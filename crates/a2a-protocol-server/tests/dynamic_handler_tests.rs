@@ -148,21 +148,21 @@ async fn handle_includes_etag_header() {
     );
 }
 
+/// Spec §8.6.1 leaves `Last-Modified` optional, and a card produced per
+/// request has no modification date (RFC 9110 §8.8.2.1), so none is sent.
 #[tokio::test]
-async fn handle_includes_last_modified_header() {
+async fn handle_sends_no_last_modified() {
     let handler = DynamicAgentCardHandler::new(StaticProducer(test_card()));
-    let req = make_request();
-    let resp = handler.handle(&req).await;
-
-    let lm = resp
-        .headers()
-        .get("last-modified")
-        .expect("Last-Modified should be present");
-    let lm_str = lm.to_str().unwrap();
-    assert!(
-        lm_str.ends_with("GMT"),
-        "Last-Modified should end with GMT: {lm_str}"
-    );
+    let full = handler.handle(&make_request()).await;
+    let etag = full.headers()["etag"].to_str().unwrap().to_owned();
+    let not_modified = handler
+        .handle(&make_request_with_header("if-none-match", &etag))
+        .await;
+    assert_eq!(not_modified.status(), 304);
+    let unconditional = handler.handle_unconditional().await;
+    for resp in [full, not_modified, unconditional] {
+        assert!(!resp.headers().contains_key("last-modified"));
+    }
 }
 
 #[tokio::test]
@@ -253,33 +253,25 @@ async fn if_none_match_wildcard_returns_304() {
 
 // ── Conditional requests (If-Modified-Since) ────────────────────────────────
 
+/// Without a modification date, `If-Modified-Since` is ignored (RFC 9110
+/// §13.1.3): whatever the date, the card is served, the `ETag` being the
+/// validator.
 #[tokio::test]
-async fn if_modified_since_matching_returns_304() {
+async fn if_modified_since_is_ignored() {
+    use a2a_protocol_server::agent_card::caching::format_http_date;
+
     let handler = DynamicAgentCardHandler::new(StaticProducer(test_card()));
-
-    // First request to get the Last-Modified value.
-    let resp = handler.handle(&make_request()).await;
-    let lm = resp
-        .headers()
-        .get("last-modified")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-
-    // Second request with matching If-Modified-Since.
-    let req = make_request_with_header("if-modified-since", &lm);
-    let resp2 = handler.handle(&req).await;
-    assert_eq!(resp2.status(), 304);
-}
-
-#[tokio::test]
-async fn if_modified_since_non_matching_returns_200() {
-    let handler = DynamicAgentCardHandler::new(StaticProducer(test_card()));
-
-    let req = make_request_with_header("if-modified-since", "Thu, 01 Jan 1970 00:00:00 GMT");
-    let resp = handler.handle(&req).await;
-    assert_eq!(resp.status(), 200);
+    let now = format_http_date(std::time::SystemTime::now());
+    for date in [
+        "Thu, 01 Jan 1970 00:00:00 GMT",
+        now.as_str(),
+        "Fri, 31 Dec 9999 23:59:59 GMT",
+    ] {
+        let resp = handler
+            .handle(&make_request_with_header("if-modified-since", date))
+            .await;
+        assert_eq!(resp.status(), 200, "If-Modified-Since: {date}");
+    }
 }
 
 // ── Producer error handling ─────────────────────────────────────────────────
@@ -322,14 +314,6 @@ async fn handle_unconditional_includes_all_headers() {
 
     let etag = resp.headers().get("etag").expect("should have etag header");
     assert!(!etag.is_empty(), "etag should be non-empty");
-    let last_modified = resp
-        .headers()
-        .get("last-modified")
-        .expect("should have last-modified header");
-    assert!(
-        !last_modified.is_empty(),
-        "last-modified should be non-empty"
-    );
     let cache_control = resp
         .headers()
         .get("cache-control")

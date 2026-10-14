@@ -940,7 +940,7 @@ Section 7 gives the order. Every row below the Status section that has no
 
 | Phase | Findings |
 |---|---|
-| 2 — observability | O1–O15; O16 apart from the push URL; O17 |
+| 2 — observability | O1–O15; O16 apart from the push URL |
 | 3 — coordinator developer experience | S4, S5, S10, S11, C7, C18, K2, and OW11. C4 (`From<ClientError>`), listed in section 7's phase 3, was done in phase 1 |
 | 4 — signing and types | T2–T7, K1 |
 | 5 — docs checked against code | C5, T8, S12, S13, K3, K4, and C19's README overstatement |
@@ -1040,7 +1040,7 @@ first, and `scripts/go_sdk_interop.sh` is the interop harness made permanent.
 | O14 | Medium | Health endpoints are inconsistent. axum `/ready` checks the store. REST `/ready` is a constant. JSON-RPC has `/health` and `/ready` (per the devx audit's live run). gRPC has no `grpc.health.v1`. | Mixed; the two audits disagreed on JSON-RPC, and the live run was taken as authoritative |
 | O15 | Medium | Push webhooks carry no `traceparent` (`push/sender.rs:851-906`). WebSocket drops it by design. Only JSON-RPC propagation is tested end to end. | CONJECTURED except JSON-RPC |
 | O16 | Low | **[Push URL logging fixed: `9ee3cc3`; the rest is open]** Two INFO lines per request. The untrusted JSON-RPC method name is logged at INFO, a log-forging risk with the plain `fmt` format. The full webhook URL is logged at INFO (`push/sender.rs:776`), and those URLs often carry secrets. Endpoint URLs are logged at INFO on every client call. | VALIDATED except the push URL |
-| O17 | Low | `ClientRequest` derives `Debug` over `extra_headers` (`client/src/interceptor.rs:50`), so `{req:?}` prints `authorization: Bearer …`. Server `CallContext` and token providers redact correctly. | VALIDATED (code) |
+| O17 | Low | **[Fixed on this branch: `ClientRequest`, `ClientResponse`, `CardFetchOptions` and `WebSocketTransportConfig` print header names and JSON keys, never values (`client/src/redact.rs`)]** `ClientRequest` derives `Debug` over `extra_headers` (`client/src/interceptor.rs:50`), so `{req:?}` prints `authorization: Bearer …`. Server `CallContext` and token providers redact correctly. | VALIDATED (code) |
 
 **What went well:** metric cardinality is bounded (`metric_label()`), and the
 bearer token did not appear in server logs. W3C propagation between the Rust
@@ -1064,7 +1064,7 @@ coordinator and Go agents was correct in all 9 binding pairs *when opted in*
 | S11 | Medium | The README's one-line `serve()` is the unhardened path: no connection cap, no header or idle timeout, no shutdown. There is no top-level `max_concurrent_tasks` (per-tenant only). | CONJECTURED (code, but the crate's own docs agree) |
 | S12 | Medium | **[Fixed on this branch: feature tables gated by `check_feature_tables.py`; every defaults table on the configuration page, the executor timeout included, gated by `tests/book_defaults.rs`, which reported five wrong or missing rows on the unfixed page]** `book/src/reference/configuration.md:17` gives the executor-timeout default as None; the code sets 1 h. The server README's `signing` row says "verification", but the crate does no signing. The feature table omits grpc-tls, auth-jwt, tls-rustls and conformance. | VALIDATED |
 | S13 | Low | The README says rate limiting is "per-caller". Without auth or `trusted_proxy_hops`, every caller shares the `"anonymous"` bucket (`rate_limit/identity.rs:45`). | VALIDATED |
-| S14 | Low | A missing or `0.3` `A2A-Version` header gets `-32009` with `"id":null` even though the request id was known. There is no v0.3 compatibility layer (a2a-go ships `a2acompat/a2av0`). | VALIDATED |
+| S14 | Low | **[The id fixed on `claude/tender-cray-bsfw83`, 2026-10-13: the refusal carries the request's; still no 0.3 layer]** A missing or `0.3` `A2A-Version` header gets `-32009` with `"id":null` even though the request id was known. There is no v0.3 compatibility layer (a2a-go ships `a2acompat/a2av0`). | VALIDATED |
 | S15 | Low | Tasks in flight at a crash or shutdown stay non-terminal in the durable store, and there is no recovery path. | CONJECTURED |
 | S16 | Low | Task statuses carry no `timestamp`; Go always sets one. | VALIDATED (Go client) |
 

@@ -125,6 +125,7 @@ fn from_json<T: serde::de::DeserializeOwned>(v: serde_json::Value) -> T {
 async fn every_handler_method_reports_its_outcome() {
     let log = Log::default();
     let handler: RequestHandler = RequestHandlerBuilder::new(Done)
+        .without_agent_card()
         .with_interceptor(Outcomes(Arc::clone(&log)))
         .build()
         .expect("handler");
@@ -189,6 +190,7 @@ async fn disconnect_mid_call(rest: bool) -> (Vec<Option<String>>, Vec<(String, S
     let started = Arc::new(tokio::sync::Notify::new());
     let handler = Arc::new(
         RequestHandlerBuilder::new(Slow(Arc::clone(&started)))
+            .without_agent_card()
             .with_metrics(calls.clone())
             .with_interceptor(Outcomes(Arc::clone(&log)))
             .build()

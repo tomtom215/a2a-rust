@@ -139,6 +139,11 @@ pub mod serve;
 // Private: the SQLite pragmas were written out four times before this.
 #[cfg(feature = "sqlite")]
 mod sqlite_pool;
+// Private: what gRPC can carry of what JSON accepts (spec §4).
+mod portable;
+// Private: which database errors a retry may get past (spec §3.3.2).
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod sql_error;
 pub mod store;
 pub mod streaming;
 pub mod tenant_config;
@@ -175,9 +180,12 @@ pub use agent_card::{
     AgentCardProducer, CORS_ALLOW_ALL, DynamicAgentCardHandler, HotReloadAgentCardHandler,
     StaticAgentCardHandler,
 };
-pub use auth::{ApiKeyAuthInterceptor, BearerTokenAuthInterceptor};
+pub use auth::{
+    ApiKeyAuthInterceptor, AuthFailureThrottle, AuthFailureThrottleConfig,
+    BearerTokenAuthInterceptor,
+};
 pub use builder::RequestHandlerBuilder;
-pub use call_context::CallContext;
+pub use call_context::{CallContext, PEER_ADDR_KEY, PeerAddr};
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]
@@ -218,6 +226,8 @@ pub use store::{
 /// (N16).
 pub use tokio_util::sync::CancellationToken;
 
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub use push::PushConfigCipher;
 #[cfg(feature = "sqlite")]
 pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};
 #[cfg(feature = "sqlite")]

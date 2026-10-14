@@ -47,6 +47,7 @@ from either direction (`grep -rn "§3.4.3" crates/`).
 | §3.4.2 Unknown `taskId` → `TaskNotFound` | `handler/messaging/continuation.rs`, `handler/lifecycle/get_task.rs` | TCK `get_unknown_task_returns_error` (portable across all official SDKs) |
 | §3.4.3 `taskId`-only continuation infers `contextId` | `handler/messaging/continuation.rs` | `messaging` continuation tests |
 | §3.3.4 Required-extension negotiation | `handler/capability.rs`, `interceptor.rs` | `ExtensionSupportRequired` tests; echoed `A2A-Extensions` header tests |
+| §3.3.4 Client validates capabilities against the card before calling (SHOULD): streaming, push-notification config (including an inline config on a send) and the extended card are refused before sending unless declared `true`; `ClientBuilder::without_capability_checks` opts out | client `declared.rs`, `client.rs` (`require_declared`), `methods/` | `capability_check_tests.rs` (all ten call shapes against a recording transport); `declared.rs` unit tests |
 | §3.5.2 Resubscribe reconnection: a **non-terminal** task's stream serves the snapshot and then stays **open** until the task is terminal (§3.1.6); a terminal task is rejected | `handler/lifecycle/subscribe.rs` | `resubscribe_nonterminal_no_queue_waits_for_the_terminal_state`; other subscribe tests; interop `subscribe to terminal task rejected`; ITK resubscribe scenarios |
 | §3.5.2 resumption: a client's `Last-Event-ID` replays exactly what it missed from the task's event log, bounded by `subscribe_replay_limit`. A2A requires reconnection to work, not this mechanism — `id:` / `Last-Event-ID` is the WHATWG SSE one | `streaming/sse.rs` (`id:` emission); `handler/lifecycle/subscribe.rs` (`last_event_id`, replay, the catch-up wait) | `sse_resumption_e2e.rs`; `sse_format_tests.rs`; `event_log_tests/resumption.rs`, `event_log_tests/live_resubscribe.rs` |
 | Append-only task event log — the substrate that replay reads. **A mechanism, not an A2A requirement**: the specification has no event-log concept, and a store that does not implement it still conforms (the stream then starts from the snapshot) | `store/task_store/mod.rs` (`supports_event_log`, `append_event`, `last_event_seq`, `read_events`); `store/task_store/in_memory/mod.rs`; `store/event_log_sql.rs`; `store/tenant_event_log.rs` | `event_log_tests/log.rs`; `store/sqlite_store/event_log_tests.rs`; retention: `PurgeReport::orphan_rows_deleted` |
@@ -68,8 +69,8 @@ the compliance claim is worse than no matrix.
 |---|---|---|
 | §3.6 Wire version is `Major.Minor` (`"1.0"`, no patch) | `A2A_VERSION` (`lib.rs`) | version-constant tests; agent-card fixtures |
 | §3.6.1 Clients send `A2A-Version` | client transports (jsonrpc/rest/websocket) | TCK sends the header on every request; client transport tests |
-| §3.6.2 Absent/empty header ⇒ 0.3 ⇒ rejected by v1.0 server | `dispatch/mod.rs::validate_version_header`; jsonrpc/rest/websocket dispatchers | `jsonrpc_missing_version_header_rejected`, `rest_missing_version_header_rejected_but_card_discovery_versionless`, `ws_*` handshake tests; opt-out `accept_missing_version_header` |
-| §3.6.2 Unsupported version → `VersionNotSupported` (all bindings) | dispatchers + `dispatch/grpc/helpers.rs::validated_metadata`; the axum adapter's `validate_a2a_request` (it had no check until 2026-10-10, so "all bindings" was not true of it) | version-mismatch tests per binding; `axum_enforces_the_protocol_version_except_for_discovery` |
+| §3.6.2 Absent/empty header ⇒ 0.3 ⇒ rejected by v1.0 server | `dispatch/version.rs::validate_version_header`; jsonrpc/rest/websocket/gRPC dispatchers; the SLIMRPC binding's `a2a_headers` | `jsonrpc_missing_version_header_rejected`, `rest_missing_version_header_rejected_but_card_discovery_versionless`, `ws_*` handshake tests, SLIMRPC `an_empty_version_is_refused_unless_none_is_required`; opt-outs `accept_missing_version_header`, gRPC `with_require_version_header(false)`, SLIMRPC `with_require_version(false)` |
+| §3.6.2 Unsupported version → `VersionNotSupported` (all bindings): anything but `Major.Minor` 1.0, `1.1` included, since 2026-10-12 | dispatchers + `dispatch/grpc/helpers.rs::validated_metadata`; the axum adapter's `validate_a2a_request` (it had no check until 2026-10-10, so "all bindings" was not true of it) | version-mismatch tests per binding; `axum_enforces_the_protocol_version_except_for_discovery` |
 | §3.6.1 Version as a request parameter (`?A2A-Version=1.0`) | `dispatch::requested_version` (JSON-RPC, REST, WebSocket upgrade, axum) | `rest_version_request_parameter_is_honoured`, `jsonrpc_version_request_parameter_is_honoured` |
 
 ## §4 — Data model
@@ -100,6 +101,7 @@ the compliance claim is worse than no matrix.
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
+| §8.1 A server MUST make an agent card available | `RequestHandlerBuilder::build` refuses a handler with no card unless `without_agent_card()` (since 0.15); JSON-RPC, REST and axum serve it. WebSocket- and gRPC-only deployments must publish it on an HTTP route of their own (ledger: PARTIAL) | `builder::tests::build_refuses_a_handler_without_an_agent_card`, `without_agent_card_builds_a_handler_with_no_card` |
 | §8.3 Well-known agent card at `/.well-known/agent-card.json` | dispatchers; `client/discovery.rs` | discovery tests; card served versionless (see §3.6.2 row) |
 | §8.3.2 rule 4 Client sends the selected interface's `tenant` on **every** request | `methods/mod.rs::tenant_or_default`, applied in all eleven methods; `builder/mod.rs` populates `ClientConfig::tenant` from the card | `methods::tests::card_tenant_is_sent_on_every_request` (per-method, by name); `tenant_round_trip_tests.rs` (client vs. tenant-partitioned server over JSON-RPC and REST, with a `TaskNotFound` control) |
 | `AgentInterface.url` for gRPC is a target `host:port` (proto comment, upstream `cfc9d34`) | `transport/grpc.rs::normalize_endpoint`; `GrpcBareAddressScheme` | `normalize_*` unit tests; `a2a-protocol-sdk/tests/grpc_address_e2e.rs` (bare loopback → plaintext; bare target with TLS and a pinned CA; bundled roots reject an unknown CA) |
@@ -130,7 +132,7 @@ the compliance claim is worse than no matrix.
 
 | Spec area | Implementation | Evidence |
 |---|---|---|
-| §13.1 Results scoped to the caller's authorization boundaries | Tenant partitions (`TenantResolver`, `TenantAware*` stores); per caller within a tenant with `RequestHandlerBuilder::isolate_tasks_by_caller` (`TenantContext::partition`, `RequestHandler::admit`). Off by default: callers in one tenant share its tasks unless the deployment asks otherwise | `tests/caller_isolation.rs` (every task-naming operation, lists, webhooks, background completion, SQLite) |
+| §13.1 Results scoped to the caller's authorization boundaries | Tenant partitions (`TenantResolver`, `TenantAware*` stores); per caller within a tenant (`TenantContext::partition`, `RequestHandler::admit`), the default since 0.15 for every caller an authenticating interceptor identifies; callers it names nobody for keep the tenant's shared records (`RequestHandlerBuilder::share_tasks_across_callers` opts out, `isolate_tasks_by_caller` refuses unidentified callers) | `tests/caller_isolation.rs` (every task-naming operation, lists, webhooks, background completion, SQLite; by default and explicitly), `tests/caller_isolation_default.rs` (when the default applies, unidentified callers, the build refusals) |
 | §13.3 Extended-card auth (see §8 row) | — | — |
 | Push webhook SSRF defense (DNS-resolve + pin) | `push/sender.rs` (`tls-rustls`) | push-sender e2e; live-TLS rebinding test |
 | Push webhook auth scheme (RFC 9110 case-insensitive) | `push/sender.rs` | push auth-scheme tests |
@@ -168,13 +170,14 @@ A2A. They are recorded here for traceability, not for credit.
 ## Known non-conformances (in the ecosystem, not here)
 
 Running our TCK against the official SDKs surfaced upstream divergences,
-skipped in CI via `a2a-tck --skip` (reported, never silent):
+skipped in CI via `a2a-tck --skip` (reported, never silent) until each was
+fixed upstream and the pin moved. None is skipped since 2026-10-12:
 
-| SDK | Test | Divergence |
-|---|---|---|
-| `@a2a-js/sdk` 1.0.0 | `list_tasks_basic` | `ListTasksRequest.fromJSON({})` materializes proto3-default `status=TASK_STATE_UNSPECIFIED`; the store filters on it, so unfiltered lists return empty. |
-| `@a2a-js/sdk` 1.0.0 | `a2a_media_type_accepted` | Rejects `application/a2a+json`; spec §6.1 examples use it (Python/Go SDKs accept it). |
-| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | Same `application/a2a+json` rejection, on the REST binding only. |
+| SDK | Test | Divergence | Fixed in |
+|---|---|---|---|
+| `@a2a-js/sdk` 1.0.0 | `list_tasks_basic` | `ListTasksRequest.fromJSON({})` materializes proto3-default `status=TASK_STATE_UNSPECIFIED`; the store filters on it, so unfiltered lists return empty. | 1.1.0 (skip removed 2026-08-30) |
+| `@a2a-js/sdk` 1.0.0 | `a2a_media_type_accepted` | Rejected `application/a2a+json` on JSON-RPC. Not a divergence: §9 specifies `application/json`, and the check is REST-only now. | (skip removed 2026-08-30) |
+| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | Rejects `application/a2a+json` on the REST binding, which §11 says SHOULD be used. | 1.4.0.Final (skip removed 2026-10-12) |
 
 Our implementation accepts `application/a2a+json` and returns a populated
 `ListTasks` response, matching the spec and the Python/Go reference SDKs.

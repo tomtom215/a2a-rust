@@ -234,6 +234,7 @@ mod tests {
         crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
         let seen = Arc::new(Seen::default());
         let handler = crate::RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_metrics(Arc::clone(&seen))
             .build()
             .unwrap();

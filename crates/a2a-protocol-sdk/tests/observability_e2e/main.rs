@@ -137,6 +137,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         "1.0.0",
         AgentInterface::jsonrpc("http://127.0.0.1"),
     )
+    .with_description("A test agent")
     .with_skill(
         a2a_protocol_sdk::types::AgentSkill::new("test", "Test", "A test skill")
             .with_tags(["test"]),

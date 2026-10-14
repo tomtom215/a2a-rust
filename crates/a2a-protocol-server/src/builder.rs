@@ -81,13 +81,34 @@ enum TenantIsolation {
 }
 
 /// Whether callers in one tenant share its tasks or each get their own.
+///
+/// Unset on the builder means [`IdentifiedCallers`](Self::IdentifiedCallers)
+/// when an interceptor authenticates and [`Shared`](Self::Shared) otherwise;
+/// [`RequestHandlerBuilder::build`] resolves it to one of these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CallerIsolation {
-    /// One set of records per tenant. The default.
+    /// One set of records per tenant:
+    /// [`RequestHandlerBuilder::share_tasks_across_callers`], or no
+    /// authenticating interceptor.
     Shared,
-    /// A partition per authenticated caller:
-    /// [`RequestHandlerBuilder::isolate_tasks_by_caller`].
-    PerCaller,
+    /// A partition per identified caller; a request no interceptor identified
+    /// (an unlabelled bearer token or API key, a JWT without `sub`) stays in
+    /// the tenant's shared records, as it would with no isolation. The
+    /// default with an authenticating interceptor.
+    IdentifiedCallers,
+    /// A partition per caller, and a request no interceptor identified is
+    /// refused: [`RequestHandlerBuilder::isolate_tasks_by_caller`].
+    EveryCaller,
+}
+
+/// What the builder was told about the agent card.
+enum CardSetting {
+    /// Nothing: `build()` refuses (spec §8.1).
+    Unset,
+    /// The card to serve and to check requests against.
+    Card(Box<AgentCard>),
+    /// [`RequestHandlerBuilder::without_agent_card`].
+    Without,
 }
 
 /// Fluent builder for [`RequestHandler`].
@@ -100,7 +121,14 @@ pub(crate) enum CallerIsolation {
 ///
 /// # Optional (with defaults)
 ///
-/// - `task_store`: defaults to [`InMemoryTaskStore`].
+/// - `task_store`: defaults to [`InMemoryTaskStore`], or to
+///   [`TenantAwareInMemoryTaskStore`](crate::store::TenantAwareInMemoryTaskStore)
+///   when tasks are isolated by caller.
+/// - Callers: with an interceptor that
+///   [`authenticates`](crate::interceptor::ServerInterceptor::authenticates),
+///   each caller it identifies gets a partition of its own (spec §13.1); see
+///   [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller) and
+///   [`share_tasks_across_callers`](Self::share_tasks_across_callers).
 /// - `push_config_store`: defaults to [`InMemoryPushConfigStore`], or to
 ///   [`TenantAwareInMemoryPushConfigStore`](crate::push::TenantAwareInMemoryPushConfigStore)
 ///   when the task store partitions by tenant.
@@ -108,7 +136,10 @@ pub(crate) enum CallerIsolation {
 ///   partition by tenant; see [`accept_unisolated_tenants`](Self::accept_unisolated_tenants).
 /// - `push_sender`: defaults to `None`.
 /// - `interceptors`: defaults to an empty chain.
-/// - `agent_card`: defaults to `None`.
+/// - `agent_card`: none, and `build()` refuses that: an A2A server MUST make
+///   one available (spec §8.1). Set one with
+///   [`with_agent_card`](Self::with_agent_card), or say it is published
+///   elsewhere with [`without_agent_card`](Self::without_agent_card).
 /// - `tenant_resolver`: defaults to `None` (no tenant resolution).
 /// - `tenant_config`: defaults to `None` (no per-tenant limits).
 /// - `max_concurrent_streams`: defaults to
@@ -124,7 +155,8 @@ pub struct RequestHandlerBuilder {
     push_config_store: Option<Arc<dyn PushConfigStore>>,
     push_sender: Option<Arc<dyn PushSender>>,
     interceptors: ServerInterceptorChain,
-    agent_card: Option<AgentCard>,
+    agent_card: CardSetting,
+    extended_agent_card: Option<Box<AgentCard>>,
     executor_timeout: Option<Duration>,
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
@@ -135,7 +167,7 @@ pub struct RequestHandlerBuilder {
     tenant_config: Option<PerTenantConfig>,
     require_resolved_tenant: bool,
     tenant_isolation: TenantIsolation,
-    caller_isolation: CallerIsolation,
+    caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     span_settings: crate::rpc_span::SpanSettings,
     allow_unauthenticated_extended_card: bool,
@@ -161,7 +193,8 @@ impl RequestHandlerBuilder {
             push_config_store: None,
             push_sender: None,
             interceptors: ServerInterceptorChain::new(),
-            agent_card: None,
+            agent_card: CardSetting::Unset,
+            extended_agent_card: None,
             executor_timeout: Some(DEFAULT_EXECUTOR_TIMEOUT),
             event_queue_capacity: None,
             max_event_size: None,
@@ -172,7 +205,7 @@ impl RequestHandlerBuilder {
             tenant_config: None,
             require_resolved_tenant: false,
             tenant_isolation: TenantIsolation::Required,
-            caller_isolation: CallerIsolation::Shared,
+            caller_isolation: None,
             inbound_trace_policy: crate::handler::InboundTracePolicy::Continue,
             span_settings: crate::rpc_span::SpanSettings {
                 agent: true,
@@ -206,6 +239,15 @@ impl RequestHandlerBuilder {
     }
 
     /// Configures the default [`InMemoryTaskStore`] with custom TTL and capacity settings.
+    ///
+    /// When tasks are isolated by caller (the default with an authenticating
+    /// interceptor; see [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller)),
+    /// the default store is a
+    /// [`TenantAwareInMemoryTaskStore`](crate::store::TenantAwareInMemoryTaskStore)
+    /// and these settings apply to each caller's partition, so it holds up to
+    /// [`max_tenants`](crate::store::TenantStoreConfig::max_tenants) (1,000)
+    /// times the capacity. To bound the total otherwise, supply that store with
+    /// your own [`TenantStoreConfig`](crate::store::TenantStoreConfig).
     ///
     /// # Panics
     ///
@@ -316,9 +358,58 @@ impl RequestHandlerBuilder {
     }
 
     /// Sets the agent card for discovery responses.
+    ///
+    /// The JSON-RPC and HTTP+JSON dispatchers serve it at
+    /// `/.well-known/agent-card.json`, and the handler checks requests
+    /// against what it declares: streaming, push notifications, input modes,
+    /// required extensions, the extended card. `build()` requires a card
+    /// unless told [`without_agent_card`](Self::without_agent_card).
     #[must_use]
     pub fn with_agent_card(mut self, card: AgentCard) -> Self {
-        self.agent_card = Some(card);
+        self.agent_card = CardSetting::Card(Box::new(card));
+        self
+    }
+
+    /// Sets the card `GetExtendedAgentCard` serves to an authenticated caller
+    /// (spec §3.1.11, §13.3): the public card plus whatever the agent offers
+    /// only to clients it knows, such as more skills or a security scheme.
+    ///
+    /// Without it, a handler whose card declares
+    /// `capabilities.extendedAgentCard` serves that public card as the
+    /// extended one, so a caller who authenticates learns nothing more.
+    ///
+    /// `build()` checks it as it checks the public card: it must be valid, a
+    /// push-notification capability needs a sender, and the extensions this
+    /// server can honour are advertised on it too, since a client that
+    /// fetches it uses its capabilities from then on. `build()` refuses it
+    /// when the public card does not declare `extendedAgentCard`, since it
+    /// would never be served. Without a public card
+    /// ([`without_agent_card`](Self::without_agent_card)) it is served, the
+    /// card published elsewhere being the one that declares it.
+    #[must_use]
+    pub fn with_extended_agent_card(mut self, card: AgentCard) -> Self {
+        self.extended_agent_card = Some(Box::new(card));
+        self
+    }
+
+    /// Builds a handler with no agent card.
+    ///
+    /// Spec §8.1: an A2A server MUST make an agent card available, so
+    /// `build()` refuses a handler without one unless this is called. Call it
+    /// when the card is published by something other than this handler (a
+    /// gateway, or your own route serving a
+    /// [`DynamicAgentCardHandler`](crate::agent_card::DynamicAgentCardHandler)),
+    /// or when the handler is not a public A2A server at all, as in a test.
+    ///
+    /// Without a card the dispatchers answer `/.well-known/agent-card.json`
+    /// with 404, `GetExtendedAgentCard` answers `ExtendedAgentCardNotConfigured`
+    /// unless [`with_extended_agent_card`](Self::with_extended_agent_card) set
+    /// one, and nothing a card would declare is checked: streaming and push
+    /// notifications are served, any input mode is accepted, no extension is
+    /// required, and none is advertised.
+    #[must_use]
+    pub fn without_agent_card(mut self) -> Self {
+        self.agent_card = CardSetting::Without;
         self
     }
 
@@ -432,41 +523,72 @@ impl RequestHandlerBuilder {
     }
 
     /// Gives every authenticated caller a partition of its own within its
-    /// tenant (spec §13.1).
+    /// tenant (spec §13.1), and refuses a request whose caller no interceptor
+    /// identified.
     ///
-    /// The SDK otherwise scopes tasks by tenant only: two callers who pass
-    /// the interceptors as different identities in the same tenant (or in the
-    /// default single-tenant deployment) can get, list, cancel and subscribe
-    /// to each other's tasks, and register webhooks on them. §13.1 requires
-    /// results scoped to the caller's authorization boundaries; this is the
-    /// user-identity model of it. With it, the identity an authenticating
-    /// interceptor sets ([`CallContext::set_caller_identity`]) selects the
-    /// records a request can reach: another caller's task is `TaskNotFound`,
-    /// exactly as an unknown id is, so its existence is not revealed, and
-    /// `ListTasks` returns only the caller's own.
+    /// Partitioning is already **the default whenever an interceptor
+    /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates)**,
+    /// with one difference: by default a request no interceptor identified (an
+    /// unlabelled bearer token or API key, a JWT without `sub`) keeps the
+    /// tenant's shared records, as it would with no isolation, so credentials
+    /// that name nobody behave as before. Call this when every caller must be
+    /// identified: such a request is then refused with `PermissionDenied`, and
+    /// `build()` refuses a chain with no authenticating interceptor.
+    ///
+    /// Without isolation the SDK scopes tasks by tenant only: two callers who
+    /// pass the interceptors as different identities in the same tenant (or in
+    /// the default single-tenant deployment) can get, list, cancel and
+    /// subscribe to each other's tasks, and register webhooks on them. §13.1
+    /// requires results scoped to the caller's authorization boundaries; this
+    /// is the user-identity model of it. With it, the identity an
+    /// authenticating interceptor sets ([`CallContext::set_caller_identity`])
+    /// selects the records a request can reach: another caller's task is
+    /// `TaskNotFound`, exactly as an unknown id is, so its existence is not
+    /// revealed, and `ListTasks` returns only the caller's own.
     ///
     /// Per-tenant policy is unchanged: the halt switch, concurrency quotas,
     /// audit chains and metrics still see one tenant. Each caller's partition
     /// counts against the store's tenant limit
-    /// ([`TenantStoreConfig::max_tenants`](crate::store::TenantStoreConfig::max_tenants)
-    /// for the in-memory store).
+    /// ([`TenantStoreConfig::max_tenants`](crate::store::TenantStoreConfig::max_tenants),
+    /// 1,000 by default, for the in-memory store; once reached, new callers
+    /// are refused until partitions empty). The SQL tenant stores have no such
+    /// limit.
     ///
     /// Models that share tasks between callers (roles, groups, projects) are
-    /// not this: map the group to a tenant with a
-    /// [`TenantResolver`] instead.
+    /// not this: map the group to a tenant with a [`TenantResolver`] instead,
+    /// or call [`share_tasks_across_callers`](Self::share_tasks_across_callers).
     ///
-    /// # Build errors
+    /// # Stores and build errors
     ///
-    /// `build()` refuses the configuration when the task or push-config store
-    /// does not partition by tenant, since nothing would then keep callers
-    /// apart, or when no interceptor
-    /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates),
-    /// since every request would then be refused for want of an identity.
+    /// Isolation, by default or by this call, needs a task store and a
+    /// push-config store that partition by tenant. Left unset, both default to
+    /// the tenant-aware in-memory stores. `build()` refuses a store you
+    /// supplied that does not partition, since nothing would then keep callers
+    /// apart, and refuses this call with no authenticating interceptor, since
+    /// every request would then be refused for want of an identity.
     ///
     /// [`CallContext::set_caller_identity`]: crate::CallContext::set_caller_identity
     #[must_use]
     pub const fn isolate_tasks_by_caller(mut self) -> Self {
-        self.caller_isolation = CallerIsolation::PerCaller;
+        self.caller_isolation = Some(CallerIsolation::EveryCaller);
+        self
+    }
+
+    /// Keeps one set of records per tenant, shared by every caller in it, even
+    /// when an interceptor authenticates.
+    ///
+    /// Spec §13.1 leaves the authorization model to the agent; this is the
+    /// model in which every authenticated caller of a tenant may see every
+    /// task in it, and it lets `build()` accept stores that do not partition
+    /// by tenant. Without this call a handler with an authenticating
+    /// interceptor isolates tasks by identified caller (see
+    /// [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller)). Where the
+    /// sharing group is known (a team, a project), mapping it to a tenant with
+    /// a [`TenantResolver`] keeps other groups out and is usually the better
+    /// fit.
+    #[must_use]
+    pub const fn share_tasks_across_callers(mut self) -> Self {
+        self.caller_isolation = Some(CallerIsolation::Shared);
         self
     }
 
@@ -590,19 +712,73 @@ impl RequestHandlerBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams) if the configuration is invalid:
-    /// - Agent card with empty `supported_interfaces`
-    /// - Zero executor timeout (would cause immediate timeouts)
+    /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams),
+    /// naming what to change, if the configuration is one this handler cannot
+    /// serve correctly:
+    /// - an agent card the spec does not allow (`AgentCard::validate` and
+    ///   `AgentCard::validate_security_schemes`), or a signed card it would
+    ///   have to edit to declare an extension;
+    /// - no agent card, unless [`without_agent_card`](Self::without_agent_card)
+    ///   (spec §8.1);
+    /// - an agent card that declares `pushNotifications` with no
+    ///   [`push sender`](Self::with_push_sender) (spec §3.3.4);
+    /// - a zero executor timeout, `max_id_length`, `max_metadata_size` or
+    ///   `push_delivery_timeout`;
+    /// - tasks isolated by caller with a store that does not partition by
+    ///   tenant, with no authenticating interceptor (when asked for
+    ///   explicitly), or with an approval gate that needs a second approver
+    ///   (see [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller));
+    /// - with the `audit` feature, a `Profile` whose requirements are not
+    ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
         // A card this server would publish must be valid: a name, and every
         // repeated field the proto marks REQUIRED non-empty (spec §5.7).
         // Until 2026-10-11 only the interface list was checked, so a card
-        // with no skills or modes was served as it was.
-        if let Some(ref card) = self.agent_card
-            && let Err(why) = card.validate()
+        // with no skills or modes was served as it was; until 2026-10-12 a
+        // security scheme's REQUIRED strings were not checked at all.
+        // The extended card is checked the same way: a client that fetches it
+        // reads its capabilities from then on (§3.1.11).
+        let public_card = match &self.agent_card {
+            CardSetting::Card(card) => Some(("agent card", card.as_ref())),
+            CardSetting::Unset | CardSetting::Without => None,
+        };
+        let extended_card = self
+            .extended_agent_card
+            .as_deref()
+            .map(|card| ("extended agent card", card));
+        for (which, card) in public_card.into_iter().chain(extended_card) {
+            if let Err(why) = card
+                .validate()
+                .and_then(|()| card.validate_security_schemes())
+            {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the {which} is not valid: {why}"
+                )));
+            }
+            // Spec §3.3.4: a card that declares push notifications promises the
+            // four push-config operations, and without a sender each of them
+            // answers PushNotificationNotSupported. Until 2026-10-13 such a card
+            // was served as it was.
+            if card.capabilities.push_notifications == Some(true) && self.push_sender.is_none() {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the {which} declares capabilities.pushNotifications, but no push \
+                     sender is wired, so every push-config operation would answer \
+                     PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
+                     or declare pushNotifications false"
+                )));
+            }
+        }
+        if let (Some((_, public)), Some(_)) = (public_card, extended_card)
+            && public.capabilities.extended_agent_card != Some(true)
         {
-            return Err(crate::error::ServerError::InvalidParams(why.into()));
+            return Err(crate::error::ServerError::InvalidParams(
+                "an extended agent card is set, but the agent card does not declare \
+                 capabilities.extendedAgentCard, so GetExtendedAgentCard answers \
+                 UnsupportedOperation and the extended card is never served \
+                 (spec §3.1.11): declare extendedAgentCard true, or drop the extended card"
+                    .to_owned(),
+            ));
         }
 
         #[cfg(feature = "audit")]
@@ -635,11 +811,32 @@ impl RequestHandlerBuilder {
                 "push_delivery_timeout must be greater than zero".into(),
             ));
         }
+        // Spec §13.1: with an authenticating interceptor, each caller it
+        // identifies gets a partition of its own, unless the builder said
+        // otherwise.
+        let caller_isolation = self.caller_isolation.unwrap_or_else(|| {
+            if self.interceptors.has_authenticator() {
+                CallerIsolation::IdentifiedCallers
+            } else {
+                CallerIsolation::Shared
+            }
+        });
+        let isolate_callers = caller_isolation != CallerIsolation::Shared;
+
         // Resolve the store before the card is read: whether it can honour an
         // idempotency key is what decides whether the card may advertise one.
-        let task_store = self
-            .task_store
-            .unwrap_or_else(|| Arc::new(InMemoryTaskStore::with_config(self.task_store_config)));
+        // Isolation needs a store that partitions, so an unset one is the
+        // tenant-aware kind then.
+        let task_store_config = self.task_store_config;
+        let task_store = self.task_store.unwrap_or_else(|| {
+            if isolate_callers {
+                Arc::new(crate::store::TenantAwareInMemoryTaskStore::with_config(
+                    crate::store::TenantStoreConfig::default().with_per_tenant(task_store_config),
+                ))
+            } else {
+                Arc::new(InMemoryTaskStore::with_config(task_store_config))
+            }
+        });
         #[cfg_attr(not(feature = "audit"), allow(unused_mut))]
         let mut interceptors = self.interceptors;
         #[cfg(feature = "audit")]
@@ -673,8 +870,13 @@ impl RequestHandlerBuilder {
         // `required` — a client that does not know the extension sends nothing
         // and is served exactly as before, and making one required would lock
         // those clients out for a feature they do not use.
-        let mut agent_card = self.agent_card;
-        if let Some(card) = agent_card.as_mut() {
+        let card_unset = matches!(self.agent_card, CardSetting::Unset);
+        let mut agent_card = match self.agent_card {
+            CardSetting::Card(card) => Some(*card),
+            CardSetting::Unset | CardSetting::Without => None,
+        };
+        let mut extended_agent_card = self.extended_agent_card.map(|card| *card);
+        if agent_card.is_some() || extended_agent_card.is_some() {
             let mut wanted: Vec<AgentExtension> = Vec::new();
             if task_store.supports_idempotency() {
                 wanted.push(AgentExtension {
@@ -712,43 +914,11 @@ impl RequestHandlerBuilder {
                 params: None,
             });
 
-            let declared = card.capabilities.extensions.as_deref().unwrap_or(&[]);
-            let missing: Vec<AgentExtension> = wanted
-                .into_iter()
-                .filter(|w| !declared.iter().any(|have| have.uri == w.uri))
-                .collect();
-
-            // `canonicalize_card` strips only `signatures`, so
-            // `capabilities.extensions` is inside the bytes a signature covers.
-            // Appending an entry to a card that is already signed would leave
-            // the served card canonicalizing to bytes the operator never
-            // signed, and every client that verifies would fail — silently,
-            // because nothing on this side reads the signature again. Refusing
-            // is the only honest answer: declare the extensions on the card and
-            // sign the card that results, or serve it unsigned.
-            if !missing.is_empty()
-                && card
-                    .signatures
-                    .as_ref()
-                    .is_some_and(|sigs| !sigs.is_empty())
-            {
-                let uris: Vec<&str> = missing.iter().map(|e| e.uri.as_str()).collect();
-                return Err(crate::error::ServerError::InvalidParams(format!(
-                    "the agent card carries a signature but does not declare {}. \
-                     Advertising an extension edits `capabilities.extensions`, \
-                     which is inside the signed bytes, so the card this server \
-                     would serve no longer verifies against its own signature. \
-                     Declare the extension on the card before signing it, or \
-                     supply the card unsigned.",
-                    uris.join(", ")
-                )));
+            if let Some(card) = agent_card.as_mut() {
+                advertise("agent card", card, &wanted)?;
             }
-
-            if !missing.is_empty() {
-                card.capabilities
-                    .extensions
-                    .get_or_insert_with(Vec::new)
-                    .extend(missing);
+            if let Some(card) = extended_agent_card.as_mut() {
+                advertise("extended agent card", card, &wanted)?;
             }
         }
 
@@ -788,19 +958,53 @@ impl RequestHandlerBuilder {
         let stores_isolate = task_store.isolates_tenants() && push_config_store.isolates_tenants();
         let refuse_unisolated_tenants =
             !stores_isolate && self.tenant_isolation == TenantIsolation::Required;
-        let isolate_callers = self.caller_isolation == CallerIsolation::PerCaller;
         if isolate_callers && !stores_isolate {
-            return Err(crate::error::ServerError::InvalidParams(
+            let why = if self.caller_isolation.is_none() {
+                "an authenticating interceptor makes this handler isolate tasks by caller \
+                 (spec §13.1), which needs a task store and a push-config store that \
+                 partition by tenant (the TenantAware* stores); these do not, so every \
+                 caller would share one set of records. Use those stores, or call \
+                 share_tasks_across_callers() to keep one set of records per tenant"
+            } else {
                 "isolate_tasks_by_caller needs a task store and a push-config store that \
                  partition by tenant (the TenantAware* stores); these do not, so every \
                  caller would share one set of records"
-                    .to_owned(),
-            ));
+            };
+            return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
         }
         if isolate_callers && !interceptors.has_authenticator() {
             return Err(crate::error::ServerError::InvalidParams(
                 "isolate_tasks_by_caller needs an authenticating interceptor to identify \
                  callers; without one every request would be refused"
+                    .to_owned(),
+            ));
+        }
+        if isolate_callers
+            && self
+                .approval_gate
+                .as_ref()
+                .is_some_and(crate::approval::ApprovalGate::needs_another_caller)
+        {
+            let why = if self.caller_isolation.is_none() {
+                "an authenticating interceptor makes this handler isolate tasks by caller \
+                 (spec §13.1), and the approval gate needs a caller other than the \
+                 requester to answer, who could then never reach the requester's task. \
+                 Call share_tasks_across_callers(), or let requesters answer their own \
+                 runs with ApprovalGate::allowing_self_approval()"
+            } else {
+                "isolate_tasks_by_caller keeps every caller from another's tasks, and the \
+                 approval gate needs a caller other than the requester to answer, so no \
+                 decision could ever be admitted. Call share_tasks_across_callers() \
+                 instead, or let requesters answer their own runs with \
+                 ApprovalGate::allowing_self_approval()"
+            };
+            return Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+        }
+        if card_unset {
+            return Err(crate::error::ServerError::InvalidParams(
+                "an A2A server must make an agent card available (spec §8.1): call \
+                 with_agent_card(card), or without_agent_card() if the card is \
+                 published elsewhere or this handler is not a public A2A server"
                     .to_owned(),
             ));
         }
@@ -826,13 +1030,14 @@ impl RequestHandlerBuilder {
             },
             interceptors,
             agent_card,
+            extended_agent_card,
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
             limits: self.handler_limits,
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
-            caller_isolation: self.caller_isolation,
+            caller_isolation,
             inbound_trace_policy: self.inbound_trace_policy,
             span_settings: self.span_settings,
             allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
@@ -894,7 +1099,15 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("push_config_store", &self.push_config_store.is_some())
             .field("push_sender", &self.push_sender.is_some())
             .field("interceptors", &self.interceptors)
-            .field("agent_card", &self.agent_card.is_some())
+            .field(
+                "agent_card",
+                &match self.agent_card {
+                    CardSetting::Unset => "unset",
+                    CardSetting::Card(_) => "card",
+                    CardSetting::Without => "without",
+                },
+            )
+            .field("extended_agent_card", &self.extended_agent_card.is_some())
             .field("executor_timeout", &self.executor_timeout)
             .field("event_queue_capacity", &self.event_queue_capacity)
             .field("max_event_size", &self.max_event_size)
@@ -924,6 +1137,51 @@ impl std::fmt::Debug for RequestHandlerBuilder {
     }
 }
 
+/// Adds to `card` each extension in `wanted` it does not declare, keeping an
+/// entry the operator wrote as it is. Refused on a signed card that would
+/// change, since the card served would no longer verify.
+fn advertise(which: &str, card: &mut AgentCard, wanted: &[AgentExtension]) -> ServerResult<()> {
+    let declared = card.capabilities.extensions.as_deref().unwrap_or(&[]);
+    let missing: Vec<AgentExtension> = wanted
+        .iter()
+        .filter(|w| !declared.iter().any(|have| have.uri == w.uri))
+        .cloned()
+        .collect();
+    // `canonicalize_card` strips only `signatures`, so
+    // `capabilities.extensions` is inside the bytes a signature covers.
+    // Appending an entry to a card that is already signed would leave
+    // the served card canonicalizing to bytes the operator never
+    // signed, and every client that verifies would fail — silently,
+    // because nothing on this side reads the signature again. Refusing
+    // is the only honest answer: declare the extensions on the card and
+    // sign the card that results, or serve it unsigned.
+    if !missing.is_empty()
+        && card
+            .signatures
+            .as_ref()
+            .is_some_and(|sigs| !sigs.is_empty())
+    {
+        let uris: Vec<&str> = missing.iter().map(|e| e.uri.as_str()).collect();
+        return Err(crate::error::ServerError::InvalidParams(format!(
+            "the {which} carries a signature but does not declare {}. \
+             Advertising an extension edits `capabilities.extensions`, \
+             which is inside the signed bytes, so the card this server \
+             would serve no longer verifies against its own signature. \
+             Declare the extension on the card before signing it, or \
+             supply the card unsigned.",
+            uris.join(", ")
+        )));
+    }
+
+    if !missing.is_empty() {
+        card.capabilities
+            .extensions
+            .get_or_insert_with(Vec::new)
+            .extend(missing);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -935,7 +1193,9 @@ mod tests {
 
     #[test]
     fn builder_defaults_build_ok() {
-        let handler = RequestHandlerBuilder::new(TestExecutor).build();
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build();
         let h = handler.expect("default builder should succeed");
         assert!(
             h.tenant_resolver().is_none(),
@@ -950,9 +1210,64 @@ mod tests {
     #[test]
     fn builder_zero_executor_timeout_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_executor_timeout(Duration::ZERO)
             .build();
         assert!(result.is_err());
+    }
+
+    /// Spec §8.1: an A2A server MUST make an agent card available, so a
+    /// handler with none is refused, naming both ways out.
+    #[test]
+    fn build_refuses_a_handler_without_an_agent_card() {
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .build()
+            .expect_err("no card and no opt-out");
+        let why = err.to_string();
+        assert!(why.contains("spec §8.1"), "{why}");
+        assert!(why.contains("with_agent_card(card)"), "{why}");
+        assert!(why.contains("without_agent_card()"), "{why}");
+    }
+
+    /// Spec §3.3.4: a card that declares push notifications needs a sender to
+    /// keep that promise, so one with none is refused, naming the way out.
+    #[test]
+    fn build_refuses_a_card_declaring_push_without_a_sender() {
+        let declaring = || {
+            let mut card = unsigned_card();
+            card.capabilities = card.capabilities.with_push_notifications(true);
+            card
+        };
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(declaring())
+            .build()
+            .expect_err("push declared, no sender");
+        let why = err.to_string();
+        assert!(why.contains("spec §3.3.4"), "{why}");
+        assert!(why.contains("with_push_sender(sender)"), "{why}");
+        RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(declaring())
+            .with_push_sender(crate::push::HttpPushSender::new())
+            .build()
+            .expect("push declared, sender wired");
+    }
+
+    #[test]
+    fn without_agent_card_builds_a_handler_with_no_card() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build()
+            .expect("opted out");
+        assert!(handler.agent_card.is_none());
+    }
+
+    #[test]
+    fn a_card_needs_no_opt_out() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(unsigned_card())
+            .build()
+            .expect("a card is all it needs");
+        assert!(handler.agent_card.is_some());
     }
 
     #[test]
@@ -984,6 +1299,39 @@ mod tests {
             .with_agent_card(card)
             .build();
         assert!(result.is_err());
+    }
+
+    /// A security scheme's REQUIRED string, present but empty, is refused
+    /// like the card's own (`AgentCard::validate_security_schemes`).
+    #[test]
+    fn build_refuses_a_card_with_an_empty_required_scheme_field() {
+        use a2a_protocol_types::security::{HttpAuthSecurityScheme, SecurityScheme};
+
+        let card = |scheme: &str| {
+            let mut card = crate::agent_card::caching::tests::minimal_agent_card();
+            card.security_schemes = Some(std::collections::HashMap::from([(
+                "bearer".to_owned(),
+                SecurityScheme::Http(HttpAuthSecurityScheme {
+                    scheme: scheme.to_owned(),
+                    bearer_format: None,
+                    description: None,
+                }),
+            )]));
+            card
+        };
+        RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card("bearer"))
+            .build()
+            .expect("the control builds");
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card(""))
+            .build()
+            .expect_err("a card with an empty HTTP scheme built");
+        assert!(
+            err.to_string()
+                .contains("httpAuthSecurityScheme needs a scheme"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -1034,6 +1382,7 @@ mod tests {
         use crate::tenant_resolver::HeaderTenantResolver;
 
         let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_tenant_resolver(HeaderTenantResolver::default())
             .with_tenant_config(
                 PerTenantConfig::builder()
@@ -1068,7 +1417,10 @@ mod tests {
 
     #[test]
     fn builder_without_tenant_fields() {
-        let handler = RequestHandlerBuilder::new(TestExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         assert!(handler.tenant_resolver().is_none());
         assert!(handler.tenant_config().is_none());
     }
@@ -1078,7 +1430,10 @@ mod tests {
     /// caller allocate channels and spawn tasks without bound.
     #[test]
     fn builder_default_caps_concurrent_streams() {
-        let handler = RequestHandlerBuilder::new(TestExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let debug = format!("{:?}", handler.event_queue_manager);
         assert!(
             debug.contains(&format!(
@@ -1093,6 +1448,7 @@ mod tests {
     #[test]
     fn builder_max_concurrent_streams_override_wins() {
         let handler = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_max_concurrent_streams(7)
             .build()
             .unwrap();
@@ -1105,15 +1461,24 @@ mod tests {
 
     #[test]
     fn builder_debug_does_not_panic() {
-        let builder = RequestHandlerBuilder::new(TestExecutor);
+        let builder = RequestHandlerBuilder::new(TestExecutor).without_agent_card();
         let debug = format!("{builder:?}");
         assert!(debug.contains("RequestHandlerBuilder"));
+        assert!(debug.contains(r#"agent_card: "without""#), "{debug}");
+        let unset = format!("{:?}", RequestHandlerBuilder::new(TestExecutor));
+        assert!(unset.contains(r#"agent_card: "unset""#), "{unset}");
+        let card = format!(
+            "{:?}",
+            RequestHandlerBuilder::new(TestExecutor).with_agent_card(unsigned_card())
+        );
+        assert!(card.contains(r#"agent_card: "card""#), "{card}");
     }
 
     #[test]
     fn builder_with_push_config_store_builds_ok() {
         use crate::push::InMemoryPushConfigStore;
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_push_config_store(InMemoryPushConfigStore::new())
             .build();
         let _h = result.expect("builder with push config store should succeed");
@@ -1122,6 +1487,7 @@ mod tests {
     #[test]
     fn builder_zero_max_id_length_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_handler_limits(HandlerLimits::default().with_max_id_length(0))
             .build();
         assert!(result.is_err(), "zero max_id_length should be rejected");
@@ -1130,6 +1496,7 @@ mod tests {
     #[test]
     fn builder_zero_max_metadata_size_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_handler_limits(HandlerLimits::default().with_max_metadata_size(0))
             .build();
         assert!(result.is_err(), "zero max_metadata_size should be rejected");
@@ -1138,6 +1505,7 @@ mod tests {
     #[test]
     fn builder_zero_push_delivery_timeout_errors() {
         let result = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
             .with_handler_limits(
                 HandlerLimits::default().with_push_delivery_timeout(Duration::ZERO),
             )
@@ -1161,6 +1529,7 @@ mod tests {
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
         )
+        .with_description("A test agent")
         .with_skill(
             a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         );
@@ -1199,6 +1568,7 @@ mod tests {
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
         )
+        .with_description("A test agent")
         .with_skill(
             a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         );
@@ -1235,6 +1605,7 @@ mod tests {
             "0.0.0",
             a2a_protocol_types::agent_card::AgentInterface::jsonrpc("http://127.0.0.1:1"),
         )
+        .with_description("A test agent")
         .with_skill(
             a2a_protocol_types::AgentSkill::new("test", "Test", "A test skill").with_tags(["test"]),
         )

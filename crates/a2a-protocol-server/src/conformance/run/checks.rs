@@ -224,9 +224,11 @@ impl Run {
 
     pub(in crate::conformance) fn artifacts_have_ids(&self) -> CheckResult {
         const NAME: &str = "artifacts_have_ids";
+        // What the queue refused counts: the executor emitted it.
         let artifacts: Vec<_> = self
             .events
             .iter()
+            .chain(&self.refused)
             .filter_map(|e| match e {
                 StreamResponse::ArtifactUpdate(u) => Some(&u.artifact),
                 _ => None,

@@ -8,16 +8,17 @@
 //! were always reported in, which matters to a client that fixes one problem
 //! at a time.
 
-use a2a_protocol_types::message::Message;
+use a2a_protocol_types::message::PartContent;
 use a2a_protocol_types::params::MessageSendParams;
 
 use super::super::RequestHandler;
-use super::super::helpers::{validate_id, validate_metadata_object};
+use super::super::helpers::{unset_if_empty, validate_id, validate_metadata_object};
 use super::decisions::json_byte_len;
 use crate::error::{ServerError, ServerResult};
+use crate::portable::{inexact_number, standard_base64};
 
 impl RequestHandler {
-    /// Validates the request in place: proto3-empty ids are unset, then ids,
+    /// Validates the request in place: proto3 defaults are unset, then ids,
     /// parts and every `metadata` field are checked against the handler's
     /// limits.
     ///
@@ -25,7 +26,7 @@ impl RequestHandler {
     ///
     /// [`ServerError::InvalidParams`] naming the first field that failed.
     pub(super) fn validate_send_params(&self, params: &mut MessageSendParams) -> ServerResult<()> {
-        unset_proto3_empty_ids(&mut params.message);
+        unset_proto3_defaults(params);
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively
         // long values (AP-1).
@@ -55,6 +56,15 @@ impl RequestHandler {
         }
         if let Some(ref task_id) = params.message.task_id {
             validate_id(&task_id.0, "task_id", self.limits.max_id_length)?;
+        }
+        // Task ids like `task_id`, so the same checks (spec §13.4); they were
+        // stored unchecked.
+        for reference in params.message.reference_task_ids.iter().flatten() {
+            validate_id(
+                &reference.0,
+                "reference_task_ids",
+                self.limits.max_id_length,
+            )?;
         }
 
         // a2a.proto marks `Message.role` REQUIRED. The JSON bindings already
@@ -88,12 +98,52 @@ impl RequestHandler {
         for (i, part) in params.message.parts.iter().enumerate() {
             validate_metadata_object(part.metadata.as_ref(), &format!("message part {i}"))?;
         }
+        make_portable(params)?;
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
         let max_meta = self.limits.max_metadata_size;
         check_metadata_size(params.message.metadata.as_ref(), "message", max_meta)?;
         check_metadata_size(params.metadata.as_ref(), "request", max_meta)
     }
+}
+
+/// The rest of cross-binding portability (spec §4: every binding MUST
+/// represent the same thing). A part's `raw` is protobuf `bytes`: it must be
+/// base64, read as the gRPC conversion reads it (standard or URL-safe,
+/// padded or not), and is kept in the standard padded form a gRPC read
+/// gives. The numbers in metadata and in a `data` part are protobuf
+/// doubles, which the gRPC conversion refuses beyond ±2^53 rather than
+/// round. Until 2026-10-13 any `raw` string and any integer were stored,
+/// and the task holding them could not be read over gRPC: `GetTask`, every
+/// `ListTasks` page with it and `SubscribeToTask` answered `INTERNAL`.
+fn make_portable(params: &mut MessageSendParams) -> ServerResult<()> {
+    let inexact = |value: Option<&serde_json::Value>, field: &dyn Fn() -> String| {
+        value.and_then(inexact_number).map_or(Ok(()), |n| {
+            Err(ServerError::InvalidParams(format!(
+                "{} holds the integer {n}, beyond the ±2^53 a protobuf number holds exactly",
+                field()
+            )))
+        })
+    };
+    inexact(params.metadata.as_ref(), &|| "metadata".to_owned())?;
+    inexact(params.message.metadata.as_ref(), &|| {
+        "message.metadata".to_owned()
+    })?;
+    for (i, part) in params.message.parts.iter_mut().enumerate() {
+        inexact(part.metadata.as_ref(), &|| {
+            format!("message.parts[{i}].metadata")
+        })?;
+        match &mut part.content {
+            PartContent::Raw(raw) => {
+                *raw = standard_base64(raw).map_err(|e| {
+                    ServerError::InvalidParams(format!("message.parts[{i}].raw is not base64: {e}"))
+                })?;
+            }
+            PartContent::Data(data) => inexact(Some(data), &|| format!("message.parts[{i}].data"))?,
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Rejects a `metadata` object whose JSON encoding exceeds `max_meta` bytes.
@@ -119,23 +169,38 @@ fn check_metadata_size(
     Ok(())
 }
 
-/// Maps an exactly-empty `contextId` / `taskId` on an incoming message to
-/// absent.
+/// Maps the exactly-empty proto3 strings of an incoming send to absent: the
+/// message's `contextId` and `taskId`, each part's `mediaType` and
+/// `filename`, and the inline push config's `id` and `token`.
 ///
-/// The A2A JSON bindings are `ProtoJSON`, and both fields are proto3 strings
-/// without presence: an empty string *is* the unset value. A client that
-/// prints every field — a2a-java's JSON-RPC transport uses
-/// `alwaysPrintFieldsWithNoPresence` — therefore sends `"contextId": ""` for
-/// "none", and until 2026-09-09 this server rejected that as an invalid id,
-/// failing every JSON-RPC pairing with the Java SDK in the official ITK while
-/// the same peer passed over gRPC and HTTP+JSON, whose printers omit
-/// defaults. Whitespace-only is left alone and still rejected by
-/// `validate_id`: no printer produces it for "unset".
-fn unset_proto3_empty_ids(message: &mut Message) {
+/// The A2A JSON bindings are `ProtoJSON`, and these are proto3 strings
+/// without presence: an empty string *is* the unset value, as the gRPC
+/// conversion reads it. A client that prints every field — a2a-java's
+/// JSON-RPC transport uses `alwaysPrintFieldsWithNoPresence` — therefore
+/// sends `"contextId": ""` for "none", and until 2026-09-09 this server
+/// rejected that as an invalid id, failing every JSON-RPC pairing with the
+/// Java SDK in the official ITK while the same peer passed over gRPC and
+/// HTTP+JSON, whose printers omit defaults. Until 2026-10-13 the rest were
+/// read as set: a part's `"mediaType": ""` was checked against the card's
+/// input modes and refused. Whitespace-only is left alone and still rejected
+/// by `validate_id`: no printer produces it for "unset".
+fn unset_proto3_defaults(params: &mut MessageSendParams) {
+    let message = &mut params.message;
     if message.context_id.as_ref().is_some_and(|c| c.0.is_empty()) {
         message.context_id = None;
     }
     if message.task_id.as_ref().is_some_and(|t| t.0.is_empty()) {
         message.task_id = None;
+    }
+    for part in &mut message.parts {
+        unset_if_empty(&mut part.media_type);
+        unset_if_empty(&mut part.filename);
+    }
+    if let Some(config) = params
+        .configuration
+        .as_mut()
+        .and_then(|c| c.task_push_notification_config.as_mut())
+    {
+        super::super::push_config::unset_proto3_defaults(config);
     }
 }

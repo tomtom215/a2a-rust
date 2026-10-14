@@ -19,10 +19,13 @@ use super::*;
 use crate::handler::limits::HandlerLimits;
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
 use crate::store::{InMemoryTaskStore, TaskStore};
+use crate::streaming::event_queue::applied::AppliedMark;
+use std::sync::Arc;
 
-/// Records the state of every status notification it is asked to send.
+/// Records the state of every status notification it is asked to send, and
+/// whether the applied mark had the event stored by then.
 #[derive(Default)]
-struct Pushes(Mutex<Vec<TaskState>>);
+struct Pushes(Mutex<Vec<TaskState>>, Arc<AppliedMark>, Mutex<Vec<bool>>);
 
 impl PushSender for Pushes {
     fn send<'a>(
@@ -37,6 +40,10 @@ impl PushSender for Pushes {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(e.status.state);
         }
+        self.2
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(!self.1.is_applying());
         Box::pin(async { Ok(()) })
     }
 }
@@ -135,6 +142,7 @@ impl Fixture {
             task(TaskState::Working),
             self.cancel.clone(),
             Some(&self.gate),
+            Some(&self.pushes.1),
         )
     }
 
@@ -358,6 +366,7 @@ async fn a_refusal_is_trusted_over_a_stale_read() {
         task(TaskState::Working),
         f.cancel.clone(),
         Some(&f.gate),
+        Some(&f.pushes.1),
     );
 
     let mut ticket = f.gate.arm(1).expect("gate open");
@@ -368,4 +377,31 @@ async fn a_refusal_is_trusted_over_a_stale_read() {
     );
     assert_eq!(run.last_task.status.state, TaskState::Canceled);
     assert_eq!(f.pushed(), vec![TaskState::Canceled]);
+}
+
+/// Each event the processor handles is marked stored, so a subscriber's
+/// snapshot can be read at its position (`streaming::event_queue::applied`).
+#[tokio::test]
+async fn each_event_advances_the_applied_mark() {
+    let f = Fixture::new(TaskState::Submitted).await;
+    let id = TaskId::new("t");
+    let mut run = f.processor(&id);
+    run.handle(Ok(status(1, TaskState::Working))).await;
+    run.handle(Ok(artifact(2))).await;
+    let deadline = tokio::time::Instant::now();
+    let read = f.pushes.1.read_through(2, deadline, || async {}).await;
+    assert_eq!((read.position, read.exact), (2, true));
+}
+
+/// A status update is marked stored before its push goes out, so a
+/// subscriber's snapshot waits for the store and not for a webhook.
+#[tokio::test]
+async fn a_status_update_is_marked_stored_before_its_push() {
+    let f = Fixture::new(TaskState::Submitted).await;
+    let id = TaskId::new("t");
+    f.processor(&id)
+        .handle(Ok(status(1, TaskState::Working)))
+        .await;
+    let stored = f.pushes.2.lock().unwrap().clone();
+    assert_eq!(stored, [true], "pushed once, after the mark said stored");
 }

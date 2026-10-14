@@ -80,7 +80,12 @@ fn make_agent_card() -> AgentCard {
 }
 
 fn make_dispatcher_with_cors() -> Arc<JsonRpcDispatcher> {
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     Arc::new(JsonRpcDispatcher::new(handler).with_cors(CorsConfig::permissive()))
 }
 
@@ -105,7 +110,13 @@ fn make_dispatcher_with_cors_and_card() -> Arc<JsonRpcDispatcher> {
 }
 
 fn make_plain_dispatcher() -> Arc<JsonRpcDispatcher> {
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
+            .build()
+            .unwrap(),
+    );
     Arc::new(JsonRpcDispatcher::new(handler))
 }
 
@@ -175,7 +186,12 @@ async fn post_jsonrpc(addr: std::net::SocketAddr, body: &str) -> (u16, String, h
 
 #[test]
 fn debug_impl_for_jsonrpc_dispatcher() {
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let dispatcher = JsonRpcDispatcher::new(handler);
     let debug_str = format!("{:?}", dispatcher);
     assert!(
@@ -188,7 +204,12 @@ fn debug_impl_for_jsonrpc_dispatcher() {
 
 #[test]
 fn with_cors_sets_cors_config() {
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let dispatcher = JsonRpcDispatcher::new(handler).with_cors(CorsConfig::permissive());
     // If it compiles and doesn't panic, with_cors worked.
     let debug_str = format!("{:?}", dispatcher);
@@ -522,8 +543,10 @@ async fn list_tasks_returns_result() {
     );
 }
 
+/// JSON-RPC 2.0 §4.2: `params` "MAY be omitted", and every `ListTasks`
+/// field is optional, so it lists. It was "missing params" until 2026-10-13.
 #[tokio::test]
-async fn list_tasks_missing_params() {
+async fn list_tasks_without_params_lists() {
     let addr = start_server(make_plain_dispatcher()).await;
     let body = serde_json::json!({
         "jsonrpc": "2.0",
@@ -534,7 +557,7 @@ async fn list_tasks_missing_params() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some());
+    assert!(v["result"]["tasks"].is_array(), "{v}");
 }
 
 // ── CancelTask dispatch (lines 292-297) ──────────────────────────────────────
@@ -1124,7 +1147,12 @@ async fn subscribe_to_task_in_batch_returns_error() {
 fn with_config_constructor() {
     use a2a_protocol_server::dispatch::DispatchConfig;
 
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let config = DispatchConfig::default().with_max_request_body_size(1024);
     let dispatcher = JsonRpcDispatcher::with_config(handler, config);
     let debug_str = format!("{:?}", dispatcher);
@@ -1188,7 +1216,12 @@ async fn dispatcher_trait_impl_works() {
     use a2a_protocol_server::serve::Dispatcher;
     use http_body_util::Full;
 
-    let handler = Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let dispatcher = JsonRpcDispatcher::new(handler);
 
     let body = serde_json::json!({
@@ -1336,6 +1369,7 @@ mod body_limit_boundary {
     fn dispatcher_with_limit() -> Arc<JsonRpcDispatcher> {
         let handler = Arc::new(
             a2a_protocol_server::builder::RequestHandlerBuilder::new(super::EchoExecutor)
+                .without_agent_card()
                 .build()
                 .expect("handler"),
         );
@@ -1464,6 +1498,7 @@ mod dispatch_guards {
     fn batching_dispatcher() -> Arc<JsonRpcDispatcher> {
         let handler = Arc::new(
             RequestHandlerBuilder::new(super::EchoExecutor)
+                .without_agent_card()
                 .build()
                 .expect("handler"),
         );
@@ -1565,6 +1600,7 @@ mod dispatch_guards {
     async fn subscribe_to_task_returns_an_sse_stream() {
         let handler = Arc::new(
             RequestHandlerBuilder::new(SlowExecutor)
+                .without_agent_card()
                 .build()
                 .expect("handler"),
         );

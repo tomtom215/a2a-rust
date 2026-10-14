@@ -33,6 +33,7 @@ agent_executor!(WithArtifact, |ctx, queue| async {
 async fn handler_with_a_task() -> Arc<RequestHandler> {
     let handler = Arc::new(
         RequestHandlerBuilder::new(WithArtifact)
+            .without_agent_card()
             .build()
             .expect("handler"),
     );

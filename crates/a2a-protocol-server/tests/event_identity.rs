@@ -57,7 +57,12 @@ agent_executor!(HandWritten, |_ctx, queue| async {
 
 #[tokio::test]
 async fn empty_ids_are_filled_and_foreign_ones_refused() {
-    let handler = Arc::new(RequestHandlerBuilder::new(HandWritten).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(HandWritten)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let Ok(SendMessageResult::Stream(mut stream)) = handler
         .on_send_message(
             MessageSendParams::new(Message::user_text("m-1", "go")),

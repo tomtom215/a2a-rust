@@ -11,7 +11,7 @@
 //! The default discovery path is `/.well-known/agent-card.json` appended to
 //! the agent's base URL.
 //!
-//! Per spec §8.3, the client supports HTTP caching via `ETag` and
+//! Per spec §8.6, the client supports HTTP caching via `ETag` and
 //! `If-None-Match` / `If-Modified-Since` conditional request headers.
 
 use std::collections::HashMap;
@@ -92,8 +92,11 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 ///     .with_timeout(Duration::from_secs(5));
 /// assert_eq!(options.timeout(), Duration::from_secs(5));
 /// assert_eq!(options.headers().len(), 1);
+/// assert!(!format!("{options:?}").contains("s3cret"));
 /// ```
-#[derive(Debug, Clone)]
+///
+/// Its `Debug` prints header names, never values.
+#[derive(Clone)]
 pub struct CardFetchOptions {
     headers: HashMap<String, String>,
     timeout: Duration,
@@ -101,6 +104,21 @@ pub struct CardFetchOptions {
     /// [`with_signature_keys`](Self::with_signature_keys).
     #[cfg(feature = "signing")]
     signature_keys: Option<a2a_protocol_types::signing::Jwks>,
+    /// See [`with_require_signature`](Self::with_require_signature).
+    #[cfg(feature = "signing")]
+    require_signature: bool,
+}
+
+impl std::fmt::Debug for CardFetchOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut f = f.debug_struct("CardFetchOptions");
+        f.field("header_names", &crate::redact::names(self.headers.keys()))
+            .field("timeout", &self.timeout);
+        #[cfg(feature = "signing")]
+        f.field("signature_keys", &self.signature_keys)
+            .field("require_signature", &self.require_signature);
+        f.finish()
+    }
 }
 
 impl Default for CardFetchOptions {
@@ -111,6 +129,8 @@ impl Default for CardFetchOptions {
             timeout: CARD_FETCH_BUDGET,
             #[cfg(feature = "signing")]
             signature_keys: None,
+            #[cfg(feature = "signing")]
+            require_signature: true,
         }
     }
 }
@@ -128,7 +148,13 @@ impl CardFetchOptions {
     /// clients SHOULD verify signatures when present). A card that carries
     /// signatures is returned only if at least one verifies against a key in
     /// `keys`, matched by `kid`; otherwise the fetch fails with
-    /// [`ClientError::Protocol`]. An unsigned card is returned as it is.
+    /// [`ClientError::Protocol`].
+    ///
+    /// An unsigned card fails the fetch too, unless
+    /// [`with_require_signature(false)`](Self::with_require_signature) says
+    /// otherwise: anyone able to alter a card on its way can also remove its
+    /// signatures, so a fetch that returned an unsigned card would return the
+    /// altered one unverified.
     ///
     /// The keys are the caller's trust decision: from a trusted store, or
     /// from [`fetch_jwks`](crate::jwks::fetch_jwks) on a URL the caller
@@ -138,6 +164,22 @@ impl CardFetchOptions {
     #[must_use]
     pub fn with_signature_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
         self.signature_keys = Some(keys);
+        self
+    }
+
+    /// Whether a fetch with [`with_signature_keys`](Self::with_signature_keys)
+    /// refuses a card that carries no signature. Default: `true`.
+    ///
+    /// `false` verifies signatures only when present, which is all §14 asks,
+    /// for a caller whose agents are not all signed: a signed card must still
+    /// verify, and an unsigned one is returned as it is. It accepts a card
+    /// whose signatures were removed on the way, too; the caller decides
+    /// whether an unsigned card is good enough. Without signature keys
+    /// nothing is verified and this has no effect.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub const fn with_require_signature(mut self, require: bool) -> Self {
+        self.require_signature = require;
         self
     }
 
@@ -253,7 +295,7 @@ struct CachedCard {
 ///
 /// Stores the last fetched card and uses conditional HTTP requests
 /// (`If-None-Match`, `If-Modified-Since`) to avoid unnecessary re-downloads
-/// (spec §8.3).
+/// (spec §8.6).
 #[derive(Debug, Clone)]
 pub struct CachingCardResolver {
     url: String,
@@ -404,6 +446,19 @@ async fn fetch_card_with_metadata(
         .method(hyper::Method::GET)
         .uri(url)
         .header(header::ACCEPT, "application/json");
+    // §3.6.1: "Clients MUST send the `A2A-Version` header with each
+    // request", the card's fetch among them; until 2026-10-13 it went
+    // without. A caller that sets the header sends its own value instead.
+    if !options
+        .headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case(a2a_protocol_types::A2A_VERSION_HEADER))
+    {
+        builder = builder.header(
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            a2a_protocol_types::A2A_VERSION,
+        );
+    }
 
     // The caller's headers — an `Authorization` for a card behind auth. An
     // invalid name or value poisons the builder and surfaces from `body()`.
@@ -437,18 +492,6 @@ async fn fetch_card_with_metadata(
     let status = resp.status();
     let retry_after = crate::error::parse_retry_after(resp.headers());
 
-    // 304 Not Modified — return cached card with existing metadata.
-    if status == hyper::StatusCode::NOT_MODIFIED
-        && let Some(cached) = cached
-    {
-        return Ok((
-            cached.card.clone(),
-            cached.etag.clone(),
-            cached.last_modified.clone(),
-        ));
-    }
-    // No cached card but got 304 — shouldn't happen, fall through to error.
-
     // Extract caching headers before consuming the response body. A
     // `no-store` response keeps no validators, so no cache holds it.
     let no_store = resp
@@ -468,6 +511,26 @@ async fn fetch_card_with_metadata(
         .get("last-modified")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
+
+    // 304 Not Modified: the cached card, its stored validators replaced by
+    // those the 304 carries (RFC 9111 §4.3.4). Until 2026-10-13 the stored
+    // ones were kept, so the next revalidation sent an ETag or date the
+    // server had already replaced.
+    if status == hyper::StatusCode::NOT_MODIFIED
+        && let Some(cached) = cached
+    {
+        let (etag, last_modified) = if no_store {
+            (None, None)
+        } else {
+            (
+                etag.or_else(|| cached.etag.clone()),
+                last_modified.or_else(|| cached.last_modified.clone()),
+            )
+        };
+        return Ok((cached.card.clone(), etag, last_modified));
+    }
+    // No cached card but got 304 — shouldn't happen, fall through to error.
+
     let (etag, last_modified) = if no_store {
         (None, None)
     } else {
@@ -527,37 +590,57 @@ async fn fetch_card_with_metadata(
         });
     }
 
+    #[cfg(feature = "signing")]
+    if options.signature_keys.is_some() {
+        let received: serde_json::Value =
+            serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
+        verify_card_signatures(&received, options)?;
+    }
     let card =
         serde_json::from_slice::<AgentCard>(&body_bytes).map_err(ClientError::Serialization)?;
-    #[cfg(feature = "signing")]
-    verify_card_signatures(&card, options)?;
     Ok((card, etag, last_modified))
 }
 
 /// Spec §14: verify a card's signatures when the caller supplied keys. One
 /// valid signature suffices (JWS allows several signers); none valid, or no
-/// matching key, fails the fetch.
+/// matching key, fails the fetch, and so does no signature at all unless the
+/// caller turned `require_signature` off.
+///
+/// Verified as received, before it is read into an [`AgentCard`]: the signer
+/// signed every field it serves, and the typed card drops any this SDK does
+/// not model. Until 2026-10-14 the typed card was verified, so a correctly
+/// signed card from a peer on a later version was refused.
 #[cfg(feature = "signing")]
-fn verify_card_signatures(card: &AgentCard, options: &CardFetchOptions) -> ClientResult<()> {
-    let (Some(keys), Some(signatures)) = (&options.signature_keys, &card.signatures) else {
+fn verify_card_signatures(
+    card: &serde_json::Value,
+    options: &CardFetchOptions,
+) -> ClientResult<()> {
+    let Some(keys) = &options.signature_keys else {
         return Ok(());
     };
-    if signatures.is_empty() {
+    let signed = card
+        .get("signatures")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|signatures| !signatures.is_empty());
+    if !signed {
+        if options.require_signature {
+            return Err(ClientError::Protocol(
+                a2a_protocol_types::error::A2aError::invalid_params(
+                    "agent card is not signed, and signature keys were supplied \
+                     (CardFetchOptions::with_require_signature(false) accepts it)",
+                ),
+            ));
+        }
         return Ok(());
     }
-    let mut last = None;
-    for sig in signatures {
-        match a2a_protocol_types::signing::verify_agent_card_with_jwks(card, sig, keys) {
-            Ok(()) => return Ok(()),
-            Err(e) => last = Some(e),
-        }
-    }
-    let why = last.map_or_else(String::new, |e| e.message);
-    Err(ClientError::Protocol(
-        a2a_protocol_types::error::A2aError::invalid_params(format!(
-            "agent card signature did not verify against the supplied keys: {why}"
-        )),
-    ))
+    a2a_protocol_types::signing::verify_card_json_with_jwks(card, keys).map_err(|e| {
+        ClientError::Protocol(a2a_protocol_types::error::A2aError::invalid_params(
+            format!(
+                "agent card signature did not verify against the supplied keys: {}",
+                e.message
+            ),
+        ))
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1493,6 +1576,35 @@ mod tests {
             .await
             .expect("same header, same door");
         assert_eq!(fetched.name, "gated");
+    }
+
+    /// The fetch says which protocol version it speaks (§3.6.1), and a
+    /// caller's own `A2A-Version` is sent in its place, not beside it: the
+    /// server reads the first value, so a second one would not be seen.
+    #[tokio::test]
+    async fn the_card_fetch_sends_its_a2a_version_unless_the_caller_does() {
+        use a2a_protocol_types::{AgentCard, AgentInterface};
+
+        let card = serde_json::to_string(&AgentCard::new(
+            "versioned",
+            "1.0",
+            AgentInterface::jsonrpc("http://localhost:9090"),
+        ))
+        .unwrap();
+
+        let addr = spawn_gated_card_server(card.clone(), "a2a-version", "1.0").await;
+        let fetched = resolve_agent_card(&format!("http://127.0.0.1:{}", addr.port()))
+            .await
+            .expect("the fetch names 1.0");
+        assert_eq!(fetched.name, "versioned");
+
+        let addr = spawn_gated_card_server(card, "a2a-version", "1.1").await;
+        let options = CardFetchOptions::default().with_header("a2a-version", "1.1");
+        let fetched =
+            resolve_agent_card_with_options(&format!("http://127.0.0.1:{}", addr.port()), &options)
+                .await
+                .expect("the caller's value, alone");
+        assert_eq!(fetched.name, "versioned");
     }
 
     /// The configured budget is the whole budget. Headers arrive at two

@@ -24,6 +24,7 @@ async fn create_task(handler: &a2a_protocol_server::RequestHandler) -> String {
 #[tokio::test]
 async fn push_config_crud_lifecycle() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_push_sender(MockPushSender)
         .build()
         .expect("build handler");
@@ -95,6 +96,7 @@ async fn push_config_crud_lifecycle() {
 #[tokio::test]
 async fn push_config_not_supported_without_sender() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -110,6 +112,7 @@ async fn push_config_not_supported_without_sender() {
 async fn get_push_config_not_found() {
     // SPEC §3.1.8: a missing push config is reported as TaskNotFoundError.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_push_sender(MockPushSender)
         .build()
         .expect("build handler");

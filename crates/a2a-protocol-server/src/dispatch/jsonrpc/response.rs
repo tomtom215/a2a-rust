@@ -5,7 +5,6 @@
 
 //! JSON-RPC response serialization and helper functions.
 
-use std::collections::HashMap;
 use std::convert::Infallible;
 
 use bytes::Bytes;
@@ -19,17 +18,6 @@ use a2a_protocol_types::jsonrpc::{
 };
 
 use crate::error::ServerError;
-
-/// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
-pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
-    let mut map = HashMap::with_capacity(headers.len());
-    for (key, value) in headers {
-        if let Ok(v) = value.to_str() {
-            map.insert(key.as_str().to_owned(), v.to_owned());
-        }
-    }
-    map
-}
 
 /// Serializes a success response to bytes (for batch request support).
 pub(super) fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result: &T) -> Vec<u8> {
@@ -66,10 +54,11 @@ pub(super) fn parse_params<T>(rpc_req: &JsonRpcRequest) -> Result<T, ServerError
 where
     T: serde::de::DeserializeOwned + a2a_protocol_types::params::AcceptedFields,
 {
-    let params = rpc_req
-        .params
-        .as_ref()
-        .ok_or_else(|| ServerError::InvalidParams("missing params".into()))?;
+    // JSON-RPC 2.0 §4.2: `params` "MAY be omitted". Read as `{}`, so a
+    // method whose fields are all optional (ListTasks) runs, and one with a
+    // required field names it. Until 2026-10-13 it was "missing params".
+    let empty = serde_json::Value::Object(serde_json::Map::new());
+    let params = rpc_req.params.as_ref().unwrap_or(&empty);
     // From the borrowed tree: `&Value` is a deserializer, and the clone
     // `from_value` needed copied every string in the params once more.
     let parsed = T::deserialize(params)
@@ -289,50 +278,13 @@ pub(super) fn json_response(
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
-    use hyper::header::HeaderValue;
-
-    // ── extract_headers ──────────────────────────────────────────────────────
-
-    #[test]
-    fn extract_headers_lowercases_keys() {
-        // hyper HeaderMap normalises keys to lowercase internally, so
-        // inserting via the typed `header::AUTHORIZATION` constant gives us
-        // the lower-case key "authorization".
-        let mut headers = hyper::HeaderMap::new();
-        headers.insert(
-            hyper::header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer token"),
-        );
-        let map = extract_headers(&headers);
-        assert_eq!(
-            map.get("authorization").map(String::as_str),
-            Some("Bearer token")
-        );
-    }
-
-    #[test]
-    fn extract_headers_skips_non_ascii_values() {
-        // Build a raw HeaderValue that contains non-UTF-8 bytes so that
-        // `to_str()` returns an error and the entry should be skipped.
-        let mut headers = hyper::HeaderMap::new();
-        let bad_value = HeaderValue::from_bytes(b"caf\xe9").unwrap();
-        headers.insert(hyper::header::X_CONTENT_TYPE_OPTIONS, bad_value);
-        let map = extract_headers(&headers);
-        // The entry must NOT appear in the output map.
-        assert!(!map.contains_key("x-content-type-options"));
-    }
-
-    #[test]
-    fn extract_headers_empty() {
-        let headers = hyper::HeaderMap::new();
-        let map = extract_headers(&headers);
-        assert!(map.is_empty());
-    }
 
     // ── parse_params ─────────────────────────────────────────────────────────
 
+    /// Omitted params are read as `{}` (JSON-RPC 2.0 §4.2), so a method
+    /// with a required field is refused naming it.
     #[test]
-    fn parse_params_missing_returns_invalid_params() {
+    fn parse_params_missing_names_the_required_field() {
         use a2a_protocol_types::params::TaskQueryParams;
         let req = JsonRpcRequest {
             jsonrpc: JsonRpcVersion,
@@ -341,12 +293,13 @@ mod tests {
             params: None,
         };
         let result: Result<TaskQueryParams, _> = parse_params(&req);
-        assert!(result.is_err(), "expected error when params are missing");
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, ServerError::InvalidParams(_)),
-            "expected InvalidParams, got {err:?}"
+        let err = result.expect_err("GetTask needs an id").to_a2a_error();
+        assert_eq!(
+            err.code,
+            a2a_protocol_types::error::ErrorCode::InvalidParams,
+            "{err:?}"
         );
+        assert!(err.message.contains("`id`"), "{err:?}");
     }
 
     #[test]

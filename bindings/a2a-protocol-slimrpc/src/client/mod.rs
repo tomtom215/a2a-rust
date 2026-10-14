@@ -33,6 +33,8 @@ mod bridge;
 mod dispatch;
 mod push_config;
 
+pub(crate) use dispatch::metadata_from;
+
 use crate::SlimName;
 use crate::binding::A2A_SERVICE_NAME;
 use crate::codec::Pb;

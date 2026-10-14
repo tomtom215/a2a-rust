@@ -32,6 +32,13 @@ without being another copy of it.
 ## Turning it on
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
 use std::sync::Arc;
 use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};
 use a2a_protocol_server::audit::record::{CheckpointSigner, SigningAlg};
@@ -53,6 +60,7 @@ let log = Arc::new(
 );
 
 let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card())
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
         ("token-for-billing-agent", "billing-agent"),
     ]))
@@ -83,9 +91,20 @@ missing:
 - a log that is not required, which would serve calls it cannot record;
 - a log that signs no checkpoints, whose chains could lose their end
   without trace;
-- no authenticating interceptor, which leaves the records naming no caller.
+- no authenticating interceptor, which leaves the records naming no caller;
+- tasks isolated by caller, the default with an authenticating interceptor,
+  which would keep the gate's approver from the requester's task. Call
+  `share_tasks_across_callers()`, or set a gate that allows self-approval
+  (see [Human oversight](./oversight.md#the-gate)).
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
 use std::sync::Arc;
 use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};
 use a2a_protocol_server::audit::record::{CheckpointSigner, SigningAlg};
@@ -98,8 +117,10 @@ let log = AuditLog::new(Arc::new(SqliteAuditStore::new("sqlite:audit.db?mode=rwc
     .with_signer(CheckpointSigner::from_pkcs8(SigningAlg::EdDsa, "audit-2026-10", key)?, 1_000)
     .require_record(true);
 let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card())
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("t", "billing-agent")]))
     .with_profile(Profile::Auditable(Arc::new(log)))
+    .share_tasks_across_callers()
     .build()?;
 # let _ = handler;
 # Ok(())

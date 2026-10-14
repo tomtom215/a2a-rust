@@ -46,6 +46,7 @@ impl TokenProvider for RotatingProvider {
 fn handler() -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
             .with_interceptor(BearerTokenAuthInterceptor::new(["fresh"]))
             .build()
             .expect("handler"),

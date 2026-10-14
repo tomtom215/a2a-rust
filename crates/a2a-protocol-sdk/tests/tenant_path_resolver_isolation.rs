@@ -81,6 +81,7 @@ impl CallInterceptor for ForgedPathHeader {
 fn handler(recorder: &Recorder) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(recorder.clone())
+            .without_agent_card()
             .with_tenant_resolver(PathSegmentTenantResolver::new(1)) // /tenants/{t}/...
             .with_task_store(TenantAwareInMemoryTaskStore::new())
             .build()

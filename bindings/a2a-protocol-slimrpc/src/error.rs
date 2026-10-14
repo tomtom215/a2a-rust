@@ -143,14 +143,31 @@ pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
     if a2a.retry_after().is_some() {
         return RpcError::resource_exhausted(a2a.message);
     }
+    // Spec §3.3.2: a temporary failure is `UNAVAILABLE`, as on the gRPC
+    // binding: a halted handler, or a store that cannot answer for now. Both
+    // fell through to their A2A code, `INTERNAL`, which tells a client not to
+    // retry.
+    if matches!(err, ServerError::Halted(_)) || a2a.is_unavailable() {
+        return RpcError::new(RpcCode::Unavailable, a2a.message);
+    }
     let message = format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message);
     // A refused credential carries its A2A code (`InvalidRequest`) and, beside
     // it, which refusal it is (ADR 0014). The code alone would send
     // `INVALID_ARGUMENT`, and a client's `BearerAuthInterceptor` drops a token
     // only on `UNAUTHENTICATED`, so a revoked one was re-sent: audit N36,
     // which the gRPC dispatcher fixed and this binding had not.
-    match a2a.auth_rejection().map(AuthRejection::kind) {
-        Some(AuthRejectionKind::Unauthenticated) => RpcError::unauthenticated(message),
+    //
+    // Spec §3.3.2: a refusal SHOULD carry the challenge and name the scheme.
+    // A SLIMRPC error has no metadata to carry `WWW-Authenticate` in, so the
+    // challenge ends the message. Until 2026-10-13 it was dropped.
+    let rejection = a2a.auth_rejection();
+    match rejection.map(AuthRejection::kind) {
+        Some(AuthRejectionKind::Unauthenticated) => {
+            RpcError::unauthenticated(match rejection.and_then(AuthRejection::challenge) {
+                Some(challenge) => format!("{message} (WWW-Authenticate: {challenge})"),
+                None => message,
+            })
+        }
         // `PermissionDenied`, and any kind added later: refusing is safer.
         Some(_) => RpcError::permission_denied(message),
         None => RpcError::new(error_code_to_rpc_code(a2a.code), message),
@@ -341,6 +358,24 @@ mod tests {
         }
     }
 
+    /// §3.3.2: a halt and a store that cannot answer for now are both
+    /// `UNAVAILABLE`, as on the gRPC binding; an internal error is not.
+    #[test]
+    fn a_temporary_failure_and_a_halt_are_unavailable() {
+        for err in [
+            ServerError::Halted("incident".into()),
+            ServerError::Protocol(A2aError::unavailable("database busy")),
+        ] {
+            assert_eq!(
+                server_error_to_rpc_error(&err).code(),
+                RpcCode::Unavailable,
+                "{err}"
+            );
+        }
+        let err = server_error_to_rpc_error(&ServerError::Protocol(A2aError::internal("corrupt")));
+        assert_eq!(err.code(), RpcCode::Internal);
+    }
+
     /// A rate-limit refusal is retryable, as an overload is.
     #[test]
     fn a_rate_limit_refusal_maps_to_resource_exhausted() {
@@ -401,7 +436,6 @@ mod tests {
         }
     }
 
-    /// A call the peer cancelled is not a timeout and must not be retried.
     #[test]
     fn a_refused_credential_reaches_the_client_as_401_or_403() {
         let refused = ServerError::Protocol(A2aError::unauthenticated(
@@ -410,6 +444,12 @@ mod tests {
         ));
         let wire = server_error_to_rpc_error(&refused);
         assert_eq!(wire.code(), RpcCode::Unauthenticated, "{wire:?}");
+        // Spec §3.3.2: the challenge, and so the scheme, reaches the caller.
+        assert_eq!(
+            wire.message(),
+            "InvalidRequestError: authentication required \
+             (WWW-Authenticate: Bearer realm=\"a2a\")"
+        );
         assert!(matches!(
             rpc_error_to_client_error(&wire),
             ClientError::UnexpectedStatus { status: 401, .. }
@@ -431,6 +471,7 @@ mod tests {
         );
     }
 
+    /// A call the peer cancelled is not a timeout and must not be retried.
     #[test]
     fn a_cancelled_call_is_not_retryable() {
         let err = rpc_error_to_client_error(&RpcError::cancelled("gone"));

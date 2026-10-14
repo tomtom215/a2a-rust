@@ -6,7 +6,11 @@
 //! In-memory event queue backed by a `tokio::sync::broadcast` channel.
 //!
 //! The broadcast channel has a fixed capacity and is used for SSE fan-out.
-//! When a slow SSE consumer falls behind it receives `Lagged(n)`, and its
+//! When a slow SSE consumer falls behind it receives `Lagged(n)`. If the
+//! reader has a catch-up hook, which the handler attaches whenever its task
+//! store keeps an event log, the reader reads the events it missed from the
+//! log and goes on (spec §3.5.2: each stream MUST receive the same events in
+//! the same order). Otherwise, or when the log cannot supply all of them, the
 //! stream **ends**: `InMemoryQueueReader::read` turns the lag into
 //! `A2aError::stream_lagged`, which `streaming::sse` writes as an
 //! `event: error` frame before closing.
@@ -103,6 +107,14 @@ impl PersistenceTx {
         sent.map_or_else(|failed| failed, |()| Handoff::Sent)
     }
 
+    /// Resolves once the consumer has dropped its receiver.
+    async fn closed(&self) {
+        match self {
+            Self::Owned(tx) => tx.closed().await,
+            Self::Shared(tx) => tx.closed().await,
+        }
+    }
+
     /// Hands `event` over, waiting up to `timeout` for room.
     async fn send_within(
         &self,
@@ -164,6 +176,19 @@ pub struct InMemoryQueueWriter {
     /// collide with the first turn's positions — the continuation's events
     /// would be silently dropped.
     seq: Arc<AtomicU64>,
+    /// Held by one write at a time, shared by every clone, from the moment
+    /// the position is assigned until the event is broadcast. Positions are
+    /// handed out in this order, so the broadcast, and the persistence
+    /// channel, carry events in position order (spec §3.5.2: events MUST NOT
+    /// be reordered). Without it a terminal event held for the processor's
+    /// verdict was overtaken by a later write from another clone (`CancelTask`
+    /// writes beside a running executor), and readers, which skip a position
+    /// already passed, lost the terminal event.
+    order: Arc<tokio::sync::Mutex<()>>,
+    /// How far the consumer of the persistence channel has stored this
+    /// queue's events, for a subscriber's snapshot; shared by every clone.
+    /// See [`super::applied`].
+    applied: Arc<super::applied::AppliedMark>,
     /// The task and context this writer's events belong to, once the send
     /// path has bound them ([`bind_identity`](Self::bind_identity)); shared
     /// by every clone. See `check_identity`.
@@ -203,6 +228,8 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            order: Arc::default(),
+            applied: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
@@ -223,6 +250,8 @@ impl InMemoryQueueWriter {
             write_timeout,
             metrics: None,
             seq: Arc::new(AtomicU64::new(0)),
+            order: Arc::default(),
+            applied: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
             terminal_gate: None,
             collected: false,
@@ -238,6 +267,55 @@ impl InMemoryQueueWriter {
     /// new turn.
     pub(crate) fn seed_seq(&self, last: u64) {
         self.seq.store(last, Ordering::Relaxed);
+        // Stored by the turns that wrote them.
+        self.applied.seed(last);
+    }
+
+    /// Waits until the consumer of the persistence channel has stored every
+    /// event this writer gave a position, has gone, or the queue's write
+    /// timeout passes.
+    ///
+    /// A turn's queue is released, and a continuation admitted, when its
+    /// executor returns, which can be before the background processor has
+    /// logged and stored the turn's last events: a stream delivers
+    /// `input-required` as it is broadcast, and a client may answer at once.
+    /// The continuation's queue numbers on from the log's last position, so
+    /// read early it numbered from a position the turn was still logging,
+    /// and since appends are idempotent by position every colliding event
+    /// of the continuation was dropped from the log; the two turns'
+    /// consumers also stored the task row in either order. Until 2026-10-13
+    /// nothing waited. A blocking send's collector drops its receiver once
+    /// it has its answer, and what is written after that is never stored, so
+    /// a closed channel ends the wait as well.
+    pub(crate) async fn settled(&self) {
+        let Some(ref persistence) = self.persistence_tx else {
+            return;
+        };
+        let through = self.current_seq();
+        let deadline = tokio::time::Instant::now() + self.write_timeout;
+        tokio::select! {
+            _ = self.applied.wait_through(through, deadline) => {}
+            () = persistence.closed() => {}
+        }
+    }
+
+    /// See [`applied`](Self::applied).
+    pub(crate) fn applied_mark(&self) -> Arc<super::applied::AppliedMark> {
+        Arc::clone(&self.applied)
+    }
+
+    /// A receiver for every event after the position returned, which is the
+    /// one the queue has reached.
+    ///
+    /// Taken under the order lock, while no write is between its position and
+    /// its broadcast, so the position is exact: everything at or below it went
+    /// out before the receiver existed, and everything above it reaches the
+    /// receiver. Read outside the lock, a position assigned but not yet
+    /// broadcast (a terminal event awaiting its verdict) counted as already
+    /// sent, and the reader skipped it when it came.
+    pub(crate) async fn attach(&self) -> (u64, broadcast::Receiver<super::Shared>) {
+        let _order = self.order.lock().await;
+        (self.seq.load(Ordering::Relaxed), self.tx.subscribe())
     }
 
     /// Binds this writer to the task and context its events belong to. From
@@ -310,8 +388,10 @@ impl InMemoryQueueWriter {
 
     /// Returns a raw broadcast receiver without wrapping in `InMemoryQueueReader`.
     ///
-    /// Used by [`crate::streaming::EventQueueManager::subscribe_with_snapshot`]
-    /// to create a reader with a pending first event.
+    /// Used by the conformance runner and by tests, to watch exactly what the
+    /// queue broadcasts. A reader that reattaches across turns attaches with
+    /// [`Self::attach`], which also gives the position it attached after.
+    #[cfg_attr(not(feature = "conformance"), allow(dead_code))]
     pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<super::Shared> {
         self.tx.subscribe()
     }
@@ -515,7 +595,36 @@ impl EventQueueWriter for InMemoryQueueWriter {
     /// per echo request.
     fn write<'a>(
         &'a self,
+        event: StreamResponse,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        // Uncontended, the write still completes before this returns; only a
+        // write behind another one (a terminal event awaiting its verdict, or
+        // a full persistence channel) waits for its turn.
+        match self.order.try_lock() {
+            Ok(order) => self.write_in_order(event, order),
+            Err(_) => Box::pin(async move {
+                let order = self.order.lock().await;
+                self.write_in_order(event, order).await
+            }),
+        }
+    }
+
+    fn close<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Dropping all sender clones closes the channel. The spawned
+            // executor task will drop its writer, causing readers to see EOF.
+            Ok(())
+        })
+    }
+}
+
+impl InMemoryQueueWriter {
+    /// A write holding `order`, which it releases once the event is
+    /// broadcast or refused.
+    fn write_in_order<'a>(
+        &'a self,
         mut event: StreamResponse,
+        order: tokio::sync::MutexGuard<'a, ()>,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         // Before anything persists or broadcasts it (N35).
         if let Err(e) = self.check_identity(&mut event) {
@@ -524,12 +633,14 @@ impl EventQueueWriter for InMemoryQueueWriter {
         if let Err(e) = super::status_stamp::stamp_status(&mut event) {
             return Box::pin(std::future::ready(Err(e)));
         }
-        // a2a.proto: an artifact "Must contain at least one part". Persistence
-        // already dropped one that did not, but live subscribers were sent it.
-        // An appending chunk may be empty, as the processors allow.
-        if let StreamResponse::ArtifactUpdate(u) = &event
-            && u.append != Some(true)
-            && let Err(e) = u.artifact.validate()
+        // a2a.proto's REQUIRED fields: an artifact "Must contain at least one
+        // part" (persistence already dropped one that did not, but live
+        // subscribers were sent it; an appending chunk may be empty, as the
+        // processors allow), and a message's id, role and parts, an
+        // artifact's id, a status's state, wherever the executor wrote them.
+        // Then only what the gRPC binding can carry (spec §4, R64).
+        if let Err(e) = super::content::check_required_fields(&event)
+            .and_then(|()| super::content::make_portable(&mut event))
         {
             return Box::pin(std::future::ready(Err(e)));
         }
@@ -564,14 +675,21 @@ impl EventQueueWriter for InMemoryQueueWriter {
                 Handoff::Sent => {}
                 Handoff::Closed => collector_gone = self.on_persistence_closed(&mut ticket),
                 Handoff::Full => {
-                    return Box::pin(self.finish_write(event, seq, ticket, deadline, false));
+                    return Box::pin(async move {
+                        let _order = order;
+                        self.finish_write(event, seq, ticket, deadline, false).await
+                    });
                 }
             }
         }
         if ticket.is_some() {
-            return Box::pin(self.finish_write(event, seq, ticket, deadline, true));
+            return Box::pin(async move {
+                let _order = order;
+                self.finish_write(event, seq, ticket, deadline, true).await
+            });
         }
         let outcome = self.broadcast(event, collector_gone);
+        drop(order);
         // `try_send` spends none of the task's cooperative budget, and the
         // `send` it replaces spent one unit per write. Without this an
         // executor writing in a tight loop never yields: on a current-thread
@@ -581,14 +699,6 @@ impl EventQueueWriter for InMemoryQueueWriter {
         Box::pin(async move {
             tokio::task::consume_budget().await;
             outcome
-        })
-    }
-
-    fn close<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Dropping all sender clones closes the channel. The spawned
-            // executor task will drop its writer, causing readers to see EOF.
-            Ok(())
         })
     }
 }
@@ -626,11 +736,31 @@ pub struct InMemoryQueueReader {
     /// In a `Mutex` only to keep the reader `Sync`, which it was before this
     /// field; `read` takes `&mut self`, so the lock is never contended.
     reattaching: std::sync::Mutex<Option<Pin<Box<dyn Future<Output = Reattached> + Send>>>>,
+    /// Consulted when the reader lags; see [`Self::with_catch_up`].
+    catch_up: Option<CatchUpFn>,
+    /// The hook's answer while it is still being awaited, kept here for the
+    /// same cancel-safety reason as `reattaching`.
+    catching_up: std::sync::Mutex<Option<CatchUpFuture>>,
+    /// A replay the stream owes before it reads the channel again.
+    ///
+    /// Recorded before the log is read and cleared only once the read has
+    /// answered, so a `read` dropped while it waits leaves the replay to the
+    /// next `read`, as `reattaching` does for the hook. Until 2026-10-13 a
+    /// lag's replay was owed only by a local of `read`: a `read` dropped
+    /// while the catch-up waited for the log went back to the channel past
+    /// the events the lag had cost, with no `streamLagged`, and the next lag
+    /// awaited the stale catch-up, replaying positions already delivered.
+    owed: Option<Owed>,
+    /// Set by a catch-up until the next live event: that event must follow
+    /// the replay directly. If it does not, the replay left a gap (a short
+    /// log, a failed append), and the stream says so rather than skip it.
+    just_caught_up: bool,
     /// Set once a frame reporting a terminal state has been handed to the
     /// consumer. Suppresses the synthesized final frame, so a client that
     /// already saw the real one does not get it twice.
     saw_terminal: bool,
-    /// The highest log position handed to the consumer from `pending`.
+    /// The highest log position handed to the consumer, from `pending` or
+    /// the live channel, or the position the reader attached at.
     ///
     /// A resuming subscriber attaches to the broadcast channel *before* the
     /// log is read, so any event written in the window between those two
@@ -640,6 +770,11 @@ pub struct InMemoryQueueReader {
     /// reconstructible, and the wire `id:` sequence goes backwards. Positions
     /// are assigned by one writer and strictly increase, so a live event at or
     /// below this mark is exactly a frame the replay already delivered.
+    ///
+    /// A lag catch-up reads the log after this mark, which is why the live
+    /// channel raises it too, and why a reader attaching to a running queue
+    /// starts it at the writer's position (see
+    /// [`Self::starting_after`]).
     replayed_through: u64,
     /// A `SendStreamingMessage` stream's `Task` snapshot, held until the
     /// executor's first event says which §3.1.2 pattern the stream is.
@@ -665,6 +800,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
         f.debug_struct("InMemoryQueueReader")
             .field("pending", &self.pending.len())
             .field("reattach", &self.reattach.is_some())
+            .field("catch_up", &self.catch_up.is_some())
             .field("saw_terminal", &self.saw_terminal)
             .field("provisional", &self.provisional.is_some())
             .field("finished", &self.finished)
@@ -673,25 +809,89 @@ impl std::fmt::Debug for InMemoryQueueReader {
 }
 
 /// What a reader should do when its broadcast channel closes.
-// Returned once per stream at most, so the size gap between a broadcast
-// receiver and a unit variant costs nothing worth an extra allocation.
+///
+/// Every answer but `End` can leave the reader owing events from the task's
+/// log (spec §3.5.2: each stream MUST receive the same events in the same
+/// order). The hook polls, so a turn's events may be broadcast before it
+/// finds the turn's queue, or the whole turn may run between two polls; the
+/// reader replays them from the log before it goes on. Until 2026-10-13 it
+/// did not: a subscriber beside a client that saw every artifact of a turn
+/// saw none of them, or one synthesized terminal status, and no
+/// `streamLagged` said so.
+// Returned once per turn boundary at most, so the size gap between a
+// broadcast receiver and the other variants costs nothing worth an extra
+// allocation.
 #[allow(clippy::large_enum_variant)]
 pub enum Reattached {
     /// Continue on a fresh queue — the task has more turns to run.
-    Channel(broadcast::Receiver<super::Shared>),
-    /// The task finished while no queue was attached. Emit this frame, then
-    /// end: without it the client would see the stream close having never
-    /// observed a terminal state, which is the `STREAM-SUB-002` symptom even
-    /// though the stream stayed open for the right length of time.
-    Final(StreamResponse),
+    Channel {
+        /// Holds every event the queue broadcasts after `after`.
+        rx: broadcast::Receiver<super::Shared>,
+        /// The position the receiver attached after. The events at or below
+        /// it were broadcast before it existed, and the reader replays them
+        /// from the log.
+        after: u64,
+        /// The queue numbers its events from 1 rather than on from the
+        /// task's log: the store keeps no log, so admission had no position
+        /// to seed it from, and nothing can be replayed.
+        fresh: bool,
+    },
+    /// The task is between turns and its log holds events through
+    /// `through`, past the position the hook was given: a turn ran from
+    /// start to end while no queue was attached.
+    Logged {
+        /// The log's last position.
+        through: u64,
+    },
+    /// The task finished while no queue was attached. The reader replays
+    /// what the log holds after its last position, the terminal status
+    /// among it, and emits `event`, the terminal status built from the
+    /// stored task, only when the replay does not carry one. Without either
+    /// the client would see the stream close having never observed a
+    /// terminal state, which is the `STREAM-SUB-002` symptom even though the
+    /// stream stayed open for the right length of time.
+    Final {
+        /// The task's final state, as stored.
+        event: StreamResponse,
+        /// The log's last position; 0 when the store keeps no log.
+        through: u64,
+    },
     /// End the stream now.
     End,
 }
 
-/// Called when a reader's broadcast channel closes, to decide whether the
-/// stream is really over. See [`InMemoryQueueReader::with_reattach`].
+/// Called when a reader's broadcast channel closes, with the last position
+/// the reader delivered, to decide whether the stream is really over. See
+/// [`InMemoryQueueReader::with_reattach`].
 pub type ReattachFn =
-    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
+    Arc<dyn Fn(u64) -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
+
+/// A replay from the task's log that a reader owes its consumer before it
+/// reads the channel again; see `InMemoryQueueReader::owed`.
+enum Owed {
+    /// The reader fell this many events behind the channel.
+    Lag(u64),
+    /// The positions after the last one delivered, through `through`, are
+    /// not on the channel: the next turn's queue attached after them, or a
+    /// turn ran with no queue attached.
+    Through {
+        through: u64,
+        /// The task's final state when it finished, emitted after the
+        /// replay unless the replay carries one. Boxed: every reader holds
+        /// an `Owed` slot, and a task finishes once.
+        last: Option<Box<StreamResponse>>,
+    },
+}
+
+/// What a catch-up hook answers: every event after the position it was
+/// given, up to the writer's position when it was called, or `None` when the
+/// log cannot supply all of them.
+pub type CatchUpFuture =
+    Pin<Box<dyn Future<Output = Option<Vec<crate::store::RecordedEvent>>> + Send>>;
+
+/// Called with the last position a lagging reader delivered, to read what it
+/// missed from the task's event log. See [`InMemoryQueueReader::with_catch_up`].
+pub type CatchUpFn = Arc<dyn Fn(u64) -> CatchUpFuture + Send + Sync>;
 
 /// Whether a stream frame reports a terminal task state.
 pub const fn carries_terminal_state(event: &StreamResponse) -> bool {
@@ -716,10 +916,37 @@ impl InMemoryQueueReader {
     /// The hook decides, at each close, whether the task has actually
     /// finished. Keeping it here rather than wrapping the reader in a new type
     /// means every binding that already accepts an `InMemoryQueueReader`
-    /// inherits the behaviour with no signature change.
+    /// inherits the behaviour with no signature change. It is given the last
+    /// position the reader delivered, and its answer says what the reader
+    /// must replay from the log before it goes on ([`Reattached`]); the
+    /// replay goes through the catch-up hook ([`Self::with_catch_up`]), and a
+    /// stream without one reports what it cannot replay as a lag.
     pub(crate) fn with_reattach(mut self, reattach: ReattachFn) -> Self {
         self.reattach = Some(reattach);
         self
+    }
+
+    /// Attaches a hook that runs when the reader falls behind the broadcast
+    /// channel (spec §3.5.2).
+    ///
+    /// The channel keeps the last `capacity` events; a reader slower than the
+    /// writer misses the ones overwritten. The hook reads them from the
+    /// task's event log, after the last position this reader delivered, and
+    /// the reader hands them out before resuming the channel, where anything
+    /// at or below the replay is skipped. A hook that answers `None` (no
+    /// complete replay) leaves the reader to end the stream with
+    /// `streamLagged`, as without one.
+    pub(crate) fn with_catch_up(mut self, catch_up: Option<CatchUpFn>) -> Self {
+        self.catch_up = catch_up;
+        self
+    }
+
+    /// Marks `position` as already accounted for: the writer's position when
+    /// this reader attached, or the one its numbering resumes from. A lag
+    /// catch-up starts after it, so it does not replay what came before the
+    /// reader existed.
+    pub(crate) fn starting_after(&mut self, position: u64) {
+        self.replayed_through = self.replayed_through.max(position);
     }
 
     /// Creates a new `InMemoryQueueReader`.
@@ -729,6 +956,10 @@ impl InMemoryQueueReader {
             pending: std::collections::VecDeque::new(),
             reattach: None,
             reattaching: std::sync::Mutex::new(None),
+            catch_up: None,
+            catching_up: std::sync::Mutex::new(None),
+            owed: None,
+            just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
             provisional: None,
@@ -785,6 +1016,10 @@ impl InMemoryQueueReader {
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             reattaching: std::sync::Mutex::new(None),
+            catch_up: None,
+            catching_up: std::sync::Mutex::new(None),
+            owed: None,
+            just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
             provisional: None,
@@ -808,6 +1043,10 @@ impl InMemoryQueueReader {
             pending: std::iter::once(Ok(StreamEvent::unpositioned(first))).collect(),
             reattach: None,
             reattaching: std::sync::Mutex::new(None),
+            catch_up: None,
+            catching_up: std::sync::Mutex::new(None),
+            owed: None,
+            just_caught_up: false,
             saw_terminal: false,
             replayed_through: 0,
             provisional: None,
@@ -875,7 +1114,9 @@ impl EventQueueReader for InMemoryQueueReader {
                     return first;
                 }
                 if let Some(event) = first {
-                    self.pending.push_back(event);
+                    // To the front: a lag catch-up may have queued the rest
+                    // of the replay behind it already.
+                    self.pending.push_front(event);
                 }
                 self.saw_terminal |= carries_terminal_state(&snapshot);
                 return Some(Ok(StreamEvent::unpositioned(snapshot)));
@@ -886,10 +1127,119 @@ impl EventQueueReader for InMemoryQueueReader {
 }
 
 impl InMemoryQueueReader {
+    /// What the catch-up hook answers for the events after the last position
+    /// this reader delivered; `None` without a hook.
+    ///
+    /// Cancel-safe the way the reattach hook is: the pending answer lives in
+    /// `catching_up`, so a `read` dropped while it waits leaves it for the
+    /// next `read` instead of calling the hook again.
+    async fn catch_up(&mut self) -> Option<Vec<crate::store::RecordedEvent>> {
+        let hook = self.catch_up.as_ref()?;
+        let after = self.replayed_through;
+        let answer = {
+            let slot = self
+                .catching_up
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| hook(after)).await
+        };
+        *self
+            .catching_up
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        answer
+    }
+
+    /// Pays the replay the stream owes (see `owed`): what the reader yields
+    /// next is the first event the log supplies, the lag error when the log
+    /// cannot supply them all, or, after a task that finished, its final
+    /// state. `None` when the replay holds nothing new, so reading the
+    /// channel goes on.
+    async fn settle(&mut self) -> Option<A2aResult<StreamEvent>> {
+        let replay = self.catch_up().await;
+        // Only once the log has answered: a `read` dropped while it waits
+        // leaves the debt for the next `read`.
+        match self.owed.take()? {
+            Owed::Lag(dropped) => {
+                let Some(missed) = replay else {
+                    trace_warn!(
+                        dropped_events = dropped,
+                        "event queue reader lagged, {dropped} events dropped"
+                    );
+                    return Some(Err(lag_error(dropped)));
+                };
+                trace_info!(
+                    dropped_events = dropped,
+                    replayed = missed.len(),
+                    "event queue reader lagged; caught up from the event log"
+                );
+                self.queue_replay(missed);
+            }
+            Owed::Through { through, last } => {
+                if let Some(missed) = replay {
+                    self.queue_replay(missed);
+                }
+                if self.replayed_through < through {
+                    // No log, or one that could not supply them: the stream
+                    // says so after what it did supply, rather than go on
+                    // without them. Raised so a consumer that reads on past
+                    // the error is not told twice.
+                    let dropped = through - self.replayed_through;
+                    self.replayed_through = through;
+                    trace_warn!(
+                        dropped_events = dropped,
+                        "a subscription could not replay a turn's events from the event log"
+                    );
+                    self.pending.push_back(Err(lag_error(dropped)));
+                }
+                if let Some(last) = last
+                    && !self
+                        .pending
+                        .iter()
+                        .any(|e| e.as_ref().is_ok_and(|e| carries_terminal_state(&e.event)))
+                {
+                    // Built from stored state, not emitted by the agent, so
+                    // it is not in the log and carries no position.
+                    self.pending.push_back(Ok(StreamEvent::unpositioned(*last)));
+                }
+            }
+        }
+        self.just_caught_up = true;
+        let next = self.pending.pop_front()?;
+        if let Ok(ref ev) = next {
+            self.saw_terminal |= carries_terminal_state(&ev.event);
+        }
+        Some(next)
+    }
+
+    /// Records that live position `seq` is being delivered. Right after a
+    /// catch-up it must follow the replay directly; when it does not, the
+    /// replay left a gap, and the lag error to report it is returned.
+    fn deliver_live_position(&mut self, seq: u64) -> Option<a2a_protocol_types::error::A2aError> {
+        let caught_up = std::mem::take(&mut self.just_caught_up);
+        let expected = self.replayed_through + 1;
+        self.replayed_through = seq;
+        if caught_up && seq != expected {
+            trace_warn!(
+                expected = expected,
+                got = seq,
+                "a lag catch-up left a gap; reporting the lag"
+            );
+            return Some(lag_error(seq - expected));
+        }
+        None
+    }
+
     /// The next event from the live channel, reattaching across turns.
     async fn next_live(&mut self) -> Option<A2aResult<StreamEvent>> {
         {
             loop {
+                if self.owed.is_some() {
+                    if let Some(next) = self.settle().await {
+                        return Some(next);
+                    }
+                    continue;
+                }
                 match self.rx.recv().await {
                     Ok(shared) => {
                         let event = super::unshare(shared);
@@ -906,54 +1256,81 @@ impl InMemoryQueueReader {
                             if ev.seq.is_some_and(|s| s <= self.replayed_through) {
                                 continue;
                             }
+                            if let Some(seq) = ev.seq
+                                && let Some(gap) = self.deliver_live_position(seq)
+                            {
+                                return Some(Err(gap));
+                            }
                             self.saw_terminal |= carries_terminal_state(&ev.event);
                         }
                         return Some(event);
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        trace_warn!(
-                            dropped_events = n,
-                            "event queue reader lagged, {n} events dropped"
-                        );
-                        return Some(Err(lag_error(n)));
+                        self.owed = Some(Owed::Lag(n));
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         // The queue for this turn is gone. If a terminal state
                         // has already been delivered the stream is genuinely
                         // over; otherwise ask the hook whether the task is
                         // finished or merely between turns.
-                        if self.saw_terminal {
+                        if self.saw_terminal || !self.reattach().await {
                             return None;
-                        }
-                        let reattach = self.reattach.as_ref()?;
-                        let answer = {
-                            let slot = self
-                                .reattaching
-                                .get_mut()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            slot.get_or_insert_with(|| reattach()).await
-                        };
-                        // Only once the hook has answered: a `read` dropped
-                        // while awaiting it leaves it for the next `read`.
-                        *self
-                            .reattaching
-                            .get_mut()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                        match answer {
-                            Reattached::Channel(rx) => self.rx = rx,
-                            Reattached::Final(event) => {
-                                self.saw_terminal = true;
-                                // Synthesized from stored state, not emitted
-                                // by the agent, so it is not in the log and
-                                // carries no position.
-                                return Some(Ok(StreamEvent::unpositioned(event)));
-                            }
-                            Reattached::End => return None,
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Asks the reattach hook whether a task whose queue closed is finished
+    /// or between turns, and records what its answer owes from the log.
+    /// `false` when the stream ends here.
+    async fn reattach(&mut self) -> bool {
+        let Some(reattach) = self.reattach.as_ref() else {
+            return false;
+        };
+        let after = self.replayed_through;
+        let answer = {
+            let slot = self
+                .reattaching
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| reattach(after)).await
+        };
+        // Only once the hook has answered: a `read` dropped while awaiting it
+        // leaves it for the next `read`. What the answer owes is recorded
+        // before anything else is awaited, for the same reason.
+        *self
+            .reattaching
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        self.owed = match answer {
+            Reattached::Channel { rx, after, fresh } => {
+                self.rx = rx;
+                if fresh {
+                    // Numbered from 1: the positions the last turn delivered
+                    // are not this one's.
+                    self.replayed_through = 0;
+                }
+                // The new receiver goes on from exactly where the stream is,
+                // or the gap is reported.
+                self.just_caught_up = true;
+                (after > self.replayed_through).then_some(Owed::Through {
+                    through: after,
+                    last: None,
+                })
+            }
+            Reattached::Logged { through } => Some(Owed::Through {
+                through,
+                last: None,
+            }),
+            Reattached::Final { event, through } => Some(Owed::Through {
+                through,
+                last: Some(Box::new(event)),
+            }),
+            Reattached::End => return false,
+        };
+        true
     }
 }
 
@@ -1066,7 +1443,7 @@ mod tests {
     /// Records whether the reattach hook was consulted.
     fn counting_reattach(flag: &Arc<std::sync::atomic::AtomicBool>) -> ReattachFn {
         let flag = Arc::clone(flag);
-        Arc::new(move || {
+        Arc::new(move |_| {
             let flag = Arc::clone(&flag);
             Box::pin(async move {
                 flag.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1408,9 +1785,23 @@ mod tests {
 
     #[tokio::test]
     async fn close_is_no_op_and_succeeds() {
-        let (writer, _reader) = new_in_memory_queue();
+        let (writer, mut reader) = new_in_memory_queue();
         let result = writer.close().await;
         assert!(result.is_ok(), "close() should succeed");
+
+        // A no-op in fact, not just in name: the queue stays open until the
+        // last writer drops. `CancelOnFirstWrite::close` in the conformance
+        // harness is written as the same no-op on the strength of this.
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("a write after close() still succeeds");
+        assert!(
+            reader.read().await.is_some(),
+            "the event written after close() arrives"
+        );
+        drop(writer);
+        assert!(reader.read().await.is_none(), "EOF once the writer drops");
     }
 
     // ── subscribe creates independent readers ────────────────────────────
@@ -1847,6 +2238,211 @@ mod tests {
         );
     }
 
+    /// Two lags in one stream (spec §3.5.2): the catch-up hook runs once per
+    /// lag, each time after the last position delivered, and the stream
+    /// carries every position once, in order.
+    #[tokio::test]
+    async fn each_lag_catches_up_after_the_last_position_delivered() {
+        use crate::store::RecordedEvent;
+
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked: Arc<std::sync::Mutex<Vec<u64>>> = Arc::default();
+        // The log holds positions 1 up to this.
+        let logged = Arc::new(AtomicU64::new(0));
+        let hook: CatchUpFn = {
+            let (asked, logged) = (Arc::clone(&asked), Arc::clone(&logged));
+            Arc::new(move |after| {
+                asked.lock().unwrap().push(after);
+                let until = logged.load(Ordering::SeqCst);
+                Box::pin(async move {
+                    Some(
+                        (after + 1..=until)
+                            .map(|seq| RecordedEvent {
+                                seq,
+                                event: make_status_event("t-lag", TaskState::Working),
+                            })
+                            .collect(),
+                    )
+                })
+            })
+        };
+        let mut reader = reader.with_catch_up(Some(hook));
+
+        let mut positions = Vec::new();
+        for round in 1..=2_u64 {
+            for _ in 0..5 {
+                writer
+                    .write(make_status_event("t-lag", TaskState::Working))
+                    .await
+                    .unwrap();
+            }
+            logged.store(round * 5, Ordering::SeqCst);
+            for _ in 0..5 {
+                let item = reader.read().await.expect("a frame").expect("no lag error");
+                positions.push(item.seq.expect("positioned"));
+            }
+        }
+        drop(writer);
+        assert!(
+            reader.read().await.is_none(),
+            "the stream ends with the queue"
+        );
+
+        assert_eq!(positions, (1..=10).collect::<Vec<_>>());
+        assert_eq!(*asked.lock().unwrap(), [0, 5]);
+    }
+
+    /// A replay hook for the tests below: answers with the positions from
+    /// `after + 1` up to `until`, and records each `after` it was asked.
+    fn log_hook(until: u64, asked: &Arc<std::sync::Mutex<Vec<u64>>>) -> CatchUpFn {
+        use crate::store::RecordedEvent;
+        let asked = Arc::clone(asked);
+        Arc::new(move |after| {
+            asked.lock().unwrap().push(after);
+            Box::pin(async move {
+                Some(
+                    (after + 1..=until)
+                        .map(|seq| RecordedEvent {
+                            seq,
+                            event: make_status_event("t-lag", TaskState::Working),
+                        })
+                        .collect(),
+                )
+            })
+        })
+    }
+
+    /// The catch-up starts after the last position delivered live, not only
+    /// after the last one replayed.
+    #[tokio::test]
+    async fn a_catch_up_starts_after_the_last_live_position() {
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked = Arc::default();
+        let mut reader = reader.with_catch_up(Some(log_hook(6, &asked)));
+        let event = || make_status_event("t-lag", TaskState::Working);
+
+        writer.write(event()).await.unwrap();
+        let live = reader.read().await.unwrap().unwrap();
+        assert_eq!(live.seq, Some(1), "delivered live");
+        for _ in 0..5 {
+            writer.write(event()).await.unwrap();
+        }
+        drop(writer);
+
+        let mut positions = vec![1];
+        while let Some(item) = reader.read().await {
+            positions.push(item.expect("no lag error").seq.expect("positioned"));
+        }
+        assert_eq!(positions, (1..=6).collect::<Vec<_>>());
+        assert_eq!(*asked.lock().unwrap(), [1]);
+    }
+
+    /// A replay that stops short of where the live channel resumes leaves a
+    /// gap, which the stream reports as a lag instead of skipping over it.
+    #[tokio::test]
+    async fn a_replay_that_leaves_a_gap_is_reported_as_a_lag() {
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked = Arc::default();
+        // The log has only 1 and 2 of the 6 written.
+        let mut reader = reader.with_catch_up(Some(log_hook(2, &asked)));
+        for _ in 0..6 {
+            writer
+                .write(make_status_event("t-lag", TaskState::Working))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let mut items = Vec::new();
+        while let Some(item) = reader.read().await {
+            items.push(item);
+        }
+        let positions: Vec<_> = items
+            .iter()
+            .map(|i| i.as_ref().ok().and_then(|e| e.seq))
+            .collect();
+        assert_eq!(positions[..2], [Some(1), Some(2)], "the replay first");
+        let lag = items[2].as_ref().expect_err("then the gap, reported");
+        assert!(lag.is_stream_lagged(), "{lag:?}");
+        assert_eq!(lag.dropped_event_count(), Some(2), "positions 3 and 4");
+    }
+
+    /// A live event that follows a catch-up's replay directly is delivered,
+    /// here after a second catch-up that found nothing new: the gap check
+    /// compares it with the position after the last one delivered.
+    #[tokio::test]
+    async fn a_live_event_right_after_a_catch_up_is_delivered() {
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let asked = Arc::default();
+        let mut reader = reader.with_catch_up(Some(log_hook(5, &asked)));
+        let event = || make_status_event("t-lag", TaskState::Working);
+
+        for _ in 0..5 {
+            writer.write(event()).await.unwrap();
+        }
+        let mut positions = Vec::new();
+        for _ in 0..5 {
+            let item = reader.read().await.expect("a frame").expect("no lag error");
+            positions.push(item.seq.expect("positioned"));
+        }
+        writer.write(event()).await.unwrap();
+        drop(writer);
+        while let Some(item) = reader.read().await {
+            let item = item.expect("position 6 follows the replay: no gap");
+            positions.push(item.seq.expect("positioned"));
+        }
+
+        assert_eq!(positions, (1..=6).collect::<Vec<_>>());
+        assert_eq!(*asked.lock().unwrap(), [0, 5]);
+    }
+
+    /// A terminal state delivered from a catch-up's replay ends the stream at
+    /// close, as one delivered live does: the reattach hook is not asked.
+    #[tokio::test]
+    async fn a_terminal_state_from_a_catch_up_ends_the_stream_without_reattaching() {
+        use crate::store::RecordedEvent;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (writer, reader) =
+            new_in_memory_queue_with_options(2, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
+        let called = Arc::new(AtomicBool::new(false));
+        // The log's one event after position 2 is the terminal one.
+        let hook: CatchUpFn = Arc::new(|after| {
+            Box::pin(async move {
+                Some(vec![RecordedEvent {
+                    seq: after + 1,
+                    event: make_status_event("t-term", TaskState::Completed),
+                }])
+            })
+        });
+        let mut reader = reader
+            .with_reattach(counting_reattach(&called))
+            .with_catch_up(Some(hook));
+        reader.starting_after(2);
+        for state in [TaskState::Working, TaskState::Working, TaskState::Completed] {
+            writer
+                .write(make_status_event("t-term", state))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let terminal = reader.read().await.expect("a frame").expect("no lag error");
+        assert_eq!(terminal.seq, Some(3), "the replayed terminal state");
+        assert!(
+            reader.read().await.is_none(),
+            "a stream that delivered a terminal state ends at close"
+        );
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "the reattach hook must not be consulted once a terminal state has been seen"
+        );
+    }
+
     /// The negative control: de-duplication must key on the position, not on
     /// "anything after a replay". A server-synthesized frame carries no
     /// position and was never in the log, so it is never suppressed.
@@ -1977,5 +2573,74 @@ mod tests {
             "the stream ends at the terminal snapshot, not when the writer drops"
         );
         drop(writer);
+    }
+
+    /// Uncontended, a write is complete before its future is polled, as
+    /// `write`'s docs say: the future only spends the task's cooperative
+    /// budget. Kills a write that always waits for the order lock in an async
+    /// block, which allocates that block on every write.
+    #[tokio::test]
+    async fn an_uncontended_write_is_done_before_it_is_polled() {
+        let (writer, mut reader) = new_in_memory_queue();
+        drop(writer.write(make_status_event("t-f", TaskState::Working)));
+        drop(writer);
+        let frame = reader.read().await.expect("delivered").unwrap();
+        assert_eq!(frame.seq, Some(1));
+    }
+
+    /// Clones of one writer writing at once, on several threads, reach the
+    /// reader and the persistence channel in position order, so no reader
+    /// skips one as already delivered (spec §3.5.2: events MUST NOT be
+    /// reordered). Kills a write that assigns its position, or broadcasts,
+    /// outside the order lock: the race is narrow, so a round is repeated
+    /// until one reorders, and a broken lock is caught in nearly every run.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_clones_deliver_every_position_in_order() {
+        const ROUNDS: usize = 10;
+        const CLONES: u64 = 4;
+        const EACH: u64 = 2_000;
+        let expected: Vec<_> = (1..=CLONES * EACH).map(Some).collect();
+        for _ in 0..ROUNDS {
+            let (writer, mut reader, mut persisted) = new_in_memory_queue_with_persistence(
+                expected.len(),
+                DEFAULT_MAX_EVENT_SIZE,
+                DEFAULT_WRITE_TIMEOUT,
+            );
+            let drain = tokio::spawn(async move {
+                let mut positions = vec![];
+                while let Some(event) = persisted.recv().await {
+                    positions.push(event.unwrap().seq);
+                }
+                positions
+            });
+            let handles: Vec<_> = (0..CLONES)
+                .map(|_| {
+                    let writer = writer.clone();
+                    tokio::spawn(async move {
+                        for _ in 0..EACH {
+                            writer
+                                .write(make_status_event("t-o", TaskState::Working))
+                                .await
+                                .unwrap();
+                        }
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.await.unwrap();
+            }
+            drop(writer);
+
+            let mut delivered = Vec::with_capacity(expected.len());
+            while let Some(event) = reader.read().await {
+                delivered.push(event.unwrap().seq);
+            }
+            assert_eq!(delivered.len(), expected.len(), "events were skipped");
+            assert!(delivered == expected, "broadcast out of position order");
+            assert!(
+                drain.await.unwrap() == expected,
+                "persisted out of position order"
+            );
+        }
     }
 }

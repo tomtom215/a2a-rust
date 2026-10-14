@@ -17,6 +17,14 @@ use crate::error::{ServerError, ServerResult};
 
 use super::RequestHandler;
 
+/// Unsets `field` when it holds the proto3 default, the empty string: a
+/// field without presence carries "unset" that way on the JSON bindings.
+pub(super) fn unset_if_empty(field: &mut Option<String>) {
+    if field.as_deref() == Some("") {
+        *field = None;
+    }
+}
+
 /// Validates an ID string: rejects empty/whitespace-only and excessively long values.
 pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     let trimmed = raw.trim();
@@ -769,6 +777,7 @@ mod tests {
         #[tokio::test]
         async fn context_id_too_long_returns_none_without_querying_the_store() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
                 .build()
                 .unwrap();
@@ -796,6 +805,7 @@ mod tests {
         #[tokio::test]
         async fn context_id_at_exactly_max_length_is_still_looked_up() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
                 .build()
                 .unwrap();
@@ -818,6 +828,7 @@ mod tests {
         #[tokio::test]
         async fn context_id_within_limit_returns_none_for_missing() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
                 .build()
                 .unwrap();
@@ -847,6 +858,7 @@ mod tests {
         #[tokio::test]
         async fn prefers_non_terminal_over_terminal_task() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
                 .build()
                 .unwrap();
@@ -876,6 +888,7 @@ mod tests {
         #[tokio::test]
         async fn returns_terminal_task_when_no_non_terminal_exists() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
                 .build()
                 .unwrap();
@@ -894,6 +907,7 @@ mod tests {
         #[tokio::test]
         async fn returns_first_non_terminal_when_multiple_exist() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
                 .build()
                 .unwrap();

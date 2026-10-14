@@ -36,6 +36,7 @@
 
 mod builder;
 mod config;
+mod counting;
 mod exporters;
 mod http;
 mod langfuse;
@@ -59,6 +60,7 @@ pub use config::OtlpProtocol;
 pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
 
 use config::{Env, Signal};
+use counting::Counting;
 use exporters::Target;
 use runtime::ExportRuntime;
 
@@ -107,7 +109,8 @@ pub struct Telemetry {
     log_level: tracing::Level,
     /// Dropped after the providers, so their final flush still has it.
     runtime: Option<ExportRuntime>,
-    /// Each signal's count of failed OTLP/HTTP exports since the last flush.
+    /// Each signal's count of lost exports since the last report
+    /// (`counting.rs`).
     failures: Vec<(Signal, Arc<AtomicU64>)>,
 }
 
@@ -196,22 +199,23 @@ impl Telemetry {
         self.logger.as_ref()
     }
 
-    /// A new failure counter for `signal`'s exporter.
-    fn counter(&mut self, signal: Signal) -> Arc<AtomicU64> {
+    /// `exporter`, counting its lost exports into a new counter for
+    /// `signal` that [`report_failures`](Self::report_failures) reads.
+    fn counting<E>(&mut self, signal: Signal, exporter: E) -> Counting<E> {
         let counter = Arc::new(AtomicU64::new(0));
         self.failures.push((signal, Arc::clone(&counter)));
-        counter
+        Counting::new(exporter, counter)
     }
 
-    /// Adds to `failed` each signal whose OTLP/HTTP exports failed since the
-    /// last report — telemetry that was dropped, which the SDK's own flush
-    /// and shutdown results do not say (`http.rs`).
+    /// Adds to `failed` each signal with exports lost since the last report
+    /// — telemetry that was dropped, which the SDK's own shutdown result does
+    /// not say (`counting.rs`).
     fn report_failures(&self, failed: &mut Vec<String>) {
         for (signal, count) in &self.failures {
             let n = count.swap(0, Ordering::Relaxed);
             if n > 0 {
                 failed.push(format!(
-                    "{}: {n} export(s) did not reach the collector or were refused",
+                    "{}: {n} export(s) failed after retrying and were dropped",
                     signal.name()
                 ));
             }
@@ -223,8 +227,8 @@ impl Telemetry {
     /// # Errors
     ///
     /// [`TelemetryError::Export`] naming each signal whose flush failed or
-    /// timed out, or whose OTLP/HTTP exports failed since the last report —
-    /// see [`shutdown`](Self::shutdown) for what is and is not caught.
+    /// timed out, or whose exports were lost since the last report — see
+    /// [`shutdown`](Self::shutdown).
     pub fn force_flush(&self) -> Result<(), TelemetryError> {
         let mut failed = Vec::new();
         if let Some(p) = &self.tracer
@@ -255,16 +259,15 @@ impl Telemetry {
     /// # Errors
     ///
     /// [`TelemetryError::Export`] naming each signal whose shutdown failed
-    /// or timed out, or whose OTLP/HTTP exports did not reach the collector
-    /// or were refused since the last report: telemetry on it was lost.
-    /// Termination should not be blocked on it.
+    /// or timed out, or whose exports were lost since the last report, on
+    /// either transport: an export the exporter gave up on after its retries
+    /// (`opentelemetry-otlp` makes four attempts by default), whose batch the
+    /// SDK then dropped. An attempt refused and then retried successfully is
+    /// not a loss. Termination should not be blocked on it.
     ///
-    /// **Over gRPC a failed export is only logged.** The SDK's batch
-    /// processors log a failed export (`BatchSpanProcessor.ExportError`) and
-    /// drop the batch, and their `shutdown` returns `Ok` regardless
-    /// (`opentelemetry_sdk` 0.32.1, `trace/span_processor.rs`); this crate
-    /// counts failures in the HTTP client it supplies, and has no such hook
-    /// in tonic's.
+    /// The SDK's batch processors log a lost export and their `shutdown`
+    /// returns `Ok` regardless (`opentelemetry_sdk` 0.33.1,
+    /// `trace/span_processor.rs`); the count is this crate's.
     pub fn shutdown(mut self) -> Result<(), TelemetryError> {
         self.shutdown_inner()
     }

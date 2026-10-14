@@ -32,7 +32,10 @@ fn is_refusal(result: &Result<String, ServerError>) -> bool {
 
 #[tokio::test]
 async fn the_default_store_refuses_a_client_named_tenant() {
-    let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let result = handler.resolve_tenant("GetTask", None, Some("acme")).await;
     assert!(is_refusal(&result), "got {result:?}");
 }
@@ -41,7 +44,10 @@ async fn the_default_store_refuses_a_client_named_tenant() {
 /// single-tenant deployment is untouched.
 #[tokio::test]
 async fn the_default_store_still_serves_requests_without_a_tenant() {
-    let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     assert_eq!(
         handler.resolve_tenant("GetTask", None, None).await.unwrap(),
         ""
@@ -60,6 +66,7 @@ async fn the_default_store_still_serves_requests_without_a_tenant() {
 #[tokio::test]
 async fn the_default_store_refuses_a_resolved_tenant() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .unwrap();
@@ -76,6 +83,7 @@ async fn the_default_store_refuses_a_resolved_tenant() {
 #[tokio::test]
 async fn a_tenant_aware_task_store_alone_serves_tenants() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_task_store(TenantAwareInMemoryTaskStore::new())
         .build()
         .unwrap();
@@ -94,6 +102,7 @@ async fn a_tenant_aware_task_store_alone_serves_tenants() {
 #[tokio::test]
 async fn an_explicit_shared_push_store_refuses_tenants() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_task_store(TenantAwareInMemoryTaskStore::new())
         .with_push_config_store(InMemoryPushConfigStore::new())
         .build()
@@ -105,6 +114,7 @@ async fn an_explicit_shared_push_store_refuses_tenants() {
 #[tokio::test]
 async fn the_opt_out_serves_tenants_from_shared_stores() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .accept_unisolated_tenants()
         .build()
         .unwrap();
@@ -121,7 +131,10 @@ async fn the_opt_out_serves_tenants_from_shared_stores() {
 /// no task behind for any tenant to find.
 #[tokio::test]
 async fn a_refused_send_creates_no_task() {
-    let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let mut params = MessageSendParams::new(Message::new(
         MessageId::new("m-1"),
         MessageRole::User,

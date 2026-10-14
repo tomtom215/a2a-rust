@@ -11,8 +11,11 @@
 //! itself. These tests are about the thing there was nothing to check
 //! against.
 
+mod across_turns;
+mod continuation_race;
 mod live_resubscribe;
 mod log;
+mod log_holes;
 mod resumption;
 mod truncation;
 
@@ -181,6 +184,146 @@ impl TaskStore for SlowLog {
     }
 }
 
+/// The same store with a log that is written but cannot be read back, so a
+/// replay fails while everything else works.
+#[derive(Debug)]
+struct Unreadable(Arc<InMemoryTaskStore>);
+
+impl TaskStore for Unreadable {
+    delegate_required!();
+
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.0.append_event(task_id, seq, event)
+    }
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        self.0.last_event_seq(task_id)
+    }
+    fn read_events<'a>(
+        &'a self,
+        _task_id: &'a TaskId,
+        _after_seq: u64,
+        _limit: usize,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        Box::pin(async {
+            Err(a2a_protocol_types::error::A2aError::internal(
+                "the log cannot be read",
+            ))
+        })
+    }
+}
+
+/// The same store, where the first read of the log's end after the flag is
+/// set is preceded by another writer logging and storing one more artifact,
+/// `other-1`: what a replica running the task does while this one
+/// subscribes.
+#[derive(Debug)]
+struct WritesWhileSubscribing(Arc<InMemoryTaskStore>, Arc<std::sync::atomic::AtomicBool>);
+
+impl TaskStore for WritesWhileSubscribing {
+    delegate_required!();
+
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.0.append_event(task_id, seq, event)
+    }
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.1.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                let mut task = self.0.get(task_id).await?.expect("the task");
+                let artifact =
+                    a2a_protocol_types::artifact::Artifact::new("other-1", vec![Part::text("x")]);
+                let event = StreamResponse::ArtifactUpdate(
+                    a2a_protocol_types::events::TaskArtifactUpdateEvent {
+                        task_id: task.id.clone(),
+                        context_id: task.context_id.clone(),
+                        artifact: artifact.clone(),
+                        append: None,
+                        last_chunk: Some(true),
+                        metadata: None,
+                    },
+                );
+                let seq = self.0.last_event_seq(task_id).await? + 1;
+                self.0.append_event(task_id, seq, &event).await?;
+                task.artifacts.get_or_insert_with(Vec::new).push(artifact);
+                self.0.save(&task).await?;
+            }
+            self.0.last_event_seq(task_id).await
+        })
+    }
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        self.0.read_events(task_id, after_seq, limit)
+    }
+}
+
+/// The same store with the append at one position failing, as a storage
+/// hiccup leaves a log: the processor reports it and goes on, and the log
+/// skips that position.
+#[derive(Debug)]
+struct HoleAt(Arc<InMemoryTaskStore>, u64);
+
+impl TaskStore for HoleAt {
+    delegate_required!();
+
+    fn supports_event_log(&self) -> bool {
+        true
+    }
+    fn append_event<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        seq: u64,
+        event: &'a StreamResponse,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        if seq == self.1 {
+            return Box::pin(async {
+                Err(a2a_protocol_types::error::A2aError::internal(
+                    "append failed",
+                ))
+            });
+        }
+        self.0.append_event(task_id, seq, event)
+    }
+    fn last_event_seq<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        self.0.last_event_seq(task_id)
+    }
+    fn read_events<'a>(
+        &'a self,
+        task_id: &'a TaskId,
+        after_seq: u64,
+        limit: usize,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
+        self.0.read_events(task_id, after_seq, limit)
+    }
+}
+
 /// Emits three events, reports that it has, and then waits to be released.
 ///
 /// The queue stays registered for as long as `execute` has not returned, which
@@ -214,6 +357,7 @@ impl a2a_protocol_server::executor::AgentExecutor for EmitsThenWaits {
 
 fn handler_with(store: &Arc<InMemoryTaskStore>) -> RequestHandler {
     RequestHandlerBuilder::new(ThreeSteps)
+        .without_agent_card()
         .with_task_store(Shared(Arc::clone(store)))
         .build()
         .expect("handler")

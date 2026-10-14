@@ -64,7 +64,12 @@ agent_executor!(Echo, |ctx, queue| async {
 
 #[tokio::test]
 async fn bytes_pass_through_untouched_and_a_signed_artifact_still_verifies() {
-    let handler = Arc::new(RequestHandlerBuilder::new(Echo).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Echo)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
         .await
         .unwrap();

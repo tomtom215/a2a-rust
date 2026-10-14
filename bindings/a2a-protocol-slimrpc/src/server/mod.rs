@@ -19,6 +19,7 @@
 //! response.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use a2a_protocol_server::RequestHandler;
 use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
@@ -34,7 +35,7 @@ use crate::SlimName;
 
 mod methods;
 
-use methods::register_a2a_methods;
+use methods::{Served, register_a2a_methods};
 
 /// A configured SLIM application plus the notification stream its server needs.
 type AppParts = (
@@ -143,6 +144,7 @@ impl SlimRpcServerBuilder {
 /// An A2A agent served over SLIMRPC.
 pub struct SlimRpcServer {
     inner: Arc<Server>,
+    state: Arc<Served>,
     name: SlimName,
     /// Held only so a service the builder created outlives the server that
     /// depends on it. `None` when the caller owns the service.
@@ -164,11 +166,7 @@ impl SlimRpcServer {
     ///
     /// This is the path for a SLIM app attached to a remote fabric node, or one
     /// shared with other services. The caller keeps the [`Service`] alive.
-    // The handler is taken by value because that is the shape a caller has one
-    // in; demanding `&Arc<_>` at every call site to save one refcount bump is a
-    // worse API than the bump.
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
     pub fn from_app(parts: AppParts, handler: Arc<RequestHandler>, name: SlimName) -> Self {
         Self::from_app_with_connection(parts, handler, name, None)
     }
@@ -183,7 +181,6 @@ impl SlimRpcServer {
     /// route to it, which is what makes the agent reachable from other
     /// processes and other hosts.
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
     pub fn from_app_with_connection(
         (app, notifications): AppParts,
         handler: Arc<RequestHandler>,
@@ -206,12 +203,31 @@ impl SlimRpcServer {
             notifications,
             None,
         );
-        register_a2a_methods(&mut server, &handler);
+        let state = Arc::new(Served {
+            handler,
+            require_version: AtomicBool::new(true),
+        });
+        register_a2a_methods(&mut server, &state);
         Self {
             inner: Arc::new(server),
+            state,
             name,
             owned_service: None,
         }
+    }
+
+    /// Sets whether a call that declares no `A2A-Version` is refused.
+    ///
+    /// Spec §3.6.2 reads an absent or empty version as 0.3, which this server
+    /// does not serve, so by default (`true`) such a call is refused with
+    /// `VersionNotSupportedError`, as the HTTP and gRPC bindings refuse it.
+    /// `false` serves it as 1.0, for callers that send no version; this
+    /// crate's client sends one, and so does the official crate's
+    /// `A2AClient`. A declared version other than 1.0 is refused either way.
+    #[must_use]
+    pub fn with_require_version(self, require: bool) -> Self {
+        self.state.require_version.store(require, Ordering::Relaxed);
+        self
     }
 
     /// Keeps a builder-created service alive for the server's lifetime.

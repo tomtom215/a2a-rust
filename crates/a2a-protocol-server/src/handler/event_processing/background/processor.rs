@@ -45,6 +45,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::store::TerminalStateConflict;
 use crate::streaming::StreamEvent;
+use crate::streaming::event_queue::applied::AppliedMark;
 use crate::streaming::event_queue::carries_terminal_state;
 use crate::streaming::event_queue::terminal_gate::TerminalGate;
 
@@ -64,6 +65,8 @@ pub(super) struct Processor<'a> {
     /// The queue's terminal gate, when the writer holds terminal events for
     /// a verdict.
     gate: Option<&'a TerminalGate>,
+    /// Where each event is marked stored, for a subscriber's snapshot.
+    applied: Option<&'a AppliedMark>,
     /// The stored terminal status, once another writer is known to have
     /// finished the task.
     superseded: Option<StreamResponse>,
@@ -79,6 +82,7 @@ impl<'a> Processor<'a> {
         last_task: Task,
         cancel: CancellationToken,
         gate: Option<&'a TerminalGate>,
+        applied: Option<&'a AppliedMark>,
     ) -> Self {
         Self {
             task_id,
@@ -86,6 +90,7 @@ impl<'a> Processor<'a> {
             last_task,
             cancel,
             gate,
+            applied,
             superseded: None,
             pushed_terminal: false,
         }
@@ -118,6 +123,9 @@ impl<'a> Processor<'a> {
     /// Folds one event from the persistence channel.
     pub(super) async fn handle(&mut self, event: A2aResult<StreamEvent>) {
         let seq = event.as_ref().ok().and_then(|e| e.seq);
+        // Stored once the save reports it (`on_persisted`), or when this
+        // returns: a subscriber's snapshot is read between events.
+        let applying = seq.zip(self.applied).map(|(seq, mark)| mark.applying(seq));
         let terminal = event
             .as_ref()
             .ok()
@@ -152,6 +160,9 @@ impl<'a> Processor<'a> {
             }
         };
         let on_persisted = || {
+            if let Some(applying) = &applying {
+                applying.done();
+            }
             if let Some(event) = &terminal {
                 release(event);
             }

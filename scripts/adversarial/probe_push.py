@@ -11,7 +11,7 @@
 
 Registering a webhook turns the server into an HTTP client that dials an
 address the caller chose. That is a different threat model from the inbound
-probes: a hostile *receiver* can hang, drip, flood, reset, or redirect the
+probes: a hostile *receiver* can hang, answer late, flood, reset, or redirect the
 server's own delivery attempts. The properties this asserts:
 
   * a hanging or slow webhook does NOT slow the request path — delivery is
@@ -60,10 +60,15 @@ class Receiver(threading.Thread):
         self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.srv.bind(("127.0.0.1", port))
         self.srv.listen(128)
-        self._stop = False
+        # Not `_stop` / `_handle`: `threading.Thread` uses both names itself.
+        # Since Python 3.13 `Thread.__init__` sets `self._handle`, which
+        # shadowed the method of that name, so every connection thread died
+        # with a TypeError before it ran its mode and every mode behaved as a
+        # silent hang.
+        self._stopping = False
 
     def run(self):
-        while not self._stop:
+        while not self._stopping:
             try:
                 self.srv.settimeout(1.0)
                 try:
@@ -71,11 +76,12 @@ class Receiver(threading.Thread):
                 except socket.timeout:
                     continue
                 self.hits += 1
-                threading.Thread(target=self._handle, args=(c,), daemon=True).start()
+                threading.Thread(target=self._serve_conn, args=(c,), daemon=True).start()
             except Exception:
                 break
 
-    def _handle(self, c):
+    def _serve_conn(self, c):
+        held = False
         try:
             c.settimeout(2.0)
             try:
@@ -84,7 +90,8 @@ class Receiver(threading.Thread):
                 # the request body is discarded anyway; a slow/absent body must not stop the reply
                 pass
             if self.mode == "hang":
-                self._held.append(c)              # never respond, hold forever
+                self._held.append(c)              # never respond, hold until stop()
+                held = True
                 return
             if self.mode == "slow":
                 time.sleep(8)                      # respond after the 5s timeout
@@ -104,14 +111,21 @@ class Receiver(threading.Thread):
             # the probe client may have hung up or reset; the receiver's reply is best-effort
             pass
         finally:
+            if not held:
+                try:
+                    c.close()
+                except Exception:
+                    # socket already closed or reset; nothing left to release
+                    pass
+
+    def stop(self):
+        self._stopping = True
+        for c in self._held:
             try:
                 c.close()
             except Exception:
-                # socket already closed or reset; nothing left to release
+                # the server already gave up on this delivery and reset it
                 pass
-
-    def stop(self):
-        self._stop = True
         try:
             self.srv.close()
         except Exception:

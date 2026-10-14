@@ -82,6 +82,7 @@ fn handler(seen: &Seen) -> RequestHandler {
     struct Idle;
     crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
     crate::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
         .with_metrics(Recording(Arc::clone(seen)))
         .build()
         .unwrap()
@@ -155,6 +156,7 @@ fn spans_created_under(policy: InboundTracePolicy) -> Vec<String> {
     let subscriber = tracing_subscriber::registry().with(created.clone());
     let seen = Seen::default();
     let handler = crate::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
         .with_metrics(Recording(Arc::clone(&seen)))
         .with_inbound_trace_policy(policy)
         .build()
@@ -324,6 +326,7 @@ fn only_continue_makes_the_callers_traceparent_the_spans_parent() {
         struct Idle;
         crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
         let handler = crate::RequestHandlerBuilder::new(Idle)
+            .without_agent_card()
             .with_inbound_trace_policy(policy)
             .build()
             .unwrap();

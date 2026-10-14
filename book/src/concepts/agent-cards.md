@@ -127,12 +127,23 @@ let caps = AgentCapabilities::none()
 >   return `UnsupportedOperationError`.
 > - If `pushNotifications` is not `true`, the push-config operations
 >   (Create/Get/List/Delete) return `PushNotificationNotSupportedError`.
+>   They also need a push sender (`RequestHandlerBuilder::with_push_sender`):
+>   without one they return that error whatever the card says, and `build()`
+>   refuses a card that declares `pushNotifications` with no sender.
 > - If `extendedAgentCard` is not `true`, `GetExtendedAgentCard` returns
 >   `UnsupportedOperationError`.
 >
 > So if your agent serves streaming or push, **set the matching flag to `true`**
 > — otherwise clients are told the operation is unsupported. A handler with no
-> agent card configured publishes no contract and is not gated.
+> agent card configured publishes no contract and is not gated by one; push
+> still needs a sender.
+>
+> **The client reads the same flags (spec §3.3.4).** A client built with
+> `ClientBuilder::from_card` refuses those calls itself, before sending, when
+> the card does not set the flag to `true`, with
+> `ClientError::CapabilityNotDeclared`; a send carrying an inline push config
+> counts as a push call. `ClientBuilder::without_capability_checks` sends them
+> anyway, for an agent that serves a capability without declaring it.
 
 ## Interfaces
 
@@ -154,9 +165,9 @@ the gRPC binding it is a gRPC target, `"grpc.example.com:443"` — no scheme,
 because gRPC names have none; whether the channel uses TLS is the client's
 decision (see [gRPC](transport-layers.md#grpc)).
 
-An agent must have at least one interface. Having multiple interfaces (e.g., JSON-RPC and REST) lets clients choose their preferred transport.
+An agent must have at least one interface. List them in the order you want clients to use them: the order is the agent's preference.
 
-The choice is the *client's*, not the card's. `ClientBuilder::from_card()` walks `ClientConfig::preferred_bindings` in order and takes the first binding the card offers, falling back to the card's first interface only when it offers none of them. Pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`.
+Spec §8.3.2 makes that order binding on clients: a client MUST select the first interface it supports and prefer earlier entries. `ClientBuilder::from_card()` does exactly that, skipping an interface for another protocol major and, at `build()`, one it cannot construct (gRPC under the synchronous `build()`, a binding it does not implement). Until 0.15 it preferred JSON-RPC wherever the card listed it. To rank bindings yourself, which the spec leaves to the client only when you ask for it, pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`; interfaces you did not rank follow in the card's order.
 
 Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and sent on every request — all eleven methods, `GetExtendedAgentCard` included — as spec §8.3.2 rule 4 requires. Methods whose params carry a `tenant` (send, get, list, push-config) let a per-request value override it.
 
@@ -171,9 +182,43 @@ let capabilities = AgentCapabilities::none()
     .with_extended_agent_card(true);
 ```
 
-If the capability is `false` or absent, the server returns `UnsupportedOperationError`.
-`ExtendedAgentCardNotConfiguredError` is returned when the handler has no agent
-card at all.
+Give the handler the card to serve with `with_extended_agent_card`: the public
+card plus what only clients you know should see, such as a further skill.
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+use a2a_protocol_sdk::server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
+
+let public = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true));
+let extended = public
+    .clone()
+    .with_skill(AgentSkill::new("billing", "Billing", "Account details").with_tags(["billing"]));
+
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(public)
+    .with_extended_agent_card(extended)
+    .with_interceptor(BearerTokenAuthInterceptor::new(["s3cret"]))
+    .build()
+    .unwrap();
+# let _ = handler;
+# }
+```
+
+`build()` checks the extended card as it checks the public one, and advertises
+the same extensions on it, since a client that fetches it uses its capabilities
+from then on. Without `with_extended_agent_card`, the public card is served as
+the extended one, so an authenticated caller learns nothing more.
+
+If the capability is `false` or absent, the server returns `UnsupportedOperationError`,
+and `build()` refuses an extended card it would never serve.
+`ExtendedAgentCardNotConfiguredError` is returned when the handler has neither
+card.
 
 The operation must be authenticated (§13.3): without an authenticating
 interceptor (e.g. `BearerTokenAuthInterceptor`, `JwtAuthInterceptor`) the server
@@ -190,7 +235,7 @@ For agent cards that don't change at runtime:
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
 # fn main() {
 # let my_executor = MyAgent;
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
@@ -216,7 +261,7 @@ For agent cards that change (e.g., based on feature flags, load, or authenticati
 # use std::future::Future;
 # use std::pin::Pin;
 # use a2a_protocol_sdk::prelude::{A2aResult, AgentInterface, AgentSkill};
-# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
 use a2a_protocol_sdk::server::{AgentCardProducer, DynamicAgentCardHandler};
 use a2a_protocol_sdk::types::agent_card::AgentCard;
 
@@ -240,7 +285,7 @@ For agent cards loaded from a JSON file that may change at runtime:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
-# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
 # #[tokio::main]
 # async fn main() {
 # let initial_card = make_agent_card();
@@ -268,15 +313,15 @@ let signal_watcher = handler.spawn_signal_watcher(
 
 ## HTTP Caching
 
-Agent card responses include standard HTTP caching headers (RFC 7232):
+Agent card responses include standard HTTP caching headers (spec §8.6, RFC 9110):
 
 | Header | Purpose |
 |--------|---------|
 | `ETag` | Content hash for cache validation |
-| `Last-Modified` | Timestamp of last change |
+| `Last-Modified` | Static handler only: when it loaded the card |
 | `Cache-Control` | `public, max-age=3600` (configurable) |
 
-Clients should send `If-None-Match` or `If-Modified-Since` headers. If the card hasn't changed, the server returns `304 Not Modified` with no body.
+Clients revalidate with `If-None-Match`, or with `If-Modified-Since` against the static handler. If the card hasn't changed, the server returns `304 Not Modified` with no body. The dynamic handler sends no `Last-Modified` and ignores `If-Modified-Since`: a card produced per request has no modification date, so the `ETag` is its only validator.
 
 ## Security
 

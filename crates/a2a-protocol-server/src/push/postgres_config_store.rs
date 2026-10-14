@@ -9,16 +9,20 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use sqlx::postgres::PgPool;
 
+use super::cipher::{PushConfigCipher, Sealing};
 use super::config_store::PushConfigStore;
 
 /// `PostgreSQL`-backed [`PushConfigStore`].
 ///
 /// Stores push notification configs as JSONB blobs in a `push_configs` table.
+/// With [`with_cipher`](Self::with_cipher), each config is stored sealed
+/// (spec §13.2); see [`PushConfigCipher`].
 ///
 /// # Schema
 ///
@@ -33,12 +37,14 @@ use super::config_store::PushConfigStore;
 #[derive(Debug, Clone)]
 pub struct PostgresPushConfigStore {
     pool: PgPool,
+    /// Whether configs are sealed, and with what.
+    sealing: Sealing,
 }
 
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]
 fn to_a2a_error(e: sqlx::Error) -> A2aError {
-    A2aError::internal(format!("postgres error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", &e)
 }
 
 impl PostgresPushConfigStore {
@@ -53,6 +59,23 @@ impl PostgresPushConfigStore {
             .connect(url)
             .await?;
         Self::from_pool(pool).await
+    }
+
+    /// Seals each config this store writes with `cipher`, and opens each one
+    /// it reads (spec §13.2); see [`PushConfigCipher`].
+    #[must_use]
+    pub fn with_cipher(mut self, cipher: Arc<dyn PushConfigCipher>) -> Self {
+        self.sealing = self.sealing.with_cipher(cipher);
+        self
+    }
+
+    /// With a cipher, also reads configs stored unsealed, by this store
+    /// before [`with_cipher`](Self::with_cipher) was set; each is sealed when
+    /// it is next written.
+    #[must_use]
+    pub fn accept_unsealed_rows(mut self) -> Self {
+        self.sealing = self.sealing.accepting_unsealed();
+        self
     }
 
     /// Creates a store from an existing connection pool.
@@ -74,7 +97,10 @@ impl PostgresPushConfigStore {
         )
         .await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            sealing: Sealing::default(),
+        })
     }
 }
 
@@ -99,8 +125,10 @@ impl PushConfigStore for PostgresPushConfigStore {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             config.id = Some(id.clone());
 
-            let data = serde_json::to_value(&config)
-                .map_err(|e| A2aError::internal(format!("serialize: {e}")))?;
+            let data = self
+                .sealing
+                .encode_json(&config, &Sealing::context("", &task_id, &id))
+                .await?;
 
             sqlx::query(
                 "INSERT INTO push_configs (task_id, id, data)
@@ -134,11 +162,11 @@ impl PushConfigStore for PostgresPushConfigStore {
                     .map_err(to_a2a_error)?;
 
             match row {
-                Some((data,)) => {
-                    let config: TaskPushNotificationConfig = serde_json::from_value(data)
-                        .map_err(|e| A2aError::internal(format!("deserialize: {e}")))?;
-                    Ok(Some(config))
-                }
+                Some((data,)) => Ok(Some(
+                    self.sealing
+                        .decode_json(data, &Sealing::context("", task_id, id))
+                        .await?,
+                )),
                 None => Ok(None),
             }
         })
@@ -149,19 +177,22 @@ impl PushConfigStore for PostgresPushConfigStore {
         task_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
-            let rows: Vec<(serde_json::Value,)> =
-                sqlx::query_as("SELECT data FROM push_configs WHERE task_id = $1")
+            let rows: Vec<(String, serde_json::Value)> =
+                sqlx::query_as("SELECT id, data FROM push_configs WHERE task_id = $1")
                     .bind(task_id)
                     .fetch_all(&self.pool)
                     .await
                     .map_err(to_a2a_error)?;
 
-            rows.into_iter()
-                .map(|(data,)| {
-                    serde_json::from_value(data)
-                        .map_err(|e| A2aError::internal(format!("deserialize: {e}")))
-                })
-                .collect()
+            let mut configs = Vec::with_capacity(rows.len());
+            for (id, data) in rows {
+                configs.push(
+                    self.sealing
+                        .decode_json(data, &Sealing::context("", task_id, &id))
+                        .await?,
+                );
+            }
+            Ok(configs)
         })
     }
 

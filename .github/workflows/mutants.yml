@@ -8,13 +8,14 @@
 # incremental (diff-only) job instead — see the `on.schedule` cron below.
 #
 # Architecture:
-#   - Full sweep splits into 21 parallel jobs: 12 shards of a2a-server,
+#   - Full sweep splits into 33 parallel jobs: 24 shards of a2a-server,
 #     4 each of a2a-types and a2a-client, and a2a-sdk whole (it is a pure
 #     re-export facade and generates no mutants at all). Sharding exists to
 #     stay inside the per-job timeout, which was 120 minutes until 2026-08-07
 #     and is now 240; at 8 shards two of them hit the old limit (run
-#     30236603180, 2026-07-27) and were cancelled. Every sharded job now
-#     carries a comparable load of roughly 170-200 mutants.
+#     30236603180, 2026-07-27) and were cancelled, and at 12 two more hit the
+#     new one (run 38199170161, 2026-10-12). Mutants are dealt round-robin,
+#     so every shard of a crate carries the same mix of slow and fast ones.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
 #   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff) in one job.
@@ -127,6 +128,16 @@ jobs:
     # full compile before it fails, whereas a caught one exits early under
     # nextest's fail-fast. So per-shard cost is dominated by builds, not tests.
     #
+    # **The opposite on 2026-10-12** (run 38199170161, a2a-server, from the
+    # shards' own outcomes.json): an unviable mutant's build averaged 26s and
+    # a caught one's 206s, with tests adding 19s. Builds still dominate, but
+    # it is the *caught* mutants that pay for them — an unviable one now stops
+    # at the type check — so the slowest shards are the ones with the fewest
+    # unviable mutants (4/12: 271 unviable, 48 minutes; 1/12: 105, 221
+    # minutes). Why the 2026-08-07 run differed is not established here; it
+    # predates both the `--all-features` move (audit N8) and the patched
+    # cargo-mutants, either of which changes what "unviable" contains.
+    #
     # The two slowest jobs in that run were the two crates that had never been
     # sharded — a2a-server was split 12 ways when it hit this wall, while
     # a2a-types and a2a-client were left whole and quietly grew to 4x the load
@@ -191,6 +202,31 @@ jobs:
         # from run 31193107921 by holding the ~7m fixed cost (toolchain install,
         # cache, baseline build and test) constant and dividing the remainder.
         #
+        # 12 stopped being enough on 2026-10-12 (run 38199170161; shard numbers
+        # here are the job names', one more than the `--shard` value): 7/12
+        # and 11/12 were cancelled at 240 minutes with 37 and 55 mutants
+        # ungraded, and eight of the other ten took 167-221 minutes by
+        # cargo-mutants' own clock. The
+        # crate had grown to 3724 mutants. The spread — 48 minutes for 4/12,
+        # 221 for 1/12, same 311 mutants each — was the slicing, not the
+        # load: `--sharding slice` (the default) hands each shard a run of
+        # consecutive files, and a shard of mostly unviable mutants (4/12:
+        # 271 of 311) finishes in a fifth of the time of one of mostly
+        # caught ones, because an unviable mutant stops at the type check
+        # while a caught one builds every test binary. Hence both changes:
+        # `--sharding round-robin` below, which deals the mutants out one at
+        # a time, and 24 shards. Projected from that run's own per-mutant
+        # build and test times, under the job's `--jobs 4` — summed, divided
+        # by four, plus the baseline: a model that reproduces all ten shards
+        # that finished to within 1.1 minutes — the slowest a2a-server shard
+        # lands at ~106 minutes plus setup, inside this file's 2x headroom
+        # rule; 20 round-robin shards would have been ~123, outside it. The
+        # crate lists 3855 mutants at the commit that resharded it; scaled to
+        # that, ~110. Re-measure from the next sweep's artifacts. If 33
+        # jobs exceed the account's concurrent-job limit, the excess queue;
+        # a job's timeout runs from its own start, so queueing costs
+        # wall-clock, not completeness.
+        #
         # The `shard` value is passed verbatim to cargo-mutants' `--shard K/N`
         # flag, which splits mutants deterministically across shards. a2a-sdk
         # stays whole at K=0/N=1 (≡ no sharding): it has no mutants to split.
@@ -229,52 +265,100 @@ jobs:
             shard: "3/4"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 1/12
-            shard: "0/12"
+            name: a2a-server shard 1/24
+            shard: "0/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 2/12
-            shard: "1/12"
+            name: a2a-server shard 2/24
+            shard: "1/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 3/12
-            shard: "2/12"
+            name: a2a-server shard 3/24
+            shard: "2/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 4/12
-            shard: "3/12"
+            name: a2a-server shard 4/24
+            shard: "3/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 5/12
-            shard: "4/12"
+            name: a2a-server shard 5/24
+            shard: "4/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 6/12
-            shard: "5/12"
+            name: a2a-server shard 6/24
+            shard: "5/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 7/12
-            shard: "6/12"
+            name: a2a-server shard 7/24
+            shard: "6/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 8/12
-            shard: "7/12"
+            name: a2a-server shard 8/24
+            shard: "7/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 9/12
-            shard: "8/12"
+            name: a2a-server shard 9/24
+            shard: "8/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 10/12
-            shard: "9/12"
+            name: a2a-server shard 10/24
+            shard: "9/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 11/12
-            shard: "10/12"
+            name: a2a-server shard 11/24
+            shard: "10/24"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 12/12
-            shard: "11/12"
+            name: a2a-server shard 12/24
+            shard: "11/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 13/24
+            shard: "12/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 14/24
+            shard: "13/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 15/24
+            shard: "14/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 16/24
+            shard: "15/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 17/24
+            shard: "16/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 18/24
+            shard: "17/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 19/24
+            shard: "18/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 20/24
+            shard: "19/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 21/24
+            shard: "20/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 22/24
+            shard: "21/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 23/24
+            shard: "22/24"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 24/24
+            shard: "23/24"
           - crate: a2a-protocol-sdk
             short: a2a-sdk
             name: a2a-sdk
@@ -302,7 +386,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.check.outputs.skip == 'false'
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
         with:
           toolchain: stable
         if: steps.check.outputs.skip == 'false'
@@ -379,9 +463,13 @@ jobs:
           # counts in neither the numerator nor the denominator. See that file
           # for the mutant that established it and the measurement behind the
           # numbers. Do not run this sweep with `--test-tool` unset.
+          #
+          # `--sharding round-robin`: see the matrix comment above for why
+          # consecutive slices were replaced.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
             --shard ${{ matrix.shard }} \
+            --sharding round-robin \
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
@@ -602,7 +690,7 @@ jobs:
 
       - name: Upload per-crate report
         if: always() && steps.check.outputs.skip == 'false'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Include the shard tag so sharded jobs (a2a-server) don't collide
           # on the same artifact name.
@@ -633,7 +721,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Download all per-crate reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: mutation-report-*
           path: reports/
@@ -669,11 +757,12 @@ jobs:
           # Completeness is decided by the per-shard COMPLETED markers below.
           SHARD_RESULT: ${{ needs.mutants-crate.result }}
           # Must equal the number of `include:` entries in mutants-crate:
-          # 12 a2a-server + 4 a2a-types + 4 a2a-client + 1 a2a-sdk. Deliberately
+          # 24 a2a-server + 4 a2a-types + 4 a2a-client + 1 a2a-sdk. Deliberately
           # a literal: if the matrix grows and this does not, the sweep fails
           # loudly here rather than quietly measuring less. It went 15 -> 21 on
-          # 2026-08-07 when a2a-types and a2a-client were sharded 4 ways.
-          EXPECTED_SHARDS: 21
+          # 2026-08-07 when a2a-types and a2a-client were sharded 4 ways, and
+          # 21 -> 33 on 2026-10-12 when a2a-server went from 12 shards to 24.
+          EXPECTED_SHARDS: 33
           # A workflow_dispatch scoped to one package skips the other matrix
           # entries by design, so they legitimately upload nothing. Only the
           # unscoped sweep — the one whose score means "the whole workspace" —
@@ -951,10 +1040,37 @@ jobs:
     strategy:
       fail-fast: false # a survivor in one shard must not cancel the others
       matrix:
-        # 8-way (matching the full-sweep shard count for a2a-server): a large
-        # PR diff generates enough in-diff mutants that a 4-way split pushed the
-        # heaviest shards past the 45-minute timeout. Doubling the shard count
-        # halves each runner's mutant load so every shard finishes in time.
+        # 8-way (the full sweep's a2a-server count when this was written): a
+        # large PR diff generates enough in-diff mutants that a 4-way split
+        # pushed the heaviest shards past the 45-minute timeout. Doubling the
+        # shard count halves each runner's mutant load so every shard finishes
+        # in time.
+        #
+        # Dealt round-robin (`--sharding round-robin` below) since 2026-10-14,
+        # as the full sweep is. The default slicing gives each shard a run of
+        # consecutive files, so on a PR touching several crates one shard can
+        # hold only a2a-types mutants, which run only that crate's tests, and
+        # another only a2a-server ones, which run the server and Postgres
+        # suites. The slowest shard of runs 38447468013, 38481386658 and
+        # 38495126684 held only a2a-server mutants and took 114-120 minutes (in
+        # the first, shard 4 used 7,193 s of its 7,200); in the last, the two
+        # shards holding only a2a-types mutants took 20 and 27. Listed with the
+        # pinned binary at a later head of the same PR, its 1,160 in-diff
+        # mutants sliced put 145 a2a-server mutants in each of four shards and
+        # only a2a-types ones in two; round-robin puts 91-92 a2a-server, 41-42
+        # a2a-types and 11-12 a2a-client mutants in every shard, and the eight
+        # listings partition the 1,160 exactly. Measured on those same 1,160
+        # (the source did not change between the two pushes): sliced, run
+        # 38515154450 lost four shards to the timeout at 7,229-7,237 s;
+        # round-robin, run 38516495025 finished all eight in 4,755-6,571 s and
+        # passed. Its slowest shard took 110 minutes, not the 77 first projected
+        # by dividing run 38495126684's total evenly, which assumed a mutant's
+        # cost does not depend on the one before it; round-robin used 787
+        # runner-minutes against the sliced run's 722, cut short. The likely
+        # cause, not measured, is rebuilds: an a2a-types mutant makes the next
+        # a2a-server one rebuild what depends on it. Ten minutes of headroom is
+        # thin; splitting this job by crate, as the full sweep is, would keep
+        # round-robin within one crate.
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       INCREMENTAL_SHARDS: 8
@@ -964,7 +1080,7 @@ jobs:
         with:
           fetch-depth: 0 # full history for diff
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
         with:
           toolchain: stable
 
@@ -1038,7 +1154,9 @@ jobs:
           # (measured 2026-08-14), this flag is the only per-mutant cap either
           # job has, and only this job has it. Keep it.
           # `--shard K/N` partitions the in-diff mutant set across the matrix
-          # so each runner tests roughly 1/N of the mutants and fits the timeout.
+          # so each runner tests roughly 1/N of the mutants and fits the timeout;
+          # `--sharding round-robin` deals them out one at a time, so every
+          # shard gets the same mix of crates (see the matrix comment above).
           # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for
           # why `--output mutants.out` silently disabled this gate.
           # No `--exclude-re` here either; the two invocations stay in step
@@ -1050,6 +1168,7 @@ jobs:
             --timeout 300 \
             --jobs 4 \
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
+            --sharding round-robin \
             --test-tool=nextest \
             --profile=mutants \
             --all-features \
@@ -1279,7 +1398,7 @@ jobs:
 
       - name: Upload mutation report
         if: always() && steps.diff.outputs.skip == 'false'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mutation-report-incremental-shard-${{ matrix.shard }}
           path: mutants.out/
@@ -1299,7 +1418,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Download shard reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: mutation-report-incremental-shard-*
           path: shards/

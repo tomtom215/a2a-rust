@@ -558,7 +558,10 @@ impl GrpcTransport {
                 } else {
                     status.message().to_owned()
                 };
-                ClientError::Protocol(a2a_protocol_types::A2aError::new(code, message))
+                ClientError::Protocol(with_detail_data(
+                    a2a_protocol_types::A2aError::new(code, message),
+                    status,
+                ))
             }
         }
     }
@@ -876,6 +879,49 @@ async fn grpc_stream_reader_task<S>(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// `@type` of a `google.protobuf.Struct`, the detail an error's data
+/// travels in.
+const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
+
+/// `err` with the data a status's details carry (§5.1): a
+/// `google.protobuf.Struct` detail becomes `data`, as the REST transport
+/// decodes one, or else a `google.rpc.BadRequest` becomes the typed detail
+/// the JSON bindings send. It is what keeps
+/// [`A2aError::is_stream_lagged`](a2a_protocol_types::A2aError::is_stream_lagged)
+/// true across a gRPC stream; the data was dropped.
+fn with_detail_data(
+    mut err: a2a_protocol_types::A2aError,
+    status: &tonic::Status,
+) -> a2a_protocol_types::A2aError {
+    use a2a_protocol_types::proto::prost_types;
+    use prost::Message as _;
+    use tonic_types::StatusExt as _;
+    let object = tonic_types::pb::Status::decode(status.details())
+        .ok()
+        .and_then(|carried| {
+            carried
+                .details
+                .into_iter()
+                .find(|d| d.type_url == STRUCT_DETAIL_TYPE)
+        })
+        .and_then(|d| prost_types::Struct::decode(d.value.as_slice()).ok())
+        .and_then(|s| a2a_protocol_types::proto::convert::struct_to_json(s).ok());
+    if object.is_some() {
+        err.data = object;
+    } else if let Some(bad) = status.get_details_bad_request() {
+        let violations: Vec<_> = bad
+            .field_violations
+            .iter()
+            .map(|v| serde_json::json!({ "field": v.field, "description": v.description }))
+            .collect();
+        err.data = Some(serde_json::json!({
+            "@type": "type.googleapis.com/google.rpc.BadRequest",
+            "fieldViolations": violations,
+        }));
+    }
+    err
+}
 
 /// Whether tonic is reporting a response that ended without a `grpc-status`
 /// trailer: `Unknown`, with the message tonic writes for exactly that case
@@ -1324,6 +1370,55 @@ mod tests {
 
     /// §10.6: when the server attaches `google.rpc.ErrorInfo`, the exact A2A
     /// reason wins over the lossy status-code inverse mapping.
+    /// §5.1: an error's data travels in the status details, as the server
+    /// writes it, and a lagged gRPC stream reads as one.
+    #[test]
+    fn status_to_error_keeps_a_struct_detail_as_data() {
+        use a2a_protocol_types::proto::prost_types;
+        use prost::Message as _;
+        let data = a2a_protocol_types::proto::convert::json_to_struct(
+            serde_json::json!({ "streamLagged": 3 }),
+        )
+        .expect("a Struct");
+        let carried = tonic_types::pb::Status {
+            code: tonic::Code::Internal as i32,
+            message: "lagged".into(),
+            details: vec![prost_types::Any {
+                type_url: STRUCT_DETAIL_TYPE.into(),
+                value: data.encode_to_vec(),
+            }],
+        };
+        let status = tonic::Status::with_details(
+            tonic::Code::Internal,
+            "lagged",
+            carried.encode_to_vec().into(),
+        );
+        let ClientError::Protocol(err) = GrpcTransport::status_to_error(&status) else {
+            panic!("a Protocol error");
+        };
+        assert!(err.is_stream_lagged(), "{err:?}");
+        assert_eq!(err.dropped_event_count(), Some(3));
+    }
+
+    #[test]
+    fn status_to_error_keeps_field_violations_as_data() {
+        use tonic_types::StatusExt as _;
+        let details =
+            tonic_types::ErrorDetails::with_bad_request_violation("message.parts", "empty");
+        let status =
+            tonic::Status::with_error_details(tonic::Code::InvalidArgument, "bad", details);
+        let ClientError::Protocol(err) = GrpcTransport::status_to_error(&status) else {
+            panic!("a Protocol error");
+        };
+        assert_eq!(
+            err.data,
+            Some(serde_json::json!({
+                "@type": "type.googleapis.com/google.rpc.BadRequest",
+                "fieldViolations": [{ "field": "message.parts", "description": "empty" }],
+            }))
+        );
+    }
+
     #[test]
     fn status_to_error_prefers_error_info_reason() {
         use tonic_types::StatusExt as _;

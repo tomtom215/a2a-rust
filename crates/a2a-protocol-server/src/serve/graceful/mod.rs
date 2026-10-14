@@ -53,6 +53,12 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+//! #         .with_description("An example agent")
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use std::sync::Arc;
 //! use std::time::Duration;
 //! use a2a_protocol_server::serve::{ServeConfig, Server};
@@ -67,7 +73,7 @@
 //! #     }
 //! # }
 //! # async fn example() -> std::io::Result<()> {
-//! let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).build().expect("handler"));
+//! let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).with_agent_card(card()).build().expect("handler"));
 //!
 //! let server = Server::bind("0.0.0.0:3000").await?.with_config(
 //!     ServeConfig::new()
@@ -285,7 +291,7 @@ impl Server {
                 break;
             };
 
-            let (stream, _peer) = match accept {
+            let (stream, peer) = match accept {
                 Ok(pair) => pair,
                 Err(e) => {
                     // Transient by nature — a per-connection abort, or a
@@ -299,6 +305,7 @@ impl Server {
             accepted.fetch_add(1, Ordering::Relaxed);
             spawn_connection(
                 stream,
+                peer,
                 Arc::clone(&dispatcher),
                 graceful.watcher(),
                 permit,
@@ -337,6 +344,7 @@ impl Server {
 /// rather than on total accepts.
 fn spawn_connection(
     stream: tokio::net::TcpStream,
+    peer: SocketAddr,
     dispatcher: Arc<impl Dispatcher>,
     watcher: hyper_util::server::graceful::Watcher,
     permit: tokio::sync::OwnedSemaphorePermit,
@@ -355,6 +363,7 @@ fn spawn_connection(
         let service = super::service(
             dispatcher,
             connection.as_ref().map(connections::Connection::requests),
+            peer,
         );
         // The builder is bound rather than chained: `serve_connection` borrows
         // it, and the connection future outlives the statement.

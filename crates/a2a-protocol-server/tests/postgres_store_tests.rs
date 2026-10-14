@@ -21,6 +21,12 @@
 
 #![cfg(feature = "postgres")]
 
+#[path = "support/aes_gcm.rs"]
+mod aes_gcm;
+
+#[path = "support/list_proto.rs"]
+mod list_proto;
+
 use a2a_protocol_server::push::{
     PostgresPushConfigStore, PushConfigStore, TenantAwarePostgresPushConfigStore,
 };
@@ -179,6 +185,136 @@ async fn only_the_tenant_aware_postgres_stores_isolate_tenants() {
         .await
         .expect("push store");
     assert!(!plain_tasks.isolates_tenants() && !plain_configs.isolates_tenants());
+    db.drop_db().await;
+}
+
+/// A config the sealing tests store: both secrets a push config carries.
+fn secret_push_config() -> TaskPushNotificationConfig {
+    let mut config = make_push_config("task-1");
+    config.id = Some("cfg-1".into());
+    config.token = Some("client-token-s3cret".into());
+    config.authentication = Some(a2a_protocol_types::push::AuthenticationInfo {
+        scheme: "Bearer".into(),
+        credentials: Some("webhook-credential-s3cret".into()),
+    });
+    config
+}
+
+/// The one stored `data` value of `table`, read past the store.
+async fn only_stored_value(url: &str, table: &str) -> serde_json::Value {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(url)
+        .await
+        .expect("connect");
+    let rows: Vec<serde_json::Value> = sqlx::query_scalar(&format!("SELECT data FROM {table}"))
+        .fetch_all(&pool)
+        .await
+        .expect("rows");
+    pool.close().await;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    rows.into_iter().next().unwrap()
+}
+
+fn assert_sealed(value: &serde_json::Value) {
+    let text = value
+        .as_str()
+        .unwrap_or_else(|| panic!("not sealed: {value}"));
+    assert!(text.starts_with("a2a-sealed:v1:"), "{text}");
+    for (what, value) in [
+        ("the client's token", "client-token-s3cret"),
+        ("the webhook credential", "webhook-credential-s3cret"),
+    ] {
+        assert!(!text.contains(value), "{what} is stored in the clear");
+    }
+}
+
+/// Spec §13.2: with a cipher the Postgres push store keeps neither secret in
+/// the clear, reads its configs back, and a sealed config moved to another
+/// task does not open.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_push_store_seals_its_configs() {
+    let db = TestDb::create("push_sealed").await;
+    let store = PostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("push store")
+        .with_cipher(std::sync::Arc::new(aes_gcm::Aes256Gcm::new(&[42; 32])));
+    store.set(secret_push_config()).await.expect("set");
+
+    assert_sealed(&only_stored_value(&db.url, "push_configs").await);
+    let read = store
+        .get("task-1", "cfg-1")
+        .await
+        .expect("get")
+        .expect("found");
+    assert_eq!(read.token.as_deref(), Some("client-token-s3cret"));
+    assert_eq!(store.list("task-1").await.expect("list").len(), 1);
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&db.url)
+        .await
+        .expect("connect");
+    sqlx::query("UPDATE push_configs SET task_id = 'task-2'")
+        .execute(&pool)
+        .await
+        .expect("move");
+    pool.close().await;
+    assert!(store.get("task-2", "cfg-1").await.is_err());
+    assert!(store.list("task-2").await.is_err());
+    drop(store);
+    db.drop_db().await;
+}
+
+/// The tenant-aware Postgres push store seals each config to its partition.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_postgres_push_store_seals_each_config_to_its_tenant() {
+    let db = TestDb::create("tenant_push_sealed").await;
+    let store = TenantAwarePostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("push store")
+        .with_cipher(std::sync::Arc::new(aes_gcm::Aes256Gcm::new(&[42; 32])));
+    TenantContext::scope("tenant-a", store.set(secret_push_config()))
+        .await
+        .expect("set");
+
+    assert_sealed(&only_stored_value(&db.url, "tenant_push_configs").await);
+    let read = TenantContext::scope("tenant-a", store.get("task-1", "cfg-1"))
+        .await
+        .expect("get")
+        .expect("found");
+    assert_eq!(read.token.as_deref(), Some("client-token-s3cret"));
+    assert_eq!(
+        TenantContext::scope("tenant-a", store.list("task-1"))
+            .await
+            .expect("list")
+            .len(),
+        1
+    );
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&db.url)
+        .await
+        .expect("connect");
+    sqlx::query("UPDATE tenant_push_configs SET tenant_id = 'tenant-b'")
+        .execute(&pool)
+        .await
+        .expect("move");
+    pool.close().await;
+    assert!(
+        TenantContext::scope("tenant-b", store.get("task-1", "cfg-1"))
+            .await
+            .is_err()
+    );
+    assert!(
+        TenantContext::scope("tenant-b", store.list("task-1"))
+            .await
+            .is_err()
+    );
+    drop(store);
     db.drop_db().await;
 }
 
@@ -381,7 +517,8 @@ fn make_task_with_ts(id: &str, context_id: &str, ts: &str) -> Task {
 
 /// §3.1.4: tasks with status timestamps sort by that timestamp (descending),
 /// not by write order; a status-preserving re-save keeps its position; and
-/// `statusTimestampAfter` filters strictly-after.
+/// `statusTimestampAfter` includes its bound (a2a.proto: "greater than or
+/// equal to"; until 2026-10-13 this pinned strictly-after).
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn task_list_status_timestamp_ordering_and_filter() -> A2aResult<()> {
@@ -423,7 +560,7 @@ async fn task_list_status_timestamp_ordering_and_filter() -> A2aResult<()> {
         "a status-preserving re-save must not reorder the list"
     );
 
-    // statusTimestampAfter is strictly-after (boundary excluded).
+    // statusTimestampAfter includes the boundary.
     let filtered = store
         .list(&ListTasksParams {
             status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
@@ -431,7 +568,11 @@ async fn task_list_status_timestamp_ordering_and_filter() -> A2aResult<()> {
         })
         .await?;
     let ids: Vec<&str> = filtered.tasks.iter().map(|t| t.id.0.as_str()).collect();
-    assert_eq!(ids, vec!["newest"], "boundary task must be excluded");
+    assert_eq!(
+        ids,
+        vec!["newest", "middle"],
+        "the boundary task is included"
+    );
 
     db.drop_db().await;
     Ok(())
@@ -855,7 +996,7 @@ async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<(
         let ids: Vec<&str> = by_status.tasks.iter().map(|t| t.id.0.as_str()).collect();
         assert_eq!(ids, vec!["b2"], "status filter");
 
-        // statusTimestampAfter is strictly-after
+        // statusTimestampAfter includes the bound
         let after = store
             .list(&ListTasksParams {
                 status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
@@ -864,7 +1005,11 @@ async fn tenant_task_store_filters_paginates_deletes_and_counts() -> A2aResult<(
             .await?;
         let mut ids: Vec<&str> = after.tasks.iter().map(|t| t.id.0.as_str()).collect();
         ids.sort_unstable();
-        assert_eq!(ids, vec!["b1", "b2"], "strictly after the second timestamp");
+        assert_eq!(
+            ids,
+            vec!["a2", "b1", "b2"],
+            "at or after the second timestamp"
+        );
 
         // An unparseable value matches nothing rather than everything.
         let garbage = store
@@ -3051,6 +3196,7 @@ async fn caller_isolation_holds_on_the_tenant_postgres_stores() {
 
     let db = TestDb::create("caller_isolation").await;
     let handler = RequestHandlerBuilder::new(IsolationWorker)
+        .without_agent_card()
         .with_task_store(
             TenantAwarePostgresTaskStore::new(&db.url)
                 .await
@@ -3107,5 +3253,19 @@ async fn caller_isolation_holds_on_the_tenant_postgres_stores() {
     assert!(bobs.tasks.is_empty(), "{bobs:?}");
 
     drop(handler);
+    db.drop_db().await;
+}
+
+/// a2a.proto's `ListTasks` fields; see `support/list_proto.rs`.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn postgres_list_follows_the_proto() {
+    let db = TestDb::create("list_proto").await;
+    let plain = PostgresTaskStore::new(&db.url).await.expect("open store");
+    list_proto::list_follows_the_proto(&plain).await;
+    let tenant = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant-aware store");
+    list_proto::list_follows_the_proto(&tenant).await;
     db.drop_db().await;
 }

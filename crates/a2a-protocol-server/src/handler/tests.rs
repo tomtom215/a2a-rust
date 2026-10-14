@@ -27,6 +27,7 @@ agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 #[test]
 fn default_build_has_no_tenant_resolver() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .build()
         .expect("default build should succeed");
     assert!(
@@ -49,6 +50,7 @@ fn tenant_overrides_resolve_ahead_of_the_defaults() {
     use std::time::Duration;
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_config(
             PerTenantConfig::builder()
                 .default_limits(TenantLimits::builder().max_concurrent_tasks(1).build())
@@ -77,6 +79,7 @@ fn tenant_overrides_resolve_ahead_of_the_defaults() {
 #[test]
 fn default_build_has_no_tenant_config() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .build()
         .expect("default build should succeed");
     assert!(
@@ -90,6 +93,7 @@ fn default_build_has_no_tenant_config() {
 #[test]
 fn tenant_resolver_returns_some_when_configured() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .expect("build with tenant resolver");
@@ -115,6 +119,7 @@ fn headers_with(tenant: &str) -> HashMap<String, String> {
 #[tokio::test]
 async fn resolve_tenant_uses_resolver_when_client_omits_tenant() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
@@ -130,6 +135,7 @@ async fn resolve_tenant_uses_resolver_when_client_omits_tenant() {
 #[tokio::test]
 async fn resolve_tenant_rejects_client_tenant_mismatch() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .unwrap();
@@ -147,6 +153,7 @@ async fn resolve_tenant_rejects_client_tenant_mismatch() {
 #[tokio::test]
 async fn resolve_tenant_accepts_matching_client_tenant() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
@@ -164,6 +171,7 @@ async fn resolve_tenant_default_falls_back_to_empty_when_unresolved() {
     // Without strict mode, an unresolved tenant (no header) uses the
     // documented default partition — preserving the resolver contract.
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .unwrap();
@@ -182,6 +190,7 @@ async fn resolve_tenant_strict_rejects_unresolved() {
     // Strict mode: a request the resolver cannot map to a tenant (no
     // header) is rejected rather than silently sharing the `""` partition.
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .require_resolved_tenant()
         .build()
@@ -197,6 +206,7 @@ async fn resolve_tenant_strict_rejects_unresolved() {
 async fn resolve_tenant_without_resolver_trusts_client_value() {
     // No resolver → single-tenant / trusted-caller mode: client value used.
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
         .build()
         .unwrap();
@@ -210,6 +220,7 @@ async fn resolve_tenant_without_resolver_trusts_client_value() {
 #[test]
 fn tenant_resolver_returns_none_when_not_configured() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .build()
         .expect("default build");
     assert!(
@@ -227,6 +238,7 @@ fn tenant_config_returns_some_when_configured() {
         .build();
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_config(config)
         .build()
         .expect("build with tenant config");
@@ -239,6 +251,7 @@ fn tenant_config_returns_some_when_configured() {
 #[test]
 fn tenant_config_returns_none_when_not_configured() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .build()
         .expect("default build");
     assert!(
@@ -255,6 +268,7 @@ fn tenant_config_preserves_values() {
         .build();
 
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_config(config)
         .build()
         .expect("build with per-tenant overrides");
@@ -269,6 +283,7 @@ fn tenant_config_preserves_values() {
 #[test]
 fn handler_with_both_tenant_fields() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .with_tenant_config(
             PerTenantConfig::builder()
@@ -287,6 +302,7 @@ fn handler_with_both_tenant_fields() {
 #[test]
 fn debug_impl_does_not_panic() {
     let handler = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .build()
         .expect("default build");
     let debug = format!("{handler:?}");
@@ -298,8 +314,12 @@ fn debug_impl_does_not_panic() {
 
 #[test]
 fn debug_shows_tenant_resolver_presence() {
-    let without = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+    let without = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let with = RequestHandlerBuilder::new(DummyExecutor)
+        .without_agent_card()
         .with_tenant_resolver(HeaderTenantResolver::default())
         .build()
         .unwrap();

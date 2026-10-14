@@ -43,6 +43,9 @@ pub fn jwt_validate(token: &str) -> bool {
 /// The REST binding's routing of a request line: the tenant prefix split off
 /// the path, then the `ListTasks` query parameters, as `dispatch_rest` reads
 /// them.
+///
+/// The parameters are `None` when a value does not parse, which the binding
+/// refuses.
 #[must_use]
 pub fn rest_route(
     path: &str,
@@ -50,10 +53,10 @@ pub fn rest_route(
 ) -> (
     Option<String>,
     String,
-    a2a_protocol_types::params::ListTasksParams,
+    Option<a2a_protocol_types::params::ListTasksParams>,
 ) {
     let (tenant, rest) = crate::dispatch::rest::query::strip_tenant_prefix(path);
-    let params = crate::dispatch::rest::query::parse_list_tasks_query(query, tenant);
+    let params = crate::dispatch::rest::query::parse_list_tasks_query(query, tenant).ok();
     (tenant.map(str::to_owned), rest.to_owned(), params)
 }
 
@@ -98,10 +101,12 @@ mod tests {
         );
         assert_eq!(tenant.as_deref(), Some("acme"));
         assert_eq!(rest, "/tasks");
+        let p = p.expect("every value parses");
         assert_eq!(p.tenant.as_deref(), Some("acme"));
         assert_eq!(p.context_id.as_deref(), Some("c 1"));
         assert_eq!(p.page_size, Some(7));
         assert_eq!(p.include_artifacts, Some(true));
+        assert!(rest_route("/tasks", "pageSize=seven").2.is_none());
     }
 
     #[test]

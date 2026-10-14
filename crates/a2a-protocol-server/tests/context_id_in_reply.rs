@@ -27,7 +27,10 @@ agent_executor!(Reply, |_ctx, queue| async {
 });
 
 fn handler() -> RequestHandler {
-    RequestHandlerBuilder::new(Reply).build().expect("handler")
+    RequestHandlerBuilder::new(Reply)
+        .without_agent_card()
+        .build()
+        .expect("handler")
 }
 
 /// The context the server generated for the one task it holds.

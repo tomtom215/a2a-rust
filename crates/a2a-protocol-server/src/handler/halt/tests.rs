@@ -31,6 +31,7 @@ agent_executor!(Sleeper, |ctx, queue| async {
 fn handler() -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Sleeper)
+            .without_agent_card()
             .with_task_store(TenantAwareInMemoryTaskStore::new())
             .build()
             .expect("handler"),
@@ -189,6 +190,7 @@ async fn a_halt_and_a_resume_are_recorded_with_the_operator() {
 
     let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
     let h = RequestHandlerBuilder::new(Sleeper)
+        .without_agent_card()
         .with_task_store(TenantAwareInMemoryTaskStore::new())
         .with_audit(Arc::clone(&log))
         .build()

@@ -41,6 +41,13 @@ impl ServerInterceptor for LoggingInterceptor {
 ### Adding Interceptors
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
 # use std::future::Future;
 # use std::pin::Pin;
 # use a2a_protocol_sdk::prelude::*;
@@ -56,6 +63,7 @@ impl ServerInterceptor for LoggingInterceptor {
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let my_executor = MyAgent;
 let handler = RequestHandlerBuilder::new(my_executor)
+    .with_agent_card(card())
     .with_interceptor(BearerTokenAuthInterceptor::new(["s3cret-token"]))
     .with_interceptor(LoggingInterceptor)
     .with_interceptor(RateLimitInterceptor::new(RateLimitConfig::default())?)
@@ -303,6 +311,13 @@ impl ServerInterceptor for MetricsInterceptor {
 The built-in `RateLimitInterceptor` provides per-caller fixed-window rate limiting:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -318,6 +333,7 @@ let limiter = RateLimitInterceptor::new(
 
 // Add to handler builder:
 let handler = RequestHandlerBuilder::new(my_executor)
+    .with_agent_card(card())
     .with_interceptor(limiter)
     .build()?;
 # Ok(())
@@ -351,11 +367,18 @@ under the `postgres` feature). For sliding windows, implement a custom
 Both client and server support ordered interceptor chains. The chain is built incrementally:
 
 ```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
 # fn main() {
-# let builder = RequestHandlerBuilder::new(MyAgent);
+# let builder = RequestHandlerBuilder::new(MyAgent).with_agent_card(card());
 # let first = BearerTokenAuthInterceptor::new(["t"]);
 # let second = ApiKeyAuthInterceptor::new(["k"]);
 # let third = RateLimitInterceptor::new(RateLimitConfig::default()).unwrap();

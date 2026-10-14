@@ -170,7 +170,7 @@ match client.send_message(params).await {
 # }
 ```
 
-Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, `TooManyPendingRequests`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. Over gRPC, `DeadlineExceeded` maps to `Timeout`, and `Unavailable` or a response truncated before its `grpc-status` maps to `HttpClient` (all retryable). `ResourceExhausted` maps to `UnexpectedStatus { status: 429 }` (retryable), and `Unauthenticated`/`PermissionDenied` map to `UnexpectedStatus` 401/403 (not retryable). A peer's `Cancelled` is a non-retryable `Protocol` error.
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, `TooManyPendingRequests`, `UnexpectedStatus` with codes 429, 502, 503, or 504, and a `Protocol` error whose details carry a `google.rpc.RetryInfo` delay, which is how a rate limit is refused over JSON-RPC and WebSocket. `retry_after()` returns that delay, or a 429's `Retry-After`, and the retry policy waits it out instead of its own backoff; both are retried even for `SendMessage`, because the request was refused before it was processed. Over gRPC, `DeadlineExceeded` maps to `Timeout`, and `Unavailable` or a response truncated before its `grpc-status` maps to `HttpClient` (all retryable). `ResourceExhausted` maps to `UnexpectedStatus { status: 429 }` (retryable), and `Unauthenticated`/`PermissionDenied` map to `UnexpectedStatus` 401/403 (not retryable). A peer's `Cancelled` is a non-retryable `Protocol` error.
 
 Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering-herd storms when multiple clients experience the same failure simultaneously.
 
@@ -264,6 +264,7 @@ async fn delegate(downstream_url: &str) -> A2aResult<Option<String>> {
 | Client error | Task's failure class |
 |---|---|
 | `Protocol(e)` from the downstream agent | passed through unchanged (code, message, data), classified by its code |
+| `Protocol(e)` naming a retry delay (a downstream rate limit) | passed through with its delay, `Transient` |
 | timeouts, connection failures, HTTP `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `Transient` (retry with backoff) |
 | anything else | `Internal` |
 
@@ -297,7 +298,8 @@ while let Some(event) = stream.next().await {
 ```
 
 A reader that falls too far behind is cut off — over SSE when it lags the
-server's broadcast queue, over WebSocket once 64 frames are waiting unread —
+server's broadcast queue further than the task's event log can make up, over
+WebSocket once 64 frames are waiting unread —
 with an error that answers `is_stream_lagged()`. Resubscribe
 (`subscribe_to_task_from` with the stream's `last_event_id()` over SSE, or
 `subscribe_to_task`) to continue; see

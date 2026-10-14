@@ -23,6 +23,9 @@ pub struct ProcessorLinks {
     pub cancel: tokio_util::sync::CancellationToken,
     /// The queue's terminal gate, whose tickets the processor answers.
     pub gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
+    /// The queue's mark of how far its events are stored, which the
+    /// processor advances.
+    pub applied: Option<std::sync::Arc<crate::streaming::event_queue::applied::AppliedMark>>,
 }
 
 /// Returns `true` if appending `new_parts` more parts to an artifact that

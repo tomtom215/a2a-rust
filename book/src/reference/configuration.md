@@ -8,12 +8,16 @@ Complete reference of all configuration options across a2a-rust crates.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_agent_card` | `AgentCard` | None | Discovery card for `/.well-known/agent-card.json` |
-| `with_task_store` | `impl TaskStore` | `InMemoryTaskStore` | Custom task storage backend |
-| `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store |
-| `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore` | Custom push config storage |
-| `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation |
+| `with_agent_card` | `AgentCard` | Required | Discovery card for `/.well-known/agent-card.json`; the handler checks requests against what it declares |
+| `with_extended_agent_card` | `AgentCard` | The public card | What `GetExtendedAgentCard` serves to an authenticated caller (§3.1.11, §13.3); checked and advertised on like the public card |
+| `without_agent_card()` | — | — | Build without a card, which `build()` otherwise refuses (spec §8.1): for a card published elsewhere, or a handler that is not a public A2A server |
+| `with_task_store` | `impl TaskStore` | `InMemoryTaskStore`; `TenantAwareInMemoryTaskStore` when tasks are isolated by caller | Custom task storage backend |
+| `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store; per caller partition when tasks are isolated by caller, so the store holds up to 1,000 times the capacity |
+| `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore`; the tenant-aware one when the task store partitions by tenant | Custom push config storage |
+| `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation. Without one, every push-config operation answers `PushNotificationNotSupported`, and `build()` refuses a card that declares `pushNotifications` (spec §3.3.4) |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
+| `isolate_tasks_by_caller()` | — | On, with an authenticating interceptor | A partition per caller within a tenant (spec §13.1). On by default for the callers an authenticating interceptor identifies; calling it also refuses a request with no identity. See [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant) |
+| `share_tasks_across_callers()` | — | Off | Every caller in a tenant sees its tasks, and stores that do not partition by tenant are accepted |
 | `with_executor_timeout` | `Duration` | 1 hour | Max time for executor completion (`DEFAULT_EXECUTOR_TIMEOUT`); `without_executor_timeout()` removes the bound |
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
@@ -30,15 +34,15 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_metadata_size` | `usize` | 1 MiB | Maximum serialized metadata size |
 | `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold |
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
-| `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
+| `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
 | `push_delivery_budget` | `Duration` | 30s | Total push-delivery time per event, across all configs |
-| `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn's executor to return |
+| `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
 | `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
-| `subscribe_reattach_interval` | `Duration` | 250ms | How often an idle `SubscribeToTask` stream re-checks whether its task finished, once the turn's queue closed |
+| `subscribe_reattach_interval` | `Duration` | 250ms | How often a `SubscribeToTask` stream between turns checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays |
 | `subscribe_max_idle` | `Duration` | 5 min | How long a `SubscribeToTask` stream waits on a parked task before ending; the client resubscribes |
 | `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events a `Last-Event-ID` resumption replays. The offset is client-supplied, so the cap bounds the read; every replayed frame carries its own `id:`, so a truncated replay is resumable |
 | `subscribe_replay_catchup` | `Duration` | 2s | How long a resuming stream waits for the event log to catch up with what was already broadcast. Zero disables the wait; on expiry the shortfall is logged and counted under `event_log_catchup` |
@@ -80,6 +84,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
 | `require_version_header` | `bool` | true | Reject a data-plane request with no `A2A-Version` header as `VersionNotSupported` (spec §3.6.2: absent means 0.3) |
+| `agent_card_max_age` | `u32` | 3600 | `Cache-Control: max-age`, in seconds, for the public agent card; set it to how often the card changes (spec §8.6.1) |
 
 ### GrpcConfig
 
@@ -132,7 +137,7 @@ take the same three through their own `with_completion_grace`,
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Event queue type | `broadcast` | Fan-out to multiple subscribers; a reader that falls behind the ring receives a `streamLagged` error and its stream ends (no silent gap) |
+| Event queue type | `broadcast` | Fan-out to multiple subscribers; a reader that falls behind the ring catches up from the task's event log, and when the log cannot supply what it missed it receives a `streamLagged` error and its stream ends (no silent gap) |
 | Rate limiter cleanup interval | 256 checks | Stale buckets (from departed callers) evicted every 256 `check()` calls |
 | Rate limiter window CAS | Lock-free | Window transitions use `compare_exchange` to avoid TOCTOU races |
 | Credential store poisoning | Fail-fast | `InMemoryCredentialsStore` panics on poisoned locks rather than returning `None` |
@@ -143,7 +148,7 @@ take the same three through their own `with_completion_grace`,
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_protocol_binding` | `impl Into<String>` | `"JSONRPC"` (`new`); the card's interface chosen by `preferred_bindings` (`from_card`) | Transport: `"JSONRPC"`, `"HTTP+JSON"` (alias `"REST"`), or `"GRPC"` — the last needs `build_grpc()`; `build()` refuses it |
+| `with_protocol_binding` | `impl Into<String>` | `"JSONRPC"` (`new`); the card's first supported interface (`from_card`); the first ranked one the card offers (`from_card_preferring`) | Transport: `"JSONRPC"`, `"HTTP+JSON"` (alias `"REST"`), or `"GRPC"` — the last needs `build_grpc()`; `build()` refuses it |
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | Establishing a stream: until the response headers (gRPC: until the call is accepted) |
@@ -196,7 +201,7 @@ and the `with_*` setters.
 |--------|---------|-------------|
 | `Cache-Control` | `public, max-age=3600` | Configurable max-age (default 1 hour) |
 | `ETag` | Auto-computed | Content hash |
-| `Last-Modified` | Auto-set | Timestamp of last change |
+| `Last-Modified` | Static handler: when it loaded the card | Not sent by the dynamic handler, which has no modification date |
 
 ## Feature Flags
 

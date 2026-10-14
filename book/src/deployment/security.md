@@ -67,7 +67,14 @@ something stops it. The bundled `HttpPushSender` does:
 * the validated IP is pinned, so DNS rebinding between check and connect does
   not help an attacker;
 * credentials are checked for `\r` and `\n` before they reach a header;
-* every delivery is capped at 30 seconds.
+* every delivery is capped at 30 seconds;
+* with `https_only()`, an `http://` webhook is refused at config creation and
+  again at delivery, so payloads and credentials never cross the network in
+  plaintext (opt-in: spec §13.2 says webhook URLs SHOULD use HTTPS);
+* with a `PushConfigCipher` (`with_cipher` on the SQL push-config stores),
+  configs are sealed at rest, bound to their row, so the table holds no token
+  or credential in the clear (opt-in: spec §13.2 says agents SHOULD store them
+  securely).
 
 If you replace the sender, you inherit all of that as your responsibility. The
 validation helpers are public and reusable — use them rather than reimplementing
@@ -108,7 +115,7 @@ side reported nothing. So `build()` **refuses** a signed card it would
 otherwise have to edit, and names the URIs to add:
 
 ```rust
-use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::extensions::AgentExtension;
 use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
@@ -120,7 +127,9 @@ fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
         "Triage Agent",
         "1.0.0",
         AgentInterface::jsonrpc("https://agent.example/rpc"),
-    );
+    )
+    .with_description("Triages incoming incidents")
+    .with_skill(AgentSkill::new("triage", "Triage", "Triages an incident").with_tags(["triage"]));
 
     // Declare first. `AgentExtension::new` leaves `required` unset, which is
     // what a non-required extension means on the wire.
@@ -158,7 +167,9 @@ Stated because a security page that lists only strengths is not one.
   build provenance attestations described in `PROVENANCE.md`, not the tag.
 * **No rate limiting is applied unless you wire it.** `rate_limit_rps` is
   counted in an interceptor; setting the field without installing
-  `RateLimitInterceptor` does nothing.
+  `RateLimitInterceptor` does nothing. Failed credentials are throttled only
+  with `AuthFailureThrottle` registered before the authenticator (see
+  [Authentication](../building-agents/authentication.md#throttling-guessed-credentials)).
 * **The SLIMRPC binding is out of scope for the published crates' audit
   surface.** It pulls 359 transitive dependencies including a native C crypto
   build, which is why it lives outside the workspace with its own lockfile and

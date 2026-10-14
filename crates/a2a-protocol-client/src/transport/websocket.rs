@@ -194,7 +194,9 @@ struct WriteCommand {
 /// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
 /// which cover every field; a struct literal is not available outside this
 /// crate, so a field added later does not break callers.
-#[derive(Debug, Clone)]
+///
+/// Its `Debug` prints the names of `extra_headers`, never their values.
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct WebSocketTransportConfig {
     /// Timeout for unary responses and for the first frame of a stream.
@@ -210,6 +212,9 @@ pub struct WebSocketTransportConfig {
     /// `Authorization` header produced by an
     /// [`AuthInterceptor`](crate::AuthInterceptor)).
     pub extra_headers: HashMap<String, String>,
+    /// The extensions to ask the agent for; see
+    /// [`with_extensions`](Self::with_extensions). Default: none.
+    pub extensions: Vec<String>,
     /// How long the connect may take: TCP, TLS, and the HTTP upgrade
     /// handshake, together. Default: 10 seconds.
     ///
@@ -252,6 +257,42 @@ pub struct WebSocketTransportConfig {
     /// [`ClientError::TooManyPendingRequests`] rather than queued invisibly;
     /// it is retryable, and a later attempt finds room once responses arrive.
     pub max_pending_requests: usize,
+    /// See [`with_tls_config`](Self::with_tls_config).
+    #[cfg(feature = "tls-rustls")]
+    tls: Option<WsTls>,
+}
+
+/// A `wss://` connection's TLS configuration.
+///
+/// `rustls::ClientConfig` holds trait objects with no unwind-safety bounds;
+/// held as it is, it would cost this config, and the transport holding it,
+/// the `RefUnwindSafe` they had in 0.13.0 (see the auto-trait assertion in
+/// this file's tests). Nothing here mutates it: it is read once per connect.
+#[cfg(feature = "tls-rustls")]
+#[derive(Clone, Debug)]
+struct WsTls(Arc<rustls::ClientConfig>);
+
+#[cfg(feature = "tls-rustls")]
+impl std::panic::UnwindSafe for WsTls {}
+#[cfg(feature = "tls-rustls")]
+impl std::panic::RefUnwindSafe for WsTls {}
+
+impl std::fmt::Debug for WebSocketTransportConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut f = f.debug_struct("WebSocketTransportConfig");
+        f.field("request_timeout", &self.request_timeout)
+            .field(
+                "extra_header_names",
+                &crate::redact::names(self.extra_headers.keys()),
+            )
+            .field("extensions", &self.extensions)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("max_message_size", &self.max_message_size)
+            .field("max_pending_requests", &self.max_pending_requests);
+        #[cfg(feature = "tls-rustls")]
+        f.field("tls", &self.tls);
+        f.finish()
+    }
 }
 
 impl Default for WebSocketTransportConfig {
@@ -260,8 +301,11 @@ impl Default for WebSocketTransportConfig {
             request_timeout: Duration::from_secs(30),
             connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
+            extensions: Vec::new(),
             max_message_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             max_pending_requests: DEFAULT_MAX_PENDING_REQUESTS,
+            #[cfg(feature = "tls-rustls")]
+            tls: None,
         }
     }
 }
@@ -303,10 +347,44 @@ impl WebSocketTransportConfig {
         self
     }
 
+    /// Asks the agent to use these extensions on every request of the
+    /// connection: the `A2A-Extensions` service parameter (spec §3.2.6), sent
+    /// with the upgrade, which is where the server reads a WebSocket's
+    /// service parameters. An `A2A-Extensions` entry in
+    /// [`extra_headers`](Self::extra_headers) replaces it.
+    ///
+    /// The connect refuses a URI that is empty, or holds a comma, whitespace
+    /// or anything but visible ASCII.
+    #[must_use]
+    pub fn with_extensions<I, S>(mut self, uris: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extensions = uris.into_iter().map(Into::into).collect();
+        self
+    }
+
     /// Sets the maximum incoming message size in bytes.
     #[must_use]
     pub const fn with_max_message_size(mut self, max_bytes: usize) -> Self {
         self.max_message_size = max_bytes;
+        self
+    }
+
+    /// Sets the TLS configuration for a `wss://` endpoint; a `ws://` one does
+    /// not use it.
+    ///
+    /// Without one the transport uses
+    /// [`default_tls_config`](crate::tls::default_tls_config), Mozilla's roots
+    /// verified with `ring`, as the HTTP transports do. For a private CA pass
+    /// [`tls_config_with_extra_roots`](crate::tls::tls_config_with_extra_roots).
+    /// Its ALPN list, if it has one, must not offer `h2`: the upgrade is an
+    /// HTTP/1.1 request, and a server that picks `h2` cannot answer it.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(mut self, config: rustls::ClientConfig) -> Self {
+        self.tls = Some(WsTls(Arc::new(config)));
         self
     }
 }
@@ -515,6 +593,14 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
                 a2a_protocol_types::A2A_VERSION,
             ),
         );
+        // §3.2.6, also before extra_headers for the same reason.
+        if let Some(value) = crate::extensions::header_value(&config.extensions)? {
+            let value = tokio_tungstenite::tungstenite::http::HeaderValue::try_from(value)
+                .map_err(|e| ClientError::Transport(format!("invalid extension URIs: {e}")))?;
+            ws_request
+                .headers_mut()
+                .insert(crate::extensions::HEADER, value);
+        }
         for (k, v) in &config.extra_headers {
             // Fail closed on an unparseable header rather than silently dropping
             // it: a rejected `Authorization` header must not let the handshake
@@ -544,18 +630,32 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         // Bounded, because nothing below this line is. A server that accepts
         // the TCP connection and never answers the upgrade leaves this future
         // pending with no OS timeout to rescue it.
-        let (ws_stream, _resp) = tokio::time::timeout(
-            config.connect_timeout,
-            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true),
-        )
-        .await
-        .map_err(|_| {
-            ClientError::Transport(format!(
-                "WebSocket connect to {endpoint} did not complete within {:?}",
-                config.connect_timeout
-            ))
-        })?
-        .map_err(connect_error)?;
+        // The connector is used only for a `wss://` request; `ws://` stays
+        // plain whatever it is.
+        #[cfg(feature = "tls-rustls")]
+        let connect = tokio_tungstenite::connect_async_tls_with_config(
+            ws_request,
+            Some(ws_config),
+            true,
+            Some(tokio_tungstenite::Connector::Rustls(
+                config.tls.as_ref().map_or_else(
+                    || Arc::new(crate::tls::default_tls_config()),
+                    |tls| Arc::clone(&tls.0),
+                ),
+            )),
+        );
+        #[cfg(not(feature = "tls-rustls"))]
+        let connect =
+            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true);
+        let (ws_stream, _resp) = tokio::time::timeout(config.connect_timeout, connect)
+            .await
+            .map_err(|_| {
+                ClientError::Transport(format!(
+                    "WebSocket connect to {endpoint} did not complete within {:?}",
+                    config.connect_timeout
+                ))
+            })?
+            .map_err(connect_error)?;
 
         let (ws_writer, ws_reader) = ws_stream.split();
 
@@ -922,6 +1022,11 @@ fn connect_error(e: tokio_tungstenite::tungstenite::Error) -> ClientError {
             retry_after: None,
         },
         Error::Io(io) => ClientError::HttpClient(format!("WebSocket connect failed: {io}")),
+        Error::Url(tokio_tungstenite::tungstenite::error::UrlError::TlsFeatureNotEnabled) => {
+            ClientError::Transport(
+                "WebSocket connect failed: wss:// needs this crate's `tls-rustls` feature".into(),
+            )
+        }
         other => ClientError::Transport(format!("WebSocket connect failed: {other}")),
     }
 }
@@ -1240,6 +1345,18 @@ mod tests {
         assert!(validate_ws_url("wss://agent.example.com/a2a").is_ok());
     }
 
+    /// A `wss://` endpoint in a build without TLS names the feature that
+    /// enables it, rather than tungstenite's "TLS support not compiled in".
+    #[test]
+    fn a_wss_connect_without_tls_names_the_feature() {
+        use tokio_tungstenite::tungstenite::{Error, error::UrlError};
+        let err = connect_error(Error::Url(UrlError::TlsFeatureNotEnabled));
+        assert!(
+            matches!(&err, ClientError::Transport(m) if m.contains("`tls-rustls`")),
+            "{err}"
+        );
+    }
+
     #[test]
     fn is_stream_terminal_completed_status() {
         let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"completed"}}}}"#;
@@ -1299,8 +1416,8 @@ mod tests {
         );
         let err = result.expect_err("the sentinel must not parse as a StreamResponse");
         assert!(
-            err.to_string().contains("unknown variant"),
-            "expected an unknown-variant error, got: {err}"
+            err.to_string().contains("this one sets none"),
+            "expected a no-member error, got: {err}"
         );
     }
 

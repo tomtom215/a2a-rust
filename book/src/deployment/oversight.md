@@ -39,8 +39,8 @@ handler.halt(HaltScope::All, "oncall:alice", "model provider incident").await;
 While a scope is halted:
 
 - **New sends are refused,** including sends that would continue a waiting task.
-  HTTP+JSON answers `503` with status `UNAVAILABLE`, gRPC `UNAVAILABLE`, and
-  JSON-RPC an internal error. Each message reads `halted: <reason>`.
+  HTTP+JSON answers `503` with status `UNAVAILABLE`, gRPC and SLIMRPC
+  `UNAVAILABLE`, and JSON-RPC an internal error. Each message reads `halted: <reason>`.
 - **Running tasks are stopped.** Each task's cancellation token fires. An
   executor that returns on it without a terminal state has its task ended
   `canceled` by its `cancel` hook, as on shutdown. An executor that uses a
@@ -130,19 +130,36 @@ client.send_message(MessageSendParams::new(reply)).await?;
 On the server, `with_approval_gate` decides which decisions reach the executor:
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
 use a2a_protocol_server::approval::ApprovalGate;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
 # struct MyAgent;
 # a2a_protocol_server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
 let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card())
     .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
         ("token-a", "alice"), ("token-b", "bob"), ("token-agent", "billing-agent"),
     ]))
     // Only these two may approve, and never the caller whose run asked.
     .with_approval_gate(ApprovalGate::new().with_approvers(["alice", "bob"]))
+    // The approver has to reach the requester's task.
+    .share_tasks_across_callers()
     .build();
 # let _ = handler;
 ```
+
+An approver answers by continuing the requester's task, so the two must
+share it. With an authenticating interceptor, tasks are isolated by caller
+unless the builder says otherwise, and `build()` refuses a gate that wants a
+second caller until it does: call `share_tasks_across_callers()`, as above,
+or let requesters answer their own runs with
+`ApprovalGate::allowing_self_approval()`.
 
 A continuation that carries a decision is refused before anything runs when:
 

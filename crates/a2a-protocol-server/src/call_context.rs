@@ -26,11 +26,51 @@
 //! assert_eq!(ctx.http_headers().get("authorization").map(String::as_str),
 //!            Some("Bearer tok_abc123"));
 //! ```
+//!
+//! # The peer's address
+//!
+//! [`peer_addr`](CallContext::peer_addr) is the address of the connection the
+//! call arrived on. It travels in the headers map under [`PEER_ADDR_KEY`], as
+//! the request path does under `":path"`: a real header cannot carry either
+//! name, since a colon is not valid in an HTTP field name or a gRPC metadata
+//! key, so a client cannot supply them. Each binding sets it when the server
+//! knows the address:
+//!
+//! - JSON-RPC and REST: from the [`PeerAddr`] request extension, which
+//!   [`serve`](fn@crate::serve), [`serve_with_addr`](crate::serve_with_addr) and
+//!   [`Server`](crate::Server) insert. A server of your own that calls
+//!   [`Dispatcher::dispatch`](crate::Dispatcher::dispatch) inserts it the same
+//!   way.
+//! - The axum router: from [`PeerAddr`], or from axum's
+//!   `ConnectInfo<SocketAddr>` when it is served with
+//!   `into_make_service_with_connect_info::<SocketAddr>()`.
+//! - WebSocket and gRPC: from the accepted TCP stream.
+//!
+//! Behind a reverse proxy this is the proxy's address. The client's is in
+//! `x-forwarded-for`, which only the deployment knows how far to trust.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::OnceLock;
 
 use a2a_protocol_types::trace_context::TraceContext;
+
+/// The headers-map key under which a binding records the address of the
+/// connection a call arrived on, as `ip:port`; see [`CallContext::peer_addr`].
+///
+/// A transport of your own that calls the
+/// [`RequestHandler`](crate::RequestHandler) directly sets it in the headers
+/// map it passes.
+pub const PEER_ADDR_KEY: &str = ":peer-addr";
+
+/// The address of the connection a request arrived on, as an HTTP request
+/// extension.
+///
+/// The SDK's servers insert it into each request before dispatching it, and
+/// the dispatchers copy it to [`CallContext::peer_addr`]; see the
+/// [module docs](self).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PeerAddr(pub SocketAddr);
 
 /// Metadata about the current server-side method call.
 ///
@@ -225,6 +265,16 @@ impl CallContext {
     pub fn tenant(&self) -> Option<&str> {
         self.tenant.as_deref()
     }
+
+    /// The address of the connection this call arrived on, when the binding
+    /// knew it; see the [module docs](self).
+    ///
+    /// Read from the headers map's [`PEER_ADDR_KEY`] entry; `None` when there
+    /// is none or it does not parse as a socket address.
+    #[must_use]
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.http_headers.get(PEER_ADDR_KEY)?.parse().ok()
+    }
 }
 
 impl CallContext {
@@ -279,6 +329,13 @@ impl CallContext {
     pub fn with_request_id(mut self, id: impl Into<String>) -> Self {
         self.request_id = Some(id.into());
         self
+    }
+
+    /// Sets the address of the connection the call arrived on (the
+    /// [`PEER_ADDR_KEY`] entry of the headers map).
+    #[must_use]
+    pub fn with_peer_addr(self, addr: SocketAddr) -> Self {
+        self.with_http_header(PEER_ADDR_KEY, addr.to_string())
     }
 
     /// Sets the HTTP headers map (replacing any existing headers).
@@ -372,6 +429,30 @@ mod tests {
     fn with_extensions_sets_field() {
         let ctx = CallContext::new("test").with_extensions(vec!["ext1".into(), "ext2".into()]);
         assert_eq!(ctx.extensions(), &["ext1", "ext2"]);
+    }
+
+    #[test]
+    fn peer_addr_round_trips_through_the_headers_map() {
+        for addr in [
+            "203.0.113.7:4711",
+            "[2001:db8::1]:443",
+            "[::ffff:192.0.2.1]:80",
+        ] {
+            let addr: SocketAddr = addr.parse().unwrap();
+            let ctx = CallContext::new("test").with_peer_addr(addr);
+            assert_eq!(ctx.peer_addr(), Some(addr));
+            assert_eq!(
+                ctx.http_headers().get(PEER_ADDR_KEY).map(String::as_str),
+                Some(addr.to_string().as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn peer_addr_is_none_when_absent_or_unparsable() {
+        assert_eq!(CallContext::new("test").peer_addr(), None);
+        let ctx = CallContext::new("test").with_http_header(PEER_ADDR_KEY, "not an address");
+        assert_eq!(ctx.peer_addr(), None);
     }
 
     #[test]

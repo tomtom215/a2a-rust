@@ -50,9 +50,13 @@ fn keys() -> Jwks {
 
 /// Serves `card` as JSON to every request on a bare socket.
 async fn serve(card: &AgentCard) -> String {
+    serve_json(serde_json::to_string(card).unwrap()).await
+}
+
+/// Serves `body` to every request on a bare socket.
+async fn serve_json(body: String) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    let body = serde_json::to_string(card).unwrap();
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
             let mut buf = [0_u8; 4096];
@@ -89,12 +93,90 @@ async fn a_signed_card_is_verified_when_keys_are_supplied() {
         .await
         .expect_err("a tampered card must not verify");
     assert!(err.to_string().contains("signature"), "{err}");
+}
 
-    // Unsigned: returned as it is; the SHOULD is about signatures present.
-    let url = serve(&card()).await;
+/// R9: anyone who can alter the card on its way can also remove its
+/// signatures, and a fetch that accepted an unsigned card returned the
+/// altered card unverified. With keys supplied, a card with no signature, or
+/// an empty list, is refused.
+#[tokio::test]
+async fn a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied() {
+    let with_keys = CardFetchOptions::default().with_signature_keys(keys());
+    for signatures in [None, Some(vec![])] {
+        let mut stripped = signed();
+        stripped.name = "someone-else".into();
+        stripped.signatures = signatures;
+        let url = serve(&stripped).await;
+        let err = resolve_agent_card_with_options(&url, &with_keys)
+            .await
+            .expect_err("an unsigned card must not pass for a verified one");
+        assert!(err.to_string().contains("not signed"), "{err}");
+    }
+}
+
+/// `with_require_signature(false)` verifies signatures only when present, as
+/// §14 asks: an unsigned card, or one with an empty list, is returned; a
+/// signed one must still verify.
+#[tokio::test]
+async fn signatures_only_when_present_returns_an_unsigned_card() {
+    let lenient = CardFetchOptions::default()
+        .with_signature_keys(keys())
+        .with_require_signature(false);
+    for signatures in [None, Some(vec![])] {
+        let mut unsigned = card();
+        unsigned.signatures = signatures;
+        let url = serve(&unsigned).await;
+        let fetched = resolve_agent_card_with_options(&url, &lenient)
+            .await
+            .expect("an unsigned card is returned as it is");
+        assert_eq!(fetched.name, "signed-agent");
+    }
+
+    let mut tampered = signed();
+    tampered.name = "someone-else".into();
+    let url = serve(&tampered).await;
+    assert!(
+        resolve_agent_card_with_options(&url, &lenient)
+            .await
+            .is_err(),
+        "a signed card must still verify"
+    );
+}
+
+/// R31: a peer that models a field this SDK does not (one a later minor
+/// version adds, say) signs over it. The fetch verifies the card as received;
+/// it verified the typed card, which has dropped the field, and so refused a
+/// correctly signed card.
+#[tokio::test]
+async fn a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted() {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
+    let mut json = serde_json::to_value(card()).unwrap();
+    json["futureField"] = serde_json::json!({ "addedIn": "1.1" });
+    let protected = URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","kid":"ed-1","typ":"JOSE"}"#);
+    let payload =
+        URL_SAFE_NO_PAD.encode(a2a_protocol_types::signing::canonicalize_card_json(&json).unwrap());
+    let key = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&hex(ED_PKCS8)).unwrap();
+    let sig = key.sign(format!("{protected}.{payload}").as_bytes());
+    json["signatures"] = serde_json::json!([{
+        "protected": protected,
+        "signature": URL_SAFE_NO_PAD.encode(sig.as_ref()),
+    }]);
+
+    let with_keys = CardFetchOptions::default().with_signature_keys(keys());
+    let url = serve_json(json.to_string()).await;
+    let fetched = resolve_agent_card_with_options(&url, &with_keys)
+        .await
+        .expect("a card signed over a field this SDK does not model verifies as received");
+    assert_eq!(fetched.name, "signed-agent");
+
+    // The field is covered by the signature: altering it is refused.
+    json["futureField"]["addedIn"] = serde_json::json!("1.2");
+    let url = serve_json(json.to_string()).await;
     assert!(
         resolve_agent_card_with_options(&url, &with_keys)
             .await
-            .is_ok()
+            .is_err()
     );
 }

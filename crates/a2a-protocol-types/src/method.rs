@@ -46,7 +46,7 @@
 
 use std::fmt;
 
-/// One of the eleven A2A v1.0 service methods (spec §8).
+/// One of the eleven A2A v1.0 service methods (spec §3.1).
 ///
 /// The wire name is the `PascalCase` form used as the JSON-RPC `method` and as
 /// the final path segment of the gRPC full method name.
@@ -62,27 +62,27 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum Method {
-    /// Send a message and wait for the response (spec §8.1).
+    /// Send a message and wait for the response (spec §3.1.1).
     SendMessage,
-    /// Send a message and stream events as they occur (spec §8.2).
+    /// Send a message and stream events as they occur (spec §3.1.2).
     SendStreamingMessage,
-    /// Fetch a task by id (spec §8.3).
+    /// Fetch a task by id (spec §3.1.3).
     GetTask,
-    /// List tasks, with optional filters and pagination (spec §8.4).
+    /// List tasks, with optional filters and pagination (spec §3.1.4).
     ListTasks,
-    /// Request cancellation of a task (spec §8.5).
+    /// Request cancellation of a task (spec §3.1.5).
     CancelTask,
-    /// Re-attach to an existing task's event stream (spec §8.6).
+    /// Re-attach to an existing task's event stream (spec §3.1.6).
     SubscribeToTask,
-    /// Create a push-notification config for a task (spec §8.7).
+    /// Create a push-notification config for a task (spec §3.1.7).
     CreateTaskPushNotificationConfig,
-    /// Fetch one push-notification config (spec §8.8).
+    /// Fetch one push-notification config (spec §3.1.8).
     GetTaskPushNotificationConfig,
-    /// List a task's push-notification configs (spec §8.9).
+    /// List a task's push-notification configs (spec §3.1.9).
     ListTaskPushNotificationConfigs,
-    /// Delete a push-notification config (spec §8.10).
+    /// Delete a push-notification config (spec §3.1.10).
     DeleteTaskPushNotificationConfig,
-    /// Fetch the authenticated extended agent card (spec §8.11, §13.3).
+    /// Fetch the authenticated extended agent card (spec §3.1.11, §13.3).
     GetExtendedAgentCard,
 }
 

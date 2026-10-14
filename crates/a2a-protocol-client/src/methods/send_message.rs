@@ -19,9 +19,14 @@ use crate::streaming::EventStream;
 /// Per-request values in `params.configuration` take precedence over
 /// client-level defaults so callers can override on a per-call basis.
 fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
+    // Not `SendMessageConfiguration::default()`, whose `["text/plain"]` kept
+    // the client's own modes off every request without a configuration.
     let cfg = params
         .configuration
-        .get_or_insert_with(SendMessageConfiguration::default);
+        .get_or_insert_with(|| SendMessageConfiguration {
+            accepted_output_modes: Vec::new(),
+            ..SendMessageConfiguration::default()
+        });
 
     // Only apply client-level settings when the per-request value is absent.
     if cfg.return_immediately.is_none() && config.return_immediately {
@@ -39,6 +44,26 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
     // Apply default tenant from client config (populated from AgentInterface).
     if params.tenant.is_none() {
         params.tenant.clone_from(&config.tenant);
+    }
+}
+
+impl A2aClient {
+    /// A send carrying an inline push-notification config needs the push
+    /// capability as much as `CreateTaskPushNotificationConfig` does; a
+    /// conformant agent refuses it with the same error (spec §3.3.4).
+    fn require_inline_push_declared(
+        &self,
+        params: &MessageSendParams,
+        method: &str,
+    ) -> ClientResult<()> {
+        if params
+            .configuration
+            .as_ref()
+            .is_some_and(|c| c.task_push_notification_config.is_some())
+        {
+            self.require_declared(crate::declared::Capability::PushNotifications, method)?;
+        }
+        Ok(())
     }
 }
 
@@ -79,6 +104,7 @@ impl A2aClient {
         mut params: MessageSendParams,
     ) -> ClientResult<SendMessageResponse> {
         const METHOD: &str = "SendMessage";
+        self.require_inline_push_declared(&params, METHOD)?;
 
         apply_client_config(&mut params, &self.config);
 
@@ -111,6 +137,8 @@ impl A2aClient {
     /// Returns [`ClientError`] on transport or protocol errors.
     pub async fn stream_message(&self, mut params: MessageSendParams) -> ClientResult<EventStream> {
         const METHOD: &str = "SendStreamingMessage";
+        self.require_declared(crate::declared::Capability::Streaming, METHOD)?;
+        self.require_inline_push_declared(&params, METHOD)?;
 
         apply_client_config(&mut params, &self.config);
 
@@ -254,15 +282,9 @@ mod tests {
             ..ClientConfig::default()
         };
 
+        // No configuration of its own: the client's modes, not the
+        // `["text/plain"]` of `SendMessageConfiguration::default()`.
         let mut params = make_params();
-        // Explicitly set empty modes so the config value is applied.
-        // (SendMessageConfiguration::default() has non-empty modes, so we must override.)
-        params.configuration = Some(SendMessageConfiguration {
-            accepted_output_modes: vec![],
-            task_push_notification_config: None,
-            history_length: None,
-            return_immediately: None,
-        });
         apply_client_config(&mut params, &config);
 
         let cfg = params.configuration.unwrap();

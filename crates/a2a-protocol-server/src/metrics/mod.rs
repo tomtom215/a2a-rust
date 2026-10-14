@@ -279,11 +279,12 @@ pub mod push_outcome {
     /// Distinct from [`TIMEOUT`], which is a webhook that did not answer inside
     /// the time it was given. This one is a *configuration* result: the sender
     /// reports (via `PushSender::max_delivery_duration`) that it wanted longer
-    /// than the handler allows, so retries it advertises can never run. At the
-    /// shipped defaults that is exactly the case — 98 seconds of schedule
-    /// against a 5-second bound, measured at one attempt of three — and it is
-    /// worth its own label because the fix is a config change, not a webhook
-    /// investigation.
+    /// than the handler allows, so retries it advertises can never run in full.
+    /// At the shipped defaults that can only be the last attempt — a 38-second
+    /// schedule against a 30-second bound, in which every attempt starts and
+    /// the third has 2 seconds when the first two run to their timeouts. It
+    /// is worth its own label because the fix is a config change, not a
+    /// webhook investigation.
     pub const TIMEOUT_TRUNCATED: &str = "timeout_truncated";
     /// No longer reported.
     ///

@@ -15,21 +15,16 @@ use crate::error::ServerError;
 /// Extracts gRPC metadata into a `HashMap` matching the HTTP headers
 /// interface used by `RequestHandler`.
 pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for kv in metadata.iter() {
-        if let tonic::metadata::KeyAndValueRef::Ascii(key, value) = kv
-            && let Ok(v) = value.to_str()
-        {
-            map.insert(key.as_str().to_owned(), v.to_owned());
-        }
-    }
+    // Binary (`-bin`) entries are not text; the handler reads none.
+    let mut map = crate::dispatch::header_fields(metadata.as_ref());
+    map.retain(|key, _| !key.ends_with("-bin"));
     map
 }
 
 /// Extracts gRPC metadata into headers and validates the `a2a-version`
 /// service parameter (§3.6.2, §10.2) through the **same shared validator** the
-/// JSON-RPC, REST and WebSocket bindings use, so all four agree: any `1.x` is
-/// accepted; an empty or absent value is interpreted as protocol 0.3 and, when
+/// JSON-RPC, REST and WebSocket bindings use, so all four agree: `1.0`, with
+/// any patch, is accepted and any other version refused; an empty or absent value is interpreted as protocol 0.3 and, when
 /// `require_version` is set (the default), rejected with `VersionNotSupported`
 /// carrying its `google.rpc.ErrorInfo` detail — the identical rejection the
 /// other bindings produce. `require_version = false` admits versionless legacy
@@ -49,6 +44,19 @@ pub(super) fn validated_metadata(
     Ok(headers)
 }
 
+/// [`validated_metadata`] for a request, with the address of the connection
+/// it arrived on recorded as [`CallContext::peer_addr`](crate::CallContext::peer_addr)
+/// reads it, when tonic knows it.
+#[allow(clippy::result_large_err)]
+pub(super) fn request_headers<T>(
+    request: &tonic::Request<T>,
+    require_version: bool,
+) -> Result<HashMap<String, String>, Status> {
+    let mut headers = validated_metadata(request.metadata(), require_version)?;
+    crate::dispatch::record_peer_addr(&mut headers, request.remote_addr());
+    Ok(headers)
+}
+
 /// Converts a [`ServerError`] into a tonic [`Status`].
 ///
 /// Per Section 5.4, each A2A error type maps to a specific gRPC status code.
@@ -57,7 +65,25 @@ pub(super) fn validated_metadata(
 /// `UPPER_SNAKE_CASE` reason and the `a2a-protocol.org` domain, so gRPC
 /// clients get the same machine-readable error identity as the JSON-RPC
 /// (`error.data`) and REST (`error.details`) bindings.
+///
+/// A refused credential's challenge travels as `www-authenticate` metadata,
+/// as an HTTP `401` carries it as a header (spec §3.3.2: SHOULD include the
+/// challenge and name the scheme). Until 2026-10-13 it was dropped. One a
+/// metadata value cannot carry is sent as the bare `Bearer`, as the HTTP
+/// bindings send it.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
+    let mut status = status_without_challenge(err);
+    if let Some(challenge) = err.challenge() {
+        let value = challenge
+            .parse()
+            .unwrap_or_else(|_| tonic::metadata::MetadataValue::from_static("Bearer"));
+        status.metadata_mut().insert("www-authenticate", value);
+    }
+    status
+}
+
+/// [`server_error_to_status`] before the challenge is added.
+fn status_without_challenge(err: &ServerError) -> Status {
     use tonic_types::StatusExt as _;
     if let ServerError::Overloaded(msg) = err {
         return Status::new(tonic::Code::ResourceExhausted, msg.clone());
@@ -66,7 +92,8 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
     let code = grpc_code(err, a2a_err.code);
     let reason = a2a_err.code.a2a_reason();
     let retry_after = a2a_err.retry_after();
-    if reason.is_none() && retry_after.is_none() {
+    let data = a2a_err.data.as_ref().and_then(super::details::data_detail);
+    if reason.is_none() && retry_after.is_none() && data.is_none() {
         return Status::new(code, a2a_err.message);
     }
     let mut details = tonic_types::ErrorDetails::new();
@@ -80,7 +107,22 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
     if retry_after.is_some() {
         details.set_retry_info(retry_after);
     }
-    Status::with_error_details(code, a2a_err.message, details)
+    // §5.1: `data` too, as the JSON bindings carry it (`details`).
+    let mut object = None;
+    match data {
+        Some(super::details::DataDetail::BadRequest(violations)) => {
+            for (field, description) in violations {
+                details.add_bad_request_violation(field, description);
+            }
+        }
+        Some(super::details::DataDetail::Struct(s)) => object = Some(s),
+        None => {}
+    }
+    let status = Status::with_error_details(code, a2a_err.message, details);
+    match object {
+        Some(s) => super::details::with_struct(&status, &s),
+        None => status,
+    }
 }
 
 /// The gRPC status code this binding answers `err` with; `a2a_code` is
@@ -92,7 +134,7 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     if matches!(err, ServerError::Overloaded(_)) || err.retry_after().is_some() {
         return tonic::Code::ResourceExhausted;
     }
-    if matches!(err, ServerError::Halted(_)) {
+    if matches!(err, ServerError::Halted(_)) || err.is_unavailable() {
         return tonic::Code::Unavailable;
     }
     // A refused credential has its own codes (N36); `status_name` is the
@@ -160,234 +202,5 @@ pub(super) async fn resolve_addr(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::ServerError;
-
-    // server_error_to_status mapping
-    #[test]
-    fn task_not_found_maps_to_not_found() {
-        let status = server_error_to_status(&ServerError::TaskNotFound("t1".into()));
-        assert_eq!(status.code(), tonic::Code::NotFound);
-    }
-
-    #[test]
-    fn task_not_cancelable_maps_to_failed_precondition() {
-        let status = server_error_to_status(&ServerError::TaskNotCancelable("t1".into()));
-        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
-    }
-
-    #[test]
-    fn invalid_params_maps_to_invalid_argument() {
-        let status = server_error_to_status(&ServerError::InvalidParams("bad".into()));
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    }
-
-    #[test]
-    fn method_not_found_maps_to_unimplemented() {
-        let status = server_error_to_status(&ServerError::MethodNotFound("Foo".into()));
-        assert_eq!(status.code(), tonic::Code::Unimplemented);
-    }
-
-    #[test]
-    fn internal_error_maps_to_internal() {
-        let status = server_error_to_status(&ServerError::Internal("oops".into()));
-        assert_eq!(status.code(), tonic::Code::Internal);
-    }
-
-    /// §13.4: a rate-limit refusal is `RESOURCE_EXHAUSTED` with a
-    /// `RetryInfo` detail, not the `INTERNAL` its A2A code maps to.
-    #[test]
-    fn a_rate_limited_error_maps_to_resource_exhausted_with_retry_info() {
-        use tonic_types::StatusExt as _;
-        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::rate_limited(
-            "slow down",
-            std::time::Duration::from_secs(7),
-        ));
-        let status = server_error_to_status(&err);
-        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
-        assert_eq!(grpc_status_name(&err), "RESOURCE_EXHAUSTED");
-        let retry = status
-            .get_error_details()
-            .retry_info()
-            .cloned()
-            .expect("a RetryInfo detail");
-        assert_eq!(retry.retry_delay, Some(std::time::Duration::from_secs(7)));
-    }
-
-    // ADR 0014 (N36): a refused credential answers its own gRPC codes, not the
-    // `INVALID_ARGUMENT` its A2A code maps to under §5.4.
-    #[test]
-    fn a_missing_credential_maps_to_unauthenticated() {
-        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::unauthenticated(
-            "no token", "Bearer",
-        ));
-        assert_eq!(
-            server_error_to_status(&err).code(),
-            tonic::Code::Unauthenticated
-        );
-        assert_eq!(grpc_status_name(&err), "UNAUTHENTICATED");
-    }
-
-    #[test]
-    fn a_refused_permission_maps_to_permission_denied() {
-        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::permission_denied(
-            "not permitted",
-        ));
-        assert_eq!(
-            server_error_to_status(&err).code(),
-            tonic::Code::PermissionDenied
-        );
-        assert_eq!(grpc_status_name(&err), "PERMISSION_DENIED");
-    }
-
-    // §10.6: A2A-specific errors carry google.rpc.ErrorInfo in status.details.
-
-    #[test]
-    fn a2a_error_status_carries_error_info_detail() {
-        use tonic_types::StatusExt as _;
-        let status = server_error_to_status(&ServerError::TaskNotFound("t1".into()));
-        let info = status
-            .get_details_error_info()
-            .expect("A2A error must carry google.rpc.ErrorInfo in status.details");
-        assert_eq!(info.reason, "TASK_NOT_FOUND");
-        assert_eq!(info.domain, a2a_protocol_types::error::A2A_ERROR_DOMAIN);
-    }
-
-    #[test]
-    fn every_a2a_reason_maps_to_error_info_detail() {
-        use tonic_types::StatusExt as _;
-        let cases: Vec<(ServerError, &str)> = vec![
-            (ServerError::TaskNotFound("t".into()), "TASK_NOT_FOUND"),
-            (
-                ServerError::TaskNotCancelable("t".into()),
-                "TASK_NOT_CANCELABLE",
-            ),
-            (
-                ServerError::PushNotSupported,
-                "PUSH_NOTIFICATION_NOT_SUPPORTED",
-            ),
-            (
-                ServerError::UnsupportedOperation("u".into()),
-                "UNSUPPORTED_OPERATION",
-            ),
-        ];
-        for (err, want_reason) in cases {
-            let status = server_error_to_status(&err);
-            let info = status
-                .get_details_error_info()
-                .unwrap_or_else(|| panic!("missing ErrorInfo for {want_reason}"));
-            assert_eq!(info.reason, want_reason);
-            assert_eq!(info.domain, "a2a-protocol.org");
-        }
-    }
-
-    #[test]
-    fn standard_errors_have_no_error_info_detail() {
-        use tonic_types::StatusExt as _;
-        // InternalError and InvalidParams are standard JSON-RPC codes without
-        // an A2A reason — no ErrorInfo detail is attached.
-        for err in [
-            ServerError::Internal("oops".into()),
-            ServerError::InvalidParams("bad".into()),
-            ServerError::Overloaded("busy".into()),
-        ] {
-            let status = server_error_to_status(&err);
-            assert!(
-                status.get_details_error_info().is_none(),
-                "standard error unexpectedly carried ErrorInfo: {err:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_halt_is_unavailable() {
-        let status = server_error_to_status(&ServerError::Halted("incident".into()));
-        assert_eq!(status.code(), tonic::Code::Unavailable);
-        assert_eq!(status.message(), "halted: incident");
-    }
-
-    // extract_metadata
-    #[test]
-    fn extract_metadata_ascii_keys() {
-        let mut meta = tonic::metadata::MetadataMap::new();
-        meta.insert("authorization", "Bearer token".parse().unwrap());
-        let map = extract_metadata(&meta);
-        assert_eq!(
-            map.get("authorization").map(String::as_str),
-            Some("Bearer token")
-        );
-    }
-
-    #[test]
-    fn extract_metadata_empty() {
-        let meta = tonic::metadata::MetadataMap::new();
-        let map = extract_metadata(&meta);
-        assert!(map.is_empty());
-    }
-
-    // ── validated_metadata (§3.6.2 / §10.2 version negotiation) ──────────
-
-    #[test]
-    fn validated_metadata_accepts_1x() {
-        for version in ["1.0", "1.5", "1.0.3"] {
-            let mut meta = tonic::metadata::MetadataMap::new();
-            meta.insert("a2a-version", version.parse().unwrap());
-            assert!(
-                validated_metadata(&meta, true).is_ok(),
-                "version {version:?} must be accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn validated_metadata_rejects_absent_version_by_default() {
-        // Absent or empty is interpreted as protocol 0.3 (§3.6.2), which this
-        // 1.x server does not support, so the strict default rejects it — the
-        // same negotiation the JSON-RPC, REST and WebSocket bindings enforce.
-        // Regression guard: this used to be accepted, letting a gRPC caller
-        // skip the version check the other bindings apply.
-        use tonic_types::StatusExt as _;
-        for version in [Some(""), None] {
-            let mut meta = tonic::metadata::MetadataMap::new();
-            if let Some(v) = version {
-                meta.insert("a2a-version", v.parse().unwrap());
-            }
-            let status = validated_metadata(&meta, true)
-                .expect_err("absent/empty version must be rejected under the strict default");
-            // FAILED_PRECONDITION, not UNIMPLEMENTED: §5.4 moved
-            // `VersionNotSupportedError` off UNIMPLEMENTED, which is now
-            // reserved for a method the server does not serve at all.
-            assert_eq!(status.code(), tonic::Code::FailedPrecondition);
-            let info = status
-                .get_details_error_info()
-                .expect("version rejection must carry ErrorInfo");
-            assert_eq!(info.reason, "VERSION_NOT_SUPPORTED");
-            // The escape hatch the other bindings also offer: when the version
-            // is not required, a versionless legacy client is admitted.
-            assert!(
-                validated_metadata(&meta, false).is_ok(),
-                "version {version:?} must be accepted when require_version is false"
-            );
-        }
-    }
-
-    #[test]
-    fn validated_metadata_rejects_unsupported_versions() {
-        use tonic_types::StatusExt as _;
-        for version in ["0.3", "2.0", "not-a-version"] {
-            let mut meta = tonic::metadata::MetadataMap::new();
-            meta.insert("a2a-version", version.parse().unwrap());
-            let status =
-                validated_metadata(&meta, true).expect_err("unsupported version must be rejected");
-            // FAILED_PRECONDITION, not UNIMPLEMENTED: §5.4 moved
-            // `VersionNotSupportedError` off UNIMPLEMENTED, which is now
-            // reserved for a method the server does not serve at all.
-            assert_eq!(status.code(), tonic::Code::FailedPrecondition);
-            let info = status
-                .get_details_error_info()
-                .expect("version rejection must carry ErrorInfo");
-            assert_eq!(info.reason, "VERSION_NOT_SUPPORTED");
-        }
-    }
-}
+#[path = "helpers_tests.rs"]
+mod tests;

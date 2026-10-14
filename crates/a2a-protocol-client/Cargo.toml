@@ -25,17 +25,22 @@ categories             = ["network-programming", "web-programming"]
 ## `default-features = false` for a plaintext-HTTP-only build with no rustls
 ## dependency and no logging.
 default = ["tls-rustls", "tracing"]
-## Enable HTTPS support via rustls (no OpenSSL system dependency).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
-## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
+## Enable HTTPS support via rustls (no OpenSSL system dependency), and
+## `wss://` for the `websocket` transport. tokio-tungstenite's `__rustls-tls`
+## is the feature that compiles its rustls connector in without a root store
+## of its own: the transport hands it this crate's `ring`-backed config and
+## Mozilla roots, so the public `rustls-tls-*` features would only add a
+## second root-store crate. The version range below pins the feature name.
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "tokio-tungstenite?/__rustls-tls"]
+## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization),
+## and let card discovery verify signatures.
 ##
-## This forwards the types-crate feature and nothing more: no code in this crate
-## calls `verify_agent_card`, and `resolve_agent_card`/`fetch_card_from_url`
-## return the card they fetched without checking its `signatures`. Verifying
-## needs a trust anchor the client cannot invent, so the decision is the
-## caller's — call `verify_agent_card` yourself against a key you trust. The
-## description here used to read "Enable agent card signing verification", which
-## claimed an integration that does not exist.
+## Verifying needs a trust anchor the client cannot invent, so nothing is
+## verified by default: `resolve_agent_card` and `fetch_card_from_url` return
+## the card they fetched without checking its `signatures`. Pass the keys you
+## trust with `CardFetchOptions::with_signature_keys` to the `_with_options`
+## variants and the fetch verifies the card, refusing an unsigned one unless
+## `with_require_signature(false)`; `fetch_jwks` fetches a key set.
 signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out
 ## when disabled).
@@ -79,8 +84,8 @@ hyper-util     = { workspace = true }
 tokio          = { workspace = true }
 uuid           = { workspace = true }
 tracing        = { workspace = true, optional = true }
-opentelemetry  = { version = "0.32", optional = true, default-features = false, features = ["trace"] }
-tracing-opentelemetry = { version = ">=0.33, <0.34", optional = true, default-features = false }
+opentelemetry  = { version = "0.33", optional = true, default-features = false, features = ["trace"] }
+tracing-opentelemetry = { version = ">=0.34, <0.35", optional = true, default-features = false }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
@@ -105,7 +110,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 tracing-subscriber = { workspace = true }
 # The call span's own tests record through a real OpenTelemetry tracer, to
 # check the `traceparent` it sends (`src/call_span/tests.rs`).
-opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 criterion = { workspace = true }
 bytes = "1.11.1"
@@ -123,6 +128,11 @@ futures-util = { version = ">=0.3.30, <0.4", default-features = false, features 
 # through hyper-util.
 socket2 = { version = ">=0.6, <0.7", features = ["all"] }
 tower-service = ">=0.3, <0.4"
+# Sign a card's JSON as a peer would, over a field this SDK does not model
+# (`tests/card_signature_verification.rs`); both already in the tree through
+# a2a-protocol-types.
+ring = "0.17.12"
+base64 = "0.23"
 
 [[bench]]
 name = "sse_parse"

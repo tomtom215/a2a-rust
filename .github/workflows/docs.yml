@@ -3,9 +3,18 @@
 
 name: Deploy Documentation
 
+# A finished release deploys too: the site's root is the latest release's
+# book, so a new tag must reach it without waiting for the next push to main.
+# Through `workflow_run` rather than a tag trigger: a `workflow_run` run
+# executes on the default branch, which the `github-pages` environment allows
+# to deploy, and a tag ref may not be. Dispatching from release.yml instead
+# would need `actions: write` there.
 on:
   push:
     branches: [main]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -22,9 +31,16 @@ env:
 
 jobs:
   build:
+    # A failed release published nothing new; the site stays as it is.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      # Always main, with every tag: /dev/ is main's book whichever event ran
+      # this, and each release line's book is built from its tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Install mdBook
         run: |
@@ -44,7 +60,7 @@ jobs:
           python3 scripts/seo_postprocess.py book/book
           python3 scripts/seo_postprocess.py book/book --check
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-09-03
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -109,13 +125,23 @@ jobs:
           test -f book/book/vendor/chart.umd.min.js
           test -f book/book/reference/benchmark-dashboard.html
 
+      # Everything above built main's book; it becomes /dev/. The root is the
+      # latest release's book and /vX.Y/ each release line's, built from
+      # their tags with the same mdBook; see the script's docstring for the
+      # layout and why only the root is indexed.
+      - name: Build every release line's book and assemble the versioned site
+        run: python3 scripts/build_docs_site.py build --dev book/book --out site
+
+      - name: Versioned site is complete
+        run: python3 scripts/build_docs_site.py check site
+
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: book/book
+          path: site
 
   deploy:
     needs: build

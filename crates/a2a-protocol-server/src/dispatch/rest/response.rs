@@ -13,17 +13,6 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 
-/// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
-pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
-    let mut map = HashMap::with_capacity(headers.len());
-    for (key, value) in headers {
-        if let Ok(v) = value.to_str() {
-            map.insert(key.as_str().to_owned(), v.to_owned());
-        }
-    }
-    map
-}
-
 pub fn json_ok_response<T: serde::Serialize>(
     value: &T,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
@@ -41,7 +30,7 @@ pub fn json_ok_response<T: serde::Serialize>(
 /// The card depends on who asked, so `private` keeps it out of shared
 /// caches and `Vary: Authorization` keys a client's cache by credential.
 /// `no-cache` makes the client revalidate on every use, and the `ETag`
-/// (the public card's validator, over the serialized card) makes that
+/// (the public card's validator, over the card's content) makes that
 /// revalidation a `304` until the card changes, which is how a change, a
 /// new `version` included, reaches a client that cached the old one. Until
 /// 2026-10-10 the response carried none of these.
@@ -49,10 +38,9 @@ pub fn extended_card_response(
     card: &a2a_protocol_types::AgentCard,
     headers: &HashMap<String, String>,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let Ok(body) = serde_json::to_vec(card) else {
+    let Ok((body, etag)) = crate::agent_card::caching::card_body_and_etag(card) else {
         return internal_error_response();
     };
-    let etag = crate::agent_card::caching::make_etag(&body);
     let not_modified = headers
         .get("if-none-match")
         .is_some_and(|inm| crate::agent_card::caching::etag_matches(inm, &etag));
@@ -118,11 +106,16 @@ pub(super) fn build_json_response(
 }
 
 /// Reads a request body with a size limit and timeout.
+///
+/// `Err` carries the HTTP status to answer with and why: `413` for a body
+/// over `max_size`, `408` for one not received within `read_timeout` (RFC
+/// 9110 §15.5.9, as the axum router answers it), `400` for a body stream
+/// hyper could not read. Until 2026-10-13 all three were `413`.
 pub(super) async fn read_body_limited(
     body: Incoming,
     max_size: usize,
     read_timeout: std::time::Duration,
-) -> Result<Bytes, String> {
+) -> Result<Bytes, (u16, String)> {
     use http_body_util::{BodyExt, LengthLimitError, Limited};
 
     // Fast path: reject before reading any body bytes when an honest
@@ -131,8 +124,9 @@ pub(super) async fn read_body_limited(
     if let Some(upper) = size_hint.upper()
         && upper > max_size as u64
     {
-        return Err(format!(
-            "request body too large: {upper} bytes exceeds {max_size} byte limit"
+        return Err((
+            413,
+            format!("request body too large: {upper} bytes exceeds {max_size} byte limit"),
         ));
     }
 
@@ -144,29 +138,35 @@ pub(super) async fn read_body_limited(
     // the read as soon as the accumulated body would exceed `max_size`.
     let limited = Limited::new(body, max_size);
     match tokio::time::timeout(read_timeout, limited.collect()).await {
-        Err(_) => Err("request body read timed out".to_owned()),
+        Err(_) => Err((408, "request body read timed out".to_owned())),
         Ok(Ok(collected)) => Ok(collected.to_bytes()),
         Ok(Err(err)) => Err(if err.downcast_ref::<LengthLimitError>().is_some() {
-            format!("request body too large: exceeds {max_size} byte limit")
+            (
+                413,
+                format!("request body too large: exceeds {max_size} byte limit"),
+            )
         } else {
-            err.to_string()
+            (400, err.to_string())
         }),
     }
 }
 
-/// Injects a field into a JSON object if it is missing.
+/// Sets a path variable's field in a request body.
 ///
-/// REST routes extract path parameters from the URL, so the client may omit
-/// them from the body.  This helper re-injects the value so that the
-/// downstream deserializer always sees the full object.
-pub(super) fn inject_field_if_missing(
+/// Under `google.api.http` a field bound from the path is the path's value,
+/// whatever the body says, and the client may omit it from the body. Until
+/// 2026-10-13 a field the body already had was kept, so
+/// `POST /tasks/A:cancel` with `{"id": "B"}` cancelled B.
+pub(super) fn set_path_field(
     mut value: serde_json::Value,
     field: &str,
     path_value: &str,
 ) -> serde_json::Value {
     if let Some(obj) = value.as_object_mut() {
-        obj.entry(field.to_owned())
-            .or_insert_with(|| serde_json::Value::String(path_value.to_owned()));
+        obj.insert(
+            field.to_owned(),
+            serde_json::Value::String(path_value.to_owned()),
+        );
     }
     value
 }
@@ -176,27 +176,34 @@ mod tests {
     use super::*;
     use http_body_util::BodyExt;
 
-    // ── extract_headers ──────────────────────────────────────────────────
-
-    #[test]
-    fn extract_headers_lowercased_keys() {
-        let mut hm = hyper::HeaderMap::new();
-        hm.insert("Content-Type", "application/json".parse().unwrap());
-        hm.insert("Authorization", "Bearer tok".parse().unwrap());
-
-        let map = extract_headers(&hm);
-        assert_eq!(map.get("content-type").unwrap(), "application/json");
-        assert_eq!(map.get("authorization").unwrap(), "Bearer tok");
-    }
-
-    #[test]
-    fn extract_headers_empty() {
-        let hm = hyper::HeaderMap::new();
-        let map = extract_headers(&hm);
-        assert!(map.is_empty());
-    }
-
     // ── Response helpers ─────────────────────────────────────────────────
+
+    /// The extended card's `ETag` names the card, not the order its maps
+    /// were drawn in: each `from_value` builds `HashMap`s with their own
+    /// random order.
+    #[test]
+    fn the_extended_card_s_etag_is_the_same_for_the_same_card() {
+        let mut value =
+            serde_json::to_value(crate::agent_card::caching::tests::minimal_agent_card()).unwrap();
+        value["securitySchemes"] = (0..16)
+            .map(|i| {
+                (
+                    format!("key-{i}"),
+                    serde_json::json!({"apiKeySecurityScheme": {"location": "header", "name": "x"}}),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let etags: std::collections::HashSet<String> = (0..8)
+            .map(|_| {
+                let card: a2a_protocol_types::AgentCard =
+                    serde_json::from_value(value.clone()).unwrap();
+                let resp = extended_card_response(&card, &HashMap::new());
+                resp.headers()["etag"].to_str().unwrap().to_owned()
+            })
+            .collect();
+        assert_eq!(etags.len(), 1, "{etags:?}");
+    }
 
     #[tokio::test]
     async fn health_response_status_and_body() {
@@ -236,24 +243,22 @@ mod tests {
 
     // ── server_error_to_response status mapping ──────────────────────────
 
-    // ── inject_field_if_missing ──────────────────────────────────────────
+    // ── set_path_field ───────────────────────────────────────────────────
 
     #[test]
-    fn inject_field_when_missing() {
+    fn set_path_field_when_missing() {
         let val = serde_json::json!({"url": "https://example.com"});
-        let result = inject_field_if_missing(val, "taskId", "task-1");
+        let result = set_path_field(val, "taskId", "task-1");
         assert_eq!(result["taskId"], "task-1");
         assert_eq!(result["url"], "https://example.com");
     }
 
+    /// The path's value replaces the body's.
     #[test]
-    fn inject_field_preserves_existing() {
-        let val = serde_json::json!({"taskId": "existing", "url": "https://example.com"});
-        let result = inject_field_if_missing(val, "taskId", "task-1");
-        assert_eq!(
-            result["taskId"], "existing",
-            "should not overwrite existing field"
-        );
+    fn set_path_field_overrides_the_body() {
+        let val = serde_json::json!({"taskId": "other", "url": "https://example.com"});
+        let result = set_path_field(val, "taskId", "task-1");
+        assert_eq!(result["taskId"], "task-1");
     }
 
     /// Covers lines 32-34 (`json_ok_response` serialization error fallback path).
@@ -288,9 +293,9 @@ mod tests {
     }
 
     #[test]
-    fn inject_field_on_non_object_is_noop() {
+    fn set_path_field_on_non_object_is_noop() {
         let val = serde_json::json!("string value");
-        let result = inject_field_if_missing(val.clone(), "taskId", "task-1");
+        let result = set_path_field(val.clone(), "taskId", "task-1");
         assert_eq!(result, val);
     }
 

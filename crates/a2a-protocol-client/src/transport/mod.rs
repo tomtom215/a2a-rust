@@ -108,14 +108,14 @@ pub(crate) async fn collect_response_limited(
 ///
 /// Two things were previously lost at every mapping site:
 ///
-/// - **`data`** — the JSON-RPC `error.data` payload (structured diagnostics)
-///   was dropped even though `A2aError` can carry it.
+/// - **`data`** — the JSON-RPC `error.data` payload was dropped though `A2aError` can carry it.
 /// - **The numeric code** — [`ErrorCode`](a2a_protocol_types::ErrorCode) is a
 ///   closed enum, so any implementation-defined code (JSON-RPC reserves
 ///   `-32000..=-32099` for server errors; A2A assigns only a subset) collapsed
 ///   to `InternalError`, and the original number was unrecoverable.
 ///
-/// Known codes map through directly (carrying `data` when present). An unknown
+/// Known codes map through directly, carrying `data` when present and the delay
+/// of a `RetryInfo` detail in it, which makes a rate limit retryable. An unknown
 /// code maps to `InternalError` but the original code — and any `data` — is
 /// preserved under the error's `data` field as
 /// `{"originalCode": <n>, "data": <original>}` so nothing is silently lost.
@@ -129,7 +129,7 @@ pub(crate) fn map_jsonrpc_error(
     let message = message.into();
     match ErrorCode::try_from(code) {
         Ok(known) => match data {
-            Some(d) => A2aError::with_data(known, message, d),
+            Some(d) => A2aError::with_data(known, message, d).with_retry_info_from_details(),
             None => A2aError::new(known, message),
         },
         Err(unknown) => {

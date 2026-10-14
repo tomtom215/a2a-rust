@@ -7,8 +7,9 @@
 #
 #   1. a2a-go CLIENT  -> this repo's SERVER  (itk/interop/go-sdk-client
 #                                              against examples/echo-agent;
-#                                              1b pins a2a-go's known
-#                                              securityRequirements gap)
+#                                              1b runs the battery against
+#                                              a card with
+#                                              securityRequirements)
 #   2. this repo's CLIENT -> a2a-go SERVER   (the harness's go_sdk_interop
 #                                              against itk/agents/go-sdk)
 #
@@ -91,16 +92,17 @@ if ! "$WORK/go-sdk-client" "http://$RUST_HTTP" "JSONRPC,HTTP+JSON,GRPC"; then
 fi
 
 # A card with securityRequirements, which this SDK writes in the spec's
-# {"list":[...]} shape and a2a-go v2.5.0 cannot read. That is a2a-go's to
-# fix, so this run asserts the rejection instead of the battery — and fails,
-# naming what to change here, on the first a2a-go that reads the card.
+# {"list":[...]} shape. a2a-go v2.5.0 could not read it, and until
+# 2026-10-12 this run asserted that rejection; v2.6.0 reads it, so the whole
+# battery runs against the card, on the two bindings it lists (no gRPC
+# address is given to this agent).
 echo "── 1b. a2a-go client -> Rust server, card with securityRequirements ─────"
 A2A_BIND_ADDR=$RUST_SECURED_HTTP A2A_INTEROP_CARD=1 \
     "$BIN/echo-agent" >"$WORK/rust-secured.log" 2>&1 &
 PIDS+=($!)
 await_card "http://$RUST_SECURED_HTTP" "echo-agent (secured card)" "$WORK/rust-secured.log"
-if ! "$WORK/go-sdk-client" -expect-card-rejected "http://$RUST_SECURED_HTTP"; then
-    echo "::error::the a2a-go securityRequirements expectation no longer holds" >&2
+if ! "$WORK/go-sdk-client" -expect-security "http://$RUST_SECURED_HTTP" "JSONRPC,HTTP+JSON"; then
+    echo "::error::a2a-go client against the Rust server's card with securityRequirements failed" >&2
     verdict=1
 fi
 

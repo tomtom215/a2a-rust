@@ -14,12 +14,15 @@
 //! persisted or broadcast, covers the helper and hand-written executors
 //! alike.
 //!
-//! A timestamp the executor set is kept when it is already UTC (`Z`). One
-//! with another offset is rewritten to the same instant in UTC, at
-//! millisecond precision: §5.6.1 says timestamps MUST NOT carry an offset
-//! other than `Z`. One that does not parse is refused, as an oversized event
-//! is. Until 2026-10-10 both went out unchanged on the JSON bindings, while
-//! the gRPC binding refused the malformed one at encoding.
+//! A timestamp the executor set is kept when it is already in the canonical
+//! UTC shape (`T`, `Z`). One with another offset, or a lower-case `t` or
+//! `z`, is rewritten to the same instant in UTC, at millisecond precision:
+//! §5.6.1 says timestamps MUST NOT carry an offset other than `Z`. One that
+//! is not RFC 3339, as the gRPC conversion reads it, is refused, as an
+//! oversized event is. Until 2026-10-10 both went out unchanged on the JSON
+//! bindings, while the gRPC binding refused the malformed one at encoding,
+//! and until 2026-10-13 an unpadded field or a date such as `02-30` still
+//! did.
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
@@ -45,7 +48,12 @@ pub(super) fn stamp_status(event: &mut StreamResponse) -> A2aResult<()> {
                     "status timestamp {ts:?} is not an ISO 8601 date-time (spec §5.6.1)"
                 ))
             })?;
-            if !ts.trim_end().ends_with(['Z', 'z']) {
+            // Kept as written only in the canonical shape, `T` and `Z` in
+            // upper case and no offset; any other form the parser reads is
+            // the same instant written canonically, so every binding serves
+            // one string.
+            let canonical = ts.as_bytes().get(10) == Some(&b'T') && ts.ends_with('Z');
+            if !canonical {
                 status.timestamp = Some(a2a_protocol_types::unix_millis_to_iso8601(millis));
             }
         }
@@ -128,10 +136,36 @@ mod tests {
 
     #[test]
     fn a_timestamp_that_is_not_iso_8601_is_refused() {
-        let mut status = TaskStatus::new(TaskState::Completed);
-        status.timestamp = Some("yesterday".into());
-        let mut event = update(status);
-        let err = stamp_status(&mut event).expect_err("refused");
-        assert!(err.message.contains("yesterday"), "{err}");
+        for bad in [
+            "yesterday",
+            "2026-1-2T3:4:5Z",
+            "2026-02-30T00:00:00Z",
+            " 2026-01-02T03:04:05Z",
+        ] {
+            let mut status = TaskStatus::new(TaskState::Completed);
+            status.timestamp = Some(bad.into());
+            let mut event = update(status);
+            let err = stamp_status(&mut event).expect_err(bad);
+            assert!(err.message.contains(bad), "{err}");
+        }
+    }
+
+    /// Only the canonical shape is kept as written: a lower-case `t` or `z`
+    /// is rewritten, as an offset is, so no binding serves another string.
+    #[test]
+    fn a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept() {
+        for (given, served) in [
+            ("2026-01-02t03:04:05z", "2026-01-02T03:04:05.000Z"),
+            ("2026-01-02T03:04:05z", "2026-01-02T03:04:05.000Z"),
+            ("2026-01-02t03:04:05Z", "2026-01-02T03:04:05.000Z"),
+            ("1969-07-20T20:17:00Z", "1969-07-20T20:17:00Z"),
+            ("1969-07-20T21:17:00+01:00", "1969-07-20T20:17:00.000Z"),
+        ] {
+            let mut status = TaskStatus::new(TaskState::Completed);
+            status.timestamp = Some(given.into());
+            let mut event = update(status);
+            stamp_status(&mut event).expect(given);
+            assert_eq!(timestamp(&event), Some(served), "{given}");
+        }
     }
 }

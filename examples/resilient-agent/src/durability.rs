@@ -87,6 +87,7 @@ mod sqlite {
             .await
             .map_err(|e| format!("opening the push-config store at {db_url}: {e}"))?;
         let handler = RequestHandlerBuilder::new(executor)
+            .without_agent_card()
             .with_task_store(tasks)
             .with_push_config_store(push_configs)
             .with_push_sender(

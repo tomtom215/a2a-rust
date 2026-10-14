@@ -26,10 +26,12 @@ use crate::push::{PushConfigStore, PushSender};
 /// [`push_outcome::TIMEOUT_TRUNCATED`], and the fix is two numbers rather than
 /// an investigation.
 ///
-/// At the shipped defaults it is the second. Measured 2026-08-19 against a real
-/// socket: `HttpPushSender::new()` schedules 98 seconds of work (a 5-second
-/// DNS bound, then 93 of requests and backoff) against a 5-second bound, and
-/// exactly one of its three attempts reaches the webhook.
+/// At the shipped defaults a timed-out delivery is the second, but only just:
+/// `HttpPushSender::new()` schedules 38 seconds at worst (a 5-second DNS bound,
+/// then 33 of requests and backoff) against a 30-second bound, so every attempt
+/// starts and only the third can be cut short. Until 2026-10-12 it was 98
+/// seconds against 5, and one attempt of three reached the webhook (measured
+/// 2026-08-19 against a real socket).
 ///
 /// A sender that reports nothing stays a plain `TIMEOUT` — nothing is *known*
 /// to have been truncated, and claiming it would be inventing a diagnosis.
@@ -200,7 +202,9 @@ async fn deliver_once(
         Ok(Err(_err)) => {
             trace_warn!(
                 task_id = %task_id,
-                url = %config.url,
+                // The origin only: a webhook's path or query is often its
+                // receiver's secret. Until 2026-10-14 the whole URL went out.
+                url = %crate::push::webhook::origin_for_log(&config.url),
                 error = %_err,
                 "push notification delivery failed"
             );
@@ -209,7 +213,7 @@ async fn deliver_once(
         Err(_) => {
             trace_warn!(
                 task_id = %task_id,
-                url = %config.url,
+                url = %crate::push::webhook::origin_for_log(&config.url),
                 outcome = timeout_label,
                 "push notification delivery timed out"
             );

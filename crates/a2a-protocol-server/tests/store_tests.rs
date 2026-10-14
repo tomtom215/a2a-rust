@@ -5,6 +5,9 @@
 
 //! Tests for task store: pagination, eviction, edge cases.
 
+#[path = "support/list_proto.rs"]
+mod list_proto;
+
 use std::time::Duration;
 
 use a2a_protocol_types::params::ListTasksParams;
@@ -467,4 +470,14 @@ async fn insert_if_absent_returns_correct_count() {
         .unwrap();
     assert!(!inserted);
     assert_eq!(store.count().await.unwrap(), 1);
+}
+
+/// a2a.proto's `ListTasks` fields; see `support/list_proto.rs`.
+#[tokio::test]
+async fn in_memory_list_follows_the_proto() {
+    list_proto::list_follows_the_proto(&InMemoryTaskStore::new()).await;
+    list_proto::list_follows_the_proto(
+        &a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new(),
+    )
+    .await;
 }

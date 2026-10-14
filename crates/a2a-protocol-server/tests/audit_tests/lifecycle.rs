@@ -16,6 +16,7 @@ use super::*;
 async fn full_handler_lifecycle_send_get_list_cancel() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );
@@ -104,6 +105,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 #[tokio::test]
 async fn full_handler_lifecycle_with_streaming() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -167,6 +169,7 @@ async fn full_handler_lifecycle_with_streaming() {
 #[tokio::test]
 async fn full_handler_lifecycle_failing_executor() {
     let handler = RequestHandlerBuilder::new(FailingExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

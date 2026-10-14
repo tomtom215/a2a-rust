@@ -297,7 +297,7 @@ pub(super) mod journal;
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]
 fn to_a2a_error(e: sqlx::Error) -> A2aError {
-    A2aError::internal(format!("sqlite error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite error", &e)
 }
 
 /// Builds the `UPDATE` that splices an artifact delta into the stored JSON,
@@ -792,18 +792,37 @@ impl TaskStore for SqliteTaskStore {
                 conditions.push(format!("state = ?{}", bind_values.len() + 1));
                 bind_values.push(status.to_string());
             }
-            // §3.1.4 statusTimestampAfter: strictly-after filter on the
-            // status timestamp, which is what `updated_at` stores. An
-            // unparseable value cannot reach the store through the handler
-            // (which validates it); treat it as matching nothing rather than
-            // silently returning everything.
+            // a2a.proto `status_timestamp_after`: "greater than or equal to"
+            // (until 2026-10-13, strictly after) on the status timestamp, which
+            // is what `updated_at` stores. An unparseable value cannot reach
+            // the store through the handler (which validates it); treat it as
+            // matching nothing rather than silently returning everything.
             if let Some(ref after) = params.status_timestamp_after {
                 let Some(after_dt) = super::status_timestamp_sqlite(Some(after)) else {
                     return Ok(TaskListResponse::new(Vec::new()));
                 };
-                conditions.push(format!("updated_at > ?{}", bind_values.len() + 1));
+                conditions.push(format!("updated_at >= ?{}", bind_values.len() + 1));
                 bind_values.push(after_dt);
             }
+            // a2a.proto `total_size`: the tasks these filters match "before
+            // pagination", so counted before the cursor narrows them. Until
+            // 2026-10-13 it was the length of the page.
+            let total_size = {
+                let sql = if conditions.is_empty() {
+                    "SELECT COUNT(*) FROM tasks".to_owned()
+                } else {
+                    format!(
+                        "SELECT COUNT(*) FROM tasks WHERE {}",
+                        conditions.join(" AND ")
+                    )
+                };
+                let mut count = sqlx::query_scalar::<_, i64>(&sql);
+                for val in &bind_values {
+                    count = count.bind(val);
+                }
+                let n = count.fetch_one(&self.pool).await.map_err(to_a2a_error)?;
+                u32::try_from(n).unwrap_or(u32::MAX)
+            };
             // Composite (updated_at, id) row-value cursor: resume strictly
             // before the last row of the previous page under the
             // status-timestamp-descending order (spec §3.1.4). A token not
@@ -907,12 +926,11 @@ impl TaskStore for SqliteTaskStore {
                     String::new()
                 };
 
-            #[allow(clippy::cast_possible_truncation)]
-            let page_len = rows.len() as u32;
             let tasks: Vec<Task> = rows.into_iter().map(|(_, task)| task).collect();
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
-            response.page_size = page_len;
+            response.page_size = page_size;
+            response.total_size = total_size;
             Ok(response)
         })
     }

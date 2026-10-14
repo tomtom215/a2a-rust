@@ -11,6 +11,11 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent")
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use std::sync::Arc;
 //! use a2a_protocol_server::serve::serve;
 //! use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -27,6 +32,7 @@
 //! # async fn example() -> std::io::Result<()> {
 //! let handler = Arc::new(
 //!     RequestHandlerBuilder::new(MyExecutor)
+//!         .with_agent_card(card())
 //!         .build()
 //!         .expect("build handler"),
 //! );
@@ -120,6 +126,11 @@ pub trait Dispatcher: Send + Sync + 'static {
 /// # Example
 ///
 /// ```rust,no_run
+/// # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+/// #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+/// #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent")
+/// #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+/// # }
 /// use std::sync::Arc;
 /// use a2a_protocol_server::serve::serve;
 /// use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -136,6 +147,7 @@ pub trait Dispatcher: Send + Sync + 'static {
 /// # async fn example() -> std::io::Result<()> {
 /// let handler = Arc::new(
 ///     RequestHandlerBuilder::new(MyExecutor)
+///         .with_agent_card(card())
 ///         .build()
 ///         .expect("build handler"),
 /// );
@@ -159,7 +171,7 @@ pub async fn serve(
     );
 
     loop {
-        let (stream, _peer) = match listener.accept().await {
+        let (stream, peer) = match listener.accept().await {
             Ok(pair) => pair,
             Err(e) => {
                 // A transient accept() error (per-connection abort, or fd-table
@@ -181,6 +193,7 @@ pub async fn serve(
             let service = service(
                 dispatcher,
                 connection.as_ref().map(connections::Connection::requests),
+                peer,
             );
             let result =
                 hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
@@ -193,18 +206,20 @@ pub async fn serve(
     }
 }
 
-/// The per-connection service: dispatches each request, counting it in
-/// flight on its connection when there is a tracker (audit O10).
+/// The per-connection service: dispatches each request with its connection's
+/// [`PeerAddr`](crate::PeerAddr), counted in flight when tracked (audit O10).
 fn service<D: Dispatcher>(
     dispatcher: Arc<D>,
     requests: Option<connections::Requests>,
+    peer: SocketAddr,
 ) -> impl hyper::service::Service<
     hyper::Request<Incoming>,
     Response = DispatchResponse,
     Error = Infallible,
     Future = impl Future<Output = Result<DispatchResponse, Infallible>> + Send,
 > + Clone {
-    hyper::service::service_fn(move |req| {
+    hyper::service::service_fn(move |mut req: hyper::Request<Incoming>| {
+        req.extensions_mut().insert(crate::PeerAddr(peer));
         let d = Arc::clone(&dispatcher);
         let requests = requests.clone();
         async move {
@@ -237,7 +252,7 @@ pub async fn serve_with_addr(
 
     tokio::spawn(async move {
         loop {
-            let (stream, _peer) = match listener.accept().await {
+            let (stream, peer) = match listener.accept().await {
                 Ok(pair) => pair,
                 Err(e) => {
                     // Never let a transient accept() error kill the loop.
@@ -255,6 +270,7 @@ pub async fn serve_with_addr(
                 let service = service(
                     dispatcher,
                     connection.as_ref().map(connections::Connection::requests),
+                    peer,
                 );
                 let result = hyper_util::server::conn::auto::Builder::new(
                     hyper_util::rt::TokioExecutor::new(),

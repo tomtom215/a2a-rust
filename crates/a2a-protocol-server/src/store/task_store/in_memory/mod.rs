@@ -1057,16 +1057,17 @@ impl TaskStore for InMemoryTaskStore {
                 },
             };
 
-            // §3.1.4 statusTimestampAfter: only tasks whose status timestamp
-            // is strictly after the given instant. Because the index is keyed
-            // by (millis, seq), the filter is a lower range bound rather than
-            // a per-entry check. An unparseable filter value cannot reach the
+            // a2a.proto `status_timestamp_after`: only tasks whose status
+            // timestamp is "greater than or equal to" the given instant (until
+            // 2026-10-13, strictly after). Because the index is keyed by
+            // (millis, seq), the filter is a lower range bound rather than a
+            // per-entry check. An unparseable filter value cannot reach the
             // store through the handler (which validates it); treat it as
             // matching nothing rather than silently returning everything.
             let lower = match params.status_timestamp_after.as_deref() {
                 None => std::ops::Bound::Unbounded,
                 Some(ts) => match a2a_protocol_types::parse_iso8601_to_unix_millis(ts) {
-                    Some(millis) => std::ops::Bound::Excluded((millis, u64::MAX)),
+                    Some(millis) => std::ops::Bound::Included((millis, 0)),
                     None => {
                         return Ok(TaskListResponse::new(Vec::new()));
                     }
@@ -1099,17 +1100,33 @@ impl TaskStore for InMemoryTaskStore {
                     .collect()
             };
 
-            let collected: Vec<(OrderKey, Task)> = if let Some(ref ctx) = params.context_id {
-                store
-                    .context_index
-                    .get(ctx.as_str())
-                    .map_or_else(Vec::new, collect_from)
-            } else {
-                collect_from(&store.order_index)
+            let index = match params.context_id {
+                Some(ref ctx) => store.context_index.get(ctx.as_str()),
+                None => Some(&store.order_index),
             };
+            let collected: Vec<(OrderKey, Task)> = index.map_or_else(Vec::new, collect_from);
 
-            #[allow(clippy::cast_possible_truncation)]
-            let total_size = store.len() as u32;
+            // a2a.proto `total_size`: the tasks these filters match "before
+            // pagination", so the cursor does not narrow it. Until 2026-10-13
+            // this was every task in the store, whatever the filters. Only a
+            // timestamp or status filter costs a walk of what it matches; the
+            // index alone, or a context's, is counted by its length.
+            let total_size = index.map_or(0, |index| match (lower, &params.status) {
+                (std::ops::Bound::Unbounded, None) => index.len(),
+                (std::ops::Bound::Included(_) | std::ops::Bound::Excluded(_), None) => {
+                    index.range((lower, std::ops::Bound::Unbounded)).count()
+                }
+                (lower, Some(status)) => index
+                    .range((lower, std::ops::Bound::Unbounded))
+                    .filter(|(_, id)| {
+                        store
+                            .entries
+                            .get(id)
+                            .is_some_and(|e| e.task.status.state == *status)
+                    })
+                    .count(),
+            });
+            let total_size = u32::try_from(total_size).unwrap_or(u32::MAX);
             drop(store);
 
             let has_next_page = crate::store::pagination::has_next_page(collected.len(), page_size);
@@ -1796,8 +1813,9 @@ mod tests {
         );
     }
 
-    /// §3.1.4 statusTimestampAfter: only tasks whose status changed strictly
-    /// after the given instant are returned.
+    /// a2a.proto `status_timestamp_after`: only tasks whose status timestamp
+    /// is "greater than or equal to" the given instant are returned. Until
+    /// 2026-10-13 this pinned strictly-after.
     #[tokio::test]
     async fn list_filters_by_status_timestamp_after() {
         let store = InMemoryTaskStore::new();
@@ -1832,11 +1850,7 @@ mod tests {
         };
         let page = store.list(&params).await.unwrap();
         let ids: Vec<&str> = page.tasks.iter().map(|t| t.id.0.as_str()).collect();
-        assert_eq!(
-            ids,
-            vec!["new"],
-            "filter must be strictly-after (boundary excluded)"
-        );
+        assert_eq!(ids, vec!["new", "boundary"], "the boundary is included");
 
         // Filter combined with context filter.
         let params = ListTasksParams {
@@ -1882,8 +1896,8 @@ mod tests {
         }
         assert_eq!(
             seen,
-            vec!["t9", "t8", "t7", "t6", "t5"],
-            "filtered pagination must visit exactly the strictly-after tasks in order"
+            vec!["t9", "t8", "t7", "t6", "t5", "t4"],
+            "filtered pagination must visit exactly the tasks at or after the bound, in order"
         );
     }
 

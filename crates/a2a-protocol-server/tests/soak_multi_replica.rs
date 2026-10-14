@@ -220,11 +220,15 @@ async fn spawn_replica(
     // the keys in the table rather than trusting the configuration.
     let handler = Arc::new(
         RequestHandlerBuilder::new(WorkingExec)
+            .without_agent_card()
             .with_task_store(store)
             .with_interceptor(ApiKeyAuthInterceptor::with_labelled_keys(
                 (0..WORKERS).map(|w| (format!("soak-key-{w}"), format!("caller-{w}"))),
             ))
             .with_interceptor(limiter)
+            // What this soak measures is the rate-limit buckets, not task
+            // isolation, which would need the tenant-aware Postgres stores.
+            .share_tasks_across_callers()
             .build()
             .expect("handler builds"),
     );

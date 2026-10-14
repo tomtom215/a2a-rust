@@ -114,6 +114,14 @@ pub trait PushSender: Send + Sync + 'static {
         true
     }
 
+    /// Whether this sender delivers only to `https://` webhooks, checked when
+    /// a push config is created so an `http://` URL is refused then, with a
+    /// reason. Default: `false`. [`HttpPushSender`] answers from
+    /// [`https_only`](HttpPushSender::https_only).
+    fn requires_https(&self) -> bool {
+        false
+    }
+
     /// The longest a single [`send`](Self::send) can take, if this sender can
     /// say — its whole retry schedule, not one attempt.
     ///
@@ -122,13 +130,11 @@ pub trait PushSender: Send + Sync + 'static {
     /// Background delivery bounds every `send` with
     /// [`HandlerLimits::push_delivery_timeout`], and a sender whose own
     /// schedule is longer than that bound never finishes it. At the shipped
-    /// defaults the two contradict: [`HttpPushSender`] promises three attempts
-    /// at 30s each with `[1s, 2s]` backoff, after a 5s DNS bound — 98s —
-    /// against a 5-second bound.
-    /// **Measured 2026-08-19 against a real socket: exactly one of the three
-    /// attempts reaches the webhook, and the outer timeout fires at 5.001s.**
-    /// `max_attempts` and `backoff` are, at the defaults, configuration that
-    /// cannot take effect.
+    /// defaults [`HttpPushSender`] schedules three attempts at 10s each with
+    /// `[1s, 2s]` backoff, after a 5s DNS bound — 38s — against a 30-second
+    /// bound: every attempt starts, the first two always finish, and the third
+    /// has what is left, 2s when every request runs to its timeout. Until
+    /// 2026-10-12 it was 98s against 5s, and one attempt of three ran.
     ///
     /// Reporting a duration here lets the server tell "your webhook is slow"
     /// apart from "your two timeouts disagree" — see
@@ -143,8 +149,14 @@ pub trait PushSender: Send + Sync + 'static {
     }
 }
 
-/// Default per-request timeout for push notification delivery.
-const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Default per-request timeout for push notification delivery: the low end of
+/// the 10-30 seconds spec §4.3.3 and §13.2 recommend, so that the default
+/// retry schedule fits inside the handler's default delivery bound (see
+/// [`HandlerLimits::push_delivery_timeout`]). It was 30 seconds until
+/// 2026-10-12, which left room for one attempt in three.
+///
+/// [`HandlerLimits::push_delivery_timeout`]: crate::handler::HandlerLimits::push_delivery_timeout
+const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Default bound on the SSRF pre-flight's DNS lookup. See
 /// [`HttpPushSender::with_dns_timeout`].
@@ -259,6 +271,8 @@ pub struct HttpPushSender {
     allow_private_urls: bool,
     /// Lowercased hostnames webhooks may target; `None` allows any.
     allowed_hosts: Option<Vec<String>>,
+    /// Whether only `https://` webhooks are accepted.
+    https_only: bool,
 }
 
 impl Default for HttpPushSender {
@@ -268,7 +282,7 @@ impl Default for HttpPushSender {
 }
 
 impl HttpPushSender {
-    /// Creates a new [`HttpPushSender`] with the default 30-second request timeout
+    /// Creates a new [`HttpPushSender`] with the default 10-second request timeout
     /// and default retry policy.
     #[must_use]
     pub fn new() -> Self {
@@ -286,6 +300,7 @@ impl HttpPushSender {
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
             allowed_hosts: None,
+            https_only: false,
         }
     }
 
@@ -309,6 +324,7 @@ impl HttpPushSender {
             dns_timeout: DEFAULT_DNS_LOOKUP_TIMEOUT,
             allow_private_urls: false,
             allowed_hosts: None,
+            https_only: false,
         }
     }
 
@@ -366,6 +382,17 @@ impl HttpPushSender {
         self
     }
 
+    /// Delivers only to `https://` webhooks (spec §13.2: webhook URLs SHOULD
+    /// use HTTPS). A push config with any other scheme is refused when it is
+    /// created, and a delivery to one is refused before any connection is
+    /// made. Off by default, so `http://` webhooks are delivered in
+    /// plaintext unless this is set.
+    #[must_use]
+    pub const fn https_only(mut self) -> Self {
+        self.https_only = true;
+        self
+    }
+
     fn host_allowed(&self, url: &str) -> bool {
         let Some(allowed) = &self.allowed_hosts else {
             return true;
@@ -375,6 +402,12 @@ impl HttpPushSender {
             .and_then(|uri| uri.host().map(str::to_ascii_lowercase))
             .is_some_and(|host| allowed.contains(&host))
     }
+}
+
+/// Whether `url`'s scheme is `https`, ignoring ASCII case.
+pub(crate) fn is_https_url(url: &str) -> bool {
+    url.split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"))
 }
 
 /// Returns `true` if the given IPv4 address is private, loopback, link-local,
@@ -815,6 +848,10 @@ impl PushSender for HttpPushSender {
         self.host_allowed(url)
     }
 
+    fn requires_https(&self) -> bool {
+        self.https_only
+    }
+
     fn send<'a>(
         &'a self,
         url: &'a str,
@@ -834,9 +871,12 @@ impl PushSender for HttpPushSender {
                 )));
             }
 
-            let is_https = url
-                .split_once("://")
-                .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
+            let is_https = is_https_url(url);
+            if self.https_only && !is_https {
+                return Err(A2aError::invalid_params(format!(
+                    "{target} is not an https:// webhook, and this sender delivers only to https"
+                )));
+            }
 
             // Without the `tls-rustls` feature this sender's connector is
             // HTTP-only. Fail an `https://` target early with an actionable
@@ -1281,12 +1321,12 @@ mod tests {
     fn max_delivery_duration_matches_the_retry_loop_it_describes() {
         use std::time::Duration;
 
-        // 3 attempts at 30s, with [1s, 2s] between them, after a 5s DNS bound.
+        // 3 attempts at 10s, with [1s, 2s] between them, after a 5s DNS bound.
         let sender = HttpPushSender::new();
         assert_eq!(
             sender.max_delivery_duration(),
-            Some(Duration::from_secs(5 + 30 + 1 + 30 + 2 + 30)),
-            "the default schedule is 98 seconds: 5 of DNS, then 93 of requests and backoff"
+            Some(Duration::from_secs(5 + 10 + 1 + 10 + 2 + 10)),
+            "the default schedule is 38 seconds: 5 of DNS, then 33 of requests and backoff"
         );
 
         // One attempt has no backoff at all.
@@ -1312,50 +1352,56 @@ mod tests {
         );
     }
 
-    /// The two shipped defaults contradict each other, and this records by how
-    /// much so that moving either one is a visible decision.
+    /// The shipped defaults meet spec §4.3.3 / §13.2 (10-30 seconds) and start
+    /// every attempt of the default retry schedule inside the handler's
+    /// default bound, and this records by how much, so that moving any of the
+    /// numbers is a visible decision.
     ///
-    /// Measured 2026-08-19 against a real socket: with a webhook that never
-    /// answers, exactly one request arrives and the handler's bound fires at
-    /// 5.001s — the sender's second and third attempts never happen.
+    /// Until 2026-10-12 the sender's 30s requests ran against a 5s bound: one
+    /// attempt in three reached the webhook (measured 2026-08-19 against a
+    /// real socket, the bound firing at 5.001s).
     #[test]
-    fn the_default_schedule_does_not_fit_the_default_handler_bound() {
+    fn the_default_schedule_starts_every_attempt_inside_the_default_bound() {
         use crate::handler::HandlerLimits;
+        use std::time::Duration;
 
-        let wanted = HttpPushSender::new()
-            .max_delivery_duration()
-            .expect("HttpPushSender reports its schedule");
+        let ten = Duration::from_secs(10);
+        let thirty = Duration::from_secs(30);
+        assert!((ten..=thirty).contains(&DEFAULT_PUSH_REQUEST_TIMEOUT));
         let allowed = HandlerLimits::default().push_delivery_timeout;
+        assert!((ten..=thirty).contains(&allowed));
 
-        assert!(
-            wanted > allowed,
-            "if these no longer contradict, the fix landed — update this test \
-             and the arithmetic in HandlerLimits::push_delivery_timeout's docs. \
-             sender wants {wanted:?}, handler allows {allowed:?}"
-        );
-
-        // How many attempts actually get to run, by the same arithmetic the
-        // docs quote. One attempt starts immediately; each further attempt
-        // needs the previous request's timeout plus its backoff to have fitted.
+        // When each attempt starts if every request runs to its timeout: after
+        // the DNS bound, then after each request and the backoff that follows.
         let policy = PushRetryPolicy::default();
-        let request = std::time::Duration::from_secs(30);
-        let mut spent = std::time::Duration::ZERO;
-        let mut attempts = 0_usize;
+        let mut starts = Vec::new();
+        let mut at = DEFAULT_DNS_LOOKUP_TIMEOUT;
         for i in 0..policy.max_attempts {
-            if spent >= allowed {
-                break;
-            }
-            attempts += 1;
-            spent += request;
+            starts.push(at);
+            at += DEFAULT_PUSH_REQUEST_TIMEOUT;
             if let Some(d) = policy.backoff.get(i).or_else(|| policy.backoff.last()) {
-                spent += *d;
+                at += *d;
             }
         }
         assert_eq!(
-            attempts, 1,
-            "at the shipped defaults one attempt of {} runs",
-            policy.max_attempts
+            starts,
+            [5, 16, 28].map(Duration::from_secs),
+            "every attempt starts inside the {allowed:?} bound"
         );
+        assert!(starts.iter().all(|s| *s < allowed));
+        let finished = starts
+            .iter()
+            .filter(|s| **s + DEFAULT_PUSH_REQUEST_TIMEOUT <= allowed)
+            .count();
+        assert_eq!(finished, 2, "the first two attempts always finish");
+
+        // The whole schedule is still longer than the bound, so a delivery
+        // that times out is reported as truncated: the third attempt was cut.
+        let wanted = HttpPushSender::new()
+            .max_delivery_duration()
+            .expect("HttpPushSender reports its schedule");
+        assert_eq!(wanted, Duration::from_secs(38));
+        assert!(wanted > allowed);
     }
 
     #[test]

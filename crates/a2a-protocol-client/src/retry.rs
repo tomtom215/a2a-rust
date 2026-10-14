@@ -155,6 +155,9 @@ impl ClientError {
     ///   clears as responses arrive
     /// - A stream that ended before its final event (`IncompleteStream`),
     ///   which a resubscribe resumes
+    /// - A protocol error that asks to be retried later: a rate limit refused
+    ///   over JSON-RPC or WebSocket carries a `RetryInfo` detail, where HTTP+JSON
+    ///   and gRPC answer `429` and `RESOURCE_EXHAUSTED`
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
         match self {
@@ -166,13 +169,16 @@ impl ClientError {
             Self::UnexpectedStatus { status, .. } => {
                 matches!(status, 429 | 502 | 503 | 504)
             }
-            // Non-retryable: serialization, protocol, config, auth errors
+            Self::Protocol(e) => e.retry_after().is_some(),
+            // Non-retryable: serialization, other protocol errors, config,
+            // auth, and a call the card does not declare the capability for
             Self::Serialization(_)
-            | Self::Protocol(_)
             | Self::Transport(_)
             | Self::InvalidEndpoint(_)
             | Self::AuthRequired { .. }
-            | Self::ProtocolBindingMismatch(_) => false,
+            | Self::CapabilityNotDeclared { .. }
+            | Self::ProtocolBindingMismatch(_)
+            | Self::InvalidAuthScheme(_) => false,
         }
     }
 }
@@ -261,19 +267,25 @@ fn carries_idempotency_key(
 /// **non-idempotent** method — that is, the error proves the server rejected
 /// the request *without processing it*, so re-sending cannot duplicate work.
 ///
-/// Only `429 Too Many Requests` and `503 Service Unavailable` qualify: both
-/// signal the request was refused up front. `Timeout`, connection errors, and
-/// `502`/`504` (a gateway may already have forwarded the request to a backend
-/// that processed it) are all ambiguous and are therefore *not* retried for
-/// non-idempotent methods.
+/// `429 Too Many Requests` and `503 Service Unavailable` qualify: both signal
+/// the request was refused up front. So does a protocol error carrying a
+/// `RetryInfo` delay, the JSON-RPC and WebSocket form of a rate-limit refusal:
+/// an executor's own failure reaches the caller as a `Failed` task, not as an
+/// error response, so a response error that names a delay was raised before
+/// the request was processed. `Timeout`, connection errors, and `502`/`504` (a
+/// gateway may already have forwarded the request to a backend that processed
+/// it) are all ambiguous and are therefore *not* retried for non-idempotent
+/// methods.
 const fn safe_to_retry_non_idempotent(error: &ClientError) -> bool {
-    matches!(
-        error,
+    match error {
         ClientError::UnexpectedStatus {
-            status: 429 | 503,
-            ..
-        }
-    )
+            status: 429 | 503, ..
+        } => true,
+        // A rate-limit refusal names a delay because the request was not
+        // processed: the JSON-RPC and WebSocket form of a 429.
+        ClientError::Protocol(e) => e.retry_after().is_some(),
+        _ => false,
+    }
 }
 
 /// Computes the delay before the next retry: the server's `Retry-After` (from
@@ -361,7 +373,8 @@ impl Transport for RetryTransport {
                     Ok(result) => return Ok(result),
                     // Retry only when the error is transient AND either the
                     // method is idempotent or the failure proves the request
-                    // was rejected without being processed (429/503). This
+                    // was rejected without being processed (429/503, or a
+                    // RetryInfo delay). This
                     // prevents silently re-sending a non-idempotent SendMessage
                     // whose outcome is ambiguous (a timeout the server may have
                     // already processed).

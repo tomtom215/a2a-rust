@@ -220,10 +220,16 @@ agent_executor!(Refunds, |ctx, queue| async {
     emit.status(TaskState::Completed).await
 });
 
+/// Alice asks and Bob answers, so Bob has to reach Alice's task: the two
+/// share the tenant's records rather than being isolated by caller.
 fn handler(gate: Option<ApprovalGate>) -> RequestHandler {
-    let mut b = RequestHandlerBuilder::new(Refunds).with_interceptor(
-        BearerTokenAuthInterceptor::with_labelled_tokens([("t-alice", "alice"), ("t-bob", "bob")]),
-    );
+    let mut b = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
+            ("t-alice", "alice"),
+            ("t-bob", "bob"),
+        ]))
+        .share_tasks_across_callers();
     if let Some(g) = gate {
         b = b.with_approval_gate(g);
     }
@@ -285,6 +291,67 @@ async fn an_approval_flows_through_the_gate_to_the_executor() {
     assert_eq!(result_text(&done), "Approve by bob");
 }
 
+/// Isolated by caller, nobody but Alice reaches Alice's task, so a gate that
+/// wants a second caller could never admit a decision; `build()` says so
+/// rather than serving a gate that refuses everything.
+#[test]
+fn caller_isolation_refuses_a_gate_that_needs_a_second_caller() {
+    let auth = || BearerTokenAuthInterceptor::with_labelled_tokens([("t-alice", "alice")]);
+    let by_default = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
+        .with_interceptor(auth())
+        .with_approval_gate(ApprovalGate::new());
+    let explicitly = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
+        .with_interceptor(auth())
+        .with_approval_gate(ApprovalGate::new().with_approvers(["bob"]))
+        .isolate_tasks_by_caller();
+    // Each names what isolated the callers, and both ways out.
+    for (b, cause) in [
+        (by_default, "an authenticating interceptor makes"),
+        (explicitly, "isolate_tasks_by_caller keeps"),
+    ] {
+        let Err(ServerError::InvalidParams(why)) = b.build() else {
+            panic!("expected a refusal");
+        };
+        assert!(why.contains(cause), "{why}");
+        assert!(why.contains("share_tasks_across_callers()"), "{why}");
+        assert!(why.contains("allowing_self_approval()"), "{why}");
+    }
+}
+
+/// A gate that lets the requester answer works under caller isolation, and
+/// the task stays out of every other caller's reach.
+#[tokio::test]
+async fn a_self_approving_gate_works_with_caller_isolation() {
+    let h = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
+            ("t-alice", "alice"),
+            ("t-bob", "bob"),
+        ]))
+        .with_approval_gate(ApprovalGate::new().allowing_self_approval())
+        .build()
+        .expect("isolated by caller, by default");
+    let asked = send(&h, "t-alice", ask()).await.unwrap();
+    let req = ApprovalRequest::read(asked.status.message.as_ref().unwrap())
+        .unwrap()
+        .unwrap();
+    let mut decision = answer(&ApprovalDecision::approve(&req), &asked.id.0);
+    decision.context_id = Some(asked.context_id.clone());
+
+    let bobs = send(&h, "t-bob", decision.clone()).await;
+    assert!(
+        matches!(bobs, Err(ServerError::TaskNotFound(_))),
+        "{bobs:?}"
+    );
+
+    decision.id = MessageId::new("a-2");
+    let done = send(&h, "t-alice", decision).await.unwrap();
+    assert_eq!(done.status.state, TaskState::Completed);
+    assert_eq!(result_text(&done), "Approve by alice");
+}
+
 #[tokio::test]
 async fn without_a_gate_a_decision_is_never_reported_as_checked() {
     let h = handler(None);
@@ -335,12 +402,14 @@ async fn an_admitted_decision_is_audited_with_the_approver() {
 
     let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
     let h = RequestHandlerBuilder::new(Refunds)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("t-alice", "alice"),
             ("t-bob", "bob"),
         ]))
         .with_approval_gate(ApprovalGate::new())
         .with_audit(Arc::clone(&log))
+        .share_tasks_across_callers()
         .build()
         .expect("handler");
     let asked = send(&h, "t-alice", ask()).await.unwrap();

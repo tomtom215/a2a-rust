@@ -138,11 +138,13 @@ impl HotReloadAgentCardHandler {
     ///
     /// Returns [`ServerError::Serialization`] if `json` is not valid agent card
     /// JSON, and [`ServerError::InvalidParams`] if it parses but is not a
-    /// card this server may publish ([`AgentCard::validate`]; spec §5.7). In
-    /// both cases the current card stays in place.
+    /// card this server may publish ([`AgentCard::validate`] and
+    /// [`AgentCard::validate_security_schemes`]; spec §5.7). In both cases
+    /// the current card stays in place.
     pub fn reload_from_json(&self, json: &str) -> ServerResult<()> {
         let card: AgentCard = serde_json::from_str(json)?;
         card.validate()
+            .and_then(|()| card.validate_security_schemes())
             .map_err(|why| ServerError::InvalidParams(why.into()))?;
         self.update(card);
         Ok(())
@@ -509,6 +511,25 @@ mod tests {
         skillless.skills.clear();
         let json = serde_json::to_string(&skillless).unwrap();
         assert!(handler.reload_from_json(&json).is_err());
+        assert_eq!(handler.current().name, "Test Agent");
+    }
+
+    /// A reload whose security scheme has an empty REQUIRED string is
+    /// refused too, and the card being served stays.
+    #[test]
+    fn reload_from_json_refuses_an_empty_required_scheme_field() {
+        let handler = HotReloadAgentCardHandler::new(minimal_agent_card());
+        let mut card = serde_json::to_value(minimal_agent_card()).unwrap();
+        card["name"] = "Empty Key Name".into();
+        card["securitySchemes"] = serde_json::json!({"key": {"apiKeySecurityScheme": {"location": "header", "name": ""}}});
+        let err = handler
+            .reload_from_json(&card.to_string())
+            .expect_err("an empty API key name reloaded");
+        assert!(
+            err.to_string()
+                .contains("apiKeySecurityScheme needs a name"),
+            "{err}"
+        );
         assert_eq!(handler.current().name, "Test Agent");
     }
 

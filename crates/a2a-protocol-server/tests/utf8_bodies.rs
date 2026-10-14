@@ -19,7 +19,12 @@ struct Exec;
 agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 
 fn handler() -> Arc<RequestHandler> {
-    Arc::new(RequestHandlerBuilder::new(Exec).build().expect("handler"))
+    Arc::new(
+        RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
+            .build()
+            .expect("handler"),
+    )
 }
 
 /// A send whose text part holds Latin-1 `é` (0xE9), invalid as UTF-8.

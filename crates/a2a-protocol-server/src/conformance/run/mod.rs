@@ -35,6 +35,10 @@ use crate::streaming::event_queue::{
 pub(super) struct Run {
     outcome: RunOutcome,
     events: Vec<StreamResponse>,
+    /// What the executor wrote and the queue refused, such as an artifact
+    /// with no id. The queue checks REQUIRED fields itself since
+    /// 2026-10-14, so a check that read `events` alone saw nothing wrong.
+    refused: Vec<StreamResponse>,
     /// The queue lagged, so `events` is missing an unknown stretch and every
     /// check that reads the sequence has to say so rather than grade a hole.
     truncated: bool,
@@ -110,28 +114,45 @@ async fn drain(mut rx: tokio::sync::broadcast::Receiver<Shared>) -> (Vec<StreamR
 /// inside an `await` the executor is itself suspended on, so a cooperative
 /// executor's next token check provably observes it, and an executor that
 /// never checks again provably does not.
-struct CancelOnFirstWrite {
+/// The writer an executor is graded through: it keeps each event the queue
+/// refused, and for a mid-run cancellation cancels the token on the first
+/// write.
+struct HarnessWriter {
     inner: Arc<InMemoryQueueWriter>,
-    token: CancellationToken,
+    cancel: Option<CancellationToken>,
     fired: AtomicBool,
+    refused: Arc<std::sync::Mutex<Vec<StreamResponse>>>,
 }
 
-impl EventQueueWriter for CancelOnFirstWrite {
+impl EventQueueWriter for HarnessWriter {
     fn write<'a>(
         &'a self,
         event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            let attempted = event.clone();
             let result = self.inner.write(event).await;
-            if !self.fired.swap(true, Ordering::SeqCst) {
-                self.token.cancel();
+            if result.is_err() {
+                self.refused
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(attempted);
+            }
+            if let Some(token) = &self.cancel
+                && !self.fired.swap(true, Ordering::SeqCst)
+            {
+                token.cancel();
             }
             result
         })
     }
 
+    // `InMemoryQueueWriter::close` is a no-op — the channel closes when the
+    // last writer drops — so forwarding to it and doing nothing are the same
+    // function, and the forwarding form left a mutant no test could kill.
+    // `close_is_no_op_and_succeeds` fails if that ever stops being true.
     fn close<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        self.inner.close()
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -179,16 +200,14 @@ impl Run {
         // Spawned so a panicking executor is a graded failure rather than a
         // panic that takes the harness with it. `AgentExecutor` is already
         // `Send + Sync + 'static`, so this costs nothing in generality.
-        let mut handle = if cancel_mid_run {
-            let wrapper = CancelOnFirstWrite {
-                inner: write_handle,
-                token,
-                fired: AtomicBool::new(false),
-            };
-            tokio::spawn(async move { exec.execute(&ctx, &wrapper).await })
-        } else {
-            tokio::spawn(async move { exec.execute(&ctx, write_handle.as_ref()).await })
+        let refused = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let wrapper = HarnessWriter {
+            inner: write_handle,
+            cancel: cancel_mid_run.then_some(token),
+            fired: AtomicBool::new(false),
+            refused: Arc::clone(&refused),
         };
+        let mut handle = tokio::spawn(async move { exec.execute(&ctx, &wrapper).await });
         let drainer = tokio::spawn(drain(rx));
         let deadline = tokio::time::Instant::now() + RUN_TIMEOUT;
 
@@ -218,9 +237,15 @@ impl Run {
             // far as complete would grade a hole, so say it is incomplete.
             _ => (Vec::new(), true),
         };
+        let refused = std::mem::take(
+            &mut *refused
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
         Self {
             outcome,
             events,
+            refused,
             truncated,
         }
     }
@@ -259,13 +284,15 @@ impl Run {
     }
 }
 
-/// [`AgentExecutor::cancel`] must leave subscribers a terminal state.
-pub(super) async fn cancel_emits_a_terminal_state(
+/// [`AgentExecutor::cancel`] must return `Ok`, in time and without
+/// panicking. Whether it writes the terminal state is its choice: after a
+/// hook that writes none, the handler writes `Canceled` (spec §3.1.2).
+pub(super) async fn cancel_succeeds(
     executor: &Arc<dyn AgentExecutor>,
     message: &Message,
     call_context: Option<&CallContext>,
 ) -> CheckResult {
-    const NAME: &str = "cancel_emits_terminal";
+    const NAME: &str = "cancel_succeeds";
     let (writer, _reader) = new_in_memory_queue();
     let rx = writer.raw_subscribe();
     let writer = Arc::new(writer);
@@ -305,10 +332,9 @@ pub(super) async fn cancel_emits_a_terminal_state(
             if states(&events).iter().any(|s| s.is_terminal()) {
                 CheckResult::pass(NAME, "emitted a terminal status")
             } else {
-                CheckResult::fail(
+                CheckResult::pass(
                     NAME,
-                    "emitted no terminal status; a subscriber watching the stream \
-                     is left waiting for a task that has already been cancelled",
+                    "emitted no terminal status; the handler writes Canceled after it",
                 )
             }
         }

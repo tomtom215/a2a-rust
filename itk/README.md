@@ -15,7 +15,7 @@ Two agent tiers exist per language:
 2. **Official-SDK agents** (`python-sdk/`, `js-sdk/`, `go-sdk/`,
    `java-sdk/`) — the same echo contract built on the official reference
    SDKs (`a2a-sdk` 1.x, `@a2a-js/sdk` 1.x, `a2a-go/v2`, `a2a-java`
-   1.3.0.Final). These are the runs that prove real cross-SDK interop.
+   1.4.0.Final). These are the runs that prove real cross-SDK interop.
 
 The reverse direction is covered too: `interop/python_client_vs_rust.py`
 drives our `echo-agent` with the official Python SDK **client** over both
@@ -32,9 +32,11 @@ Each echo agent:
 Documented upstream bugs surfaced by running our TCK against the official
 SDKs — skipped with `--skip` (reported, never silent) in CI:
 
-| SDK | Test | Binding | Divergence |
-|---|---|---|---|
-| `a2a-java` 1.3.0.Final | `a2a_media_type_accepted` | REST only | Rejects `application/a2a+json`, which §11 says **SHOULD** be used for requests and responses. Re-verified 2026-08-30 at 1.3.0.Final. |
+None since 2026-10-12. The last entry was `a2a-java` 1.3.0.Final's REST
+server rejecting `application/a2a+json` (`a2a_media_type_accepted`), which
+§11 says **SHOULD** be used for requests and responses. 1.4.0.Final accepts
+it; [pin freshness](../.github/workflows/pin-freshness.yml) reported the skip
+stale, the pin moved to 1.4.0.Final, and the skip went with it.
 
 **A skip is a claim about someone else's software.** Every entry asserts that
 a named third party is wrong, so each one needs re-checking against the

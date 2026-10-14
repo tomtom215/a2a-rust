@@ -22,7 +22,12 @@ struct Exec;
 agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 
 async fn send(version: &str, message: Value, metadata: Option<Value>) -> Value {
-    let handler = Arc::new(RequestHandlerBuilder::new(Exec).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
         .await
         .unwrap();
@@ -85,7 +90,7 @@ async fn each_refusal_names_the_parameter_and_what_is_accepted() {
         ),
         (
             send("2.0", message("m-1", text()), None).await,
-            vec!["2.0", "supports 1.x"],
+            vec!["2.0", "supports 1.0"],
         ),
     ];
     for (error, needles) in cases {

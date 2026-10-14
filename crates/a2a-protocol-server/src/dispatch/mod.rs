@@ -13,6 +13,7 @@ pub mod grpc;
 pub mod hsts;
 pub mod jsonrpc;
 pub mod rest;
+mod version;
 #[cfg(feature = "websocket")]
 pub mod websocket;
 
@@ -22,6 +23,8 @@ pub use grpc::{GrpcConfig, GrpcDispatcher};
 pub use hsts::Hsts;
 pub use jsonrpc::JsonRpcDispatcher;
 pub use rest::RestDispatcher;
+pub use version::{A2A_VERSION_METADATA_KEY, validate_version_metadata};
+pub(crate) use version::{requested_version, validate_version_header};
 #[cfg(feature = "websocket")]
 pub use websocket::WebSocketDispatcher;
 
@@ -85,6 +88,10 @@ pub struct DispatchConfig {
     /// Disable via [`accept_missing_version_header`](Self::accept_missing_version_header)
     /// for manual `curl` testing or trusted internal deployments.
     pub require_version_header: bool,
+    /// `max-age`, in seconds, of the `Cache-Control` the public agent card is
+    /// served with: spec §8.6.1 asks for one "appropriate for the agent's
+    /// expected update frequency". Default: 3600.
+    pub agent_card_max_age: u32,
 }
 
 impl Default for DispatchConfig {
@@ -97,6 +104,7 @@ impl Default for DispatchConfig {
             sse_channel_capacity: 64,
             max_batch_size: 100,
             require_version_header: true,
+            agent_card_max_age: 3600,
         }
     }
 }
@@ -160,75 +168,20 @@ impl DispatchConfig {
     /// this server does not implement, so the strict default rejects such
     /// requests with `VersionNotSupported` (reference-SDK parity). This
     /// opt-out restores the pre-0.7 tolerant behavior for manual testing or
-    /// deployments where every client is known to speak 1.x.
+    /// deployments where every client is known to speak 1.0.
     #[must_use]
     pub const fn accept_missing_version_header(mut self) -> Self {
         self.require_version_header = false;
         self
     }
-}
 
-/// The service parameter naming the A2A protocol version, spelled the way a
-/// non-HTTP binding carries it.
-///
-/// A2A §3.6.2 defines the parameter and §10.2 says each binding transmits it in
-/// whatever its own metadata mechanism is: an `A2A-Version` HTTP header for
-/// JSON-RPC and REST, a gRPC metadata entry, SLIMRPC session metadata. HTTP
-/// header names are case-insensitive and gRPC requires lowercase, so this is
-/// the lowercase spelling and [`validate_version_metadata`] matches keys
-/// without regard to case.
-pub const A2A_VERSION_METADATA_KEY: &str = "a2a-version";
-
-/// Validates the A2A version carried in a binding's request metadata.
-///
-/// The counterpart of this crate's private header validator, for bindings that
-/// carry service parameters in a string map rather than in HTTP headers, and
-/// the supported way for a binding **outside this crate** to enforce §3.6.2 —
-/// which the built-in bindings do through private helpers this makes public.
-/// Without it an out-of-tree binding can send a version but cannot check one,
-/// and would have to reimplement the comparison and hope it stays in step.
-///
-/// Key lookup is case-insensitive. Any `1.x` is accepted and patch segments
-/// are ignored, per §3.6. The map is generic over its hasher so a binding that
-/// keeps metadata in something other than the default `RandomState` — most
-/// transport crates do — can pass it without rebuilding the map.
-///
-/// `require` decides what an absent or empty value means, and the two answers
-/// are both defensible, which is why it is the caller's to make. §3.6.2 says a
-/// missing value MUST be read as protocol 0.3 — a version this server does not
-/// implement — so `true` rejects it, matching the reference Python SDK and this
-/// crate's own HTTP default. `false` accepts it, which is what the gRPC binding
-/// does for clients predating the parameter.
-///
-/// # Errors
-///
-/// [`A2aError::version_not_supported`] when the version is one this server does
-/// not implement, or is absent while `require` is set.
-///
-/// # Example
-///
-/// ```rust
-/// use a2a_protocol_server::dispatch::validate_version_metadata;
-/// use std::collections::HashMap;
-///
-/// let mut metadata = HashMap::new();
-/// metadata.insert("A2A-Version".to_string(), "1.0".to_string());
-/// assert!(validate_version_metadata(&metadata, true).is_ok());
-///
-/// // Absent, and the caller requires it: rejected as 0.3 per §3.6.2.
-/// assert!(validate_version_metadata(&HashMap::new(), true).is_err());
-/// ```
-///
-/// [`A2aError::version_not_supported`]: a2a_protocol_types::error::A2aError::version_not_supported
-pub fn validate_version_metadata<S: std::hash::BuildHasher>(
-    metadata: &std::collections::HashMap<String, String, S>,
-    require: bool,
-) -> Result<(), a2a_protocol_types::error::A2aError> {
-    let value = metadata
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case(A2A_VERSION_METADATA_KEY))
-        .map(|(_, v)| v.as_str());
-    validate_version_header(value, require)
+    /// Sets the agent card's `Cache-Control: max-age`, in seconds (spec
+    /// §8.6.1). Until 2026-10-14 every HTTP dispatcher sent 3600.
+    #[must_use]
+    pub const fn with_agent_card_max_age(mut self, seconds: u32) -> Self {
+        self.agent_card_max_age = seconds;
+        self
+    }
 }
 
 /// Refuses a request body in a media type A2A does not define.
@@ -249,69 +202,32 @@ pub(crate) fn check_request_content_type(
     ) {
         return Ok(());
     }
-    let Some(ct) = headers.get(hyper::header::CONTENT_TYPE) else {
-        return Ok(());
-    };
-    let ct = ct.to_str().unwrap_or("");
-    if ct.starts_with("application/json") || ct.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE) {
-        return Ok(());
-    }
-    Err(
+    unsupported_content_type(headers).map_or(Ok(()), Err)
+}
+
+/// The refusal of a `Content-Type` that names neither of A2A's JSON media
+/// types, or `None` when `headers` name one of them or none at all.
+///
+/// The value is read as RFC 9110 §8.3.1 reads a media type: the type and
+/// subtype before any `;` parameter, compared case-insensitively. Until
+/// 2026-10-13 every binding compared the raw value by prefix,
+/// case-sensitively, so `Application/JSON` was refused and
+/// `application/json-patch+json` accepted.
+pub(crate) fn unsupported_content_type(
+    headers: &hyper::HeaderMap,
+) -> Option<a2a_protocol_types::error::A2aError> {
+    let ct = headers
+        .get(hyper::header::CONTENT_TYPE)?
+        .to_str()
+        .unwrap_or("");
+    let essence = rest::media_type::essence(ct);
+    let json = essence.eq_ignore_ascii_case("application/json")
+        || essence.eq_ignore_ascii_case(a2a_protocol_types::A2A_CONTENT_TYPE);
+    (!json).then(|| {
         a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
             "unsupported Content-Type: {ct}; expected application/json or application/a2a+json"
-        )),
-    )
-}
-
-/// The `A2A-Version` a request asks for: its header, or else the
-/// `A2A-Version` request parameter.
-///
-/// Spec §3.6.1: "Clients MAY provide the `A2A-Version` as a request parameter
-/// instead of a header", with `GET /tasks/task-123?A2A-Version=1.0` as the
-/// example. Until 2026-10-10 only the header was read, so a client doing
-/// exactly what the example shows was taken to be speaking 0.3 and refused.
-/// A non-empty header wins over the parameter; an empty or absent one falls
-/// back to it.
-pub(crate) fn requested_version(headers: &hyper::HeaderMap, uri: &hyper::Uri) -> Option<String> {
-    let header = headers
-        .get(a2a_protocol_types::A2A_VERSION_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .filter(|v| !v.trim().is_empty());
-    if let Some(v) = header {
-        return Some(v.to_owned());
-    }
-    uri.query()
-        .and_then(|q| rest::query::parse_query_param(q, a2a_protocol_types::A2A_VERSION_HEADER))
-}
-
-/// Validates an `A2A-Version` header value per spec §3.6.2.
-///
-/// `value` is the raw header value (`None` when the header is absent).
-/// Absent or empty MUST be interpreted as protocol 0.3; when `require` is
-/// set (the strict default) that yields the same `VersionNotSupported`
-/// rejection the reference Python SDK produces. Any `1.x` value is
-/// accepted; patch segments are ignored per §3.6. Other versions are
-/// rejected.
-pub(crate) fn validate_version_header(
-    value: Option<&str>,
-    require: bool,
-) -> Result<(), a2a_protocol_types::error::A2aError> {
-    let v = value.unwrap_or("").trim();
-    if v.is_empty() {
-        if require {
-            return Err(a2a_protocol_types::error::A2aError::version_not_supported(
-                "A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)",
-            ));
-        }
-        return Ok(());
-    }
-    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-    if major == Some(1) {
-        return Ok(());
-    }
-    Err(a2a_protocol_types::error::A2aError::version_not_supported(
-        format!("unsupported A2A version: {v}; this server supports 1.x"),
-    ))
+        ))
+    })
 }
 
 /// Adds the `WWW-Authenticate` challenge a `401` for `err` must carry
@@ -331,10 +247,132 @@ pub(crate) fn add_auth_challenge(headers: &mut hyper::HeaderMap, err: &crate::er
     headers.insert(hyper::header::WWW_AUTHENTICATE, value);
 }
 
+/// Records the address of the connection a call arrived on in its headers
+/// map, under [`PEER_ADDR_KEY`](crate::call_context::PEER_ADDR_KEY), where
+/// [`CallContext::peer_addr`](crate::CallContext::peer_addr) reads it.
+pub(crate) fn record_peer_addr(
+    headers: &mut std::collections::HashMap<String, String>,
+    peer: Option<std::net::SocketAddr>,
+) {
+    if let Some(addr) = peer {
+        headers.insert(
+            crate::call_context::PEER_ADDR_KEY.to_owned(),
+            addr.to_string(),
+        );
+    }
+}
+
+/// A request's header fields by name, as the handler reads them.
+///
+/// Names are lowercase, as `http` stores them. A field sent as several lines
+/// is one field (RFC 9110 §5.3), so its lines are joined in order as
+/// [`field_value`] joins them. Until 2026-10-13 every binding kept one line,
+/// the last, and `A2A-Extensions` sent as two lines activated only the
+/// second.
+pub(crate) fn header_fields(
+    headers: &hyper::HeaderMap,
+) -> std::collections::HashMap<String, String> {
+    headers
+        .keys()
+        .filter_map(|name| {
+            Some((
+                name.as_str().to_owned(),
+                field_value(headers, name.as_str())?,
+            ))
+        })
+        .collect()
+}
+
+/// The value of the field `name` (any case): its lines joined in order with
+/// `", "`, or with `"; "` for `cookie`, which HTTP/2 splits into one line per
+/// cookie (RFC 9113 §8.2.3). A line that is not visible ASCII is left out;
+/// `None` when no line is left.
+pub(crate) fn field_value(headers: &hyper::HeaderMap, name: &str) -> Option<String> {
+    let separator = if name.eq_ignore_ascii_case("cookie") {
+        "; "
+    } else {
+        ", "
+    };
+    let lines: Vec<&str> = headers
+        .get_all(name)
+        .iter()
+        .filter_map(|line| line.to_str().ok())
+        .collect();
+    (!lines.is_empty()).then(|| lines.join(separator))
+}
+
+/// The [`PeerAddr`](crate::call_context::PeerAddr) a server attached to a
+/// request, if any.
+pub(crate) fn peer_of(extensions: &hyper::http::Extensions) -> Option<std::net::SocketAddr> {
+    extensions
+        .get::<crate::call_context::PeerAddr>()
+        .map(|peer| peer.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    // ── header_fields ────────────────────────────────────────────────────
+
+    fn lines(pairs: &[(&'static str, &[u8])]) -> hyper::HeaderMap {
+        let mut headers = hyper::HeaderMap::new();
+        for (name, value) in pairs {
+            headers.append(
+                *name,
+                hyper::header::HeaderValue::from_bytes(value).expect("value"),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn header_fields_are_named_in_lowercase() {
+        let fields = header_fields(&lines(&[
+            ("Authorization", b"Bearer tok"),
+            ("X-Request-ID", b"abc"),
+        ]));
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields["authorization"], "Bearer tok");
+        assert_eq!(fields["x-request-id"], "abc");
+        assert!(header_fields(&hyper::HeaderMap::new()).is_empty());
+    }
+
+    /// RFC 9110 §5.3: the lines of one field, joined in the order sent.
+    #[test]
+    fn a_field_sent_as_several_lines_is_one_field() {
+        let fields = header_fields(&lines(&[
+            ("a2a-extensions", b"urn:b"),
+            ("A2A-Extensions", b"urn:a, urn:c"),
+            ("authorization", b"Bearer tok"),
+        ]));
+        assert_eq!(fields["a2a-extensions"], "urn:b, urn:a, urn:c");
+        assert_eq!(fields["authorization"], "Bearer tok");
+    }
+
+    /// RFC 9113 §8.2.3: HTTP/2 sends each cookie on its own line, and they
+    /// are rejoined with `"; "`.
+    #[test]
+    fn cookie_lines_are_joined_as_cookies() {
+        let headers = lines(&[("cookie", b"a=1"), ("Cookie", b"b=2")]);
+        assert_eq!(header_fields(&headers)["cookie"], "a=1; b=2");
+        assert_eq!(field_value(&headers, "Cookie").as_deref(), Some("a=1; b=2"));
+    }
+
+    #[test]
+    fn a_line_that_is_not_visible_ascii_is_left_out() {
+        let headers = lines(&[
+            ("x-name", b"caf\xe9"),
+            ("x-name", b"cafe"),
+            ("x-other", b"caf\xe9"),
+        ]);
+        let fields = header_fields(&headers);
+        assert_eq!(fields["x-name"], "cafe");
+        assert!(!fields.contains_key("x-other"), "{fields:?}");
+        assert_eq!(field_value(&headers, "x-other"), None);
+        assert_eq!(field_value(&headers, "x-absent"), None);
+    }
 
     #[test]
     fn default_values() {
@@ -416,79 +454,6 @@ mod tests {
     }
 
     // ── validate_version_metadata: the out-of-crate binding extension point ──
-
-    #[test]
-    fn version_metadata_matches_key_case_insensitively() {
-        // Bindings spell this differently — HTTP headers arrive in whatever
-        // case the peer sent, gRPC lowercases, SLIMRPC passes through what the
-        // caller set. All four spellings are the same parameter.
-        for key in ["a2a-version", "A2A-Version", "A2A-VERSION", "a2a-Version"] {
-            let mut md = std::collections::HashMap::new();
-            md.insert(key.to_string(), "1.0".to_string());
-            assert!(
-                validate_version_metadata(&md, true).is_ok(),
-                "key spelling {key} should be recognised"
-            );
-        }
-    }
-
-    #[test]
-    fn version_metadata_rejects_unsupported_version() {
-        let mut md = std::collections::HashMap::new();
-        md.insert("a2a-version".to_string(), "0.3".to_string());
-        let err = validate_version_metadata(&md, true).expect_err("0.3 is not supported");
-        assert!(
-            err.message.contains("0.3"),
-            "the error should name the version it rejected, got: {}",
-            err.message
-        );
-    }
-
-    #[test]
-    fn version_metadata_accepts_any_1x_including_patch() {
-        for v in ["1.0", "1.4", "1.0.2", " 1.0 "] {
-            let mut md = std::collections::HashMap::new();
-            md.insert("a2a-version".to_string(), v.to_string());
-            assert!(
-                validate_version_metadata(&md, true).is_ok(),
-                "{v} is a 1.x version and should be accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn version_metadata_absent_follows_the_require_flag() {
-        let empty = std::collections::HashMap::new();
-        assert!(
-            validate_version_metadata(&empty, false).is_ok(),
-            "require=false is the gRPC posture: absent means a legacy client, accept it"
-        );
-        assert!(
-            validate_version_metadata(&empty, true).is_err(),
-            "require=true is the HTTP posture: absent means 0.3 per 3.6.2, reject it"
-        );
-    }
-
-    #[test]
-    fn version_metadata_treats_empty_value_as_absent() {
-        // A binding that sets the key but leaves it blank has told us nothing,
-        // and 3.6.2 reads "no value" as 0.3 regardless of how it got that way.
-        let mut md = std::collections::HashMap::new();
-        md.insert("a2a-version".to_string(), "   ".to_string());
-        assert!(validate_version_metadata(&md, true).is_err());
-        assert!(validate_version_metadata(&md, false).is_ok());
-    }
-
-    #[test]
-    fn version_metadata_ignores_unrelated_keys() {
-        let mut md = std::collections::HashMap::new();
-        md.insert("authorization".to_string(), "Bearer x".to_string());
-        md.insert("x-tenant-id".to_string(), "acme".to_string());
-        assert!(
-            validate_version_metadata(&md, false).is_ok(),
-            "no version key present, and require=false accepts that"
-        );
-    }
 
     #[test]
     fn with_require_version_header_sets_the_field() {

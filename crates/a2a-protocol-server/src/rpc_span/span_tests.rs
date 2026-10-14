@@ -25,7 +25,10 @@ fn call_fields(record: impl FnOnce()) -> BTreeMap<String, String> {
     use tracing_subscriber::layer::SubscriberExt as _;
     struct Idle;
     crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
-    let handler = crate::RequestHandlerBuilder::new(Idle).build().unwrap();
+    let handler = crate::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let fields = Fields::default();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
@@ -221,7 +224,10 @@ fn reference_task_ids_are_exported_as_a_string_array() {
 
     struct Idle;
     crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
-    let handler = crate::RequestHandlerBuilder::new(Idle).build().unwrap();
+    let handler = crate::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let keep = Keep::default();
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(keep.clone())

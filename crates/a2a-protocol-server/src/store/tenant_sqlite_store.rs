@@ -232,7 +232,7 @@ impl TenantAwareSqliteTaskStore {
 use crate::sqlite_pool::sqlite_pool;
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {
-    A2aError::internal(format!("sqlite error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite error", e)
 }
 
 #[allow(clippy::manual_async_fn)]
@@ -423,17 +423,36 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 conditions.push(format!("state = ?{}", bind_values.len() + 1));
                 bind_values.push(status.to_string());
             }
-            // §3.1.4 statusTimestampAfter: strictly-after filter on the
-            // status timestamp, which is what `updated_at` stores. An
-            // unparseable value cannot reach the store through the handler
-            // (which validates it); treat it as matching nothing.
+            // a2a.proto `status_timestamp_after`: "greater than or equal to"
+            // (until 2026-10-13, strictly after) on the status timestamp, which
+            // is what `updated_at` stores. An unparseable value cannot reach
+            // the store through the handler (which validates it); treat it as
+            // matching nothing.
             if let Some(ref after) = params.status_timestamp_after {
                 let Some(after_dt) = super::status_timestamp_sqlite(Some(after)) else {
                     return Ok(TaskListResponse::new(Vec::new()));
                 };
-                conditions.push(format!("updated_at > ?{}", bind_values.len() + 1));
+                conditions.push(format!("updated_at >= ?{}", bind_values.len() + 1));
                 bind_values.push(after_dt);
             }
+            // a2a.proto `total_size`: the tasks these filters match "before
+            // pagination", so counted before the cursor narrows them. Until
+            // 2026-10-13 it was the length of the page.
+            let total_size = {
+                let sql = format!(
+                    "SELECT COUNT(*) FROM tenant_tasks WHERE {}",
+                    conditions.join(" AND ")
+                );
+                let mut count = sqlx::query_scalar::<_, i64>(&sql);
+                for val in &bind_values {
+                    count = count.bind(val);
+                }
+                let n = count
+                    .fetch_one(&self.pool)
+                    .await
+                    .map_err(|e| to_a2a_error(&e))?;
+                u32::try_from(n).unwrap_or(u32::MAX)
+            };
             // Composite (updated_at, id) row-value cursor: status-timestamp
             // descending (spec §3.1.4), disambiguated by id when timestamps
             // tie. A token not produced by us decodes to None → empty page.
@@ -489,12 +508,11 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                     String::new()
                 };
 
-            #[allow(clippy::cast_possible_truncation)]
-            let page_len = rows.len() as u32;
             let tasks: Vec<Task> = rows.into_iter().map(|(_, task)| task).collect();
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
-            response.page_size = page_len;
+            response.page_size = page_size;
+            response.total_size = total_size;
             Ok(response)
         })
     }

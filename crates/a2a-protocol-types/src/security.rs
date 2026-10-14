@@ -198,6 +198,24 @@ impl SecurityScheme {
             Self::MutualTls(_) => SCHEME_ARMS[4].0,
         }
     }
+
+    /// Refuses a string field `a2a.proto` marks REQUIRED that is empty.
+    ///
+    /// Over JSON a missing one does not parse, but an empty one does, and
+    /// over gRPC an absent proto3 string arrives empty. `location` needs no
+    /// check: [`ApiKeyLocation`] has no empty value, and `""` neither parses
+    /// nor converts.
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::ApiKey(s) if s.name.is_empty() => Err("an apiKeySecurityScheme needs a name"),
+            Self::Http(s) if s.scheme.is_empty() => Err("an httpAuthSecurityScheme needs a scheme"),
+            Self::OpenIdConnect(s) if s.open_id_connect_url.is_empty() => {
+                Err("an openIdConnectSecurityScheme needs an openIdConnectUrl")
+            }
+            Self::OAuth2(s) => s.flows.validate(),
+            Self::ApiKey(_) | Self::Http(_) | Self::OpenIdConnect(_) | Self::MutualTls(_) => Ok(()),
+        }
+    }
 }
 
 impl Serialize for SecurityScheme {
@@ -257,6 +275,21 @@ impl<'de> Deserialize<'de> for SecurityScheme {
         // not per request, so the allocation is not on any hot path — unlike
         // `Part`, which is and therefore has a hand-rolled visitor.
         let map = serde_json::Map::<String, serde_json::Value>::deserialize(deserializer)?;
+
+        // A `oneof` holds one arm. Two were read as the first, as if the
+        // other were not there, until 2026-10-13; `Part` and `OAuthFlows`
+        // already refused a second member.
+        let arms = SCHEME_ARMS
+            .iter()
+            .filter(|(json_name, proto_name)| {
+                map.contains_key(*json_name) || map.contains_key(*proto_name)
+            })
+            .count();
+        if arms > 1 {
+            return Err(D::Error::custom(format!(
+                "a SecurityScheme sets exactly one scheme; this one sets {arms}"
+            )));
+        }
 
         for (index, (json_name, proto_name)) in SCHEME_ARMS.iter().enumerate() {
             let Some(inner) = map.get(*json_name).or_else(|| map.get(*proto_name)) else {
@@ -376,19 +409,16 @@ pub struct OAuth2SecurityScheme {
 /// Per the proto definition, this is a `oneof flow` — exactly one flow type
 /// can be specified. Serialized as an externally tagged enum in JSON.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OAuthFlows {
     /// Authorization code flow.
-    #[serde(alias = "authorization_code")]
     AuthorizationCode(AuthorizationCodeFlow),
 
     /// Client credentials flow.
-    #[serde(alias = "client_credentials")]
     ClientCredentials(ClientCredentialsFlow),
 
     /// Device authorization flow (RFC 8628).
-    #[serde(alias = "device_code")]
     DeviceCode(DeviceCodeFlow),
 
     /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
@@ -418,6 +448,47 @@ pub enum OAuthFlows {
     /// ```
     #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
     Password(PasswordOAuthFlow),
+}
+
+crate::oneof::oneof_deserialize!(
+    OAuthFlows,
+    [
+        AuthorizationCode(AuthorizationCodeFlow) = "authorizationCode" | "authorization_code",
+        ClientCredentials(ClientCredentialsFlow) = "clientCredentials" | "client_credentials",
+        DeviceCode(DeviceCodeFlow) = "deviceCode" | "device_code",
+        Implicit(ImplicitFlow) = "implicit",
+        Password(PasswordOAuthFlow) = "password",
+    ]
+);
+
+impl OAuthFlows {
+    /// [`SecurityScheme::validate`] for the flow. The proto marks no field
+    /// of the deprecated implicit and password flows REQUIRED.
+    #[allow(deprecated)] // matching the deprecated flows is not using them
+    const fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            Self::AuthorizationCode(f) if f.authorization_url.is_empty() => {
+                Err("an authorizationCode flow needs an authorizationUrl")
+            }
+            Self::AuthorizationCode(f) if f.token_url.is_empty() => {
+                Err("an authorizationCode flow needs a tokenUrl")
+            }
+            Self::ClientCredentials(f) if f.token_url.is_empty() => {
+                Err("a clientCredentials flow needs a tokenUrl")
+            }
+            Self::DeviceCode(f) if f.device_authorization_url.is_empty() => {
+                Err("a deviceCode flow needs a deviceAuthorizationUrl")
+            }
+            Self::DeviceCode(f) if f.token_url.is_empty() => {
+                Err("a deviceCode flow needs a tokenUrl")
+            }
+            Self::AuthorizationCode(_)
+            | Self::ClientCredentials(_)
+            | Self::DeviceCode(_)
+            | Self::Implicit(_)
+            | Self::Password(_) => Ok(()),
+        }
+    }
 }
 
 /// OAuth 2.0 authorization code flow.
@@ -569,6 +640,29 @@ pub struct MutualTlsSecurityScheme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `oneof` holds one arm: a scheme naming two is refused, as a `Part`
+    /// with two content members is, whichever spelling each arm takes.
+    #[test]
+    fn a_scheme_with_two_arms_is_refused() {
+        let api_key = serde_json::json!({"location": "header", "name": "X-Key"});
+        let http = serde_json::json!({"scheme": "Bearer"});
+        for two in [
+            serde_json::json!({"apiKeySecurityScheme": api_key, "httpAuthSecurityScheme": http}),
+            serde_json::json!({"api_key_security_scheme": api_key, "httpAuthSecurityScheme": http}),
+            serde_json::json!({"mtlsSecurityScheme": {}, "openIdConnectSecurityScheme": {"openIdConnectUrl": "https://x"}}),
+        ] {
+            let err = serde_json::from_value::<SecurityScheme>(two.clone()).expect_err("two arms");
+            assert!(err.to_string().contains("sets 2"), "{two}: {err}");
+        }
+        // One arm, in either spelling, still parses.
+        for one in [
+            serde_json::json!({"apiKeySecurityScheme": api_key}),
+            serde_json::json!({"api_key_security_scheme": api_key}),
+        ] {
+            serde_json::from_value::<SecurityScheme>(one).expect("one arm");
+        }
+    }
 
     #[test]
     fn api_key_scheme_roundtrip() {

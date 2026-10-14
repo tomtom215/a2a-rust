@@ -129,9 +129,18 @@ client sends, including the `authorization` value a `BearerAuthInterceptor`
 adds, becomes a metadata entry of the same name, beside `a2a-version`. The
 server lowercases the keys (they are case-insensitive) and hands them to the
 `RequestHandler` as request headers, so its authentication interceptors and
-tenant resolvers read them as they would over HTTP. This is separate from the
+tenant resolvers read them as they would over HTTP. Two kinds of key are
+dropped first: SLIMRPC's own (`rpc-id`, `service`, `method`, the deadline and
+status code), and any key beginning with `:`. That prefix names what a server
+records itself, such as the connection's address (`:peer-addr`), so from a
+caller it would be a claim the handler reads as fact. This is separate from the
 SLIM transport identity below (SPIFFE/MLS or a static token), which
 authenticates the app to the SLIM fabric, not the caller to the agent.
+
+The server reads `a2a-version` as the HTTP bindings read the header: absent or
+empty means 0.3 (A2A §3.6.2), which it refuses with `VersionNotSupportedError`.
+`SlimRpcServer::with_require_version(false)` serves such a call as 1.0 instead,
+for a caller that sends no version.
 
 ## Why the code blocks on this page are not compiled
 
@@ -156,7 +165,10 @@ they are.
 
 - **SLIM names carry a fourth instance component** (`org/ns/agent/NULL_COMPONENT`).
   Key on the full rendering and every multicast response files under a name no
-  member matches: all agents answer, and all of them report as timeouts.
+  member matches: all agents answer, and all of them report as timeouts. A
+  member's error carries the same rendering as text, in `MulticastRpc`'s
+  `origin`, and this crate keyed it that way until 2026-10-13: an agent that
+  refused a broadcast was reported as having timed out.
 - **A client must announce its own name to the node** —
   `app.subscribe(&reply_to, Some(conn))`. `Channel` routes outward only, so
   without it every call fails its session handshake. This is invisible

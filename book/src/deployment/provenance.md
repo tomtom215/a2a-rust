@@ -17,20 +17,36 @@ All of this needs the `signing` feature.
 ## Verifying an agent card
 
 ```rust,no_run
-use a2a_protocol_client::discovery::{CardFetchOptions, resolve_agent_card};
+use a2a_protocol_client::discovery::{CardFetchOptions, resolve_agent_card_with_options};
 use a2a_protocol_client::jwks::fetch_jwks;
-use a2a_protocol_types::signing::verify_card_with_jwks;
 # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let card = resolve_agent_card("https://agent.example.com").await?;
-
 // A key set you trust: your directory's, or one the operator published.
 // Not the `jku` in the card's own signature header, which is unverified.
 let keys = fetch_jwks("https://keys.example.com/a2a/jwks.json", &CardFetchOptions::default()).await?;
 
-verify_card_with_jwks(&card, &keys)?; // any of its signatures, by `kid`
+// The fetch verifies any of the card's signatures, by `kid`, as received,
+// and refuses a card that carries none.
+let options = CardFetchOptions::default().with_signature_keys(keys);
+let card = resolve_agent_card_with_options("https://agent.example.com", &options).await?;
+# let _ = card;
 # Ok(())
 # }
 ```
+
+- **Unsigned cards:** with keys supplied, a card with no signature fails the
+  fetch. Anyone able to alter a card on its way can also remove its
+  signatures, so a fetch that returned an unsigned card would return the
+  altered one unverified. If some of your agents do not sign,
+  `.with_require_signature(false)` verifies signatures only when present,
+  which is all §14 asks: a signed card must still verify, and an unsigned
+  one is returned as it is, whoever removed its signatures.
+
+- **As received:** the fetch verifies the card's JSON before reading it into
+  an `AgentCard`. The signer signed every field it serves, and `AgentCard`
+  drops one this SDK does not model, such as a field a later minor version
+  adds, so a correctly signed card would not verify as an `AgentCard`. For a
+  card you fetched yourself, `verify_card_json_with_jwks` takes its JSON;
+  `verify_card_with_jwks` verifies a card as this SDK models it.
 
 - **Algorithms:** ES256 (P-256) and EdDSA (Ed25519). A key is only ever
   tried under the algorithm its type is for.

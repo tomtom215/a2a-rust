@@ -17,6 +17,16 @@ use crate::error::{ServerError, ServerResult};
 use super::RequestHandler;
 use super::helpers::build_call_context;
 
+/// Unsets a push config's proto3 strings that hold their default, `""`:
+/// `id`, so the store mints one (a config stored under `""` could never be
+/// got or deleted, and the next such create replaced it), and `token`, so no
+/// empty token header is sent. `tenant` already reads `""` as none, and an
+/// empty `taskId` is refused as missing.
+pub(super) fn unset_proto3_defaults(config: &mut TaskPushNotificationConfig) {
+    super::helpers::unset_if_empty(&mut config.id);
+    super::helpers::unset_if_empty(&mut config.token);
+}
+
 /// `InvalidParams` when a field the proto marks REQUIRED is empty. On gRPC
 /// an absent string arrives as `""`, and JSON can send `""` outright; both
 /// used to reach the store, where an empty id on delete or list matched
@@ -75,43 +85,7 @@ impl RequestHandler {
             return Err(ServerError::TaskNotFound(target_task));
         }
 
-        // FIX(#3): Validate webhook URL at config creation time to prevent
-        // SSRF attacks. Previously validation only happened at delivery time,
-        // leaving a window where malicious URLs could be stored.
-        // Respect the push sender's allow_private_urls setting for testing.
-        //
-        // This is deliberately the synchronous host check (scheme, IP
-        // literals, credentials, ports) — it fails fast on obviously bad
-        // URLs without adding a DNS lookup to a CRUD call. The security
-        // boundary is delivery: `validate_webhook_url_with_dns` re-checks
-        // there with resolution + IP pinning, so a hostname that resolves
-        // privately is stored but never delivered to.
-        if !sender.allows_private_urls() {
-            crate::push::sender::validate_webhook_url(&config.url)?;
-        }
-        if !sender.allows_webhook_url(&config.url) {
-            return Err(ServerError::InvalidParams(
-                "push notification URL's host is not in the server's webhook allowlist".into(),
-            ));
-        }
-        // The proto marks `url` REQUIRED. The host check above runs only
-        // when private URLs are refused, so with them allowed an empty or
-        // scheme-less URL was stored, and listed back, until 2026-10-10.
-        config.validate().map_err(ServerError::InvalidParams)?;
-        // §4.3.3 / §13.2: deliveries MUST carry the credentials the config
-        // specifies. The sender can write only `Bearer` and `Basic` (a2a-go
-        // v2.5.0 the same); any other scheme used to be stored and then
-        // delivered without credentials, with only a log line to say so.
-        if let Some(auth) = &config.authentication
-            && !auth.scheme.eq_ignore_ascii_case("bearer")
-            && !auth.scheme.eq_ignore_ascii_case("basic")
-        {
-            return Err(ServerError::InvalidParams(format!(
-                "push notification authentication scheme {:?} is not supported; \
-                 this server can send Bearer or Basic",
-                auth.scheme
-            )));
-        }
+        refuse_an_unservable_config(sender.as_ref(), &config)?;
 
         // Enforce the per-task config cap here so it holds for EVERY store
         // backend (the SQL stores do not self-enforce). Creating a new
@@ -179,14 +153,16 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::PushNotSupported`] if no push sender is configured.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications or no push sender is configured.
     #[allow(clippy::too_many_lines)]
     pub async fn on_set_push_config(
         &self,
-        config: TaskPushNotificationConfig,
+        mut config: TaskPushNotificationConfig,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskPushNotificationConfig> {
         let start = Instant::now();
+        unset_proto3_defaults(&mut config);
         #[cfg(feature = "tracing")]
         if let Some(task_id) = config.task_id.as_deref() {
             crate::rpc_span::record_task(task_id, None);
@@ -230,7 +206,8 @@ impl RequestHandler {
                 .await;
                 call.finish(result).await
             })
-            .await;
+            .await
+            .map_err(ServerError::not_retry_safe);
 
         let elapsed = start.elapsed();
         match &result {
@@ -254,8 +231,9 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::PushNotSupported`] if the agent card does not
-    /// advertise push notifications, or [`ServerError::TaskNotFound`] if the
-    /// requested configuration does not exist (spec §3.1.8).
+    /// advertise push notifications or no push sender is configured, or
+    /// [`ServerError::TaskNotFound`] if the requested configuration does not
+    /// exist (spec §3.1.8).
     pub async fn on_get_push_config(
         &self,
         params: GetPushConfigParams,
@@ -327,7 +305,10 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the store query fails.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications or no push sender is configured,
+    /// [`ServerError::TaskNotFound`] if the task does not exist (spec
+    /// §3.1.9), or another [`ServerError`] if the store query fails.
     pub async fn on_list_push_configs(
         &self,
         task_id: &str,
@@ -392,7 +373,10 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the delete operation fails.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications or no push sender is configured,
+    /// [`ServerError::TaskNotFound`] if the task does not exist (spec
+    /// §3.1.10), or another [`ServerError`] if the delete operation fails.
     pub async fn on_delete_push_config(
         &self,
         params: DeletePushConfigParams,
@@ -459,6 +443,81 @@ impl RequestHandler {
     }
 }
 
+/// Refuses, at creation, a push config `sender` could not deliver: a URL the
+/// SSRF check, the HTTPS requirement or the host allowlist would refuse, a
+/// config the proto does not allow, or credentials the sender cannot write.
+fn refuse_an_unservable_config(
+    sender: &dyn crate::push::PushSender,
+    config: &TaskPushNotificationConfig,
+) -> ServerResult<()> {
+    // FIX(#3): Validate webhook URL at config creation time to prevent
+    // SSRF attacks. Previously validation only happened at delivery time,
+    // leaving a window where malicious URLs could be stored.
+    // Respect the push sender's allow_private_urls setting for testing.
+    //
+    // This is deliberately the synchronous host check (scheme, IP
+    // literals, credentials, ports) — it fails fast on obviously bad
+    // URLs without adding a DNS lookup to a CRUD call. The security
+    // boundary is delivery: `validate_webhook_url_with_dns` re-checks
+    // there with resolution + IP pinning, so a hostname that resolves
+    // privately is stored but never delivered to.
+    if !sender.allows_private_urls() {
+        crate::push::sender::validate_webhook_url(&config.url)?;
+    }
+    // §13.2: webhook URLs SHOULD use HTTPS; a sender set to deliver
+    // only over it refuses any other scheme here, with a reason, rather
+    // than storing a config every delivery of which would fail.
+    if sender.requires_https() && !crate::push::sender::is_https_url(&config.url) {
+        return Err(ServerError::InvalidParams(
+            "push notification URL must be https://: this server's push sender \
+             delivers only to https webhooks"
+                .into(),
+        ));
+    }
+    if !sender.allows_webhook_url(&config.url) {
+        return Err(ServerError::InvalidParams(
+            "push notification URL's host is not in the server's webhook allowlist".into(),
+        ));
+    }
+    // The proto marks `url` REQUIRED. The host check above runs only
+    // when private URLs are refused, so with them allowed an empty or
+    // scheme-less URL was stored, and listed back, until 2026-10-10.
+    config.validate().map_err(ServerError::InvalidParams)?;
+    // §4.3.3 / §13.2: deliveries MUST carry the credentials the config
+    // specifies. The sender can write only `Bearer` and `Basic` (a2a-go
+    // v2.5.0 the same); any other scheme used to be stored and then
+    // delivered without credentials, with only a log line to say so.
+    if let Some(auth) = &config.authentication
+        && !auth.scheme.eq_ignore_ascii_case("bearer")
+        && !auth.scheme.eq_ignore_ascii_case("basic")
+    {
+        return Err(ServerError::InvalidParams(format!(
+            "push notification authentication scheme {:?} is not supported; \
+             this server can send Bearer or Basic",
+            auth.scheme
+        )));
+    }
+    // The token and the credentials travel as header values. One a header
+    // cannot carry (CR, LF or another control character) was stored, and
+    // listed back, then refused at every delivery until 2026-10-13.
+    let credentials = config
+        .authentication
+        .as_ref()
+        .and_then(|auth| auth.credentials.as_deref());
+    for (field, value) in [
+        ("token", config.token.as_deref()),
+        ("credentials", credentials),
+    ] {
+        if value.is_some_and(|v| hyper::header::HeaderValue::from_str(v).is_err()) {
+            return Err(ServerError::InvalidParams(format!(
+                "push notification {field} holds a character a header cannot carry \
+                 (a control character such as CR or LF)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,7 +528,20 @@ mod tests {
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     fn make_handler() -> RequestHandler {
-        RequestHandlerBuilder::new(DummyExecutor).build().unwrap()
+        RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap()
+    }
+
+    /// A handler with a sender wired, so push-config calls get past the
+    /// §3.3.4 gate to the behaviour a test is about.
+    fn make_push_handler() -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap()
     }
 
     fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
@@ -597,6 +669,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(DummyExecutor)
+                .without_agent_card()
                 .with_push_sender(CapTestSender)
                 .with_push_config_store(SlowListStore::default())
                 .with_handler_limits(
@@ -663,6 +736,51 @@ mod tests {
         );
     }
 
+    /// §3.3.4: without a push sender every push-config operation answers
+    /// `PushNotificationNotSupported`, as Create already did. Get, List and
+    /// Delete answered `TaskNotFound`, `[]` and success.
+    #[tokio::test]
+    async fn every_push_op_without_a_sender_returns_push_not_supported() {
+        use a2a_protocol_types::params::{DeletePushConfigParams, GetPushConfigParams};
+
+        let handler = make_handler();
+        save_task(&handler, "task-1").await;
+
+        let get = handler
+            .on_get_push_config(
+                GetPushConfigParams {
+                    tenant: None,
+                    task_id: "task-1".into(),
+                    id: "cfg-1".into(),
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(get, Err(crate::error::ServerError::PushNotSupported)),
+            "get: {get:?}"
+        );
+        let list = handler.on_list_push_configs("task-1", None, None).await;
+        assert!(
+            matches!(list, Err(crate::error::ServerError::PushNotSupported)),
+            "list: {list:?}"
+        );
+        let delete = handler
+            .on_delete_push_config(
+                DeletePushConfigParams {
+                    tenant: None,
+                    task_id: "task-1".into(),
+                    id: "cfg-1".into(),
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(delete, Err(crate::error::ServerError::PushNotSupported)),
+            "delete: {delete:?}"
+        );
+    }
+
     /// Regression (D1): `taskId` is optional on the wire, but a standalone
     /// `CreateTaskPushNotificationConfig` cannot infer it — the handler must
     /// reject a missing task ID with `InvalidParams`, not panic or store an
@@ -691,6 +809,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -748,6 +867,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(DefaultPolicySender)
             .build()
             .unwrap();
@@ -804,6 +924,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .with_handler_limits(
                 crate::handler::HandlerLimits::default().with_max_total_push_configs(2),
@@ -870,6 +991,7 @@ mod tests {
 
         // Per-task cap of 1: one config fills the task.
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .with_handler_limits(
                 crate::handler::HandlerLimits::default().with_max_push_configs_per_task(1),
@@ -970,6 +1092,7 @@ mod tests {
     #[tokio::test]
     async fn set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -997,6 +1120,7 @@ mod tests {
     async fn set_push_config_refuses_an_auth_scheme_it_cannot_send() {
         use a2a_protocol_types::push::AuthenticationInfo;
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -1036,6 +1160,7 @@ mod tests {
     #[tokio::test]
     async fn empty_required_ids_are_invalid_params() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -1074,6 +1199,7 @@ mod tests {
     #[tokio::test]
     async fn set_push_config_refuses_a_host_outside_the_allowlist() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(
                 crate::push::HttpPushSender::new().with_allowed_hosts(["hooks.example.com"]),
             )
@@ -1095,11 +1221,55 @@ mod tests {
             .expect("a listed host is accepted");
     }
 
+    /// §13.2: a sender set to deliver only over HTTPS has an `http://`
+    /// config refused at creation, with the reason; `https://` is accepted.
+    #[tokio::test]
+    async fn set_push_config_refuses_http_when_the_sender_is_https_only() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(crate::push::HttpPushSender::new().https_only())
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let mut config = make_push_config("t-1");
+        config.url = "http://hooks.example.com/hook".into();
+        let refused = handler.on_set_push_config(config, None).await;
+        assert!(
+            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("must be https://")),
+            "{refused:?}"
+        );
+        let mut config = make_push_config("t-1");
+        config.url = "https://hooks.example.com/hook".into();
+        handler
+            .on_set_push_config(config, None)
+            .await
+            .expect("an https:// webhook is accepted");
+    }
+
+    /// A sender that keeps `PushSender::requires_https`'s default accepts an
+    /// `http://` config: HTTPS-only is opt-in.
+    #[tokio::test]
+    async fn set_push_config_accepts_http_from_a_sender_that_does_not_require_https() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        save_task(&handler, "t-1").await;
+        let mut config = make_push_config("t-1");
+        config.url = "http://hooks.example.com/hook".into();
+        handler
+            .on_set_push_config(config, None)
+            .await
+            .expect("http:// is accepted unless the sender requires https");
+    }
+
     /// SPEC §3.1.7: creating a push config for a task that does not exist must
     /// return `TaskNotFoundError`, not store an orphaned config.
     #[tokio::test]
     async fn set_push_config_for_missing_task_returns_task_not_found() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_push_sender(NoopSender)
             .build()
             .unwrap();
@@ -1204,7 +1374,7 @@ mod tests {
         // TaskNotFoundError.
         use a2a_protocol_types::params::GetPushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         let params = GetPushConfigParams {
             tenant: None,
             task_id: "no-task".to_owned(),
@@ -1223,7 +1393,7 @@ mod tests {
     /// a peer could not tell from a known task with no webhooks.
     #[tokio::test]
     async fn list_push_configs_for_an_unknown_task_is_task_not_found() {
-        let handler = make_handler();
+        let handler = make_push_handler();
         let result = handler.on_list_push_configs("no-task", None, None).await;
         assert!(
             matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
@@ -1233,7 +1403,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_push_configs_of_a_task_without_any_is_empty() {
-        let handler = make_handler();
+        let handler = make_push_handler();
         save_task(&handler, "t-empty").await;
         let result = handler
             .on_list_push_configs("t-empty", None, None)
@@ -1250,7 +1420,7 @@ mod tests {
     async fn delete_push_config_nonexistent_returns_ok() {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         save_task(&handler, "t-del").await;
         let params = DeletePushConfigParams {
             tenant: None,
@@ -1269,7 +1439,7 @@ mod tests {
     async fn delete_push_config_of_an_unknown_task_is_task_not_found() {
         use a2a_protocol_types::params::DeletePushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         let params = DeletePushConfigParams {
             tenant: None,
             task_id: "no-task".to_owned(),
@@ -1316,7 +1486,9 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_interceptor(FailInterceptor)
+            .with_push_sender(NoopSender)
             .build()
             .unwrap();
 
@@ -1360,6 +1532,7 @@ mod tests {
         }
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
             .with_interceptor(FailInterceptor)
             .build()
             .unwrap();
@@ -1395,7 +1568,7 @@ mod tests {
         // This additionally ensures error metrics are tracked for missing configs.
         use a2a_protocol_types::params::GetPushConfigParams;
 
-        let handler = make_handler();
+        let handler = make_push_handler();
         let params = GetPushConfigParams {
             tenant: None,
             task_id: "missing-task".to_owned(),

@@ -53,7 +53,12 @@ impl AgentExecutor for NoopExecutor {
 }
 
 async fn start_jsonrpc_server() -> std::net::SocketAddr {
-    let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(NoopExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

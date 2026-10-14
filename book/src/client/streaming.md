@@ -147,7 +147,8 @@ WebSocket streams carry no ids, so there it is always `None` and a resubscribe
 starts from the `Task` snapshot.
 
 A reader that falls too far behind is cut off: over SSE when it lags the
-server's broadcast queue, and over WebSocket once 64 frames are waiting unread.
+server's broadcast queue further than the task's event log can make up, and
+over WebSocket once 64 frames are waiting unread.
 The error answers `e.is_stream_lagged()` (with `e.dropped_event_count()`). The
 task is unaffected; resubscribe (`subscribe_to_task_from` with
 `stream.last_event_id()` over SSE, or `subscribe_to_task` over WebSocket) to

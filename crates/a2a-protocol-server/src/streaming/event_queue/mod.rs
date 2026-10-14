@@ -14,13 +14,17 @@
 //! (fan-out) for the same event stream. This allows `SubscribeToTask`
 //! (resubscribe) to work even when another SSE stream is already active.
 
+pub(crate) mod applied;
+mod content;
 mod in_memory;
 mod manager;
+#[cfg(test)]
+mod reattach_tests;
 mod status_stamp;
 pub(crate) mod terminal_gate;
 
+pub(crate) use in_memory::{CatchUpFn, ReattachFn, Reattached, carries_terminal_state};
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
-pub(crate) use in_memory::{ReattachFn, Reattached, carries_terminal_state};
 pub use manager::EventQueueManager;
 pub(crate) use manager::{QueueConsumer, QueueLease};
 

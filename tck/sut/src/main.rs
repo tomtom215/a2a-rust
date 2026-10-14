@@ -614,9 +614,14 @@ async fn main() {
     // stopped doing so would fail the probe rather than silently serve
     // unauthenticated traffic.
     if profile == Profile::Secured {
-        builder = builder.with_interceptor(
-            a2a_protocol_server::auth::BearerTokenAuthInterceptor::new([SECURED_PROFILE_TOKEN]),
-        );
+        builder = builder
+            .with_interceptor(a2a_protocol_server::auth::BearerTokenAuthInterceptor::new(
+                [SECURED_PROFILE_TOKEN],
+            ))
+            // One unlabelled token names no caller, so there is nobody to
+            // isolate; sharing keeps the plain stores every other profile
+            // runs on, rather than the tenant-aware ones isolation needs.
+            .share_tasks_across_callers();
     }
     // Extension advertises the same capabilities as Full, so it needs the same
     // supporting stores; only Minimal advertises nothing and needs none.

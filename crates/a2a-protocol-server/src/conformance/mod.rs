@@ -57,7 +57,7 @@ mod report;
 mod run;
 
 pub use report::{CheckResult, Outcome, Report};
-use run::{Run, cancel_emits_a_terminal_state};
+use run::{Run, cancel_succeeds};
 
 /// Grades an executor against a default one-line text message.
 pub async fn check(executor: Arc<dyn AgentExecutor>) -> Report {
@@ -121,7 +121,7 @@ async fn check_inner(
     results.push(mid_run.stops_when_cancelled_mid_run());
     results.push(mid_run.did_not_panic("does_not_panic_when_cancelled_mid_run"));
 
-    results.push(cancel_emits_a_terminal_state(&executor, &message, cc).await);
+    results.push(cancel_succeeds(&executor, &message, cc).await);
 
     Report { results }
 }

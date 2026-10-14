@@ -37,7 +37,7 @@ const SCHEMA: [&str; 4] = [
 ];
 
 fn db(e: &sqlx::Error) -> A2aError {
-    A2aError::internal(format!("sqlite audit store: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite audit store", e)
 }
 
 fn json<T: serde::Serialize>(v: &T) -> A2aResult<String> {

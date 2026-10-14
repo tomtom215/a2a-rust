@@ -384,20 +384,6 @@ impl EventQueueManager {
         map.get(task_id).map(|writer| writer.subscribe())
     }
 
-    /// Returns a raw broadcast receiver for a task's live queue, if one exists.
-    ///
-    /// Unlike [`Self::subscribe`] this hands back the channel itself rather
-    /// than a reader, so a reader that has outlived one queue can swap onto
-    /// the next without being rebuilt — see
-    /// [`InMemoryQueueReader::with_reattach`].
-    pub(crate) async fn raw_subscribe(
-        &self,
-        task_id: &TaskId,
-    ) -> Option<tokio::sync::broadcast::Receiver<super::Shared>> {
-        let map = self.writers.read().await;
-        map.get(task_id).map(|writer| writer.raw_subscribe())
-    }
-
     /// Subscribes to a task's event queue with an initial snapshot event.
     ///
     /// Per A2A spec, the first event in a `SubscribeToTask` stream MUST be a
@@ -411,14 +397,47 @@ impl EventQueueManager {
         task_id: &TaskId,
         snapshot: StreamResponse,
     ) -> Option<InMemoryQueueReader> {
-        let map = self.writers.read().await;
-        let writer = map.get(task_id)?;
         // Create a reader with the snapshot as its pending first event.
         // The snapshot is NOT written to the broadcast channel, so other
         // subscribers are unaffected.
-        let rx = writer.raw_subscribe();
-        drop(map);
-        Some(InMemoryQueueReader::with_first_event(rx, snapshot))
+        //
+        // Every event the receiver holds is above the position it attached
+        // at: a lag catch-up then starts there, not at the start of the
+        // task's log, whose events up to the snapshot the subscriber did not
+        // ask for.
+        let (attached_after, rx, _) = self.attach(task_id).await?;
+        let mut reader = InMemoryQueueReader::with_first_event(rx, snapshot);
+        reader.starting_after(attached_after);
+        Some(reader)
+    }
+
+    /// The task's live queue's mark of how far its events are stored, for
+    /// the consumer that stores them.
+    pub(crate) async fn applied_mark(
+        &self,
+        task_id: &TaskId,
+    ) -> Option<Arc<super::applied::AppliedMark>> {
+        self.writers
+            .read()
+            .await
+            .get(task_id)
+            .map(|w| w.applied_mark())
+    }
+
+    /// A receiver on the task's live queue, the exact position it attached
+    /// after (see [`InMemoryQueueWriter::attach`]), and the queue's mark of
+    /// how far its events are stored, or `None` when the task has no queue.
+    pub(crate) async fn attach(
+        &self,
+        task_id: &TaskId,
+    ) -> Option<(
+        u64,
+        tokio::sync::broadcast::Receiver<super::Shared>,
+        Arc<super::applied::AppliedMark>,
+    )> {
+        let writer = Arc::clone(self.writers.read().await.get(task_id)?);
+        let (position, rx) = writer.attach().await;
+        Some((position, rx, writer.applied_mark()))
     }
 
     /// Removes and drops the event queue for the given task.
@@ -821,27 +840,6 @@ mod tests {
             manager.active_count().await,
             1,
             "an over-limit queue must not be stored"
-        );
-    }
-
-    /// Kills: `replace EventQueueManager::raw_subscribe -> Option<..> with
-    /// None`.
-    #[tokio::test]
-    async fn raw_subscribe_returns_a_receiver_for_a_live_queue() {
-        let manager = EventQueueManager::new();
-        let task_id = TaskId::new("raw");
-        let (_writer, _reader) = manager.get_or_create(&task_id).await;
-
-        assert!(
-            manager.raw_subscribe(&task_id).await.is_some(),
-            "a live queue must yield a receiver"
-        );
-        assert!(
-            manager
-                .raw_subscribe(&TaskId::new("absent"))
-                .await
-                .is_none(),
-            "an unknown task must yield None — pins that Some is not blanket"
         );
     }
 

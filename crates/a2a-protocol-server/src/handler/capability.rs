@@ -51,18 +51,22 @@ impl RequestHandler {
     /// Enforces the push-notification capability contract (spec §3.3.4).
     ///
     /// Returns [`ServerError::PushNotSupported`] when a card is configured but
-    /// does not advertise `capabilities.pushNotifications == true`. A no-op when
-    /// no card is configured (the push-config handlers still require a wired
-    /// push sender).
+    /// does not advertise `capabilities.pushNotifications == true`, or when no
+    /// push sender is wired, so that all four push-config operations answer
+    /// alike. Until 2026-10-13 only Create required the sender: on a server
+    /// without one, Get, List and Delete answered `TaskNotFound`, `[]` or
+    /// success where Create answered `PushNotificationNotSupported`.
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::PushNotSupported`] if push notifications are not
-    /// advertised by the configured agent card.
+    /// Returns [`ServerError::PushNotSupported`] if the configured agent card
+    /// does not advertise push notifications or no push sender is wired.
     pub(crate) fn ensure_push_supported(&self) -> ServerResult<()> {
-        if let Some(card) = &self.agent_card
-            && card.capabilities.push_notifications != Some(true)
-        {
+        let declared = self
+            .agent_card
+            .as_ref()
+            .is_none_or(|card| card.capabilities.push_notifications == Some(true));
+        if !declared || self.push_sender.is_none() {
             return Err(ServerError::PushNotSupported);
         }
         Ok(())
@@ -190,9 +194,26 @@ mod tests {
 
     #[test]
     fn no_card_allows_streaming_and_push() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_push_sender(crate::push::HttpPushSender::new())
+            .build()
+            .unwrap();
         assert!(handler.ensure_streaming_supported().is_ok());
         assert!(handler.ensure_push_supported().is_ok());
+    }
+
+    /// §3.3.4: with no sender, push is not supported, card or no card.
+    #[test]
+    fn no_sender_rejects_push() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
+        assert!(matches!(
+            handler.ensure_push_supported(),
+            Err(ServerError::PushNotSupported)
+        ));
     }
 
     #[test]
@@ -220,6 +241,7 @@ mod tests {
     fn card_without_push_rejects_push() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_agent_card(card_with(AgentCapabilities::none()))
+            .with_push_sender(crate::push::HttpPushSender::new())
             .build()
             .unwrap();
         assert!(matches!(
@@ -234,6 +256,7 @@ mod tests {
             .with_agent_card(card_with(
                 AgentCapabilities::none().with_push_notifications(true),
             ))
+            .with_push_sender(crate::push::HttpPushSender::new())
             .build()
             .unwrap();
         assert!(handler.ensure_push_supported().is_ok());
@@ -340,7 +363,10 @@ mod tests {
 
     #[tokio::test]
     async fn no_card_no_required_extensions() {
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap();
         let ctx = ctx_with_extensions(&[]);
         assert!(handler.ensure_required_extensions(&ctx).is_ok());
     }

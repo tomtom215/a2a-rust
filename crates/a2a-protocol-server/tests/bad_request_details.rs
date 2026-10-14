@@ -25,7 +25,12 @@ const BAD_TYPE: &str = r#"{"message":{"messageId":"m-1","role":"ROLE_USER","part
 const MALFORMED: &str = r#"{"message":"#;
 
 fn handler() -> Arc<RequestHandler> {
-    Arc::new(RequestHandlerBuilder::new(Exec).build().expect("handler"))
+    Arc::new(
+        RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
+            .build()
+            .expect("handler"),
+    )
 }
 
 async fn post(url: &str, body: &str) -> (u16, serde_json::Value) {

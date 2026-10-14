@@ -144,6 +144,7 @@ async fn a_peer_that_stops_reading_mid_stream_is_closed_by_the_idle_bound() {
         RequestHandlerBuilder::new(FloodExecutor {
             chunk_bytes: 128 * 1024,
         })
+        .without_agent_card()
         .with_handler_limits(HandlerLimits::default().with_max_parts_per_artifact(16))
         .build()
         .expect("build handler"),

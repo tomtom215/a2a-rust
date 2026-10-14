@@ -61,6 +61,7 @@ async fn idle_handler_reports_zero_queues_and_tokens() {
         proceed: Arc::new(Notify::new()),
         started: Arc::new(AtomicBool::new(false)),
     })
+    .without_agent_card()
     .with_task_store(InMemoryTaskStore::new())
     .build()
     .expect("build handler");
@@ -93,6 +94,7 @@ async fn one_in_flight_task_is_counted_exactly_once() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_task_store(InMemoryTaskStore::new())
         .build()
         .expect("build handler"),
@@ -258,6 +260,7 @@ async fn pushed_artifacts_are_reported_at_their_own_index() {
     let deltas = Arc::new(Mutex::new(Vec::new()));
     let handler = Arc::new(
         RequestHandlerBuilder::new(PushingExecutor { count: COUNT })
+            .without_agent_card()
             .with_task_store(DeltaRecordingStore::new(Arc::clone(&deltas)))
             .build()
             .expect("build handler"),
@@ -307,6 +310,7 @@ async fn pushed_artifacts_are_reported_at_their_own_index_when_blocking() {
 
     let deltas = Arc::new(Mutex::new(Vec::new()));
     let handler = RequestHandlerBuilder::new(PushingExecutor { count: COUNT })
+        .without_agent_card()
         .with_task_store(DeltaRecordingStore::new(Arc::clone(&deltas)))
         .build()
         .expect("build handler");
@@ -331,4 +335,25 @@ async fn pushed_artifacts_are_reported_at_their_own_index_when_blocking() {
         (0..COUNT).collect::<Vec<_>>(),
         "each pushed artifact must be reported at the position it occupies; got {pushed:?}"
     );
+}
+
+/// `task_count` is the store's count: zero on a fresh handler, two after two
+/// tasks. No constant answers both. The weekly mutation sweep of 2026-10-12
+/// found `Ok(0)` and `Ok(1)` surviving: the only other reader is the
+/// sustained-load test, which asserts an upper bound that both constants meet.
+#[tokio::test]
+async fn task_count_is_the_number_of_stored_tasks() {
+    let handler = RequestHandlerBuilder::new(StatusExecutor)
+        .without_agent_card()
+        .with_task_store(InMemoryTaskStore::new())
+        .build()
+        .expect("build handler");
+    assert_eq!(handler.task_count().await.expect("count"), 0);
+    for _ in 0..2 {
+        handler
+            .on_send_message(make_send_params(), false, None)
+            .await
+            .expect("send message");
+    }
+    assert_eq!(handler.task_count().await.expect("count"), 2);
 }

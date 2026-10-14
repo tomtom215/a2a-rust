@@ -109,10 +109,10 @@ async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError
             url: url.to_owned(),
             source,
         })?;
-    // `from_card` applies the client's binding preference (`JSONRPC` when the
-    // card offers it, else the card's first interface) and moves endpoint and
-    // tenant to that interface as a pair; `chosen_interface` reports which,
-    // so this tool knows which constructor to call without re-deriving it.
+    // `from_card` takes the card's first interface this client supports
+    // (spec §8.3.2) and moves endpoint and tenant to it as a pair;
+    // `chosen_interface` reports which, so this tool knows which constructor
+    // to call without re-deriving it.
     let builder = ClientBuilder::from_card(&card)?;
     let iface = builder.chosen_interface().ok_or_else(|| {
         CliError::Client(a2a_protocol_client::ClientError::InvalidEndpoint(format!(
@@ -158,6 +158,9 @@ pub async fn connect(url: &str, opts: &GlobalOpts) -> Result<A2aClient, CliError
     if opts.grpc_plaintext {
         builder = builder.with_grpc_bare_address_scheme(GrpcBareAddressScheme::Http);
     }
+    if opts.no_capability_check {
+        builder = builder.without_capability_checks();
+    }
 
     let client = if binding.eq_ignore_ascii_case(BINDING_GRPC) {
         builder.build_grpc().await?
@@ -190,17 +193,17 @@ mod tests {
     }
 
     /// What the library reports as chosen is what `--help` says the default
-    /// is: JSONRPC when offered, even when the card lists it second. This
-    /// pins the tool's reading of the builder, not the builder's rule — that
-    /// is tested where it lives.
+    /// is: the card's first interface, even when JSONRPC is listed second
+    /// (spec §8.3.2). This pins the tool's reading of the builder, not the
+    /// builder's rule — that is tested where it lives.
     #[test]
-    fn prefers_jsonrpc_wherever_the_card_lists_it() {
+    fn takes_the_cards_first_interface_even_before_jsonrpc() {
         let c = card(
             AgentInterface::rest("http://r"),
             AgentInterface::jsonrpc("http://j"),
         );
         let b = ClientBuilder::from_card(&c).expect("card has interfaces");
-        assert_eq!(b.chosen_interface().expect("some").url, "http://j");
+        assert_eq!(b.chosen_interface().expect("some").url, "http://r");
     }
 
     #[test]
@@ -221,6 +224,7 @@ mod tests {
             headers: vec![],
             tenant: None,
             grpc_plaintext: false,
+            no_capability_check: false,
         };
         // No server is listening on port 1; discovery would fail, so a
         // successful resolve proves it was skipped.

@@ -627,8 +627,13 @@ async fn main() {
     } else {
         acts_modes::Scope::ExtendedCard
     };
-    let builder =
-        RequestHandlerBuilder::new(ItkExecutor).with_interceptor(acts_modes::Guard::new(scope));
+    // `Guard` authenticates, which would isolate each identified caller's
+    // tasks (spec §13.1). The passes this agent serves dial with and without
+    // a credential and expect to reach the same tasks, so they share them, on
+    // the plain stores below.
+    let builder = RequestHandlerBuilder::new(ItkExecutor)
+        .with_interceptor(acts_modes::Guard::new(scope))
+        .share_tasks_across_callers();
     let handler = Arc::new(
         builder
             .with_agent_card(card)

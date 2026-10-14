@@ -16,7 +16,7 @@ fn default_values() {
     assert_eq!(limits.max_metadata_size, 1_048_576);
     assert_eq!(limits.max_cancellation_tokens, 10_000);
     assert_eq!(limits.max_token_age, Duration::from_secs(3600));
-    assert_eq!(limits.push_delivery_timeout, Duration::from_secs(5));
+    assert_eq!(limits.push_delivery_timeout, Duration::from_secs(30));
     assert_eq!(limits.push_delivery_budget, Duration::from_secs(30));
     assert_eq!(limits.executor_drain_timeout, Duration::from_secs(5));
     assert_eq!(limits.max_artifacts_per_task, 1000);

@@ -17,7 +17,10 @@ agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 
 #[tokio::test]
 async fn an_empty_task_id_is_invalid_params() {
-    let handler = RequestHandlerBuilder::new(Exec).build().unwrap();
+    let handler = RequestHandlerBuilder::new(Exec)
+        .without_agent_card()
+        .build()
+        .unwrap();
     for id in ["", "   "] {
         let params = json!({ "id": id });
         let get = handler

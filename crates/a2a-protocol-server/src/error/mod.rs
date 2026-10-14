@@ -171,6 +171,9 @@ impl ServerError {
         if self.retry_after().is_some() {
             return 429;
         }
+        if self.is_unavailable() {
+            return 503;
+        }
         match self {
             Self::PayloadTooLarge(_) => 413,
             Self::Overloaded(_) | Self::Halted(_) => 503,
@@ -192,10 +195,36 @@ impl ServerError {
     /// How long a rate-limited caller should wait
     /// ([`A2aError::rate_limited`]); `None` for anything else.
     #[must_use]
-    pub(crate) fn retry_after(&self) -> Option<std::time::Duration> {
+    pub(crate) const fn retry_after(&self) -> Option<std::time::Duration> {
         match self {
             Self::Protocol(e) => e.retry_after(),
             _ => None,
+        }
+    }
+
+    /// Whether this is a temporary failure ([`A2aError::unavailable`]): a
+    /// store whose database cannot answer for now. Spec §3.3.2.
+    #[must_use]
+    pub(crate) const fn is_unavailable(&self) -> bool {
+        match self {
+            Self::Protocol(e) => e.is_unavailable(),
+            _ => false,
+        }
+    }
+
+    /// This error for a call a client may not simply repeat (a send, creating
+    /// a push config): no longer temporary. This SDK's client re-sends such a
+    /// call on `503` alone, as a refusal before any work began, and a store
+    /// failure proves no such thing: a blocking send's last read can fail
+    /// after its executor ran. `INTERNAL` keeps the call from being run twice.
+    #[must_use]
+    pub(crate) fn not_retry_safe(self) -> Self {
+        match self {
+            Self::Protocol(e) if e.is_unavailable() => Self::Protocol(match e.data {
+                Some(data) => A2aError::with_data(e.code, e.message, data),
+                None => A2aError::new(e.code, e.message),
+            }),
+            other => other,
         }
     }
 
@@ -212,7 +241,7 @@ impl ServerError {
         match self.auth_rejection().map(AuthRejection::kind) {
             Some(AuthRejectionKind::Unauthenticated) => "UNAUTHENTICATED",
             Some(_) => "PERMISSION_DENIED",
-            None if matches!(self, Self::Halted(_)) => "UNAVAILABLE",
+            None if matches!(self, Self::Halted(_)) || self.is_unavailable() => "UNAVAILABLE",
             None if matches!(self, Self::Overloaded(_)) || self.retry_after().is_some() => {
                 "RESOURCE_EXHAUSTED"
             }

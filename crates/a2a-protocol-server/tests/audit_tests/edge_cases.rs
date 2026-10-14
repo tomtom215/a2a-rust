@@ -16,6 +16,7 @@ use super::*;
 #[tokio::test]
 async fn unicode_emoji_in_messages() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -43,6 +44,7 @@ async fn unicode_emoji_in_messages() {
 #[tokio::test]
 async fn unicode_in_context_id() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -62,25 +64,17 @@ async fn unicode_in_context_id() {
     }
 }
 
-// 16. Very large page_size clamped to 1000
+// 16. A page_size over 100 is refused
 
 #[tokio::test]
-async fn large_page_size_clamped() {
+async fn a_page_size_over_100_is_invalid_params() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
-    // Create a couple of tasks so we can list them.
-    handler
-        .on_send_message(make_send_params("one"), false, None)
-        .await
-        .expect("send first");
-    handler
-        .on_send_message(make_send_params("two"), false, None)
-        .await
-        .expect("send second");
-
-    // Request u32::MAX page_size -- should be clamped to 1000 internally.
+    // a2a.proto: page_size's maximum is 100. A larger one, u32::MAX
+    // included, was clamped to 1000; it is refused, and nothing is listed.
     let params = ListTasksParams {
         tenant: None,
         context_id: None,
@@ -92,17 +86,10 @@ async fn large_page_size_clamped() {
         history_length: None,
     };
 
-    let result = handler
-        .on_list_tasks(params, None)
-        .await
-        .expect("list tasks");
-    // We only created 2 tasks, so we should get 2 back.
-    // The important thing is that it does not crash or allocate huge memory.
-    assert_eq!(
-        result.tasks.len(),
-        2,
-        "expected exactly 2 tasks from list, got {}",
-        result.tasks.len()
+    let result = handler.on_list_tasks(params, None).await;
+    assert!(
+        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidParams(m)) if m.contains("pageSize")),
+        "{result:?}"
     );
 }
 
@@ -111,6 +98,7 @@ async fn large_page_size_clamped() {
 #[tokio::test]
 async fn duplicate_task_id_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -235,6 +223,7 @@ async fn oversized_event_rejected() {
 #[test]
 fn builder_rejects_zero_timeout() {
     let result = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::ZERO)
         .build();
 
@@ -268,6 +257,7 @@ fn builder_rejects_empty_interfaces() {
 #[test]
 fn builder_accepts_valid_timeout() {
     let result = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::from_secs(30))
         .build();
 

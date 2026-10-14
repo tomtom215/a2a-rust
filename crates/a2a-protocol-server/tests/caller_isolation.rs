@@ -6,11 +6,16 @@
 //! Spec §13.1: results scoped to the caller's authorization boundaries.
 //!
 //! Two callers, Alice and Bob, authenticate as different identities in the
-//! same (default) tenant. Without `isolate_tasks_by_caller` they share every
-//! record, which is the baseline these tests also pin, so the isolation tests
-//! cannot pass for want of a working shared path. With it, each operation that
-//! names a task must answer Bob exactly as it answers an id that does not
-//! exist, and a list must hold only the caller's own tasks.
+//! same (default) tenant. Isolated by caller, which an authenticating
+//! interceptor makes the default and `isolate_tasks_by_caller` asks for
+//! explicitly, each operation that names a task must answer Bob exactly as it
+//! answers an id that does not exist, and a list must hold only the caller's
+//! own tasks. With `share_tasks_across_callers` they share every record, on
+//! the same tenant-aware store, which is the baseline these tests also pin, so
+//! the isolation tests cannot pass for want of a working shared path.
+//!
+//! What the default does with callers no interceptor identified, and which
+//! configurations `build()` refuses, is in `caller_isolation_default.rs`.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -18,7 +23,7 @@ use std::time::Duration;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::error::ServerError;
 use a2a_protocol_server::handler::{RequestHandler, SendMessageResult};
-use a2a_protocol_server::store::TenantAwareInMemoryTaskStore;
+use a2a_protocol_server::store::{InMemoryTaskStore, TenantAwareInMemoryTaskStore};
 use a2a_protocol_server::{BearerTokenAuthInterceptor, EventEmitter, agent_executor};
 use a2a_protocol_types::params::{
     CancelTaskParams, ListTasksParams, MessageSendParams, SendMessageConfiguration, TaskIdParams,
@@ -41,17 +46,40 @@ agent_executor!(Worker, |ctx, queue| async {
     Ok(())
 });
 
-fn handler(isolate: bool) -> RequestHandler {
-    let mut b = RequestHandlerBuilder::new(Worker)
-        .with_task_store(TenantAwareInMemoryTaskStore::new())
+/// How a test's handler relates callers to each other's tasks.
+#[derive(Debug, Clone, Copy)]
+enum Callers {
+    /// Nothing said: an authenticating interceptor isolates them, on the
+    /// stores the builder picks for that.
+    ByDefault,
+    /// `isolate_tasks_by_caller`, on a tenant-aware store.
+    Isolated,
+    /// `share_tasks_across_callers`, on the same tenant-aware store.
+    Shared,
+}
+
+/// Both ways of isolating, for the tests that must hold for each.
+const ISOLATED: [Callers; 2] = [Callers::ByDefault, Callers::Isolated];
+
+fn handler(callers: Callers) -> RequestHandler {
+    let b = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
+        .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
             ("alice-token", "alice"),
             ("bob-token", "bob"),
         ]));
-    if isolate {
-        b = b.isolate_tasks_by_caller();
+    match callers {
+        Callers::ByDefault => b,
+        Callers::Isolated => b
+            .with_task_store(TenantAwareInMemoryTaskStore::new())
+            .isolate_tasks_by_caller(),
+        Callers::Shared => b
+            .with_task_store(TenantAwareInMemoryTaskStore::new())
+            .share_tasks_across_callers(),
     }
-    b.build().expect("handler")
+    .build()
+    .expect("handler")
 }
 
 fn as_caller(token: &str) -> HashMap<String, String> {
@@ -84,8 +112,8 @@ fn not_found<T: std::fmt::Debug>(r: Result<T, ServerError>, what: &str) {
 }
 
 #[tokio::test]
-async fn without_isolation_callers_in_one_tenant_share_tasks() {
-    let h = handler(false);
+async fn sharing_callers_in_one_tenant_see_each_others_tasks() {
+    let h = handler(Callers::Shared);
     let id = alice_starts(&h, "work").await;
     let bob = as_caller("bob-token");
     h.on_get_task(TaskQueryParams::new(&id), Some(&bob))
@@ -99,9 +127,14 @@ async fn without_isolation_callers_in_one_tenant_share_tasks() {
 }
 
 #[tokio::test]
-async fn with_isolation_another_callers_task_is_not_found_by_any_operation() {
-    let h = handler(true);
-    let id = alice_starts(&h, "work").await;
+async fn isolated_another_callers_task_is_not_found_by_any_operation() {
+    for callers in ISOLATED {
+        another_callers_task_is_not_found_by_any_operation(&handler(callers)).await;
+    }
+}
+
+async fn another_callers_task_is_not_found_by_any_operation(h: &RequestHandler) {
+    let id = alice_starts(h, "work").await;
     let alice = as_caller("alice-token");
     let bob = as_caller("bob-token");
 
@@ -219,8 +252,13 @@ async fn with_isolation_another_callers_task_is_not_found_by_any_operation() {
 /// and her task would stay `Working` forever as far as she could see.
 #[tokio::test]
 async fn background_work_stays_in_the_callers_partition() {
-    let h = handler(true);
-    let id = alice_starts(&h, "done").await;
+    for callers in ISOLATED {
+        background_work_finishes_in_the_callers_partition(&handler(callers)).await;
+    }
+}
+
+async fn background_work_finishes_in_the_callers_partition(h: &RequestHandler) {
+    let id = alice_starts(h, "done").await;
     let alice = as_caller("alice-token");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
@@ -248,19 +286,27 @@ async fn background_work_stays_in_the_callers_partition() {
 #[test]
 fn isolation_refuses_stores_that_cannot_partition() {
     let err = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
+        .with_task_store(InMemoryTaskStore::new())
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([(
             "alice-token",
             "alice",
         )]))
         .isolate_tasks_by_caller()
         .build()
-        .expect_err("the default in-memory store does not partition");
-    assert!(err.to_string().contains("partition by tenant"), "{err}");
+        .expect_err("the plain in-memory store does not partition");
+    let why = err.to_string();
+    assert!(why.contains("partition by tenant"), "{why}");
+    assert!(
+        why.contains("isolate_tasks_by_caller needs"),
+        "names the call that asked for it: {why}"
+    );
 }
 
 #[test]
 fn isolation_refuses_a_chain_that_identifies_nobody() {
     let err = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_task_store(TenantAwareInMemoryTaskStore::new())
         .isolate_tasks_by_caller()
         .build()
@@ -275,7 +321,7 @@ fn isolation_refuses_a_chain_that_identifies_nobody() {
 /// partition key, or it could name another tenant's caller partition.
 #[tokio::test]
 async fn a_tenant_containing_the_partition_separator_is_refused() {
-    let h = handler(true);
+    let h = handler(Callers::ByDefault);
     let params = TaskQueryParams::new("t").with_tenant("acme\u{1f}alice");
     let r = h.on_get_task(params, Some(&as_caller("bob-token"))).await;
     assert!(
@@ -293,6 +339,7 @@ async fn isolation_holds_on_the_sqlite_stores() {
     use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
 
     let h = RequestHandlerBuilder::new(Worker)
+        .without_agent_card()
         .with_task_store(
             TenantAwareSqliteTaskStore::new("sqlite::memory:")
                 .await

@@ -10,7 +10,10 @@ use super::*;
 
 #[tokio::test]
 async fn send_message_basic_flow() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let result = handler
         .on_send_message(make_send_params("hello"), false, None)
         .await;
@@ -24,7 +27,10 @@ async fn send_message_basic_flow() {
 
 #[tokio::test]
 async fn send_message_executor_failure_marks_task_failed() {
-    let handler = RequestHandlerBuilder::new(FailingExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(FailingExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let result = handler
         .on_send_message(make_send_params("hello"), false, None)
         .await;
@@ -48,7 +54,12 @@ async fn send_message_executor_failure_marks_task_failed() {
 
 #[tokio::test]
 async fn cancel_task_signals_cancellation_token() {
-    let handler = Arc::new(RequestHandlerBuilder::new(SlowExecutor).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SlowExecutor)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
 
     // Start a streaming task (which won't block waiting for completion)
     let params = make_send_params("slow task");
@@ -124,7 +135,10 @@ async fn cancel_task_signals_cancellation_token() {
 
 #[tokio::test]
 async fn get_task_not_found() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let result = handler
         .on_get_task(
             TaskQueryParams {
@@ -144,7 +158,10 @@ async fn get_task_not_found() {
 
 #[tokio::test]
 async fn cancel_task_not_found() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let result = handler
         .on_cancel_task(
             a2a_protocol_types::params::CancelTaskParams {
@@ -164,7 +181,10 @@ async fn cancel_task_not_found() {
 
 #[tokio::test]
 async fn cancel_completed_task_returns_not_cancelable() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
 
     // First, complete a task
     let result = handler
@@ -197,8 +217,11 @@ async fn cancel_completed_task_returns_not_cancelable() {
 }
 
 #[tokio::test]
-async fn list_tasks_pagination_page_size_zero_defaults() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+async fn list_tasks_page_size_zero_is_invalid_params() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
 
     // Create a task
     handler
@@ -206,7 +229,8 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
         .await
         .unwrap();
 
-    // List with page_size = 0 (should default to 50, not return empty)
+    // a2a.proto: page_size's minimum is 1. Zero read as the default of 50;
+    // it is refused.
     let result = handler
         .on_list_tasks(
             ListTasksParams {
@@ -221,17 +245,19 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
             },
             None,
         )
-        .await
-        .unwrap();
+        .await;
     assert!(
-        !result.tasks.is_empty(),
-        "page_size=0 should default to 50, not empty"
+        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidParams(m)) if m.contains("pageSize")),
+        "{result:?}"
     );
 }
 
 #[tokio::test]
 async fn push_config_not_supported_without_sender() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
 
     let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
         "task-1",
@@ -247,7 +273,10 @@ async fn push_config_not_supported_without_sender() {
 
 #[tokio::test]
 async fn extended_agent_card_not_configured() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
     let result = handler.on_get_extended_agent_card(None).await;
     let err = result.expect_err("should return error when no card configured");
     assert!(

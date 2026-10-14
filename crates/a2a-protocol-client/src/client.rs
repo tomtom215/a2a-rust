@@ -20,10 +20,13 @@
 //!
 //! [`ClientBuilder`]: crate::ClientBuilder
 
+use std::sync::{PoisonError, RwLock};
+
 use a2a_protocol_types::AgentCard;
 
 use crate::builder::ClientBuilder;
 use crate::config::ClientConfig;
+use crate::declared::DeclaredCapabilities;
 use crate::error::ClientResult;
 use crate::interceptor::{ClientRequest, InterceptorChain};
 use crate::streaming::EventStream;
@@ -55,12 +58,18 @@ pub struct A2aClient {
     pub(crate) config: ClientConfig,
     /// The agent called, as its spans describe it.
     pub(crate) peer: crate::call_span::Peer,
+    /// The optional capabilities the agent's card declares, checked before a
+    /// call that needs one; `None` when there is no card to check against or
+    /// the checks were turned off. Behind a lock because fetching the
+    /// extended card replaces them ([`Self::adopt_capabilities`]).
+    pub(crate) declared: RwLock<Option<DeclaredCapabilities>>,
 }
 
 impl A2aClient {
     /// Creates a client from an [`AgentCard`] using the recommended defaults.
     ///
-    /// Selects the transport based on the agent's preferred protocol.
+    /// Uses the first interface the card lists that this client supports,
+    /// as [`ClientBuilder::from_card`] does (spec §8.3.2).
     ///
     /// # Errors
     ///
@@ -105,6 +114,7 @@ impl A2aClient {
             interceptors,
             config,
             peer: crate::call_span::Peer::default(),
+            declared: RwLock::new(None),
         }
     }
 
@@ -112,6 +122,46 @@ impl A2aClient {
     pub(crate) fn with_peer(mut self, peer: crate::call_span::Peer) -> Self {
         self.peer = peer;
         self
+    }
+
+    /// Sets the card capabilities checked before each call that needs one.
+    pub(crate) fn with_declared(mut self, declared: Option<DeclaredCapabilities>) -> Self {
+        *self
+            .declared
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner) = declared;
+        self
+    }
+
+    /// Checks calls against what `card` declares from now on, when this
+    /// client checks at all.
+    ///
+    /// Spec §3.1.11 and §13.3: a client that fetches the extended card SHOULD
+    /// replace its cached public card with it, and the capabilities are what
+    /// this client caches of a card. They are replaced, not merged: one only
+    /// the public card declared is no longer assumed. `extendedAgentCard`
+    /// stays declared whatever `card` says, since the agent has just served
+    /// it.
+    pub(crate) fn adopt_capabilities(&self, card: &AgentCard) {
+        let mut declared = self
+            .declared
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if declared.is_some() {
+            *declared =
+                Some(DeclaredCapabilities::of(&card.capabilities).with_extended_agent_card());
+        }
+    }
+
+    /// Refuses `method` locally when the card this client was built from does
+    /// not declare `capability` (spec §3.3.4). A no-op without a card.
+    pub(crate) fn require_declared(
+        &self,
+        capability: crate::declared::Capability,
+        method: &str,
+    ) -> ClientResult<()> {
+        let declared = *self.declared.read().unwrap_or_else(PoisonError::into_inner);
+        declared.map_or(Ok(()), |declared| declared.require(capability, method))
     }
 
     /// Sends an intercepted request, and lets the interceptors see a

@@ -417,3 +417,74 @@ async fn ws_close_frame_terminates_cleanly() {
     });
     timeout.await.expect("should terminate cleanly within 2s");
 }
+
+/// R42: the WebSocket binding has no resumption (book, "Reconnection"), so a
+/// `Last-Event-ID` on the upgrade request must not turn a `SubscribeToTask`
+/// on that connection into a replay of the task's event log. The upgrade's
+/// headers reach every call on the connection, and it did.
+#[tokio::test]
+async fn ws_upgrade_last_event_id_does_not_replay_the_log() {
+    use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
+    use a2a_protocol_types::task::{Task, TaskId};
+
+    let store = InMemoryTaskStore::new();
+    // Parked, because §3.1.6 forbids subscribing to a terminal task.
+    let task = Task {
+        id: TaskId::new("t-parked"),
+        context_id: ContextId::new("c-1"),
+        status: TaskStatus::new(TaskState::InputRequired),
+        history: None,
+        artifacts: None,
+        metadata: None,
+    };
+    store.save(&task).await.expect("save");
+    for seq in 1..=3 {
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: task.id.clone(),
+            context_id: task.context_id.clone(),
+            status: TaskStatus::new(TaskState::Working),
+            metadata: None,
+        });
+        store
+            .append_event(&task.id, seq, &event)
+            .await
+            .expect("append");
+    }
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SimpleExecutor)
+            .without_agent_card()
+            .with_task_store(store)
+            .build()
+            .expect("build handler"),
+    );
+    let addr = Arc::new(WebSocketDispatcher::new(handler))
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .expect("start WS server");
+    let mut req = ws_request(&format!("ws://{addr}"));
+    req.headers_mut()
+        .insert("last-event-id", "0".parse().expect("header value"));
+    let (mut ws, _) = tokio_tungstenite::connect_async(req)
+        .await
+        .expect("WebSocket connect");
+
+    let rpc_req = JsonRpcRequest::with_params(
+        serde_json::json!("sub-1"),
+        "SubscribeToTask",
+        serde_json::json!({ "id": "t-parked" }),
+    );
+    let json = serde_json::to_string(&rpc_req).unwrap();
+    ws.send(WsMessage::Text(json.into())).await.unwrap();
+
+    // The replay, when there was one, followed the snapshot at once.
+    let mut frames = Vec::new();
+    while let Ok(Some(Ok(msg))) =
+        tokio::time::timeout(std::time::Duration::from_millis(500), ws.next()).await
+    {
+        if let WsMessage::Text(text) = msg {
+            frames.push(text.to_string());
+        }
+    }
+    assert_eq!(frames.len(), 1, "only the snapshot: {frames:?}");
+    assert!(frames[0].contains("\"task\""), "{}", frames[0]);
+}

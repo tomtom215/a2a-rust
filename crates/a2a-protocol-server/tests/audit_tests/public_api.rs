@@ -171,6 +171,7 @@ fn push_config_new_construction() {
 #[tokio::test]
 async fn executor_timeout_causes_failure() {
     let handler = RequestHandlerBuilder::new(SlowExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::from_millis(50))
         .build()
         .expect("build handler");
@@ -200,6 +201,7 @@ async fn executor_timeout_causes_failure() {
 async fn shutdown_cancels_in_flight_tasks() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(SlowExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );
@@ -310,6 +312,7 @@ async fn get_extended_agent_card_without_capability_returns_unsupported() {
 #[tokio::test]
 async fn get_extended_agent_card_unconfigured() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

@@ -138,10 +138,12 @@ fn make_handler() -> Arc<a2a_protocol_server::RequestHandler> {
     )
 }
 
+/// No push sender, and so no card: `build()` refuses a card that declares
+/// push without a sender (spec §3.3.4).
 fn make_handler_no_push() -> Arc<a2a_protocol_server::RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
-            .with_agent_card(minimal_agent_card())
+            .without_agent_card()
             .build()
             .expect("build handler"),
     )
@@ -600,9 +602,10 @@ async fn delete_push_config_nonexistent_returns_200() {
     assert_eq!(status, 200);
 }
 
+/// §3.3.4: without a push sender, List is not supported, as Create is not.
+/// It used to answer 200 from the store.
 #[tokio::test]
-async fn list_push_configs_no_push_sender_still_works() {
-    // Handler without push sender — list still uses push_config_store (default in-memory).
+async fn list_push_configs_without_a_sender_is_not_supported() {
     let handler = make_handler_no_push();
     let (addr, _handle) = start_rest_server_with_cors(handler, None).await;
     let task_id = create_task(addr).await;
@@ -615,23 +618,19 @@ async fn list_push_configs_no_push_sender_still_works() {
         None,
     )
     .await;
-    assert_eq!(
-        status, 200,
-        "list push configs should succeed even without push sender"
-    );
-    assert!(
-        body.contains("\"configs\""),
-        "response should contain configs field, got: {body}"
-    );
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("PUSH_NOTIFICATION_NOT_SUPPORTED"), "{body}");
 }
 
+/// §3.3.4: without a push sender, Delete is not supported. It used to
+/// answer 200.
 #[tokio::test]
-async fn delete_push_config_no_push_sender_still_works() {
+async fn delete_push_config_without_a_sender_is_not_supported() {
     let handler = make_handler_no_push();
     let (addr, _handle) = start_rest_server_with_cors(handler, None).await;
     let task_id = create_task(addr).await;
 
-    let (status, _body) = http_request(
+    let (status, body) = http_request(
         addr,
         "DELETE",
         &format!("/tasks/{task_id}/pushNotificationConfigs/some-id"),
@@ -639,16 +638,18 @@ async fn delete_push_config_no_push_sender_still_works() {
         None,
     )
     .await;
-    // Delete is idempotent and doesn't check push sender.
-    assert_eq!(status, 200);
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("PUSH_NOTIFICATION_NOT_SUPPORTED"), "{body}");
 }
 
+/// §3.3.4: without a push sender, Get is not supported. It used to answer
+/// 404, as for a config that does not exist.
 #[tokio::test]
-async fn get_push_config_no_push_sender_returns_404() {
+async fn get_push_config_without_a_sender_is_not_supported() {
     let handler = make_handler_no_push();
     let (addr, _handle) = start_rest_server_with_cors(handler, None).await;
 
-    let (status, _body) = http_request(
+    let (status, body) = http_request(
         addr,
         "GET",
         "/tasks/task-1/pushNotificationConfigs/some-id",
@@ -656,8 +657,8 @@ async fn get_push_config_no_push_sender_returns_404() {
         None,
     )
     .await;
-    // SPEC §3.1.8: a missing push config is reported as TaskNotFound → 404.
-    assert_eq!(status, 404);
+    assert_eq!(status, 400, "{body}");
+    assert!(body.contains("PUSH_NOTIFICATION_NOT_SUPPORTED"), "{body}");
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -680,6 +681,7 @@ async fn extended_card_returns_200() {
 #[test]
 fn rest_dispatcher_debug_impl() {
     let handler = RequestHandlerBuilder::new(SimpleExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let dispatcher = RestDispatcher::new(Arc::new(handler));
@@ -738,6 +740,7 @@ async fn dispatcher_trait_dispatch_via_real_server() {
 #[test]
 fn with_cors_returns_self() {
     let handler = RequestHandlerBuilder::new(SimpleExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
     let dispatcher = RestDispatcher::new(Arc::new(handler));

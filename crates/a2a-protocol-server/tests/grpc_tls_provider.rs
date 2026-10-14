@@ -49,6 +49,7 @@ async fn serving_tls_installs_a_default_provider_when_none_is_installed() {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(NoopExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );

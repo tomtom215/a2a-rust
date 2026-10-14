@@ -46,6 +46,7 @@ fn signer() -> CheckpointSigner {
 
 async fn server(log: Arc<AuditLog>) -> std::net::SocketAddr {
     let handler = RequestHandlerBuilder::new(Echo)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([(
             "tok-alice",
             "alice@example.test",
@@ -225,6 +226,7 @@ async fn a_cancel_request_names_who_asked() {
     });
     let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
     let handler = RequestHandlerBuilder::new(Waits)
+        .without_agent_card()
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([(
             "tok-bob", "bob",
         )]))
@@ -392,6 +394,7 @@ async fn each_tenant_gets_its_own_chain() {
 
     let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
     let handler = RequestHandlerBuilder::new(Echo)
+        .without_agent_card()
         .with_task_store(TenantAwareInMemoryTaskStore::new())
         .with_push_config_store(TenantAwareInMemoryPushConfigStore::new())
         .with_audit(Arc::clone(&log))

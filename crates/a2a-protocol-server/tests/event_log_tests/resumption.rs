@@ -135,6 +135,7 @@ async fn an_unparseable_last_event_id_is_ignored_rather_than_refused() {
 async fn the_replay_is_bounded_by_the_configured_limit() {
     let store = Arc::new(InMemoryTaskStore::new());
     let handler = RequestHandlerBuilder::new(ThreeSteps)
+        .without_agent_card()
         .with_task_store(Shared(Arc::clone(&store)))
         .with_handler_limits(
             a2a_protocol_server::handler::HandlerLimits::default().with_subscribe_replay_limit(2),
@@ -168,6 +169,7 @@ async fn the_replay_is_bounded_by_the_configured_limit() {
 async fn a_store_without_a_log_subscribes_instead_of_failing() {
     let store = Arc::new(InMemoryTaskStore::new());
     let handler = RequestHandlerBuilder::new(ThreeSteps)
+        .without_agent_card()
         .with_task_store(NoLog(Arc::clone(&store)))
         .build()
         .expect("handler");
@@ -342,6 +344,7 @@ async fn a_replay_never_crosses_the_tenant_boundary() {
     // handler uses; seeding a per-tenant log has no public API otherwise.
     let store = Arc::new(TenantAwareInMemoryTaskStore::new());
     let handler = RequestHandlerBuilder::new(ThreeSteps)
+        .without_agent_card()
         .with_task_store_arc(Arc::clone(&store) as Arc<dyn TaskStore>)
         .build()
         .expect("handler");

@@ -50,6 +50,8 @@ fn make_handler() -> Arc<a2a_protocol_server::RequestHandler> {
     // a store that cannot isolate tenants refuses.
     Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
             .with_task_store(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new())
             .build()
             .unwrap(),

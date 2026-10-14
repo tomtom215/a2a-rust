@@ -173,6 +173,7 @@ mod direct_message_response {
     #[tokio::test]
     async fn message_only_executor_returns_a_message() {
         let handler = RequestHandlerBuilder::new(MessageOnlyExecutor)
+            .without_agent_card()
             .build()
             .unwrap();
 
@@ -196,6 +197,7 @@ mod direct_message_response {
     #[tokio::test]
     async fn message_then_work_still_returns_the_task() {
         let handler = RequestHandlerBuilder::new(MessageThenCompleteExecutor)
+            .without_agent_card()
             .build()
             .unwrap();
 
@@ -241,7 +243,10 @@ mod direct_message_response {
                 .await
         });
 
-        let handler = RequestHandlerBuilder::new(Silent).build().unwrap();
+        let handler = RequestHandlerBuilder::new(Silent)
+            .without_agent_card()
+            .build()
+            .unwrap();
         assert!(
             matches!(
                 send(&handler, "ctx-silent").await,
@@ -256,6 +261,7 @@ mod direct_message_response {
     #[tokio::test]
     async fn message_only_interaction_still_records_a_task() {
         let handler = RequestHandlerBuilder::new(MessageOnlyExecutor)
+            .without_agent_card()
             .build()
             .unwrap();
         let _ = send(&handler, "ctx-msg-record").await;

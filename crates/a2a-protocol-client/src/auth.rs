@@ -30,7 +30,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
-use crate::error::ClientResult;
+use a2a_protocol_types::security::{ApiKeyLocation, ApiKeySecurityScheme};
+
+use crate::error::{ClientError, ClientResult};
 use crate::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
 
 // ── SessionId ─────────────────────────────────────────────────────────────────
@@ -178,12 +180,49 @@ impl CredentialsStore for InMemoryCredentialsStore {
 /// Authorization: Bearer <token>
 /// ```
 ///
-/// to `req.extra_headers`.
+/// to `req.extra_headers`. An interceptor made by
+/// [`api_key`](Self::api_key) writes the header or cookie an agent's
+/// `APIKeySecurityScheme` names instead.
 pub struct AuthInterceptor {
     store: Arc<dyn CredentialsStore>,
     session: SessionId,
     /// The auth scheme to look up (e.g. `"bearer"`, `"api-key"`).
     scheme: String,
+    placement: Placement,
+}
+
+/// Where an [`AuthInterceptor`] writes its credential.
+#[derive(Debug)]
+enum Placement {
+    /// `Authorization`, prefixed `Bearer ` or `Basic ` for those schemes.
+    Authorization,
+    /// The header an `APIKeySecurityScheme` names, lowercased.
+    Header(String),
+    /// The cookie an `APIKeySecurityScheme` names.
+    Cookie(String),
+}
+
+/// RFC 9110 §5.6.2 `tchar`: what a header name, and a cookie name
+/// (RFC 6265 §4.1.1), may be made of.
+const fn is_tchar(b: u8) -> bool {
+    b.is_ascii_alphanumeric()
+        || matches!(
+            b,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
 }
 
 impl AuthInterceptor {
@@ -194,6 +233,7 @@ impl AuthInterceptor {
             store,
             session,
             scheme: "bearer".to_owned(),
+            placement: Placement::Authorization,
         }
     }
 
@@ -208,7 +248,48 @@ impl AuthInterceptor {
             store,
             session,
             scheme: scheme.into(),
+            placement: Placement::Authorization,
         }
+    }
+
+    /// Creates an [`AuthInterceptor`] that sends the credential stored under
+    /// `scheme` where an agent's `APIKeySecurityScheme` says (spec §4.5.2):
+    /// in the header or the cookie it names.
+    /// [`with_scheme`](Self::with_scheme) writes `Authorization`, which an
+    /// agent that reads its key from `X-API-Key` never sees.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::InvalidAuthScheme`] for a key the scheme places in the
+    /// query string, which this client's transports cannot add, and for a
+    /// name that is not an HTTP token, which no header or cookie can carry.
+    pub fn api_key(
+        store: Arc<dyn CredentialsStore>,
+        session: SessionId,
+        scheme: impl Into<String>,
+        api_key: &ApiKeySecurityScheme,
+    ) -> ClientResult<Self> {
+        let name = api_key.name.as_str();
+        if name.is_empty() || !name.bytes().all(is_tchar) {
+            return Err(ClientError::InvalidAuthScheme(format!(
+                "API key name {name:?} is not an HTTP token"
+            )));
+        }
+        let placement = match api_key.location {
+            ApiKeyLocation::Header => Placement::Header(name.to_ascii_lowercase()),
+            ApiKeyLocation::Cookie => Placement::Cookie(name.to_owned()),
+            ApiKeyLocation::Query => {
+                return Err(ClientError::InvalidAuthScheme(format!(
+                    "API key {name:?} goes in the query string, which this client cannot send"
+                )));
+            }
+        };
+        Ok(Self {
+            store,
+            session,
+            scheme: scheme.into(),
+            placement,
+        })
     }
 }
 
@@ -219,6 +300,7 @@ impl fmt::Debug for AuthInterceptor {
         f.debug_struct("AuthInterceptor")
             .field("session", &self.session)
             .field("scheme", &self.scheme)
+            .field("placement", &self.placement)
             .finish()
     }
 }
@@ -230,16 +312,34 @@ impl CallInterceptor for AuthInterceptor {
         req: &'a mut ClientRequest,
     ) -> impl std::future::Future<Output = ClientResult<()>> + Send + 'a {
         async move {
-            if let Some(credential) = self.store.get(&self.session, &self.scheme) {
-                let header_value = if self.scheme.eq_ignore_ascii_case("bearer") {
-                    format!("Bearer {credential}")
-                } else if self.scheme.eq_ignore_ascii_case("basic") {
-                    format!("Basic {credential}")
-                } else {
-                    credential
-                };
-                req.extra_headers
-                    .insert("authorization".to_owned(), header_value);
+            let Some(credential) = self.store.get(&self.session, &self.scheme) else {
+                return Ok(());
+            };
+            match &self.placement {
+                Placement::Authorization => {
+                    let header_value = if self.scheme.eq_ignore_ascii_case("bearer") {
+                        format!("Bearer {credential}")
+                    } else if self.scheme.eq_ignore_ascii_case("basic") {
+                        format!("Basic {credential}")
+                    } else {
+                        credential
+                    };
+                    req.extra_headers
+                        .insert("authorization".to_owned(), header_value);
+                }
+                Placement::Header(name) => {
+                    req.extra_headers.insert(name.clone(), credential);
+                }
+                Placement::Cookie(name) => {
+                    let pair = format!("{name}={credential}");
+                    req.extra_headers
+                        .entry("cookie".to_owned())
+                        .and_modify(|cookies| {
+                            cookies.push_str("; ");
+                            cookies.push_str(&pair);
+                        })
+                        .or_insert(pair);
+                }
             }
             Ok(())
         }
@@ -257,230 +357,4 @@ impl CallInterceptor for AuthInterceptor {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `Debug` must not panic on a poisoned lock.
-    ///
-    /// The accessors propagate poisoning on purpose — a credentials lookup
-    /// that quietly returns `None` is a silent auth downgrade. `Debug` is the
-    /// opposite case: it runs while somebody is diagnosing the first failure,
-    /// often from a logging path, and panicking there replaces the diagnosis
-    /// with a second failure. Under this workspace's release
-    /// `panic = "abort"`, with a process abort.
-    #[test]
-    fn debug_reports_a_poisoned_lock_instead_of_panicking() {
-        let store = std::sync::Arc::new(InMemoryCredentialsStore::new());
-        store.set(SessionId::new("s1"), "bearer", "tok".into());
-
-        let poisoner = std::sync::Arc::clone(&store);
-        // No panic-hook swap around this `catch_unwind`, deliberately, and
-        // `scripts/check_panic_hooks.sh` keeps it that way: `set_hook` is
-        // process-global, libtest runs tests as parallel threads in one
-        // process, and a silenced hook costs every other thread in this
-        // binary its panic message for as long as the window is held.
-        // libtest already captures panic output per test and discards it on
-        // success, so the swap bought nothing it did not already have.
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = poisoner.inner.write().expect("uncontended");
-            panic!("poison the lock");
-        }));
-        assert!(outcome.is_err(), "the closure must actually have panicked");
-        assert!(store.inner.is_poisoned(), "and poisoned the lock");
-
-        let rendered =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| format!("{store:?}")))
-                .expect("Debug must not panic on a poisoned lock");
-        assert!(
-            rendered.contains("poisoned"),
-            "and must say so rather than printing a count read out of a map a \
-             writer panicked inside: {rendered}"
-        );
-    }
-
-    #[test]
-    fn credentials_store_set_get_remove() {
-        let store = InMemoryCredentialsStore::new();
-        let session = SessionId::new("sess-1");
-
-        assert!(store.get(&session, "bearer").is_none());
-
-        store.set(session.clone(), "bearer", "my-token".into());
-        assert_eq!(store.get(&session, "bearer").as_deref(), Some("my-token"));
-
-        store.remove(&session, "bearer");
-        assert!(store.get(&session, "bearer").is_none());
-    }
-
-    #[tokio::test]
-    async fn auth_interceptor_injects_bearer() {
-        let store = Arc::new(InMemoryCredentialsStore::new());
-        let session = SessionId::new("test");
-        store.set(session.clone(), "bearer", "my-secret-token".into());
-
-        let interceptor = AuthInterceptor::new(store, session);
-        let mut req = ClientRequest::new("message/send", serde_json::Value::Null);
-
-        interceptor.before(&mut req).await.unwrap();
-
-        assert_eq!(
-            req.extra_headers.get("authorization").map(String::as_str),
-            Some("Bearer my-secret-token")
-        );
-    }
-
-    #[tokio::test]
-    async fn auth_interceptor_no_credential_no_header() {
-        let store = Arc::new(InMemoryCredentialsStore::new());
-        let session = SessionId::new("empty");
-        let interceptor = AuthInterceptor::new(store, session);
-
-        let mut req = ClientRequest::new("message/send", serde_json::Value::Null);
-        interceptor.before(&mut req).await.unwrap();
-
-        assert!(!req.extra_headers.contains_key("authorization"));
-    }
-
-    #[test]
-    fn credentials_store_multiple_sessions() {
-        let store = InMemoryCredentialsStore::new();
-        let s1 = SessionId::new("session-1");
-        let s2 = SessionId::new("session-2");
-
-        store.set(s1.clone(), "bearer", "token-1".into());
-        store.set(s2.clone(), "bearer", "token-2".into());
-
-        assert_eq!(store.get(&s1, "bearer").as_deref(), Some("token-1"));
-        assert_eq!(store.get(&s2, "bearer").as_deref(), Some("token-2"));
-
-        // Removing from one session doesn't affect the other.
-        store.remove(&s1, "bearer");
-        assert!(store.get(&s1, "bearer").is_none());
-        assert_eq!(store.get(&s2, "bearer").as_deref(), Some("token-2"));
-    }
-
-    #[test]
-    fn credentials_store_multiple_schemes() {
-        let store = InMemoryCredentialsStore::new();
-        let session = SessionId::new("multi-scheme");
-
-        store.set(session.clone(), "bearer", "bearer-tok".into());
-        store.set(session.clone(), "api-key", "key-123".into());
-
-        assert_eq!(store.get(&session, "bearer").as_deref(), Some("bearer-tok"));
-        assert_eq!(store.get(&session, "api-key").as_deref(), Some("key-123"));
-    }
-
-    #[test]
-    fn credentials_store_overwrite() {
-        let store = InMemoryCredentialsStore::new();
-        let session = SessionId::new("overwrite");
-
-        store.set(session.clone(), "bearer", "old-token".into());
-        store.set(session.clone(), "bearer", "new-token".into());
-
-        assert_eq!(store.get(&session, "bearer").as_deref(), Some("new-token"));
-    }
-
-    #[test]
-    fn credentials_store_debug_hides_values() {
-        let store = InMemoryCredentialsStore::new();
-        let session = SessionId::new("secret");
-        store.set(session, "bearer", "super-secret-token".into());
-
-        let debug_output = format!("{store:?}");
-        assert!(
-            !debug_output.contains("super-secret"),
-            "debug output should not expose credentials: {debug_output}"
-        );
-        assert!(debug_output.contains("sessions"));
-    }
-
-    #[tokio::test]
-    async fn auth_interceptor_basic_scheme() {
-        let store = Arc::new(InMemoryCredentialsStore::new());
-        let session = SessionId::new("basic-test");
-        store.set(session.clone(), "basic", "dXNlcjpwYXNz".into());
-
-        let interceptor = AuthInterceptor::with_scheme(store, session, "basic");
-        let mut req = ClientRequest::new("message/send", serde_json::Value::Null);
-        interceptor.before(&mut req).await.unwrap();
-
-        assert_eq!(
-            req.extra_headers.get("authorization").map(String::as_str),
-            Some("Basic dXNlcjpwYXNz")
-        );
-    }
-
-    #[tokio::test]
-    async fn auth_interceptor_custom_scheme() {
-        let store = Arc::new(InMemoryCredentialsStore::new());
-        let session = SessionId::new("custom-test");
-        store.set(session.clone(), "api-key", "my-api-key".into());
-
-        let interceptor = AuthInterceptor::with_scheme(store, session, "api-key");
-        let mut req = ClientRequest::new("message/send", serde_json::Value::Null);
-        interceptor.before(&mut req).await.unwrap();
-
-        // Custom schemes use the raw credential as the header value.
-        assert_eq!(
-            req.extra_headers.get("authorization").map(String::as_str),
-            Some("my-api-key")
-        );
-    }
-
-    #[test]
-    fn session_id_display() {
-        let session = SessionId::new("my-session");
-        assert_eq!(session.to_string(), "my-session");
-    }
-
-    #[test]
-    fn session_id_from_string() {
-        let session: SessionId = "test".into();
-        assert_eq!(session, SessionId::new("test"));
-
-        let session: SessionId = String::from("owned").into();
-        assert_eq!(session, SessionId::new("owned"));
-    }
-
-    #[test]
-    fn credentials_store_default_impl() {
-        let store = InMemoryCredentialsStore::default();
-        let session = SessionId::new("test");
-        assert!(store.get(&session, "bearer").is_none());
-    }
-
-    #[tokio::test]
-    async fn auth_interceptor_after_is_noop() {
-        let store = Arc::new(InMemoryCredentialsStore::new());
-        let session = SessionId::new("test");
-        let interceptor = AuthInterceptor::new(store, session);
-        let resp = ClientResponse {
-            method: "test".into(),
-            result: serde_json::Value::Null,
-            status_code: 200,
-        };
-        interceptor.after(&resp).await.unwrap();
-    }
-
-    #[test]
-    fn auth_interceptor_debug_contains_fields() {
-        let store = Arc::new(InMemoryCredentialsStore::new());
-        let session = SessionId::new("debug-session");
-        let interceptor = AuthInterceptor::new(store, session);
-        let debug = format!("{interceptor:?}");
-        assert!(
-            debug.contains("AuthInterceptor"),
-            "debug output missing struct name: {debug}"
-        );
-        assert!(
-            debug.contains("debug-session"),
-            "debug output missing session: {debug}"
-        );
-        assert!(
-            debug.contains("bearer"),
-            "debug output missing scheme: {debug}"
-        );
-    }
-}
+mod tests;

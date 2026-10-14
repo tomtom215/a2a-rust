@@ -57,6 +57,7 @@ use slim_service::app::App as SlimApp;
 use crate::SlimName;
 use crate::binding::A2A_SERVICE_NAME;
 use crate::client::TransportBuildError;
+use crate::client::metadata_from;
 use crate::codec::Pb;
 use crate::error::rpc_error_to_client_error;
 use crate::method;
@@ -180,6 +181,10 @@ impl SlimRpcMulticast {
     /// Only for an interaction-level failure — the request could not be encoded
     /// or could not be delivered to the group at all. A per-agent failure is
     /// not an error here; it is an outcome.
+    ///
+    /// `metadata` goes to every agent with `a2a-version` added unless it
+    /// already names one, as the unicast transport sends it. Until 2026-10-13
+    /// none was added, and a server that requires the version refused it.
     pub async fn send_message(
         &self,
         params: MessageSendParams,
@@ -195,7 +200,7 @@ impl SlimRpcMulticast {
                 method::SEND_MESSAGE,
                 Pb(request),
                 self.timeout,
-                metadata,
+                Some(metadata_from(&metadata.unwrap_or_default())),
             );
         futures::pin_mut!(responses);
 
@@ -224,7 +229,7 @@ impl SlimRpcMulticast {
                         message,
                         details,
                     };
-                    answered.insert(origin, Err(rpc_error_to_client_error(&err)));
+                    answered.insert(address_key(&origin), Err(rpc_error_to_client_error(&err)));
                 }
                 // The session ended before every member replied. This names the
                 // missing members outright, which is better than the timeout
@@ -273,6 +278,7 @@ impl SlimRpcMulticast {
     /// # Errors
     ///
     /// Only for an interaction-level failure, as [`Self::send_message`].
+    /// `metadata` is sent as there.
     pub fn stream_message(
         &self,
         params: MessageSendParams,
@@ -297,6 +303,7 @@ impl SlimRpcMulticast {
 
         let channel = self.channel.clone();
         let timeout = self.timeout;
+        let metadata = Some(metadata_from(&metadata.unwrap_or_default()));
         tokio::spawn(fan_out_to_members(
             channel, request, timeout, metadata, senders,
         ));
@@ -343,12 +350,16 @@ pub(super) fn member_key(name: &SlimName) -> String {
 /// and every response then filed under a name no member matched, so every
 /// member came back as a timeout while all of them had in fact answered.
 pub(super) fn proto_name_key(source: &ProtoName) -> String {
-    source
-        .to_string()
-        .split('/')
-        .take(3)
-        .collect::<Vec<_>>()
-        .join("/")
+    address_key(&source.to_string())
+}
+
+/// The same key, from a SLIM name already rendered as text: the `origin` of
+/// a member's error, which SLIM fills with the full four-part rendering.
+/// Until 2026-10-13 errors were filed under that rendering, the mistake
+/// [`proto_name_key`] describes, so a member that answered with an error was
+/// reported as having timed out.
+pub(super) fn address_key(rendered: &str) -> String {
+    rendered.split('/').take(3).collect::<Vec<_>>().join("/")
 }
 
 #[cfg(test)]
@@ -378,7 +389,7 @@ mod tests {
         ] {
             assert_eq!(
                 member_key(&invited),
-                truncate_to_address(on_the_wire),
+                address_key(on_the_wire),
                 "a response from {on_the_wire} must key to the invited member"
             );
         }
@@ -388,18 +399,13 @@ mod tests {
     #[test]
     fn different_agents_keep_different_keys() {
         assert_ne!(
-            truncate_to_address("org/mc/agent-0/NULL_COMPONENT"),
-            truncate_to_address("org/mc/agent-1/NULL_COMPONENT")
+            address_key("org/mc/agent-0/NULL_COMPONENT"),
+            address_key("org/mc/agent-1/NULL_COMPONENT")
         );
         assert_ne!(
             member_key(&SlimName::new("org", "a", "agent")),
             member_key(&SlimName::new("org", "b", "agent"))
         );
-    }
-
-    /// The string half of `proto_name_key`, testable without a `ProtoName`.
-    fn truncate_to_address(rendered: &str) -> String {
-        rendered.split('/').take(3).collect::<Vec<_>>().join("/")
     }
 
     /// A node component in the address is an attach hint, not part of the

@@ -103,7 +103,10 @@ pub trait AgentExecutor: Send + Sync + 'static {
     ///
     /// Override this when the task holds something that must be released —
     /// a reserved slot, a parked message, an open handle. Overriding is about
-    /// releasing state, not about opting in to cancellation.
+    /// releasing state, not about opting in to cancellation: an override that
+    /// returns `Ok` without writing a terminal state has the `Canceled` status
+    /// written for it, after it returns, so the task's open streams still end
+    /// on it.
     ///
     /// Before 0.7 the default refused with `TaskNotCancelable`, which left
     /// `Working` tasks uncancelable out of the box and reported it as the
@@ -129,22 +132,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
             // the pre-0.7 default of refusing with TaskNotCancelable made
             // WORKING tasks uncancelable out of the box and mislabeled the
             // failure as the task's fault.
-            let event = a2a_protocol_types::events::TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
-                status: a2a_protocol_types::task::TaskStatus::with_timestamp(
-                    a2a_protocol_types::task::TaskState::Canceled,
-                ),
-                metadata: None,
-            };
-            // Best-effort delivery: a task with no live subscribers has no
-            // queue receivers, and that must not fail the cancel — the
-            // handler persists the Canceled state either way.
-            let _ = queue
-                .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
-                    event,
-                ))
-                .await;
+            write_canceled(ctx, queue).await;
             Ok(())
         })
     }
@@ -156,4 +144,27 @@ pub trait AgentExecutor: Send + Sync + 'static {
     fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async {})
     }
+}
+
+/// Writes the terminal `Canceled` status for `ctx`'s task: what the default
+/// [`AgentExecutor::cancel`] does, and what the handler does after a hook
+/// that wrote no terminal state.
+///
+/// Best-effort delivery: a task with no live subscribers has no queue
+/// receivers, and that must not fail the cancel — the handler persists the
+/// Canceled state either way.
+pub(crate) async fn write_canceled(ctx: &RequestContext, queue: &dyn EventQueueWriter) {
+    let event = a2a_protocol_types::events::TaskStatusUpdateEvent {
+        task_id: ctx.task_id.clone(),
+        context_id: a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
+        status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+            a2a_protocol_types::task::TaskState::Canceled,
+        ),
+        metadata: None,
+    };
+    let _ = queue
+        .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            event,
+        ))
+        .await;
 }

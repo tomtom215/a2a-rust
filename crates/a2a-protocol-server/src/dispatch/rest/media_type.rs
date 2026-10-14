@@ -47,18 +47,29 @@ impl ResponseMediaType {
         }
     }
 
-    /// Negotiates from a request's headers.
+    /// Negotiates from a request's headers, every `Accept` line of them
+    /// (RFC 9110 §5.3; until 2026-10-13 the first line alone was read).
     pub fn from_headers(headers: &hyper::HeaderMap) -> Self {
-        let get = |name| headers.get(name).and_then(|v| v.to_str().ok());
-        Self::negotiate(get(hyper::header::ACCEPT), get(hyper::header::CONTENT_TYPE))
+        let accept = crate::dispatch::field_value(headers, "accept");
+        let content_type = headers
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok());
+        Self::negotiate(accept.as_deref(), content_type)
     }
 
-    /// Relabels a response the dispatcher built as `application/json`.
+    /// Relabels a response the dispatcher built as `application/json`, and
+    /// names the request fields its type was chosen from in `Vary` (RFC 9110
+    /// §12.5.5), so a cache does not give one client's representation to a
+    /// client that asked for the other. Until 2026-10-13 no `Vary` was sent.
     ///
     /// Only an exact `application/json` is touched, so an SSE stream
     /// (`text/event-stream`) or anything else a route chose deliberately keeps
-    /// its type.
+    /// its type. `Vary` is appended, beside one a route set.
     pub fn apply(self, headers: &mut hyper::HeaderMap) {
+        headers.append(
+            hyper::header::VARY,
+            hyper::header::HeaderValue::from_static("Accept, Content-Type"),
+        );
         if self != Self::A2aJson {
             return;
         }
@@ -84,7 +95,7 @@ pub fn is_negotiable_path(path: &str) -> bool {
 }
 
 /// The `type/subtype` of a media type, without parameters or whitespace.
-fn essence(value: &str) -> &str {
+pub fn essence(value: &str) -> &str {
     value.split(';').next().unwrap_or("").trim()
 }
 

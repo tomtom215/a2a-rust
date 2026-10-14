@@ -71,6 +71,7 @@ async fn streaming_mode_background_processor_updates_store() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
@@ -208,6 +209,7 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_push_sender(SharedRecordingPushSender {
             calls: calls.clone(),
             sent: push_sent.clone(),
@@ -340,6 +342,7 @@ async fn streaming_mode_background_drains_after_executor_done() {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .without_agent_card()
         .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),

@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use a2a_protocol_types::task::TaskId;
+use a2a_protocol_types::task::{Task, TaskId};
 
 use super::super::RequestHandler;
 use super::decisions::second_send_blocked;
@@ -38,54 +38,90 @@ impl RequestHandler {
     /// unique id. Must be called under the per-context lock so it is atomic
     /// with the token insert that follows.
     ///
-    /// One in-flight executor is waited for rather than refused: one whose
-    /// latest state parked the task at `input-required` or `auth-required`
-    /// (N21). The client has been told to answer, and may do so before the
-    /// executor's future has returned and released its token — a blocking
-    /// response returns on the interrupted state, and a stream delivers it,
-    /// without waiting for that. Refusing that continuation with "wait for
-    /// input-required" contradicted the state the client had just been sent.
-    /// The wait is bounded by
-    /// [`executor_drain_timeout`](crate::handler::HandlerLimits::executor_drain_timeout);
-    /// an executor still running past it is refused exactly as before, so
-    /// two executors never run for one task.
+    /// One in-flight executor is waited for rather than refused, by
+    /// [`Self::wait_for_parked_turn`], which the caller runs first under the
+    /// same lock: one whose latest state parked the task at `input-required`
+    /// or `auth-required` (N21). The client has been told to answer, and may
+    /// do so before the executor's future has returned and released its
+    /// token — a blocking response returns on the interrupted state, and a
+    /// stream delivers it, without waiting for that. Refusing that
+    /// continuation with "wait for input-required" contradicted the state
+    /// the client had just been sent. An executor still running past that
+    /// wait's bound is refused here, so two executors never run for one
+    /// task. The turn is marked parked before the interrupted state is
+    /// broadcast, so a client answering that state finds it parked.
     ///
     /// # Errors
     ///
     /// [`ServerError::UnsupportedOperation`] while the task's executor runs.
     pub(super) async fn reject_in_flight_send(&self, task_id: &TaskId) -> ServerResult<()> {
-        let parked_turn = {
-            let tokens = self.cancellation_tokens.read().await;
-            match tokens.get(task_id) {
-                Some(entry) if second_send_blocked(entry) => {
-                    entry.turn.is_parked().then(|| Arc::clone(&entry.turn))
-                }
-                _ => return Ok(()),
-            }
-        };
-        if let Some(turn) = parked_turn {
-            // The executor releases its queue and token, then cancels
-            // `finished`. A timeout falls through to the re-check, which
-            // refuses if the executor is still there.
-            let _ = tokio::time::timeout(
-                self.limits.executor_drain_timeout,
-                turn.finished.cancelled(),
-            )
-            .await;
-            let still_blocked = self
-                .cancellation_tokens
-                .read()
-                .await
-                .get(task_id)
-                .is_some_and(second_send_blocked);
-            if !still_blocked {
-                return Ok(());
-            }
+        let still_blocked = self
+            .cancellation_tokens
+            .read()
+            .await
+            .get(task_id)
+            .is_some_and(second_send_blocked);
+        if !still_blocked {
+            return Ok(());
         }
         Err(ServerError::UnsupportedOperation(format!(
             "task {task_id} is already being processed; \
                      wait for it to reach input-required or a terminal state before sending again"
         )))
+    }
+
+    /// Waits, bounded by
+    /// [`executor_drain_timeout`](crate::handler::HandlerLimits::executor_drain_timeout),
+    /// for the in-flight turn of `task_id` to finish when its latest state
+    /// parked the task; whether there was such a turn.
+    ///
+    /// The turn finishes once its executor has returned and its events are
+    /// stored ([`InMemoryQueueWriter::settled`](crate::streaming::InMemoryQueueWriter)),
+    /// so a send that waited here reads the task as that turn left it.
+    pub(super) async fn wait_for_parked_turn(&self, task_id: &TaskId) -> bool {
+        let parked_turn = {
+            let tokens = self.cancellation_tokens.read().await;
+            tokens
+                .get(task_id)
+                .filter(|entry| second_send_blocked(entry) && entry.turn.is_parked())
+                .map(|entry| Arc::clone(&entry.turn))
+        };
+        let Some(turn) = parked_turn else {
+            return false;
+        };
+        // The executor releases its queue and token, then cancels `finished`.
+        let _ = tokio::time::timeout(
+            self.limits.executor_drain_timeout,
+            turn.finished.cancelled(),
+        )
+        .await;
+        true
+    }
+
+    /// `stored`, or, when a turn of `task_id` had parked the task, the task
+    /// as that turn left it once it finished.
+    ///
+    /// A client may answer the moment its stream reports `input-required`,
+    /// which is before the turn that asked has stored its last events. A
+    /// continuation built from the task read before then saved over them:
+    /// an artifact the turn produced was lost from the task, and an approval
+    /// request was not yet there to be decided. So a send waits for that turn
+    /// here, before its approval check and before
+    /// [`Self::reject_in_flight_send`] checks for the turn, and goes on from
+    /// the task as the turn left it.
+    ///
+    /// # Errors
+    ///
+    /// The store's, when the task cannot be read again.
+    pub(super) async fn settled_task(
+        &self,
+        task_id: &TaskId,
+        stored: Option<Task>,
+    ) -> ServerResult<Option<Task>> {
+        if !self.wait_for_parked_turn(task_id).await {
+            return Ok(stored);
+        }
+        Ok(self.task_store.get(task_id).await?.or(stored))
     }
 
     /// Leases the task's event queue, which must happen before any other
@@ -130,7 +166,7 @@ impl RequestHandler {
         {
             QueueLease::Created {
                 writer,
-                reader,
+                mut reader,
                 persistence_rx,
             } => {
                 // Resume the log's numbering before the executor can write.
@@ -151,7 +187,12 @@ impl RequestHandler {
                     // to show for it. A refused send is recoverable by retrying;
                     // a turn whose events were never recorded is not.
                     match self.task_store.last_event_seq(task_id).await {
-                        Ok(seq) => writer.seed_seq(seq),
+                        Ok(seq) => {
+                            writer.seed_seq(seq);
+                            // A lag catch-up resumes after the previous
+                            // turns, which this stream does not carry.
+                            reader.starting_after(seq);
+                        }
                         Err(e) => {
                             // The lease is already registered, so returning
                             // without releasing it would wedge the task as
@@ -271,6 +312,7 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_log_position_refuses_the_lease_rather_than_renumbering() {
         let handler = RequestHandlerBuilder::new(NoopExecutor)
+            .without_agent_card()
             .with_task_store(UnreadableLogStore)
             .build()
             .expect("handler");

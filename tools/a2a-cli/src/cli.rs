@@ -15,8 +15,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 /// drift apart in what they promise.
 pub const BINDING_HELP: &str = "Protocol binding to speak to <URL> with. \
 Without this flag the agent card is fetched from <URL>/.well-known/agent-card.json \
-and the binding is chosen the way ClientBuilder::from_card does: JSONRPC if the card \
-offers it, otherwise the card's first interface — and the card's URL for that \
+and the binding is chosen the way ClientBuilder::from_card does: the first interface \
+the card lists that this client supports (spec §8.3.2) — and the card's URL for that \
 interface is used, not <URL>. With this flag no card is fetched and <URL> is taken \
 as the endpoint of that binding (http(s):// for jsonrpc and rest, ws(s):// for \
 websocket, host:port or http(s):// for grpc).";
@@ -75,6 +75,14 @@ pub struct GlobalOpts {
     /// effect on an address that already carries a scheme.
     #[arg(long, global = true)]
     pub grpc_plaintext: bool,
+
+    /// Run `stream` even when the agent card does not declare
+    /// `capabilities.streaming`. By default the stream is refused before
+    /// anything is sent, as spec §3.3.4 asks of a client. Only for an agent
+    /// that streams without declaring it. No effect with `--binding`, which
+    /// skips the card.
+    #[arg(long, global = true)]
+    pub no_capability_check: bool,
 }
 
 /// The four bindings the client library speaks.

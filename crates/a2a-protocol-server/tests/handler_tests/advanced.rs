@@ -14,6 +14,7 @@ use super::*;
 #[tokio::test]
 async fn resubscribe_nonexistent_task_fails() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -33,6 +34,7 @@ async fn resubscribe_nonexistent_task_fails() {
 #[tokio::test]
 async fn return_immediately_returns_pending_task() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -69,6 +71,7 @@ async fn return_immediately_returns_pending_task() {
 #[tokio::test]
 async fn task_continuation_same_context_finds_stored_task() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -181,6 +184,7 @@ impl a2a_protocol_server::executor::AgentExecutor for InputRequiredExecutor {
 #[tokio::test]
 async fn task_id_only_continuation_infers_context_from_task() {
     let handler = RequestHandlerBuilder::new(InputRequiredExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -239,6 +243,7 @@ async fn task_id_only_continuation_infers_context_from_task() {
 #[tokio::test]
 async fn task_id_only_unknown_task_returns_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -275,6 +280,7 @@ async fn task_id_only_unknown_task_returns_task_not_found() {
 #[tokio::test]
 async fn context_task_id_naming_no_existing_task_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -326,6 +332,7 @@ async fn context_task_id_naming_no_existing_task_rejected() {
 #[tokio::test]
 async fn task_id_from_another_context_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -371,6 +378,7 @@ async fn task_id_from_another_context_rejected() {
 #[tokio::test]
 async fn interceptor_rejection_stops_processing() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .with_interceptor(RejectInterceptor)
         .build()
         .expect("build handler");

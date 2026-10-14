@@ -21,7 +21,7 @@ The server answers `101 Switching Protocols`, or refuses the upgrade:
 | Condition | Answer |
 |---|---|
 | `A2A-Version` absent or empty (read as 0.3, §3.6.2) | `400`, unless the server was built with `accept_missing_version_header()` |
-| `A2A-Version` names a major version other than 1 | `400` |
+| `A2A-Version` names a version other than 1.0 (a patch number is ignored) | `400` |
 | Handshake not finished within the handshake timeout (default 10 s) | connection closed |
 
 A refused upgrade carries the HTTP+JSON binding's error body (§11.6):
@@ -104,10 +104,10 @@ This frame is a transport marker, not a `StreamResponse`. A stream that fails
 ends with a JSON-RPC error frame for its `id` instead, and no marker.
 
 **Reconnection.** There is no resumption. The HTTP binding's
-`Last-Event-ID` has no counterpart here, so a client whose connection drops
-opens a new one and calls `SubscribeToTask`. That stream's first event is the
-task's current snapshot, from which the client continues; events in between
-are not replayed.
+`Last-Event-ID` has no counterpart here, and the server ignores one on the
+upgrade request, so a client whose connection drops opens a new one and calls
+`SubscribeToTask`. That stream's first event is the task's current snapshot,
+from which the client continues; events in between are not replayed.
 
 ## 5. Errors (§5.4, §12.4)
 
@@ -159,6 +159,9 @@ that accepts its cookie or ticket and forwards a header.
 
 - **Transport.** The dispatcher listens on plain `ws://`. Production
   deployments put a TLS terminator in front and publish `wss://` in the card.
+  The SDK's client connects to `wss://` with the roots its HTTPS transports
+  use (feature `tls-rustls`, on by default), or a configuration given to
+  `WebSocketTransportConfig::with_tls_config`.
 - **Origin.** The server does not check the upgrade's `Origin` header. Where
   credentials are ambient (a cookie a gateway turns into a header), a page on
   another site could open an authenticated connection (cross-site WebSocket

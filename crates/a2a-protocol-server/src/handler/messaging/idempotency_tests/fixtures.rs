@@ -48,6 +48,7 @@ impl AgentExecutor for CountingExecutor {
 pub(super) fn counting_handler() -> (RequestHandler, Arc<AtomicUsize>) {
     let counter = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&counter)))
+        .without_agent_card()
         .build()
         .expect("default build should succeed");
     (handler, counter)
@@ -357,6 +358,7 @@ pub(super) fn withholding_handler(
 ) -> (RequestHandler, Arc<AtomicUsize>) {
     let counter = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&counter)))
+        .without_agent_card()
         .with_task_store_arc(Arc::clone(store) as Arc<dyn crate::store::TaskStore>)
         .build()
         .expect("withholding-store build should succeed");

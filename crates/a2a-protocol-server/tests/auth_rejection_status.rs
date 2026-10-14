@@ -35,6 +35,7 @@ agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 fn handler(interceptor: impl ServerInterceptor + 'static) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
             .with_interceptor(interceptor)
             .build()
             .expect("handler"),

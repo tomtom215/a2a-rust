@@ -332,20 +332,40 @@ impl TaskStore for PostgresTaskStore {
                 bind_values.push(status.to_string());
                 conditions.push(format!("state = ${}", bind_values.len()));
             }
-            // §3.1.4 statusTimestampAfter: strictly-after filter on the
-            // status timestamp, which is what `updated_at` stores. An
-            // unparseable value cannot reach the store through the handler
-            // (which validates it); treat it as matching nothing.
+            // a2a.proto `status_timestamp_after`: "greater than or equal to"
+            // (until 2026-10-13, strictly after) on the status timestamp, which
+            // is what `updated_at` stores. An unparseable value cannot reach
+            // the store through the handler (which validates it); treat it as
+            // matching nothing.
             if let Some(ref after) = params.status_timestamp_after {
                 let Some(after_ts) = crate::store::status_timestamp_rfc3339(Some(after)) else {
                     return Ok(TaskListResponse::new(Vec::new()));
                 };
                 bind_values.push(after_ts);
                 conditions.push(format!(
-                    "updated_at > (${})::timestamptz",
+                    "updated_at >= (${})::timestamptz",
                     bind_values.len()
                 ));
             }
+            // a2a.proto `total_size`: the tasks these filters match "before
+            // pagination", so counted before the cursor narrows them. Until
+            // 2026-10-13 it was the length of the page.
+            let total_size = {
+                let sql = if conditions.is_empty() {
+                    "SELECT COUNT(*) FROM tasks".to_owned()
+                } else {
+                    format!(
+                        "SELECT COUNT(*) FROM tasks WHERE {}",
+                        conditions.join(" AND ")
+                    )
+                };
+                let mut count = sqlx::query_scalar::<_, i64>(&sql);
+                for val in &bind_values {
+                    count = count.bind(val);
+                }
+                let n = count.fetch_one(&self.pool).await.map_err(to_a2a_error)?;
+                u32::try_from(n).unwrap_or(u32::MAX)
+            };
             // Composite (updated_at, id) row-value cursor for status-
             // timestamp-descending pagination (spec §3.1.4). The cursor timestamp is a
             // UTC wall-clock string; casting it back through
@@ -412,12 +432,11 @@ impl TaskStore for PostgresTaskStore {
                     String::new()
                 };
 
-            #[allow(clippy::cast_possible_truncation)]
-            let page_len = rows.len() as u32;
             let tasks: Vec<Task> = rows.into_iter().map(|(_, task)| task).collect();
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
-            response.page_size = page_len;
+            response.page_size = page_size;
+            response.total_size = total_size;
             Ok(response)
         })
     }

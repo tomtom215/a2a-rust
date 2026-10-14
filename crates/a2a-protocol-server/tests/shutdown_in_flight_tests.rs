@@ -94,6 +94,7 @@ fn handler(on_cancel: OnCancel) -> (Arc<RequestHandler>, Arc<AtomicUsize>) {
         on_cancel,
         hook_calls: Arc::clone(&hook_calls),
     })
+    .without_agent_card()
     .build()
     .unwrap();
     (Arc::new(handler), hook_calls)

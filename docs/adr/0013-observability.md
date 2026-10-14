@@ -207,6 +207,11 @@ Found while building it, each now covered by a test:
   result and returns `Ok` from `shutdown` regardless. The HTTP client counts
   failed and refused exports, and `shutdown` reports them; over gRPC a
   failure is still only logged.
+  *Superseded 2026-10-12:* `opentelemetry-otlp` 0.33 retries a failed export
+  by default, so counting refused responses reported an export delivered on
+  retry as lost. `Telemetry` now counts exports the exporter gave up on, on
+  both transports (`otel/telemetry/counting.rs`); 0.33.1's `shutdown` still
+  returns `Ok` regardless.
 
 **The executor's span is the GenAI conventions' `invoke_agent`** (internal,
 `semantic-conventions-genai` `docs/gen-ai/gen-ai-agent-spans.md` at

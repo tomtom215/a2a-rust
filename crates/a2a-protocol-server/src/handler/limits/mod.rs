@@ -46,7 +46,7 @@ pub struct HandlerLimits {
     pub max_cancellation_tokens: usize,
     /// Maximum age for cancellation tokens. Default: 1 hour.
     pub max_token_age: Duration,
-    /// Timeout for individual push webhook deliveries. Default: 5 seconds.
+    /// Timeout for individual push webhook deliveries. Default: 30 seconds.
     ///
     /// Bounds how long the handler waits for a single push notification delivery
     /// to complete, preventing one slow webhook from blocking all subsequent
@@ -58,22 +58,24 @@ pub struct HandlerLimits {
     /// not one HTTP request. A sender whose own schedule is longer never
     /// finishes it, and the attempts it advertises simply do not happen.
     ///
-    /// **The shipped defaults contradict each other.** `HttpPushSender::new()`
-    /// is three attempts at a 30-second request timeout with `[1s, 2s]`
-    /// backoff after a 5-second DNS bound — 98 seconds — against this
-    /// 5-second bound. Measured
-    /// 2026-08-19 against a real socket: **one of the three attempts reaches
-    /// the webhook, and the bound fires at 5.001s.** So `max_attempts` and
-    /// `backoff` are, at the defaults, configuration that cannot take effect.
+    /// **At the shipped defaults every attempt starts.** `HttpPushSender::new()`
+    /// is three attempts at a 10-second request timeout with `[1s, 2s]`
+    /// backoff after a 5-second DNS bound — 38 seconds at worst — against
+    /// this 30-second bound. When every request runs to its timeout the
+    /// attempts start at 5s, 16s and 28s: the first two finish and the third
+    /// has 2 seconds. Both numbers sit in the 10-30 seconds spec §4.3.3 and
+    /// §13.2 recommend for webhook requests.
     ///
-    /// The two numbers pull in opposite directions and neither is obviously
-    /// wrong. Raising this bound to fit the retries makes the 30-second
-    /// per-event budget in `deliver_push_bg` reachable by a single config,
-    /// which is the amplification ceiling that budget exists to hold.
-    /// Shrinking the sender's schedule to fit gives real webhooks less time
-    /// than a slow one legitimately needs. Choosing between them is a
-    /// deployment decision, so this documents the arithmetic rather than
-    /// picking:
+    /// Until 2026-10-12 the defaults were 30-second requests against a
+    /// 5-second bound, and one attempt in three reached the webhook (measured
+    /// 2026-08-19 against a real socket; the bound fired at 5.001s).
+    ///
+    /// A bound as long as [`push_delivery_budget`](Self::push_delivery_budget)
+    /// means one timeout fills the budget, so an event's deliveries all run at
+    /// once (see the budget's concurrency rule). That is concurrency, not
+    /// extra work: every config was always attempted, and the event still
+    /// finishes inside the budget. To keep fewer in flight, raise the budget
+    /// or lower this bound. The arithmetic, for any pair of settings:
     ///
     /// ```text
     /// attempts_that_run == 1 + how many whole (request_timeout + backoff)
@@ -94,9 +96,11 @@ pub struct HandlerLimits {
     /// attempt each); the budget decides how many deliveries of one event run
     /// at once, the fewest that fit every attempt into it:
     /// `ceil(configs / (budget / push_delivery_timeout))`, at least one and at
-    /// most `configs`. At the defaults (100 configs, 5s, 30s) that is 17 at a
-    /// time. When not even one timeout fits, all of an event's deliveries run
-    /// at once and the event takes one timeout, past the budget.
+    /// most `configs`. At the defaults (30s, 30s) one timeout fills the budget,
+    /// so all of an event's deliveries run at once, up to
+    /// `max_push_configs_per_task`; before 2026-10-12 (5s, 30s) it was 17 of
+    /// 100 at a time. When not even one timeout fits, all of an event's
+    /// deliveries run at once and the event takes one timeout, past the budget.
     /// `max_push_configs_per_task` caps how many there can be. On the blocking
     /// send path the budget covers the whole batch of events a request
     /// produced, delivered in order.
@@ -194,8 +198,10 @@ pub struct HandlerLimits {
     /// last one and continues — the replay is resumable by the same mechanism
     /// that started it.
     pub subscribe_replay_limit: usize,
-    /// How long a resuming `SubscribeToTask` waits for the task's event log to
-    /// catch up with what has already been broadcast. Default: 2 seconds.
+    /// How long a `SubscribeToTask` waits for the task's store to catch up with
+    /// what has already been broadcast: a resuming one for the event log, and
+    /// any one for the task row its first `Task` is read from. Default: 2
+    /// seconds.
     ///
     /// Events reach the log through the background processor, so a position
     /// can have been broadcast to live subscribers before it has been
@@ -222,7 +228,7 @@ impl Default for HandlerLimits {
             max_metadata_size: 1_048_576,
             max_cancellation_tokens: 10_000,
             max_token_age: Duration::from_secs(3600),
-            push_delivery_timeout: Duration::from_secs(5),
+            push_delivery_timeout: Duration::from_secs(30),
             push_delivery_budget: Duration::from_secs(30),
             executor_drain_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,

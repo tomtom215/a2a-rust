@@ -240,6 +240,8 @@ async fn auth_interceptor_with_scheme_api_key_produces_raw_credential() {
 // ── 4. ClientConfig tests ────────────────────────────────────────────────────
 
 #[test]
+// Reads the deprecated `preferred_bindings`, which keeps its default until removed.
+#[allow(deprecated)]
 fn client_config_default_produces_valid_config() {
     let cfg = ClientConfig::default();
     assert_eq!(cfg.request_timeout, Duration::from_secs(30));
@@ -254,6 +256,8 @@ fn client_config_default_produces_valid_config() {
 }
 
 #[test]
+// Reads the deprecated `preferred_bindings`, which keeps its default until removed.
+#[allow(deprecated)]
 fn client_config_default_http_produces_valid_config() {
     let cfg = ClientConfig::default_http();
     assert_eq!(cfg.request_timeout, Duration::from_secs(30));

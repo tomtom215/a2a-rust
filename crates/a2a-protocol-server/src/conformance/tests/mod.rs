@@ -285,24 +285,58 @@ async fn not_applicable_is_never_counted_as_a_pass() {
     );
 }
 
-/// A custom `cancel` that emits nothing leaves a subscriber waiting for a
-/// task that has already ended.
+/// A `cancel` hook that releases what the task holds and writes nothing:
+/// the handler writes `Canceled` after it, so the stream still ends.
+struct SilentCancel;
+impl AgentExecutor for SilentCancel {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let emit = EventEmitter::new(ctx, queue);
+            if emit.is_cancelled() {
+                return emit.status(TaskState::Canceled).await;
+            }
+            emit.status(TaskState::Completed).await
+        })
+    }
+
+    fn cancel<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
 #[tokio::test]
-async fn a_cancel_that_emits_nothing_is_caught() {
-    struct SilentCancel;
-    impl AgentExecutor for SilentCancel {
+async fn a_cancel_that_emits_nothing_passes() {
+    let report = check(Arc::new(SilentCancel)).await;
+    assert!(report.is_pass(), "{report}");
+    let result = report
+        .results()
+        .iter()
+        .find(|r| r.name == "cancel_succeeds")
+        .expect("the check runs");
+    assert!(
+        result.detail.contains("the handler writes Canceled"),
+        "{report}"
+    );
+}
+
+#[tokio::test]
+async fn a_cancel_that_fails_is_caught() {
+    struct FailingCancel;
+    impl AgentExecutor for FailingCancel {
         fn execute<'a>(
             &'a self,
             ctx: &'a RequestContext,
             queue: &'a dyn EventQueueWriter,
         ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-            Box::pin(async move {
-                let emit = EventEmitter::new(ctx, queue);
-                if emit.is_cancelled() {
-                    return emit.status(TaskState::Canceled).await;
-                }
-                emit.status(TaskState::Completed).await
-            })
+            SilentCancel.execute(ctx, queue)
         }
 
         fn cancel<'a>(
@@ -310,23 +344,25 @@ async fn a_cancel_that_emits_nothing_is_caught() {
             _ctx: &'a RequestContext,
             _queue: &'a dyn EventQueueWriter,
         ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-            Box::pin(async { Ok(()) })
+            Box::pin(async { Err(A2aError::internal("the slot could not be released")) })
         }
     }
 
-    only_failure_is(
-        &check(Arc::new(SilentCancel)).await,
-        "cancel_emits_terminal",
-    );
+    only_failure_is(&check(Arc::new(FailingCancel)).await, "cancel_succeeds");
 }
 
 /// The default `cancel` emits, so an executor that does not override it
 /// passes that check without doing anything.
 #[tokio::test]
 async fn the_default_cancel_satisfies_the_check() {
-    assert_eq!(
-        outcome_of(&check(Arc::new(Good)).await, "cancel_emits_terminal"),
-        Outcome::Pass
+    let report = check(Arc::new(Good)).await;
+    assert_eq!(outcome_of(&report, "cancel_succeeds"), Outcome::Pass);
+    assert!(
+        report
+            .results()
+            .iter()
+            .any(|r| r.name == "cancel_succeeds" && r.detail == "emitted a terminal status"),
+        "{report}"
     );
 }
 

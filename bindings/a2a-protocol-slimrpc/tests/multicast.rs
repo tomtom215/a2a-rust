@@ -207,6 +207,77 @@ async fn a_failing_agent_does_not_affect_the_others() {
     group.shutdown().await;
 }
 
+/// An agent that answers with an A2A error has that error as its outcome,
+/// not a timeout: here every agent refuses a call whose `a2a-version` the
+/// caller set empty, which §3.6.2 reads as 0.3.
+#[tokio::test]
+async fn an_agents_refusal_is_its_outcome() {
+    let group = Group::new("mc-refused", 2, 0).await;
+
+    let outcome = group
+        .multicast
+        .send_message(
+            common::send_params("which version?"),
+            Some([("a2a-version".to_string(), String::new())].into()),
+        )
+        .await
+        .expect("the broadcast itself must succeed");
+
+    for member in outcome.all() {
+        match &member.result {
+            Err(ClientError::Protocol(a2a)) => assert_eq!(
+                a2a.code,
+                a2a_protocol_types::ErrorCode::VersionNotSupported,
+                "{}",
+                member.member
+            ),
+            other => panic!(
+                "{}: expected VersionNotSupported, got {other:?}",
+                member.member
+            ),
+        }
+    }
+
+    group.shutdown().await;
+}
+
+/// The streaming form of the same: an agent's refusal reaches its own
+/// stream as an error, where it used to end the stream with no events, as
+/// if the agent had said nothing.
+#[tokio::test]
+async fn an_agents_refusal_reaches_its_stream() {
+    let group = Group::new("mc-stream-refused", 2, 0).await;
+
+    let streams = group
+        .multicast
+        .stream_message(
+            common::send_params("which version?"),
+            Some([("a2a-version".to_string(), String::new())].into()),
+        )
+        .expect("opening the broadcast must succeed");
+
+    for (member, mut stream) in streams {
+        let mut items = Vec::new();
+        while let Some(item) = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .unwrap_or_else(|_| panic!("{}'s stream stalled", member.service))
+        {
+            items.push(item);
+        }
+        match items.as_slice() {
+            [Err(ClientError::Protocol(a2a))] => assert_eq!(
+                a2a.code,
+                a2a_protocol_types::ErrorCode::VersionNotSupported,
+                "{}",
+                member.service
+            ),
+            other => panic!("{}: expected one refusal, got {other:?}", member.service),
+        }
+    }
+
+    group.shutdown().await;
+}
+
 /// A streaming broadcast gives every invited agent its own event stream, and
 /// each ends on its own terminal event.
 ///

@@ -144,20 +144,25 @@ trip over.
 
 Spec §5.7: a required array MUST contain at least one element.
 `RequestHandlerBuilder::build` now runs `AgentCard::validate`, which checks
-`defaultInputModes`, `defaultOutputModes`, `skills`, and every skill's `tags`, as
+`defaultInputModes`, `defaultOutputModes`, `skills`, and every skill's `tags`, and
+the card's `description` and `version`, which `a2a.proto` marks REQUIRED, as
 well as the name and interfaces it checked before. A card missing any of them
-used to be served as it was. Add a skill:
+used to be served as it was. Add a description and a skill:
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;
 # let url = "http://localhost:3000";
 let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc(url))
+    .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
 # assert!(card.validate().is_ok());
 ```
 
 `AgentCard::new` now starts both mode lists at `["text/plain"]`, so a card
-built with it only needs the skill. A `DynamicAgentCardHandler` whose producer
+built with it only needs the description and the skill. `build()` also runs
+`AgentCard::validate_security_schemes`, which refuses a security scheme whose
+REQUIRED string is empty, such as an API key with no `name`. A
+`DynamicAgentCardHandler` whose producer
 returns an invalid card answers `500`, and `HotReloadAgentCardHandler` refuses
 to reload one and keeps serving the previous card.
 
@@ -166,6 +171,213 @@ to reload one and keeps serving the previous card.
 A push config with an empty or scheme-less `url`, or with an authentication
 scheme other than Bearer or Basic, answers `InvalidParams`. The second used to
 be stored and then delivered with no credentials at all.
+
+### Push needs a push sender
+
+Spec §3.3.4: when push is not supported, every push-config operation MUST
+answer `PushNotificationNotSupported`. A handler with no push sender now
+answers that to Get, List and Delete as well as Create; they used to run
+against the store. And `build()` refuses an agent card that declares
+`capabilities.pushNotifications` with no sender, since every push-config
+operation would refuse what the card advertises. Wire one with
+`.with_push_sender(HttpPushSender::new())`, or declare `pushNotifications`
+false.
+
+### `ClientBuilder::from_card` follows the card's interface order
+
+Spec §8.3.2: a client MUST select the first interface it supports, preferring
+earlier entries in the card's list. `from_card` used to prefer JSON-RPC
+wherever the card listed it; it now takes the card's first interface for
+protocol 1.x and falls back down the list past one it cannot build. A card
+listing `HTTP+JSON` before `JSONRPC` now gets HTTP+JSON. To keep the old
+choice, rank the bindings yourself:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn main() -> Result<(), ClientError> {
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3001"))
+#     .with_description("An example agent")
+#     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+let client = ClientBuilder::from_card_preferring(&card, &["JSONRPC".into()])?.build()?;
+# drop(client);
+# Ok(())
+# }
+```
+
+`ClientConfig::preferred_bindings` and its setter are deprecated: nothing
+reads them. Use `from_card_preferring` to rank, and
+`ClientBuilder::chosen_interface` to see what was chosen.
+
+### A client built from a card checks the card's capabilities
+
+Spec §3.3.4: a client SHOULD check the agent card before an operation that
+needs an optional capability. A client from `ClientBuilder::from_card` (or
+`A2aClient::from_card`) now does: streaming and resubscription need
+`capabilities.streaming`, the push-config methods and a send carrying an
+inline push config need `pushNotifications`, and `get_extended_agent_card`
+needs `extendedAgentCard`, each set to `true`. Otherwise the call returns
+`ClientError::CapabilityNotDeclared` and nothing is sent.
+
+A conformant agent refuses the same calls, so code that already handled
+`UnsupportedOperationError` or `PushNotificationNotSupportedError` from such
+an agent should handle this error the same way. For an agent that streams or
+takes push configs without declaring it, opt out:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# fn main() -> Result<(), ClientError> {
+# let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3001"))
+#     .with_description("An example agent")
+#     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+let client = ClientBuilder::from_card(&card)?
+    .without_capability_checks()
+    .build()?;
+# drop(client);
+# Ok(())
+# }
+```
+
+The CLI's equivalent is `--no-capability-check`. A client built for a bare
+endpoint with `ClientBuilder::new` has no card and checks nothing.
+
+### `build()` requires an agent card
+
+Spec §8.1: an A2A server MUST make an agent card available.
+`RequestHandlerBuilder::build` now refuses a handler without one. Before, it
+built, answered `/.well-known/agent-card.json` with 404, and skipped every
+check a card would drive: streaming and push-notification capabilities, input
+modes, required extensions. Give it the card your agent publishes:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+    .with_streaming(true);
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card)
+    .build()?;
+# drop(handler);
+# Ok(())
+# }
+```
+
+Declare what the agent does: with a card, a streaming call to an agent that
+does not declare `streaming` is refused, as the spec requires. A handler whose
+card is published by something else, or one that is not a public A2A server
+(a test), keeps the old behaviour with `.without_agent_card()`.
+
+### An authenticating interceptor isolates tasks by caller
+
+Spec §13.1: results are scoped to the caller's authorization boundaries. A
+handler with an authenticating interceptor now gives each caller it
+identifies (a labelled token or key, a JWT's `sub`, or a custom interceptor's
+`set_caller_identity`) a partition of its own, and another caller's task is
+`TaskNotFound`. Callers it does not name keep sharing the tenant's records, so
+a deployment on unlabelled tokens or keys sees no change in what each caller
+can reach; its default stores do become the tenant-aware in-memory ones.
+Their capacity (`with_task_store_config`, 10,000 tasks by default) now applies
+to each caller's partition, up to 1,000 partitions; supply a
+`TenantAwareInMemoryTaskStore` with your own `TenantStoreConfig` to bound the
+total differently.
+
+Three configurations that built before now fail `build()`, each naming its
+remedy: an authenticating interceptor with a task or push-config store you
+supplied that does not partition by tenant (use the `TenantAware*` stores);
+an approval gate that wants an approver other than the requester, including
+the one `Profile::Auditable` installs (or let requesters approve with
+`ApprovalGate::allowing_self_approval()`); and, as before, an explicit
+`isolate_tasks_by_caller()` without an authenticating interceptor. Where
+callers are meant to see each other's tasks, say so:
+
+```rust
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::InMemoryTaskStore;
+# struct MyAgent;
+# a2a_protocol_sdk::server::agent_executor!(MyAgent, |_ctx, _q| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card())
+    .with_task_store(InMemoryTaskStore::new())
+    .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([
+        ("token-a", "alice"),
+        ("token-b", "bob"),
+    ]))
+    .share_tasks_across_callers()
+    .build()?;
+# drop(handler);
+# Ok(())
+# }
+```
+
+### Push webhook timeouts: 10 s per request, 30 s per delivery
+
+`HttpPushSender`'s request timeout goes from 30 s to 10 s and
+`HandlerLimits::push_delivery_timeout` from 5 s to 30 s, both inside the
+10-30 s that spec §4.3.3 recommends. The old pair let one attempt of the
+sender's three run; now all three start and two always finish. A webhook
+that needs more than 10 s per request needs `HttpPushSender::with_timeout`.
+Because the delivery bound now equals `push_delivery_budget`, an event's
+deliveries run all at once instead of 17 at a time; to bound how many are in
+flight, raise `push_delivery_budget` or lower the delivery bound.
+
+### Only `A2A-Version: 1.0` is served
+
+Spec §3.6.2: a request is processed with the semantics of the version it
+asks for, and a server that does not support that version MUST answer
+`VersionNotSupportedError`. This server implements 1.0 only, so a request
+naming `1.1`, or a bare `1`, is now refused with an error that says it
+supports `1.0`; a patch number is still ignored (`1.0.1` is 1.0). It used to
+accept any `1.x` and serve it as 1.0, which is also what the official Python
+SDK does. Every client in this SDK, and every peer the conformance suites
+run against, sends `1.0`.
+
+### OpenTelemetry 0.33 for the `otel` feature
+
+`opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` and the rest of the
+family move from 0.32 to 0.33.1, and `tracing-opentelemetry` from 0.33 to
+0.34.0. Types from them appear in `Telemetry`'s API, so move your own
+dependencies on these crates to the same versions. Export now retries a
+failed batch (four attempts by default), which is `opentelemetry-otlp`'s new
+default, and `shutdown` reports only exports that were lost after retrying,
+on gRPC as well as OTLP/HTTP.
+
+### A stream that falls behind catches up instead of ending
+
+A reader slower than the agent used to end with `streamLagged` as soon as the
+broadcast queue overwrote an event it had not read. It now reads what it
+missed from the task's event log and goes on (spec §3.5.2), on every store that
+keeps a log, which is every built-in one. A test that provokes `streamLagged`
+with a small `with_event_queue_capacity` no longer sees it there; also bound
+the log below what the stream misses
+(`TaskStoreConfig::with_max_events_per_task`), or lower
+`HandlerLimits::subscribe_replay_limit`.
+
+### ListTasks takes a `pageSize` from 1 to 100
+
+A2A's proto bounds `page_size` to 1 through 100, and the server now refuses
+anything else with `InvalidParams` (400 on HTTP+JSON). It used to clamp a
+larger size to 1000 and read 0 as the default of 50. A client paging through
+every task should ask for 100 at most; leaving `pageSize` out still lists 50.
+
+### The conformance kit's cancel check is `cancel_succeeds`
+
+The `conformance` feature's `cancel_emits_terminal` check is renamed
+`cancel_succeeds`; a CI step that greps for the old name finds nothing. It
+failed a `cancel` hook that wrote no terminal state, because such a hook left
+the task's streams without one. The handler now writes `Canceled` after such a
+hook (spec §3.1.2), so the check passes it, and fails a hook that errors,
+panics or overruns.
 
 ### Error codes some clients may match on
 

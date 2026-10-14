@@ -4,7 +4,6 @@
 //! Building one OTLP exporter per signal, on either transport.
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig};
@@ -30,8 +29,6 @@ pub(super) struct Target {
     pub(super) timeout: Duration,
     /// Extra CA certificates, PEM, trusted alongside the Mozilla roots.
     pub(super) ca_pem: Vec<u8>,
-    /// Counts this signal's failed OTLP/HTTP exports; see `http.rs`.
-    pub(super) failures: Arc<AtomicU64>,
 }
 
 impl Target {
@@ -151,7 +148,6 @@ macro_rules! build_exporter {
                     runtime.handle().clone(),
                     &target.rustls_config()?,
                     target.timeout,
-                    Arc::clone(&target.failures),
                 );
                 let mut builder = <$exporter>::builder()
                     .with_http()

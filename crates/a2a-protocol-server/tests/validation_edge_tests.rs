@@ -146,6 +146,7 @@ fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
 #[tokio::test]
 async fn empty_context_id_is_unset() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -162,6 +163,7 @@ async fn empty_context_id_is_unset() {
 #[tokio::test]
 async fn reject_whitespace_only_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -178,6 +180,7 @@ async fn reject_whitespace_only_context_id() {
 #[tokio::test]
 async fn reject_oversized_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -192,6 +195,7 @@ async fn reject_oversized_context_id() {
 #[tokio::test]
 async fn accept_max_length_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -210,6 +214,7 @@ async fn accept_max_length_context_id() {
 #[tokio::test]
 async fn accept_unicode_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -229,6 +234,7 @@ async fn accept_unicode_context_id() {
 #[tokio::test]
 async fn reject_empty_parts() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -255,6 +261,7 @@ async fn reject_empty_parts() {
 #[tokio::test]
 async fn reject_oversized_metadata() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -270,6 +277,7 @@ async fn reject_oversized_metadata() {
 #[tokio::test]
 async fn reject_oversized_request_metadata() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -287,6 +295,7 @@ async fn reject_oversized_request_metadata() {
 #[tokio::test]
 async fn accept_small_metadata() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -306,6 +315,7 @@ async fn accept_small_metadata() {
 #[tokio::test]
 async fn artifact_produced_in_task() {
     let handler = RequestHandlerBuilder::new(ArtifactExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -334,6 +344,7 @@ async fn artifact_produced_in_task() {
 #[tokio::test]
 async fn return_immediately_returns_submitted_task() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -365,6 +376,7 @@ async fn return_immediately_returns_submitted_task() {
 #[tokio::test]
 async fn builder_rejects_zero_timeout() {
     let result = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_executor_timeout(Duration::ZERO)
         .build();
     assert!(result.is_err(), "zero timeout should be rejected");
@@ -405,6 +417,45 @@ async fn builder_rejects_empty_interfaces_in_card() {
     assert!(result.is_err(), "empty interfaces should be rejected");
 }
 
+/// `a2a.proto` marks the card's `description` and `version` REQUIRED.
+/// `AgentCard::new` leaves the description empty, and such a card was
+/// served with `"description": ""` until 0.15.
+#[tokio::test]
+async fn builder_rejects_a_card_without_a_description_or_version() {
+    let card = || {
+        a2a_protocol_types::AgentCard::new(
+            "test",
+            "1.0.0",
+            a2a_protocol_types::AgentInterface::jsonrpc("http://localhost:3000"),
+        )
+        .with_skill(a2a_protocol_types::AgentSkill::new("s", "S", "A skill").with_tags(["s"]))
+    };
+    for (card, missing) in [
+        (card(), "description"),
+        (
+            a2a_protocol_types::AgentCard {
+                version: String::new(),
+                ..card().with_description("A test agent")
+            },
+            "version",
+        ),
+    ] {
+        let err = RequestHandlerBuilder::new(CompletingExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect_err(missing);
+        assert!(
+            err.to_string()
+                .contains(&format!("agent card {missing} must not be empty")),
+            "{missing}: {err}"
+        );
+    }
+    RequestHandlerBuilder::new(CompletingExecutor)
+        .with_agent_card(card().with_description("A test agent"))
+        .build()
+        .expect("a card with both is served");
+}
+
 // ── Shutdown tests ───────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -433,7 +484,12 @@ async fn shutdown_cancels_in_flight_tasks() {
         }
     }
 
-    let handler = Arc::new(RequestHandlerBuilder::new(NeverFinish).build().unwrap());
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(NeverFinish)
+            .without_agent_card()
+            .build()
+            .unwrap(),
+    );
 
     // Start a streaming task
     let h = Arc::clone(&handler);
@@ -491,6 +547,7 @@ async fn shutdown_cancels_in_flight_tasks() {
 async fn shutdown_with_timeout() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CompletingExecutor)
+            .without_agent_card()
             .build()
             .unwrap(),
     );
@@ -528,6 +585,7 @@ async fn shutdown_with_timeout() {
 async fn concurrent_list_and_send() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CompletingExecutor)
+            .without_agent_card()
             .build()
             .unwrap(),
     );
@@ -602,6 +660,7 @@ async fn task_store_config_both_ttl_and_capacity() {
         .with_task_ttl(Some(Duration::from_secs(3600)));
 
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_task_store_config(config)
         .build()
         .unwrap();
@@ -643,6 +702,7 @@ async fn task_store_config_both_ttl_and_capacity() {
 #[tokio::test]
 async fn multi_turn_same_context_id() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -674,6 +734,7 @@ async fn multi_turn_same_context_id() {
 #[tokio::test]
 async fn custom_event_queue_capacity() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_event_queue_capacity(4)
         .build()
         .unwrap();
@@ -694,6 +755,7 @@ async fn custom_event_queue_capacity() {
 #[tokio::test]
 async fn custom_max_event_size() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_max_event_size(1024 * 1024)
         .build()
         .unwrap();
@@ -730,6 +792,7 @@ async fn metrics_receives_callbacks() {
     }
 
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .with_metrics(SharedCountingMetrics {
             requests: Arc::clone(&counter),
         })
@@ -753,6 +816,7 @@ async fn metrics_receives_callbacks() {
 #[tokio::test]
 async fn debug_impls_dont_panic() {
     let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
         .build()
         .unwrap();
 
@@ -762,10 +826,39 @@ async fn debug_impls_dont_panic() {
         "debug output should contain 'RequestHandler', got: {debug}"
     );
 
-    let builder = RequestHandlerBuilder::new(CompletingExecutor);
+    let builder = RequestHandlerBuilder::new(CompletingExecutor).without_agent_card();
     let debug = format!("{builder:?}");
     assert!(
         debug.contains("RequestHandlerBuilder"),
         "debug output should contain 'RequestHandlerBuilder', got: {debug}"
     );
+}
+
+/// Spec §13.4: agents MUST validate all input parameters. A message's
+/// `referenceTaskIds` are task ids like its `taskId` and get the same checks;
+/// they were stored unchecked, an empty or an oversized id included.
+#[tokio::test]
+async fn reference_task_ids_are_validated_like_the_other_ids() {
+    use a2a_protocol_server::error::ServerError;
+    use a2a_protocol_types::task::TaskId;
+
+    let handler = RequestHandlerBuilder::new(CompletingExecutor)
+        .without_agent_card()
+        .build()
+        .unwrap();
+    for bad in [String::new(), "   ".to_owned(), "x".repeat(1025)] {
+        let mut params = make_params("hello");
+        params.message.reference_task_ids =
+            Some(vec![TaskId::new("t-ok"), TaskId::new(bad.clone())]);
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(&result, Err(ServerError::InvalidParams(m)) if m.contains("reference_task_ids")),
+            "an id of {} chars: {result:?}",
+            bad.len()
+        );
+    }
+    let mut params = make_params("hello");
+    params.message.reference_task_ids = Some(vec![TaskId::new("t-1")]);
+    let result = handler.on_send_message(params, false, None).await;
+    assert!(result.is_ok(), "{result:?}");
 }

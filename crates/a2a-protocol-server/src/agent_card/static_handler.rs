@@ -8,7 +8,7 @@
 //! [`StaticAgentCardHandler`] serves a pre-serialized [`AgentCard`] as JSON.
 //! The card is serialized once at construction time and served as raw bytes
 //! on every request. Supports HTTP caching via `ETag`, `Last-Modified`,
-//! `Cache-Control`, and conditional request headers (spec §8.3).
+//! `Cache-Control`, and conditional request headers (spec §8.6).
 
 use a2a_protocol_types::agent_card::AgentCard;
 use bytes::Bytes;
@@ -16,7 +16,7 @@ use http_body_util::Full;
 
 use crate::agent_card::CORS_ALLOW_ALL;
 use crate::agent_card::caching::{
-    CacheConfig, ConditionalResult, check_conditional, format_http_date, make_etag,
+    CacheConfig, ConditionalResult, card_body_and_etag, check_conditional, format_http_date,
 };
 use crate::error::ServerResult;
 
@@ -37,10 +37,17 @@ impl StaticAgentCardHandler {
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`](crate::error::ServerError) if serialization fails.
+    /// [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams)
+    /// if the card is not one a server may publish ([`AgentCard::validate`],
+    /// [`AgentCard::validate_security_schemes`]), as `build()`, hot reload
+    /// and the dynamic handler refuse it; until 2026-10-13 a card handed to
+    /// this handler directly was served unchecked. Another
+    /// [`ServerError`](crate::error::ServerError) if serialization fails.
     pub fn new(card: &AgentCard) -> ServerResult<Self> {
-        let json = serde_json::to_vec(card)?;
-        let etag = make_etag(&json);
+        card.validate()
+            .and_then(|()| card.validate_security_schemes())
+            .map_err(|why| crate::error::ServerError::InvalidParams(why.into()))?;
+        let (json, etag) = card_body_and_etag(card)?;
         Ok(Self {
             card_json: Bytes::from(json),
             etag,
@@ -105,6 +112,32 @@ impl StaticAgentCardHandler {
 mod tests {
     use super::*;
     use crate::agent_card::caching::tests::minimal_agent_card;
+
+    /// A card a server may not publish is refused, as `build()`, hot reload
+    /// and the dynamic handler refuse it: a REQUIRED list left empty, or a
+    /// security scheme's REQUIRED string.
+    #[test]
+    fn a_card_that_does_not_validate_is_refused() {
+        let mut skillless = minimal_agent_card();
+        skillless.skills.clear();
+        let mut keyless = serde_json::to_value(minimal_agent_card()).unwrap();
+        keyless["securitySchemes"] = serde_json::json!(
+            {"key": {"apiKeySecurityScheme": {"location": "header", "name": ""}}}
+        );
+        let keyless: AgentCard = serde_json::from_value(keyless).unwrap();
+        for (card, why) in [
+            (skillless, "skill"),
+            (keyless, "apiKeySecurityScheme needs a name"),
+        ] {
+            let Err(err) = StaticAgentCardHandler::new(&card) else {
+                panic!("served a card without a valid {why}");
+            };
+            assert!(
+                matches!(err, crate::error::ServerError::InvalidParams(ref m) if m.contains(why)),
+                "{err:?}"
+            );
+        }
+    }
 
     #[test]
     fn static_handler_returns_etag_and_cache_headers() {

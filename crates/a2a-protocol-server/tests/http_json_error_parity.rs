@@ -28,6 +28,7 @@ agent_executor!(Exec, |_ctx, _q| async { Ok(()) });
 fn handler() -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Exec)
+            .without_agent_card()
             .with_interceptor(BearerTokenAuthInterceptor::new(["good"]))
             .build()
             .expect("handler"),

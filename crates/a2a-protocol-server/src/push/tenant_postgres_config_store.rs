@@ -12,17 +12,21 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use sqlx::postgres::PgPool;
 
+use super::cipher::{PushConfigCipher, Sealing};
 use super::config_store::PushConfigStore;
 use crate::store::tenant::TenantContext;
 
 /// Tenant-scoped `PostgreSQL`-backed [`PushConfigStore`].
 ///
 /// Each operation is scoped to the tenant from [`TenantContext`].
+/// With [`with_cipher`](Self::with_cipher), each config is stored sealed
+/// (spec §13.2); see [`PushConfigCipher`].
 ///
 /// # Schema
 ///
@@ -38,10 +42,12 @@ use crate::store::tenant::TenantContext;
 #[derive(Debug, Clone)]
 pub struct TenantAwarePostgresPushConfigStore {
     pool: PgPool,
+    /// Whether configs are sealed, and with what.
+    sealing: Sealing,
 }
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {
-    A2aError::internal(format!("postgres error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", e)
 }
 
 impl TenantAwarePostgresPushConfigStore {
@@ -56,6 +62,23 @@ impl TenantAwarePostgresPushConfigStore {
             .connect(url)
             .await?;
         Self::from_pool(pool).await
+    }
+
+    /// Seals each config this store writes with `cipher`, and opens each one
+    /// it reads (spec §13.2); see [`PushConfigCipher`].
+    #[must_use]
+    pub fn with_cipher(mut self, cipher: Arc<dyn PushConfigCipher>) -> Self {
+        self.sealing = self.sealing.with_cipher(cipher);
+        self
+    }
+
+    /// With a cipher, also reads configs stored unsealed, by this store
+    /// before [`with_cipher`](Self::with_cipher) was set; each is sealed when
+    /// it is next written.
+    #[must_use]
+    pub fn accept_unsealed_rows(mut self) -> Self {
+        self.sealing = self.sealing.accepting_unsealed();
+        self
     }
 
     /// Creates a store from an existing connection pool.
@@ -78,7 +101,10 @@ impl TenantAwarePostgresPushConfigStore {
         )
         .await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            sealing: Sealing::default(),
+        })
     }
 }
 
@@ -108,8 +134,10 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             config.id = Some(id.clone());
 
-            let data = serde_json::to_value(&config)
-                .map_err(|e| A2aError::internal(format!("serialize: {e}")))?;
+            let data = self
+                .sealing
+                .encode_json(&config, &Sealing::context(&tenant, &task_id, &id))
+                .await?;
 
             sqlx::query(
                 "INSERT INTO tenant_push_configs (tenant_id, task_id, id, data)
@@ -147,11 +175,11 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
             .map_err(|e| to_a2a_error(&e))?;
 
             match row {
-                Some((data,)) => {
-                    let config: TaskPushNotificationConfig = serde_json::from_value(data)
-                        .map_err(|e| A2aError::internal(format!("deserialize: {e}")))?;
-                    Ok(Some(config))
-                }
+                Some((data,)) => Ok(Some(
+                    self.sealing
+                        .decode_json(data, &Sealing::context(&tenant, task_id, id))
+                        .await?,
+                )),
                 None => Ok(None),
             }
         })
@@ -163,8 +191,8 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
-                "SELECT data FROM tenant_push_configs WHERE tenant_id = $1 AND task_id = $2",
+            let rows: Vec<(String, serde_json::Value)> = sqlx::query_as(
+                "SELECT id, data FROM tenant_push_configs WHERE tenant_id = $1 AND task_id = $2",
             )
             .bind(&tenant)
             .bind(task_id)
@@ -172,12 +200,15 @@ impl PushConfigStore for TenantAwarePostgresPushConfigStore {
             .await
             .map_err(|e| to_a2a_error(&e))?;
 
-            rows.into_iter()
-                .map(|(data,)| {
-                    serde_json::from_value(data)
-                        .map_err(|e| A2aError::internal(format!("deserialize: {e}")))
-                })
-                .collect()
+            let mut configs = Vec::with_capacity(rows.len());
+            for (id, data) in rows {
+                configs.push(
+                    self.sealing
+                        .decode_json(data, &Sealing::context(&tenant, task_id, &id))
+                        .await?,
+                );
+            }
+            Ok(configs)
         })
     }
 

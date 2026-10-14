@@ -417,9 +417,12 @@ impl WebSocketDispatcher {
         // do on the HTTP bindings. Also validates the A2A-Version header.
         let mut upgrade_headers: Option<HashMap<String, String>> = None;
         let require_version = self.require_version_header;
+        let peer = stream.peer_addr().ok();
         let callback = |req: &WsUpgradeRequest, resp: WsUpgradeResponse| {
             check_a2a_version(req, require_version)?;
-            upgrade_headers = Some(extract_upgrade_headers(req));
+            let mut headers = extract_upgrade_headers(req);
+            super::record_peer_addr(&mut headers, peer);
+            upgrade_headers = Some(headers);
             Ok(resp)
         };
 
@@ -664,20 +667,17 @@ impl WebSocketDispatcher {
     }
 }
 
-/// Extracts the upgrade request's headers (lowercased) plus the request path
-/// (under `":path"`), mirroring `extract_headers` in the HTTP dispatchers.
+/// The upgrade request's header fields, read as the HTTP bindings read them
+/// ([`header_fields`](super::header_fields)), plus the request path (under
+/// `":path"`), less `Last-Event-ID`.
 ///
-/// Values that are not valid UTF-8 are skipped, matching HTTP behavior.
+/// This binding has no resumption: a resubscribe starts from the task's
+/// snapshot. `Last-Event-ID` is the HTTP binding's resumption cursor, and
+/// these headers reach every call on the connection, so until 2026-10-14 one
+/// on the upgrade made every `SubscribeToTask` replay the log from it.
 fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
-    let mut map: HashMap<String, String> = req
-        .headers()
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|val| (k.as_str().to_lowercase(), val.to_owned()))
-        })
-        .collect();
+    let mut map = super::header_fields(req.headers());
+    map.remove("last-event-id");
     // The pseudo-header name cannot collide with a real HTTP/1 header (colons
     // are not valid in field names), and it is what
     // `PathSegmentTenantResolver` documents reading.
@@ -686,10 +686,10 @@ fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
 }
 
 /// Validates the `A2A-Version` header (or `?A2A-Version=` parameter, §3.6.1)
-/// on the upgrade request, mirroring the
-/// JSON-RPC dispatcher: absent or empty is interpreted as protocol 0.3 per
-/// spec §3.6.2 and rejected under the strict default; any `1.x` is
-/// accepted; other major versions are rejected with HTTP 400 during the
+/// on the upgrade request with the same check the HTTP bindings use
+/// (`validate_version_header`): absent or empty is interpreted as protocol
+/// 0.3 per spec §3.6.2 and rejected under the strict default, and any version
+/// but this server's `Major.Minor` is rejected, with HTTP 400 during the
 /// handshake.
 // The Err type (an HTTP response) is dictated by tungstenite's `Callback`
 // trait contract — it cannot be boxed or shrunk here.
@@ -698,27 +698,12 @@ fn check_a2a_version(req: &WsUpgradeRequest, require: bool) -> Result<(), ErrorR
     // A browser cannot set headers on a WebSocket upgrade, so the §3.6.1
     // request parameter is the only way it can name a version at all.
     let value = super::requested_version(req.headers(), req.uri());
-    let v = value.as_deref().unwrap_or("").trim();
-    if v.is_empty() {
-        if !require {
-            return Ok(());
-        }
-        // Fall through to the rejection below with the 0.3 interpretation.
-    } else {
-        let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-        if major == Some(1) {
-            return Ok(());
-        }
-    }
+    let Err(a2a_err) = super::validate_version_header(value.as_deref(), require) else {
+        return Ok(());
+    };
     // Emit the same AIP-193 error shape (code/status/message/details with
     // google.rpc.ErrorInfo) as the REST binding, so a version-rejected
     // upgrade is machine-readable identically across HTTP surfaces.
-    let a2a_err = a2a_protocol_types::error::A2aError::version_not_supported(if v.is_empty() {
-        "A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)"
-            .to_owned()
-    } else {
-        format!("unsupported A2A version: {v}; this server supports 1.x")
-    });
     let mut error_obj = serde_json::json!({
         "error": {
             "code": a2a_err.code.http_status(),
@@ -1132,7 +1117,7 @@ async fn dispatch_simple<'a, F>(
         >,
     >,
 {
-    let params = rpc_req.params.clone().unwrap_or(serde_json::Value::Null);
+    let params = rpc_req.params.clone().unwrap_or_else(empty_params);
     match ws_span(handler, rpc_req, headers)
         .run(f(handler, params, headers))
         .await
@@ -1193,12 +1178,18 @@ fn ws_params<T: serde::de::DeserializeOwned>(
         .map_err(|e| crate::streaming::sse::invalid_params_for::<T>(p, &e).to_a2a_error())
 }
 
-/// Parses params from an optional JSON value.
+/// Parses params from an optional JSON value, absent read as `{}` (JSON-RPC
+/// 2.0 §4.2: `params` "MAY be omitted"), as over HTTP.
 fn parse_params<T: serde::de::DeserializeOwned>(
     params: Option<&serde_json::Value>,
 ) -> Result<T, ServerError> {
-    let value = params.cloned().unwrap_or(serde_json::Value::Null);
+    let value = params.cloned().unwrap_or_else(empty_params);
     T::deserialize(&value).map_err(|e| crate::streaming::sse::invalid_params_for::<T>(&value, &e))
+}
+
+/// The `params` an omitted member stands for: `{}`.
+fn empty_params() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
 }
 
 #[cfg(test)]
@@ -1271,7 +1262,12 @@ mod tests {
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let _dispatcher = WebSocketDispatcher::new(handler);
     }
 
@@ -1305,7 +1301,12 @@ mod tests {
     });
 
     async fn spawn_ws_server() -> std::net::SocketAddr {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
         dispatcher
             .serve_with_addr("127.0.0.1:0")
@@ -1430,7 +1431,12 @@ mod tests {
     /// `None` is only interesting if `None` means what it should.
     #[tokio::test(flavor = "multi_thread")]
     async fn the_defaults_are_no_idle_timeout_and_no_connection_ceiling() {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let default = WebSocketDispatcher::new(handler);
         assert!(
             default.idle_timeout.is_none(),
@@ -1635,15 +1641,19 @@ mod tests {
             activity: ActivityClock::new(),
         });
 
-        // Held from before the half-budget (200 ms) until 300 ms, as a stream
-        // write in flight would hold it; released with 100 ms to spare.
-        let idle = Duration::from_millis(400);
+        // Held from before the half-budget (1 s) until 1.3 s, as a stream
+        // write in flight would hold it; released with 700 ms to spare. The
+        // spare was 100 ms (a 400 ms budget) until the holder's wake-up
+        // overran it on a loaded macOS runner (52e35e27): the budget ran out
+        // first and the connection closed with no ping, which is the right
+        // verdict for a sink held past the budget, not what this test pins.
+        let idle = Duration::from_millis(2_000);
         let (locked_tx, locked_rx) = tokio::sync::oneshot::channel();
         let held = Arc::clone(&conn);
         let holder = tokio::spawn(async move {
             let _guard = held.sink.lock().await;
             let _ = locked_tx.send(());
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::sleep(Duration::from_millis(1_300)).await;
         });
         locked_rx.await.expect("the sink is held");
 
@@ -1651,7 +1661,7 @@ mod tests {
             WebSocketDispatcher::next_frame(&mut reader, &conn, Some(idle)).await
         });
 
-        let pinged = tokio::time::timeout(Duration::from_secs(2), async {
+        let pinged = tokio::time::timeout(Duration::from_secs(10), async {
             while let Some(Ok(frame)) = client_ws.next().await {
                 if matches!(frame, WsMessage::Ping(_)) {
                     return true;
@@ -1697,7 +1707,12 @@ mod tests {
         executor: impl crate::executor::AgentExecutor + 'static,
         configure: impl FnOnce(WebSocketDispatcher) -> WebSocketDispatcher,
     ) -> std::net::SocketAddr {
-        let handler = Arc::new(RequestHandlerBuilder::new(executor).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(executor)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = Arc::new(configure(WebSocketDispatcher::new(handler)));
         dispatcher
             .serve_with_addr("127.0.0.1:0")
@@ -2187,6 +2202,7 @@ mod tests {
         let seen = Seen::default();
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
                 .with_metrics(Recording(Arc::clone(&seen)))
                 .build()
                 .unwrap(),
@@ -2252,6 +2268,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
                 .with_push_sender(NoopSender)
                 .build()
                 .unwrap(),
@@ -2429,6 +2446,7 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
                 .with_task_store(crate::store::TenantAwareInMemoryTaskStore::new())
                 .with_tenant_resolver(HeaderTenantResolver::default())
                 .require_resolved_tenant()
@@ -2499,7 +2517,17 @@ mod tests {
             "handshake with A2A-Version 2.0 must be rejected"
         );
 
-        // 1.x is accepted.
+        // §3.6.2: another minor is refused too; this server has 1.0's
+        // semantics only.
+        let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "1.1".parse().unwrap());
+        assert!(
+            tokio_tungstenite::connect_async(req).await.is_err(),
+            "handshake with A2A-Version 1.1 must be rejected"
+        );
+
+        // 1.0 is accepted.
         let mut req = format!("ws://{addr}").into_client_request().unwrap();
         req.headers_mut()
             .insert("a2a-version", "1.0".parse().unwrap());
@@ -2537,7 +2565,12 @@ mod tests {
     async fn ws_missing_version_header_accepted_with_optout() {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher =
             Arc::new(WebSocketDispatcher::new(handler).accept_missing_version_header());
         let addr = dispatcher
@@ -2598,7 +2631,9 @@ mod tests {
     // The lag is genuine. A queue capacity of 1 plus an executor that writes
     // far more events than the socket consumer can drain overflows the
     // broadcast ring for this subscriber, which is exactly the production
-    // condition the frame exists to report.
+    // condition the frame exists to report. The store's log keeps only the
+    // last four events: with a whole log the stream would catch up from it
+    // (§3.5.2) and never report a lag.
     #[allow(clippy::too_many_lines)]
     #[tokio::test]
     async fn ws_lagged_stream_reports_server_error_code() {
@@ -2619,7 +2654,11 @@ mod tests {
 
         let handler = Arc::new(
             RequestHandlerBuilder::new(FloodExec)
+                .without_agent_card()
                 .with_event_queue_capacity(1)
+                .with_task_store(crate::store::InMemoryTaskStore::with_config(
+                    crate::store::TaskStoreConfig::default().with_max_events_per_task(Some(4)),
+                ))
                 .build()
                 .unwrap(),
         );
@@ -2696,7 +2735,12 @@ mod tests {
             Ok(())
         });
 
-        let handler = Arc::new(RequestHandlerBuilder::new(BlockingExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(BlockingExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let addr = Arc::new(WebSocketDispatcher::new(handler))
             .serve_with_addr("127.0.0.1:0")
             .await
@@ -2755,7 +2799,12 @@ mod tests {
     // configured handshake timeout instead of pinning the connection forever.
     #[tokio::test]
     async fn ws_handshake_timeout_disconnects_stalled_peer() {
-        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let dispatcher = Arc::new(
             WebSocketDispatcher::new(handler)
                 .with_handshake_timeout(std::time::Duration::from_millis(200)),

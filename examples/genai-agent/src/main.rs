@@ -48,7 +48,7 @@ mod surface;
 #[cfg(test)]
 mod tests;
 use a2a_protocol_server::executor::AgentExecutor;
-use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
+use a2a_protocol_server::push::HttpPushSender;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
@@ -320,7 +320,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut builder = RequestHandlerBuilder::new(executor)
             .with_agent_card(make_agent_card(&url, &model))
-            .with_push_config_store(InMemoryPushConfigStore::new())
+            // The push-config store is the builder's default, which follows
+            // the task store: tenant-aware when an authenticating interceptor
+            // below isolates callers' tasks (spec §13.1).
             .with_push_sender(push_sender)
             .allow_unauthenticated_extended_card();
 

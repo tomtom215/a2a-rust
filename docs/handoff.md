@@ -11,8 +11,12 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-10 — `claude/nifty-fermat-roj04f`: a requirement-level
-spec ledger and the conformance fixes it found. `git log -1 --format='%ci %s' --
+Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
+left after #165, OpenTelemetry 0.33, a versioned documentation site, the
+weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
+JSON-RPC `RetryInfo`, §13.1 caller isolation by default, Dependabot #166
+and #167, §8.1's required agent card, the opt-in push and authentication
+hardening (§13.2, §13.4), and §3.5.2's lag catch-up. `git log -1 --format='%ci %s' --
 docs/handoff.md` remains the authority on this line.
 
 This line said 2026-09-19 and named "the panic-hook fix and the type
@@ -558,12 +562,19 @@ by no test; the cargo-mutants patch (kept here, not upstreamed — see `scripts/
   deliberately wrong code as the control that must fail.
 - **Count before writing a number.** A CHANGELOG draft said "36 of them
   run"; the diff says 79. Numbers in records come from a command.
+- **A cost model that divides a run's total evenly assumes each unit's cost
+  is independent of order.** cargo-mutants' build cost is not: dealing a
+  PR's mutants round-robin across crates made its slowest shard take 110
+  minutes where the even split said 77 (item 107). Quote a projection as one,
+  and replace it with the first run's measurement.
 - **A mutant a crate's own tests cannot reach is a coverage fact about that
   crate.** cargo-mutants runs only the mutated crate's tests: the client's
   gRPC success path was covered from the server and SDK crates and
   therefore, for mutation purposes, not at all. It happened again with
   phase 2: nine server survivors, every one covered by the SDK's
-  `observability_e2e` and by nothing in the server crate.
+  `observability_e2e` and by nothing in the server crate. A doctest does
+  not count either: CI runs the mutants under nextest, which runs none
+  (item 106).
 - **Measure the cost before calling observability done.** The spans were
   green and correct, and a default build had become 36–46% slower per call.
   Clippy's `large_futures` had pointed at one of the two causes; the bench
@@ -935,6 +946,1153 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
 
+## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
+
+Picked up after #165 merged (`6ce5dc9`); pull request #168. Commits are
+authored and signed off as the maintainer and carry **no** `Co-Authored-By`
+or session trailers, by the maintainer's instruction (DCO). CONTRIBUTING's
+note on AI-assisted changes suggests a `Co-Authored-By` trailer; the two
+disagree, and that is the maintainer's to reconcile — it was not edited.
+
+**What landed, in commit order.**
+1. `test(client):` the keep-alive liveness test tolerates a runner stall and
+   reports the stub's longest write gap.
+2. `fix(adversarial):` `probe_push.py` receivers work on Python 3.13+, and
+   hang mode holds its socket; two push-sender tests pin redirect and
+   flood behaviour.
+3. `ci:` Dependabot #164's action bumps.
+4. `deps(otel)!:` OpenTelemetry 0.33 (Dependabot #158-#161 together).
+   `opentelemetry-otlp` 0.33 retries a failed export (4 attempts), so export
+   losses are now counted once per export by a `Counting` wrapper around
+   each exporter rather than per HTTP attempt.
+5. `fix(client)!:` §8.3.2 — `from_card` takes the card's first supported
+   interface; `preferred_bindings` is deprecated.
+6. `fix(server)!:` §3.6.2 — only `A2A-Version` 1.0 (any patch) is served;
+   other minors get `VersionNotSupportedError`.
+7. `docs(handoff):` the private upstream report (no identifier here, by
+   design).
+8. `test:` clippy 1.99's `assert_is_empty` and `unused_async`.
+9. `test(server):` the unreachable-collector test uses an accept-and-drop
+   listener; Windows retries a closed port for ~2 s per attempt.
+10. `deps(slimrpc):` RUSTSEC-2024-0449 waived in the out-of-workspace binding,
+    with its dependency chain.
+11. `fix(book):` brand font URLs (the live site returned 404 for them).
+12. `feat(docs):` versioned site — `/` the latest release, `/vX.Y/` each
+    release line, `/dev/` main — built by `scripts/build_docs_site.py`,
+    deployed from `docs.yml` on pushes to main and after `Release` completes
+    (`workflow_run`, not a tag trigger).
+13. `test:` the weekly sweep's six survivors (2026-09-28 onward) killed or
+    retired; see `mutation-history.md`.
+14. `ci(mutants):` `a2a-server` dealt round-robin across 24 shards; the four
+    unrecorded sweeps since 2026-09-07 and the 2026-10-12 one get ledger rows.
+15. `docs(handoff):` this section.
+16. `feat(client)!:` §3.3.4, the ledger's last GAP — a client built from a
+    card refuses, before sending, a call the card does not declare the
+    capability for (`ClientError::CapabilityNotDeclared`), with
+    `ClientBuilder::without_capability_checks` and the CLI's
+    `--no-capability-check` to opt out.
+17. `fix(server):` push webhook timeouts of 10 s per request and 30 s per
+    delivery (§4.3.3, §13.2), so every attempt of the default three starts
+    inside the bound.
+18. `feat(client):` a rate limit refused over JSON-RPC or WebSocket
+    (`InternalError` with a `RetryInfo` detail) is retried after the delay
+    it names; `A2aError::with_retry_info_from_details`.
+19. `test(server):` the stress test reports a failed connect's whole error
+    chain, and its accept loop says when it stops (item 6 below).
+20. `deps(itk):` the card-signature interop pin moves to a2a-sdk 1.2.2, after
+    the interop matched all six cards against it.
+21. `feat(server)!:` §13.1 — an authenticating interceptor isolates tasks by
+    caller by default; `share_tasks_across_callers()` opts out. See "§13.1,
+    as built" below for the rules and what `build()` now refuses.
+22. `docs(handoff):` the §13.1 update.
+23. `deps:` Dependabot #167 and #166 folded (hyper 1.12, tokio 1.53.2 and
+    five more); the workspace lock's changed lines are #167's exactly, the
+    binding's lock is #166's file. Both PRs can be closed once this merges.
+24. `feat(server)!:` §8.1 — `build()` requires an agent card;
+    `without_agent_card()` opts out. Tests opt out (425 builders, by
+    script); docs set a card (hidden `card()` helper in 47 doc blocks, a
+    visible card in both quick starts).
+25. `docs(handoff):` this update.
+26. `deps(itk):` the signing interop lock takes protobuf 7.36.2, the
+    version the other Python locks had; the interop matched 6/6 on it.
+27. `fix(server):` a card whose security scheme has an empty REQUIRED
+    string (an API key's `name`, an HTTP `scheme`, `openIdConnectUrl`, the
+    authorization-code, client-credentials and device-code flow URLs) is
+    refused by `build()`, hot reload and the dynamic card handler, through
+    the new `AgentCard::validate_security_schemes` (the const `validate`
+    cannot walk the map, and dropping its `const` would break the public
+    API at 0.14.1). Nine proto ledger entries move to TESTED. The ledger's
+    191 citations into the edited files were carried through the diff by
+    script (115 moved), each checked to name the same text as before, and
+    every named test citation into them was then anchored to its `fn` line
+    (14 moved: rustfmt ran after the remap, and two were already wrong).
+    The ledger check verifies the file and the name, not the line, so a
+    line drifts silently; anchor by name after any edit that moves code.
+28. `ci:` pin freshness grades the Python SDK again (item 9 below).
+29. `test(server):` §3.3.2's SHOULD log system errors is tested: a failed
+    executor is logged at ERROR with its task and cause.
+30. `deps(itk):` the conformance peers move to `@a2a-js/sdk` 1.3.0, a2a-go
+    v2.6.0 and `a2a-java` 1.4.0.Final (maintainer's decision); the java-sdk
+    REST skip goes, and the Go interop's step 1b runs the full battery.
+31. `deps:` every lockfile takes the day's semver-compatible updates
+    (maintainer's decision): root 59 crates, SLIMRPC binding 41, itk and fuzz
+    48 each, loom-halt 2. `agntcy-slim-persistence` is held at 0.1.0 in the
+    binding (item 11 below). The benchmark-harness locks are left alone.
+32. `feat(server):` §13.2 — `HttpPushSender::https_only()`, opt-in
+    (maintainer's choice of three hardening options).
+33. `feat(server):` §13.4 — `AuthFailureThrottle`, opt-in, and
+    `CallContext::peer_addr`, which every binding now records (item 12).
+34. `fix(server):` §3.1.6 — the subscribe reattach hook re-enters the
+    subscriber's tenant and caller (`TenantContext::capture`). It ran
+    while the stream was read, outside the request, so on a partitioned
+    store it found no task and ended the stream at the first turn boundary.
+    Found while designing §3.5.2's catch-up; item 21's caller isolation
+    made it reach every authenticated server. Any hook a reader runs later
+    (the §3.5.2 catch-up included) needs the same capture.
+35. `feat(server):` §13.2 — `PushConfigCipher`, opt-in: the SQL push-config
+    stores' `with_cipher` seals each config (`a2a-sealed:v1:<base64>`),
+    bound to its row, and `accept_unsealed_rows` reads a table written
+    before. The SDK ships no cipher; the tests use AES-256-GCM from `ring`
+    (`tests/support/aes_gcm.rs`). `tenant_sqlite_config_store.rs`'s tests
+    moved to their own file, unchanged, to keep it under 500 lines.
+36. `feat(server):` §3.5.2 — a stream that falls behind the broadcast
+    buffer catches up from the task's event log, after the last position it
+    delivered, and goes on live, instead of ending with `streamLagged` (the
+    maintainer's choice). The request builds the hook (`lag_catch_up_hook`)
+    inside its tenant scope (item 34) and hands it to the reader
+    (`with_catch_up`). Each reader starts after the writer's position when
+    it attached (`starting_after`), so a catch-up never replays what the
+    stream was not owed. The hook takes only a complete replay whose head is
+    still in the log, and after a catch-up a live event that does not follow
+    it is reported as a lag, so a stream never skips an event silently.
+    `streamLagged` remains when the log cannot supply every missed event:
+    the in-memory stores keep 512 events per task by default, one replay
+    reads at most `subscribe_replay_limit` (1,000), and a custom store
+    without a log has nothing to read. `dispatch/websocket.rs`'s lag test
+    now truncates the log to 4 events so that its stream still lags.
+37. `test(server):` the sealing tests name a leaked secret instead of
+    printing it. CodeQL's "cleartext logging of sensitive information"
+    raised three high alerts on `748c95b4` against item 35's tests, whose
+    failure messages printed the fixture secrets; nothing real was exposed.
+38. `test(server):` cargo-mutants over items 36-37's source diff found four
+    reader decisions no test reached (the live position expected after a
+    catch-up, the gap's dropped count, a replayed terminal state ending the
+    stream); three tests pin them.
+39. `test(server):` `if_modified_since_matching_returns_304` retries a
+    request pair that straddles a second. It failed once on macOS at
+    `f95b5420` (200 for 304); reproduced by timing the pair across a second
+    boundary. The handler and test date from `708ead97`.
+40. `fix(server):` §8.6.1 — the dynamic card handler sends no
+    `Last-Modified` and ignores `If-Modified-Since` (the maintainer's call,
+    item 13 (c)): a produced card has no modification date (RFC 9110
+    §8.8.2.1, §13.1.3). The `ETag` revalidates it; the static handler keeps
+    its load-time `Last-Modified`. This replaced item 39's test, which
+    pinned the old behaviour.
+41. `fix(server):` §3.5.2 — writes to one queue broadcast in position
+    order. A spec audit of this branch found that a terminal event held for
+    the processor's verdict was overtaken by a later write through another
+    handle on the queue's writer (`CancelTask` beside the executor), and
+    that on a multi-threaded runtime any two writes could swap. Item 36's
+    reader skips a position it has passed, so the terminal event was lost;
+    v0.14.1 has the reordering without the loss. `InMemoryQueueWriter`'s
+    `order` lock is held from the position's assignment to the broadcast;
+    an uncontended write takes it with `try_lock` and still finishes before
+    `write` returns. Five hand mutants of the lock are killed, one only by
+    chance: `concurrent_clones_deliver_every_position_in_order` caught the
+    sync path releasing before its broadcast in 17 of 20 runs, since that
+    race is one call wide.
+42. `fix(client):` a request with no `configuration` carries the client's
+    `accepted_output_modes`. `SendMessageConfiguration::default()`'s
+    `["text/plain"]` filled the field first, so the configured modes never
+    applied; the unit test that covered the merge set an empty
+    configuration by hand, with a comment explaining the default away.
+43. `test(server):` item 41's stress test renamed two bindings clippy's
+    `similar_names` refused. Item 41's clippy run predated the test's
+    final form, so its message's clippy claim did not hold for the commit
+    pushed, and CI's clippy jobs failed on it.
+44. `fix(server):` a refused inline push config on a continuation keeps
+    the task. `commit_task` saved the turn first and registered the config
+    after; a refusal ran the rollback meant for a new task, which deleted
+    the row, so the continued task and its history went with it. A
+    continuation now registers first; if its turn then cannot be saved, a
+    config the server created is withdrawn, one named by id is kept.
+45. `fix(server):` §11.5 — `A2aRouter` reads GetTask's `historyLength`
+    and every GET or DELETE route's `?tenant=`, as `RestDispatcher` does.
+    Its module docs said a request without a resolver is always served
+    from the default tenant; a POST body's `tenant` was honoured all along.
+    The `:cancel` and `:subscribe` POST bodies are still not read (audit
+    register R24).
+46. `test(server):` `a_keepalive_that_finds_the_sink_busy_is_retried`
+    failed once on macOS at `52e35e27` (no ping: the sink holder's wake-up
+    overran the 100 ms left in a 400 ms budget). The budget is 2 s now, the
+    hold 1.3 s, 700 ms to spare; the mutant it was written for (a busy sink
+    recorded as pinged) is still killed. The same run's two-replica soak
+    failed its p95 bound (3.94x, a dip at 40-50 s that recovered), not
+    reproduced; it ran 59,090 pairs where the two runs before ran 32,773
+    and 45,486, so a faster runner. Recorded, not fixed: read the next run.
+47. `fix(client):` the WebSocket transport reaches `wss://`. `tls-rustls`
+    now enables tokio-tungstenite's `__rustls-tls`, which compiles its
+    rustls connector in without a root store of its own; the transport hands
+    it `tls::default_tls_config()` or `with_tls_config`'s. The config sits
+    in a private newtype that declares itself unwind-safe, since a bare
+    `rustls::ClientConfig` would have cost `WebSocketTransport` the
+    `RefUnwindSafe` it has had since 0.13.0. `__rustls-tls` is
+    tokio-tungstenite's internal feature name: the `>=0.30, <0.31` range
+    pins it; recheck it when that range moves.
+48. `refactor(server):` item 44 took `handler/messaging/mod.rs` to 520
+    lines, past the 500-line ratchet. A continuation's register, save and
+    withdraw moved into `create.rs`'s `save_turn`; `mod.rs` is at exactly
+    500. A fifth test, `an_accepted_continuation_registers_its_config_once`,
+    covers the case the move made easy to break; 12 hand mutants over the
+    new shape, all killed.
+49. `fix(server):` §3.1.6 — a `SubscribeToTask` snapshot is consistent
+    with the live stream. `streaming/event_queue/applied.rs` is the queue's
+    mark of how far its events are stored: the background processor and the
+    blocking collector mark each event applying, then stored (the processor
+    at `on_persisted`, before a status update's push). A subscriber attaches
+    under the order lock at an exact position P, waits (bounded by
+    `subscribe_replay_catchup`) until every event up to P is stored and none
+    is being stored, reads the row then, and skips live events up to the
+    mark. Past the bound it replays the log from the mark. Two limits: an
+    artifact's push still delays its mark (only status updates and snapshots
+    report `on_persisted`), and the processor logs each event only after
+    storing the one before, so the log replay rarely outruns a slow store;
+    and a row written by `CancelTask` or another replica is outside the mark.
+50. `fix(server):` §3.1.2 / §3.1.6 — a cancelled task's streams end on
+    `Canceled` whatever its executor's `cancel` hook writes.
+    `TerminalTracking::cancel_with` runs the hook and, when it returned `Ok`
+    without a terminal state, writes the default hook's `Canceled`
+    (`executor::write_canceled`); `CancelTask` and the shutdown/halt path
+    both go through it. Before, a send stream ended after `Working` with no
+    terminal frame, and a halt left the task `Working` (each checked by
+    reverting its call site). A subscription already recovered `Canceled`
+    through the reattach hook's store read. The conformance kit's
+    `cancel_emits_terminal` check, which existed to catch the silent hook,
+    is `cancel_succeeds` now and passes it; `a_cancel_that_fails_is_caught`
+    keeps a failing hook failed, which no test covered before.
+51. `fix(server):` §5.1 — proto3 defaults on the JSON bindings mean unset,
+    as gRPC's conversion already read them: a part's `mediaType` and
+    `filename`, a push config's `id` and `token` (standalone, and inline in
+    `SendMessage`, where an `id` of `""` also made the continuation path
+    treat the config as named), and ListTasks' `contextId`, `pageToken` and
+    `status`. `helpers::unset_if_empty` does it on ingress; the four tests in
+    `tests/proto3_defaults.rs` each failed before. Left as they were: an
+    empty `tenant`, already read as none, and push `authentication.credentials`
+    of `""`, which by the code (not run) is delivered as `Bearer ` with
+    nothing after it; neither the audit nor a test covers that one.
+52. `refactor(server):` the applied mark's version is bumped when an
+    application starts, not when it ends. The Mutation Testing gate on
+    `1672fbf9` found the two bumps covering for each other: each one's
+    mutant survived because the other still changed the version (shard 6
+    the end's, shard 5 the start's). Only the start's is needed, since a
+    reader reads only when nothing is being applied; with the end's gone,
+    `a_read_an_application_overlapped_is_taken_again` kills the start's.
+    Shard 5's two other survivors, the `+` in each catch-up deadline
+    (`snapshot_and_live`, `LogReplay::read`), get tests of their own.
+53. `fix(client):` §3.1.11 / §13.3 — the client checks calls against the
+    extended card's capabilities once `get_extended_agent_card` has fetched
+    it (`A2aClient::adopt_capabilities`; the field is behind a `RwLock`,
+    since the fetch takes `&self`). Replaced, not merged; `extendedAgentCard`
+    stays declared. Ledger 425 moves from APPLICATION to TESTED and 3166's
+    note no longer says the client keeps no card.
+54. `fix(server):` §13.4 / §5.1 — a malformed GET query value
+    (`historyLength`, `pageSize`, `status`, `includeArtifacts`) is
+    `InvalidParams` on both HTTP+JSON dispatchers, from
+    `dispatch::rest::query`'s parsers, which return `Result` now. The axum
+    router's ListTasks reads the raw query with the same parser. The
+    fuzzing API's `rest_route` returns `Option` params, so the fuzz target
+    is unchanged.
+55. `fix(server):` §3.3.2 / §13.4 — ListTasks refuses a `pageSize`
+    outside a2a.proto's 1 to 100 (it clamped to 1000 and read 0 as 50), and
+    a message's `referenceTaskIds` get `validate_id`. Two tests that pinned
+    the clamp and the 0 default now require the refusal, and
+    `probe_load.py` pages by 100. A behaviour change, in the CHANGELOG and
+    the upgrading guide.
+56. `fix(server):` §3.5.2 — a `SubscribeToTask` stream across turns gets
+    every turn's events. The reattach hook is called with the stream's
+    position, attaches with the manager's exact `attach`, and answers
+    `Channel { rx, after, fresh }`, `Logged { through }` (no queue here, but
+    the log moved: a turn ran between two polls, on this replica or another)
+    or `Final { event, through }`. The reader replays the log for each before
+    it goes on, and reports what the log cannot supply as `streamLagged`. The
+    replay a stream owes lives in the reader (`Owed`), so a `read` dropped
+    while the log is read resumes it; the lag catch-up had that hole too (a
+    dropped `read` went back to the channel past the lag), and it is fixed
+    with it. Without a log each turn numbers from 1, and the reader's dedup
+    skipped as many of a turn's events as it had seen positions before;
+    `fresh` resets it. A subscription with no live queue starts at the log's
+    end, read before the task is re-read, so a race with another replica's
+    writes duplicates an event rather than loses one. Across replicas a
+    subscriber now sees the running replica's events a poll late:
+    `multi_replica.rs`'s test asserts it and the book's horizontal-scaling
+    page says so. A continuation admitted before the previous turn's
+    processor had logged its last events seeded colliding positions, which
+    the replay would skip as already delivered; item 57 fixes that.
+57. `fix(server):` §3.5.2 / §3.3.3 — a continuation sent the moment a task
+    parks keeps its events and the task's artifacts (audit register R55,
+    reproduced 3 of 3 before the fix). A stream delivers `input-required`
+    before the processor has logged and stored it, and the continuation was
+    admitted when the executor returned: its queue numbered from the log's
+    end while the turn was still being logged, its colliding positions were
+    dropped as replays (the log held only the first turn's three events),
+    and it was built from the task read before the turn stored it (the
+    first turn's artifact was gone from the task). The executor's teardown
+    now waits for `InMemoryQueueWriter::settled` (every assigned position
+    stored, or the consumer gone, bounded by the write timeout) before the
+    queue is released; `commit_task` takes the task from `settled_task`,
+    which waits for a parked turn before the approval check and re-reads
+    it, and `reject_in_flight_send` only checks. `ExecutorStart` moved to
+    `messaging/start.rs` to keep `mod.rs` under 500 lines. Not covered: a
+    continuation that reaches another replica while the first is still
+    storing; nothing in-process can see that.
+58. `fix(server):` §3.5.2 — a replay with a hole in the log is not used
+    (audit register R53). A failed append leaves the log without that
+    position and the processor goes on; `LogReplay::read` counted a read
+    that reached its target as complete, so a lagged stream was replayed
+    positions 1 to 9 and 11 to 32 with 10 skipped, and a resume after 1 got
+    2, 4 and 5. `contiguous` now makes such a read incomplete (the lag is
+    reported) and a resume falls back to the snapshot. Left open, low: the
+    catch-up's target is the task's current queue, so a send stream that
+    lags after its turn's queue is gone can be replayed into the next
+    turn's events (the same task's, in order); §11.7 describes a stream as
+    closing at an interrupted state, but §3.1.2's MUST is the terminal
+    state, so send streams were left as they are.
+59. `fix(server, client):` §5.1 — a gRPC error carries its `data` (audit
+    register R60). `server_error_to_status` adds what the JSON bindings'
+    `error_details` send: a BadRequest's field violations as a
+    `google.rpc.BadRequest`, any other `data` as a `google.protobuf.Struct`
+    `Any` (`dispatch/grpc/details.rs`, since `tonic_types::ErrorDetails`
+    holds only the standard detail types). A stream's error goes through
+    it too; it was `Status::internal("event queue error")`, which lost the
+    `streamLagged` marker. The gRPC client's `status_to_error` decodes a
+    `Struct` detail into `data` and a BadRequest into the JSON shape. The
+    types crate's `proto` module re-exports `prost_types`, so neither the
+    server nor the client takes a dependency of its own, and no lockfile
+    changes.
+60. `docs:` stale ledger notes and citations (audit register R62). The
+    §3.6 patch-version entry said both sides compare only the major: the
+    server compares `Major.Minor` (`is_served_version`) and the client only
+    the major (`is_compatible`), so neither considers the patch, and the
+    client takes a 1.1 interface listed first and addresses it as 1.0. The
+    §14 and §10.2 entries still said the server accepts any 1.x, and
+    §3.3.2's quoted the refusal as "supports 1.x". §3.3.2's `@type` entry
+    said `A2aError.data` is dropped; it goes as a typed detail on every
+    binding (gRPC since item 59). §3.3.2's retry-guidance entry and
+    §13.4's said RetryInfo goes on every binding; SLIMRPC has no details
+    field and sends none. The §9.5, §10.6 and §11.6 error entries said
+    unary errors carry `ErrorInfo` alone, WebSocket sends no `data` and
+    gRPC streams lose the marker, all fixed since (`ef31df91`, 2026-10-11,
+    and item 59); §11.6's "further objects MAY" entry moves from
+    NOT_SUPPORTED to TESTED on `unary_errors_keep_their_data`. Twelve
+    entries cited `dispatch/mod.rs` lines whose code had moved, mostly to
+    `dispatch/version.rs`. The 24 entries changed here had their citations
+    re-pointed by pattern, each cited line read back. Ledger-wide, 296 of
+    the 723 named test citations with a line number pointed at a line
+    other than the test's `fn`; each now names the one `fn <name>` line in
+    its file (only the numbers changed, checked by diff).
+    `A2aError::is_stream_lagged`'s doc said the stream goes on after the
+    lag; on every binding but SLIMRPC it is the last frame, and the doc now
+    says so and how to resynchronize. SLIMRPC's `event_stream` sends the
+    error as `"InternalError: …"` text and reads on after it; whether the
+    stream ends there is unchecked (register: SLIMRPC stream marker).
+61. `feat(client):` §3.2.6 — the client asks for extensions (audit register
+    R63). The server read `A2A-Extensions` on every binding, but the
+    client could send it only as a header the caller set; the ledger's
+    `binds: both` entry was TESTED on the server half alone.
+    `ClientBuilder::with_extensions` sends the URIs as one comma-separated
+    header (gRPC metadata) on every request, through an interceptor the
+    build adds after the caller's, which leaves alone a request an
+    interceptor already gave the header (`src/extensions.rs`).
+    `WebSocketTransportConfig::with_extensions` puts it on the upgrade,
+    where that binding's server reads every service parameter; an
+    `extra_headers` entry of the same name replaces it. A URI that is
+    empty or holds a comma, whitespace or non-visible-ASCII is refused at
+    build or connect. `extensions_e2e.rs` (SDK crate) checks what the
+    executor sees over JSON-RPC, HTTP+JSON, gRPC and WebSocket, unary and
+    streaming; the client crate's own tests (unit tests in
+    `extensions.rs`, `ws_extensions_tests.rs`) kill the 14 hand-applied
+    mutants, since cargo-mutants runs only the mutated crate's tests.
+    SLIMRPC is not tested. Ledger §3.2.6 (entry 69), §9.2 and §10.2's
+    comma-separated entries and the proto `AgentExtension.required` entry
+    say so.
+62. `fix(client):` §3.6.1 — the agent card fetch sends `A2A-Version`
+    (audit register R61). "Clients MUST send the `A2A-Version` header with
+    each request"; every transport did, the card fetch
+    (`fetch_card_with_metadata`, behind `resolve_agent_card`,
+    `fetch_card_from_url` and the caching resolver) did not. It sends
+    `1.0` unless the caller's `CardFetchOptions` name the header, whose
+    value is then sent alone. This SDK's server serves discovery with or
+    without the header. Ledger §3.6.1 (entry 130),
+    whose transport citations had drifted, now cites the lines that set
+    the header.
+63. `fix(server):` §8.6.1 — a card's `ETag` is the same for the same card
+    (audit register R16). It hashed `serde_json::to_vec(card)`, and the
+    card's `HashMap` fields (`securitySchemes`, a requirement's `schemes`,
+    OAuth `scopes`) serialize in a per-instance random order: the new
+    `card_etag_determinism.rs` gave 8 ETags in 8 parses of one card with
+    16 schemes, statically and through a dynamic handler. All four call
+    sites (static, dynamic conditional and unconditional, the REST
+    extended card) take `caching::card_body_and_etag`, which hashes
+    `serde_json::to_value(card)`; the body served is unchanged. That
+    relies on `serde_json::Map` being a `BTreeMap`, which holds while no
+    crate in the build enables serde_json's `preserve_order` (none does,
+    `cargo tree -e features -i serde_json --all-features`);
+    `serde_json_maps_are_sorted` fails if the workspace ever does. An
+    application that enables it downstream gets the old variable `ETag`
+    back, costing bandwidth, not correctness. An explicit sort would cover
+    that, but in this build it is an equivalent mutant, which
+    `mutants.toml` does not admit.
+64. `fix(types)!:` proto REQUIRED — an agent card needs a description and
+    a version (audit register R7). `AgentCard::validate` checked `name`
+    but not `description` or `version`, and `AgentCard::new` leaves the
+    description empty, so such a card was published with
+    `"description": ""`. Both are refused now; `build()`, hot reload and
+    the dynamic card handler run `validate`. 73 `AgentCard::new` call
+    sites without `with_description` gained one, by script (book, READMEs,
+    the server's doc comments and tests, the SDK's observability test, the
+    swarm example); the 29 tests that failed first are among them.
+    Compile-only snippets (`no_run`) in the server README, the book's
+    dispatchers, security and hello-agent pages also lacked a skill, so
+    `build()` refused them already; they have one now (hello-agent's as
+    the example has it). Left without a description, because nothing
+    validates them: the types crate's builder examples, the client's
+    discovery and signature tests, the CLI's selection test, the
+    a2a-rs benchmark harness (another SDK), and history (old CHANGELOG
+    entries, the v0.9.0 review). Ledger: the proto `AgentCard` name,
+    description, version and capabilities entries said `validate` is never
+    called in production, which has been wrong since `build()` ran it;
+    the three REQUIRED list entries said an empty list may be emitted.
+65. `fix(server):` §4 / §5.1 — what a JSON binding accepts, gRPC can carry
+    (audit register R6). `validate_send_params` now runs `make_portable`:
+    each `raw` part is decoded as the gRPC conversion decodes it (standard
+    or URL-safe, padded or not) and kept in standard padded base64, and an
+    integer beyond ±2^53 in the request's, the message's or a part's
+    metadata or in a `data` part is `InvalidParams` naming the field.
+    `tests/portable_content.rs` failed 3 of 4 before (a non-base64 `raw`
+    and the over-range integers were accepted, a URL-safe `raw` stored as
+    sent); its gRPC case shows the conversion refusing both values.
+    Hand mutants: 16 distinct over the final code, all killed; two
+    survived an earlier version, where `serde_json` reports any positive
+    integer up to `i64::MAX` through `as_i64`, so the `u64` branch, met
+    only above `i64::MAX`, held an equivalent `<=`/`<` mutant and no test
+    went that high: the branch is now `!n.is_u64()`, and `u64::MAX` is a
+    case. `base64` is an unconditional dependency of the server now: the
+    root lockfile is unchanged, and the ITK and SLIMRPC-binding lockfiles
+    each gain one line, the server's edge to `base64 0.23.1`, which both
+    already held. An executor's own events were left open (register
+    R64): an artifact with such a value was served over JSON and failed a
+    gRPC read. Item 105 closes it, and the §4 entry is TESTED.
+66. `docs(ledger):` the ten entries items 61 to 65 changed with a test
+    that failed first (69, 130, 143, 270, 279, 290, 413, 436, 438, 445)
+    did not carry `changed_by`, which the ledger's method says marks a
+    re-verified entry; they do now. The notes item 60 corrected stay
+    unmarked, since reading the code is not that check, and the method
+    says so.
+67. `fix(server):` §9.3 — a JSON-RPC request refused for a header is
+    answered with its id (audit register R18; adopter audit S14). The
+    `A2A-Version` and `Content-Type` checks ran before the body was read,
+    so their refusal answered `"id": null` and a batch got one object.
+    Both now wait for the body: `refuse_with_ids` (`refusal.rs`) echoes
+    the request's `id`, and a batch gets one error per request, each
+    recorded as a failed call. A batch beyond `max_batch_size` still gets
+    one null-id refusal, since an answer per item would let a body of
+    `{}`s buy a response 94 times its size (1,000 of them, 3,001 bytes,
+    were answered with 283,001 when the cap was lifted); so do a body that is
+    not JSON, an empty batch, a request without an id, and a body over
+    the size limit, where the header's refusal still wins over the read
+    error. `tests/jsonrpc_header_refusal_ids.rs` failed 4 of 5 before (the
+    fifth guards the null-id cases), and `rpc_calls.rs` gained a check of
+    what is recorded. The `id` is echoed whatever its JSON type, as the
+    dispatcher does for a request it serves; register R21 covers invalid
+    id types for both. Hand mutants: 16 distinct,
+    all killed; three were first written so that they did not build
+    under `-D warnings`, and were rewritten until they did.
+68. `fix(server):` §9.1 / §11.1 — a request's `Content-Type` is read as
+    a media type (audit register R22). The JSON-RPC, HTTP+JSON and axum
+    bindings matched the raw value by prefix, case-sensitively:
+    `Application/JSON` was refused, `application/json-rpc` and
+    `application/json-patch+json` accepted. One predicate,
+    `dispatch::unsupported_content_type`, now serves all three: the
+    type/subtype before any `;` (`rest::media_type::essence`), compared
+    case-insensitively with the two A2A types. `content_type_essence.rs`
+    failed on all three bindings before; hand mutants 9 of 9 killed.
+    The stricter half is a behaviour change, in the CHANGELOG: a client
+    sending `application/json-rpc` is refused where it was served
+    (a2a-java 1.3.0.Final's server matches by prefix too, entry 295). The
+    client was already case-insensitive (it lowercases before its
+    `text/event-stream` check) and is unchanged. Ledger §3.6.2 (entry
+    134) cited four lines that had drifted to a comment, an attribute,
+    `};` and a doc line; it now cites the version checks entry 70 cites.
+69. `fix(server):` RFC 9110 §15.5.9 / spec §5.1 — an HTTP+JSON body that
+    never arrives is `408` (audit register R25). `read_body_limited`
+    (`rest/response.rs`) returned a message and the caller answered every
+    failure `413`, a stalled upload included, where the axum router
+    answers `408`. It returns the status now: `413` over the size limit,
+    `408` past `body_read_timeout`, `400` for a body stream hyper cannot
+    read. `rest_body_read_errors.rs` (raw TCP) failed 2 of 3 before; the
+    third pins `413`. Hand mutants 5 of 5 killed. The JSON-RPC binding
+    still answers both with `-32700`, inside a `200`: its body was not
+    JSON it could read. The axum router's own rejections stay plain text
+    (register R26). Ledger §13.4 (entry 379) cited the JSON-parse
+    `map_err` for the body cap, and now cites the read.
+70. `fix(server, types):` §9.3 — three more JSON-RPC 2.0 rules (audit
+    register R21, all but its notification part). An id that is not a
+    string, a number or `null` is refused by `JsonRpcRequestId`'s
+    `Deserialize`, so it is `-32600` with a null id over HTTP and
+    WebSocket, where it was run and echoed; a header refusal (item 67)
+    echoes only an id of those types. An omitted `params` is read as `{}`
+    on both transports (HTTP's `parse_params`, WebSocket's two paths), so
+    `ListTasks` lists. A stream in a batch is `UnsupportedOperation`
+    (`-32004`). `jsonrpc_2_0_rules.rs` failed 6 of 6 before; the types
+    crate has its own test, since cargo-mutants runs only the mutated
+    crate's. Two tests pinned the old behaviour and now assert the new:
+    `list_tasks_missing_params` (renamed `list_tasks_without_params_lists`)
+    and the unit test now `parse_params_missing_names_the_required_field`,
+    which entries 485, 495 and 503 cite. Hand mutants 12 of 12, one
+    rewritten after it did not build. Still open, the maintainer's call
+    (register R21): a notification is answered, which JSON-RPC 2.0 §4.1
+    forbids; `jsonrpc_absent_id_request_answered_with_null_id` pins it.
+71. `fix(types, server):` §5.6.1 / §5.1 — timestamps are read as RFC 3339,
+    as the gRPC conversion reads them (audit register R20).
+    `parse_iso8601_to_unix_millis` was lenient (whitespace, unpadded or
+    signed fields, an offset without minutes, `02-30` rolled into March)
+    and refused every pre-1970 instant; the gRPC conversion parses with
+    the `time` crate's RFC 3339 parser. An executor's status timestamp in
+    a lenient shape went out as written on the JSON bindings and failed a
+    gRPC read; a 1969 `statusTimestampAfter` was `InvalidParams` on every
+    binding. The parser now takes RFC 3339's fixed-width grammar with a
+    real date, `t`/`z` in either case, second 60 only as a month's last
+    second in UTC (read as `time` reads it, the millisecond before), and
+    years 0000-9999 in UTC; `unix_millis_to_iso8601` writes pre-1970
+    instants as themselves, through `utc_fields`, which moves an instant
+    five 400-year cycles forward and its year back. `stamp_status` keeps a
+    timestamp as written only in the canonical shape (`T`, `Z`, no
+    offset). `tests/timestamp_parity.rs` (types, feature `proto`) compares
+    the two parsers over 1,655,808 strings (141,444 accepted) and checks
+    the `iso8601` fuzz target's round trip on each; it failed at once on
+    the old parser (`0000-01-01T00:00:00Z`), as did the three
+    `pre_epoch_timestamps.rs` tests (both stores, and the handler's
+    filter). Hand mutants: 27 of 27 in the types crate, 2 of 2 in the
+    server. Two tests that pinned the old behaviour changed with it:
+    `parse_rejects_pre_epoch_dates` became
+    `parse_accepts_pre_epoch_dates_back_to_year_0`, and the formatter test
+    asserts `-5` writes `1969-12-31T23:59:59.995Z`. Two drifted citations
+    were corrected in passing: entry 182's `list_tasks.rs:47` (the
+    page-size message) and entry 424's `status_stamp.rs:21` (a doc line).
+72. `fix(types):` §8.4 / RFC 7515 §4.1.11 — a card signature naming a
+    critical JWS extension is refused (audit register R28).
+    `signature_header` read only `alg`, `kid` and `jku`, so a protected
+    header with `"crit": ["exp"]` verified and its expiry was never
+    enforced. Any `crit`, protected or unprotected, is now an error from
+    `signature_header`, so `verify_agent_card` and both JWK Set verifiers
+    refuse it. `a_signature_with_crit_is_refused` signs with and without
+    `crit` under one key; mutants 2 of 2 (the check removed, the
+    unprotected header ignored). The a2a-sdk interop signs with `alg`,
+    `kid` and `typ` only (`itk/interop/card_signature_interop.py`), so it
+    is unaffected. Entry 262 cited a doc line for the verify step; it cites
+    `verify_with` now.
+73. `fix(server):` §13.2 — a push config a header cannot carry is refused
+    when it is created (audit register R45). `refuse_an_unservable_config`
+    checked the URL and the scheme, not the token or the credentials, so a
+    value with CR, LF or another control character was stored and every
+    delivery refused (the sender's `validate_header_value` for CR/LF, the
+    HTTP client for the rest). Creation now applies `HeaderValue`'s rule to
+    both, so the check matches what a delivery can send; the inline config
+    of a send takes the same path. `push_config_header_values.rs` failed
+    before; mutants 4 of 4, a CR/LF-only check among them (killed by the
+    NUL and BEL cases). Entry 429's citation had drifted to a `));` and
+    now names the scheme check.
+74. `fix(server):` proto `REQUIRED` — `StaticAgentCardHandler::new`
+    validates the card (audit register R39). It is public and re-exported,
+    and was the one way to serve a card that ran neither
+    `AgentCard::validate` nor `validate_security_schemes`. It already
+    returned `ServerResult`, so it now returns `InvalidParams` as `build()`
+    does, with no signature change. The three dispatchers build theirs
+    from a card `build()` has already validated, so they are unaffected.
+    `a_card_that_does_not_validate_is_refused` (no skills; an API key
+    scheme without a name); mutants 2 of 2. The 25 ledger notes that
+    listed where validation runs say this too.
+75. `fix(types):` proto `oneof` — a `SecurityScheme` naming two schemes is
+    refused (audit register R37). The deserializer returned the first arm
+    of `SCHEME_ARMS` present and ignored the rest; it now counts the arms
+    present, in either spelling, and refuses more than one, as `Part`
+    does. `a_scheme_with_two_arms_is_refused`; mutants 4 of 4, one
+    rewritten after it did not build. No ledger entry: the `oneof` has no
+    RFC 2119 line of its own.
+76. `fix(server):` RFC 9110 §5.3 / spec §9.2, §10.2, §11.2 — a header sent
+    as several lines is one field (audit register R23). Each of the
+    JSON-RPC, HTTP+JSON, axum, gRPC and WebSocket bindings copied headers
+    into a map with `insert`, keeping the last line of a repeated field;
+    the JSON-RPC echo of `A2A-Extensions` read the first. One helper,
+    `dispatch::header_fields`, now builds every binding's map, joining a
+    field's lines in order with `", "` (`"; "` for `cookie`, RFC 9113
+    §8.2.3), as the SLIMRPC binding already did; gRPC drops `-bin` keys as
+    before, and the echo reads the same joined value. Behaviour change: a
+    single-valued field sent twice (`Authorization`, a tenant header)
+    reaches interceptors as both values joined, so a bearer token sent on
+    two lines is refused (`a_credential_sent_on_two_lines_is_refused`).
+    `tests/repeated_header_lines.rs` (one test per binding, all five
+    failing before) and four unit tests on the helper; mutants 14 of 14,
+    two rewritten after they did not build (the "last line only" one, the
+    old behaviour, fails the credential test too). Ledger: the eight
+    entries that cited the deleted extractors (277, 278, 279, 288, 289,
+    290, 296, 297) cite the helper, and 68, 275, 320 and 328 follow the
+    code the diff moved; 279 and 290 lose the last-line-wins note and carry
+    `changed_by`. Entry 296's note that axum never checks `A2A-Version`
+    was stale (`validate_a2a_request` does, `axum_adapter.rs:212`) and its
+    axum citation pointed at a doc comment; both are corrected.
+77. `fix(client):` §8.6.2 / RFC 9111 §4.3.4 — `CachingCardResolver` takes
+    the validators a `304` carries (audit register R32). It kept the
+    first `200`'s `ETag` and `Last-Modified` and revalidated with them
+    after a `304` that sent new ones; a `no-store` `304` left the card
+    stored. `a_304_replaces_the_stored_validators` and
+    `a_no_store_304_leaves_nothing_stored`, both failing before; mutants
+    6 of 6. Ledger 272 (PARTIAL: max-age is still not used to skip the
+    request, and the plain functions do not cache) and 273 cite the code
+    by its current lines; six proto `REQUIRED` entries (431, 432, 434,
+    468, 472, 481) cited a `.headers()` call and now cite the card parse,
+    as 435 to 439 do. Not done: the resolver takes no
+    `CardFetchOptions`. It was held back because `CardFetchOptions` then
+    printed its headers, an `Authorization` among them, through `Debug`;
+    item 99 removes that reason, and the resolver still takes none.
+78. `fix(types):` §5.7 — the `oneof` wrappers skip unknown fields (audit
+    register R46). `SendMessageResponse`, `StreamResponse` and
+    `OAuthFlows` derived serde's externally tagged encoding, which fails on
+    any key beside the member. `oneof_deserialize!` (`types/src/oneof.rs`)
+    reads keys as identifiers, skips unknown ones, builds the member once,
+    and refuses none or two; `Part` and `SecurityScheme` keep their own
+    deserializers. `tests/oneof_unknown_fields.rs`: the unknown-field test
+    failed before; the two-member refusal held before and only its message
+    changed. Mutants: 10 of 10 on the final macro, one surviving until the
+    test asserted "this one sets more". Cost, measured because
+    `protocol/stream_events/*/deserialize` is in the Regression Gate:
+    timed interleaved with a derived mirror enum in one release-build
+    process, 21 pairs per run, 3 runs, Intel Xeon @ 2.10GHz, a stream
+    event's parse is 1.08-1.10x the derived one's (a first version that
+    moved the member through an `Option` was 1.09-1.17x; a per-enum tag
+    enum and `#[inline]` did not help). The gate fails at 25 % with 95 %
+    confidence. One client test asserted the old "unknown variant" text and
+    now asserts the new one. Ledger 189 cites the macro and the tests.
+79. `test(types):` CI on `152ea962`, mutants shard 7: `replace && with ||
+    in offset_minutes` survived item 71's tests. Under it, a digit then `:`
+    reads as two digits (`:` - `0` is 10), so `+05:0:` parses as `+05:10`;
+    nothing put a non-digit in an offset's digit positions. Three such
+    offsets join `parse_refuses_what_rfc_3339_does_not_allow`; the mutant
+    is killed by hand. The same run's `Test (stable, windows-latest)` failed
+    at `TcpListener::bind` with WSAENOBUFS (10055) in
+    `dispatch_edge_tests`, unchanged by the push and green on `8059da21`;
+    commented on the PR, and the next push is its one re-run.
+80. `fix(server):` §8.6.1 / RFC 9110 §9.3.2, §13.1 — the card answers
+    `HEAD`, and its conditionals follow RFC 9110 (audit register R29,
+    R44). JSON-RPC and HTTP+JSON route `GET` and `HEAD` to the card (and
+    HTTP+JSON's probes), axum exempts both from the version check, and
+    `check_conditional` and the dynamic handler answer `304` to `GET` and
+    `HEAD` only, read every `If-None-Match` line through
+    `dispatch::field_value`, and (static) skip `If-Modified-Since` whenever
+    `If-None-Match` is present. `tests/card_head.rs` (all three bindings
+    failed before) and four unit tests, all failing before; mutants
+    13 of 13. Ledger 270 and 271 carry the new rules and tests; 268's note
+    that nothing honours `no-store` was stale (item 77's resolver does) and
+    is corrected. Not changed: a non-`GET` request carrying a matching
+    `If-None-Match` gets the card, not the `412` §13.1.2 asks for, because
+    `ConditionalResult` has no such outcome and no SDK route sends one
+    there; `If-Modified-Since` is still compared by exact string.
+81. `test(server):` `eefd2399` — item 76's `repeated_header_lines.rs`
+    imported `SocketAddr` for an annotation in its axum-gated test, so
+    clippy on the server without `axum` failed (unused import). It was
+    pushed in `d3f633d3`'s batch before a no-default-features clippy ran on
+    it. Lesson: a test file with a feature-gated test needs clippy with
+    that feature off before it is pushed, not only `--all-features`.
+82. `fix(types):` §8.4.1 — the gRPC card conversion keeps an explicitly
+    empty `icon_url` or `documentation_url` (audit register R47; both are
+    `optional string` in a2a.proto). Both directions filtered `""` to
+    `None`, a comment calling it idempotence.
+    `an_explicitly_empty_url_keeps_its_presence` failed before; mutants 4
+    of 4 (each filter put back). Ledger 248 cites it.
+83. `fix(server):` §11.1 / RFC 9110 §12.5.5 — negotiated HTTP+JSON
+    responses carry `Vary: Accept, Content-Type` (audit register R27), on
+    `RestDispatcher` and axum, appended in `ResponseMediaType::apply` so
+    the extended card keeps its `Vary: Authorization`; `from_headers`
+    reads every `Accept` line through `dispatch::field_value`.
+    `tests/rest_vary.rs` (both bindings failed before); mutants 4 of 4,
+    one rewritten after it did not build; `append` turned `insert` is
+    killed by the extended-card caching tests. Ledger 294 stays PARTIAL for
+    its a2a-go trade-off.
+84. `fix(server):` §11.3 / RFC 3986 §3.3 — `RestDispatcher`'s traversal
+    guard refuses dot segments, not every `..` (audit register R24, first
+    half). `contains_path_traversal` splits on `/` and `\` and refuses a
+    `.` or `..` segment in each decoded form; the raw pre-check went, since
+    the first pass holds every raw segment. `tests/rest_dot_segments.rs`
+    (failed before: `/tasks/v1..prod` was 400) and two unit tests; mutants
+    5 of 5, the fail-closed bound surviving until
+    `a_path_still_decoding_at_the_bound_is_refused`. Ledger 299 records it;
+    302's two query citations pointed into this function and now name the
+    boolean and number parsers.
+85. `fix(server, client):` §11.3 — on HTTP+JSON the path's id is the
+    request's (audit register R38, and R24's second half; in Behaviour
+    Changes). `set_path_field` (was `inject_field_if_missing`) inserts over
+    the body, as axum's push-config create now does; axum's `:cancel` and
+    `:subscribe` read their bodies through `body_with_path_id`; both
+    routers keep empty interior segments (one trailing `/` tolerated); the
+    REST client refuses an empty path id. `inject_field_preserves_existing`
+    pinned the old behaviour and is replaced by
+    `set_path_field_overrides_the_body`. `tests/http_json_path_ids.rs` (both
+    bindings failed before) and the client's
+    `an_empty_path_id_is_refused_before_the_request_is_built`; mutants 11 of
+    11 (9 server, 2 client). Ledger: the eight proto id entries (485, 495,
+    497, 498, 500, 501, 503, 505) say it. Not done from H-F10: the client
+    still sends an empty `messageId` or empty parts unchecked; the server
+    refuses both.
+86. `fix(slimrpc):` — the SLIMRPC server drops a caller's `:`-prefixed
+    metadata key (audit register R41; in Security). `a2a_headers` passed
+    `:peer-addr` and `:path` through, so `CallContext::peer_addr` and
+    `AuthFailureThrottle` read a caller's claim as the connection's
+    address. `a_callers_pseudo_header_never_reaches_the_handler` failed
+    before; mutants 2 of 2. The book's SLIMRPC page says which keys are
+    dropped; ledger 321. **Open, for the maintainer:** the same caller can
+    still send `x-forwarded-for`, and with `trusted_proxy_hops` above 0
+    `forwarded_client` (read by `AuthFailureThrottle` and
+    `RateLimitInterceptor`) takes the entry it names, because no proxy
+    appends one over SLIMRPC. Read from the code, not tested. Dropping the
+    key in the binding, or a per-binding hop count, are both API-visible
+    choices.
+87. `fix(slimrpc)!:` §3.6.2 — the SLIMRPC server refuses a call that
+    declares no `A2A-Version`, as 0.3 (audit register R43; in Behaviour
+    Changes). It served one as 1.0 because the official `a2a-slimrpc` sent
+    none at 0.2.4; read on 2026-10-13, `a2a-client-lf` 0.2.8's `A2AClient`
+    adds the version to every call and `a2a-slimrpc` 0.3.2 forwards it.
+    `SlimRpcServer::with_require_version(false)` is the opt-out, held in an
+    `AtomicBool` beside the handler (`Served`) so `from_app` needs no new
+    argument. `an_absent_version_is_refused_as_0_3_unless_none_is_required`
+    replaces `an_absent_version_is_accepted_for_interop` and failed before;
+    e2e `an_empty_version_is_refused_unless_none_is_required`. The strict
+    default failed 4 of 6 multicast tests: `SlimRpcMulticast` sent no
+    version, so it now adds one through the unicast client's
+    `metadata_from`. Mutants 9 of 9 (7 server, 2 multicast). Ledger 135
+    PARTIAL to TESTED: its note had said every binding refused.
+88. `fix(slimrpc):` — a multicast member's error is its outcome (found
+    while testing item 87; in Fixed). `MulticastRpc`'s `origin` is the full
+    four-part SLIM name, and `send_message` keyed it unchanged while
+    outcomes are paired by the three-part address, so an erroring agent
+    came back as a timeout; `fanout.rs` dropped every error frame. Both now
+    go through `address_key`, which also replaced the unit tests' private
+    copy of it. `an_agents_refusal_is_its_outcome` and
+    `an_agents_refusal_reaches_its_stream` failed before; mutants 4 of 4.
+    **Open, Low:** an `EventStream` ends at its first `Err` chunk
+    (`event_stream.rs:485`), and the fan-out's lag report is one, so a
+    member that falls behind is told so and its stream ends; `fanout.rs`'s
+    docs describe it continuing. The test of the report,
+    `a_consumer_that_falls_behind_is_told_what_it_missed`, stops reading at
+    it, so it does not distinguish the two.
+89. `fix(server):` a2a.proto `ListTasksRequest`/`ListTasksResponse` — every
+    task store (audit register R40; in Behaviour Changes).
+    `status_timestamp_after` includes its bound, `total_size` counts what the
+    filters match before pagination, and the SQL stores' `page_size` is the
+    size used, not the page's length; a2a-sdk 1.2.2's stores, read
+    2026-10-13, do all three. `tests/support/list_proto.rs` runs against
+    all six stores (Postgres two, `#[ignore]`d like the rest of that file)
+    and failed on each before. Five tests pinned strictly-after and now
+    expect the bound included; they are named in the commit. The in-memory
+    count keeps an unfiltered or context-only list O(1) (`index.len()`); a
+    timestamp or status filter walks what it matches. The SQL stores run a
+    `COUNT(*)` per call. MEASURED 2026-10-13, `data_volume/list/
+    filtered_page_50` (context filter, release, this container), criterion
+    medians, two runs each: at 10K tasks old 34.07 and 34.04 µs, new 34.95
+    and 35.81; at 100K old 33.20 and 33.86, new 33.86 and 35.28; at 1K no
+    change. The 10K gap (0.9 to 1.8 µs) is wider than the old code's
+    run-to-run spread and is not explained by the O(1) path it takes.
+90. `docs:` spec section citations (audit register R48). Card caching is
+    §8.6 and discovery §8.2 (four files cited §8.3), signing §8.4 (cited
+    §10), and `method.rs`'s eleven methods §3.1.1 to §3.1.11 (cited §8.x).
+    The axum quick-start's card declared JSON-RPC while `A2aRouter` serves
+    HTTP+JSON (C-F10, ledger 162). E-F12 (`event: error` on SSE error
+    frames) is kept: the Python SDK does the same.
+91. `fix(server, slimrpc):` §3.3.2 — a refused credential's challenge
+    reaches gRPC and SLIMRPC callers (audit register R59; in Fixed). gRPC:
+    `www-authenticate` metadata on the `UNAUTHENTICATED` status. SLIMRPC,
+    which has no error metadata: `(WWW-Authenticate: <challenge>)` ends the
+    message. WebSocket refusals after the upgrade still carry none. The
+    gRPC helper tests moved to `grpc/helpers_tests.rs` to keep
+    `helpers.rs` under 500 lines; the ledger's 17 citations of them, and
+    five line citations into `helpers.rs` the wrapper shifted, follow.
+    Both tests failed before; mutants 4 of 4.
+92. `fix(server)!:` §3.3.4 — push-config operations need a push sender, and
+    so does a card that declares push (audit register R34; in Behaviour
+    Changes). `ensure_push_supported` refuses when no sender is wired, so
+    Get, List and Delete answer `PushNotificationNotSupported` as Create
+    did; they ran against the store. `build()` refuses a card declaring
+    `pushNotifications` with no sender. Three tests failed before:
+    `every_push_op_without_a_sender_returns_push_not_supported`,
+    `no_sender_rejects_push` and
+    `build_refuses_a_card_declaring_push_without_a_sender`.
+    The workspace run (`--all-features`) then failed 26 tests across 9
+    targets, all from this change. Twenty now wire a sender: they test
+    behaviour past the gate, or build a card that declares push for another
+    reason. Three about the missing sender build without a card instead.
+    Three named for the old answers (`*_no_push_sender_still_works`,
+    `get_push_config_no_push_sender_returns_404`) now assert
+    `PUSH_NOTIFICATION_NOT_SUPPORTED` under new names. Two metrics tests
+    that had passed on the gate's error rather than the one they name, and
+    three capability tests written for the old contract, wire a sender too.
+    The SLIMRPC binding (its own workspace) was not run: by grep, no card
+    in it declares push and no test calls a push-config operation. 39
+    hidden book cards declared push with no sender wired and no longer
+    declare it; the push-config store snippet wires one. Ledger 355, 376,
+    397 and 573; 87 citations into the three edited files follow their
+    lines (the 74 bare ones checked byte for byte against the old source).
+    Mutants 8 of 8.
+93. `fix(server):` a `Last-Event-ID` on a WebSocket upgrade no longer
+    replays the event log (audit register R42; in Fixed). The binding page
+    promised no resumption, but the upgrade's headers reach every call on
+    the connection, so every `SubscribeToTask` replayed the log from it.
+    `extract_upgrade_headers` drops the header.
+    `ws_upgrade_last_event_id_does_not_replay_the_log` received the snapshot
+    and the replayed events before the fix. Ledger 3030; 35 citations into
+    `websocket.rs` follow the shifted lines (every bare one checked against
+    the old source). Mutants 2 of 2.
+94. `feat(client):` `AuthInterceptor::api_key` (audit register R35; in
+    Added). It sends an `APIKeySecurityScheme`'s key in the header or cookie
+    the scheme names; `with_scheme("api-key")` writes `Authorization`.
+    `api_key_placement_e2e.rs` runs both against `ApiKeyAuthInterceptor`
+    over JSON-RPC, HTTP+JSON and gRPC: the old placement gets `401`, the new
+    one reaches the handler. A query-string key is refused with the new
+    `ClientError::InvalidAuthScheme`: no transport can add a query
+    parameter, which needs a `Transport` change and is put to the
+    maintainer. `auth.rs` passed 500 lines, so its tests moved to
+    `auth/tests.rs` (checked byte for byte). Ledger 423. Mutants 9 of 9.
+95. `fix(server):` the axum router's own refusals are AIP-193 (audit
+    register R26; in Fixed): `405` through `method_not_allowed_fallback`,
+    which keeps `Allow`, and the body extractor's `413`, `408` and `400`.
+    Not a router-wide `fallback` for unknown paths: it would answer every
+    path of an app the router is merged into, and axum panics merging two
+    routers that both have one. `axum_refusals_of_its_own_are_aip_193` and
+    the extended `a_dribbling_body_is_cut_off_at_the_configured_timeout`
+    failed before. Ledger 2908; ledger 2918's axum citation pointed at the
+    body extractor, not the content-type check, before this change and now
+    names the check. Mutants 4 of 4.
+96. `fix(client, types):` a signed card is verified as received (audit
+    register R31; in Fixed). `canonicalize_card_json` is now the one
+    canonicalization path (`canonicalize_card` serializes and calls it);
+    verification takes canonical bytes, so the typed and JSON entry points
+    share it. `verify_card_json_with_jwks` is new; the client's fetch with
+    signature keys parses the body as JSON and verifies that before the
+    typed parse. Two tests sign over a field this SDK does not model: the
+    types one shows the typed path refusing it, the client one failed
+    before. Removing the presence prune survived every types-crate test;
+    `a_received_cards_defaults_are_dropped_before_canonicalizing` now kills
+    it (the Python interop test in `itk/` covers it across SDKs). The client
+    gained `ring` and `base64` as dev-dependencies, already in the tree.
+    Ledger 2131, 2133, 2140 (its note denied the opt-in that exists) and
+    3352. Mutants 6 of 6.
+97. `feat(server):` `DispatchConfig::with_agent_card_max_age` (audit
+    register R30; in Added). The three HTTP dispatchers built their card
+    handlers with the 3600-second default and no way to set it. The new
+    test fails without it; the existing caching test now pins the default
+    exactly rather than any `max-age=`, which let a changed default pass.
+    Ledger 2229. Mutants 5 of 5.
+98. `fix(server):` a failed push delivery logs the webhook's origin (audit
+    register R14; in Security). `deliver_once`'s two WARNs logged
+    `config.url` whole; they use `push::webhook::origin_for_log`, as
+    `HttpPushSender`'s own lines have since audit O16.
+    `a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` saw the
+    secret in the failure line before the fix. Ledger 3138. Mutants 2 of 2.
+99. `fix(client):` the client's `Debug` output names headers and JSON
+    keys, never values (audit register R17, adopter audit O17; in
+    Security). `ClientRequest`, `ClientResponse`, `CardFetchOptions` and
+    `WebSocketTransportConfig` derived it. A scan of every crate for a
+    derived `Debug` over a field named for a header, token, secret or
+    credential found no other: the hits elsewhere hold header names,
+    cancellation tokens, page tokens and token URLs. `redact::names`
+    sorts, so a debug-print is the same line every time.
+    `tests/debug_redaction.rs` pins each type's exact output under every
+    feature set that changes it; all five tests failed before.
+    `interceptor.rs` passed 500 lines, so its tests moved to
+    `interceptor/tests.rs` (checked byte for byte). Ledger 3194, which binds
+    both sides and cited only server evidence. Mutants 18 of 18; the one
+    that drops the sort is caught through `HashMap` iteration order, so
+    only by chance: if that order is uniform, six names come out sorted
+    by accident once in 720 maps (not measured).
+100. `fix(client):` a fetch with signature keys refuses an unsigned card
+    (audit register R9; amends the unreleased `with_signature_keys` entry in
+    Added, so no release behaved otherwise). Anyone able to alter a card on
+    its way can remove its signatures too, and the fetch returned an
+    unsigned card, so it returned the altered one unverified.
+    `with_require_signature(false)` keeps verify-when-present for a fleet
+    that is not all signed. `a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied`
+    failed before. Mutants 6 of 6; treating an empty list as signed
+    survived until the lenient test covered `[]`, since the types crate
+    refuses an empty list with the same "not signed" message. The
+    client's `signing` feature note in `Cargo.toml` said no code in the
+    crate verifies a card, untrue since `7260a8f`; corrected. Ledger 3352
+    (still PARTIAL, low: `CachingCardResolver` and `from_card` take no keys).
+101. `feat(server):` `RequestHandlerBuilder::with_extended_agent_card`
+    (audit register R56; in Added). No setting existed, so an agent that
+    declared `extendedAgentCard` served its public card again. Not a MUST
+    gap, as the register had it: ledger 3173 already read the public card
+    as the configured extended card, which is why the change is additive
+    rather than a `build()` refusal that would have broken about twenty
+    builders declaring the capability. `build()` gives the extended card the
+    public card's validation, push-sender check and extension
+    advertisements (`advertise` is now one function for both), and refuses
+    one a non-declaring public card would never serve. Four tests in
+    `lifecycle/extended_card.rs`; the API is new, so none could fail before
+    it. Mutants 8 of 8. The no-public-card test asserts the advertisement
+    because, read before the run, nothing else would catch advertising
+    only when a public card is present; that mutant was not run without it.
+    Ledger: 424, 3157, 3158 and 3159 move from NOT_SUPPORTED to SUPPORTED
+    (MAY clauses; 3159's user-specific half and 3152's per-caller variation
+    remain unsupported), and eleven entries whose notes said the extended
+    card was always the public one are corrected. Several of their
+    citations already pointed at the wrong lines (575 at `result`); they
+    cite the match arms now.
+102. `fix(server):` a database that cannot answer for now is a temporary
+    failure (audit register R57; in Fixed and Added). `A2aError::unavailable`
+    marks it as `rate_limited` marks a refusal, with a field that is not on
+    the wire (`A2aError` stays 96 bytes, measured). One classifier,
+    `sql_error.rs`, serves the ten store conversions; the backend is passed
+    in, since a Postgres SQLSTATE can be all digits and the first version,
+    which told them apart by parsing, read `08000` as a SQLite code (the
+    table test caught it). The exception is the decision to know about:
+    `SendMessage`, `SendStreamingMessage` and creating a push config keep
+    `INTERNAL` (`ServerError::not_retry_safe`), because the client re-sends
+    those on `503` as refused before processing (`retry.rs`), and a store
+    failure can come after the executor ran; two mutants that dropped the
+    exception showed both calls answering `503`. The SLIMRPC binding now
+    answers a halt `UNAVAILABLE`, as gRPC did. `tests/sql_transient_errors.rs`
+    starves a one-connection pool: the read failed `500 INTERNAL` before.
+    Mutants 23 of 23 (two in the SLIMRPC workspace). Ledger 532. Postgres
+    paths are compiled and their codes table-tested, not run against a
+    database here; CI's Postgres job runs those stores.
+103. `fix(server):` the event queue refuses an executor's event missing a
+    REQUIRED field (audit register R36, part (a); in Behaviour Changes).
+    `event_queue/content.rs`, called where the artifact-parts check was:
+    message `messageId`, role and parts; artifact `artifactId` and parts
+    (an appended chunk may have none); status `state`, in every event kind
+    and inside a snapshot's status, artifacts and history.
+    `tests/executor_event_fields.rs` writes eleven broken events; all
+    eleven were accepted before. The conformance harness drained only what
+    the queue broadcast, so an executor writing a nameless artifact earned
+    a clean report once the queue refused it; `HarnessWriter` keeps refused
+    writes and `artifacts_have_ids` grades them. Mutants 18 of 18. Every
+    workspace package's tests pass (server 2672, sdk and client 948, the
+    other eighteen packages 463), run per package because the workspace
+    build filled the disk. Not done, part (b): a task snapshot that moves
+    back to `Submitted` is still accepted. The store guards terminal
+    states; mirroring the status-update rule in both processors means
+    sharing the background mark-failed path, which also drives the
+    writer's terminal verdicts.
+104. `docs(slimrpc):` a multicast member's lag report ends its stream, and
+    the fan-out's docs say so (audit register R66; docs only). The report
+    is an `Err`, and `EventStream::from_event_channel` bridges it into the
+    one parsing path, which finishes the stream at its first error
+    (`event_stream.rs`, `Phase::Finished`); the docs read as if the member
+    went on, and the README cited the drop at `fanout.rs:116`, the
+    malformed-event mapping. Making the report non-terminal is a client
+    behaviour change and is left to the maintainer. A private intra-doc
+    link in the same file did not resolve under `--document-private-items`;
+    it does now.
+105. `fix(server):` the event queue refuses an executor's event the gRPC
+    binding cannot carry (audit register R64; in Behaviour Changes): a
+    `raw` part that is not base64, an integer beyond ±2^53 in metadata or a
+    `data` part, a `metadata` that is not a JSON object, in every event
+    kind; `raw` that is base64 is kept in standard padded form. The register
+    left refusing or converting lossily to the maintainer; refusing is what
+    R6 does for a client's message and what R36 does at the same writer,
+    and a lossy conversion would change an agent's data without a word.
+    R6's `standard_base64` and `inexact_number` moved to `portable.rs`,
+    which both paths use; their bodies are unchanged (diffed against HEAD),
+    and they are `pub` in that private module. `tests/executor_event_portability.rs`
+    writes twelve such events; all twelve were accepted before. The gRPC
+    dispatcher's `reader_to_native_stream_stops_after_a_conversion_error`
+    made its unconvertible event through the writer, which now refuses it;
+    it sends the event onto the reader's channel instead (a store written
+    before this check can still replay one), and still kills its `||`→`&&`
+    mutant. Fifteen hand-applied mutants fail the new test: the writer
+    skipping the check, each event kind's and each field's check removed,
+    `raw` left as written, the object check off, and `exact` never
+    refusing. The writer mutant, first written as a bare `Ok(())`, did not
+    build (the check became dead code under `-D warnings`); it runs the
+    check on a copy and ignores the result instead. Ledger 768 (§4) moves
+    from PARTIAL to TESTED; 768 and 225 cite `portable.rs` for the two moved
+    functions.
+106. `test(types):` CI on `96decb0b`, mutants shard 7: `replace
+    A2aError::is_unavailable -> bool with true` and `with false` survived
+    (133 caught, 2 missed, 8 unviable). Item 102's hand mutants ran in the
+    server crate, where the flag is read, and the types crate covered the
+    accessor only with a doctest; CI grades a types-crate mutant with that
+    crate's tests under nextest, which runs no doctests.
+    `an_unavailable_error_is_marked_temporary` checks the flag both ways,
+    the code and message it keeps, and that it is not on the wire; both
+    mutants fail it, applied by hand.
+107. `ci(mutants):` the incremental job deals its mutants round-robin across
+    its eight shards, as the full sweep has since `6c2bff19`; that commit
+    changed only the full sweep. The incremental job mutates the whole PR's
+    diff against `main` on every push (1,160 mutants on this branch at
+    `ee7df1e7`), and the default slicing gave whole shards to one crate: the
+    slowest shard of the runs on `152ea962`, `2d551a2b` and `3f152a79` held
+    only `a2a-server` mutants and took 114-120 minutes against the
+    120-minute timeout (7,193 s of 7,200 on `152ea962`), while `3f152a79`'s
+    two `a2a-types`-only shards took 20 and 27. The pinned binary's
+    listings: sliced, four shards of 145 `a2a-server` mutants and two of
+    `a2a-types` only; round-robin, every shard 91-92 `a2a-server`, 41-42
+    `a2a-types`, 11-12 `a2a-client`, the eight together exactly the 1,160.
+    Measured: `10827fae`'s run (same source as `ee7df1e7`, so the same
+    1,160 mutants) finished all eight shards in 4,755-6,571 s and passed,
+    where `ee7df1e7`'s sliced run lost four shards to the timeout at
+    7,229-7,237 s, as `96decb0b`'s lost three. The ~77 minutes this item
+    first projected was wrong: it divided `3f152a79`'s total evenly, as if a
+    mutant's cost did not depend on the one before it. Round-robin used 787
+    runner-minutes against the sliced run's 722 (cut short), likely because
+    an `a2a-types` mutant makes the next `a2a-server` one rebuild its
+    dependents (not measured: the per-mutant times are in the run's
+    artifacts). The slowest shard has ten minutes of headroom; the next step,
+    if a push brings it closer, is to split the job by crate as the full
+    sweep is, so round-robin stays within one crate.
+
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 318,
+PARTIAL 20, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
+proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
+
+**Lessons, new this session.**
+- A check describes the tree it ran on. After any edit that follows a
+  clippy or test run, run it again before the commit claims it (item 43).
+- CI's stable toolchain moves under you: 1.99 on 2026-10-12, two releases
+  ahead of the container's. Its new clippy lints failed every clippy job.
+  `rustup update stable` before the first local clippy run.
+- `#[deprecated]` warns inside the defining crate too; in-crate uses need
+  `#[allow(deprecated)]`.
+- The weekly sweep's cost is the *caught* mutants (≈206 s to build each,
+  against ≈26 s for an unviable one), and contiguous slices cluster them.
+  The model in `mutants.yml`'s matrix comment (sum of build + test time ÷ 4,
+  plus baseline) reproduced every finished shard within 1.1 minutes; reuse it
+  rather than guessing a shard count.
+- Four weekly sweeps went unrecorded because nothing prompts a row. Record
+  each one as `mutation-history.md` "How to add an entry" says, from the
+  run's `Mutants Summary`, the week it runs; a cancelled shard's report is
+  still uploaded, so an incomplete sweep can be counted too.
+- The versioned site is about 18 MB per release line (268 MB for 13 lines and
+  dev, measured); GitHub Pages caps a site at 1 GB.
+- A test can pass on a different branch than the one it is named for. Both
+  §3.5.2 over-limit tests first ran the live-writer branch, because the
+  agent finished before the test's first read and the stream lagged inside
+  it; a hand mutant on the other branch survived. Print the decision's
+  inputs once (here the replay's target) to see which branch a test
+  reaches, and gate the agent when timing decides it.
+- A hand-applied mutant checked with `cargo test` (no `--no-fail-fast`)
+  shows only the first failing binary's tests; a test in a later target may
+  kill it too. Run that target alone before citing it as the killer.
+- No live queue on this replica does not mean no turn is running: another
+  replica sharing the store may be writing (item 56). Reason about the
+  multi-replica case before calling a read order safe.
+- The ledger checker verifies that a cited test function exists, not that a
+  `path:line` names the code meant. Item 60 anchored every named test
+  citation to its `fn` line (296 had drifted); the 1,180 `impl_evidence`
+  citations carry no name and were checked only in the entries items 56
+  to 60 touched. Move citations through `git diff` when a file changes
+  (item 56 did, 45 lines checked identical).
+- Nightly cargo's `unused_dependencies` lint flags `book-tests`' dependencies,
+  which only its doctests use. A warning on the informational nightly job
+  today; it would need an allow if the lint stabilizes as-is.
+
+**What the next session should do first.**
+1. Read CI on the branch head.
+2. The first 24-shard sweep (next scheduled Monday, or dispatch it): compare
+   the slowest `a2a-server` shard with the ~110-minute projection, and give
+   the sweep its ledger row.
+3. After the next release, confirm `docs.yml` ran from `workflow_run` and
+   that `/`, `/vX.Y/` and `/dev/` are what `build_docs_site.py check`
+   accepted locally.
+4. The incremental mutation job still slices: run 37906246207 put one shard
+   at ~83 minutes while the other seven took 13-49. Round-robin is the likely
+   fix there too; measure it from that run's artifacts before changing it.
+5. `benches/sdk-comparison/harness/agent-a2a-rust` pins the published
+   `a2a-protocol-sdk =0.14.1`, so the §13.1 default does not reach it yet.
+   When the pin moves past it, its `AUTH_TOKEN` mode (one unlabelled token)
+   with `SQLITE_URL` builds no more without `share_tasks_across_callers()`,
+   and without `SQLITE_URL` it measures `TenantAwareInMemoryTaskStore`
+   instead of the plain store: add the call to keep the measured store.
+6. `stress_tests::concurrent_200_requests_all_succeed` failed once on
+   `Test (1.88, windows-latest)` at `2d086b04` (run 38269273780): 1 of 200
+   requests got `client error (Connect)`. The CI runs on `main` that
+   preceded it succeeded, and both runs on the previous head (`40449307`)
+   got past this binary to fail later, in `telemetry_export`. It failed at
+   TCP connect, before a request reaches any code this branch changed; the
+   cause is not established. Two candidates, neither confirmed: a
+   full accept backlog (Windows refuses a connect then, where Linux retries
+   the SYN), or the test's own accept loop, which `break`s on the first
+   `accept()` error and so drops the listener. Item 19 makes a recurrence
+   name its cause: read the failing log's error chain, and look for
+   "accept failed". In that job it failed in the `sqlite` feature step,
+   after passing in the five steps before it; the re-run of the job on the
+   same commit passed (run attempt 2).
+7. §8.1 stays PARTIAL (ledger line 1980, now low): the WebSocket and gRPC
+   dispatchers serve no well-known card, so a deployment on only those
+   bindings has no discovery endpoint from the SDK. Closing it means serving
+   the card beside them (an HTTP route a gRPC-only server can mount), which
+   is a design question, not a fix.
+8. The ledger's three medium PARTIAL entries are the maintainer's to decide,
+   not fixes: §1.4 (line 107; the serde types are hand-written, not generated
+   from the proto), §8.4.3 (line 2132; `jku` is never followed,
+   deliberately: `fetch_jwks` takes a URL the caller trusts, not one the card
+   names), and §12 (line 2985; SLIMRPC's own spec maps two errors
+   differently from A2A §5.4). §3.5.2 (line 692) moved to low with item 36.
+   The 20 PARTIAL left are these three and 17 low.
+9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
+   or dispatch it with `force`). Its 2026-10-05 grading run had three red
+   legs: python-sdk never graded (no PyYAML; fixed on this branch), go-sdk
+   could not resolve a2a-go 2.6.0 on Go 1.25 (fixed on `main` 2026-10-10),
+   and java-sdk graded the newest a2a-java (1.4.0.Final, on Maven Central by
+   2026-09-28) and found `tck.yml`'s REST skip of `a2a_media_type_accepted`
+   stale: upstream fixed it. Dispatched on this branch on 2026-10-12 (run
+   38299384752), python-sdk, js-sdk and go-sdk passed at their latest
+   releases and java-sdk failed only on that stale skip. The maintainer then
+   moved all three pins (item 30), and no skip is left on any official SDK's
+   leg. Next: extend `card_signature_interop.py` to a2a-go 2.6.0
+   (`a2acrypto`) and to `@a2a-js/sdk`, which has exported card signing since
+   at least 1.1.0 although the script said it had none.
+10. The REST client still sends `Content-Type: application/json` (ledger
+    line 2758, NOT_SUPPORTED), deliberately, because a2a-java 1.3.0.Final's
+    server refused anything else. The ledger said to revisit when a2a-java
+    accepts `application/a2a+json`; 1.4.0.Final does. Switching follows
+    §11.1's SHOULD but breaks every call to a 1.3.0.Final or older a2a-java
+    server: the maintainer's call.
+11. The SLIMRPC binding's lock holds `agntcy-slim-persistence` at 0.1.0.
+    Its 0.1.1, a patch release, moves to mls-rs 0.56 / mls-rs-core 0.27
+    while `agntcy-slim-mls` 0.3.10 still builds against 0.54 / 0.26 and
+    implements persistence's storage trait across the two: with both in the
+    graph `agntcy-slim-mls` fails to compile (73 errors, E0277 "multiple
+    different versions of crate mls_rs_core"). A plain `cargo update` in
+    `bindings/a2a-protocol-slimrpc` brings it back; use `cargo update -p
+    agntcy-slim-persistence --precise 0.1.0` after it until SLIM releases a
+    matching `agntcy-slim-mls`. That is upstream's to fix.
+12. `CallContext::peer_addr` travels in the headers map under `":peer-addr"`
+    (`PEER_ADDR_KEY`), beside `":path"`, so no handler signature changed. The
+    axum router has it only when served with
+    `into_make_service_with_connect_info::<SocketAddr>()` or with a
+    `PeerAddr` extension. `RateLimitInterceptor` does not use it: an
+    unidentified caller is still keyed by trusted `x-forwarded-for` hops or
+    the shared `anonymous` bucket. Keying that bucket by peer address
+    instead would be a behaviour change to an existing feature, so it is the
+    maintainer's call. `serve/mod.rs` is at exactly 500 lines.
+13. Found on the way, not changed. (a) `validate_webhook_url` compares the
+    scheme case-sensitively, so `HTTPS://…` is refused at creation although
+    RFC 3986 schemes are case-insensitive: stricter than needed, not unsafe.
+    (b) The gRPC client maps `RESOURCE_EXHAUSTED` to a 429 with
+    `retry_after: None` (`transport/grpc.rs`), dropping the `RetryInfo`
+    detail the server sends, so a retry policy backs off on its own schedule
+    instead of the server's; the JSON-RPC and REST clients honour it.
+    (c) Done (item 40): `DynamicAgentCardHandler` no longer sends
+    `Last-Modified`, which had been the current second on every request.
+14. §3.5.2 is done (item 36). Ledger line 692 stays PARTIAL, now low, for
+    the `streamLagged` cases item 36 lists. Raising the in-memory retention
+    (`TaskStoreConfig::with_max_events_per_task`) or the replay limit narrows
+    them; the SQL stores already keep a task's whole log.
+15. The Postgres-gated suites run locally against a throwaway PostgreSQL 16
+    (`initdb` as the `postgres` user, outside the scratchpad, whose parent
+    permissions get reset): `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
+    cargo test -p a2a-protocol-server --features postgres --test
+    postgres_store_tests -- --ignored`.
+
 ## `claude/nifty-fermat-roj04f` — the spec ledger, and what it found
 
 The maintainer asked to keep closing the gap to full A2A compliance. The first
@@ -1113,26 +2271,41 @@ before acting on it, as this branch did.
   passes no preference (card order, with the existing fallback past an
   interface it cannot build) while `from_card_preferring` keeps the caller's
   explicit ranking. Not changed: it reverses a recorded decision and changes
-  which binding default clients use.
+  which binding default clients use. **Decided 2026-10-12: follow the spec;
+  done on `claude/tender-cray-bsfw83`.**
 - *Upstream candidate, not filed: a2a-java and `application/a2a+json`.*
   a2a-java 1.3.0.Final's REST server refuses any request Content-Type not
   starting with `application/json` (`A2AServerRoutes.validateContentType`,
   read from the jar's bytecode), so a client following §11.1's SHOULD gets
   `ContentTypeNotSupportedError` from it. This client keeps sending
   `application/json`; ledger line 2758 records why. A public issue on
-  a2a-java is the maintainer's call.
+  a2a-java is the maintainer's call. **Superseded 2026-10-12: nothing to
+  file.** Pin freshness graded a2a-java 1.4.0.Final on 2026-10-05 (run
+  37268203276) and its REST server passed `a2a_media_type_accepted`, which
+  1.3.0.Final fails; see item 9 of this branch's section.
 - *Minor-version matching (ledger §3.6.2, line 737).* The spec says requests
   are processed with the semantics of the requested `Major.Minor` and an
   unsupported one is `VersionNotSupportedError`. This server accepts any
   `1.x`, and so does the official Python SDK: `_is_version_compatible`
   compares only the major version, although its docstring says major and
   minor. Rejecting `1.1` follows the text and breaks the first 1.1 client.
-- *Upstream report: the Python SDK's card canonicalization.* Its
+  **Decided 2026-10-12: follow the spec; done on `claude/tender-cray-bsfw83`.**
+- *Upstream report: the Python SDK's card canonicalization (reported).* Its
   `_clean_empty` drops a security requirement whose scope list is empty, so a
   card's `securityRequirements` (the ordinary bearer case) are not covered by
-  its signature and can be removed from a signed card undetected. That is a
-  signature-coverage weakness in the reference SDK; it should go to
-  a2a-python's security contact, not a public issue. Nothing was filed.
+  its signature: one can be removed from, or added to, a signed card
+  undetected. Reproduced on a2a-sdk 1.1.4 and 1.2.2 (2026-10-12), with
+  controls; the SDK's `AuthInterceptor` then sends no credential, or a
+  different declared scheme's. Reported privately to a2aproject/a2a-python
+  through GitHub Security Advisories on 2026-10-12 (the advisory ID is in the
+  maintainer's GitHub notifications; it stays out of this repository until
+  published). This repository's `CHANGELOG.md` and
+  `itk/interop/card_signature_interop.py` already described the behaviour
+  publicly from 2026-10-10, which the report says. Related public threads:
+  a2a-python#1278 and A2A#2122 (canonicalization of empty and REQUIRED
+  fields; a maintainer there rules out changing signed bytes outside a major
+  release). Do not file a public issue about the security consequence while
+  the advisory is open.
 
 **What the next session should do first.**
 1. Read the first CI run of this branch. New or changed gates: the ledger
@@ -1142,7 +2315,8 @@ before acting on it, as this branch did.
    lists every open one, most severe first). The ones read and confirmed
    this session but not yet fixed: the client never checks card capabilities before
    streaming (a SHOULD, and checking would refuse servers that stream without
-   declaring it).
+   declaring it). Done on `claude/tender-cray-bsfw83`: checked by default,
+   with `ClientBuilder::without_capability_checks` for such servers.
 3. Postgres was run this session too: `postgres_store_tests -- --ignored`,
    67 passed against postgres:16, including
    `caller_isolation_holds_on_the_tenant_postgres_stores`, which fails with
@@ -1164,7 +2338,8 @@ before acting on it, as this branch did.
    `RESOURCE_EXHAUSTED` maps to `UnexpectedStatus { 429 }` (`grpc.rs`), also
    retried. Over JSON-RPC it is `Protocol(InternalError)` with the `RetryInfo`
    in `data`, which the retry layer does not retry. Open: decide whether the
-   JSON-RPC client should read `RetryInfo`.
+   JSON-RPC client should read `RetryInfo`. Decided 2026-10-12 and done on
+   `claude/tender-cray-bsfw83`: it does, and retries.
    Done: SLIMRPC status table and key case; §3.1.4, §3.3.4 and §3.5.2
    tests; empty push `url`. The §12 PARTIAL that remains is a conflict
    between the SLIMRPC table and A2A §5.4 (push/unsupported-operation
@@ -1180,9 +2355,33 @@ chains and metric labels. Spawned work re-enters both through
 would get its own halt scope, so halting a tenant would not stop its callers);
 a nested future per method (clippy `large_futures`: 29-34 KB); a general
 `TaskAuthorizer` hook (ownership would have to be stored in all four stores).
-A maintainer decision remains: whether isolation should become the default
-when an authenticating interceptor is installed. That is a breaking change for
-deployments that share tasks within a tenant on purpose.
+**Decided 2026-10-12 and done on `claude/tender-cray-bsfw83`: on by default
+with an authenticating interceptor.** The rules, as built:
+- `build()` resolves an unset isolation to `IdentifiedCallers` when an
+  interceptor `authenticates()`, else `Shared`. Unset stores become the
+  tenant-aware in-memory ones under isolation (1,000 partitions by default).
+  `TenantStoreConfig` has no overall cap: each partition gets the whole
+  `with_task_store_config` capacity (10,000 tasks by default), so that
+  default store's worst case is now 1,000 times the old one. Documented, not
+  changed; the maintainer was not asked about it.
+- A request no interceptor identified (an unlabelled token or key, a JWT
+  without `sub`) keeps the tenant's shared records under the default, as the
+  maintainer was promised ("no change when there is no authenticated
+  identity"); `isolate_tasks_by_caller()` (`EveryCaller`) still refuses it.
+  The shared partition is the bare tenant, which `isolatable` keeps free of
+  U+001F, so it never meets a caller partition.
+- `build()` refuses a supplied task or push-config store that does not
+  partition (agreed with the maintainer), and an approval gate that needs a
+  second approver, including `Profile::Auditable`'s, since the approver
+  could never reach the requester's task. The gate refusal was not in the
+  question put to the maintainer: it follows their choice of a build error
+  over silent sharing, and is theirs to reverse (the alternative is to
+  resolve the default to `Shared` when such a gate is installed).
+- Every handler built with an authenticating interceptor was read, in the
+  workspace and out (TCK SUT, ITK agent, soak, examples, book): the ones that
+  would no longer build call `share_tasks_across_callers()` or drop an
+  explicit plain store. The ITK agent, outside the workspace, was
+  compile-checked with `cargo check --locked` and `-D warnings`.
 
 **Environment notes, new this session.**
 - `pkill -f` / `pgrep -f` with a pattern from your own command killed the

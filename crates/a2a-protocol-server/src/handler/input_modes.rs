@@ -166,9 +166,10 @@ mod tests {
         media_type: Option<&str>,
     ) -> Result<(), (ErrorCode, String)> {
         let mut builder = RequestHandlerBuilder::new(DummyExecutor);
-        if let Some(card) = card {
-            builder = builder.with_agent_card(card);
-        }
+        builder = match card {
+            Some(card) => builder.with_agent_card(card),
+            None => builder.without_agent_card(),
+        };
         if opt_out {
             builder = builder.allow_undeclared_input_modes();
         }

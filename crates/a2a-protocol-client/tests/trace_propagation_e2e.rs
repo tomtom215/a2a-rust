@@ -53,6 +53,7 @@ impl AgentExecutor for RecordingExecutor {
 async fn spawn_agent(observed: &Observed) -> String {
     let handler = Arc::new(
         RequestHandlerBuilder::new(RecordingExecutor(Arc::clone(observed)))
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );

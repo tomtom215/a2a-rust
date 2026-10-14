@@ -7,6 +7,8 @@
 
 //! What reaches the handler, and what does not: SLIMRPC's own metadata keys
 //! are filtered out, and the A2A version the caller declared is checked.
+//! Tests of the filter pass `require_version = false`, so a call that
+//! declares no version reaches it rather than being refused first.
 
 use super::*;
 use std::collections::HashMap;
@@ -25,16 +27,19 @@ fn metadata(pairs: &[(&str, &str)]) -> HashMap<String, String> {
 /// transport plumbing.
 #[test]
 fn transport_keys_never_reach_the_handler() {
-    let headers = a2a_headers(metadata(&[
-        (slim_rpc::DEADLINE_KEY, "2026-01-01T00:00:00Z"),
-        (slim_rpc::STATUS_CODE_KEY, "0"),
-        ("rpc-id", "17"),
-        ("service", "lf.a2a.v1.A2AService"),
-        ("method", "SendMessage"),
-        ("authorization", "Bearer token"),
-        ("x-tenant-id", "acme"),
-    ]))
-    .expect("no version declared, which is accepted");
+    let headers = a2a_headers(
+        metadata(&[
+            (slim_rpc::DEADLINE_KEY, "2026-01-01T00:00:00Z"),
+            (slim_rpc::STATUS_CODE_KEY, "0"),
+            ("rpc-id", "17"),
+            ("service", "lf.a2a.v1.A2AService"),
+            ("method", "SendMessage"),
+            ("authorization", "Bearer token"),
+            ("x-tenant-id", "acme"),
+        ]),
+        false,
+    )
+    .expect("no version declared, and none required");
 
     assert_eq!(
         headers,
@@ -43,17 +48,42 @@ fn transport_keys_never_reach_the_handler() {
     );
 }
 
+/// A key beginning with `:` names something the binding records, not the
+/// caller: `:peer-addr` is the address `CallContext::peer_addr` reports and
+/// `AuthFailureThrottle` counts failures by, `:path` what
+/// `PathSegmentTenantResolver` reads. This binding records neither, so each
+/// one a caller sent reached the handler as fact: a caller could charge its
+/// failed attempts to another client's address and lock that client out.
+#[test]
+fn a_callers_pseudo_header_never_reaches_the_handler() {
+    let headers = a2a_headers(
+        metadata(&[
+            (":peer-addr", "203.0.113.7:443"),
+            (":path", "/acme/tasks"),
+            (":anything", "x"),
+            ("authorization", "Bearer token"),
+        ]),
+        false,
+    )
+    .expect("no version declared, and none required");
+
+    assert_eq!(headers, metadata(&[("authorization", "Bearer token")]));
+}
+
 /// SLIM does not promise a case for its keys, and a filter that missed
 /// `Service` while catching `service` would leak exactly the case an
 /// attacker would pick.
 #[test]
 fn transport_keys_are_filtered_regardless_of_case() {
-    let headers = a2a_headers(metadata(&[
-        ("RPC-ID", "17"),
-        ("Service", "x"),
-        ("METHOD", "y"),
-        ("x-tenant-id", "acme"),
-    ]))
+    let headers = a2a_headers(
+        metadata(&[
+            ("RPC-ID", "17"),
+            ("Service", "x"),
+            ("METHOD", "y"),
+            ("x-tenant-id", "acme"),
+        ]),
+        false,
+    )
     .expect("must succeed");
 
     assert_eq!(headers, metadata(&[("x-tenant-id", "acme")]));
@@ -63,8 +93,8 @@ fn transport_keys_are_filtered_regardless_of_case() {
 /// implement must be refused rather than treated as absent.
 #[test]
 fn an_unsupported_version_is_rejected() {
-    let err = a2a_headers(metadata(&[("a2a-version", "0.3")]))
-        .expect_err("0.3 is not a version this server speaks");
+    let err = a2a_headers(metadata(&[("a2a-version", "0.3")]), false)
+        .expect_err("0.3 is refused even when no version is required");
 
     assert!(
         format!("{err:?}").contains("0.3"),
@@ -75,7 +105,7 @@ fn an_unsupported_version_is_rejected() {
 #[test]
 fn a_supported_version_passes_through_to_the_handler() {
     let headers =
-        a2a_headers(metadata(&[("a2a-version", "1.0")])).expect("1.0 is what we implement");
+        a2a_headers(metadata(&[("a2a-version", "1.0")]), true).expect("1.0 is what we implement");
 
     assert_eq!(
         headers.get("a2a-version").map(String::as_str),
@@ -84,15 +114,20 @@ fn a_supported_version_passes_through_to_the_handler() {
     );
 }
 
-/// The deliberate leniency, pinned so it cannot be tightened by accident:
-/// the official `a2a-slimrpc` crate sends no version, and rejecting an
-/// absent one would refuse every call from the A2A project's own Rust SDK.
+/// §3.6.2: an empty or absent version MUST be read as 0.3, which this
+/// server does not serve. Only a server told that no version is required
+/// serves it, as 1.0.
 #[test]
-fn an_absent_version_is_accepted_for_interop() {
-    let headers = a2a_headers(metadata(&[("authorization", "Bearer t")]))
-        .expect("an unversioned caller is still served");
+fn an_absent_version_is_refused_as_0_3_unless_none_is_required() {
+    for md in [
+        metadata(&[("authorization", "Bearer t")]),
+        metadata(&[("a2a-version", " ")]),
+    ] {
+        let err = a2a_headers(md.clone(), true).expect_err("no version is 0.3");
+        assert!(format!("{err:?}").contains("'0.3'"), "{err:?}");
 
-    assert_eq!(headers, metadata(&[("authorization", "Bearer t")]));
+        a2a_headers(md, false).expect("served as 1.0 when no version is required");
+    }
 }
 
 /// SLIMRPC spec §3: service parameter keys are case-insensitive. The handler
@@ -100,17 +135,17 @@ fn an_absent_version_is_accepted_for_interop() {
 /// lose its credential, its extensions, or its version check.
 #[test]
 fn service_parameter_keys_are_case_insensitive() {
-    let headers = a2a_headers(metadata(&[
-        ("Authorization", "Bearer t"),
-        ("A2A-Extensions", "urn:x"),
-    ]))
-    .expect("no version declared");
+    let headers = a2a_headers(
+        metadata(&[("Authorization", "Bearer t"), ("A2A-Extensions", "urn:x")]),
+        false,
+    )
+    .expect("no version declared, and none required");
     assert_eq!(
         headers,
         metadata(&[("authorization", "Bearer t"), ("a2a-extensions", "urn:x")])
     );
 
-    let err = a2a_headers(metadata(&[("A2A-Version", "0.3")]))
+    let err = a2a_headers(metadata(&[("A2A-Version", "0.3")]), false)
         .expect_err("a capitalised version key is still checked");
     assert!(format!("{err:?}").contains("0.3"), "{err:?}");
 }
@@ -119,10 +154,10 @@ fn service_parameter_keys_are_case_insensitive() {
 /// combines a repeated field, in a fixed order.
 #[test]
 fn keys_differing_only_in_case_are_combined() {
-    let headers = a2a_headers(metadata(&[
-        ("a2a-extensions", "urn:b"),
-        ("A2A-Extensions", "urn:a"),
-    ]))
+    let headers = a2a_headers(
+        metadata(&[("a2a-extensions", "urn:b"), ("A2A-Extensions", "urn:a")]),
+        false,
+    )
     .expect("must succeed");
     assert_eq!(
         headers.get("a2a-extensions").map(String::as_str),

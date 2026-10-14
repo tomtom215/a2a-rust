@@ -78,6 +78,7 @@ fn handler_with_capacity(max_tasks: usize) -> Arc<RequestHandler> {
     );
     Arc::new(
         RequestHandlerBuilder::new(LoadAgent)
+            .without_agent_card()
             .with_task_store(store)
             .build()
             .expect("build handler"),

@@ -99,8 +99,10 @@ pub enum JsonRpcRequestId {
     Absent,
     /// The `id` member was an explicit `null`: a call with a null id.
     Null,
-    /// A string or number id. (Kept permissive as a raw JSON value, matching
-    /// the previous behavior of accepting any JSON type here.)
+    /// A string or number id. Deserializing refuses any other type (JSON-RPC
+    /// 2.0 §4: an id "MUST contain a String, Number, or NULL value if
+    /// included"); until 2026-10-13 an object, array or boolean id was
+    /// accepted and echoed.
     Value(serde_json::Value),
 }
 
@@ -161,7 +163,13 @@ impl<'de> Deserialize<'de> for JsonRpcRequestId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // Only reached when the `id` member is present (an absent member
         // falls back to `#[serde(default)]` → `Absent`).
-        Ok(Self::from(serde_json::Value::deserialize(deserializer)?))
+        let id = serde_json::Value::deserialize(deserializer)?;
+        if !(id.is_string() || id.is_number() || id.is_null()) {
+            return Err(serde::de::Error::custom(
+                "id must be a string, a number or null",
+            ));
+        }
+        Ok(Self::from(id))
     }
 }
 
@@ -729,6 +737,35 @@ mod tests {
             JsonRpcRequestId::Value(serde_json::json!(3)).to_response_id(),
             Some(serde_json::json!(3))
         );
+    }
+
+    /// JSON-RPC 2.0 §4: an id "MUST contain a String, Number, or NULL value
+    /// if included". Any other type is refused, so the request is Invalid
+    /// Request rather than run with an id no client can match.
+    #[test]
+    fn a_request_id_must_be_a_string_a_number_or_null() {
+        let parse = |id: &str| {
+            serde_json::from_str::<JsonRpcRequest>(&format!(
+                r#"{{"jsonrpc":"2.0","id":{id},"method":"GetTask"}}"#
+            ))
+            .map(|r| r.id)
+        };
+        assert_eq!(
+            parse(r#""a""#).unwrap(),
+            JsonRpcRequestId::Value(serde_json::json!("a"))
+        );
+        assert_eq!(
+            parse("7").unwrap(),
+            JsonRpcRequestId::Value(serde_json::json!(7))
+        );
+        assert_eq!(parse("null").unwrap(), JsonRpcRequestId::Null);
+        for id in ["true", r#"{"a":1}"#, "[1]"] {
+            let err = parse(id).expect_err(id).to_string();
+            assert!(
+                err.contains("id must be a string, a number or null"),
+                "{id}: {err}"
+            );
+        }
     }
 
     #[test]

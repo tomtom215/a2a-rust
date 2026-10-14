@@ -39,7 +39,7 @@ use query::{
     contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
     percent_decode_path, strip_tenant_prefix,
 };
-use response::{extract_headers, health_response, inject_field_if_missing, read_body_limited};
+use response::{health_response, read_body_limited, set_path_field};
 
 /// REST HTTP request dispatcher.
 ///
@@ -65,7 +65,8 @@ impl RestDispatcher {
         let card_handler = handler
             .agent_card
             .as_ref()
-            .and_then(|card| StaticAgentCardHandler::new(card).ok());
+            .and_then(|card| StaticAgentCardHandler::new(card).ok())
+            .map(|card| card.with_max_age(config.agent_card_max_age));
         Self {
             handler,
             card_handler,
@@ -139,7 +140,7 @@ impl RestDispatcher {
         }
 
         // Health check endpoint.
-        if method == "GET" && (path == "/health" || path == "/ready") {
+        if matches!(method.as_str(), "GET" | "HEAD") && (path == "/health" || path == "/ready") {
             let mut resp = health_response();
             if let Some(ref cors) = self.cors {
                 cors.apply_headers(&mut resp);
@@ -162,7 +163,7 @@ impl RestDispatcher {
         }
 
         // Agent card is always at the well-known path (no tenant prefix).
-        if method == "GET" && path == "/.well-known/agent-card.json" {
+        if matches!(method.as_str(), "GET" | "HEAD") && path == "/.well-known/agent-card.json" {
             return self
                 .card_handler
                 .as_ref()
@@ -173,7 +174,7 @@ impl RestDispatcher {
 
         // Validate the A2A-Version header per spec §3.6.2: absent or empty
         // is interpreted as protocol 0.3 and rejected under the strict
-        // default (reference-SDK parity); any 1.x is accepted. Rejections
+        // default (reference-SDK parity); only 1.0 (any patch) is accepted. Rejections
         // produce the real VersionNotSupportedError (with its ErrorInfo
         // detail), not an anonymous 400.
         let version_value = super::requested_version(req.headers(), req.uri());
@@ -196,11 +197,12 @@ impl RestDispatcher {
         let tenant = tenant.as_deref();
 
         // Extract HTTP headers BEFORE consuming the request body.
-        let mut headers = extract_headers(req.headers());
+        let mut headers = super::header_fields(req.headers());
         // What `PathSegmentTenantResolver` reads; a real header cannot carry
         // this name, so a client cannot supply it (the WebSocket dispatcher
         // inserts it the same way).
         headers.insert(":path".to_owned(), path.clone());
+        super::record_peer_addr(&mut headers, super::peer_of(req.extensions()));
 
         // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
         // and moving that much state around on the stack per request costs
@@ -354,7 +356,11 @@ impl RestDispatcher {
             }
         }
 
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        // An empty segment is kept, so an empty id is refused where it
+        // stands; until 2026-10-13 empties were dropped and
+        // `/tasks//pushNotificationConfigs` was GetTask for a task named
+        // `pushNotificationConfigs`. One trailing `/` is tolerated.
+        let segments = path_segments(path);
 
         match (method, segments.as_slice()) {
             // Tasks.
@@ -496,8 +502,9 @@ impl RestDispatcher {
     /// and any other path variable the route bound. An empty body is the
     /// empty object, so a bodiless `POST /tasks/{id}:cancel` still parses.
     ///
-    /// `Err` carries the response to return: 413 for an oversized body, 400
-    /// for one that is not JSON.
+    /// `Err` carries the response to return: 413 for an oversized body, 408
+    /// for one not received in time, 400 for one that is not JSON or could
+    /// not be read.
     // The `Err` is the finished response, sent as-is by the one caller of
     // each route; boxing it would only add an allocation on the error path.
     #[allow(clippy::result_large_err)]
@@ -513,7 +520,7 @@ impl RestDispatcher {
             self.config.body_read_timeout,
         )
         .await
-        .map_err(|msg| error_json_response(413, &msg))?;
+        .map_err(|(status, msg)| error_json_response(status, &msg))?;
         let mut value: serde_json::Value = if body_bytes.iter().all(u8::is_ascii_whitespace) {
             serde_json::Value::Object(serde_json::Map::new())
         } else {
@@ -521,7 +528,7 @@ impl RestDispatcher {
                 .map_err(|e| error_json_response(400, &e.to_string()))?
         };
         for &(field, path_value) in path_fields {
-            value = inject_field_if_missing(value, field, path_value);
+            value = set_path_field(value, field, path_value);
         }
         // The path form is authoritative: under `google.api.http` a variable
         // bound from the path is the field's value, whatever the body says.
@@ -579,7 +586,10 @@ impl RestDispatcher {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let id = percent_decode_path(id);
         let id = id.as_str();
-        let history_length = parse_query_param_u32(query, "historyLength");
+        let history_length = match parse_query_param_u32(query, "historyLength") {
+            Ok(history_length) => history_length,
+            Err(e) => return server_error_to_response(&e),
+        };
         let params = a2a_protocol_types::params::TaskQueryParams {
             tenant: tenant.map(str::to_owned),
             id: id.to_owned(),
@@ -597,7 +607,10 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = parse_list_tasks_query(query, tenant);
+        let params = match parse_list_tasks_query(query, tenant) {
+            Ok(params) => params,
+            Err(e) => return server_error_to_response(&e),
+        };
         match self.handler.on_list_tasks(params, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),
@@ -810,6 +823,13 @@ impl crate::serve::Dispatcher for RestDispatcher {
     fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
         Some(&self.handler)
     }
+}
+
+/// A path's segments for routing: one leading and one trailing `/` dropped,
+/// every other segment kept, empty ones included.
+fn path_segments(path: &str) -> Vec<&str> {
+    let path = path.strip_prefix('/').unwrap_or(path);
+    path.strip_suffix('/').unwrap_or(path).split('/').collect()
 }
 
 #[cfg(test)]

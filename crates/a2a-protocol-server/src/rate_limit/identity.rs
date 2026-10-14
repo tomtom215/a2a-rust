@@ -23,26 +23,31 @@ pub fn caller_key(ctx: &CallContext, trusted_proxy_hops: usize) -> String {
     if let Some(identity) = ctx.caller_identity() {
         return identity.to_owned();
     }
-    let hops = trusted_proxy_hops;
-    if hops > 0
-        && let Some(xff) = ctx.http_headers().get("x-forwarded-for")
-    {
-        let entries: Vec<&str> = xff
-            .split(',')
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-            .collect();
-        // With `hops` trusted proxies each appending its peer address,
-        // the client address is the `hops`-th entry from the right.
-        // Entries further left are client-supplied and untrusted.
-        if entries.len() >= hops {
-            return canonicalize_caller_ip(entries[entries.len() - hops]);
-        }
-        // Fewer entries than trusted hops: the request did not come
-        // through the expected proxy chain. Fall through to the
-        // shared anonymous bucket rather than trusting any entry.
+    // Without a forwarded client address (no trusted hops, no header, or
+    // fewer entries than trusted hops), the shared anonymous bucket.
+    forwarded_client(ctx, trusted_proxy_hops).unwrap_or_else(|| "anonymous".to_string())
+}
+
+/// The client address `hops` trusted reverse proxies appended to
+/// `x-forwarded-for`, canonicalized.
+///
+/// `None` when `hops` is zero, when there is no such header, and when it has
+/// fewer entries than `hops`: the request did not come through the expected
+/// proxy chain, so no entry is trusted.
+pub fn forwarded_client(ctx: &CallContext, hops: usize) -> Option<String> {
+    if hops == 0 {
+        return None;
     }
-    "anonymous".to_string()
+    let xff = ctx.http_headers().get("x-forwarded-for")?;
+    let entries: Vec<&str> = xff
+        .split(',')
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .collect();
+    // With `hops` trusted proxies each appending its peer address, the
+    // client address is the `hops`-th entry from the right. Entries further
+    // left are client-supplied and untrusted.
+    (entries.len() >= hops).then(|| canonicalize_caller_ip(entries[entries.len() - hops]))
 }
 
 /// Canonicalizes a caller IP string so equivalent encodings of the same address

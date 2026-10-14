@@ -128,6 +128,7 @@ struct Pair {
 fn handler(store: Arc<dyn TaskStore>, exec: GatedExec) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(exec)
+            .without_agent_card()
             .with_task_store_arc(store)
             .build()
             .expect("handler builds"),

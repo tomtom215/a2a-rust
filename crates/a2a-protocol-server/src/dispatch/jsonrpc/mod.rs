@@ -31,8 +31,8 @@ use crate::serve::Dispatcher;
 use crate::streaming::build_sse_response;
 
 use response::{
-    error_response, error_response_bytes, extract_headers, json_response, parse_params,
-    read_body_limited, success_response, success_response_bytes,
+    error_response, error_response_bytes, json_response, parse_params, read_body_limited,
+    success_response, success_response_bytes,
 };
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -41,7 +41,7 @@ use response::{
 /// Optionally applies CORS headers to all responses.
 ///
 /// Also serves the agent card at `GET /.well-known/agent-card.json` so that
-/// JSON-RPC servers can participate in agent card discovery (spec §8.3).
+/// JSON-RPC servers can participate in agent card discovery (spec §8.2).
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
@@ -63,7 +63,8 @@ impl JsonRpcDispatcher {
         let card_handler = handler
             .agent_card
             .as_ref()
-            .and_then(|card| StaticAgentCardHandler::new(card).ok());
+            .and_then(|card| StaticAgentCardHandler::new(card).ok())
+            .map(|card| card.with_max_age(config.agent_card_max_age));
         Self {
             handler,
             card_handler,
@@ -107,9 +108,11 @@ impl JsonRpcDispatcher {
             return json_response(204, Vec::new());
         }
 
-        // Serve the agent card at the well-known discovery path (spec §8.3).
+        // Serve the agent card at the well-known discovery path (spec §8.2).
         // This must be handled before JSON-RPC body parsing since it's a GET.
-        if req.method() == "GET" && req.uri().path() == "/.well-known/agent-card.json" {
+        if matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD)
+            && req.uri().path() == "/.well-known/agent-card.json"
+        {
             let mut resp = self.card_handler.as_ref().map_or_else(
                 || json_response(404, br#"{"error":"agent card not configured"}"#.to_vec()),
                 |h| h.handle(&req).map(http_body_util::BodyExt::boxed),
@@ -124,11 +127,8 @@ impl JsonRpcDispatcher {
         // consumed, so the activated set can be echoed on the response
         // (official-SDK convention; lets clients see which requested
         // extensions the agent honored).
-        let requested_extensions = req
-            .headers()
-            .get(a2a_protocol_types::A2A_EXTENSIONS_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned);
+        let requested_extensions =
+            super::field_value(req.headers(), a2a_protocol_types::A2A_EXTENSIONS_HEADER);
 
         // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
         // and moving that much state around on the stack per request costs
@@ -156,46 +156,29 @@ impl JsonRpcDispatcher {
         req: hyper::Request<Incoming>,
         started: std::time::Instant,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        // Validate Content-Type if present.
-        if let Some(ct) = req.headers().get("content-type") {
-            let ct_str = ct.to_str().unwrap_or("");
-            if !ct_str.starts_with("application/json")
-                && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
-            {
-                // Spec §5.4 maps an unsupported media type to
-                // ContentTypeNotSupportedError (-32005), not ParseError
-                // (-32700): the body was never parsed, so "parse error" both
-                // misreports the cause and denies the client the machine-
-                // readable `CONTENT_TYPE_NOT_SUPPORTED` reason. Routing it
-                // through `error_response` also attaches the §10.6 ErrorInfo
-                // detail like every other A2A error.
-                return self.refuse(
-                    started,
-                    &ServerError::Protocol(
-                        a2a_protocol_types::error::A2aError::content_type_not_supported(format!(
-                            "unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"
-                        )),
-                    ),
-                );
-            }
-        }
-
-        // Validate the A2A-Version header per spec §3.6.2: an absent or
-        // empty value is interpreted as protocol 0.3 and rejected under the
-        // strict default (reference-SDK parity); any 1.x is accepted.
+        // Content-Type, then A2A-Version per spec §3.6.2: an absent or empty
+        // version is interpreted as protocol 0.3 and rejected under the
+        // strict default (reference-SDK parity); only 1.0 (any patch) is
+        // accepted. Either refusal waits for the body, to answer with its ids.
+        // An unsupported media type is -32005 (§5.4), not -32700: the body
+        // was never parsed.
         let version_value = super::requested_version(req.headers(), req.uri());
-        if let Err(err) = super::validate_version_header(
-            version_value.as_deref(),
-            self.config.require_version_header,
-        ) {
-            return self.refuse(started, &ServerError::Protocol(err));
-        }
+        let refused = super::unsupported_content_type(req.headers())
+            .or_else(|| {
+                super::validate_version_header(
+                    version_value.as_deref(),
+                    self.config.require_version_header,
+                )
+                .err()
+            })
+            .map(ServerError::Protocol);
 
         // Extract HTTP headers BEFORE consuming the body.
-        let mut headers = extract_headers(req.headers());
+        let mut headers = super::header_fields(req.headers());
         // What `PathSegmentTenantResolver` reads; a real header cannot carry
         // this name, so a client cannot supply it.
         headers.insert(":path".to_owned(), req.uri().path().to_owned());
+        super::record_peer_addr(&mut headers, super::peer_of(req.extensions()));
 
         // Read body with size limit (default 4 MiB).
         let body_bytes = match read_body_limited(
@@ -206,8 +189,16 @@ impl JsonRpcDispatcher {
         .await
         {
             Ok(bytes) => bytes,
-            Err(msg) => return self.refuse_unparsed(started, &msg),
+            Err(msg) => {
+                return refused.map_or_else(
+                    || self.refuse_unparsed(started, &msg),
+                    |err| self.refuse(started, &err),
+                );
+            }
         };
+        if let Some(err) = refused {
+            return self.refuse_with_ids(started, &body_bytes, &err);
+        }
 
         // JSON-RPC 2.0 §6.3: detect batch (array) vs single (object) request.
         //
@@ -406,11 +397,13 @@ impl JsonRpcDispatcher {
                     }
                 }
             }
-            // In batch context, streaming is not supported.
-            "SendStreamingMessage" => Err(ServerError::InvalidParams(
+            // A stream cannot be one answer of a batch: the method is
+            // served, its params may be fine, so UnsupportedOperation
+            // (-32004), not the InvalidParams it was until 2026-10-13.
+            "SendStreamingMessage" => Err(ServerError::UnsupportedOperation(
                 "SendStreamingMessage not supported in batch requests".into(),
             )),
-            "SubscribeToTask" => Err(ServerError::InvalidParams(
+            "SubscribeToTask" => Err(ServerError::UnsupportedOperation(
                 "SubscribeToTask not supported in batch requests".into(),
             )),
             "GetTask" => {

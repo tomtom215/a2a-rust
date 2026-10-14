@@ -245,6 +245,70 @@ async fn a_streaming_retry_replays_the_task_as_its_first_event() {
     assert_eq!(executions.load(Ordering::SeqCst), 1);
 }
 
+/// Writes `Working` and then waits, so its task stays live.
+struct Parks(Arc<tokio::sync::Notify>);
+
+impl crate::executor::AgentExecutor for Parks {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a crate::request_context::RequestContext,
+        queue: &'a dyn crate::streaming::EventQueueWriter,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            crate::executor_helpers::EventEmitter::new(ctx, queue)
+                .status(a2a_protocol_types::task::TaskState::Working)
+                .await?;
+            self.0.notified().await;
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_streaming_retry_of_a_running_send_trims_its_first_event() {
+    // The retry of a send still running streams as `SubscribeToTask` does,
+    // and its first `Task` is shaped by the retry's `historyLength`, as the
+    // original's response was.
+    let release = Arc::new(tokio::sync::Notify::new());
+    let handler = RequestHandlerBuilder::new(Parks(Arc::clone(&release)))
+        .without_agent_card()
+        .build()
+        .expect("default build should succeed");
+    let first = handler
+        .on_send_message(keyed_params("msg-1", Some(KEY)), true, None)
+        .await
+        .expect("the first send");
+    drop(first);
+
+    let mut retry = keyed_params("msg-1", Some(KEY));
+    retry.configuration = Some(a2a_protocol_types::params::SendMessageConfiguration {
+        history_length: Some(0),
+        ..Default::default()
+    });
+    let SendMessageResult::Stream(mut reader) = handler
+        .on_send_message(retry, true, None)
+        .await
+        .expect("a streaming retry should succeed")
+    else {
+        panic!("expected a stream");
+    };
+    let first_event = reader
+        .read()
+        .await
+        .expect("the stream must open with an event")
+        .expect("that event must not be an error");
+    match first_event.event {
+        a2a_protocol_types::events::StreamResponse::Task(task) => assert!(
+            task.history.unwrap_or_default().is_empty(),
+            "historyLength 0 leaves no history"
+        ),
+        other => panic!("first event must be a Task, got {other:?}"),
+    }
+    release.notify_one();
+}
+
 // ── The store that cannot honour a key ───────────────────────────────────
 
 #[tokio::test]
@@ -253,6 +317,7 @@ async fn a_key_is_refused_when_the_store_cannot_honour_it() {
     // which is exactly what presenting a key is meant to rule out.
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .with_task_store(NoIdempotencyStore::default())
         .build()
         .expect("build with a store lacking idempotency should succeed");
@@ -276,6 +341,7 @@ async fn a_key_is_refused_when_the_store_cannot_honour_it() {
 async fn a_store_without_idempotency_still_serves_unkeyed_sends() {
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .with_task_store(NoIdempotencyStore::default())
         .build()
         .unwrap();
@@ -358,6 +424,7 @@ async fn an_operators_own_declaration_is_left_alone() {
 async fn a_server_with_no_card_still_builds_and_serves_keys() {
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .build()
         .unwrap();
     assert!(handler.agent_card.is_none());
@@ -382,6 +449,7 @@ async fn a_send_that_fails_after_claiming_leaves_the_key_reusable() {
     // existed. Every failure path after the claim releases it.
     let executions = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(CountingExecutor(Arc::clone(&executions)))
+        .without_agent_card()
         .with_task_store(FailFirstSaveStore::default())
         .build()
         .unwrap();

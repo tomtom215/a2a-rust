@@ -20,7 +20,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 use super::GrpcConfig;
-use super::helpers::{server_error_to_status, validated_metadata};
+use super::helpers::{request_headers, server_error_to_status};
 use super::pb::a2a_service_server::A2aService;
 use crate::handler::{RequestHandler, SendMessageResult};
 
@@ -96,8 +96,13 @@ fn reader_to_native_stream(
                         break;
                     }
                 }
-                Some(Err(_)) => {
-                    let _ = tx.send(Err(Status::internal("event queue error"))).await;
+                Some(Err(e)) => {
+                    // The error as a unary call answers it, `streamLagged`
+                    // marker included (§5.1); it was a bare internal error.
+                    let status = super::helpers::server_error_to_status(
+                        &crate::error::ServerError::Protocol(e),
+                    );
+                    let _ = tx.send(Err(status)).await;
                     break;
                 }
                 None => break,
@@ -140,7 +145,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<apb::SendMessageResponse>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -164,7 +169,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -192,7 +197,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskQueryParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -209,7 +214,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTasksRequest>,
     ) -> Result<Response<apb::ListTasksResponse>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListTasksParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -226,7 +231,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::CancelTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::CancelTaskParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -245,7 +250,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SubscribeToTaskRequest>,
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskIdParams = request.into_inner().into();
         match self
             .rpc_span("SubscribeToTask", &headers)
@@ -266,7 +271,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::TaskPushNotificationConfig>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             request.into_inner().into();
         match self
@@ -283,7 +288,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskPushNotificationConfigRequest>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::GetPushConfigParams = request.into_inner().into();
         match self
             .rpc_span("GetTaskPushNotificationConfig", &headers)
@@ -299,7 +304,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTaskPushNotificationConfigsRequest>,
     ) -> Result<Response<apb::ListTaskPushNotificationConfigsResponse>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListPushConfigsParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -325,7 +330,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::DeleteTaskPushNotificationConfigRequest>,
     ) -> Result<Response<()>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         let params: a2a_protocol_types::params::DeletePushConfigParams =
             request.into_inner().into();
         match self
@@ -344,7 +349,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetExtendedAgentCardRequest>,
     ) -> Result<Response<apb::AgentCard>, Status> {
-        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
+        let headers = request_headers(&request, self.config.require_version_header)?;
         match self
             .rpc_span("GetExtendedAgentCard", &headers)
             .run(self.handler.on_get_extended_agent_card(Some(&headers)))
@@ -362,6 +367,51 @@ mod tests {
     use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
     use a2a_protocol_types::responses::SendMessageResponse;
     use a2a_protocol_types::task::{ContextId, TaskId};
+
+    /// §5.1: a stream's error reaches a gRPC client as a unary call's would,
+    /// with its data. A lag was `Status::internal("event queue error")`, and
+    /// the `streamLagged` marker that tells it from an executor failure was
+    /// gone.
+    #[tokio::test]
+    async fn a_lagged_stream_s_error_keeps_its_marker() {
+        use crate::streaming::EventQueueWriter as _;
+        use prost::Message as _;
+        use tokio_stream::StreamExt as _;
+        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue_with_options(
+            1,
+            crate::streaming::event_queue::DEFAULT_MAX_EVENT_SIZE,
+            crate::streaming::event_queue::DEFAULT_WRITE_TIMEOUT,
+        );
+        for _ in 0..3 {
+            let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
+                a2a_protocol_types::events::TaskStatusUpdateEvent {
+                    task_id: TaskId::new("t"),
+                    context_id: ContextId::new("c"),
+                    status: a2a_protocol_types::task::TaskStatus::new(
+                        a2a_protocol_types::task::TaskState::Working,
+                    ),
+                    metadata: None,
+                },
+            );
+            writer.write(event).await.expect("write");
+        }
+        let mut stream = reader_to_native_stream(reader, 8);
+
+        let status = stream.next().await.expect("an item").expect_err("the lag");
+        assert_eq!(status.code(), tonic::Code::Internal);
+        let carried = tonic_types::pb::Status::decode(status.details()).expect("details");
+        let any = carried
+            .details
+            .iter()
+            .find(|d| d.type_url == super::super::details::STRUCT_TYPE)
+            .expect("the error's data as a Struct");
+        let data = a2a_protocol_types::proto::convert::struct_to_json(
+            a2a_protocol_types::proto::prost_types::Struct::decode(any.value.as_slice())
+                .expect("a Struct"),
+        )
+        .expect("JSON");
+        assert_eq!(data, serde_json::json!({ "streamLagged": 2 }));
+    }
 
     /// A client that cancels a stream while the task is quiet releases the
     /// server's subscription at once. The forwarder used to notice only at
@@ -867,8 +917,7 @@ mod tests {
         use a2a_protocol_types::events::StreamResponse;
         use tokio_stream::StreamExt;
 
-        use crate::streaming::EventQueueWriter;
-        use crate::streaming::event_queue::new_in_memory_queue;
+        use crate::streaming::event_queue::StreamEvent;
 
         fn message(metadata: serde_json::Value) -> Message {
             Message {
@@ -888,24 +937,23 @@ mod tests {
             }
         }
 
-        let (writer, reader) = new_in_memory_queue();
         // `json_to_struct` rejects any metadata that is not a JSON object, so
-        // this first event cannot cross into protobuf.
-        writer
-            .write(StreamResponse::Message(message(serde_json::json!(
-                "not-an-object"
-            ))))
-            .await
-            .expect("write of the unconvertible event");
-        // A perfectly convertible event queued behind it. Reaching this one is
-        // the observable difference the mutation would make.
-        writer
-            .write(StreamResponse::Message(message(
-                serde_json::json!({"ok": true}),
-            )))
-            .await
-            .expect("write of the convertible event");
-        drop(writer);
+        // the first event cannot cross into protobuf. The queue writer refuses
+        // such an event since 2026-10-14, but a reader can still be handed one
+        // it did not check, replayed from a task stored before that; so it is
+        // sent here below the writer, straight onto the reader's channel. A
+        // perfectly convertible event follows it: reaching that one is the
+        // observable difference the mutation would make.
+        let (tx, rx) = tokio::sync::broadcast::channel(8);
+        let reader = crate::streaming::InMemoryQueueReader::new(rx);
+        for (seq, metadata) in [
+            (1, serde_json::json!("not-an-object")),
+            (2, serde_json::json!({"ok": true})),
+        ] {
+            let event = StreamEvent::at(seq, StreamResponse::Message(message(metadata)));
+            tx.send(std::sync::Arc::new(Ok(event))).expect("a receiver");
+        }
+        drop(tx);
 
         let mut stream = reader_to_native_stream(reader, 8);
 

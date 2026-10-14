@@ -12,17 +12,21 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use sqlx::sqlite::SqlitePool;
 
+use super::cipher::{PushConfigCipher, Sealing};
 use super::config_store::PushConfigStore;
 use crate::store::tenant::TenantContext;
 
 /// Tenant-scoped SQLite-backed [`PushConfigStore`].
 ///
 /// Each operation is scoped to the tenant from [`TenantContext`].
+/// With [`with_cipher`](Self::with_cipher), each config is stored sealed
+/// (spec §13.2); see [`PushConfigCipher`].
 ///
 /// # Schema
 ///
@@ -38,12 +42,14 @@ use crate::store::tenant::TenantContext;
 #[derive(Debug, Clone)]
 pub struct TenantAwareSqlitePushConfigStore {
     pool: SqlitePool,
+    /// Whether configs are sealed, and with what.
+    sealing: Sealing,
 }
 
 use crate::sqlite_pool::sqlite_pool;
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {
-    A2aError::internal(format!("sqlite error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite error", e)
 }
 
 impl TenantAwareSqlitePushConfigStore {
@@ -55,6 +61,23 @@ impl TenantAwareSqlitePushConfigStore {
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
         let pool = sqlite_pool(url).await?;
         Self::from_pool(pool).await
+    }
+
+    /// Seals each config this store writes with `cipher`, and opens each one
+    /// it reads (spec §13.2); see [`PushConfigCipher`].
+    #[must_use]
+    pub fn with_cipher(mut self, cipher: Arc<dyn PushConfigCipher>) -> Self {
+        self.sealing = self.sealing.with_cipher(cipher);
+        self
+    }
+
+    /// With a cipher, also reads configs stored unsealed, by this store
+    /// before [`with_cipher`](Self::with_cipher) was set; each is sealed when
+    /// it is next written.
+    #[must_use]
+    pub fn accept_unsealed_rows(mut self) -> Self {
+        self.sealing = self.sealing.accepting_unsealed();
+        self
     }
 
     /// Creates a store from an existing connection pool.
@@ -75,7 +98,10 @@ impl TenantAwareSqlitePushConfigStore {
         .execute(&pool)
         .await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            sealing: Sealing::default(),
+        })
     }
 }
 
@@ -105,8 +131,10 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             config.id = Some(id.clone());
 
-            let data = serde_json::to_string(&config)
-                .map_err(|e| A2aError::internal(format!("serialize: {e}")))?;
+            let data = self
+                .sealing
+                .encode_text(&config, &Sealing::context(&tenant, &task_id, &id))
+                .await?;
 
             sqlx::query(
                 "INSERT INTO tenant_push_configs (tenant_id, task_id, id, data)
@@ -144,11 +172,11 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             .map_err(|e| to_a2a_error(&e))?;
 
             match row {
-                Some((data,)) => {
-                    let config: TaskPushNotificationConfig = serde_json::from_str(&data)
-                        .map_err(|e| A2aError::internal(format!("deserialize: {e}")))?;
-                    Ok(Some(config))
-                }
+                Some((data,)) => Ok(Some(
+                    self.sealing
+                        .decode_text(&data, &Sealing::context(&tenant, task_id, id))
+                        .await?,
+                )),
                 None => Ok(None),
             }
         })
@@ -160,8 +188,8 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let rows: Vec<(String,)> = sqlx::query_as(
-                "SELECT data FROM tenant_push_configs WHERE tenant_id = ?1 AND task_id = ?2",
+            let rows: Vec<(String, String)> = sqlx::query_as(
+                "SELECT id, data FROM tenant_push_configs WHERE tenant_id = ?1 AND task_id = ?2",
             )
             .bind(&tenant)
             .bind(task_id)
@@ -169,12 +197,15 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             .await
             .map_err(|e| to_a2a_error(&e))?;
 
-            rows.into_iter()
-                .map(|(data,)| {
-                    serde_json::from_str(&data)
-                        .map_err(|e| A2aError::internal(format!("deserialize: {e}")))
-                })
-                .collect()
+            let mut configs = Vec::with_capacity(rows.len());
+            for (id, data) in rows {
+                configs.push(
+                    self.sealing
+                        .decode_text(&data, &Sealing::context(&tenant, task_id, &id))
+                        .await?,
+                );
+            }
+            Ok(configs)
         })
     }
 
@@ -214,267 +245,5 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use a2a_protocol_types::push::TaskPushNotificationConfig;
-
-    async fn make_store() -> TenantAwareSqlitePushConfigStore {
-        TenantAwareSqlitePushConfigStore::new("sqlite::memory:")
-            .await
-            .expect("failed to create in-memory tenant push config store")
-    }
-
-    fn make_config(task_id: &str, id: Option<&str>, url: &str) -> TaskPushNotificationConfig {
-        TaskPushNotificationConfig {
-            tenant: None,
-            id: id.map(String::from),
-            task_id: Some(task_id.to_string()),
-            url: url.to_string(),
-            token: None,
-            authentication: None,
-        }
-    }
-
-    /// `count` is held against the handler's global push-config ceiling, and
-    /// for this store it is per tenant: `None` would switch the ceiling off,
-    /// and a count across tenants would let one tenant exhaust another's.
-    #[tokio::test]
-    async fn count_is_per_tenant() {
-        let store = make_store().await;
-        TenantContext::scope("acme", async {
-            for task in ["t1", "t2"] {
-                store
-                    .set(make_config(task, None, "https://a.example.com"))
-                    .await
-                    .unwrap();
-            }
-        })
-        .await;
-        TenantContext::scope("globex", async {
-            store
-                .set(make_config("t1", None, "https://g.example.com"))
-                .await
-                .unwrap();
-        })
-        .await;
-        let acme = TenantContext::scope("acme", store.count()).await.unwrap();
-        let globex = TenantContext::scope("globex", store.count()).await.unwrap();
-        let unseen = TenantContext::scope("initech", store.count())
-            .await
-            .unwrap();
-        assert_eq!((acme, globex, unseen), (Some(2), Some(1), Some(0)));
-    }
-
-    #[tokio::test]
-    async fn set_and_get_within_tenant() {
-        let store = make_store().await;
-        TenantContext::scope("acme", async {
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://example.com"))
-                .await
-                .unwrap();
-            let config = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(
-                config.is_some(),
-                "config should be retrievable within its tenant"
-            );
-            assert_eq!(config.unwrap().url, "https://example.com");
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn tenant_isolation_get() {
-        let store = make_store().await;
-        TenantContext::scope("tenant-a", async {
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://a.com"))
-                .await
-                .unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            let result = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(
-                result.is_none(),
-                "tenant-b should not see tenant-a's config"
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn tenant_isolation_list() {
-        let store = make_store().await;
-        TenantContext::scope("tenant-a", async {
-            store
-                .set(make_config("task-1", Some("c1"), "https://a.com/1"))
-                .await
-                .unwrap();
-            store
-                .set(make_config("task-1", Some("c2"), "https://a.com/2"))
-                .await
-                .unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            store
-                .set(make_config("task-1", Some("c3"), "https://b.com/1"))
-                .await
-                .unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-a", async {
-            let configs = store.list("task-1").await.unwrap();
-            assert_eq!(configs.len(), 2, "tenant-a should see only its 2 configs");
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            let configs = store.list("task-1").await.unwrap();
-            assert_eq!(configs.len(), 1, "tenant-b should see only its 1 config");
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn tenant_isolation_delete() {
-        let store = make_store().await;
-        TenantContext::scope("tenant-a", async {
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://a.com"))
-                .await
-                .unwrap();
-        })
-        .await;
-
-        // Delete from tenant-b should not affect tenant-a's config
-        TenantContext::scope("tenant-b", async {
-            store.delete("task-1", "cfg-1").await.unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-a", async {
-            let config = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(
-                config.is_some(),
-                "tenant-a's config should survive tenant-b's delete"
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn same_keys_different_tenants() {
-        let store = make_store().await;
-        TenantContext::scope("tenant-a", async {
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://a.com"))
-                .await
-                .unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://b.com"))
-                .await
-                .unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-a", async {
-            let config = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-            assert_eq!(
-                config.url, "https://a.com",
-                "tenant-a should get its own config"
-            );
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            let config = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-            assert_eq!(
-                config.url, "https://b.com",
-                "tenant-b should get its own config"
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn overwrite_within_tenant() {
-        let store = make_store().await;
-        TenantContext::scope("acme", async {
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://old.com"))
-                .await
-                .unwrap();
-            store
-                .set(make_config("task-1", Some("cfg-1"), "https://new.com"))
-                .await
-                .unwrap();
-
-            let config = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-            assert_eq!(
-                config.url, "https://new.com",
-                "overwrite should update the URL"
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn set_assigns_id_when_none() {
-        let store = make_store().await;
-        TenantContext::scope("acme", async {
-            let config = make_config("task-1", None, "https://example.com");
-            let result = store.set(config).await.unwrap();
-            assert!(
-                result.id.is_some(),
-                "set should assign an id when none is provided"
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn delete_nonexistent_is_ok() {
-        let store = make_store().await;
-        TenantContext::scope("acme", async {
-            let result = store.delete("no-task", "no-id").await;
-            assert!(
-                result.is_ok(),
-                "deleting a nonexistent config should not error"
-            );
-        })
-        .await;
-    }
-
-    /// Covers lines 41-43 (`to_a2a_error` conversion).
-    #[test]
-    fn to_a2a_error_formats_message() {
-        let sqlite_err = sqlx::Error::RowNotFound;
-        let a2a_err = to_a2a_error(&sqlite_err);
-        let msg = format!("{a2a_err}");
-        assert!(
-            msg.contains("sqlite error"),
-            "error message should contain 'sqlite error': {msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn default_tenant_context_uses_empty_string() {
-        let store = make_store().await;
-        // No TenantContext::scope - should use "" as tenant
-        store
-            .set(make_config("task-1", Some("cfg-1"), "https://default.com"))
-            .await
-            .unwrap();
-        let config = store.get("task-1", "cfg-1").await.unwrap();
-        assert!(config.is_some(), "default (empty) tenant should work");
-    }
-}
+#[path = "tenant_sqlite_config_store_tests.rs"]
+mod tests;

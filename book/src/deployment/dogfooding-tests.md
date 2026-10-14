@@ -108,7 +108,7 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 68b | extended-card-requires-auth | Cards | Extended card refused without an authenticating interceptor (spec §13.3) |
 | 69 | dynamic-agent-card | Cards | `DynamicAgentCardHandler` runtime card generation |
 | 70 | agent-card-caching | Caching | ETag, `If-None-Match`, 304 Not Modified |
-| 71 | backpressure-lagged | Streaming | Slow reader receives a `stream_lagged` error, not a silent gap (capacity=2) |
+| 71 | backpressure-lagged | Streaming | Slow reader catches up from the event log or receives a `stream_lagged` error, never a silent gap (capacity=2) |
 | 72 | push-global-limit | Push config | Global push config limit enforcement (DoS prevention) |
 | 73 | webhook-url-scheme | Push config | Rejects non-HTTP webhook URL schemes (ftp://, file://) |
 | 74 | combined-filter | ListTasks | Combined status + context_id filtering |

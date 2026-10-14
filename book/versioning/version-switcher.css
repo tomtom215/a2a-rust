@@ -1,0 +1,35 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) */
+/* Styles for version-switcher.js, in mdBook's theme variables so every theme
+   (light, ayu, navy, coal, rust) colours them. */
+
+.a2a-version-select {
+  margin: 0 0.5em;
+  padding: 0.15em 0.35em;
+  font-size: 0.85em;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--searchbar-border-color, var(--icons));
+  border-radius: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.a2a-version-select:focus-visible {
+  outline: 2px solid var(--links);
+  outline-offset: 1px;
+}
+
+.a2a-version-notice {
+  margin: 0 0 1.5em;
+  padding: 0.6em 0.9em;
+  color: var(--fg);
+  background: var(--quote-bg);
+  border-left: 4px solid var(--warning-border, var(--quote-border));
+  border-radius: 2px;
+  font-size: 0.95em;
+}
+
+.a2a-version-notice a {
+  color: var(--links);
+}

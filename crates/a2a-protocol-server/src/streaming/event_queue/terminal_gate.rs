@@ -282,6 +282,141 @@ mod tests {
         assert!(gate.lock().waiting.is_empty(), "the ticket was withdrawn");
     }
 
+    /// A terminal event held for its verdict is not overtaken by a later
+    /// write from another clone of the writer (`CancelTask` writes Canceled
+    /// while the executor may still be emitting): spec §3.5.2, events MUST
+    /// NOT be reordered, and each stream MUST receive the same events. Until
+    /// the writes were ordered the later event went out first, and a reader,
+    /// which skips a position it has already passed, then dropped the
+    /// terminal: the stream ended with no terminal state.
+    #[tokio::test]
+    async fn a_held_terminal_event_is_not_overtaken() {
+        let (writer, mut reader, mut rx) = gated();
+        let gate = writer.terminal_gate().expect("gated");
+        let w = std::sync::Arc::clone(&writer);
+        let terminal = tokio::spawn(async move { w.write(status(TaskState::Canceled)).await });
+        let held = within(rx.recv()).await.expect("handed over").expect("ok");
+
+        let w = std::sync::Arc::clone(&writer);
+        let later = tokio::spawn(async move { w.write(status(TaskState::Working)).await });
+        tokio::task::yield_now().await;
+        gate.resolve(held.seq.expect("positioned"), status(TaskState::Canceled));
+        within(terminal)
+            .await
+            .expect("joins")
+            .expect("write succeeds");
+        within(later).await.expect("joins").expect("write succeeds");
+        drop(writer);
+
+        let mut delivered = Vec::new();
+        while let Some(frame) = within(reader.read()).await {
+            let frame = frame.expect("no error");
+            delivered.push((frame.seq, state_of(&frame.event)));
+        }
+        // The terminal event comes first, and the stream ends there (§3.1.6):
+        // the later write is position 2, after it, and is never delivered.
+        assert_eq!(delivered, [(Some(1), Some(TaskState::Canceled))]);
+    }
+
+    /// The same when the terminal event first waited for room on a full
+    /// persistence channel. The later write queues behind it for room, and
+    /// unless it also waits its turn to be positioned it takes the next slot
+    /// and is broadcast while the terminal event still awaits its verdict.
+    #[tokio::test]
+    async fn a_terminal_event_that_waited_for_room_is_not_overtaken() {
+        let (tx, rx) = tokio::sync::broadcast::channel(8);
+        let (persistence_tx, mut persisted) = tokio::sync::mpsc::channel(1);
+        let writer = std::sync::Arc::new(
+            InMemoryQueueWriter::new_with_persistence(
+                tx,
+                super::super::in_memory::PersistenceTx::Owned(persistence_tx),
+                1 << 20,
+                TIMEOUT,
+            )
+            .with_terminal_gate(),
+        );
+        let mut reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
+        let gate = writer.terminal_gate().expect("gated");
+        writer
+            .write(status(TaskState::Working))
+            .await
+            .expect("fills the channel");
+
+        let w = std::sync::Arc::clone(&writer);
+        let terminal = tokio::spawn(async move { w.write(status(TaskState::Canceled)).await });
+        tokio::task::yield_now().await;
+        let w = std::sync::Arc::clone(&writer);
+        let later = tokio::spawn(async move { w.write(status(TaskState::Working)).await });
+        tokio::task::yield_now().await;
+
+        let first = within(persisted.recv()).await.expect("handed over");
+        assert_eq!(first.expect("ok").seq, Some(1));
+        let held = within(persisted.recv()).await.expect("handed over");
+        let held = held.expect("ok").seq.expect("positioned");
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        gate.resolve(held, status(TaskState::Canceled));
+        within(terminal)
+            .await
+            .expect("joins")
+            .expect("write succeeds");
+        within(later).await.expect("joins").expect("write succeeds");
+        drop(writer);
+
+        let mut delivered = Vec::new();
+        while let Some(frame) = within(reader.read()).await {
+            let frame = frame.expect("no error");
+            delivered.push((frame.seq, state_of(&frame.event)));
+        }
+        assert_eq!(
+            delivered,
+            [
+                (Some(1), Some(TaskState::Working)),
+                (Some(2), Some(TaskState::Canceled)),
+            ]
+        );
+    }
+
+    /// A receiver attaching while a terminal event awaits its verdict waits
+    /// for the broadcast: the event's position is assigned, and a position
+    /// read then would count it as sent, so the reader would skip it.
+    #[tokio::test]
+    async fn an_attach_waits_for_a_held_event() {
+        let (writer, _reader, mut rx) = gated();
+        let gate = writer.terminal_gate().expect("gated");
+        let w = std::sync::Arc::clone(&writer);
+        let terminal = tokio::spawn(async move { w.write(status(TaskState::Canceled)).await });
+        let held = within(rx.recv()).await.expect("handed over").expect("ok");
+
+        let w = std::sync::Arc::clone(&writer);
+        let attach = tokio::spawn(async move { w.attach().await });
+        tokio::task::yield_now().await;
+        assert!(!attach.is_finished(), "not while the event is held");
+        gate.resolve(held.seq.expect("positioned"), status(TaskState::Canceled));
+        within(terminal)
+            .await
+            .expect("joins")
+            .expect("write succeeds");
+        let (position, mut live) = within(attach).await.expect("joins");
+        assert_eq!(position, 1, "attached after the event it waited for");
+        assert!(live.try_recv().is_err(), "and does not receive it again");
+    }
+
+    /// A continued task's queue numbers on from its log, whose events earlier
+    /// turns stored: the mark starts there too, or a subscriber would wait
+    /// for positions no consumer of this queue will ever store.
+    #[tokio::test]
+    async fn seeding_a_writer_seeds_its_mark() {
+        let (writer, _reader, _rx) = gated();
+        writer.seed_seq(5);
+        let read = writer
+            .applied_mark()
+            .read_through(5, tokio::time::Instant::now(), || async {})
+            .await;
+        assert_eq!((read.position, read.exact), (5, true));
+    }
+
     /// A writer with no persistence channel has nobody to answer, so asking
     /// for a gate gives it none, and a writer never asked has none either.
     #[test]

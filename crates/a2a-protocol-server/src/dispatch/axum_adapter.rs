@@ -11,6 +11,12 @@
 //! # Quick start
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::rest("http://localhost:3000"))
+//! #         .with_description("An example agent")
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use std::sync::Arc;
 //! use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
 //! use a2a_protocol_server::RequestHandlerBuilder;
@@ -26,6 +32,7 @@
 //! # async fn example() {
 //! let handler = Arc::new(
 //!     RequestHandlerBuilder::new(MyExecutor)
+//!         .with_agent_card(card())
 //!         .build()
 //!         .expect("build handler"),
 //! );
@@ -67,12 +74,13 @@
 //! so a request that carries no tenant is rejected rather than served from
 //! the shared default partition.
 //!
-//! With **no** resolver configured, every request through this router is
-//! served from the default (`""`) tenant, because the per-request `tenant`
-//! field is not populated from the URL. That is correct for single-tenant
-//! deployments and is the reason the prefix is absent rather than silently
-//! mis-parsed; it is called out here so it is a choice rather than a
-//! discovery.
+//! With **no** resolver configured, a request is served from the tenant
+//! its own `tenant` field names, and from the default (`""`) tenant when
+//! it names none. A GET or DELETE carries the field in its query
+//! (`?tenant=`), as on the REST dispatcher; a POST in its body. The URL
+//! prefix is never read, which is why the prefixed routes are absent rather
+//! than silently mis-parsed; it is called out here so it is a choice rather
+//! than a discovery.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -80,7 +88,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Query, State};
+use axum::extract::{RawQuery, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use bytes::Bytes;
@@ -145,7 +153,7 @@ impl A2aRouter {
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
         let require_version = self.config.require_version_header;
-        let card_handler = card_handler(&self.handler);
+        let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
@@ -170,6 +178,10 @@ impl A2aRouter {
             // Health check
             .route("/health", get(handle_health))
             .route("/ready", get(handle_ready))
+            // Not a router-wide `fallback`: that would answer every unknown
+            // path of an app this router is merged into, and axum refuses to
+            // merge two routers that both have one.
+            .method_not_allowed_fallback(method_not_allowed)
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
             .layer(axum::middleware::from_fn_with_state(
@@ -193,8 +205,10 @@ async fn validate_a2a_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = req.uri().path();
-    let versionless = req.method() == axum::http::Method::GET
-        && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
+    let versionless = matches!(
+        *req.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD
+    ) && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
     if !versionless {
         if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
             return handler_error_to_response(&crate::error::ServerError::Protocol(err));
@@ -256,15 +270,17 @@ impl axum::extract::FromRequest<A2aState> for TimedBody {
         let deadline = state.config.body_read_timeout;
         match tokio::time::timeout(deadline, Bytes::from_request(req, state)).await {
             Ok(Ok(bytes)) => Ok(Self(bytes)),
-            // A body that exceeded `DefaultBodyLimit`, or a broken stream:
-            // axum's own rejection already says which, and says it better than
-            // a re-wrap would.
-            Ok(Err(rejection)) => Err(rejection.into_response()),
-            Err(_) => Err((
-                axum::http::StatusCode::REQUEST_TIMEOUT,
-                format!("request body not fully received within {deadline:?}"),
-            )
-                .into_response()),
+            // A body over `DefaultBodyLimit` (413), or a broken stream: axum's
+            // status, in the AIP-193 shape `RestDispatcher` answers with.
+            // Until 2026-10-14 axum's plain-text rejection went out as it was.
+            Ok(Err(rejection)) => Err(plain_error(
+                rejection.status().as_u16(),
+                &rejection.body_text(),
+            )),
+            Err(_) => Err(plain_error(
+                408,
+                &format!("request body not fully received within {deadline:?}"),
+            )),
         }
     }
 }
@@ -282,25 +298,39 @@ struct A2aState {
 
 fn card_handler(
     handler: &RequestHandler,
+    max_age: u32,
 ) -> Option<Arc<crate::agent_card::StaticAgentCardHandler>> {
     handler
         .agent_card
         .as_ref()
         .and_then(|card| crate::agent_card::StaticAgentCardHandler::new(card).ok())
+        .map(|card| card.with_max_age(max_age))
         .map(Arc::new)
 }
 
-// ── Helper: extract headers as HashMap ───────────────────────────────────────
+/// The request's headers as the handler takes them, with the address of the
+/// connection it arrived on: a [`PeerAddr`](crate::call_context::PeerAddr)
+/// extension, or axum's `ConnectInfo<SocketAddr>` when the router is served
+/// with `into_make_service_with_connect_info::<SocketAddr>()`.
+struct CallHeaders(HashMap<String, String>);
 
-fn extract_headers(headers: &axum::http::HeaderMap) -> HashMap<String, String> {
-    headers
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|val| (k.as_str().to_lowercase(), val.to_owned()))
-        })
-        .collect()
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for CallHeaders {
+    type Rejection = Infallible;
+
+    fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let mut headers = super::header_fields(&parts.headers);
+        let peer = super::peer_of(&parts.extensions).or_else(|| {
+            parts
+                .extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|info| info.0)
+        });
+        super::record_peer_addr(&mut headers, peer);
+        std::future::ready(Ok(Self(headers)))
+    }
 }
 
 // ── Helper: convert A2A errors to HTTP responses ─────────────────────────────
@@ -322,6 +352,12 @@ fn plain_error(status: u16, message: &str) -> axum::response::Response {
 /// [`ServerError::http_status`]: crate::error::ServerError::http_status
 fn handler_error_to_response(err: &crate::error::ServerError) -> axum::response::Response {
     hyper_to_axum(crate::dispatch::rest::server_error_to_response(err))
+}
+
+/// A method an A2A route does not take, answered in the AIP-193 shape (spec
+/// §11.6) instead of axum's bodiless `405`, which keeps its `Allow` header.
+async fn method_not_allowed() -> axum::response::Response {
+    plain_error(405, "method not allowed")
 }
 
 /// A request body this adapter could not read, answered as `RestDispatcher`
@@ -368,27 +404,38 @@ async fn handle_tasks_catchall(
     State(state): State<A2aState>,
     method: axum::http::Method,
     uri: axum::http::Uri,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     // Routed on the raw path, then each id decoded, as the REST dispatcher
     // does: an id this SDK's client encoded keeps its `/` and `:` inside it.
     // `Path` decoded the whole tail first, so such an id was split or read as
     // an action until 2026-10-12.
     let rest = uri.path().strip_prefix("/tasks/").unwrap_or_default();
-    let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    // Empty segments are kept, as the REST dispatcher keeps them: `rest`
+    // follows `/tasks/`, so a leading `/` here is an empty id. One trailing
+    // `/` is tolerated.
+    let segments: Vec<&str> = rest.strip_suffix('/').unwrap_or(rest).split('/').collect();
     let dec = super::rest::query::percent_decode_path;
+    // §11.5: a GET or DELETE carries its request's other fields in the
+    // query, the `tenant` among them, as the REST dispatcher reads them.
+    let query = uri.query().unwrap_or_default();
+    let tenant = query_tenant(query);
 
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
         ("GET", [id]) if !id.contains(':') => {
+            let history_length =
+                match super::rest::query::parse_query_param_u32(query, "historyLength") {
+                    Ok(history_length) => history_length,
+                    Err(e) => return handler_error_to_response(&e),
+                };
             rpc_call(
                 &state.handler,
                 "GetTask",
                 (method.as_str(), "/tasks/{id}"),
                 &hdrs,
-                handle_get_task_inner(&state, &dec(id), &hdrs),
+                handle_get_task_inner(&state, &dec(id), tenant, history_length, &hdrs),
             )
             .await
         }
@@ -401,7 +448,7 @@ async fn handle_tasks_catchall(
                 "CancelTask",
                 (method.as_str(), "/tasks/{id}:cancel"),
                 &hdrs,
-                handle_cancel_task_inner(&state, &dec(id), &hdrs),
+                handle_cancel_task_inner(&state, &dec(id), &hdrs, &body),
             )
             .await
         }
@@ -414,7 +461,7 @@ async fn handle_tasks_catchall(
                 "SubscribeToTask",
                 (method.as_str(), "/tasks/{id}:subscribe"),
                 &hdrs,
-                handle_subscribe_inner(&state, &dec(id), &hdrs),
+                handle_subscribe_inner(&state, &dec(id), tenant, &hdrs, &body),
             )
             .await
         }
@@ -438,7 +485,7 @@ async fn handle_tasks_catchall(
                 "ListTaskPushNotificationConfigs",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_list_push_configs_inner(&state, &dec(task_id), &hdrs),
+                handle_list_push_configs_inner(&state, &dec(task_id), tenant, &hdrs),
             )
             .await
         }
@@ -453,7 +500,7 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_get_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
+                handle_get_push_config_inner(&state, &dec(task_id), &dec(config_id), tenant, &hdrs),
             )
             .await
         }
@@ -468,7 +515,13 @@ async fn handle_tasks_catchall(
                     "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
                 ),
                 &hdrs,
-                handle_delete_push_config_inner(&state, &dec(task_id), &dec(config_id), &hdrs),
+                handle_delete_push_config_inner(
+                    &state,
+                    &dec(task_id),
+                    &dec(config_id),
+                    tenant,
+                    &hdrs,
+                ),
             )
             .await
         }
@@ -502,10 +555,9 @@ fn rpc_call(
 
 async fn handle_send_message(
     State(state): State<A2aState>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     rpc_call(
         &state.handler,
         "SendMessage",
@@ -518,10 +570,9 @@ async fn handle_send_message(
 
 async fn handle_stream_message(
     State(state): State<A2aState>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
     TimedBody(body): TimedBody,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     rpc_call(
         &state.handler,
         "SendStreamingMessage",
@@ -534,22 +585,18 @@ async fn handle_stream_message(
 
 async fn handle_list_tasks(
     State(state): State<A2aState>,
-    Query(query): Query<HashMap<String, String>>,
-    headers: axum::http::HeaderMap,
+    RawQuery(query): RawQuery,
+    CallHeaders(hdrs): CallHeaders,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
-    let params = a2a_protocol_types::params::ListTasksParams {
-        tenant: None,
-        context_id: query.get("contextId").cloned(),
-        status: query
-            .get("status")
-            .and_then(|s| serde_json::from_value(serde_json::Value::String(s.clone())).ok()),
-        page_size: query.get("pageSize").and_then(|v| v.parse().ok()),
-        page_token: query.get("pageToken").cloned(),
-        status_timestamp_after: query.get("statusTimestampAfter").cloned(),
-        include_artifacts: query.get("includeArtifacts").and_then(|v| v.parse().ok()),
-        history_length: query.get("historyLength").and_then(|v| v.parse().ok()),
-    };
+    // The REST dispatcher's parser, so the two HTTP+JSON surfaces refuse the
+    // same malformed values (spec §5.1, §13.4); this route read its own map,
+    // dropping what did not parse, and took `includeArtifacts=1` as absent.
+    let query = query.unwrap_or_default();
+    let params =
+        match super::rest::query::parse_list_tasks_query(&query, query_tenant(&query).as_deref()) {
+            Ok(params) => params,
+            Err(e) => return handler_error_to_response(&e),
+        };
     rpc_call(
         &state.handler,
         "ListTasks",
@@ -567,9 +614,8 @@ async fn handle_list_tasks(
 
 async fn handle_extended_card(
     State(state): State<A2aState>,
-    headers: axum::http::HeaderMap,
+    CallHeaders(hdrs): CallHeaders,
 ) -> axum::response::Response {
-    let hdrs = extract_headers(&headers);
     rpc_call(
         &state.handler,
         "GetExtendedAgentCard",
@@ -667,15 +713,23 @@ async fn handle_send_inner(
     }
 }
 
+/// The request's `tenant` from the query, as the REST dispatcher reads it:
+/// an empty value names none.
+fn query_tenant(query: &str) -> Option<String> {
+    super::rest::query::parse_query_param(query, "tenant").filter(|t| !t.is_empty())
+}
+
 async fn handle_get_task_inner(
     state: &A2aState,
     id: &str,
+    tenant: Option<String>,
+    history_length: Option<u32>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::TaskQueryParams {
-        tenant: None,
+        tenant,
         id: id.to_owned(),
-        history_length: None,
+        history_length,
     };
     match state.handler.on_get_task(params, Some(hdrs)).await {
         Ok(task) => a2a_json(&task),
@@ -683,15 +737,36 @@ async fn handle_get_task_inner(
     }
 }
 
+/// A body read as the REST dispatcher reads one: `{}` when empty, and the
+/// path's `id` set over whatever the body says. Until 2026-10-13 the
+/// `:cancel` and `:subscribe` routes never read theirs, so a malformed body
+/// was served, and its `metadata` and `tenant` were dropped.
+// The `Err` is the finished response, returned as-is by both callers.
+#[allow(clippy::result_large_err)]
+fn body_with_path_id<T: serde::de::DeserializeOwned>(
+    body: &Bytes,
+    id: &str,
+) -> Result<T, axum::response::Response> {
+    let mut value: serde_json::Value = if body.iter().all(u8::is_ascii_whitespace) {
+        serde_json::Value::Object(serde_json::Map::new())
+    } else {
+        serde_json::from_slice(body).map_err(|e| bad_body(&e))?
+    };
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("id".to_owned(), serde_json::Value::String(id.to_owned()));
+    }
+    crate::dispatch::rest::params_from_value(value).map_err(hyper_to_axum)
+}
+
 async fn handle_cancel_task_inner(
     state: &A2aState,
     id: &str,
     hdrs: &HashMap<String, String>,
+    body: &Bytes,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::CancelTaskParams {
-        tenant: None,
-        id: id.to_owned(),
-        metadata: None,
+    let params: a2a_protocol_types::params::CancelTaskParams = match body_with_path_id(body, id) {
+        Ok(params) => params,
+        Err(resp) => return resp,
     };
     match state.handler.on_cancel_task(params, Some(hdrs)).await {
         Ok(task) => a2a_json(&task),
@@ -702,12 +777,18 @@ async fn handle_cancel_task_inner(
 async fn handle_subscribe_inner(
     state: &A2aState,
     id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
+    body: &Bytes,
 ) -> axum::response::Response {
-    let params = a2a_protocol_types::params::TaskIdParams {
-        tenant: None,
-        id: id.to_owned(),
+    // A POST's body may name the tenant; a GET's `?tenant=` names it.
+    let mut params: a2a_protocol_types::params::TaskIdParams = match body_with_path_id(body, id) {
+        Ok(params) => params,
+        Err(resp) => return resp,
     };
+    if params.tenant.is_none() {
+        params.tenant = tenant;
+    }
     match state.handler.on_resubscribe(params, Some(hdrs)).await {
         Ok(reader) => hyper_to_axum(build_sse_response(
             reader,
@@ -729,9 +810,13 @@ async fn handle_create_push_config_inner(
         Ok(v) => v,
         Err(e) => return bad_body(&e),
     };
+    // The path's id is the request's (`google.api.http`), as on the REST
+    // dispatcher; until 2026-10-13 a `taskId` in the body replaced it.
     if let Some(obj) = value.as_object_mut() {
-        obj.entry("taskId")
-            .or_insert_with(|| serde_json::Value::String(task_id.to_owned()));
+        obj.insert(
+            "taskId".to_owned(),
+            serde_json::Value::String(task_id.to_owned()),
+        );
     }
     let config: a2a_protocol_types::push::TaskPushNotificationConfig =
         match crate::dispatch::rest::params_from_value(value) {
@@ -748,10 +833,11 @@ async fn handle_get_push_config_inner(
     state: &A2aState,
     task_id: &str,
     config_id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::GetPushConfigParams {
-        tenant: None,
+        tenant,
         task_id: task_id.to_owned(),
         id: config_id.to_owned(),
     };
@@ -764,11 +850,12 @@ async fn handle_get_push_config_inner(
 async fn handle_list_push_configs_inner(
     state: &A2aState,
     task_id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     match state
         .handler
-        .on_list_push_configs(task_id, None, Some(hdrs))
+        .on_list_push_configs(task_id, tenant.as_deref(), Some(hdrs))
         .await
     {
         Ok(configs) => {
@@ -786,10 +873,11 @@ async fn handle_delete_push_config_inner(
     state: &A2aState,
     task_id: &str,
     config_id: &str,
+    tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
     let params = a2a_protocol_types::params::DeletePushConfigParams {
-        tenant: None,
+        tenant,
         task_id: task_id.to_owned(),
         id: config_id.to_owned(),
     };
@@ -831,11 +919,15 @@ mod tests {
                 crate::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
                 Noop
             })
+            .without_agent_card()
             .build()
             .unwrap(),
         );
         A2aState {
-            card_handler: card_handler(&handler),
+            card_handler: card_handler(
+                &handler,
+                super::super::DispatchConfig::default().agent_card_max_age,
+            ),
             handler,
             config: Arc::new(super::super::DispatchConfig::default()),
         }
@@ -859,7 +951,7 @@ mod tests {
             State(state.clone()),
             axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
             format!("/tasks/{rest}").parse().unwrap(),
-            axum::http::HeaderMap::new(),
+            CallHeaders(HashMap::new()),
             TimedBody(Bytes::new()),
         )
         .await;
@@ -972,34 +1064,6 @@ mod tests {
             axum::http::StatusCode::OK,
             "a colon action must not be captured by the plain `GetTask` arm"
         );
-    }
-
-    #[test]
-    fn extract_headers_lowercases_names() {
-        let mut map = axum::http::HeaderMap::new();
-        map.insert("X-Request-ID", "abc".parse().unwrap());
-        map.insert("content-type", "application/json".parse().unwrap());
-
-        let result = extract_headers(&map);
-        assert_eq!(result.get("x-request-id").unwrap(), "abc");
-        assert_eq!(result.get("content-type").unwrap(), "application/json");
-    }
-
-    #[test]
-    fn extract_headers_skips_non_utf8_values() {
-        let mut map = axum::http::HeaderMap::new();
-        map.insert("good", "valid".parse().unwrap());
-        // Non-UTF8 values are filtered out by to_str().ok()
-        let result = extract_headers(&map);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result.get("good").unwrap(), "valid");
-    }
-
-    #[test]
-    fn extract_headers_empty_map() {
-        let map = axum::http::HeaderMap::new();
-        let result = extract_headers(&map);
-        assert!(result.is_empty());
     }
 
     #[test]
@@ -1210,7 +1274,12 @@ mod tests {
             }
         }
 
-        let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(NoopExecutor)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let router = A2aRouter::new(handler);
         // Should not panic when building the router
         let _axum_router = router.into_router();
@@ -1237,7 +1306,12 @@ mod tests {
             }
         }
 
-        let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(NoopExecutor)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
         let config =
             super::super::DispatchConfig::default().with_max_request_body_size(8 * 1024 * 1024);
         let router = A2aRouter::with_config(handler, config);
@@ -1311,7 +1385,7 @@ mod readiness_tests {
         struct Noop;
         crate::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
 
-        let builder = crate::builder::RequestHandlerBuilder::new(Noop);
+        let builder = crate::builder::RequestHandlerBuilder::new(Noop).without_agent_card();
         let builder = match store {
             Some(s) => builder.with_task_store(s),
             None => builder,

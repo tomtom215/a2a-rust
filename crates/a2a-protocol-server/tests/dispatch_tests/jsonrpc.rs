@@ -625,6 +625,7 @@ async fn jsonrpc_missing_version_header_accepted_with_opt_out() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(SimpleExecutor)
             .with_agent_card(minimal_agent_card())
+            .with_push_sender(MockPushSender)
             .build()
             .expect("build handler"),
     );

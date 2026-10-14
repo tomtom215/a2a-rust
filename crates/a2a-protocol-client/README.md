@@ -86,9 +86,16 @@ let client = A2aClient::from_card(&card)?;
 ```
 
 `from_card` considers only interfaces for this SDK's protocol major (an agent
-that also serves v0.3 is not connected to on that endpoint), in the order of
-`ClientConfig::preferred_bindings` (`["JSONRPC"]` by default);
-`ClientBuilder::from_card_preferring` takes an order of your own.
+that also serves v0.3 is not connected to on that endpoint), in the card's
+own order, as spec §8.3.2 requires; `ClientBuilder::from_card_preferring`
+takes a binding order of your own.
+
+A client built from a card also checks the card's optional capabilities
+before each call that needs one (spec §3.3.4): streaming, push-notification
+config and the extended card are refused with
+`ClientError::CapabilityNotDeclared`, before anything is sent, unless the card
+sets `capabilities.streaming`, `pushNotifications` or `extendedAgentCard` to
+`true`. `ClientBuilder::without_capability_checks` turns this off.
 
 ## Streaming
 

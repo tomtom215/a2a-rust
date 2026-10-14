@@ -12,11 +12,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`DispatchConfig::with_agent_card_max_age`** (server; spec §8.6.1: the
+  card's `max-age` SHOULD suit how often it changes). The JSON-RPC, REST
+  and axum dispatchers served the public card with `max-age=3600` and no
+  way to change it; it is now the deployment's, defaulting to 3600.
+- **`AuthInterceptor::api_key`** (client; spec §4.5.2, §3.1.11). An
+  agent whose card declares an `APIKeySecurityScheme` reads its key from the
+  header or cookie the scheme names; the client could only write the key
+  into `Authorization`, which such an agent refuses. `api_key` sends it
+  where the scheme says, over JSON-RPC, HTTP+JSON and gRPC. A scheme that
+  places the key in the query string, or names a header no request can
+  carry, is refused when the interceptor is made, with the new
+  `ClientError::InvalidAuthScheme`.
+- **`ClientBuilder::with_extensions`** and
+  **`WebSocketTransportConfig::with_extensions`** (client; spec §3.2.6: the
+  `A2A-Extensions` service parameter lists the extension URIs "the client
+  wants to use for the request"). The server read the header on every
+  binding, but the client could send it only as a header the caller set
+  itself. The builder now sends the URIs as one comma-separated
+  `A2A-Extensions` header (gRPC metadata on gRPC) on every request, unless
+  an interceptor set the header itself; the WebSocket transport sends them
+  with its upgrade, where that binding's server reads them. A URI that is
+  empty, or holds a comma, whitespace or anything but visible ASCII, is
+  refused at build or connect.
+- **Versioned documentation** (site). [a2a-rust.com](https://a2a-rust.com)
+  was the book built from `main`, so a reader on a release saw the next
+  release's unreleased and breaking changes. Now `/` is the latest
+  release's book, built from its tag, `/vX.Y/` each release line's (all
+  thirteen, 0.2 to 0.14), and `/dev/` is `main`'s, with `main`'s rustdoc at
+  `/dev/api/`; `/api/` redirects to docs.rs at the release. Every page has
+  a version selector, and a page that is not the latest release's says so.
+  Only `/` is indexed. Built by `scripts/build_docs_site.py`, checked by its
+  `check` step, which `prove_workflow_gates_fail.py` proves can fail; it
+  deploys on every push to `main` and when the Release workflow succeeds.
+- **`HttpPushSender::https_only()`** (server; spec §13.2: webhook URLs
+  SHOULD use HTTPS). Opt-in: a push config whose URL is not `https://` is
+  refused at creation with `InvalidParams` naming the reason, and a delivery
+  to one is refused before any connection. Senders of your own report it
+  through the new provided method `PushSender::requires_https` (default
+  `false`). Off by default; `http://` webhooks are still delivered unless it
+  is set.
+- **`PushConfigCipher`** and the SQL push-config stores' `with_cipher` and
+  `accept_unsealed_rows` (server, features `sqlite` / `postgres`; spec §13.2:
+  agents SHOULD securely store push notification configurations and
+  credentials). Opt-in: given a cipher, `SqlitePushConfigStore`,
+  `PostgresPushConfigStore` and their tenant-aware forms write each config
+  sealed (the whole JSON document, so the client's `token` and the webhook
+  `credentials` are never stored in the clear) as `a2a-sealed:v1:<base64>`,
+  bound to its row (tenant partition, task id, config id) as associated
+  data, so a sealed config moved to another row does not open. With a
+  cipher, an unsealed row is refused unless `accept_unsealed_rows` is set
+  for migrating a table written before; without one, a sealed row is
+  refused. The SDK ships no cipher: plug in an AEAD whose key your KMS
+  holds (the tests use AES-256-GCM from `ring`).
+- **`AuthFailureThrottle`** (server; spec §13.4: agents SHOULD rate-limit
+  to prevent brute-force attacks). An interceptor, registered before the
+  authenticating one, that counts per peer the calls refused as
+  unauthenticated and, once a peer reaches `max_failures` in a window,
+  refuses its calls as rate-limited (HTTP+JSON `429` with `Retry-After`,
+  JSON-RPC `-32603`, gRPC `RESOURCE_EXHAUSTED`, the last two with a
+  `RetryInfo` detail) until the window ends, the right credential included. A peer is the connection's
+  IP address, or the client address trusted proxies appended to
+  `x-forwarded-for`; at most `max_peers` are tracked. Opt-in: nothing
+  throttles failed authentication unless it is registered.
+- **`CallContext::peer_addr`**, **`PeerAddr`** and **`PEER_ADDR_KEY`**
+  (server): the address of the connection a call arrived on. The SDK's
+  servers (`serve`, `serve_with_addr`, `Server`, the WebSocket and gRPC
+  dispatchers) record it; the axum router reads it from `PeerAddr` or from
+  `ConnectInfo<SocketAddr>`. It travels in the headers map under
+  `":peer-addr"`, which no client can send, as the request path does under
+  `":path"`. `RateLimitInterceptor` does not use it: a caller it cannot
+  identify is still keyed by trusted `x-forwarded-for` hops or the shared
+  `anonymous` bucket.
+- **`AgentCard::validate_security_schemes`** (types; proto `REQUIRED`):
+  refuses a security scheme whose REQUIRED string is empty. See "refuses
+  empty required strings" under Behaviour Changes.
+- **`A2aError::with_retry_info_from_details`** (types): records the delay of a
+  received error's `RetryInfo` detail, so `retry_after` (now a `const fn`)
+  answers for an error from the wire as it does for one built with
+  `rate_limited`.
+- **`ClientError::CapabilityNotDeclared` and
+  `ClientBuilder::without_capability_checks`** (client; spec §3.3.4), and the
+  CLI's `--no-capability-check`: see Behaviour Changes. The error names the
+  method that was not sent and the card field that would have declared it;
+  it is not retryable.
+- **`RequestHandlerBuilder::without_agent_card`** (server; spec §8.1): builds
+  a handler with no agent card, which `build()` now refuses otherwise. See
+  Behaviour Changes.
+- **`RequestHandlerBuilder::share_tasks_across_callers`** (server; spec
+  §13.1): keeps one set of records per tenant, shared by every caller in it,
+  now that an authenticating interceptor isolates callers by default. See
+  Behaviour Changes.
+- **`A2aError::unavailable` and `A2aError::is_unavailable`** (types; spec
+  §3.3.2). A failure a retry may get past: HTTP `503` with status
+  `UNAVAILABLE`, gRPC and SLIMRPC `UNAVAILABLE`, JSON-RPC `-32603` as before.
+  For a custom store; the SQL stores use it (see Fixed).
+- **`RequestHandlerBuilder::with_extended_agent_card`** (server; spec §3.1.11,
+  §13.3). The card `GetExtendedAgentCard` serves to an authenticated caller,
+  distinct from the public one: a further skill, more detailed capabilities.
+  A handler whose card declared `extendedAgentCard` could only serve that
+  public card again, so authenticating gained a caller nothing. `build()`
+  validates it, requires a push sender if it declares push notifications,
+  and advertises the server's extensions on it as on the public card; it
+  refuses one the public card does not declare, since it would never be
+  served. Without it, the public card is served, as before.
 - **`CardFetchOptions::with_signature_keys`** (client, feature `signing`;
   spec §14: clients SHOULD verify signatures when present). Card discovery
   with these options returns a signed card only if one of its signatures
   verifies against the supplied JWK Set; a tampered card, or one with no
-  matching key, fails the fetch. An unsigned card is returned as it is.
+  matching key, fails the fetch. So does an unsigned card, since a card
+  whose signatures were removed on the way reads the same;
+  `CardFetchOptions::with_require_signature(false)` returns it, verifying
+  signatures only when present.
 - **`dispatch::Hsts`** (server; spec §13.4). Wraps any `Dispatcher` and adds
   `Strict-Transport-Security` to every response. Opt-in: the built-in
   listener is plaintext, and the header only takes effect behind a TLS
@@ -247,6 +354,297 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The event queue refuses an executor's event the gRPC binding cannot
+  carry** (server; spec §4: every binding MUST represent the same thing). A
+  `raw` part that is not base64, an integer beyond ±2^53 in metadata or a
+  `data` part, or a `metadata` that is not a JSON object, written by an
+  executor, was stored and served over JSON, and the task then answered
+  `INTERNAL` over gRPC. The write now returns `InvalidParams` naming the
+  field, as a client's message already did, and a `raw` that is base64 is
+  kept in standard padded form.
+- **The event queue refuses an executor's event missing a REQUIRED field**
+  (server; a2a.proto). A message with no `messageId`, role or parts, an
+  artifact with no `artifactId`, or a status in `TASK_STATE_UNSPECIFIED`,
+  written as an event or inside a status update or task snapshot, was stored
+  and served as written; over gRPC the last reads as a task with no state.
+  The write now returns `InvalidParams` naming the field. A client's message
+  was already held to the same fields. The conformance harness grades
+  artifacts the queue refused, so `artifacts_have_ids` still fails an
+  executor that writes one without an id.
+- **Push-config operations need a push sender, and so does a card that
+  declares push** (server; spec §3.3.4). Without a sender, Create answered
+  `PushNotificationNotSupported` while Get, List and Delete still ran
+  against the push-config store, so a client was told `TaskNotFound`, `[]`
+  or success; all four now answer `PushNotificationNotSupported`. And `RequestHandlerBuilder::build`
+  refuses an agent card that declares `capabilities.pushNotifications`
+  with no `with_push_sender`, since every push-config operation would
+  refuse what the card advertises; wire a sender or declare it false.
+- **ListTasks follows a2a.proto's `ListTasksRequest` and
+  `ListTasksResponse`** (server, every task store). `statusTimestampAfter`
+  includes its bound ("greater than or equal to"); every store excluded
+  it. `totalSize` is the number of tasks the filters match before
+  pagination; the SQL stores reported the page's length, and the in-memory
+  store every task in the partition, whatever the filters. And the SQL
+  stores' `pageSize` is the page size used, as the in-memory store's
+  already was, not the number of tasks on the page. The official Python
+  SDK (a2a-sdk 1.2.2) does all three the same way. The SQL stores now run
+  a `COUNT(*)` over the filters on each call.
+- **SLIMRPC refuses a call that declares no `A2A-Version`**
+  (`a2a-protocol-slimrpc`; spec §3.6.2: an empty value MUST be read as
+  0.3). The server served such a call as 1.0, because the official
+  `a2a-slimrpc` crate sent no version when this was decided, against its
+  0.2.4. Its `A2AClient` sends one now (`a2a-client-lf` 0.2.8 adds it to
+  every call's parameters, and `a2a-slimrpc` 0.3.2 forwards them as
+  metadata), so the refusal the HTTP and gRPC bindings already make by
+  default is now SLIMRPC's default too: `VersionNotSupportedError`.
+  `SlimRpcServer::with_require_version(false)` restores the old behaviour.
+  This crate's unicast client sends the version, as it has since the
+  workspace's 0.10.0 release; its multicast client (`SlimRpcMulticast`)
+  sent none, which the old default hid, and now adds it the same way.
+- **On HTTP+JSON the path's id is the request's, and an empty one is
+  refused where it stands** (server and client; spec §11.3; under
+  `google.api.http` a field bound from the path is not read from the
+  body). `RestDispatcher` and the axum router let a body's `id` or
+  `taskId` replace the path's, so `POST /tasks/A:cancel` with `{"id": "B"}`
+  cancelled B, which a proxy authorizing by path would not have allowed.
+  The axum router also never read the body of `:cancel` or `:subscribe`,
+  so a malformed one was served and its `metadata` and `tenant` were
+  dropped. And both dropped empty path segments before routing, so
+  `GET /tasks//pushNotificationConfigs` was `GetTask` for a task named
+  `pushNotificationConfigs`. Now the path's value is set over the body's,
+  both routers read those bodies (a malformed one is `400`), an empty
+  segment reaches its handler as an empty id and is `InvalidParams`, and
+  one trailing `/` is still tolerated. The REST client refuses an empty or
+  whitespace-only path id with `InvalidParams` before building the URL;
+  `get_task` with `""` sent `GET /tasks/` and failed to parse the task
+  list it got back.
+- **A header sent as several lines is read as one field** (server; spec
+  §9.2 and §11.2: service parameters are HTTP headers; RFC 9110 §5.3). The
+  JSON-RPC, HTTP+JSON, axum, gRPC and WebSocket bindings each kept one line
+  of a repeated field, the last. `A2A-Extensions` sent as two lines,
+  `urn:a` then `urn:b`, activated `urn:b` only: a card requiring `urn:a`
+  answered `ExtensionSupportRequiredError`, and the JSON-RPC response
+  echoed `urn:a`, read from the first line, as activated. Every binding
+  now joins the lines in order with `", "`, as the SLIMRPC binding already
+  did, and `cookie` lines with `"; "` (RFC 9113 §8.2.3); the echo reads the
+  same value. A field that takes one value and arrives on two lines, such
+  as `Authorization` or a tenant header, reaches interceptors and executors
+  as both values joined rather than as the last line, so a bearer token
+  sent on two lines is refused.
+- **`StaticAgentCardHandler::new` refuses a card a server may not publish**
+  (server; proto `REQUIRED` fields, spec §5.7). `build()`, hot reload and
+  the dynamic card handler run `AgentCard::validate` and
+  `validate_security_schemes`; this public constructor did not, so a card
+  handed to it directly was served with, say, no skills or an API key
+  scheme without a name. It now returns `InvalidParams`, as `build()` does.
+- **Timestamps are read as RFC 3339, as gRPC reads them, 1969 included**
+  (types and server; spec §5.6.1: ISO 8601 date-times; §5.1: the bindings
+  MUST represent the same thing). `parse_iso8601_to_unix_millis` trimmed
+  whitespace, took unpadded or signed fields and an offset without minutes,
+  rolled `2026-02-30` into March, and refused every instant before 1970.
+  An executor's status timestamp in one of those shapes went out as written
+  on JSON-RPC and HTTP+JSON, while the gRPC conversion, which parses with
+  the `time` crate's RFC 3339 parser, answered `INTERNAL`. A
+  `statusTimestampAfter` before 1970 was `InvalidParams`. The parser now
+  reads exactly what the gRPC conversion reads, which a test checks over
+  1,655,808 strings: fixed-width fields, a real date, an offset with
+  minutes, a fraction with digits, `t`/`z` in either case, second 60 only
+  as a month's last, and years 0000 to 9999 in UTC.
+  `unix_millis_to_iso8601` writes a pre-1970 instant as itself rather than
+  as the epoch. A status timestamp is kept as written only in the canonical
+  shape (`T`, `Z`, no offset); any other accepted form is written as the
+  same instant canonically.
+- **JSON-RPC follows three more JSON-RPC 2.0 rules** (server and types;
+  spec §9.3: requests MUST follow JSON-RPC 2.0), over HTTP and WebSocket.
+  An `id` that is not a string, a number or `null` (§4) is now an Invalid
+  Request (`-32600`, null id); it was run and echoed.
+  `JsonRpcRequestId`'s `Deserialize` refuses it. An omitted `params` (§4.2:
+  it "MAY be omitted") is read as `{}`, so `ListTasks` without one lists,
+  and a method with a required field names it; it was "missing params".
+  `SendStreamingMessage` or `SubscribeToTask` inside a batch is
+  `UnsupportedOperationError` (`-32004`); it was `-32602`, though the params
+  were valid. Notifications are still answered.
+- **A request's `Content-Type` is read as a media type** (server; spec
+  §9.1 and §11.1 name `application/json` and `application/a2a+json`; RFC
+  9110 §8.3.1 makes the type and subtype case-insensitive). The JSON-RPC,
+  HTTP+JSON and axum bindings compared the raw value by prefix,
+  case-sensitively. `Application/JSON` was refused with
+  `ContentTypeNotSupportedError`, and a type that only begins with one of
+  the two, such as `application/json-rpc` or `application/json-patch+json`,
+  was accepted. Now the type and subtype before any `;` parameter must be
+  one of the two, in any case. A client that sends `application/json-rpc`
+  is refused where it was served (a2a-java 1.3.0.Final's REST server also
+  matches by prefix, and would accept it).
+- **A message's raw parts must be base64, and its numbers exact in
+  protobuf** (server; spec §4: every binding MUST represent the same
+  data). A part's `raw` is protobuf `bytes`, and the numbers in metadata
+  and in a `data` part are protobuf doubles, which the gRPC conversion
+  refuses beyond ±2^53 rather than round. The JSON bindings stored any
+  `raw` string and any integer, and the task's history holds the message,
+  so one such send made the task unreadable over gRPC: `GetTask`, every
+  `ListTasks` page holding it and `SubscribeToTask` answered `INTERNAL`.
+  Such a send is `InvalidParams` now, naming the field. A `raw` in
+  URL-safe or unpadded base64 is still accepted, as gRPC reads it, and is
+  kept in standard padded form, so every binding returns the same string.
+  `base64` becomes an unconditional dependency of the server crate (it was
+  already in the build through the SQL, JWT and OTLP features).
+- **An agent card needs a description and a version** (types; `a2a.proto`
+  marks `AgentCard.description` and `AgentCard.version` REQUIRED).
+  `AgentCard::validate`, which `RequestHandlerBuilder::build`, hot reload
+  and the dynamic card handler run, refused an empty name but not an empty
+  description or version, and `AgentCard::new` leaves the description
+  empty, so a card built with it was published with `"description": ""`,
+  which over gRPC is the REQUIRED field absent. Both are refused now: add
+  `with_description` to a card built with `new`. The book's and READMEs'
+  snippets do, and the ones compiled but never run also gained the skill
+  they lacked, without which `build()` refused them already.
+- **ListTasks refuses a `pageSize` outside 1 to 100** (server; a2a.proto:
+  `page_size`'s "minimum value is 1" and "maximum value is 100"; spec
+  §3.3.2 and §13.4: servers MUST validate all input parameters). A larger
+  size was clamped to 1000 and served, and 0 read as the default of 50;
+  both are `InvalidParams` now, on every binding, as the spec's own
+  validation example answers `pageSize=150` with a 400. Omitting `pageSize`
+  still lists 50. A message's `referenceTaskIds` are checked as its
+  `taskId` is (non-empty, not only whitespace, at most `max_id_length`);
+  they were stored unchecked.
+- **The dynamic agent card handler sends no `Last-Modified`** (server; spec
+  §8.6.1 makes the header optional). `DynamicAgentCardHandler` stamped it
+  with the current second on every response, which told clients the card
+  changed at every request, and answered `If-Modified-Since` with `304` only
+  within that same second. A card produced per request has no modification
+  date (RFC 9110 §8.8.2.1), so the handler now omits the header and ignores
+  `If-Modified-Since` (§13.1.3). Revalidate with `If-None-Match`: the `ETag`,
+  a hash of the card, is unchanged. The static handler still sends
+  `Last-Modified`, the time it loaded the card.
+- **A stream that falls behind catches up from the task's event log**
+  (server; spec §3.5.2: each stream MUST receive the same events in the same
+  order). A reader slower than the agent lost the events the bounded
+  broadcast queue overwrote, and its stream ended with `streamLagged`. When
+  the task store keeps an event log, as every built-in store does, the reader
+  now reads what it missed from the log, after the last position it
+  delivered, and goes on. This is the reader every binding streams
+  `SendStreamingMessage` and `SubscribeToTask` from. A subscriber attaching
+  mid-task resumes from where it attached, not from the start of the log.
+  Only a complete replay is used, with no position missing (a failed
+  append leaves the log without one), and a live event that does not
+  follow it is reported as a lag. When the log cannot supply every missed event the
+  stream ends with `streamLagged`, as before: a store without a log, a lag
+  beyond what the log still holds (the in-memory stores keep the last 512
+  events of a task by default; the SQL stores keep the whole log), or more
+  missed events than one replay reads (`subscribe_replay_limit`, 1,000 by
+  default). A `read` dropped while the log is read, as the SSE and gRPC
+  bindings drop one whenever a keep-alive or a closed client wins the race,
+  leaves the replay owed to the next `read`.
+- **A subscription across turns receives every turn's events** (server;
+  spec §3.5.2: each stream MUST receive the same events in the same order).
+  A `SubscribeToTask` stream on a task parked at `input-required` waits for
+  the next turn's queue, polling every `subscribe_reattach_interval`. What
+  the turn broadcast before the poll found its queue never reached the
+  subscriber, and a turn that ran from start to end between two polls
+  reached it as one terminal status built from the stored task, or, if it
+  parked the task again, not at all; no `streamLagged` said so. When the
+  store keeps an event log the stream now replays those events from the
+  log, with their positions, before it goes on. So does a subscription on
+  another replica sharing the store, which used to get only the ending: the
+  book's "Running More Than One Replica" says what it sees now. Without a
+  log each turn numbers its events from 1, and a subscriber skipped as many
+  of a turn's events as it had seen positions in the turns before; it now
+  receives them, and reports with `streamLagged` the ones broadcast before
+  it found the turn's queue. A subscription to a task with no live queue
+  starts at the log's end, so the next turn does not replay the history its
+  snapshot holds.
+- **Breaking: `ClientBuilder::from_card` follows the card's interface order**
+  (client; spec §8.3.2: a client MUST select the first supported interface,
+  preferring earlier entries). It ranked by `ClientConfig::default()`'s
+  `preferred_bindings`, `["JSONRPC"]`, so a card listing `HTTP+JSON` before
+  `JSONRPC` got JSON-RPC. It now applies no preference of its own: the card's
+  first interface for protocol 1.x, with `build()` falling back down the list
+  past one it cannot construct. `A2aClient::from_card` follows.
+  `from_card_preferring` still applies a caller's explicit ranking, and
+  `ClientConfig::preferred_bindings` is documented as the record of the
+  ranking applied, which it always was. See the upgrading guide.
+- **Breaking: only `A2A-Version: 1.0` is served** (server; spec §3.6.2:
+  requests are processed with the requested `Major.Minor`'s semantics, and an
+  unsupported version MUST be `VersionNotSupportedError`). Any `1.x` was
+  accepted and served as 1.0; now `1.1`, a bare `1`, `v1.0` and `+1.0` are
+  refused with a message naming `1.0`, on JSON-RPC, HTTP+JSON, gRPC,
+  WebSocket and `validate_version_metadata` alike. A patch number is still
+  ignored (§3.6). The WebSocket handshake's own copy of the check now calls
+  the shared validator.
+- **Breaking for clients built from a card: a call the card does not
+  declare the capability for is refused before it is sent** (client; spec
+  §3.3.4: clients SHOULD validate capability support against the card before
+  an operation that needs it). `stream_message`, `subscribe_to_task` and
+  `subscribe_to_task_from`, the four push-config methods, a send or stream
+  carrying an inline push config, and `get_extended_agent_card` return
+  `ClientError::CapabilityNotDeclared` without sending anything unless the
+  card sets `capabilities.streaming`, `pushNotifications` or
+  `extendedAgentCard` (respectively) to `true`. A conformant agent refuses
+  those calls too, with `UnsupportedOperationError` or
+  `PushNotificationNotSupportedError`, so against one what changes is where
+  the refusal happens and which error carries it.
+  `ClientBuilder::without_capability_checks` sends them anyway; a client built
+  with `ClientBuilder::new` has no card and is unaffected. See the upgrading
+  guide.
+- **A rate limit refused over JSON-RPC or WebSocket is retried** (client;
+  spec §3.3.2). Such a refusal is an `InternalError` whose details carry a
+  `google.rpc.RetryInfo` delay; the client treated it as permanent, while the
+  same refusal over HTTP+JSON (`429`) or gRPC (`RESOURCE_EXHAUSTED`) was
+  retried. It is now `is_retryable()`, `retry_after()` returns the delay, and
+  a client with a `RetryPolicy` waits that long and re-sends, `SendMessage`
+  included: the request was refused before it was processed. Without a
+  policy nothing is re-sent. A delegating executor that passes such an error
+  through with `?` now records it as `Transient`.
+- **Push webhook timeouts are 10 s per request and 30 s per delivery**
+  (server; spec §4.3.3 and §13.2 recommend 10-30 s). `HttpPushSender`'s
+  request timeout was 30 s and `HandlerLimits::push_delivery_timeout`, which
+  bounds a whole delivery with its retries, was 5 s, so one attempt of the
+  default three ever ran. Now every attempt starts inside the bound and the
+  first two finish. With the bound equal to `push_delivery_budget` (30 s), an
+  event's deliveries all run at once rather than 17 at a time; every config
+  was attempted before and is now, and the event still finishes inside the
+  budget. Both values remain configurable.
+- **Breaking: `build()` requires an agent card** (server; spec §8.1: an A2A
+  server MUST make an agent card available). `RequestHandlerBuilder` let a
+  handler build without one, which then answered discovery with 404 and,
+  with nothing declared, skipped every capability, input-mode and
+  required-extension check (§3.3.4). `build()` now refuses that, naming the
+  two ways out: `with_agent_card(card)`, or `without_agent_card()` for a card
+  published elsewhere or a handler that is not a public A2A server (a test,
+  for instance), which behaves as before. The README quick start and the
+  book's examples now set a card. See the upgrading guide.
+- **Breaking: an authenticating interceptor isolates tasks by caller**
+  (server; spec §13.1: results scoped to the caller's authorization
+  boundaries). Callers in one tenant shared its tasks unless the builder
+  called `isolate_tasks_by_caller`, so with labelled tokens, labelled keys or
+  JWT, Bob could read, list, cancel and subscribe to Alice's tasks and
+  register webhooks on them. Now each caller an authenticating interceptor
+  identifies gets a partition of its own, where another caller's task is
+  `TaskNotFound`. A request it lets through without an identity (an
+  unlabelled token or key, a JWT without `sub`) keeps the tenant's shared
+  records, as before; `isolate_tasks_by_caller` still refuses one. Unset
+  stores default to the tenant-aware in-memory ones: up to 1,000 partitions,
+  each with the whole `with_task_store_config` capacity (10,000 tasks by
+  default), so that store's bound is per caller now. `build()` now refuses, naming the remedies, a supplied task or
+  push-config store that does not partition by tenant, and an approval gate
+  that needs a second approver, including the one `Profile::Auditable`
+  installs: under isolation that approver could never reach the requester's
+  task. `share_tasks_across_callers()` restores the old behaviour. A handler
+  with no authenticating interceptor is unaffected. See the upgrading guide.
+- **Breaking for the `otel` feature: OpenTelemetry 0.33** (server, client,
+  sdk). `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`,
+  `opentelemetry-http`, `opentelemetry-appender-tracing` 0.32 to 0.33.1 and
+  `tracing-opentelemetry` 0.33 to 0.34.0, together: the four Dependabot
+  updates could not land one at a time. Types from these crates appear in
+  the server's API (`Telemetry::tracer_provider`, `meter_provider`,
+  `logger_provider`, `TelemetryError::Exporter`, whose source
+  `ExporterBuildError` now has only `InvalidConfiguration` and
+  `InternalFailure`), and the client reads the current span's context
+  through `tracing-opentelemetry` 0.34, so its `traceparent` names the
+  caller's span only under a 0.34 layer. An application must move to the
+  same versions.
+  `opentelemetry-otlp` 0.33 retries a failed export by default (four
+  attempts, exponential backoff with jitter), so `Telemetry` export does too.
 - **Every push webhook is attempted** (server; spec §4.3.3). Deliveries ran
   one after another and `push_delivery_budget` skipped whatever it did not
   reach: at the defaults a slow webhook estate reached 6 of 100 configs per
@@ -270,7 +668,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `protocolVersion`; the provider's `organization` or `url`; a skill's
   `id`, `name` or `description`; a signature's `protected` or `signature`.
   Over gRPC an empty string is the absent value. Security-scheme fields are
-  not yet checked (the const `validate` cannot walk the scheme map).
+  checked by `AgentCard::validate_security_schemes` (the const `validate`
+  cannot walk the scheme map): an API key's `name`, an HTTP scheme's
+  `scheme`, an OpenID Connect `openIdConnectUrl`, and the URLs of the
+  authorization-code, client-credentials and device-code flows.
+  `RequestHandlerBuilder::build`, `HotReloadAgentCardHandler` and
+  `DynamicAgentCardHandler` run both.
 - **An executor's events are bound to its task** (server; proto
   `REQUIRED` `taskId`/`contextId`). A status, artifact or task event written
   with an empty task or context id gets the running task's; one naming
@@ -457,6 +860,349 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A database that cannot answer for now is a temporary failure** (server,
+  `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD tell temporary failures
+  from permanent ones). Every SQL store answered every database error as
+  internal (HTTP `500`, gRPC `INTERNAL`), so a pool with no free connection, a
+  busy `SQLite` file, or a lost or restarting Postgres told a client not to
+  retry a request that would have succeeded a moment later. Those answer HTTP
+  `503` with status `UNAVAILABLE` and gRPC `UNAVAILABLE` now; other database
+  errors, and every error on a send or a push config's creation, stay
+  `INTERNAL`. This SDK's client re-sends those two calls on `503` as refused
+  before any work began, and a store failure can come after the executor ran.
+  The SLIMRPC binding answers a halted handler `UNAVAILABLE` too, as gRPC
+  already did; it answered `INTERNAL`.
+- **A signed agent card is verified as received** (client, types;
+  `signing` feature; spec §8.4.3). The signer signs every field it serves,
+  and the client verified the card after reading it into an `AgentCard`,
+  which drops any field this SDK does not model (one a later minor version
+  adds, say). So a correctly signed card from such a peer was refused by a
+  fetch with `CardFetchOptions::with_signature_keys`. The fetch now
+  verifies the card's JSON first. New in `signing`:
+  `verify_card_json_with_jwks` and `canonicalize_card_json`, for a card
+  fetched another way; `verify_card_with_jwks` still verifies a card as
+  this SDK models it.
+- **The axum router's own refusals are AIP-193** (server, `axum` feature;
+  spec §11.6). Refusals the router made before any A2A handler ran went out
+  as axum wrote them: a method a route does not take as a bodiless `405`, a
+  body over the cap as plain-text `413`, one not received in time as
+  plain-text `408`. They now carry an AIP-193 body (`error.code` and
+  `error.message`, with `error.status` where the code has a name), as
+  `RestDispatcher`'s do; the statuses and the `405`'s `Allow` header are
+  unchanged. An unknown path outside the A2A routes is left to the app the
+  router is merged into.
+- **A `Last-Event-ID` on a WebSocket upgrade no longer replays the event
+  log** (server, `websocket` feature). The WebSocket binding has no
+  resumption: a resubscribe starts from the task's snapshot. But the
+  upgrade request's headers reach every call on the connection, so one
+  carrying `Last-Event-ID` made every `SubscribeToTask` on it replay the log
+  from that position. The header is now dropped at the handshake.
+- **A refused credential names its challenge on gRPC and SLIMRPC** (server,
+  `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD include the
+  authentication challenge and specify the scheme). The HTTP bindings send
+  `WWW-Authenticate` with their `401`; the gRPC dispatcher now sends the
+  same challenge as `www-authenticate` metadata on its `UNAUTHENTICATED`
+  status, and the SLIMRPC server, whose errors carry no metadata, ends the
+  message with `(WWW-Authenticate: <challenge>)`. Both dropped it.
+- **SLIMRPC multicast: an agent's error is its outcome**
+  (`a2a-protocol-slimrpc`). SLIM names the member an error came from with
+  its full four-part SLIM name; `SlimRpcMulticast::send_message` filed the
+  error under that name while it pairs outcomes by the three-part agent
+  address, so an agent that answered with an error was reported as a
+  timeout. `stream_message` dropped every error frame, so a refusing agent's
+  stream ended with no events, as `IncompleteStream`. Now the first reports
+  the agent's own error, and the second ends that agent's stream with it.
+- **`RestDispatcher` serves an id containing `..`** (server; spec §11.3
+  routes). Its path-traversal guard refused any path containing `..`, raw
+  or percent-encoded, so a task or push config id such as `v1..prod`,
+  which JSON-RPC, gRPC and the axum router serve, answered 400 on every
+  HTTP+JSON route. It now refuses a dot segment (`.` or `..` as a whole
+  segment, RFC 3986 §3.3) at any encoding depth, with `\` read as a
+  separator as well as `/`, and still refuses a path that has not finished
+  decoding after eight passes.
+- **An HTTP+JSON response names what chose its media type** (server; spec
+  §11.1 negotiation; RFC 9110 §12.5.5). `RestDispatcher` and the axum
+  router pick `application/a2a+json` or `application/json` from the
+  request's `Accept`, else its `Content-Type`, and sent no `Vary`, so a
+  shared cache could serve one client's representation to a client that
+  asked for the other. Negotiated responses now carry `Vary: Accept,
+  Content-Type`, beside the extended card's `Vary: Authorization`, and an
+  `Accept` sent as two lines is read as one list; only its first line was
+  read.
+- **An agent card's explicitly empty `iconUrl` or `documentationUrl`
+  survives gRPC** (types; spec §8.4.1: an optional field explicitly set to
+  its default MUST be included). Both are `optional string` in a2a.proto,
+  and the gRPC conversion mapped `""` to absent in both directions, so a
+  card read over gRPC was not the card served over JSON, and a signature
+  covering the empty field no longer verified. The conversion keeps it.
+- **The agent card answers `HEAD`, and its conditional requests follow RFC
+  9110** (server; spec §8.6.1: cache validation on the card endpoint).
+  JSON-RPC and HTTP+JSON served `/.well-known/agent-card.json` (and the
+  HTTP+JSON probes `/health`, `/ready`) for `GET` only, and the axum router
+  exempted only `GET` from the `A2A-Version` check, so a `HEAD` was refused
+  (RFC 9110 §9.3.2: answer it as a `GET`, without the body). In the static
+  and dynamic card handlers, a `304` answered any method, not only `GET`
+  and `HEAD` (§13.1.2); only the first `If-None-Match` line was read
+  (§5.3); and in the static handler an `If-None-Match` that was not visible
+  ASCII fell through to `If-Modified-Since`, which MUST then be ignored
+  (§13.1.3).
+- **A response, stream event or OAuth flow set with a field it does not
+  know still parses** (types; spec §5.7: implementations SHOULD ignore
+  unrecognized fields). `SendMessageResponse`, `StreamResponse` and
+  `OAuthFlows` are protobuf `oneof`s and derived serde's externally tagged
+  encoding, which reads one key and nothing else: `{"task": …, "x": 1}`,
+  an event with a field from a later 1.x version, or a card whose
+  `oauth2SecurityScheme.flows` held one, failed to parse. They now skip
+  unknown keys and still refuse no member, or two. Error text for those
+  cases changes, from serde's "unknown variant" to "a StreamResponse sets
+  exactly one of task, message, statusUpdate, artifactUpdate; this one sets
+  none". The hand-written visitor costs a little: timed interleaved with
+  the derived one in a release build, a stream event's parse takes
+  1.08-1.10x as long (32-57 ns more on medians of 419-608 ns).
+- **`CachingCardResolver` takes the validators a `304` sends** (client;
+  spec §8.6.2: clients SHOULD honour RFC 9111). RFC 9111 §4.3.4 has a
+  cache that freshens a stored response from a `304` replace its stored
+  header fields with the `304`'s. The resolver kept the first `200`'s
+  `ETag` and `Last-Modified`, so after a `304` carrying a new `ETag`, or
+  a `Last-Modified` the `200` lacked, it revalidated with the old ones. It
+  now takes those the `304` carries and keeps the rest, and a `304` marked
+  `no-store` leaves nothing stored, as a `200` so marked already did.
+- **A security scheme naming two schemes is refused** (types; a2a.proto's
+  `SecurityScheme` is a `oneof`). Its deserializer took the first arm it
+  found, so `{"apiKeySecurityScheme": …, "httpAuthSecurityScheme": …}`
+  became an API key scheme and the other was dropped without a word, where
+  a `Part` with two content members, and `OAuthFlows` with two flows, are
+  refused. It now fails to parse, whichever spelling each arm takes.
+- **A push config a header cannot carry is refused when it is created**
+  (server; spec §13.2: a webhook request carries the config's
+  credentials). A token or credentials holding CR, LF or another control
+  character was stored, inline or by `CreateTaskPushNotificationConfig`,
+  and listed back, and then every delivery was refused before it was sent
+  (the sender refuses CR/LF; the HTTP client any other control character).
+  Creation now answers `InvalidParams` naming the field.
+- **An HTTP+JSON body that never arrives is answered `408`** (server; RFC
+  9110 §15.5.9; spec §5.1: the bindings MUST behave the same). Every
+  failure to read a request body was answered `413 Content Too Large`, so a
+  client whose upload stalled was told its body was too big, while the
+  axum router answered the same request `408`. `RestDispatcher` now answers
+  `413` for a body over `max_request_body_size`, `408` for one not received
+  within `body_read_timeout`, and `400` for a body stream it cannot read
+  (a malformed chunk, say). The JSON-RPC binding still answers a body it
+  could not read with `-32700`.
+- **A JSON-RPC request refused for a header is answered with its id**
+  (server; spec §9.3: requests follow JSON-RPC 2.0, whose response `id`
+  "MUST be the same as the value of the id member in the Request Object").
+  An unsupported `A2A-Version` or `Content-Type` was refused before the
+  body was read: the refusal answered `"id": null` and a batch got one
+  object instead of an array, so a client that pairs responses with
+  requests by id could not pair the `VersionNotSupportedError` a 0.3 client
+  most needs to see. The refusal now waits for the body and carries each
+  request's id, one error per request of a batch. A batch beyond
+  `max_batch_size`, a body that is not JSON or is over the size limit, and
+  a request without an id are refused once with a null id, as before.
+- **A card's `ETag` is the same for the same card** (server; spec §8.6.1:
+  an `ETag` "derived from ... a hash of the card content"). It hashed the
+  card's serialization, and `securitySchemes`, a requirement's `schemes`
+  and an OAuth flow's `scopes` are `HashMap`s, written in an order each
+  map draws at random. A card with two or more entries in one of them had
+  another `ETag` on each replica and after each restart, and a
+  `DynamicAgentCardHandler` whose producer builds the card per request
+  gave another on every request, so revalidation returned the whole card
+  instead of a `304`. The static and dynamic handlers and the extended
+  card (`GetExtendedAgentCard` over HTTP+JSON) now hash the card with its
+  maps' keys sorted. The body is unchanged.
+- **The agent card fetch sends `A2A-Version`** (client; spec §3.6.1:
+  "Clients MUST send the `A2A-Version` header with each request"). Every
+  transport sent it, but `resolve_agent_card`, `fetch_card_from_url` and
+  the caching resolver fetched the card without it. They send `1.0` now,
+  unless the caller's `CardFetchOptions` carry an `A2A-Version` of their
+  own, which is sent instead.
+- **`A2aError::is_stream_lagged` says what a lag does to the stream**
+  (types; documentation only). It said the stream goes on after the lag
+  and a consumer that keeps reading still gets every later event, including
+  the terminal status. This SDK's servers send the lag only when the task's
+  event log cannot replay what the consumer missed, and on the JSON-RPC,
+  HTTP+JSON, WebSocket and gRPC bindings it is the stream's last frame. The
+  doc now says so, and that the way back is to subscribe again (over SSE
+  with `Last-Event-ID`). The SLIMRPC binding sends the error's text without
+  the marker, so the check is `false` there.
+- **A gRPC error carries its data, and a stream's error its marker**
+  (server and client; spec §5.1: every binding MUST handle errors the same
+  way). The JSON bindings send an error's `data` beside its `ErrorInfo`: a
+  `google.rpc.BadRequest` as itself, anything else as a
+  `google.protobuf.Struct` detail. The gRPC binding dropped it, so a gRPC
+  client lost a bad request's field violations, and a stream's error was
+  `INTERNAL` "event queue error" whatever it was: a lagged stream could not
+  be told from an executor failure. The server now adds the same details to
+  the status, and answers a stream's error as a unary call's; the gRPC
+  client decodes a `Struct` detail into `A2aError::data`, as its REST
+  transport does, so `is_stream_lagged` holds over gRPC, and a
+  `BadRequest` into the typed detail the JSON bindings send. The types
+  crate's `proto` module re-exports `prost_types`.
+- **A resume across a hole in the event log starts from the snapshot**
+  (server; spec §3.5.2: each stream MUST receive the same events in the
+  same order). A failed append leaves the log without that position, and
+  the processor goes on. A `SubscribeToTask` resumed with `Last-Event-ID`
+  replayed the events on either side of the hole, skipping the lost one
+  without saying so. It now starts from the task snapshot, as it does when
+  the log no longer reaches back to the client's position.
+- **A continuation sent the moment a task parks keeps its events and the
+  task's artifacts** (server; spec §3.5.2: each stream MUST receive the same
+  events in the same order; §3.3.3: multi-turn interactions). A stream
+  delivers `input-required` as it is broadcast, before the background
+  processor has logged and stored it, and a continuation was admitted as
+  soon as the turn's executor returned. Its queue numbers on from the
+  task's event log, which was read while the previous turn was still being
+  logged, so its positions collided with that turn's; appends are
+  idempotent by position, and every colliding event of the continuation
+  was dropped from the log, which resumption and catch-up read. The
+  continuation was also built from the task as read before the previous
+  turn had stored it, and saving it removed what that turn had just
+  stored, such as an artifact. A turn's queue is now released once its
+  events are stored, bounded by the queue's write timeout, and a send that
+  waited for a parked turn reads the task again. This holds within one
+  process: a continuation sent to another replica while the first is still
+  storing is not covered.
+- **A malformed query value is refused on the HTTP+JSON binding** (server;
+  spec §13.4: agents MUST validate all input parameters; §5.1: every
+  binding MUST handle errors the same way). `RestDispatcher` and
+  `A2aRouter` read a GET's `historyLength`, `pageSize`, `status` or
+  `includeArtifacts` that did not parse as if it were absent:
+  `GET /tasks/{id}?historyLength=-1` returned the whole history and
+  `GET /tasks?status=TASK_STATE_WORKNG` listed every task, where JSON-RPC
+  and gRPC refuse the same values. Both now answer `400 INVALID_ARGUMENT`
+  naming the parameter, from one parser: the router read ListTasks with a
+  parser of its own, which took `includeArtifacts=1` as absent where the
+  dispatcher took it as `true`. A boolean is `true` or `1`, `false` or `0`,
+  in any case; anything else used to read as `false`.
+- **A client checks calls against the extended card once it has fetched
+  it** (client; spec §3.1.11, §13.3: a client SHOULD replace its cached
+  public card with the extended one). A client built from a card checks a
+  call's capability against that card before sending it, and kept checking
+  against the public card after `get_extended_agent_card`, so a capability
+  only the extended card declares, such as `pushNotifications`, was still
+  refused locally with `CapabilityNotDeclared`. The fetched card's
+  capabilities now replace the public card's; `extendedAgentCard` stays
+  declared, since the agent has just served it. A client built without a
+  card, or with `without_capability_checks`, still checks nothing.
+- **Proto3 defaults on the JSON bindings mean unset** (server; spec §5.1:
+  every binding MUST return semantically equivalent results for the same
+  request). `ProtoJSON` prints a field without presence at its default as
+  "unset", and a client that prints every field (a2a-java's JSON-RPC
+  transport does) sends `""` or `TASK_STATE_UNSPECIFIED` for "none". Only a
+  message's `contextId` and `taskId` were read that way. The rest were read
+  as values, where gRPC's conversion already read them as unset: a part with
+  `"mediaType": ""` was refused as `ContentTypeNotSupported`; a push config
+  created with `"id": ""` was stored under the id `""`, which Get and Delete
+  refuse, and the next such create replaced it; `"token": ""` sent an empty
+  token header; and ListTasks with `"contextId": ""`, `"pageToken": ""` or
+  `"status": "TASK_STATE_UNSPECIFIED"` listed nothing. Each is now unset on
+  ingress: a part's `mediaType` and `filename`, a push config's `id` and
+  `token` (standalone or inline in `SendMessage`), and those three ListTasks
+  fields.
+- **A cancelled task's streams end on `Canceled` whatever its `cancel` hook
+  writes** (server; spec §3.1.2, §3.1.6: a stream MUST close when the task
+  reaches a terminal state). Only the default `AgentExecutor::cancel` wrote
+  `Canceled` to the task's queue. An executor that overrode the hook to
+  release what the task held, as the trait's documentation invites, and
+  wrote nothing, had its task stored `Canceled` by `CancelTask` while an open
+  `SendStreamingMessage` stream ended after `Working` with no terminal
+  frame; a halt or shutdown that ended such a task left it `Working`, its
+  streams likewise without a terminal frame. After a hook that returns `Ok`
+  without writing a terminal state, the handler now writes `Canceled` to the
+  queue itself, where it is stored and every open stream ends on it. The
+  conformance kit's `cancel_emits_terminal` check, which failed such a hook,
+  is renamed `cancel_succeeds`: it passes a hook that writes nothing, and
+  still fails one that errors, panics or overruns.
+- **A `SubscribeToTask` stream misses nothing between its first `Task` and
+  its live events** (server; spec §3.1.6: the first event represents "the
+  current state of the task at the time of subscription. This prevents a
+  potential loss of information"). The `Task` was read from the store before
+  the stream attached to the task's queue, and the store trails the queue:
+  the background processor, or a blocking send's collector, stores each
+  event after it is broadcast. An event broadcast before the attach and
+  stored after the read was in neither, so a subscriber could see
+  `submitted` and none of the work already done. The stream now attaches
+  first, at an exact position, and reads the task once every event up to
+  there is stored and none is being stored; the live stream then skips what
+  that `Task` already holds. The wait is bounded by
+  `HandlerLimits::subscribe_replay_catchup` (2 s by default), after which
+  the task's event log fills the gap. A streaming send replayed by its
+  idempotency key starts the same way.
+- **The WebSocket client connects to `wss://`** (client, feature
+  `websocket`; spec §7.1: production deployments MUST use encrypted
+  communication). `tokio-tungstenite` was built without TLS, so every
+  `wss://` endpoint failed with "TLS support not compiled in", although the
+  transport accepted the scheme and the book's example used it. With
+  `tls-rustls` (on by default) the transport now verifies the server against
+  the roots the HTTPS transports use, Mozilla's with `ring`, or a
+  configuration given to the new
+  `WebSocketTransportConfig::with_tls_config`. Without the feature a
+  `wss://` connect fails naming it.
+- **`A2aRouter` reads a GET or DELETE request's fields from its query**
+  (server, feature `axum`; spec §11.5: GET and DELETE MUST carry request
+  parameters as path or query parameters). The router ignored the query of
+  every `/tasks/…` route: `GET /tasks/{id}?historyLength=0` returned the
+  task's whole history (a2a.proto: the server MUST NOT return more messages
+  than requested), and `?tenant=` was dropped on GetTask, ListTasks, the
+  push-config routes and `GET :subscribe`, so they read the default
+  partition. Both are now read as the REST dispatcher reads them.
+- **A refused inline push config no longer deletes the task it continues**
+  (server; spec §3.4.3: a client continues a task by sending a new message
+  with its `taskId`). A `SendMessage` continuing a task with a
+  `configuration.taskPushNotificationConfig` the server refused (a webhook
+  the SSRF screen rejects, a full per-task quota, push not supported) got
+  the error, and the rollback meant for a send that had just created its
+  task then deleted the task being continued, with its history and
+  artifacts. A continuation now registers its config before the turn touches
+  the task, so a refusal leaves the task as it was. If the config is
+  accepted and the turn then cannot be saved, a config the server created is
+  withdrawn; one the request named by id is kept.
+- **The client advertises its own `acceptedOutputModes`** (client; a2a.proto
+  `SendMessageConfiguration.accepted_output_modes`: agents SHOULD use it to
+  tailor their output). A request with no `configuration` of its own was
+  given `SendMessageConfiguration::default()`, whose `["text/plain"]` then
+  kept `ClientConfig::accepted_output_modes` from applying, so every such
+  request told the agent to answer in text only, whatever the client was
+  configured with. It now carries the configured modes: by default
+  `text/plain` and `application/json`.
+- **A task's events reach every stream in the order they were written**
+  (server; spec §3.5.2: events MUST NOT be reordered). Each event gets its
+  position when it is written, but two writes on one task in flight at once
+  (`CancelTask`'s beside the executor's, or an executor's own concurrent
+  writes) could broadcast in the other order: a terminal event waits for the
+  store's verdict before it goes out, and a write behind it went out first;
+  on a multi-threaded runtime any two writes could swap. Streams then
+  carried positions out of order, and the lag catch-up above, which skips a
+  position a stream has passed, would have lost the terminal event. Writes
+  to one queue now take turns from the moment a position is assigned until
+  the event is broadcast. An uncontended write still finishes without
+  waiting.
+- **A `SubscribeToTask` stream on a tenant- or caller-partitioned task store
+  stays open across turns** (server; spec §3.1.6: the stream MUST terminate
+  when the task reaches a terminal state). The hook that reattaches the
+  stream to the next turn's queue reads the task store while the stream is
+  read, outside the request that opened it, so it read the default
+  partition, found no task, and ended the stream at the first turn boundary
+  without a terminal state. It now re-enters the subscriber's tenant and
+  caller. Since an authenticating interceptor now isolates callers by
+  default (§13.1, above), this reached every authenticated server.
+- **The site's brand fonts load.** `theme/custom.css` asked for
+  `fonts/…`, which resolves to `theme/fonts/` and answered 404 on the live
+  site, so Space Grotesk and JetBrains Mono never loaded; it asks for
+  `../fonts/…`. Release books built before this keep the fault.
+- **This project's extension and binding URIs lead to their chapters.**
+  `https://a2a-rust.com/extensions/idempotency/v1`, `…/extensions/failure/v1`
+  and `…/bindings/websocket/v1` answered 404; each now redirects to the
+  chapter that specifies it.
+- **`Telemetry` reports a lost export on either transport, and only a lost
+  one** (server, feature `otel`). It counted failed HTTP responses, so over
+  gRPC a lost export was only logged, and with 0.33's retries an export
+  refused once and delivered on retry would have been reported lost. It now
+  counts exports the exporter gave up on, after its retries, on OTLP/HTTP
+  and gRPC alike (`otel/telemetry/counting.rs`); `shutdown` and
+  `force_flush` name each signal with `N export(s) failed after retrying and
+  were dropped`.
 - **HTTP+JSON ids with reserved characters are found** (server; spec
   §11.3). This SDK's client percent-encodes path ids; `RestDispatcher`
   matched them encoded, so a push config whose id held a space, `+`, `:` or
@@ -511,6 +1257,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- **`ClientConfig::preferred_bindings` and `ClientConfig::with_preferred_bindings`**
+  (client). Nothing reads them once `ClientBuilder::from_card` follows the
+  card's interface order (spec §8.3.2); setting them changed nothing a caller
+  could see. Rank bindings with `ClientBuilder::from_card_preferring`, and see
+  the choice with `ClientBuilder::chosen_interface`. Kept for one minor
+  release, as `STABILITY.md` requires.
 - **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519`**,
   whose `key_id: Option<&str>` let a signature omit `kid`, which §8.4.2
   forbids. Use `sign_card_es256` and `sign_card_ed25519`: the same signature
@@ -594,6 +1346,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The client's debug output names headers and JSON keys, never their
+  values** (client). `ClientRequest`, `ClientResponse`, `CardFetchOptions` and
+  `WebSocketTransportConfig` derived `Debug`, so `{req:?}` in an interceptor
+  printed the `Authorization` an auth interceptor had added, a
+  `CardFetchOptions` printed the bearer token its own example sets, and a
+  push-config call's request or response printed the webhook's `token` and
+  `credentials`. They print header names, sorted, and the top-level keys of
+  `params` and `result` now, as the server's `CallContext` does; read a value
+  from its field when you want one. The fields' names in that output changed
+  with it: `extra_header_names`, `header_names`, `param_keys`, `result_keys`.
+- **A failed push delivery is logged with the webhook's origin, not its
+  URL** (server). The background delivery's failure and timeout warnings
+  logged the whole webhook URL, so a secret in its path or query
+  (`/hooks/<token>`, `?sig=`) went into every log pipeline the server
+  feeds. `HttpPushSender`'s own log lines already named the origin only.
+- **SLIMRPC: a caller's `:`-prefixed metadata key is dropped**
+  (`a2a-protocol-slimrpc`). A key beginning with `:` names what a server
+  records itself, `":peer-addr"` (the connection's address, for
+  `CallContext::peer_addr`) and `":path"`, and the SLIMRPC server records
+  neither, but it passed a caller's own through as request headers. A caller
+  could therefore set the address `AuthFailureThrottle` charges its failed
+  attempts to, and lock out the HTTP client at that address when one handler
+  serves both. Its `":path"` gave no more than the path an HTTP caller
+  already chooses. Such keys are dropped now, beside SLIMRPC's own.
+  `":peer-addr"` is new in this release; `":path"` was passed through by
+  the binding's 0.6.0.
+- **A card signature naming a critical JWS extension is refused** (types;
+  spec §8.4: card signatures are JWS "as defined in RFC 7515", whose
+  §4.1.11 makes a JWS invalid when its `crit` names an extension the
+  recipient does not understand). `signature_header`, which
+  `verify_agent_card` and the JWK Set verifiers read, ignored `crit`, so a
+  signature whose protected header carried `"crit": ["exp"], "exp": …`
+  verified, its expiry unenforced. This verifier understands no extension,
+  so any `crit`, in the protected header or the unprotected one (where RFC
+  7515 forbids it), now fails verification.
+- **SLIMRPC binding: RUSTSEC-2024-0449 waived, with its chain recorded**
+  (`bindings/a2a-protocol-slimrpc/deny.toml`). `unsafe-libyaml` is
+  unmaintained (an informational advisory, not a vulnerability) and reaches
+  only the binding, as `serde_yaml` under `agntcy-slim-config` and `regorus`.
+  Every `agntcy-slim-config` release through 0.17.2 still requires
+  `serde_yaml`, so no bump available here removes it; the entry names the
+  release that would. The four published crates do not contain it.
 - **Code-scanning findings on `main` addressed** (OSV-Scanner, Scorecard,
   CodeQL; reproduced locally with the same tools before and after).
   - Test-peer dependencies: the Python peers floor `anyio>=4.14.2`
@@ -672,6 +1466,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **`keep_alive_comments_reset_the_idle_bound` tolerates a runner stall**
+  (client tests). It failed on Windows on `9aacd7a` and on `main` at
+  `6ce5dc9`: the stub and the client share one thread, so a stall longer
+  than the bound minus the 100 ms heartbeat interval fires the idle timeout
+  correctly. The bound is now 3 s (about 2.9 s of stall tolerated, was
+  0.9 s), and a failure reports the stub's longest gap between writes, which
+  says whether the runner stalled or heartbeats were not counted.
+- **Push delivery: a redirect is not followed and a response body is not
+  read**, now pinned in `push_sender_tests.rs`
+  (`a_redirect_is_not_followed`, `a_flooding_response_body_is_not_read`).
+- **`scripts/adversarial/probe_push.py` exercises its receivers again.** On
+  Python 3.13 and later `threading.Thread.__init__` sets `self._handle`,
+  which shadowed the receiver's connection handler, so every handler thread
+  died with a `TypeError` and every mode behaved as a silent hang. The hang
+  mode also closed the socket it meant to hold (`finally: c.close()`).
+  Measured on Python 3.13.16 by connecting to each mode before and after.
+- **Workflow actions** (Dependabot #164): `actions/upload-artifact` 7.0.2,
+  `actions/download-artifact` 8.0.2, `actions/setup-node` 7.1.0, and
+  `dtolnay/rust-toolchain` at `e2a55d2` (2026-10-08, which hardens how the
+  action handles its inputs). Its pin comment said `master 2026-09-03`; the
+  previous pin was dated 2026-09-11 and the comment now gives the new
+  commit's date.
+- **The weekly mutation sweep's survivors are gone** (2026-09-28 onward, six
+  each week). New tests fail under `SseParser::reset_event_state` emptied
+  and under `RequestHandler::task_count` returning 0 or 1. The
+  `TaskStore::earliest_event_seq` default and the conformance harness's
+  `CancelOnFirstWrite::close` were equivalent mutants, no-ops either way, and
+  are now written so the tool does not generate them; the queue test that
+  justifies the second now checks that `close` really is a no-op. No
+  behaviour changes. `check_endpoint_reachable`, the sixth, was already
+  killed on `main`.
+- **The conformance peers are at their latest releases, and no skip is
+  left** (`itk/agents/`, `tck.yml`). `@a2a-js/sdk` 1.3.0, a2a-go v2.6.0 and
+  `a2a-java` 1.4.0.Final each pass 21/21 on both bindings of this kit.
+  a2a-java 1.4.0.Final accepts `application/a2a+json` on REST, so the java-sdk
+  leg's skip of `a2a_media_type_accepted`, the last one, is gone. a2a-go
+  v2.6.0 reads the spec's `securityRequirements` lists, so
+  `go_sdk_interop.sh` step 1b runs the whole a2a-go client battery against
+  such a card (36 checks) instead of asserting the rejection.
+- **Pin freshness grades the Python SDK again** (`pin-freshness.yml`). Its
+  python-sdk leg read `tck.yml` with a `python3` that had no PyYAML and
+  died before grading anything (2026-10-05). Every leg now sets up Python
+  and installs PyYAML from `.github/requirements/pyyaml.txt` first. The
+  same run's go-sdk leg failed because a2a-go 2.6.0 needs Go 1.26, which
+  the workflow has asked for since 2026-10-10.
+- **The full mutation sweep fits its timeout again.** `a2a-server` is
+  dealt round-robin across 24 shards instead of in 12 consecutive slices,
+  after two of the 12 were cancelled at 240 minutes on 2026-10-12; projected
+  from that run's own timings, the slowest shard drops from over 240 minutes
+  to about 110. `mutation-history.md` records that sweep and the four before
+  it, none of which had been recorded.
+- **A pull request's mutation shards share the work evenly.** The
+  incremental job's eight shards are dealt round-robin too. Sliced, a shard
+  held whichever crates' files fell to it: in three runs on this branch the
+  slowest shard, all `a2a-server` mutants, took 114 to 120 minutes against a
+  120-minute timeout, while in one of them the two holding only `a2a-types`
+  mutants took 20 and 27. On the same 1,160 mutants, the last sliced run
+  lost four of its eight shards to that timeout; the first round-robin run
+  finished all eight in 79 to 110 minutes and passed.
+- **A failed executor is shown to be logged** (§3.3.2: servers SHOULD log
+  system errors). `executor_failure_logged.rs` asserts the ERROR event
+  that names the task and the cause; it fails with the call deleted,
+  demoted to WARN, or without the cause.
 - **Tests for four spec requirements that were implemented but untested**:
   §3.1.4 `includeArtifacts` omission (`list_tasks_artifacts.rs`), §3.3.4
   streaming refused without the capability on the JSON-RPC wire and §3.5.2

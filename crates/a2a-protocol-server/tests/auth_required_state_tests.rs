@@ -111,6 +111,7 @@ async fn start() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
         RequestHandlerBuilder::new(AuthRequiringExecutor {
             runs: Arc::clone(&runs),
         })
+        .without_agent_card()
         .with_interceptor(HeaderCredential)
         .build()
         .expect("build handler"),

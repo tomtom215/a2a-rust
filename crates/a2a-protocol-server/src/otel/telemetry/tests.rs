@@ -80,7 +80,7 @@ fn langfuse_traces_ignore_a_grpc_protocol_variable() {
         "pk",
         "sk",
     ));
-    let traces = b.target(Signal::Traces, Arc::default()).unwrap();
+    let traces = b.target(Signal::Traces).unwrap();
     assert_eq!(traces.protocol, OtlpProtocol::HttpProtobuf);
     assert_eq!(
         traces.endpoint.as_deref(),
@@ -88,7 +88,7 @@ fn langfuse_traces_ignore_a_grpc_protocol_variable() {
     );
     // The other signals still follow the environment.
     assert_eq!(
-        b.target(Signal::Metrics, Arc::default()).unwrap().protocol,
+        b.target(Signal::Metrics).unwrap().protocol,
         OtlpProtocol::Grpc
     );
 }
@@ -200,7 +200,7 @@ fn wrapped_errors_are_their_source() {
     use std::error::Error as _;
     let exporter = TelemetryError::Exporter {
         signal: "traces",
-        source: opentelemetry_otlp::ExporterBuildError::NoHttpClient,
+        source: opentelemetry_otlp::ExporterBuildError::InvalidConfiguration("x".into()),
     };
     assert!(exporter.source().is_some());
     let runtime = TelemetryError::Runtime(std::io::Error::other("no thread"));
@@ -254,7 +254,6 @@ fn the_export_client_debugs_as_its_timeout() {
         runtime.handle().clone(),
         &tls,
         std::time::Duration::from_secs(7),
-        Arc::default(),
     );
     let shown = format!("{client:?}");
     assert!(shown.starts_with("ExportHttpClient"), "{shown}");

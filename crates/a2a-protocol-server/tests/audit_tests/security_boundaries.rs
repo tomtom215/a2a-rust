@@ -15,6 +15,7 @@ use super::*;
 #[tokio::test]
 async fn context_id_exactly_max_length_passes() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -38,6 +39,7 @@ async fn context_id_exactly_max_length_passes() {
 #[tokio::test]
 async fn context_id_over_max_length_fails() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -63,6 +65,7 @@ async fn context_id_over_max_length_fails() {
 #[tokio::test]
 async fn task_id_exactly_max_length_passes() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -93,6 +96,7 @@ async fn task_id_exactly_max_length_passes() {
 #[tokio::test]
 async fn task_id_over_max_length_fails() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -124,6 +128,7 @@ async fn empty_context_id_is_unset_not_rejected() {
     // accepted and a context generated. Whitespace-only, below, stays a
     // client error; the boundary is exactly-empty.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -147,6 +152,7 @@ async fn empty_context_id_is_unset_not_rejected() {
 #[tokio::test]
 async fn empty_task_id_is_unset_not_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -172,6 +178,7 @@ async fn empty_task_id_is_unset_not_rejected() {
 #[tokio::test]
 async fn whitespace_only_context_id_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 
@@ -196,6 +203,7 @@ async fn whitespace_only_context_id_rejected() {
 #[tokio::test]
 async fn whitespace_only_task_id_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .without_agent_card()
         .build()
         .expect("build handler");
 

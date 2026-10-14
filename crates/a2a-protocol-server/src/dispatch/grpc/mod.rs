@@ -25,6 +25,12 @@
 //! # Example
 //!
 //! ```rust,no_run
+//! # fn card() -> a2a_protocol_types::agent_card::AgentCard {
+//! #     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+//! #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+//! #         .with_description("An example agent")
+//! #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+//! # }
 //! use std::sync::Arc;
 //! use a2a_protocol_server::dispatch::grpc::{GrpcDispatcher, GrpcConfig};
 //! use a2a_protocol_server::RequestHandlerBuilder;
@@ -38,7 +44,7 @@
 //! # }
 //! # async fn example() -> std::io::Result<()> {
 //! let handler = Arc::new(
-//!     RequestHandlerBuilder::new(MyExec).build().unwrap()
+//!     RequestHandlerBuilder::new(MyExec).with_agent_card(card()).build().unwrap()
 //! );
 //! let config = GrpcConfig::default();
 //! let dispatcher = GrpcDispatcher::new(handler, config);
@@ -49,6 +55,7 @@
 
 mod bounded_incoming;
 mod config;
+mod details;
 mod dispatcher;
 mod helpers;
 mod native;

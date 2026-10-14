@@ -24,7 +24,6 @@ use std::time::Instant;
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::task::Task;
 use tokio::sync::OwnedSemaphorePermit;
-use tokio::task::JoinHandle;
 
 use crate::call_context::CallContext;
 use crate::error::ServerResult;
@@ -43,7 +42,9 @@ mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
 mod respond;
-mod terminal;
+mod start;
+use start::{ExecutorStart, runtime_has_one_worker};
+pub(super) mod terminal;
 mod validation;
 
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
@@ -90,39 +91,6 @@ struct Started {
     cancel: tokio_util::sync::CancellationToken,
     /// The queue's terminal gate, answered by the background processor.
     gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
-}
-
-/// Whether the current tokio runtime has a single worker thread: a
-/// current-thread runtime, or a multi-thread one sized to one CPU (as
-/// `available_parallelism` reports for a container limited to one).
-fn runtime_has_one_worker() -> bool {
-    tokio::runtime::Handle::try_current().is_ok_and(|h| h.metrics().num_workers() <= 1)
-}
-
-/// How a committed send's executor runs.
-enum ExecutorStart {
-    /// Already running on a task of its own.
-    Spawned(JoinHandle<()>),
-    /// Run by whoever collects its events; spawned if dropped unrun.
-    Deferred(execute::DeferredExecutor),
-}
-
-impl ExecutorStart {
-    /// The executor on a task of its own, spawning it if it is not yet.
-    fn into_handle(self) -> JoinHandle<()> {
-        match self {
-            Self::Spawned(handle) => handle,
-            Self::Deferred(deferred) => deferred.spawn(),
-        }
-    }
-
-    /// The executor as the sync collector watches it.
-    fn watch(self) -> execute::WatchedExecutor {
-        match self {
-            Self::Spawned(handle) => execute::WatchedExecutor::Spawned(Some(handle)),
-            Self::Deferred(deferred) => deferred.watch(),
-        }
-    }
 }
 
 /// What committing a send produced.
@@ -177,7 +145,8 @@ impl RequestHandler {
             self.send_message_inner(params, streaming, method_name, headers)
                 .await
         })
-        .await;
+        .await
+        .map_err(crate::error::ServerError::not_retry_safe);
         #[cfg(feature = "tracing")]
         if let Ok(SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),
@@ -327,7 +296,9 @@ impl RequestHandler {
         // context other than the canonical one, which is the case
         // `find_task_by_context` cannot see. Everywhere else this is a no-op
         // and `stored_task` stays exactly what it was.
-        let stored_task = resolution.continues.or(stored_task);
+        let stored_task = self
+            .settled_task(&task_id, resolution.continues.or(stored_task))
+            .await?;
         // A decision is checked against the request pending on the task it
         // continues, before anything is claimed; see `crate::approval`.
         let approval = match &self.approval_gate {
@@ -384,6 +355,8 @@ impl RequestHandler {
                 stored_task.as_ref(),
                 &params.message,
             );
+            // The same decision `build_initial_task` makes.
+            let continues = stored_task.as_ref().is_some_and(|s| s.id == task_id);
             let mut ctx = create::build_request_context(
                 params.message,
                 task_id.clone(),
@@ -417,7 +390,9 @@ impl RequestHandler {
             // tokens before this one was inserted; it has set its flag by
             // now, so stop this turn the way the walk would have (`halt`).
             self.stop_if_halted(&turn, &ctx.cancellation_token);
-            self.persist_initial_task(&task).await?;
+            // A continuation's inline push config is registered here, before
+            // its turn is saved; a new task's below (see `save_turn`).
+            Box::pin(self.save_turn(&task, params.configuration.as_ref(), continues)).await?;
             #[cfg(feature = "audit")]
             if let (Some(log), Some(approval)) = (&self.audit, ctx.approval.as_ref()) {
                 Box::pin(crate::audit::record_approval(
@@ -440,8 +415,8 @@ impl RequestHandler {
             // Dropping the guard first published a task that a concurrent
             // send for the same context could find by `find_task_by_context`
             // in the window before the rollback.
-            Box::pin(self.register_inline_push_config(params.configuration.as_ref(), &task_id))
-                .await?;
+            let inline = params.configuration.as_ref().filter(|_| !continues);
+            Box::pin(self.register_inline_push_config(inline, &task_id, true)).await?;
 
             // Subsequent requests for this context_id will now find the task via
             // find_task_by_context.

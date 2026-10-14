@@ -102,6 +102,67 @@ let client = ClientBuilder::new(url)
 
 Your own hooks implement `CallInterceptor` and are added the same way.
 
+### API keys
+
+An agent whose card declares an `APIKeySecurityScheme` (spec §4.5.2) reads
+its key from the header or cookie the scheme names, so
+`AuthInterceptor::api_key` sends it there; `AuthInterceptor::with_scheme(..,
+"api-key")` writes `Authorization`, which such an agent never reads:
+
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
+use std::sync::Arc;
+use a2a_protocol_client::auth::{
+    AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, SessionId,
+};
+use a2a_protocol_types::security::{ApiKeyLocation, ApiKeySecurityScheme};
+
+// As the agent's card declares it in `securitySchemes`.
+let scheme = ApiKeySecurityScheme {
+    location: ApiKeyLocation::Header,
+    name: "X-API-Key".into(),
+    description: None,
+};
+let store = Arc::new(InMemoryCredentialsStore::new());
+let session = SessionId::new("me");
+store.set(session.clone(), "api-key", "my-key".into());
+let client = ClientBuilder::new(url)
+    .with_interceptor(AuthInterceptor::api_key(store, session, "api-key", &scheme).unwrap())
+    .build()
+    .unwrap();
+```
+
+A scheme that places the key in the query string is refused with
+`ClientError::InvalidAuthScheme`: no transport here can add a query parameter
+to a call yet.
+
+### Extensions
+
+Ask the agent to use extensions (spec §3.2.6, `A2A-Extensions`):
+
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
+let client = ClientBuilder::new(url)
+    .with_extensions([
+        "https://example.com/extensions/geolocation/v1",
+        "https://standards.org/extensions/citations/v1",
+    ])
+    .build()
+    .unwrap();
+```
+
+Every request carries the URIs in one comma-separated `A2A-Extensions` header
+(gRPC metadata on gRPC). An agent uses those it supports; one that declares an
+extension `required` refuses a request that does not ask for it with
+`ExtensionSupportRequired` (§3.3.4). An interceptor that sets the header
+itself decides for that request. A `WebSocketTransport` sends headers only
+with its upgrade, so give it the URIs with
+`WebSocketTransportConfig::with_extensions`; another set needs another
+connection. The build refuses a URI that is empty or holds a comma,
+whitespace or anything but visible ASCII.
+
 ### Retry Policy
 
 Enable automatic retries on transient failures (connection errors, timeouts, HTTP 429/502/503/504):
@@ -153,10 +214,11 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card, preferring `ClientConfig`'s default binding order (`["JSONRPC"]`), falling back to the card's first compatible interface. Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one |
+| `from_card(&AgentCard)` | — | Build from an agent card, using the first interface the card lists that this client supports (spec §8.3.2; until 0.15 it preferred JSON-RPC). Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one. The client also checks the card's optional capabilities before each call that needs one (spec §3.3.4); see `without_capability_checks` |
 | `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
 | `with_protocol_binding(str)` | `"JSONRPC"` | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
+| `without_capability_checks()` | checks on | A client from a card refuses, before sending, a call whose capability the card does not set to `true`: `stream_message` and `subscribe_to_task` need `capabilities.streaming`, the push-config methods and a send with an inline push config need `pushNotifications`, `get_extended_agent_card` needs `extendedAgentCard`. The refusal is `ClientError::CapabilityNotDeclared`; a conformant agent would refuse the call too. This sends them anyway, for an agent that serves a capability without declaring it. Once `get_extended_agent_card` succeeds, the checks use the extended card's capabilities (spec §3.1.11). A client built with `new(url)` has no card and checks nothing |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout(Duration)` | 30s | Establishing a stream (headers, or an error body) |
@@ -169,6 +231,7 @@ let client = ClientBuilder::new(url)
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
 | `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
+| `with_extensions(uris)` | None | Extensions to ask the agent for, sent as `A2A-Extensions` on every request |
 | `with_max_response_size(usize)` | 32 MiB | Largest buffered (non-streaming) response body |
 | `without_tls()` | TLS on with the `tls-rustls` feature | Disable TLS (plain HTTP only) |
 | `with_peer_honouring_idempotency(bool)` | false (true when the card advertises the extension) | Let a keyed send be retried after an ambiguous failure; see [Idempotent Sends](./idempotency.md) |

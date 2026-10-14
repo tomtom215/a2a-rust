@@ -85,11 +85,11 @@ tokio-stream = { workspace = true, features = ["net"] }
 rcgen        = "0.14"
 rustls       = { version = ">=0.23.45, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
 # `observability_e2e.rs` (ADR 0013's gate): spans reach an in-memory exporter
-# through `tracing-opentelemetry` 0.33, the release built on the workspace's
-# opentelemetry 0.32 (crates.io index: `opentelemetry = "^0.32.0"`), and
+# through `tracing-opentelemetry` 0.34, the release built on the workspace's
+# opentelemetry 0.33 (crates.io index: `opentelemetry = "^0.33.0"`), and
 # metrics reach a `ManualReader`.
 tracing                = { workspace = true }
 tracing-subscriber     = { workspace = true }
-tracing-opentelemetry  = { version = ">=0.33, <0.34", default-features = false }
-opentelemetry          = { version = "0.32" }
-opentelemetry_sdk      = { version = "0.32", features = ["trace", "metrics", "testing", "experimental_metrics_custom_reader"] }
+tracing-opentelemetry  = { version = ">=0.34, <0.35", default-features = false }
+opentelemetry          = { version = "0.33" }
+opentelemetry_sdk      = { version = "0.33", features = ["trace", "metrics", "testing", "experimental_metrics_custom_reader"] }

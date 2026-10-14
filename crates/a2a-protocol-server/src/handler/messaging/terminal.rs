@@ -9,7 +9,9 @@
 //! executor's `cancel` hook, and must not when the executor already ended the
 //! task itself: a second terminal status is an invalid transition, which the
 //! background processor answers by marking the task `Failed`. This is how the
-//! spawned executor task knows which case it is in.
+//! spawned executor task knows which case it is in. `CancelTask` and shutdown
+//! both learn from it whether the hook wrote the terminal state itself
+//! ([`TerminalTracking::cancel_with`]).
 //!
 //! It also reports whether the executor's latest state parks the task at
 //! `input-required` or `auth-required`, which admission needs to tell a
@@ -27,11 +29,13 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskState;
 
 use super::super::ExecutorTurn;
+use crate::executor::AgentExecutor;
+use crate::request_context::RequestContext;
 use crate::streaming::{EventQueueWriter, InMemoryQueueWriter};
 
 /// An [`InMemoryQueueWriter`] that records whether a terminal state was
 /// written through it.
-pub(super) struct TerminalTracking {
+pub struct TerminalTracking {
     inner: Arc<InMemoryQueueWriter>,
     terminal: AtomicBool,
     turn: Arc<ExecutorTurn>,
@@ -43,7 +47,7 @@ pub(super) struct TerminalTracking {
 
 impl TerminalTracking {
     /// Wraps the task's writer.
-    pub(super) const fn new(inner: Arc<InMemoryQueueWriter>, turn: Arc<ExecutorTurn>) -> Self {
+    pub const fn new(inner: Arc<InMemoryQueueWriter>, turn: Arc<ExecutorTurn>) -> Self {
         Self {
             inner,
             terminal: AtomicBool::new(false),
@@ -51,6 +55,12 @@ impl TerminalTracking {
             #[cfg(feature = "tracing")]
             recorder: None,
         }
+    }
+
+    /// Waits for the turn's events to be stored; see
+    /// [`InMemoryQueueWriter::settled`].
+    pub async fn settled(&self) {
+        self.inner.settled().await;
     }
 
     /// Reports what the executor writes to `recorder`.
@@ -64,8 +74,31 @@ impl TerminalTracking {
     }
 
     /// Whether a terminal state was successfully written.
-    pub(super) fn terminal_written(&self) -> bool {
+    pub fn terminal_written(&self) -> bool {
         self.terminal.load(Ordering::Acquire)
+    }
+
+    /// Runs `executor`'s `cancel` hook through this writer, then writes the
+    /// `Canceled` status itself when the hook returned without a terminal
+    /// state.
+    ///
+    /// The default hook writes it. One overridden to release what the task
+    /// holds, as the trait invites, may write nothing, and the task's open
+    /// streams then ended with no terminal frame (spec §3.1.2, §3.1.6).
+    ///
+    /// # Errors
+    ///
+    /// The hook's own error; nothing is written after it.
+    pub async fn cancel_with(
+        &self,
+        executor: &dyn AgentExecutor,
+        ctx: &RequestContext,
+    ) -> A2aResult<()> {
+        executor.cancel(ctx, self).await?;
+        if !self.terminal_written() {
+            crate::executor::write_canceled(ctx, self).await;
+        }
+        Ok(())
     }
 }
 
@@ -201,5 +234,70 @@ mod tests {
             tracking.write(event.clone()).await.unwrap();
             assert_eq!(turn.is_parked(), parked, "{event:?}");
         }
+    }
+
+    struct DefaultHook;
+    crate::agent_executor!(DefaultHook, |_ctx, _queue| async { Ok(()) });
+
+    struct EndsItself;
+    crate::agent_executor!(EndsItself,
+        execute: |_ctx, _queue| async { Ok(()) },
+        cancel: |_ctx, queue| async { queue.write(status(TaskState::Completed)).await }
+    );
+
+    struct Releases;
+    crate::agent_executor!(Releases,
+        execute: |_ctx, _queue| async { Ok(()) },
+        cancel: |_ctx, _queue| async { Ok(()) }
+    );
+
+    struct Refuses;
+    crate::agent_executor!(Refuses,
+        execute: |_ctx, _queue| async { Ok(()) },
+        cancel: |_ctx, _queue| async {
+            Err(a2a_protocol_types::error::A2aError::internal("still held"))
+        }
+    );
+
+    /// The states `cancel_with` puts on the queue, and its result. Read from
+    /// the raw channel: a reader ends at the first terminal state, so it
+    /// would not show a second one.
+    async fn cancel_through(executor: &dyn AgentExecutor) -> (Vec<TaskState>, bool) {
+        let (writer, _reader) = crate::streaming::event_queue::new_in_memory_queue_with_capacity(8);
+        let mut raw = writer.raw_subscribe();
+        let tracking = TerminalTracking::new(Arc::new(writer), Arc::default());
+        let ctx = RequestContext::new(
+            a2a_protocol_types::message::Message::user_text("m", "stop"),
+            TaskId::new("t"),
+            "c".to_owned(),
+        );
+        let ok = tracking.cancel_with(executor, &ctx).await.is_ok();
+        drop(tracking);
+        let mut states = Vec::new();
+        while let Ok(shared) = raw.try_recv() {
+            if let Some(state) = state_of(&shared.as_ref().as_ref().unwrap().event) {
+                states.push(state);
+            }
+        }
+        (states, ok)
+    }
+
+    /// One terminal state reaches the queue however the hook ends the task,
+    /// and none after a hook that failed.
+    #[tokio::test]
+    async fn a_cancel_writes_canceled_only_when_the_hook_did_not_end_the_task() {
+        assert_eq!(
+            cancel_through(&DefaultHook).await,
+            (vec![TaskState::Canceled], true)
+        );
+        assert_eq!(
+            cancel_through(&EndsItself).await,
+            (vec![TaskState::Completed], true)
+        );
+        assert_eq!(
+            cancel_through(&Releases).await,
+            (vec![TaskState::Canceled], true)
+        );
+        assert_eq!(cancel_through(&Refuses).await, (vec![], false));
     }
 }

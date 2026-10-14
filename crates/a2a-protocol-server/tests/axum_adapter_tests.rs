@@ -362,6 +362,7 @@ async fn axum_router_is_composable() {
     // Verify the A2aRouter can be merged with other Axum routes
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
+            .without_agent_card()
             .build()
             .expect("build handler"),
     );
@@ -423,6 +424,49 @@ async fn axum_honors_configured_body_limit() {
         status, 200,
         "body under the configured cap should succeed (200), got {status}"
     );
+}
+
+/// A refusal the router makes itself, before any A2A handler runs, in the
+/// AIP-193 shape `RestDispatcher` answers with (spec §11.6), status kept.
+fn assert_aip193(status: u16, body: &[u8], want: u16) {
+    let text = String::from_utf8_lossy(body);
+    assert_eq!(status, want, "{text}");
+    let v: serde_json::Value =
+        serde_json::from_slice(body).unwrap_or_else(|e| panic!("not JSON ({e}): {text}"));
+    assert_eq!(v["error"]["code"], want, "{v}");
+    assert!(v["error"]["message"].is_string(), "{v}");
+}
+
+/// R26: a method an A2A route does not take, and a body over the cap, were
+/// axum's own answers: no body at all for `405`, plain text for `413`. An
+/// unknown path outside the A2A routes stays the composing app's to answer:
+/// a router-wide fallback would claim every path of an app this router is
+/// merged into, and axum refuses to merge two routers that both have one.
+#[tokio::test]
+async fn axum_refusals_of_its_own_are_aip_193() {
+    let base = start_test_server_with_body_limit(1024).await;
+
+    // `/message:send` takes POST only.
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("{base}/message:send"))
+        .header("a2a-version", "1.0")
+        .body(Empty::new())
+        .unwrap();
+    let resp = client.request(req).await.unwrap();
+    let allow = resp.headers().get("allow").cloned();
+    let status = resp.status().as_u16();
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert_aip193(status, &body, 405);
+    assert!(
+        allow.is_some(),
+        "a 405 names the methods it takes (RFC 9110 §15.5.6)"
+    );
+
+    let big = make_send_body(&"x".repeat(4096));
+    let (status, body) = http_post_json(&format!("{base}/message:send"), &big).await;
+    assert_aip193(status, &body, 413);
 }
 
 // ── Routes that had no coverage at all ───────────────────────────────────────
@@ -767,4 +811,153 @@ async fn a_dribbling_body_is_cut_off_at_the_configured_timeout() {
         status_line.contains("408"),
         "a body that never arrives must be refused with 408, got: {status_line:?}"
     );
+
+    // R26: in the AIP-193 shape, as `RestDispatcher` answers it; it was
+    // plain text until 2026-10-14.
+    let mut response = buf[..n].to_vec();
+    while !String::from_utf8_lossy(&response).contains("\"code\":408") {
+        match tokio::time::timeout(std::time::Duration::from_secs(2), sock.read(&mut buf)).await {
+            Ok(Ok(n)) if n > 0 => response.extend_from_slice(&buf[..n]),
+            _ => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&response);
+    assert!(text.contains("\"code\":408"), "{text}");
+}
+
+// ── §11.5: a GET carries its request's fields in the query ───────────────────
+
+/// Sends one message, optionally in `tenant`, and returns the task's id.
+async fn send_in(base: &str, tenant: Option<&str>) -> String {
+    let mut body: serde_json::Value = serde_json::from_str(&make_send_body("query")).unwrap();
+    if let Some(tenant) = tenant {
+        body["tenant"] = serde_json::Value::String(tenant.to_owned());
+    }
+    let (status, resp) = http_post_json(&format!("{base}/message:send"), &body.to_string()).await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&resp));
+    match serde_json::from_slice(&resp).unwrap() {
+        SendMessageResponse::Task(task) => task.id.0,
+        other => panic!("expected a task, got {other:?}"),
+    }
+}
+
+/// `GET /tasks/{id}?historyLength=0` returns no history: a2a.proto's
+/// `GetTaskRequest.history_length`, "The server MUST NOT return more messages
+/// than the provided value". The router ignored the query and returned it all.
+#[tokio::test]
+async fn axum_get_task_honours_history_length() {
+    let base = start_test_server().await;
+    let id = send_in(&base, None).await;
+
+    let (status, full) = http_get(&format!("{base}/tasks/{id}")).await;
+    assert_eq!(status, 200);
+    let full: Task = serde_json::from_slice(&full).unwrap();
+    assert!(
+        !full.history.unwrap_or_default().is_empty(),
+        "the task has history to withhold"
+    );
+    let (status, none) = http_get(&format!("{base}/tasks/{id}?historyLength=0")).await;
+    assert_eq!(status, 200);
+    let none: Task = serde_json::from_slice(&none).unwrap();
+    assert_eq!(none.history.unwrap_or_default().len(), 0);
+}
+
+/// `?tenant=` selects the partition a GET reads, as on the REST dispatcher:
+/// the request's `tenant` field, which a GET can only carry in the query.
+/// The router read every GET from the default partition.
+#[tokio::test]
+async fn axum_get_requests_read_the_tenant_from_the_query() {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(test_card())
+            .with_task_store(a2a_protocol_server::TenantAwareInMemoryTaskStore::new())
+            .build()
+            .expect("build handler"),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("local addr"));
+    let app = A2aRouter::new(handler).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let id = send_in(&base, Some("acme")).await;
+
+    let (status, _) = http_get(&format!("{base}/tasks/{id}?tenant=acme")).await;
+    assert_eq!(status, 200, "found in its own tenant");
+    let (status, _) = http_get(&format!("{base}/tasks/{id}")).await;
+    assert_eq!(status, 404, "not in the default partition");
+
+    let listed = |body: &Bytes| -> Vec<String> {
+        let list: a2a_protocol_types::responses::TaskListResponse =
+            serde_json::from_slice(body).unwrap();
+        list.tasks.into_iter().map(|t| t.id.0).collect()
+    };
+    let (status, body) = http_get(&format!("{base}/tasks?tenant=acme")).await;
+    assert_eq!(status, 200);
+    assert_eq!(listed(&body), [id]);
+    let (status, body) = http_get(&format!("{base}/tasks")).await;
+    assert_eq!(status, 200);
+    assert!(listed(&body).is_empty());
+}
+
+/// The push-config routes and `GET :subscribe` read `?tenant=` too: the task
+/// and its config live in `acme`, and only requests naming it find them.
+#[tokio::test]
+async fn axum_push_config_and_subscribe_routes_read_the_tenant_from_the_query() {
+    let mut card = test_card();
+    card.capabilities = AgentCapabilities::none()
+        .with_streaming(true)
+        .with_push_notifications(true);
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(card)
+            .with_task_store(a2a_protocol_server::TenantAwareInMemoryTaskStore::new())
+            .with_push_config_store(
+                a2a_protocol_server::push::TenantAwareInMemoryPushConfigStore::new(),
+            )
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
+            .build()
+            .expect("build handler"),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("local addr"));
+    let app = A2aRouter::new(handler).into_router();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let id = send_in(&base, Some("acme")).await;
+    let configs = format!("{base}/tasks/{id}/pushNotificationConfigs");
+
+    let body = serde_json::json!({"url": "https://example.com/hook", "tenant": "acme"});
+    let (status, created) = http_post_json(&configs, &body.to_string()).await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&created));
+    let created: serde_json::Value = serde_json::from_slice(&created).unwrap();
+    let one = format!("{configs}/{}", created["id"].as_str().expect("config id"));
+
+    let count = |body: &Bytes| -> usize {
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
+        v["configs"].as_array().map_or(0, Vec::len)
+    };
+    let (status, listed) = http_get(&format!("{configs}?tenant=acme")).await;
+    assert_eq!((status, count(&listed)), (200, 1), "listed in its tenant");
+    let (_, listed) = http_get(&configs).await;
+    assert_eq!(count(&listed), 0, "not listed in the default partition");
+    let (status, _) = http_get(&format!("{one}?tenant=acme")).await;
+    assert_eq!(status, 200, "found in its tenant");
+    let (status, _) = http_get(&one).await;
+    assert_ne!(status, 200, "not found in the default partition");
+
+    // The task is completed, so subscribing is refused; what differs is
+    // whether the task was found at all.
+    let (status, _) = http_get(&format!("{base}/tasks/{id}:subscribe?tenant=acme")).await;
+    assert_ne!(status, 404, "the task is found in its tenant");
+    let (status, _) = http_get(&format!("{base}/tasks/{id}:subscribe")).await;
+    assert_eq!(status, 404, "not in the default partition");
+
+    let (status, _) = http_request("DELETE", &one).await;
+    assert_ne!(status, 200, "nothing to delete in the default partition");
+    let (status, _) = http_request("DELETE", &format!("{one}?tenant=acme")).await;
+    assert_eq!(status, 200);
+    let (_, listed) = http_get(&format!("{configs}?tenant=acme")).await;
+    assert_eq!(count(&listed), 0, "deleted in its tenant");
 }

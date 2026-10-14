@@ -175,11 +175,7 @@ impl TelemetryBuilder {
         config::exporter_enabled(&*self.env, signal, explicit.unwrap_or(preset_default))
     }
 
-    pub(super) fn target(
-        &self,
-        signal: Signal,
-        failures: Arc<AtomicU64>,
-    ) -> Result<Target, TelemetryError> {
+    pub(super) fn target(&self, signal: Signal) -> Result<Target, TelemetryError> {
         let env = &*self.env;
         let mut ca_pem = self.ca_pem.clone();
         if let Some((var, path)) = config::certificate_file(env, signal) {
@@ -196,7 +192,6 @@ impl TelemetryBuilder {
                 headers: lf.headers(),
                 timeout,
                 ca_pem,
-                failures,
             });
         }
         let protocol = config::protocol(env, signal, self.protocol)?;
@@ -210,7 +205,6 @@ impl TelemetryBuilder {
             headers: self.headers.clone(),
             timeout,
             ca_pem,
-            failures,
         })
     }
 
@@ -251,8 +245,8 @@ impl TelemetryBuilder {
             let runtime = ExportRuntime::start().map_err(TelemetryError::Runtime)?;
             let resource = self.resource();
             if traces {
-                let failures = telemetry.counter(Signal::Traces);
-                let exporter = exporters::spans(&self.target(Signal::Traces, failures)?, &runtime)?;
+                let exporter = exporters::spans(&self.target(Signal::Traces)?, &runtime)?;
+                let exporter = telemetry.counting(Signal::Traces, exporter);
                 telemetry.tracer = Some(
                     SdkTracerProvider::builder()
                         .with_batch_exporter(exporter)
@@ -261,9 +255,8 @@ impl TelemetryBuilder {
                 );
             }
             if metrics {
-                let failures = telemetry.counter(Signal::Metrics);
-                let exporter =
-                    exporters::metrics(&self.target(Signal::Metrics, failures)?, &runtime)?;
+                let exporter = exporters::metrics(&self.target(Signal::Metrics)?, &runtime)?;
+                let exporter = telemetry.counting(Signal::Metrics, exporter);
                 telemetry.meter = Some(
                     SdkMeterProvider::builder()
                         .with_reader(PeriodicReader::builder(exporter).build())
@@ -272,8 +265,8 @@ impl TelemetryBuilder {
                 );
             }
             if logs {
-                let failures = telemetry.counter(Signal::Logs);
-                let exporter = exporters::logs(&self.target(Signal::Logs, failures)?, &runtime)?;
+                let exporter = exporters::logs(&self.target(Signal::Logs)?, &runtime)?;
+                let exporter = telemetry.counting(Signal::Logs, exporter);
                 telemetry.logger = Some(
                     SdkLoggerProvider::builder()
                         .with_batch_exporter(exporter)

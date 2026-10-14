@@ -314,12 +314,29 @@ pub struct AgentCard {
 }
 
 impl AgentCard {
+    /// The card's own REQUIRED strings, `name`, `description` and
+    /// `version`: none may be empty.
+    const fn validate_identity(&self) -> Result<(), &'static str> {
+        if self.name.is_empty() {
+            return Err("agent card name must not be empty");
+        }
+        if self.description.is_empty() {
+            return Err("agent card description must not be empty");
+        }
+        if self.version.is_empty() {
+            return Err("agent card version must not be empty");
+        }
+        Ok(())
+    }
+
     /// Validates the agent card for completeness.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `name` is empty
+    /// - `name`, `description` or `version` is empty (all three REQUIRED in
+    ///   `a2a.proto`; until 0.15 only `name` was checked, and
+    ///   [`AgentCard::new`] leaves `description` empty)
     /// - a repeated field the proto marks REQUIRED is empty (spec §5.7:
     ///   arrays marked as required MUST contain at least one element):
     ///   `supported_interfaces`, `default_input_modes`, `default_output_modes`,
@@ -329,9 +346,12 @@ impl AgentCard {
     ///   `protocol_binding` or `protocol_version`; the provider's
     ///   `organization` or `url`; a skill's `id`, `name` or `description`; a
     ///   signature's `protected` or `signature`
+    ///
+    /// The security schemes' REQUIRED fields are checked by
+    /// [`validate_security_schemes`](Self::validate_security_schemes).
     pub const fn validate(&self) -> Result<(), &'static str> {
-        if self.name.is_empty() {
-            return Err("agent card name must not be empty");
+        if let Err(why) = self.validate_identity() {
+            return Err(why);
         }
         if self.supported_interfaces.is_empty() {
             return Err("agent card must have at least one supported interface");
@@ -385,6 +405,24 @@ impl AgentCard {
             }
         }
         Ok(())
+    }
+
+    /// Validates the security schemes: every string field `a2a.proto` marks
+    /// REQUIRED is non-empty. Those are an API key's `name`, an HTTP scheme's
+    /// `scheme`, `openIdConnectUrl`, and the URLs of the authorization-code,
+    /// client-credentials and device-code flows.
+    ///
+    /// Separate from [`validate`](Self::validate), which is `const` and so
+    /// cannot walk the scheme map. A server publishing the card runs both.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming the scheme or flow and the empty field.
+    pub fn validate_security_schemes(&self) -> Result<(), &'static str> {
+        self.security_schemes
+            .iter()
+            .flat_map(|schemes| schemes.values())
+            .try_for_each(crate::security::SecurityScheme::validate)
     }
 }
 

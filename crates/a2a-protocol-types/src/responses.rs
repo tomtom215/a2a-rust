@@ -27,7 +27,7 @@ use crate::task::Task;
 /// Per v1.0 spec, the response uses the proto `oneof payload` pattern.
 /// In JSON this is externally tagged: `{"task": {...}}` or `{"message": {...}}`.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SendMessageResponse {
     /// The agent accepted the message and created (or updated) a task.
@@ -36,6 +36,11 @@ pub enum SendMessageResponse {
     /// The agent responded immediately with a message (no task created).
     Message(Message),
 }
+
+crate::oneof::oneof_deserialize!(
+    SendMessageResponse,
+    [Task(Task) = "task", Message(Message) = "message",]
+);
 
 // ── TaskListResponse ──────────────────────────────────────────────────────────
 
