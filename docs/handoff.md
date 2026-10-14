@@ -1081,6 +1081,26 @@ reproduced locally before its fix.
    the new copy's line. Counts for v1.0.1: 509 entries, TESTED 316,
    APPLICATION 87, SUPPORTED 56, NOT_APPLICABLE 22, PARTIAL 20,
    NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0.
+9. `docs(compliance):` the audit register's open items are in the
+   repository, as `docs/compliance/audit-register.md`. The register (R1-R67)
+   lived in the previous session's scratchpad; the repository refers to 54
+   of its ids. Its eleven open items (R12, R13, R19, R21, R33, R36(b), R41,
+   R49, R50, R66, R67) and the ledger entries that need a decision each give
+   the code's current behaviour, the spec text, the options and a
+   recommendation. The behaviour was verified from source at `9b08a860` by a
+   read-only agent and spot-checked by hand at eight of its citations (all
+   held). Two corrections came out of it: R13's "no per-caller scoping" is
+   too strong (an A2A credential in SLIM metadata still reaches the
+   interceptors; what is missing is the transport-verified identity), and
+   2.3.0's `Context` does expose `session().source()`. Found besides: a JWT
+   with no `sub` is served from the tenant's shared partition under the
+   default isolation (R12); SLIMRPC sets no `:peer-addr`, so with
+   `trusted_proxy_hops = 0` the auth-failure throttle never throttles a
+   SLIMRPC caller (R41); a multicast lag report is a `Transport` error, not
+   the typed `streamLagged` (R66); the extended-card handler's doc says
+   `Internal` where it returns `-32007`; an empty appending chunk for an
+   unknown artifact id stores a zero-part artifact. **Nothing in it is
+   implemented until the maintainer decides it.**
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 

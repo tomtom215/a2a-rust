@@ -1487,6 +1487,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-test of those rules runs first on every invocation (`--self-test`
   runs only it), and fails under each of 11 hand-applied mutants of the
   retry code.
+- **The audit register's open items are committed**, as
+  `docs/compliance/audit-register.md`: eleven decisions (R12, R13, R19, R21,
+  R33, R36(b), R41, R49, R50, R66, R67) and the ledger entries that need one,
+  each with the code's current behaviour at file and line, the spec text,
+  the options and a recommendation. None is implemented yet.
 - **The spec ledger audits the v1.0.1 release.** Its entries were made
   against upstream `main` at `12e9d2fb` (retrieved 2026-10-10), which is not
   the release: it differs from tag `v1.0.1` by 65 lines, mostly link URLs and
