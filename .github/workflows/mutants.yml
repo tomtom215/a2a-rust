@@ -1040,10 +1040,30 @@ jobs:
     strategy:
       fail-fast: false # a survivor in one shard must not cancel the others
       matrix:
-        # 8-way (matching the full-sweep shard count for a2a-server): a large
-        # PR diff generates enough in-diff mutants that a 4-way split pushed the
-        # heaviest shards past the 45-minute timeout. Doubling the shard count
-        # halves each runner's mutant load so every shard finishes in time.
+        # 8-way (the full sweep's a2a-server count when this was written): a
+        # large PR diff generates enough in-diff mutants that a 4-way split
+        # pushed the heaviest shards past the 45-minute timeout. Doubling the
+        # shard count halves each runner's mutant load so every shard finishes
+        # in time.
+        #
+        # Dealt round-robin (`--sharding round-robin` below) since 2026-10-14,
+        # as the full sweep is. The default slicing gives each shard a run of
+        # consecutive files, so on a PR touching several crates one shard can
+        # hold only a2a-types mutants, which run only that crate's tests, and
+        # another only a2a-server ones, which run the server and Postgres
+        # suites. The slowest shard of runs 38447468013, 38481386658 and
+        # 38495126684 held only a2a-server mutants and took 114-120 minutes (in
+        # the first, shard 4 used 7,193 s of its 7,200); in the last, the two
+        # shards holding only a2a-types mutants took 20 and 27. Listed with the
+        # pinned binary at a later head of the same PR, its 1,160 in-diff
+        # mutants sliced put 145 a2a-server mutants in each of four shards and
+        # only a2a-types ones in two; round-robin puts 91-92 a2a-server, 41-42
+        # a2a-types and 11-12 a2a-client mutants in every shard, and the eight
+        # listings partition the 1,160 exactly. Run 38495126684's eight shards
+        # took 615 minutes in all, 77 each if evenly mixed, against its slowest
+        # sliced shard's 114; mixed, each shard also pays the a2a-server
+        # baseline, 164-254 s in that run against a types-only shard's 26-37 s.
+        # That is a projection from the run's timings, not a measurement.
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       INCREMENTAL_SHARDS: 8
@@ -1127,7 +1147,9 @@ jobs:
           # (measured 2026-08-14), this flag is the only per-mutant cap either
           # job has, and only this job has it. Keep it.
           # `--shard K/N` partitions the in-diff mutant set across the matrix
-          # so each runner tests roughly 1/N of the mutants and fits the timeout.
+          # so each runner tests roughly 1/N of the mutants and fits the timeout;
+          # `--sharding round-robin` deals them out one at a time, so every
+          # shard gets the same mix of crates (see the matrix comment above).
           # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for
           # why `--output mutants.out` silently disabled this gate.
           # No `--exclude-re` here either; the two invocations stay in step
@@ -1139,6 +1161,7 @@ jobs:
             --timeout 300 \
             --jobs 4 \
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
+            --sharding round-robin \
             --test-tool=nextest \
             --profile=mutants \
             --all-features \

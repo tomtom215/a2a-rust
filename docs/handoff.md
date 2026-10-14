@@ -1919,6 +1919,20 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `an_unavailable_error_is_marked_temporary` checks the flag both ways,
     the code and message it keeps, and that it is not on the wire; both
     mutants fail it, applied by hand.
+107. `ci(mutants):` the incremental job deals its mutants round-robin across
+    its eight shards, as the full sweep has since `6c2bff19`; that commit
+    changed only the full sweep. The incremental job mutates the whole PR's
+    diff against `main` on every push (1,160 mutants on this branch at
+    `ee7df1e7`), and the default slicing gave whole shards to one crate: the
+    slowest shard of the runs on `152ea962`, `2d551a2b` and `3f152a79` held
+    only `a2a-server` mutants and took 114-120 minutes against the
+    120-minute timeout (7,193 s of 7,200 on `152ea962`), while `3f152a79`'s
+    two `a2a-types`-only shards took 20 and 27. The pinned binary's
+    listings: sliced, four shards of 145 `a2a-server` mutants and two of
+    `a2a-types` only; round-robin, every shard 91-92 `a2a-server`, 41-42
+    `a2a-types`, 11-12 `a2a-client`, the eight together exactly the 1,160.
+    The ~77-minute slowest shard is a projection from `3f152a79`'s run; read
+    the first run after this commit to replace it with a measurement.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 318,
 PARTIAL 20, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
