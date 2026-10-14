@@ -567,7 +567,9 @@ by no test; the cargo-mutants patch (kept here, not upstreamed — see `scripts/
   gRPC success path was covered from the server and SDK crates and
   therefore, for mutation purposes, not at all. It happened again with
   phase 2: nine server survivors, every one covered by the SDK's
-  `observability_e2e` and by nothing in the server crate.
+  `observability_e2e` and by nothing in the server crate. A doctest does
+  not count either: CI runs the mutants under nextest, which runs none
+  (item 106).
 - **Measure the cost before calling observability done.** The spans were
   green and correct, and a default build had become 36–46% slower per call.
   Clippy's `large_futures` had pointed at one of the two causes; the bench
@@ -1908,6 +1910,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     check on a copy and ignores the result instead. Ledger 768 (§4) moves
     from PARTIAL to TESTED; 768 and 225 cite `portable.rs` for the two moved
     functions.
+106. `test(types):` CI on `96decb0b`, mutants shard 7: `replace
+    A2aError::is_unavailable -> bool with true` and `with false` survived
+    (133 caught, 2 missed, 8 unviable). Item 102's hand mutants ran in the
+    server crate, where the flag is read, and the types crate covered the
+    accessor only with a doctest; CI grades a types-crate mutant with that
+    crate's tests under nextest, which runs no doctests.
+    `an_unavailable_error_is_marked_temporary` checks the flag both ways,
+    the code and message it keeps, and that it is not on the wire; both
+    mutants fail it, applied by hand.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 318,
 PARTIAL 20, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

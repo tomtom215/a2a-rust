@@ -1538,6 +1538,26 @@ mod tests {
         assert_eq!(round_trip.retry_after(), None);
     }
 
+    /// A temporary failure keeps the code §3.3.2 gives for it and is marked
+    /// as one; an internal error is not. The mark is not on the wire, so a
+    /// deserialized error is never temporary.
+    #[test]
+    fn an_unavailable_error_is_marked_temporary() {
+        let busy = A2aError::unavailable("database busy");
+        assert!(busy.is_unavailable());
+        assert_eq!(busy.code, ErrorCode::InternalError);
+        assert_eq!(busy.message, "database busy");
+        assert!(!A2aError::internal("database busy").is_unavailable());
+
+        let wire = serde_json::to_value(&busy).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::to_value(A2aError::internal("database busy")).unwrap()
+        );
+        let round_trip: A2aError = serde_json::from_value(wire).unwrap();
+        assert!(!round_trip.is_unavailable());
+    }
+
     #[test]
     fn ordinary_errors_are_not_lag_signals() {
         // A generic internal error: same ErrorCode as a lag signal, which is
