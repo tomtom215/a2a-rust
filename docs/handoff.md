@@ -999,6 +999,15 @@ reproduced locally before its fix.
    limiter compares the count against it the same way whatever it is.
 4. `ci:` Dependabot #169, `ossf/scorecard-action` 2.5.0; tag `v2.5.0`
    peels to the pinned `fa7117db`.
+5. The incremental mutation run on `a0084513` (38531404074): shard 0
+   passed, mutation step 08:15:38 to 10:03:18. Shards 1-7 started after
+   the merge (08:11:58), when `origin/main` already held the PR, so their
+   diff was empty and they skipped as "No source changes to mutate"; the
+   aggregate gate passed on one shard's report. The merged source was still
+   graded in full: `crates/*/src` is identical between `10827fae` and
+   `a0084513` (`git diff` prints nothing), and `10827fae`'s run
+   (38516495025) passed all eight shards. Not fixed, low: a shard that
+   starts after its PR merges grades nothing and the gate accepts that.
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
