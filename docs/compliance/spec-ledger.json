@@ -2,15 +2,17 @@
  "spec": {
   "repository": "https://github.com/a2aproject/A2A",
   "path": "docs/specification.md",
-  "commit": "12e9d2fbb9badfe98f8ab4f660697870eeb1940b",
-  "vendored_as": "docs/implementation/v1.0.0-specification-complete.md"
+  "tag": "v1.0.1",
+  "commit": "3303592588e388e62e0f69f701af531d2f4e3991",
+  "vendored_as": "docs/implementation/a2a-v1.0.1-specification.md",
+  "sha256": "627ccfe6ffb1be2c56811c3dcc18780deb419f41cdc98248095c939b2d9dc9cb"
  },
  "proto": {
   "vendored_as": "proto/a2a_v1/a2a.proto",
   "release": "v1.0.1"
  },
  "audited_commit": "9ec265d",
- "method": "Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified. Notes and citations corrected to match the code without a change to it (2026-10-13) carry no changed_by: they were checked by reading the code, not by a failing test.",
+ "method": "Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified. Notes and citations corrected to match the code without a change to it (2026-10-13) carry no changed_by: they were checked by reading the code, not by a failing test. Re-anchored 2026-10-14 from upstream main at 12e9d2fbb9ba, which the entries were made against, to the v1.0.1 tag: every spec_line, and every spec line number cited in a note, was moved through a line map built from the two texts by difflib (equal runs, and replaced blocks of equal length, map line for line); 191 entries moved, and the three §7.6.4 entries, whose text v1.0.1 does not have, moved to after_release.",
  "entries": [
   {
    "spec_line": 107,
@@ -304,7 +306,7 @@
     "crates/a2a-protocol-server/src/handler/capability.rs:220 card_without_streaming_rejects_streaming",
     "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming"
    ],
-   "notes": "SendStreamingMessage against a card whose streaming capability is false or absent answers UnsupportedOperationError (-32004) over JSON-RPC (test added 2026-10-10, shown to fail with the check disabled). No-op when no card is configured; see §8.1 line 1980.",
+   "notes": "SendStreamingMessage against a card whose streaming capability is false or absent answers UnsupportedOperationError (-32004) over JSON-RPC (test added 2026-10-10, shown to fail with the check disabled). No-op when no card is configured; see §8.1 line 1970.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
@@ -775,7 +777,7 @@
     "crates/a2a-protocol-server/src/handler/capability.rs:220 card_without_streaming_rejects_streaming",
     "crates/a2a-protocol-server/tests/streaming_contract.rs streaming_methods_are_refused_when_the_card_does_not_declare_streaming"
    ],
-   "notes": "SubscribeToTask against a card whose streaming capability is false or absent answers UnsupportedOperationError (-32004) over JSON-RPC (test added 2026-10-10, shown to fail with the check disabled). No-op when no card is configured; see §8.1 line 1980.",
+   "notes": "SubscribeToTask against a card whose streaming capability is false or absent answers UnsupportedOperationError (-32004) over JSON-RPC (test added 2026-10-10, shown to fail with the check disabled). No-op when no card is configured; see §8.1 line 1970.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
@@ -1272,7 +1274,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:311 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
-   "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one; without it the public card is served. One extended card for every authenticated caller: no per-caller variation (see 3152). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56).",
+   "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one; without it the public card is served. One extended card for every authenticated caller: no per-caller variation (see 3144). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56).",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
@@ -2999,7 +3001,7 @@
    "section": "§4.3.3",
    "keyword": "MUST",
    "binds": "server",
-   "requirement": "The agent MUST include authentication credentials in the request headers as specified in the TaskPushNotificationConfig.authentication field.",
+   "requirement": "The agent MUST include authentication credentials in the request headers as specified in the PushNotificationConfig.authentication field.",
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
@@ -3012,7 +3014,7 @@
     "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent",
     "crates/a2a-protocol-server/tests/push_config_header_values.rs:79 a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation"
    ],
-   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before. Since 2026-10-13 a token or credentials a header cannot carry (CR, LF or another control character) is InvalidParams at creation, inline or by CreateTaskPushNotificationConfig; it was stored and refused at every delivery.",
+   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before. Since 2026-10-13 a token or credentials a header cannot carry (CR, LF or another control character) is InvalidParams at creation, inline or by CreateTaskPushNotificationConfig; it was stored and refused at every delivery. v1.0.1's text names PushNotificationConfig, which the v1.0.1 proto does not define: the message with `authentication` is TaskPushNotificationConfig (a2a.proto line 469), the name upstream main uses since.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -3675,7 +3677,7 @@
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix"
    ],
-   "notes": "WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this is the SLIMRPC spec's own mapping (2985, maintainer/upstream).",
+   "notes": "WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this is the SLIMRPC spec's own mapping (2977, maintainer/upstream).",
    "auditor": "C",
    "source": "spec"
   },
@@ -4013,7 +4015,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3246,
+   "spec_line": 3238,
    "section": "§14",
    "keyword": "MUST",
    "binds": "both",
@@ -4033,7 +4035,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 3251,
+   "spec_line": 3243,
    "section": "§14",
    "keyword": "MUST",
    "binds": "server",
@@ -4052,7 +4054,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3252,
+   "spec_line": 3244,
    "section": "§14",
    "keyword": "MUST",
    "binds": "both",
@@ -4069,7 +4071,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3253,
+   "spec_line": 3245,
    "section": "§14",
    "keyword": "MUST",
    "binds": "agent-application",
@@ -4088,7 +4090,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3254,
+   "spec_line": 3246,
    "section": "§14",
    "keyword": "MUST",
    "binds": "server",
@@ -4106,7 +4108,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3255,
+   "spec_line": 3247,
    "section": "§14",
    "keyword": "MUST",
    "binds": "agent-application",
@@ -4120,7 +4122,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3305,
+   "spec_line": 3297,
    "section": "§14",
    "keyword": "MUST",
    "binds": "client",
@@ -4144,7 +4146,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3343,
+   "spec_line": 3335,
    "section": "§14",
    "keyword": "MUST",
    "binds": "server",
@@ -4165,7 +4167,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3349,
+   "spec_line": 3341,
    "section": "§14",
    "keyword": "MAY",
    "binds": "agent-application",
@@ -4181,7 +4183,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3349,
+   "spec_line": 3341,
    "section": "§14",
    "keyword": "SHOULD NOT",
    "binds": "agent-application",
@@ -4195,7 +4197,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3350,
+   "spec_line": 3342,
    "section": "§14",
    "keyword": "SHOULD",
    "binds": "server",
@@ -4213,7 +4215,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3351,
+   "spec_line": 3343,
    "section": "§14",
    "keyword": "MAY",
    "binds": "agent-application",
@@ -4231,7 +4233,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3352,
+   "spec_line": 3344,
    "section": "§14",
    "keyword": "SHOULD",
    "binds": "client",
@@ -4246,13 +4248,13 @@
     "crates/a2a-protocol-client/tests/card_signature_verification.rs:103 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied",
     "crates/a2a-protocol-client/tests/card_signature_verification.rs:146 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted"
    ],
-   "notes": "With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails the fetch, and so does an unsigned card unless with_require_signature(false), which verifies signatures only when present (until 2026-10-14 an unsigned card was returned, so removing a card's signatures let an altered card through; audit register R9). Why PARTIAL/low: verification needs keys only the application can trust, so it is opt-in, not default; CachingCardResolver and ClientBuilder::from_card do not take keys yet; jku is never followed (the card cannot vouch for its own keys, §8.4.3 line 2132). Since 2026-10-14 the fetch verifies the card as received, before reading it into an AgentCard; it verified the typed card, so a correctly signed card from a peer that models a field this SDK does not was refused.",
+   "notes": "With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails the fetch, and so does an unsigned card unless with_require_signature(false), which verifies signatures only when present (until 2026-10-14 an unsigned card was returned, so removing a card's signatures let an altered card through; audit register R9). Why PARTIAL/low: verification needs keys only the application can trust, so it is opt-in, not default; CachingCardResolver and ClientBuilder::from_card do not take keys yet; jku is never followed (the card cannot vouch for its own keys, §8.4.3 line 2122). Since 2026-10-14 the fetch verifies the card as received, before reading it into an AgentCard; it verified the typed card, so a correctly signed card from a peer that models a field this SDK does not was refused.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3353,
+   "spec_line": 3345,
    "section": "§14",
    "keyword": "MAY",
    "binds": "server",
@@ -4272,7 +4274,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3353,
+   "spec_line": 3345,
    "section": "§14",
    "keyword": "MUST",
    "binds": "server",
@@ -4291,7 +4293,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3365,
+   "spec_line": 3357,
    "section": "App. A",
    "keyword": "MUST",
    "binds": "spec-authors",
@@ -4305,7 +4307,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3425,
+   "spec_line": 3417,
    "section": "App. A.1",
    "keyword": "SHOULD",
    "binds": "spec-authors",
@@ -4319,7 +4321,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3429,
+   "spec_line": 3421,
    "section": "App. A.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -4339,7 +4341,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3435,
+   "spec_line": 3427,
    "section": "App. A.2",
    "keyword": "MAY",
    "binds": "server",
@@ -4358,7 +4360,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3604,
+   "spec_line": 3596,
    "section": "App. A.3",
    "keyword": "MUST",
    "binds": "spec-authors",
@@ -4711,58 +4713,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 1968,
-   "section": "§7.6.4",
-   "keyword": "MUST NOT",
-   "binds": "server",
-   "requirement": "Agents MUST NOT treat the `TASK_STATE_AUTH_REQUIRED` state transition, by itself, as authorization for any particular operation.",
-   "status": "TESTED",
-   "severity": null,
-   "impl_evidence": [
-    "crates/a2a-protocol-server/src/interceptor/mod.rs:157",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:110"
-   ],
-   "test_evidence": [
-    "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:170 auth_required_state_does_not_authorize_the_continuation"
-   ],
-   "notes": "Interceptor chain runs before every method irrespective of task state; server-src mentions of AuthRequired (rpc_span/a2a.rs:50, terminal.rs, store/terminal.rs) are labels/parking only. Note SPEC_COMPLIANCE.md:88 wrongly claims `grep AuthRequired crates/a2a-protocol-server/src` returns no lines.",
-   "auditor": "D",
-   "source": "spec"
-  },
-  {
-   "spec_line": 1968,
-   "section": "§7.6.4",
-   "keyword": "MUST",
-   "binds": "agent-application",
-   "requirement": "The meaning and scope of any resulting authorization decision or credential MUST be defined by the agent's implementation, by the credential issuer, or by an A2A extension.",
-   "status": "APPLICATION",
-   "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Definitional; agent/issuer/extension.",
-   "auditor": "D",
-   "source": "spec"
-  },
-  {
-   "spec_line": 1972,
-   "section": "§7.6.4",
-   "keyword": "MUST NOT",
-   "binds": "both",
-   "requirement": "A credential or authorization decision obtained while a Task is in `TASK_STATE_AUTH_REQUIRED` MUST NOT be assumed to authorize subsequent messages on the Task unless that behavior is explicitly defined",
-   "status": "TESTED",
-   "severity": null,
-   "impl_evidence": [
-    "crates/a2a-protocol-server/src/interceptor/mod.rs:157"
-   ],
-   "test_evidence": [
-    "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:170 auth_required_state_does_not_authorize_the_continuation"
-   ],
-   "notes": "SDK re-authenticates every message (unauthenticated continuation refused, runs stays 1); any credential caching in the executor is the application's responsibility.",
-   "auditor": "D",
-   "source": "spec"
-  },
-  {
-   "spec_line": 1980,
+   "spec_line": 1970,
    "section": "§8.1",
    "keyword": "MUST",
    "binds": "server",
@@ -4788,7 +4739,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 1994,
+   "spec_line": 1984,
    "section": "§8.3",
    "keyword": "MUST",
    "binds": "agent-application",
@@ -4806,7 +4757,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 1998,
+   "spec_line": 1988,
    "section": "§8.3.1",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -4822,7 +4773,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2000,
+   "spec_line": 1990,
    "section": "§8.3.1",
    "keyword": "MUST",
    "binds": "agent-application",
@@ -4840,7 +4791,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2001,
+   "spec_line": 1991,
    "section": "§8.3.1",
    "keyword": "MAY",
    "binds": "agent-application",
@@ -4856,7 +4807,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2007,
+   "spec_line": 1997,
    "section": "§8.3.2",
    "keyword": "MUST",
    "binds": "client",
@@ -4877,7 +4828,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 2008,
+   "spec_line": 1998,
    "section": "§8.3.2",
    "keyword": "MUST",
    "binds": "client",
@@ -4898,7 +4849,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 2009,
+   "spec_line": 1999,
    "section": "§8.3.2",
    "keyword": "MUST",
    "binds": "client",
@@ -4918,7 +4869,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2010,
+   "spec_line": 2000,
    "section": "§8.3.2",
    "keyword": "MUST",
    "binds": "client",
@@ -4942,7 +4893,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2014,
+   "spec_line": 2004,
    "section": "§8.4",
    "keyword": "MAY",
    "binds": "server",
@@ -4961,7 +4912,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2018,
+   "spec_line": 2008,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -4977,12 +4928,12 @@
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:85 rfc8785_appendix_b_from_json_text",
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:167 rfc8785_section_3_2_3_sort_order"
    ],
-   "notes": "JCS itself is implemented and vector-tested; see 2022/2026 for the pre-canonicalization default-stripping it is fed without.",
+   "notes": "JCS itself is implemented and vector-tested; see 2012/2016 for the pre-canonicalization default-stripping it is fed without.",
    "auditor": "D",
    "source": "spec"
   },
   {
-   "spec_line": 2022,
+   "spec_line": 2012,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5006,7 +4957,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2023,
+   "spec_line": 2013,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5027,7 +4978,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2024,
+   "spec_line": 2014,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5050,7 +5001,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2025,
+   "spec_line": 2015,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5073,7 +5024,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2026,
+   "spec_line": 2016,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5099,7 +5050,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2059,
+   "spec_line": 2049,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5119,7 +5070,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2033,
+   "spec_line": 2023,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -5137,7 +5088,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2078,
+   "spec_line": 2068,
    "section": "§8.4.2",
    "keyword": "MUST",
    "binds": "server",
@@ -5156,7 +5107,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2082,
+   "spec_line": 2072,
    "section": "§8.4.2",
    "keyword": "MUST",
    "binds": "server",
@@ -5177,7 +5128,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2081,
+   "spec_line": 2071,
    "section": "§8.4.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -5197,7 +5148,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2084,
+   "spec_line": 2074,
    "section": "§8.4.2",
    "keyword": "MAY",
    "binds": "server",
@@ -5216,7 +5167,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2131,
+   "spec_line": 2121,
    "section": "§8.4.3",
    "keyword": "MUST",
    "binds": "client",
@@ -5236,7 +5187,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 2132,
+   "spec_line": 2122,
    "section": "§8.4.3",
    "keyword": "MUST",
    "binds": "client",
@@ -5257,7 +5208,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2133,
+   "spec_line": 2123,
    "section": "§8.4.3",
    "keyword": "MUST",
    "binds": "client",
@@ -5279,7 +5230,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 2134,
+   "spec_line": 2124,
    "section": "§8.4.3",
    "keyword": "MUST",
    "binds": "client",
@@ -5297,7 +5248,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2135,
+   "spec_line": 2125,
    "section": "§8.4.3",
    "keyword": "MUST",
    "binds": "client",
@@ -5315,7 +5266,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2136,
+   "spec_line": 2126,
    "section": "§8.4.3",
    "keyword": "MUST",
    "binds": "client",
@@ -5337,7 +5288,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2140,
+   "spec_line": 2130,
    "section": "§8.4.3",
    "keyword": "SHOULD",
    "binds": "client",
@@ -5359,7 +5310,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 2141,
+   "spec_line": 2131,
    "section": "§8.4.3",
    "keyword": "SHOULD",
    "binds": "client",
@@ -5378,7 +5329,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2142,
+   "spec_line": 2132,
    "section": "§8.4.3",
    "keyword": "MAY",
    "binds": "client",
@@ -5396,7 +5347,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2143,
+   "spec_line": 2133,
    "section": "§8.4.3",
    "keyword": "MUST NOT",
    "binds": "client",
@@ -5414,7 +5365,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2144,
+   "spec_line": 2134,
    "section": "§8.4.3",
    "keyword": "MAY",
    "binds": "both",
@@ -5432,7 +5383,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2225,
+   "spec_line": 2215,
    "section": "§8.6",
    "keyword": "SHOULD",
    "binds": "both",
@@ -5448,12 +5399,12 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
-   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store response, and max-age is not used to skip a request (see 2235).",
+   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store response, and max-age is not used to skip a request (see 2225).",
    "auditor": "D",
    "source": "spec"
   },
   {
-   "spec_line": 2229,
+   "spec_line": 2219,
    "section": "§8.6.1",
    "keyword": "SHOULD",
    "binds": "server",
@@ -5482,7 +5433,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 2230,
+   "spec_line": 2220,
    "section": "§8.6.1",
    "keyword": "SHOULD",
    "binds": "server",
@@ -5517,7 +5468,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2231,
+   "spec_line": 2221,
    "section": "§8.6.1",
    "keyword": "MAY",
    "binds": "server",
@@ -5541,7 +5492,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2235,
+   "spec_line": 2225,
    "section": "§8.6.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -5564,7 +5515,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2236,
+   "spec_line": 2226,
    "section": "§8.6.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -5584,7 +5535,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2237,
+   "spec_line": 2227,
    "section": "§8.6.2",
    "keyword": "MAY",
    "binds": "client",
@@ -5600,7 +5551,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2246,
+   "spec_line": 2236,
    "section": "§9.1",
    "keyword": "MUST (implied by protocol requirements list)",
    "binds": "both",
@@ -5625,7 +5576,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2248,
+   "spec_line": 2238,
    "section": "§9.1/§9.4.2",
    "keyword": "MUST (implied)",
    "binds": "server",
@@ -5646,7 +5597,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2252,
+   "spec_line": 2242,
    "section": "§9.2",
    "keyword": "MUST",
    "binds": "both",
@@ -5670,7 +5621,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2256,
+   "spec_line": 2246,
    "section": "§9.2",
    "keyword": "MUST",
    "binds": "both",
@@ -5685,12 +5636,12 @@
     "crates/a2a-protocol-server/src/dispatch/mod.rs:331 header_fields_are_named_in_lowercase",
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:371 jsonrpc_response_has_a2a_version_header"
    ],
-   "notes": "Header names are lower-cased by hyper, which satisfies the RFC 7230 case-insensitivity note on line 2257.",
+   "notes": "Header names are lower-cased by hyper, which satisfies the RFC 7230 case-insensitivity note on line 2247.",
    "auditor": "E",
    "source": "spec"
   },
   {
-   "spec_line": 2258,
+   "spec_line": 2248,
    "section": "§9.2",
    "keyword": "SHOULD",
    "binds": "both",
@@ -5717,7 +5668,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2280,
+   "spec_line": 2270,
    "section": "§9.3",
    "keyword": "MUST",
    "binds": "both",
@@ -5757,7 +5708,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2418,
+   "spec_line": 2408,
    "section": "§9.4.6/§10.4.6",
    "keyword": "MUST (implied: 'Returns UnsupportedOperationError')",
    "binds": "server",
@@ -5772,12 +5723,12 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:682 resubscribe_terminal_task_returns_unsupported_operation"
    ],
-   "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3025).",
+   "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3017).",
    "auditor": "E",
    "source": "spec"
   },
   {
-   "spec_line": 2447,
+   "spec_line": 2437,
    "section": "§9.5",
    "keyword": "MUST (implied mapping)",
    "binds": "server",
@@ -5803,7 +5754,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2451,
+   "spec_line": 2441,
    "section": "§9.5",
    "keyword": "MUST (implied by standard-codes table)",
    "binds": "server",
@@ -5825,7 +5776,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2461,
+   "spec_line": 2451,
    "section": "§9.5",
    "keyword": "MUST (implied)",
    "binds": "server",
@@ -5846,7 +5797,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 2465,
+   "spec_line": 2455,
    "section": "§9.5",
    "keyword": "MUST",
    "binds": "server",
@@ -5874,7 +5825,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2465,
+   "spec_line": 2455,
    "section": "§9.5",
    "keyword": "SHOULD",
    "binds": "server",
@@ -5899,7 +5850,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 2465,
+   "spec_line": 2455,
    "section": "§9.5",
    "keyword": "MAY",
    "binds": "server",
@@ -5924,7 +5875,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 2528,
+   "spec_line": 2518,
    "section": "§10.2",
    "keyword": "MUST",
    "binds": "both",
@@ -5947,7 +5898,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2532,
+   "spec_line": 2522,
    "section": "§10.2",
    "keyword": "MUST",
    "binds": "both",
@@ -5968,7 +5919,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2534,
+   "spec_line": 2524,
    "section": "§10.2",
    "keyword": "SHOULD",
    "binds": "both",
@@ -5993,7 +5944,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2553,
+   "spec_line": 2543,
    "section": "§10.2",
    "keyword": "MUST",
    "binds": "server",
@@ -6015,7 +5966,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2554,
+   "spec_line": 2544,
    "section": "§10.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -6036,7 +5987,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2695,
+   "spec_line": 2687,
    "section": "§10.6",
    "keyword": "MUST",
    "binds": "server",
@@ -6060,7 +6011,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2758,
+   "spec_line": 2750,
    "section": "§11.1",
    "keyword": "SHOULD",
    "binds": "server",
@@ -6080,13 +6031,13 @@
     "crates/a2a-protocol-server/tests/content_type_essence.rs:110 the_axum_router_reads_the_media_type",
     "crates/a2a-protocol-server/tests/rest_vary.rs:78 rest_names_what_chose_the_media_type"
    ],
-   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2843-2844 and 2929-2930 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted. Since 2026-10-13 a negotiated response names Accept and Content-Type in Vary (RFC 9110 §12.5.5), appended beside the extended card's Vary: Authorization, and every Accept line is read (§5.3); no Vary was sent, and only the first Accept line was read.",
+   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2835-2836 and 2921-2922 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted. Since 2026-10-13 a negotiated response names Accept and Content-Type in Vary (RFC 9110 §12.5.5), appended beside the extended card's Vary: Authorization, and every Accept line is read (§5.3); no Vary was sent, and only the first Accept line was read.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2758,
+   "spec_line": 2750,
    "section": "§11.1",
    "keyword": "SHOULD",
    "binds": "client",
@@ -6106,7 +6057,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 2765,
+   "spec_line": 2757,
    "section": "§11.2",
    "keyword": "MUST",
    "binds": "both",
@@ -6132,7 +6083,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2769,
+   "spec_line": 2761,
    "section": "§11.2",
    "keyword": "MUST",
    "binds": "both",
@@ -6152,7 +6103,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2771,
+   "spec_line": 2763,
    "section": "§11.2",
    "keyword": "SHOULD",
    "binds": "both",
@@ -6166,12 +6117,12 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed"
    ],
-   "notes": "Same as 2258. Repeated header lines collapse to the last one in rest/response.rs:21.",
+   "notes": "Same as 2248. Repeated header lines collapse to the last one in rest/response.rs:21.",
    "auditor": "E",
    "source": "spec"
   },
   {
-   "spec_line": 2795,
+   "spec_line": 2787,
    "section": "§11.3",
    "keyword": "MUST (implied by URL-pattern list)",
    "binds": "both",
@@ -6201,7 +6152,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2861,
+   "spec_line": 2853,
    "section": "§11.5",
    "keyword": "MUST",
    "binds": "both",
@@ -6229,7 +6180,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2865,
+   "spec_line": 2857,
    "section": "§11.5",
    "keyword": "MUST",
    "binds": "both",
@@ -6256,7 +6207,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 2893,
+   "spec_line": 2885,
    "section": "§11.5",
    "keyword": "MUST (implied field-type table)",
    "binds": "both",
@@ -6280,7 +6231,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2896,
+   "spec_line": 2888,
    "section": "§11.5",
    "keyword": "MAY",
    "binds": "both",
@@ -6299,7 +6250,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2897,
+   "spec_line": 2889,
    "section": "§11.5",
    "keyword": "MUST",
    "binds": "client",
@@ -6318,7 +6269,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2902,
+   "spec_line": 2894,
    "section": "§11.5",
    "keyword": "MUST",
    "binds": "both",
@@ -6339,7 +6290,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2908,
+   "spec_line": 2900,
    "section": "§11.6",
    "keyword": "MUST (implied mapping)",
    "binds": "server",
@@ -6359,13 +6310,13 @@
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:446 axum_refusals_of_its_own_are_aip_193",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:763 a_dribbling_body_is_cut_off_at_the_configured_timeout"
    ],
-   "notes": "Body shape `{error:{code,status,message,details}}` matches the spec example at lines 2932-2949, except that ErrorInfo.metadata is never populated (it is optional). The axum router's own refusals, made before any A2A handler runs, take the same shape since 2026-10-14: a method a route does not take (405, Allow kept), a body over the cap (413), one not received in time (408), an unreadable one (400). They were axum's plain text, or no body for 405. An unknown path outside the A2A routes stays the composing app's to answer.",
+   "notes": "Body shape `{error:{code,status,message,details}}` matches the spec example at lines 2924-2941, except that ErrorInfo.metadata is never populated (it is optional). The axum router's own refusals, made before any A2A handler runs, take the same shape since 2026-10-14: a method a route does not take (405, Allow kept), a body over the cap (413), one not received in time (408), an unreadable one (400). They were axum's plain text, or no body for 405. An unknown path outside the A2A routes stays the composing app's to answer.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 2914,
+   "spec_line": 2906,
    "section": "§11.6",
    "keyword": "MUST",
    "binds": "server",
@@ -6388,7 +6339,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2914,
+   "spec_line": 2906,
    "section": "§11.6",
    "keyword": "SHOULD",
    "binds": "server",
@@ -6408,7 +6359,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 2914,
+   "spec_line": 2906,
    "section": "§11.6",
    "keyword": "MAY",
    "binds": "server",
@@ -6429,7 +6380,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2918,
+   "spec_line": 2910,
    "section": "§11.6",
    "keyword": "MUST",
    "binds": "server",
@@ -6451,7 +6402,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 2981,
+   "spec_line": 2973,
    "section": "§11.7",
    "keyword": "SHOULD",
    "binds": "server",
@@ -6472,7 +6423,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2981,
+   "spec_line": 2973,
    "section": "§11.7",
    "keyword": "MAY",
    "binds": "server",
@@ -6488,7 +6439,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2985,
+   "spec_line": 2977,
    "section": "§12",
    "keyword": "MAY",
    "binds": "spec-authors",
@@ -6506,7 +6457,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2985,
+   "spec_line": 2977,
    "section": "§12",
    "keyword": "MUST",
    "binds": "server",
@@ -6527,7 +6478,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2991,
+   "spec_line": 2983,
    "section": "§12.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6549,7 +6500,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2992,
+   "spec_line": 2984,
    "section": "§12.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6569,7 +6520,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2993,
+   "spec_line": 2985,
    "section": "§12.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6589,7 +6540,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2994,
+   "spec_line": 2986,
    "section": "§12.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6612,7 +6563,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 2998,
+   "spec_line": 2990,
    "section": "§12.2",
    "keyword": "MUST",
    "binds": "server",
@@ -6631,7 +6582,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3007,
+   "spec_line": 2999,
    "section": "§12.3",
    "keyword": "MUST",
    "binds": "server",
@@ -6653,7 +6604,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3009,
+   "spec_line": 3001,
    "section": "§12.3",
    "keyword": "MUST",
    "binds": "server",
@@ -6674,7 +6625,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 3023,
+   "spec_line": 3015,
    "section": "§12.4",
    "keyword": "MUST",
    "binds": "server",
@@ -6696,7 +6647,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3024,
+   "spec_line": 3016,
    "section": "§12.4",
    "keyword": "MUST",
    "binds": "server",
@@ -6718,7 +6669,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 3025,
+   "spec_line": 3017,
    "section": "§12.4",
    "keyword": "MUST",
    "binds": "server",
@@ -6732,13 +6683,13 @@
     "bindings/a2a-protocol-slimrpc/src/error.rs status_codes_follow_the_slimrpc_table",
     "bindings/a2a-protocol-slimrpc/src/error.rs a_rate_limit_refusal_maps_to_resource_exhausted"
    ],
-   "notes": "The binding follows the SLIMRPC spec's §6.1 table row by row (ParseError INTERNAL, ContentTypeNotSupported/Push/UnsupportedOperation UNIMPLEMENTED) and A2A §5.4's gRPC code for the three errors the table omits (FAILED_PRECONDITION). The table's UNKNOWN row has no case to apply to: every ServerError converts to an A2A code. Where the SLIMRPC table and A2A §5.4's gRPC column disagree (Push, UnsupportedOperation), the binding's own table is followed; see the §12 entry at line 2985.",
+   "notes": "The binding follows the SLIMRPC spec's §6.1 table row by row (ParseError INTERNAL, ContentTypeNotSupported/Push/UnsupportedOperation UNIMPLEMENTED) and A2A §5.4's gRPC code for the three errors the table omits (FAILED_PRECONDITION). The table's UNKNOWN row has no case to apply to: every ServerError converts to an A2A code. Where the SLIMRPC table and A2A §5.4's gRPC column disagree (Push, UnsupportedOperation), the binding's own table is followed; see the §12 entry at line 2977.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3026,
+   "spec_line": 3018,
    "section": "§12.4",
    "keyword": "MUST",
    "binds": "server",
@@ -6758,7 +6709,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3030,
+   "spec_line": 3022,
    "section": "§12.5",
    "keyword": "MUST (implied by §12.1.4 for streaming bindings)",
    "binds": "server",
@@ -6784,7 +6735,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3037,
+   "spec_line": 3029,
    "section": "§12.5",
    "keyword": "MUST",
    "binds": "server",
@@ -6801,7 +6752,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3041,
+   "spec_line": 3033,
    "section": "§12.6",
    "keyword": "MUST",
    "binds": "server",
@@ -6824,7 +6775,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3050,
+   "spec_line": 3042,
    "section": "§12.7",
    "keyword": "MUST",
    "binds": "agent-application",
@@ -6841,7 +6792,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3050,
+   "spec_line": 3042,
    "section": "§12.7",
    "keyword": "MUST",
    "binds": "server",
@@ -6861,7 +6812,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3070,
+   "spec_line": 3062,
    "section": "§12.8",
    "keyword": "SHOULD",
    "binds": "server",
@@ -6885,7 +6836,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3083,
+   "spec_line": 3075,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6908,7 +6859,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3087,
+   "spec_line": 3079,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6932,12 +6883,12 @@
     "crates/a2a-protocol-server/tests/interceptor_on_complete.rs:125 every_handler_method_reports_its_outcome",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings"
    ],
-   "notes": "SDK hook provided: every handler entry point (all 11 operations, all bindings incl. WebSocket per message) runs ServerInterceptorChain::before, and ServerInterceptor can return A2aError::permission_denied keyed on ctx.method()/caller_identity(). Nothing enforces that an authorizer is registered; a default build performs no authorization (the interceptor sees no task id, so per-resource checks cannot be written there; see 3100).",
+   "notes": "SDK hook provided: every handler entry point (all 11 operations, all bindings incl. WebSocket per message) runs ServerInterceptorChain::before, and ServerInterceptor can return A2aError::permission_denied keyed on ctx.method()/caller_identity(). Nothing enforces that an authorizer is registered; a default build performs no authorization (the interceptor sees no task id, so per-resource checks cannot be written there; see 3092).",
    "auditor": "F",
    "source": "spec"
   },
   {
-   "spec_line": 3088,
+   "spec_line": 3080,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6958,7 +6909,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3089,
+   "spec_line": 3081,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -6979,7 +6930,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3090,
+   "spec_line": 3082,
    "section": "§13.1",
    "keyword": "MAY",
    "binds": "agent-application",
@@ -6991,13 +6942,13 @@
     "crates/a2a-protocol-server/src/call_context.rs:177"
    ],
    "test_evidence": [],
-   "notes": "MAY: multi-tenant model SUPPORTED (TenantResolver + TenantAware stores); user/role/project models only expressible as tenants or as method-level allow/deny in an interceptor; no resource-level hook. (Re-graded on 2026-10-10: a MAY takes SUPPORTED/NOT_SUPPORTED; the tenant model is supported, and the missing per-principal hook is the §13.1 entries at lines 3083-3101.) The user-identity model is now supported too: isolate_tasks_by_caller, the default with an authenticating interceptor since 2026-10-12.",
+   "notes": "MAY: multi-tenant model SUPPORTED (TenantResolver + TenantAware stores); user/role/project models only expressible as tenants or as method-level allow/deny in an interceptor; no resource-level hook. (Re-graded on 2026-10-10: a MAY takes SUPPORTED/NOT_SUPPORTED; the tenant model is supported, and the missing per-principal hook is the §13.1 entries at lines 3075-3093.) The user-identity model is now supported too: isolate_tasks_by_caller, the default with an authenticating interceptor since 2026-10-12.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3099,
+   "spec_line": 3091,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -7019,7 +6970,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3100,
+   "spec_line": 3092,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -7040,7 +6991,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3101,
+   "spec_line": 3093,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -7061,7 +7012,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3106,
+   "spec_line": 3098,
    "section": "§13.1",
    "keyword": "MUST",
    "binds": "server",
@@ -7083,7 +7034,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3107,
+   "spec_line": 3099,
    "section": "§13.1",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -7099,7 +7050,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3117,
+   "spec_line": 3109,
    "section": "§13.2",
    "keyword": "MUST",
    "binds": "server",
@@ -7122,7 +7073,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 3118,
+   "spec_line": 3110,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7143,7 +7094,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 3119,
+   "spec_line": 3111,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7161,12 +7112,12 @@
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:248 backoff_is_paid_between_attempts_but_not_after_the_last",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:336 retries_on_rate_limit_status"
    ],
-   "notes": "3 attempts, backoff [1s,2s] (doubling; schedule is an explicit list whose last entry repeats, not computed exponential). Retries 5xx/408/429/transport errors only. Caveat: under the default 5s handler bound a timed-out first attempt leaves no time for retries (see 3118).",
+   "notes": "3 attempts, backoff [1s,2s] (doubling; schedule is an explicit list whose last entry repeats, not computed exponential). Retries 5xx/408/429/transport errors only. Caveat: under the default 5s handler bound a timed-out first attempt leaves no time for retries (see 3110).",
    "auditor": "F",
    "source": "spec"
   },
   {
-   "spec_line": 3120,
+   "spec_line": 3112,
    "section": "§13.2",
    "keyword": "MAY",
    "binds": "server",
@@ -7185,7 +7136,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3121,
+   "spec_line": 3113,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7208,7 +7159,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3122,
+   "spec_line": 3114,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7231,7 +7182,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3123,
+   "spec_line": 3115,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7253,7 +7204,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3124,
+   "spec_line": 3116,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7275,7 +7226,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 3128,
+   "spec_line": 3120,
    "section": "§13.2",
    "keyword": "MUST",
    "binds": "client",
@@ -7293,7 +7244,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3129,
+   "spec_line": 3121,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -7307,7 +7258,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3130,
+   "spec_line": 3122,
    "section": "§13.2",
    "keyword": "MUST",
    "binds": "client",
@@ -7325,7 +7276,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3131,
+   "spec_line": 3123,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -7339,7 +7290,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3132,
+   "spec_line": 3124,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -7353,7 +7304,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3133,
+   "spec_line": 3125,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -7370,7 +7321,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 3137,
+   "spec_line": 3129,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "both",
@@ -7388,17 +7339,17 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1252 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:792 an_https_only_sender_refuses_http_before_connecting"
    ],
-   "notes": "HTTPS delivery supported (tls-rustls feature, on by default via sdk) and tested over real TLS. Since 2026-10-12 opt-in HttpPushSender::https_only() refuses an http:// webhook at config creation (InvalidParams naming the reason, via PushSender::requires_https) and again at delivery before any connection, as the opt-in allowlist (line 3124) does for hosts. Off by default: plain http is still accepted unless a deployment sets it. Before: no option enforced https.",
+   "notes": "HTTPS delivery supported (tls-rustls feature, on by default via sdk) and tested over real TLS. Since 2026-10-12 opt-in HttpPushSender::https_only() refuses an http:// webhook at config creation (InvalidParams naming the reason, via PushSender::requires_https) and again at delivery before any connection, as the opt-in allowlist (line 3116) does for hosts. Off by default: plain http is still accepted unless a deployment sets it. Before: no option enforced https.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 3138,
+   "spec_line": 3130,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "both",
-   "requirement": "Authentication tokens in TaskPushNotificationConfig SHOULD be treated as secrets and rotated periodically",
+   "requirement": "Authentication tokens in PushNotificationConfig SHOULD be treated as secrets and rotated periodically",
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
@@ -7412,13 +7363,13 @@
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/log_redaction.rs:63 a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret"
    ],
-   "notes": "Secret handling (Debug redaction, origin-only URL logging) tested; rotation is an application duty (re-create config). The background delivery's failure and timeout WARNs logged the whole webhook URL, path and query included, until 2026-10-14 (audit register R14); they now log its origin, as the sender's own lines did.",
+   "notes": "Secret handling (Debug redaction, origin-only URL logging) tested; rotation is an application duty (re-create config). The background delivery's failure and timeout WARNs logged the whole webhook URL, path and query included, until 2026-10-14 (audit register R14); they now log its origin, as the sender's own lines did. v1.0.1's text names PushNotificationConfig, which the v1.0.1 proto does not define: the message with `authentication` is TaskPushNotificationConfig (a2a.proto line 469), the name upstream main uses since.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3139,
+   "spec_line": 3131,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7444,7 +7395,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 3140,
+   "spec_line": 3132,
    "section": "§13.2",
    "keyword": "SHOULD",
    "binds": "client",
@@ -7458,7 +7409,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3150,
+   "spec_line": 3142,
    "section": "§13.3",
    "keyword": "MUST",
    "binds": "server",
@@ -7481,7 +7432,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3151,
+   "spec_line": 3143,
    "section": "§13.3",
    "keyword": "MUST",
    "binds": "server",
@@ -7498,7 +7449,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3152,
+   "spec_line": 3144,
    "section": "§13.3",
    "keyword": "MAY",
    "binds": "server",
@@ -7515,7 +7466,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3153,
+   "spec_line": 3145,
    "section": "§13.3",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7535,7 +7486,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 3157,
+   "spec_line": 3149,
    "section": "§13.3",
    "keyword": "MAY",
    "binds": "server",
@@ -7555,7 +7506,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3158,
+   "spec_line": 3150,
    "section": "§13.3",
    "keyword": "MAY",
    "binds": "server",
@@ -7575,7 +7526,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3159,
+   "spec_line": 3151,
    "section": "§13.3",
    "keyword": "MAY",
    "binds": "server",
@@ -7587,13 +7538,13 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:81"
    ],
    "test_evidence": [],
-   "notes": "Organization-specific content in the one extended card (with_extended_agent_card); user-specific content needs per-caller variation, which the handler does not provide (3152).",
+   "notes": "Organization-specific content in the one extended card (with_extended_agent_card); user-specific content needs per-caller variation, which the handler does not provide (3144).",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3160,
+   "spec_line": 3152,
    "section": "§13.3",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -7607,7 +7558,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3164,
+   "spec_line": 3156,
    "section": "§13.3",
    "keyword": "SHOULD NOT",
    "binds": "agent-application",
@@ -7622,7 +7573,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3165,
+   "spec_line": 3157,
    "section": "§13.3",
    "keyword": "MUST",
    "binds": "server",
@@ -7636,13 +7587,13 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:216 get_extended_agent_card_with_authenticator_gates_on_credentials"
    ],
-   "notes": "Interceptor chain runs before the card is produced (method-level permission check possible via ctx.method()=='GetExtendedAgentCard'). Since 2026-10-14 with_extended_agent_card serves content distinct from the public card, and it is produced only after the chain and the authentication requirement (3150).",
+   "notes": "Interceptor chain runs before the card is produced (method-level permission check possible via ctx.method()=='GetExtendedAgentCard'). Since 2026-10-14 with_extended_agent_card serves content distinct from the public card, and it is produced only after the chain and the authentication requirement (3142).",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3166,
+   "spec_line": 3158,
    "section": "§13.3",
    "keyword": "SHOULD",
    "binds": "client",
@@ -7666,7 +7617,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 3167,
+   "spec_line": 3159,
    "section": "§13.3",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7685,7 +7636,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 3172,
+   "spec_line": 3164,
    "section": "§13.3",
    "keyword": "MUST",
    "binds": "server",
@@ -7706,7 +7657,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3173,
+   "spec_line": 3165,
    "section": "§13.3",
    "keyword": "MUST",
    "binds": "server",
@@ -7725,7 +7676,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3181,
+   "spec_line": 3173,
    "section": "§13.4",
    "keyword": "MUST",
    "binds": "both",
@@ -7748,7 +7699,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 3182,
+   "spec_line": 3174,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "both",
@@ -7768,7 +7719,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3183,
+   "spec_line": 3175,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7788,7 +7739,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
   },
   {
-   "spec_line": 3184,
+   "spec_line": 3176,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "both",
@@ -7808,7 +7759,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3188,
+   "spec_line": 3180,
    "section": "§13.4",
    "keyword": "MUST",
    "binds": "server",
@@ -7834,7 +7785,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 3189,
+   "spec_line": 3181,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7862,7 +7813,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
   },
   {
-   "spec_line": 3190,
+   "spec_line": 3182,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7880,7 +7831,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3194,
+   "spec_line": 3186,
    "section": "§13.4",
    "keyword": "MUST",
    "binds": "both",
@@ -7901,13 +7852,13 @@
     "crates/a2a-protocol-client/tests/debug_redaction.rs:56 a_client_request_prints_header_names_and_param_keys_only",
     "crates/a2a-protocol-client/tests/debug_redaction.rs:103 card_fetch_options_print_header_names_only"
    ],
-   "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3139). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
+   "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
-   "spec_line": 3195,
+   "spec_line": 3187,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -7925,7 +7876,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3196,
+   "spec_line": 3188,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "both",
@@ -7942,7 +7893,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3197,
+   "spec_line": 3189,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -7959,7 +7910,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3198,
+   "spec_line": 3190,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -7978,7 +7929,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3198,
+   "spec_line": 3190,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8006,7 +7957,7 @@
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
   },
   {
-   "spec_line": 3202,
+   "spec_line": 3194,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8025,7 +7976,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3203,
+   "spec_line": 3195,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -8041,7 +7992,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3204,
+   "spec_line": 3196,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8060,7 +8011,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3205,
+   "spec_line": 3197,
    "section": "§13.4",
    "keyword": "MUST NOT",
    "binds": "server",
@@ -8081,7 +8032,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3209,
+   "spec_line": 3201,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8100,7 +8051,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3210,
+   "spec_line": 3202,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8126,7 +8077,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 3211,
+   "spec_line": 3203,
    "section": "§13.4",
    "keyword": "MAY",
    "binds": "server",
@@ -8142,7 +8093,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3215,
+   "spec_line": 3207,
    "section": "§13.4",
    "keyword": "MUST",
    "binds": "agent-application",
@@ -8156,7 +8107,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3216,
+   "spec_line": 3208,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -8169,12 +8120,12 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/tenant_store_tests.rs:107 tenant_task_store_delete_isolation"
    ],
-   "notes": "TaskStore::delete exists; no A2A operation or per-user deletion API (no per-user ownership, see 3083).",
+   "notes": "TaskStore::delete exists; no A2A operation or per-user deletion API (no per-user ownership, see 3075).",
    "auditor": "F",
    "source": "spec"
   },
   {
-   "spec_line": 3217,
+   "spec_line": 3209,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "agent-application",
@@ -8192,7 +8143,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3218,
+   "spec_line": 3210,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8211,7 +8162,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3222,
+   "spec_line": 3214,
    "section": "§13.4",
    "keyword": "MUST",
    "binds": "spec-authors",
@@ -8230,7 +8181,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3223,
+   "spec_line": 3215,
    "section": "§13.4",
    "keyword": "SHOULD",
    "binds": "server",
@@ -8249,7 +8200,7 @@
    "source": "spec"
   },
   {
-   "spec_line": 3224,
+   "spec_line": 3216,
    "section": "§13.4",
    "keyword": "MUST",
    "binds": "spec-authors",
@@ -10547,7 +10498,7 @@
    "source": "proto"
   },
   {
-   "spec_line": 2028,
+   "spec_line": 2018,
    "section": "§8.4.1",
    "keyword": "MUST",
    "binds": "both",
@@ -10567,7 +10518,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2054,
+   "spec_line": 2044,
    "section": "§8.4.1",
    "keyword": "REQUIRED",
    "binds": "both",
@@ -10586,7 +10537,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2055,
+   "spec_line": 2045,
    "section": "§8.4.1",
    "keyword": "REQUIRED",
    "binds": "both",
@@ -10605,7 +10556,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2056,
+   "spec_line": 2046,
    "section": "§8.4.1",
    "keyword": "REQUIRED",
    "binds": "both",
@@ -10624,7 +10575,7 @@
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   },
   {
-   "spec_line": 2060,
+   "spec_line": 2050,
    "section": "§8.4.1",
    "keyword": "REQUIRED",
    "binds": "both",
@@ -10642,5 +10593,59 @@
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
   }
- ]
+ ],
+ "after_release": {
+  "commit": "12e9d2fbb9badfe98f8ab4f660697870eeb1940b",
+  "note": "Requirements upstream added to docs/specification.md after the v1.0.1 release, found while re-anchoring the ledger to the tag (2026-10-14). They are not part of v1.0.1 and are not counted above; they are kept because the SDK already meets them and the next release will carry them. Each names the line it had in upstream main at 12e9d2fbb9ba.",
+  "entries": [
+   {
+    "section": "§7.6.4",
+    "keyword": "MUST NOT",
+    "binds": "server",
+    "requirement": "Agents MUST NOT treat the `TASK_STATE_AUTH_REQUIRED` state transition, by itself, as authorization for any particular operation.",
+    "status": "TESTED",
+    "severity": null,
+    "impl_evidence": [
+     "crates/a2a-protocol-server/src/interceptor/mod.rs:157",
+     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:110"
+    ],
+    "test_evidence": [
+     "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:170 auth_required_state_does_not_authorize_the_continuation"
+    ],
+    "notes": "Interceptor chain runs before every method irrespective of task state; server-src mentions of AuthRequired (rpc_span/a2a.rs:50, terminal.rs, store/terminal.rs) are labels/parking only. Note SPEC_COMPLIANCE.md:88 wrongly claims `grep AuthRequired crates/a2a-protocol-server/src` returns no lines.",
+    "auditor": "D",
+    "upstream_line": "docs/specification.md at 12e9d2fbb9ba, line 1968"
+   },
+   {
+    "section": "§7.6.4",
+    "keyword": "MUST",
+    "binds": "agent-application",
+    "requirement": "The meaning and scope of any resulting authorization decision or credential MUST be defined by the agent's implementation, by the credential issuer, or by an A2A extension.",
+    "status": "APPLICATION",
+    "severity": null,
+    "impl_evidence": [],
+    "test_evidence": [],
+    "notes": "Definitional; agent/issuer/extension.",
+    "auditor": "D",
+    "upstream_line": "docs/specification.md at 12e9d2fbb9ba, line 1968"
+   },
+   {
+    "section": "§7.6.4",
+    "keyword": "MUST NOT",
+    "binds": "both",
+    "requirement": "A credential or authorization decision obtained while a Task is in `TASK_STATE_AUTH_REQUIRED` MUST NOT be assumed to authorize subsequent messages on the Task unless that behavior is explicitly defined",
+    "status": "TESTED",
+    "severity": null,
+    "impl_evidence": [
+     "crates/a2a-protocol-server/src/interceptor/mod.rs:157"
+    ],
+    "test_evidence": [
+     "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:170 auth_required_state_does_not_authorize_the_continuation"
+    ],
+    "notes": "SDK re-authenticates every message (unauthenticated continuation refused, runs stays 1); any credential caching in the executor is the application's responsibility.",
+    "auditor": "D",
+    "upstream_line": "docs/specification.md at 12e9d2fbb9ba, line 1972"
+   }
+  ]
+ }
 }

@@ -10,7 +10,13 @@ ledger never hears of it, or a test is renamed and the ledger goes on citing
 evidence that no longer exists. This check fails on both.
 
 It checks, against the vendored specification
-(`docs/implementation/v1.0.0-specification-complete.md`) and the vendored proto:
+(`docs/implementation/a2a-v1.0.1-specification.md`, the v1.0.1 release) and
+the vendored proto:
+
+0. The vendored specification's text hashes to the ledger's `spec.sha256`.
+   Every `spec_line` is a line number in that exact text, so a refreshed
+   copy without re-anchored entries fails here, before the line checks
+   below can pass by coincidence on moved text.
 
 1. Every specification line carrying MUST, SHOULD, REQUIRED, SHALL,
    RECOMMENDED or MAY has at least one entry. A line that only introduces a
@@ -23,6 +29,9 @@ It checks, against the vendored specification
    of that name in it; for anything else, the name appears in the file.
 4. `status` and `severity` use the ledger's vocabulary, an open status has a
    severity, and a closed one does not.
+5. Entries under `after_release` (requirements upstream added after the
+   release the ledger audits) meet 3 and 4, and cite no line: their text is
+   not in the vendored copy.
 
 It does not, and cannot, check that a test *proves* what the entry says. That
 judgement is in the entry's notes and in review.
@@ -36,6 +45,7 @@ Exit 0 when all hold, 1 otherwise, 2 when an input is missing or unreadable.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -44,7 +54,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs/compliance/spec-ledger.json"
-SPEC = ROOT / "docs/implementation/v1.0.0-specification-complete.md"
+SPEC = ROOT / "docs/implementation/a2a-v1.0.1-specification.md"
 PROTO = ROOT / "proto/a2a_v1/a2a.proto"
 SUMMARY = ROOT / "docs/compliance/spec-ledger.md"
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -175,8 +185,9 @@ def render(ledger: dict) -> str:
         "`scripts/check_spec_ledger.py` (CI) fails when either drifts from the",
         "vendored specification or cites a test that no longer exists.",
         "",
-        f"Specification: `{ledger['spec']['repository']}` `{ledger['spec']['path']}` at",
-        f"`{ledger['spec']['commit'][:12]}`, vendored as `{ledger['spec']['vendored_as']}`.",
+        f"Specification: `{ledger['spec']['repository']}` `{ledger['spec']['path']}` at tag",
+        f"`{ledger['spec']['tag']}` (`{ledger['spec']['commit'][:12]}`), vendored as",
+        f"`{ledger['spec']['vendored_as']}` (SHA-256 `{ledger['spec']['sha256'][:16]}…`).",
         f"Proto: `{ledger['proto']['vendored_as']}`, A2A {ledger['proto']['release']}.",
         f"Audited at commit `{ledger['audited_commit']}`.",
         "",
@@ -212,6 +223,13 @@ def render(ledger: dict) -> str:
         where = f"{e['section']} (line {e['spec_line']})" if e["source"] == "spec" else f"{e['section']} (proto line {e['spec_line']})"
         out.append(f"| {e.get('severity')} | {e['status']} | {cell(where, 60)} | "
                    f"{cell(e['requirement'], 140)} | {cell(e.get('notes', ''), 260)} |")
+    after = ledger.get("after_release")
+    if after:
+        out += ["", "## After the release", "", after["note"], "",
+                "| Section | Keyword | Status | Requirement | Notes |", "|---|---|---|---|---|"]
+        for e in after["entries"]:
+            out.append(f"| {e['section']} | {e['keyword']} | {e['status']} | "
+                       f"{cell(e['requirement'], 140)} | {cell(e.get('notes', ''), 260)} |")
     out.append("")
     return "\n".join(out)
 
@@ -233,6 +251,15 @@ def main() -> int:
 
     entries = ledger.get("entries", [])
     problems: list[str] = []
+
+    # 0. The text the line numbers refer to.
+    digest = hashlib.sha256("\n".join(spec).encode("utf-8")).hexdigest()
+    pinned = ledger.get("spec", {}).get("sha256")
+    if digest != pinned:
+        problems.append(
+            f"{SPEC.relative_to(ROOT)} hashes to {digest}, the ledger's spec.sha256 is "
+            f"{pinned}: re-anchor every spec_line to the new text and update spec"
+        )
     cited = {e["spec_line"] for e in entries if e.get("source") == "spec"}
     cited_proto = {e["spec_line"] for e in entries if e.get("source") == "proto"}
 
@@ -280,6 +307,20 @@ def main() -> int:
         else:
             problems.append(f"{source}:{n} has unknown status {status!r}")
         # 3. Evidence exists.
+        check_evidence(e, problems)
+
+    # 5. Requirements added upstream after the audited release.
+    for e in ledger.get("after_release", {}).get("entries", []):
+        where = f"after_release {e.get('section')}"
+        if "spec_line" in e:
+            problems.append(f"{where} cites spec_line {e['spec_line']}, which is not in the vendored text")
+        status, severity = e.get("status"), e.get("severity")
+        if status in OPEN and severity not in SEVERITIES:
+            problems.append(f"{where} is {status} with severity {severity!r}")
+        elif status in CLOSED and severity is not None:
+            problems.append(f"{where} is {status} but carries severity {severity!r}")
+        elif status not in OPEN | CLOSED:
+            problems.append(f"{where} has unknown status {status!r}")
         check_evidence(e, problems)
 
     summary_text = render(ledger)

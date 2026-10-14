@@ -1466,6 +1466,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The spec ledger audits the v1.0.1 release.** Its entries were made
+  against upstream `main` at `12e9d2fb` (retrieved 2026-10-10), which is not
+  the release: it differs from tag `v1.0.1` by 65 lines, mostly link URLs and
+  type names, plus one section added after the release, §7.6.4 ("In-Task
+  Authorization Scope"). The vendored copy is now the tag's text, byte for
+  byte, as `docs/implementation/a2a-v1.0.1-specification.md` (it was
+  `v1.0.0-specification-complete.md`). Its SHA-256 is pinned in the ledger,
+  and `check_spec_ledger.py` fails when the text changes without the
+  entries. Every `spec_line`, and every spec line number cited in a note, was
+  moved through a line map built from the two texts: 191 entries moved. The
+  three §7.6.4 entries are kept under `after_release`, outside the counts,
+  because v1.0.1 does not contain them. Two requirement quotes now use
+  v1.0.1's wording, `PushNotificationConfig`, and note that the v1.0.1 proto
+  calls that message `TaskPushNotificationConfig`. The ledger has 509 entries
+  for v1.0.1: TESTED 316, APPLICATION 87, SUPPORTED 56, NOT_APPLICABLE 22,
+  PARTIAL 20, NOT_SUPPORTED 8.
 - **The versioned documentation site deploys again.** `docs.yml` failed on
   `main` at `2b0a3abd`: its API step writes `/dev/api/index.html` as a
   redirect page with no `</head>`, and `build_docs_site.py`'s `make_noindex`

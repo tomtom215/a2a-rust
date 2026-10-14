@@ -1009,6 +1009,38 @@ reproduced locally before its fix.
    (38516495025) passed all eight shards. Not fixed, low: a shard that
    starts after its PR merges grades nothing and the gate accepts that.
 
+**Step 1: A2A v1.0.1.**
+
+6. `docs(ledger):` the ledger audits the v1.0.1 release. The vendored copy
+   it was made against was upstream `main` at `12e9d2fb`, byte-identical to
+   that commit's `docs/specification.md` (checked with `cmp`), and not tag
+   `v1.0.1` (`3303592`, the commit `proto/UPSTREAM` already pins the proto
+   to): 65 lines differ. Most are link URLs, `TaskPushNotificationConfig`
+   where v1.0.1 says `PushNotificationConfig` (which the v1.0.1 proto does not
+   define), and fixes to examples. One is normative: §7.6.4, three MUST/MUST
+   NOT statements on `TASK_STATE_AUTH_REQUIRED`, added after the release.
+   The copy is now the tag's text as
+   `docs/implementation/a2a-v1.0.1-specification.md`, with its SHA-256 in the
+   ledger's `spec.sha256`. `check_spec_ledger.py` checks the pin first; a
+   one-character edit to the copy fails it, naming both hashes. Lines were
+   mapped by `difflib` (equal runs, and equal-length replaced blocks, line
+   for line): 191 entries moved, 3 had no counterpart (all §7.6.4) and moved
+   to `after_release`, which the checker validates for evidence and
+   vocabulary and the summary lists apart. Line numbers inside notes were
+   remapped by pattern (`line N`, `see N`, `(N)`, ranges). The first pass
+   also rewrote the year in "(2026-10-12)"-style dates; it was caught from
+   the printed changes before anything was written out, the pattern was
+   given a date guard, and the dates in notes were checked identical before
+   and after (189 of them). A second pass missed two references with no
+   keyword before them ("and 2929-2930", "Same as 2258."), fixed by hand
+   after listing every four-digit number left in the shifted range. The
+   checker then passes: every v1.0.1 keyword line has an entry and every
+   cited line is normative. `docs/swarm-scale-findings.md` cited the old
+   copy at line 651, where the sentence it quotes was at 653; it now cites
+   the new copy's line. Counts for v1.0.1: 509 entries, TESTED 316,
+   APPLICATION 87, SUPPORTED 56, NOT_APPLICABLE 22, PARTIAL 20,
+   NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0.
+
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
 Picked up after #165 merged (`6ce5dc9`); pull request #168. Commits are
