@@ -1485,6 +1485,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requests too: until now a pull request ran only the job that reports
   findings new against the base, so a finding already on `main` failed no
   pull request. That is what cargo-deny in `ci.yml` already does.
+- **Workflow actions** (Dependabot #169): `ossf/scorecard-action` 2.5.0
+  (`fa7117d`, the commit tag `v2.5.0` peels to).
 - **`keep_alive_comments_reset_the_idle_bound` tolerates a runner stall**
   (client tests). It failed on Windows on `9aacd7a` and on `main` at
   `6ce5dc9`: the stub and the client share one thread, so a stall longer

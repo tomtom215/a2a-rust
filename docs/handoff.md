@@ -997,6 +997,8 @@ reproduced locally before its fix.
    95.5 us a send on `2b0a3abd` against 40k at 207 us on `6ce5dc9a`, so the
    fixed budget was spent inside one window. The limit is `u64::MAX`; the
    limiter compares the count against it the same way whatever it is.
+4. `ci:` Dependabot #169, `ossf/scorecard-action` 2.5.0; tag `v2.5.0`
+   peels to the pinned `fa7117db`.
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
