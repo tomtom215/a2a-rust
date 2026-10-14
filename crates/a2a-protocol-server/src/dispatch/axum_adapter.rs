@@ -153,7 +153,7 @@ impl A2aRouter {
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
         let require_version = self.config.require_version_header;
-        let card_handler = card_handler(&self.handler);
+        let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
@@ -298,11 +298,13 @@ struct A2aState {
 
 fn card_handler(
     handler: &RequestHandler,
+    max_age: u32,
 ) -> Option<Arc<crate::agent_card::StaticAgentCardHandler>> {
     handler
         .agent_card
         .as_ref()
         .and_then(|card| crate::agent_card::StaticAgentCardHandler::new(card).ok())
+        .map(|card| card.with_max_age(max_age))
         .map(Arc::new)
 }
 
@@ -922,7 +924,10 @@ mod tests {
             .unwrap(),
         );
         A2aState {
-            card_handler: card_handler(&handler),
+            card_handler: card_handler(
+                &handler,
+                super::super::DispatchConfig::default().agent_card_max_age,
+            ),
             handler,
             config: Arc::new(super::super::DispatchConfig::default()),
         }

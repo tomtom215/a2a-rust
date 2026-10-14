@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`DispatchConfig::with_agent_card_max_age`** (server; spec §8.6.1: the
+  card's `max-age` SHOULD suit how often it changes). The JSON-RPC, REST
+  and axum dispatchers served the public card with `max-age=3600` and no
+  way to change it; it is now the deployment's, defaulting to 3600.
 - **`AuthInterceptor::api_key`** (client; spec §4.5.2, §3.1.11). An
   agent whose card declares an `APIKeySecurityScheme` reads its key from the
   header or cookie the scheme names; the client could only write the key

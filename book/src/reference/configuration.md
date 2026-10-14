@@ -83,6 +83,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
 | `require_version_header` | `bool` | true | Reject a data-plane request with no `A2A-Version` header as `VersionNotSupported` (spec §3.6.2: absent means 0.3) |
+| `agent_card_max_age` | `u32` | 3600 | `Cache-Control: max-age`, in seconds, for the public agent card; set it to how often the card changes (spec §8.6.1) |
 
 ### GrpcConfig
 

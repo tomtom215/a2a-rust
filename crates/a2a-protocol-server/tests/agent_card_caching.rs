@@ -64,7 +64,8 @@ async fn check(url: String) {
     let (status, headers, body) = get(&url, None).await;
     assert_eq!(status, 200);
     let cc = headers["cache-control"].to_str().unwrap();
-    assert!(cc.contains("max-age="), "{cc}");
+    // The default, as `DispatchConfig` documents it.
+    assert_eq!(cc, "public, max-age=3600");
     let etag = headers["etag"].to_str().unwrap().to_owned();
     let card: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(card["name"], "cached");
@@ -87,4 +88,37 @@ async fn the_axum_agent_card_is_cacheable_like_the_rest_one() {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     check(format!("http://{addr}/.well-known/agent-card.json")).await;
+}
+
+/// Spec §8.6.1: the `max-age` is the deployment's, "appropriate for the
+/// agent's expected update frequency". The HTTP dispatchers always sent
+/// 3600 (audit register R30).
+#[tokio::test]
+async fn the_configured_card_max_age_reaches_every_http_dispatcher() {
+    use a2a_protocol_server::dispatch::{DispatchConfig, JsonRpcDispatcher};
+
+    let config = || DispatchConfig::default().with_agent_card_max_age(60);
+    let rest = serve_with_addr(
+        "127.0.0.1:0",
+        RestDispatcher::with_config(handler(), config()),
+    )
+    .await
+    .unwrap();
+    let jsonrpc = serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::with_config(handler(), config()),
+    )
+    .await
+    .unwrap();
+    let app = A2aRouter::with_config(handler(), config()).into_router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let axum = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    for addr in [rest, jsonrpc, axum] {
+        let (status, headers, _) =
+            get(&format!("http://{addr}/.well-known/agent-card.json"), None).await;
+        assert_eq!(status, 200);
+        assert_eq!(headers["cache-control"], "public, max-age=60", "{addr}");
+    }
 }

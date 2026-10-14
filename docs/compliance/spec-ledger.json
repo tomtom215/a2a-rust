@@ -1101,7 +1101,7 @@
    "status": "NOT_SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:437",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:438",
     "crates/a2a-protocol-server/src/handler/push_config.rs:250"
    ],
    "test_evidence": [],
@@ -1452,8 +1452,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:105",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:167",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:168",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:181",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:701",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:218"
@@ -1598,7 +1598,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:223",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:236",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:157",
     "crates/a2a-protocol-types/src/auth_rejection.rs:63",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs server_error_to_status",
@@ -1626,7 +1626,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:70",
     "crates/a2a-protocol-server/src/auth/mod.rs:80",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:223",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:236",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs server_error_to_status",
     "bindings/a2a-protocol-slimrpc/src/error.rs server_error_to_rpc_error"
    ],
@@ -2751,8 +2751,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:190",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:164",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:191",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:1"
    ],
    "test_evidence": [
@@ -2797,8 +2797,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:167",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:180",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:168",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:181",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:42",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:701",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:218"
@@ -3261,7 +3261,7 @@
     "book/src/bindings/websocket.md",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:880",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:139",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:304",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:305",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:883"
    ],
    "test_evidence": [
@@ -4005,7 +4005,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:218",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:219",
     "crates/a2a-protocol-server/src/push/sender.rs:873"
    ],
    "test_evidence": [
@@ -4025,7 +4025,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:214",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:215",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49"
    ],
    "test_evidence": [
@@ -4045,7 +4045,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:754",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:171"
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:172"
    ],
    "test_evidence": [],
    "notes": "SDK guards header injection in push creds (validate_header_value) and path traversal in REST; sanitising message content for downstream use is the executor's job.",
@@ -4136,8 +4136,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:176",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:177",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:113",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:167"
    ],
    "test_evidence": [
@@ -4360,7 +4360,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:107",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:113",
     "crates/a2a-protocol-client/src/tls.rs:60"
    ],
    "test_evidence": [
@@ -4465,7 +4465,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:70",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:223"
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:236"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
@@ -4751,9 +4751,9 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:101",
     "crates/a2a-protocol-server/src/builder.rs:117",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:112",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:176",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:562"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:113",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:177",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:252 agent_card_get_returns_card_when_configured",
@@ -5421,11 +5421,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:277",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:562",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:609"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:611"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one"
    ],
    "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store response, and max-age is not used to skip a request (see 2235).",
    "auditor": "D",
@@ -5442,18 +5442,23 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:221",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:95",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:562",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:609",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:66"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:611",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:181 with_agent_card_max_age",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:67",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:69",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:299 card_handler"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:143 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:218 static_handler_custom_max_age",
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one"
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one",
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:97 the_configured_card_max_age_reaches_every_http_dispatcher"
    ],
-   "notes": "JSON-RPC, REST and (since 2026-10-11) the axum router serve the public card with Cache-Control: public, max-age=3600 from StaticAgentCardHandler. The max-age is set on StaticAgentCardHandler::with_max_age; the dispatchers build theirs with the default and do not expose it. The axum test fails without the fix (no cache-control).",
+   "notes": "JSON-RPC, REST and (since 2026-10-11) the axum router serve the public card with Cache-Control: public, max-age from StaticAgentCardHandler. Since 2026-10-14 the max-age is DispatchConfig::with_agent_card_max_age (default 3600, now pinned by the_axum_agent_card_is_cacheable_like_the_rest_one); the dispatchers had built their handlers with the default and exposed no way to set it, so the \"appropriate for the agent's expected update frequency\" half of the line was not met. The axum test fails without the 2026-10-11 fix (no cache-control).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 2230,
@@ -5468,13 +5473,13 @@
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:50",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:41",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:306",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:626",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:308",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:628",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:140"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:159 static_handler_304_on_matching_etag",
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:79 the_axum_agent_card_is_cacheable_like_the_rest_one",
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:379 same_card_produces_same_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:81 the_same_card_parsed_twice_has_one_static_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:102 a_card_built_per_request_keeps_its_dynamic_etag",
@@ -5583,7 +5588,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:260-275",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:203-218",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:216-231",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:186-200"
    ],
    "test_evidence": [
@@ -5609,7 +5614,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:340-354",
     "crates/a2a-protocol-server/src/streaming/sse.rs:424-430",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:309-329"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:310-330"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:662 build_sse_response_has_correct_headers",
@@ -5628,14 +5633,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:129-130",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:164-178",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:130-131",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:165-179",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:272-284",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:195-204"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:318 header_fields_are_named_in_lowercase",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:331 header_fields_are_named_in_lowercase",
     "crates/a2a-protocol-server/tests/request_context_tests.rs:179 an_executor_sees_the_extensions_the_caller_activated",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:107 json_rpc_reads_and_echoes_both_lines"
    ],
@@ -5652,11 +5657,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:272-284",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:195-204"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:318 header_fields_are_named_in_lowercase",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:331 header_fields_are_named_in_lowercase",
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:371 jsonrpc_response_has_a2a_version_header"
    ],
    "notes": "Header names are lower-cased by hyper, which satisfies the RFC 7230 case-insensitivity note on line 2257.",
@@ -5674,14 +5679,14 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:258",
     "crates/a2a-protocol-server/src/handler/capability.rs:137",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:277",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:290",
     "crates/a2a-protocol-client/src/extensions.rs:35"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:738 parse_extensions_header_drops_empty_segments",
     "crates/a2a-protocol-client/src/extensions.rs:160 the_value_is_the_uris_comma_separated",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:103 json_rpc_sends_the_extensions_asked_for",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:331 a_field_sent_as_several_lines_is_one_field",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:344 a_field_sent_as_several_lines_is_one_field",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:107 json_rpc_reads_and_echoes_both_lines",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:117 rest_reads_and_echoes_both_lines"
    ],
@@ -5700,9 +5705,9 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/jsonrpc.rs:51-75",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:212-277",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:213-278",
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:180-204",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:199",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:200",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/refusal.rs:44-81",
     "crates/a2a-protocol-types/src/jsonrpc.rs:167",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:61"
@@ -5740,7 +5745,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:385-388",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:331-347",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:332-348",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
@@ -5787,7 +5792,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:66-91",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:173-207",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:460"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:461"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:343 parse_error_response_has_error_code",
@@ -6043,10 +6048,10 @@
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-87",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:91-102",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:92-103",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-194",
     "crates/a2a-protocol-types/src/lib.rs:87-98",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:203-218"
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:216-231"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/http_json_error_parity.rs:170 rest_and_axum_negotiate_the_response_media_type",
@@ -6088,11 +6093,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:185-214",
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:186-215",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:272-284",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:130-142",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:203-223",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:323"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:325"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed",
@@ -6114,11 +6119,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:259-271",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:272-284",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:130-142"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/mod.rs:318 header_fields_are_named_in_lowercase",
+    "crates/a2a-protocol-server/src/dispatch/mod.rs:331 header_fields_are_named_in_lowercase",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:629 build_request_includes_extra_headers"
    ],
    "notes": "",
@@ -6135,7 +6140,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:242-253",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:227-233"
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:228-234"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed"
@@ -6155,8 +6160,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:75-77",
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:200-207",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:303-506",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:201-208",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:304-507",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:87",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:162"
    ],
@@ -6185,10 +6190,10 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:85-93",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:119-127",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:572-611",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:573-612",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:721",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:725"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:723",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:727"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/request.rs:314 build_uri_extracts_path_param_and_appends_query",
@@ -6212,10 +6217,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:176-192",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:577",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:586",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:578",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:588",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:721"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:723"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:633 parse_list_tasks_query_all_params",
@@ -6323,7 +6328,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70-98",
     "crates/a2a-protocol-types/src/error.rs:198-213",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:357 method_not_allowed",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:359 method_not_allowed",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:276"
    ],
    "test_evidence": [
@@ -6412,7 +6417,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:70-98",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:148-168",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:149-169",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:213"
    ],
    "test_evidence": [
@@ -7798,8 +7803,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:516",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:185",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:517",
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:186",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:280",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:39",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:114-152"
@@ -8460,7 +8465,7 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:96",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:570",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:33",
@@ -8510,7 +8515,7 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:153",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:570",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202"
    ],
@@ -9961,7 +9966,7 @@
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:109",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:570",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:145"
@@ -10006,7 +10011,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:330",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:40",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:46",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
@@ -10215,7 +10220,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:330",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:40",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53",
     "crates/a2a-protocol-types/src/params/mod.rs:108",
@@ -10399,7 +10404,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:330",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:40",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:381",
     "crates/a2a-protocol-types/src/params/mod.rs:108",

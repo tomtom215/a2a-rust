@@ -88,6 +88,10 @@ pub struct DispatchConfig {
     /// Disable via [`accept_missing_version_header`](Self::accept_missing_version_header)
     /// for manual `curl` testing or trusted internal deployments.
     pub require_version_header: bool,
+    /// `max-age`, in seconds, of the `Cache-Control` the public agent card is
+    /// served with: spec §8.6.1 asks for one "appropriate for the agent's
+    /// expected update frequency". Default: 3600.
+    pub agent_card_max_age: u32,
 }
 
 impl Default for DispatchConfig {
@@ -100,6 +104,7 @@ impl Default for DispatchConfig {
             sse_channel_capacity: 64,
             max_batch_size: 100,
             require_version_header: true,
+            agent_card_max_age: 3600,
         }
     }
 }
@@ -167,6 +172,14 @@ impl DispatchConfig {
     #[must_use]
     pub const fn accept_missing_version_header(mut self) -> Self {
         self.require_version_header = false;
+        self
+    }
+
+    /// Sets the agent card's `Cache-Control: max-age`, in seconds (spec
+    /// §8.6.1). Until 2026-10-14 every HTTP dispatcher sent 3600.
+    #[must_use]
+    pub const fn with_agent_card_max_age(mut self, seconds: u32) -> Self {
+        self.agent_card_max_age = seconds;
         self
     }
 }

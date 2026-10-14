@@ -1777,6 +1777,12 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     gained `ring` and `base64` as dev-dependencies, already in the tree.
     Ledger 2131, 2133, 2140 (its note denied the opt-in that exists) and
     3352. Mutants 6 of 6.
+97. `feat(server):` `DispatchConfig::with_agent_card_max_age` (audit
+    register R30; in Added). The three HTTP dispatchers built their card
+    handlers with the 3600-second default and no way to set it. The new
+    test fails without it; the existing caching test now pins the default
+    exactly rather than any `max-age=`, which let a changed default pass.
+    Ledger 2229. Mutants 5 of 5.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

@@ -63,7 +63,8 @@ impl JsonRpcDispatcher {
         let card_handler = handler
             .agent_card
             .as_ref()
-            .and_then(|card| StaticAgentCardHandler::new(card).ok());
+            .and_then(|card| StaticAgentCardHandler::new(card).ok())
+            .map(|card| card.with_max_age(config.agent_card_max_age));
         Self {
             handler,
             card_handler,
