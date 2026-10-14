@@ -1480,6 +1480,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **`check_advisory_floors.py` retries a transient fetch.** One connection
+  reset from crates.io failed the gate on a pull request that touched none
+  of its inputs. A reset, a timeout, a 429 or a 5xx is now retried up to
+  three times, 2, 4 and 8 s apart; any other answer is not. An offline
+  self-test of those rules runs first on every invocation (`--self-test`
+  runs only it), and fails under each of 11 hand-applied mutants of the
+  retry code.
 - **The spec ledger audits the v1.0.1 release.** Its entries were made
   against upstream `main` at `12e9d2fb` (retrieved 2026-10-10), which is not
   the release: it differs from tag `v1.0.1` by 65 lines, mostly link URLs and

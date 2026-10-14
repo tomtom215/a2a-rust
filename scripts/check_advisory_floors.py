@@ -46,7 +46,9 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
+import urllib.error
 import urllib.request
 
 PUBLISHED = ["a2a-protocol-types", "a2a-protocol-client", "a2a-protocol-server", "a2a-protocol-sdk"]
@@ -133,13 +135,94 @@ def advisories(db: pathlib.Path) -> dict[str, list[dict]]:
     return by_crate
 
 
+# A transient fault is retried, a definite answer is not. One connection reset
+# from crates.io failed this gate on a pull request that touched none of its
+# inputs (2026-10-14, PR #170), and a gate that a network blip can fail is
+# read as noise. 429 and 5xx are the server saying "not now"; any other HTTP
+# status is an answer, and a retry would only repeat it.
+RETRY_DELAYS = (2.0, 4.0, 8.0)
+
+
+def transient(err: Exception) -> bool:
+    if isinstance(err, urllib.error.HTTPError):
+        return err.code == 429 or err.code >= 500
+    return isinstance(err, (urllib.error.URLError, ConnectionError, TimeoutError))
+
+
+def fetch_json(url: str, opener=urllib.request.urlopen, sleep=time.sleep, log=print) -> dict:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    for attempt, delay in enumerate((*RETRY_DELAYS, None), start=1):
+        try:
+            with opener(request, timeout=60) as response:
+                return json.load(response)
+        except Exception as err:  # noqa: BLE001 - classified just below
+            if delay is None or not transient(err):
+                raise
+            log(f"check_advisory_floors: {url}: {err} (attempt {attempt}); retrying in {delay:g}s",
+                file=sys.stderr)
+            sleep(delay)
+    raise AssertionError("unreachable")
+
+
+def self_test() -> int:
+    """`fetch_json`'s retry rules, against a fake opener: no network."""
+    import contextlib
+    import io
+
+    def opener_failing(errors):
+        calls = []
+
+        def opener(_request, timeout):
+            calls.append(timeout)
+            if len(calls) <= len(errors):
+                raise errors[len(calls) - 1]
+            return contextlib.nullcontext(io.StringIO(json.dumps({"call": len(calls)})))
+
+        return opener, calls
+
+    def http(code):
+        return urllib.error.HTTPError("u", code, "x", {}, None)
+
+    reset = urllib.error.URLError(ConnectionResetError(104, "Connection reset by peer"))
+    slept: list[float] = []
+    cases = [
+        ("three resets, then an answer", [reset, reset, reset], True, 4),
+        ("a 500, a 503 and a 429, then an answer", [http(500), http(503), http(429)], True, 4),
+        ("a 404 is an answer", [http(404)], False, 1),
+        ("four resets exhaust the retries", [reset] * 4, False, 4),
+    ]
+    raised: list[Exception] = []
+    failed = 0
+    for label, errors, succeeds, want_calls in cases:
+        opener, calls = opener_failing(errors)
+        try:
+            got = fetch_json("https://example.invalid/", opener=opener, sleep=slept.append,
+                             log=lambda *_a, **_k: None) == {"call": want_calls}
+        except Exception as err:  # noqa: BLE001
+            got = False
+            raised.append(err)
+        if got != succeeds or len(calls) != want_calls:
+            failed += 1
+            print(f"self-test FAIL: {label}: succeeded={got} after {len(calls)} call(s), "
+                  f"want succeeded={succeeds} after {want_calls}")
+    if slept[:3] != list(RETRY_DELAYS):
+        failed += 1
+        print(f"self-test FAIL: backoff {slept[:3]}, want {list(RETRY_DELAYS)}")
+    # A failure surfaces as the error the server gave, not as one the retry
+    # loop made up on its way out.
+    if [type(e) for e in raised] != [urllib.error.HTTPError, urllib.error.URLError]:
+        failed += 1
+        print(f"self-test FAIL: raised {[type(e).__name__ for e in raised]}, want HTTPError, URLError")
+    total = len(cases) + 2
+    print(f"check_advisory_floors self-test: {total - failed} of {total} passed")
+    return 1 if failed else 0
+
+
 def published_versions(name: str) -> list[str]:
     url = f"https://crates.io/api/v1/crates/{name}/versions?per_page=100"
     out: list[str] = []
     while url:
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            page = json.load(response)
+        page = fetch_json(url)
         out += [v["num"] for v in page["versions"] if not v["yanked"] and "-" not in v["num"]]
         nxt = page.get("meta", {}).get("next_page")
         url = f"https://crates.io/api/v1/crates/{name}/versions{nxt}" if nxt else ""
@@ -152,7 +235,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path("."))
     parser.add_argument("--db", type=pathlib.Path, help="a RustSec advisory-db checkout")
+    parser.add_argument("--self-test", action="store_true", help="check the retry rules, offline")
     args = parser.parse_args()
+    # The retry rules are checked offline on every run, so a change that
+    # breaks them fails this gate rather than waiting for the next reset.
+    if self_test():
+        return 2
+    if args.self_test:
+        return 0
 
     with tempfile.TemporaryDirectory() as scratch:
         db = args.db

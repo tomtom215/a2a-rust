@@ -1028,6 +1028,15 @@ reproduced locally before its fix.
    `cargo-deny` step fails until `deny.toml` waives the three.** Checked:
    neither the binding nor the crates implement a `ClientSessionStore`, and
    the binding's lock gives rustls no brotli dependency.
+7. `ci:` `check_advisory_floors.py` retries a transient fetch. The static
+   checks job on #170 failed on one `Connection reset by peer` from crates.io
+   in that script, which the PR did not touch. Resets, timeouts, 429 and 5xx
+   are retried three times (2, 4, 8 s); other answers are not. An offline
+   self-test runs first on every invocation; 11 of 11 hand-applied mutants of
+   the retry code fail it, three of them only after the self-test gained a
+   500 case, a check that the original error is the one raised, and a
+   payload a constant cannot match.
+
 **Step 1: A2A v1.0.1.**
 
 8. `docs(ledger):` the ledger audits the v1.0.1 release. The vendored copy
