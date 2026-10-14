@@ -525,11 +525,13 @@ impl A2aError {
     /// failed: the task goes on, and `GetTask` shows its state. This SDK's
     /// servers send it only when the task's event log cannot replay what the
     /// consumer missed (spec §3.5.2). On the JSON-RPC, HTTP+JSON, WebSocket
-    /// and gRPC bindings it is the stream's last frame; the SLIMRPC binding
+    /// and gRPC bindings it is the stream's last frame; a SLIMRPC server
     /// sends the error's text without the marker, so this returns `false`
-    /// there. To resynchronize, subscribe again: the new stream begins with
-    /// a fresh `Task` snapshot, and over SSE a `Last-Event-ID` resumes it
-    /// after the last position seen, while the log still holds it.
+    /// there, though a SLIMRPC multicast member that falls behind on the
+    /// client side is handed this signal. To resynchronize, subscribe
+    /// again: the new stream begins with a fresh `Task` snapshot, and over
+    /// SSE a `Last-Event-ID` resumes it after the last position seen, while
+    /// the log still holds it.
     ///
     /// It is detected by the [`STREAM_LAGGED_MARKER`] key in [`A2aError::data`]
     /// rather than by code or message, because the code is a generic
@@ -555,12 +557,16 @@ impl A2aError {
     /// (how this SDK's servers sent it on JSON-RPC until 2026-10-10, and how
     /// the REST client decodes a `Struct` detail), or in one of the typed
     /// detail objects of a `data` array (how §9.5 requires JSON-RPC error
-    /// data to be shaped, and how servers send it since).
+    /// data to be shaped, and how servers send it since). In a detail, the
+    /// marker is under `value` in the `ProtoJSON` `Any` form this SDK writes
+    /// since 2026-10-14, or beside `@type` in the flat form it wrote before
+    /// and a2a-go writes (audit register R19).
     fn lag_marker(&self) -> Option<&serde_json::Value> {
         match self.data.as_ref()? {
-            serde_json::Value::Array(details) => {
-                details.iter().find_map(|d| d.get(STREAM_LAGGED_MARKER))
-            }
+            serde_json::Value::Array(details) => details.iter().find_map(|d| {
+                d.get(STREAM_LAGGED_MARKER)
+                    .or_else(|| d.get("value")?.get(STREAM_LAGGED_MARKER))
+            }),
             data => data.get(STREAM_LAGGED_MARKER),
         }
     }
@@ -1423,6 +1429,19 @@ mod tests {
         );
         assert!(array.is_stream_lagged());
         assert_eq!(array.dropped_event_count(), Some(42));
+
+        // The ProtoJSON `Any` form servers send since 2026-10-14 (audit
+        // register R19): the `Struct`'s fields under `value`.
+        let any = A2aError::with_data(
+            ErrorCode::InternalError,
+            "lagged",
+            serde_json::json!([
+                {"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "X"},
+                {"@type": "type.googleapis.com/google.protobuf.Struct", "value": {"streamLagged": 42}}
+            ]),
+        );
+        assert!(any.is_stream_lagged());
+        assert_eq!(any.dropped_event_count(), Some(42));
 
         let object = A2aError::with_data(
             ErrorCode::InternalError,

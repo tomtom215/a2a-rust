@@ -601,12 +601,22 @@ async fn main() {
         .map(|h| std::env::var("SUT_WS_ADVERTISE_URL").unwrap_or_else(|_| format!("ws://{h}")));
 
     let profile = Profile::from_env();
-    let mut builder = RequestHandlerBuilder::new(TckSutExecutor).with_agent_card(make_agent_card(
+    let card = make_agent_card(
         &advertised,
         &grpc_advertised,
         ws_advertised.as_deref(),
         profile,
-    ));
+    );
+    // §3.1.11 / §13.3: a card that declares `extendedAgentCard` and has no
+    // extended card configured answers ExtendedAgentCardNotConfigured. The
+    // SUT serves its public card as the extended one, as the handler did
+    // implicitly before 0.15; the Minimal profile declares nothing, and
+    // `build()` refuses an extended card no declaration reaches.
+    let declares_extended = card.capabilities.extended_agent_card == Some(true);
+    let mut builder = RequestHandlerBuilder::new(TckSutExecutor).with_agent_card(card.clone());
+    if declares_extended {
+        builder = builder.with_extended_agent_card(card);
+    }
     // One interceptor, above the dispatchers, guarding all four bindings —
     // which is precisely the property BIND-EQUIV-004's enforcement half exists
     // to verify. It reads `Authorization` from the `CallContext`, which

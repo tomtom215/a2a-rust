@@ -160,7 +160,9 @@ async fn every_handler_method_reports_its_outcome() {
             ("CancelTask", "failed:task_not_found"),
             ("ListTasks", "succeeded"),
             ("SubscribeToTask", "failed:task_not_found"),
-            ("GetExtendedAgentCard", "failed:protocol"),
+            // No card on this handler at all: UnsupportedOperationError
+            // (SPEC §13.3), since 2026-10-14; it was -32007, a protocol error.
+            ("GetExtendedAgentCard", "failed:unsupported_operation"),
         ]
     );
 }

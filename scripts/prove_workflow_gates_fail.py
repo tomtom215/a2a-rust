@@ -786,7 +786,8 @@ def build_registry() -> dict[str, Probe | Exempt]:
             ),
         ],
     )
-    reg["docs.yml::build::Place API documentation under /api/"] = Probe(
+    API_STEP = "docs.yml::build::Place API documentation under /api/"
+    reg[API_STEP] = Probe(
         healthy=_rustdoc_fixture(ALL_DOC_CRATES),
         defects=[
             Defect(
@@ -843,7 +844,14 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 (mod.Line("0.2", "0.2.1", "v0.2.1"), book(d / "b02", True)),
                 (mod.Line("0.1", "0.1.0", "v0.1.0"), book(d / "b01", True)),
             ]
-            dev = book(d / "dev", True)
+            # The dev book gets its /api/ from the workflow's own step, run
+            # here as written: the redirect page it writes has no </head>,
+            # and on 2026-10-14 that page reached /dev/api/ indexable and
+            # with its canonical link while a hand-made fixture passed.
+            dev = book(d / "book" / "book", True)
+            _rustdoc_fixture(ALL_DOC_CRATES)(d)
+            place = next(s for s in load_steps() if s.key == API_STEP)
+            subprocess.run(["bash", "-e", "-c", place.run], cwd=d, check=True, capture_output=True)
             for chapter in mod.PERMALINKS.values():
                 (dev / chapter).parent.mkdir(parents=True, exist_ok=True)
                 (dev / chapter).write_text("<html><head></head><body></body></html>", encoding="utf-8")

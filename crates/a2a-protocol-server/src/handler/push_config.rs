@@ -33,7 +33,10 @@ pub(super) fn unset_proto3_defaults(config: &mut TaskPushNotificationConfig) {
 /// nothing and answered success.
 fn require_field(name: &str, value: &str) -> ServerResult<()> {
     if value.is_empty() {
-        return Err(ServerError::InvalidParams(format!("{name} is required")));
+        return Err(ServerError::InvalidField {
+            field: name.to_owned(),
+            message: format!("{name} is required"),
+        });
     }
     Ok(())
 }
@@ -183,9 +186,10 @@ impl RequestHandler {
                 // no task context to infer it from — reject explicitly instead of
                 // storing an unroutable config.
                 if config.task_id.as_deref().unwrap_or("").is_empty() {
-                    return Err(ServerError::InvalidParams(
-                        "taskId is required for CreateTaskPushNotificationConfig".into(),
-                    ));
+                    return Err(ServerError::InvalidField {
+                        field: "taskId".into(),
+                        message: "taskId is required for CreateTaskPushNotificationConfig".into(),
+                    });
                 }
 
                 let call_ctx = build_call_context(
@@ -468,16 +472,18 @@ fn refuse_an_unservable_config(
     // only over it refuses any other scheme here, with a reason, rather
     // than storing a config every delivery of which would fail.
     if sender.requires_https() && !crate::push::sender::is_https_url(&config.url) {
-        return Err(ServerError::InvalidParams(
-            "push notification URL must be https://: this server's push sender \
-             delivers only to https webhooks"
+        return Err(ServerError::InvalidField {
+            field: "url".into(),
+            message: "push notification URL must be https://: this server's push sender \
+                      delivers only to https webhooks"
                 .into(),
-        ));
+        });
     }
     if !sender.allows_webhook_url(&config.url) {
-        return Err(ServerError::InvalidParams(
-            "push notification URL's host is not in the server's webhook allowlist".into(),
-        ));
+        return Err(ServerError::InvalidField {
+            field: "url".into(),
+            message: "push notification URL's host is not in the server's webhook allowlist".into(),
+        });
     }
     // The proto marks `url` REQUIRED. The host check above runs only
     // when private URLs are refused, so with them allowed an empty or
@@ -491,11 +497,14 @@ fn refuse_an_unservable_config(
         && !auth.scheme.eq_ignore_ascii_case("bearer")
         && !auth.scheme.eq_ignore_ascii_case("basic")
     {
-        return Err(ServerError::InvalidParams(format!(
-            "push notification authentication scheme {:?} is not supported; \
-             this server can send Bearer or Basic",
-            auth.scheme
-        )));
+        return Err(ServerError::InvalidField {
+            field: "authentication.scheme".into(),
+            message: format!(
+                "push notification authentication scheme {:?} is not supported; \
+                 this server can send Bearer or Basic",
+                auth.scheme
+            ),
+        });
     }
     // The token and the credentials travel as header values. One a header
     // cannot carry (CR, LF or another control character) was stored, and
@@ -504,15 +513,18 @@ fn refuse_an_unservable_config(
         .authentication
         .as_ref()
         .and_then(|auth| auth.credentials.as_deref());
-    for (field, value) in [
-        ("token", config.token.as_deref()),
-        ("credentials", credentials),
+    for (field, path, value) in [
+        ("token", "token", config.token.as_deref()),
+        ("credentials", "authentication.credentials", credentials),
     ] {
         if value.is_some_and(|v| hyper::header::HeaderValue::from_str(v).is_err()) {
-            return Err(ServerError::InvalidParams(format!(
-                "push notification {field} holds a character a header cannot carry \
-                 (a control character such as CR or LF)"
-            )));
+            return Err(ServerError::InvalidField {
+                field: path.to_owned(),
+                message: format!(
+                    "push notification {field} holds a character a header cannot carry \
+                     (a control character such as CR or LF)"
+                ),
+            });
         }
     }
     Ok(())
@@ -824,7 +836,7 @@ mod tests {
         };
         let result = handler.on_set_push_config(config, None).await;
         match result {
-            Err(crate::error::ServerError::InvalidParams(msg)) => {
+            Err(crate::error::ServerError::InvalidField { message: msg, .. }) => {
                 assert!(msg.contains("taskId"), "got: {msg}");
             }
             other => panic!("expected InvalidParams for missing taskId, got: {other:?}"),
@@ -1137,13 +1149,16 @@ mod tests {
             .on_set_push_config(with_scheme("Digest"), None)
             .await;
         assert!(
-            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("Digest")),
+            matches!(&refused, Err(crate::error::ServerError::InvalidField { message: m, .. }) if m.contains("Digest")),
             "{refused:?}"
         );
         // The proto marks `scheme` REQUIRED; gRPC delivers an absent one as "".
         let refused = handler.on_set_push_config(with_scheme(""), None).await;
         assert!(
-            matches!(&refused, Err(crate::error::ServerError::InvalidParams(_))),
+            matches!(
+                &refused,
+                Err(crate::error::ServerError::InvalidField { .. })
+            ),
             "{refused:?}"
         );
         for scheme in ["Bearer", "basic"] {
@@ -1178,18 +1193,18 @@ mod tests {
         for (task_id, id) in [("", "cfg-1"), ("t-1", "")] {
             let r = handler.on_get_push_config(get(task_id, id), None).await;
             assert!(
-                matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+                matches!(r, Err(crate::error::ServerError::InvalidField { .. })),
                 "get {task_id:?}/{id:?}: {r:?}"
             );
             let r = handler.on_delete_push_config(del(task_id, id), None).await;
             assert!(
-                matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+                matches!(r, Err(crate::error::ServerError::InvalidField { .. })),
                 "delete {task_id:?}/{id:?}: {r:?}"
             );
         }
         let r = handler.on_list_push_configs("", None, None).await;
         assert!(
-            matches!(r, Err(crate::error::ServerError::InvalidParams(_))),
+            matches!(r, Err(crate::error::ServerError::InvalidField { .. })),
             "list: {r:?}"
         );
     }
@@ -1210,7 +1225,7 @@ mod tests {
         config.url = "https://other.example.com/hook".into();
         let refused = handler.on_set_push_config(config, None).await;
         assert!(
-            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("allowlist")),
+            matches!(&refused, Err(crate::error::ServerError::InvalidField { message: m, .. }) if m.contains("allowlist")),
             "{refused:?}"
         );
         let mut config = make_push_config("t-1");
@@ -1235,7 +1250,7 @@ mod tests {
         config.url = "http://hooks.example.com/hook".into();
         let refused = handler.on_set_push_config(config, None).await;
         assert!(
-            matches!(&refused, Err(crate::error::ServerError::InvalidParams(m)) if m.contains("must be https://")),
+            matches!(&refused, Err(crate::error::ServerError::InvalidField { message: m, .. }) if m.contains("must be https://")),
             "{refused:?}"
         );
         let mut config = make_push_config("t-1");

@@ -338,6 +338,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 fallback_on_error: false,
             })
             .with_agent_card(make_agent_card(&url, &model))
+            // §3.1.11: declared, so set; the public card is served as it.
+            .with_extended_agent_card(make_agent_card(&url, &model))
             .with_push_config_store(InMemoryPushConfigStore::new())
             .with_push_sender(HttpPushSender::new().allow_private_urls())
             .allow_unauthenticated_extended_card()

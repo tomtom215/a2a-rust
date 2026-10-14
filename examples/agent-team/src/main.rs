@@ -97,14 +97,14 @@ async fn main() {
     let analyzer_handler = Arc::new(
         RequestHandlerBuilder::new(CodeAnalyzerExecutor)
             .with_agent_card(code_analyzer_card(&analyzer_url))
+            .with_extended_agent_card(code_analyzer_card(&analyzer_url))
             .with_interceptor(AuditInterceptor::new("CodeAnalyzer"))
             .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
             .with_executor_timeout(std::time::Duration::from_secs(30))
             .with_event_queue_capacity(128)
-            // §13.3 wants the extended card authenticated; `AuditInterceptor`
-            // only logs, so this agent needs the explicit opt-in. The refusal
-            // path it bypasses is covered by `extended-card-requires-auth`
-            // (Test 68b), which builds a handler without it.
+            // Test 68 reads the extended card, the public card served as it
+            // (§3.1.11). §13.3 wants it authenticated; `AuditInterceptor` only
+            // logs, so the opt-in is explicit. Test 68b covers the refusal.
             .allow_unauthenticated_extended_card()
             .build()
             .expect("build code analyzer handler"),

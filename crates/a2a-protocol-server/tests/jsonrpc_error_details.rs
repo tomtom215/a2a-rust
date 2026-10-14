@@ -122,14 +122,14 @@ async fn unary_errors_keep_their_data() {
     )
     .await;
     assert_eq!(
-        find(&v["error"]["data"], structure)["policy"],
+        find(&v["error"]["data"], structure)["value"]["policy"],
         "eu-ai-act-art-14",
         "{v}"
     );
 
     let v = call("GET", format!("http://{rest}/tasks"), "").await;
     assert_eq!(
-        find(&v["error"]["details"], structure)["policy"],
+        find(&v["error"]["details"], structure)["value"]["policy"],
         "eu-ai-act-art-14",
         "{v}"
     );

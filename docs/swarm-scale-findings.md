@@ -133,7 +133,7 @@ that moved the defect. The spec settles the fork, and permits it:
 > Clients **MAY** use `contextId` without `taskId` to start a new task within
 > an existing conversation context.
 >
-> — §3.4.3, `docs/implementation/v1.0.0-specification-complete.md:651`
+> — §3.4.3, `docs/implementation/a2a-v1.0.1-specification.md:657` (cited as line 651 of the earlier copy, `v1.0.0-specification-complete.md`, where the sentence was at line 653)
 
 So the fork was never the bug. The bug was the *lockout that followed it*. The
 same section permits the continuation the server was refusing, and mandates

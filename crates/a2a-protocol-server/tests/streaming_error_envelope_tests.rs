@@ -125,7 +125,8 @@ async fn jsonrpc_stream_error_is_a_jsonrpc_error_response() {
     // The lag error's machine-readable marker must survive the wrapping,
     // since that is how a client tells truncation from an executor failure.
     // §9.5: JSON-RPC error `data` is an array of objects that each carry
-    // `@type`; the marker rides in a flat `google.protobuf.Struct` detail.
+    // `@type`; the marker rides in a `google.protobuf.Struct` detail, its
+    // fields under `value` as ProtoJSON writes an `Any` (audit register R19).
     let details = data["error"]["data"]
         .as_array()
         .unwrap_or_else(|| panic!("§9.5: error data must be an array; body:\n{body}"));
@@ -138,7 +139,9 @@ async fn jsonrpc_stream_error_is_a_jsonrpc_error_response() {
         .find(|d| d["@type"] == "type.googleapis.com/google.protobuf.Struct")
         .unwrap_or_else(|| panic!("no Struct detail; body:\n{body}"));
     assert!(
-        structured["streamLagged"].as_u64().is_some_and(|n| n > 0),
+        structured["value"]["streamLagged"]
+            .as_u64()
+            .is_some_and(|n| n > 0),
         "the streamLagged marker and its count must survive enveloping; body:\n{body}"
     );
 }
@@ -205,15 +208,17 @@ async fn rest_stream_error_is_an_aip193_status() {
             .is_some_and(|m| m.contains("lagged")),
         "body:\n{body}"
     );
-    // The streamLagged marker survives as a google.protobuf.Struct detail,
-    // flattened the way a2a-go writes and reads one (`errordetails.Typed`).
+    // The streamLagged marker survives as a google.protobuf.Struct detail in
+    // the ProtoJSON `Any` form, its fields under `value` (audit register R19).
     let details = status["details"].as_array().expect("details array");
     let structured = details
         .iter()
         .find(|d| d["@type"] == "type.googleapis.com/google.protobuf.Struct")
         .unwrap_or_else(|| panic!("no Struct detail; body:\n{body}"));
     assert!(
-        structured["streamLagged"].as_u64().is_some_and(|n| n > 0),
+        structured["value"]["streamLagged"]
+            .as_u64()
+            .is_some_and(|n| n > 0),
         "the streamLagged marker and its count must survive; body:\n{body}"
     );
 }

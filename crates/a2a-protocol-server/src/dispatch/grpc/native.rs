@@ -593,6 +593,7 @@ mod tests {
             handler: Arc::new(
                 RequestHandlerBuilder::new(NoopExecutor)
                     .with_agent_card(test_card())
+                    .with_extended_agent_card(test_card())
                     .with_push_sender(NoopSender)
                     // The extended-card operation refuses to serve an
                     // unauthenticated deployment unless the operator opts in.
@@ -705,6 +706,7 @@ mod tests {
             handler: Arc::new(
                 RequestHandlerBuilder::new(NoopExecutor)
                     .with_agent_card(test_card())
+                    .with_extended_agent_card(test_card())
                     .with_push_sender(NoopSender)
                     .allow_unauthenticated_extended_card()
                     .build()

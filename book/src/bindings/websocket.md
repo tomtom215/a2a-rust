@@ -68,6 +68,11 @@ supported: an array is answered `-32600`.
 A connection may have up to 64 requests in progress at once. Their responses
 can arrive in any order; a client correlates them by `id`.
 
+A request with no `id` member is a notification (JSON-RPC 2.0 §4.1): the
+server runs it and sends no frame for it, whether it succeeds or fails. A
+streaming method (`SendStreamingMessage`, `SubscribeToTask`) sent as a
+notification is not run: a stream is its only answer.
+
 ### Data types (§12.2)
 
 The payloads are the JSON-RPC binding's ProtoJSON (§9), unchanged:

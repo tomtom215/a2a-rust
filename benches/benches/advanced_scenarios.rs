@@ -474,7 +474,8 @@ fn bench_extended_agent_card(c: &mut Criterion) {
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(card)
+            .with_agent_card(card.clone())
+            .with_extended_agent_card(card)
             .build()
             .expect("build handler with extended card"),
     );

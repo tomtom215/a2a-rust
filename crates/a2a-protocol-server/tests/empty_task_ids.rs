@@ -27,21 +27,21 @@ async fn an_empty_task_id_is_invalid_params() {
             .on_get_task(serde_json::from_value(params.clone()).unwrap(), None)
             .await;
         assert!(
-            matches!(get, Err(ServerError::InvalidParams(_))),
+            matches!(get, Err(ServerError::InvalidField { .. })),
             "GetTask {id:?}: {get:?}"
         );
         let cancel = handler
             .on_cancel_task(serde_json::from_value(params.clone()).unwrap(), None)
             .await;
         assert!(
-            matches!(cancel, Err(ServerError::InvalidParams(_))),
+            matches!(cancel, Err(ServerError::InvalidField { .. })),
             "CancelTask {id:?}: {cancel:?}"
         );
         let subscribe = handler
             .on_resubscribe(serde_json::from_value(params).unwrap(), None)
             .await;
         assert!(
-            matches!(subscribe, Err(ServerError::InvalidParams(_))),
+            matches!(subscribe, Err(ServerError::InvalidField { .. })),
             "SubscribeToTask {id:?}: {:?}",
             subscribe.err()
         );

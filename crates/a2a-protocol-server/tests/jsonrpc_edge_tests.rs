@@ -190,26 +190,9 @@ async fn jsonrpc_null_id_call_gets_response_with_present_null_id() {
     assert!(obj.contains_key("result"), "expected success: {resp}");
 }
 
-/// End-to-end pin (D2): the HTTP dispatch treats every A2A request as a
-/// call — an id-less request is still answered, with a null response id
-/// (A2A defines no notification methods). This preserves long-standing
-/// behavior; the type layer now distinguishes the two states so the request
-/// round-trips faithfully.
-#[tokio::test]
-async fn jsonrpc_absent_id_request_answered_with_null_id() {
-    let addr = start_jsonrpc_server().await;
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "ListTasks",
-        "params": {}
-    });
-    let (status, resp) = post_jsonrpc(addr, &body.to_string()).await;
-    assert_eq!(status, 200);
-    let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    let obj = v.as_object().expect("response is an object");
-    assert!(obj["id"].is_null(), "got: {resp}");
-    assert!(obj.contains_key("result"), "expected success: {resp}");
-}
+// An id-less request is a notification, run and not answered: see
+// `jsonrpc_notifications.rs` (audit register R21). It was answered with a
+// null id, which `jsonrpc_absent_id_request_answered_with_null_id` pinned.
 
 #[tokio::test]
 async fn jsonrpc_id_large_integer_is_valid() {

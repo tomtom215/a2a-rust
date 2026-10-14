@@ -130,6 +130,9 @@ pub fn handler_for(name: &SlimName) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(SigningExecutor::new(name.service.clone()))
             .with_agent_card(agent_card(name))
+            // §3.1.11: the card declares an extended card, so one is set; the
+            // public card is served as it.
+            .with_extended_agent_card(agent_card(name))
             // No auth interceptor in these fixtures, so the extended card is
             // opted into explicitly rather than pretending to be authenticated.
             .allow_unauthenticated_extended_card()

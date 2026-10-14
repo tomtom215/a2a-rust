@@ -15,10 +15,11 @@
 //!   `sseWriter.WriteData`), i.e. `data: {"error":{"code":404,"status":
 //!   "NOT_FOUND","message":...,"details":[ErrorInfo]}}`.
 //! * **This repository's server** writes `event: error` with the same
-//!   AIP-193 object, the error's `data` as a flat `google.protobuf.Struct`
+//!   AIP-193 object, the error's `data` as a `google.protobuf.Struct`
 //!   detail (`a2a-protocol-server/src/streaming/sse.rs`,
-//!   `rest_stream_error`) — so a2a-go's REST client can read it. That detail
-//!   is decoded back into `data`, which keeps
+//!   `rest_stream_error`), in the `ProtoJSON` `Any` form since 2026-10-14 and
+//!   flat (a2a-go's form) before. That detail is decoded back into `data`,
+//!   which keeps
 //!   [`A2aError::is_stream_lagged`] true across the stream. Releases up to
 //!   and including 0.13.0 wrote a serialized `A2aError` instead,
 //!   `{"code":-32001,"message":...,"data":...}`.
@@ -78,11 +79,18 @@ fn aip193_in_stream(data: &str, value: &serde_json::Value) -> A2aError {
 /// The `@type` a `google.protobuf.Struct` detail carries.
 const STRUCT_DETAIL_TYPE: &str = "type.googleapis.com/google.protobuf.Struct";
 
-/// The error's own `data`, when the frame carries it as a flat
-/// `google.protobuf.Struct` detail — the shape this repository's server writes
-/// (`{"@type":…,"streamLagged":6}`). Returning it as `data` is what keeps
+/// The error's own `data`, when the frame carries it as a
+/// `google.protobuf.Struct` detail. Returning it as `data` is what keeps
 /// [`A2aError::is_stream_lagged`] working across a REST stream. `None` when
 /// there is no such detail, so a peer's whole object is kept instead.
+///
+/// Two shapes are read (audit register R19): the `ProtoJSON` `Any` form this
+/// repository's server writes since 2026-10-14,
+/// `{"@type":…,"value":{"streamLagged":6}}`, and the flat form it wrote
+/// before and a2a-go writes, `{"@type":…,"streamLagged":6}`. A detail whose
+/// only members are `@type` and an object `value` is read as the first; a
+/// flat `Struct` with a single object field named `value` is read the same
+/// way, which the flat form cannot tell apart.
 fn struct_detail(error: &serde_json::Value) -> Option<serde_json::Value> {
     let detail =
         error.get("details")?.as_array()?.iter().find(|d| {
@@ -90,6 +98,11 @@ fn struct_detail(error: &serde_json::Value) -> Option<serde_json::Value> {
         })?;
     let mut fields = detail.as_object()?.clone();
     fields.remove("@type");
+    if fields.len() == 1
+        && let Some(value @ serde_json::Value::Object(_)) = fields.get("value")
+    {
+        return Some(value.clone());
+    }
     Some(serde_json::Value::Object(fields))
 }
 
@@ -135,10 +148,37 @@ mod tests {
     }
 
     /// The frame this repository's own server writes for a lagged REST stream
-    /// (`rest_stream_error` in the server's `streaming/sse.rs`): the error's
-    /// `data` travels as a flat `google.protobuf.Struct` detail. Decoding it
-    /// must give back the same `data`, or `is_stream_lagged` — the client's
-    /// only signal to resubscribe — reads false.
+    /// (`rest_stream_error` in the server's `streaming/sse.rs`) since
+    /// 2026-10-14: the error's `data` travels as a `google.protobuf.Struct`
+    /// detail in the `ProtoJSON` `Any` form, under `value` (audit register R19).
+    /// Decoding it must give back the same `data`, or `is_stream_lagged` —
+    /// the client's only signal to resubscribe — reads false.
+    #[test]
+    fn a_protojson_any_struct_detail_is_the_errors_data() {
+        let frame = r#"{"error":{"code":500,"status":"INTERNAL","message":"event stream lagged",
+            "details":[{"@type":"type.googleapis.com/google.protobuf.Struct","value":{"streamLagged":6}}]}}"#;
+        let err = decode_stream_error_frame(frame).expect("an error");
+        assert!(err.is_stream_lagged(), "{err:?}");
+        assert_eq!(err.dropped_event_count(), Some(6));
+        assert_eq!(err.data, Some(serde_json::json!({"streamLagged": 6})));
+    }
+
+    /// A flat `Struct` with a field named `value` beside others is not the
+    /// `Any` form: only a detail whose sole member besides `@type` is an
+    /// object `value` is unwrapped.
+    #[test]
+    fn a_flat_struct_with_a_value_field_and_others_stays_flat() {
+        let frame = r#"{"error":{"code":500,"message":"m",
+            "details":[{"@type":"type.googleapis.com/google.protobuf.Struct","value":{"a":1},"b":2}]}}"#;
+        let err = decode_stream_error_frame(frame).expect("an error");
+        assert_eq!(
+            err.data,
+            Some(serde_json::json!({"value": {"a": 1}, "b": 2}))
+        );
+    }
+
+    /// The flat form, which this server wrote until 2026-10-14 and a2a-go
+    /// writes, is still read.
     #[test]
     fn a_struct_detail_is_the_errors_data_so_stream_lag_survives() {
         let frame = r#"{"error":{"code":500,"status":"INTERNAL","message":"event stream lagged",

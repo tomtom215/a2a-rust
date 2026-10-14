@@ -9,6 +9,7 @@
 //! them to the appropriate [`RequestHandler`] method, and serializes the
 //! response (or streams SSE for streaming methods).
 
+mod notification;
 mod refusal;
 mod response;
 
@@ -258,13 +259,19 @@ impl JsonRpcDispatcher {
                         continue;
                     }
                 };
+                if rpc_req.id.is_absent() {
+                    self.notify(&rpc_req, &headers).await;
+                    continue;
+                }
                 let resp_body = self.dispatch_single_request(&rpc_req, &headers).await;
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&resp_body) {
                     responses.push(v);
                 }
             }
-            let body = serde_json::to_vec(&responses).unwrap_or_default();
-            json_response(200, body)
+            if responses.is_empty() {
+                return notification::no_content();
+            }
+            json_response(200, serde_json::to_vec(&responses).unwrap_or_default())
         } else {
             // Single request.
             let rpc_req: JsonRpcRequest = match serde_json::from_value(raw) {
@@ -300,6 +307,10 @@ impl JsonRpcDispatcher {
         rpc_req: &JsonRpcRequest,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        if rpc_req.id.is_absent() {
+            self.notify(rpc_req, headers).await;
+            return notification::no_content();
+        }
         let id = rpc_req.id.to_response_id();
         trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
 

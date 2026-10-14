@@ -137,7 +137,15 @@ def build_line(line: Line, work: Path, mdbook: str, latest: bool) -> Path:
 def make_noindex(page: str) -> str:
     page = re.sub(r'\s*<link rel="canonical"[^>]*>', "", page)
     page = re.sub(r'\s*<meta name="(?:robots|googlebot)" content="[^"]*">', "", page)
-    return page.replace("</head>", f"    {NOINDEX}\n</head>", 1)
+    if "</head>" in page:
+        return page.replace("</head>", f"    {NOINDEX}\n</head>", 1)
+    # A page whose head is implied, such as the /api/ redirect docs.yml
+    # writes: the tag goes after the doctype, where the parser still reads
+    # it as part of the head. Matching only "</head>" left that page with
+    # neither tag, and deployed it indexable.
+    doctype = re.match(r"\s*<!doctype[^>]*>\n?", page, re.IGNORECASE)
+    at = doctype.end() if doctype else 0
+    return f"{page[:at]}{NOINDEX}\n{page[at:]}"
 
 
 def switcher_tags(label: str, root: str, page: str) -> str:

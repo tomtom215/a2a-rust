@@ -375,8 +375,10 @@ impl RequestHandlerBuilder {
     /// only to clients it knows, such as more skills or a security scheme.
     ///
     /// Without it, a handler whose card declares
-    /// `capabilities.extendedAgentCard` serves that public card as the
-    /// extended one, so a caller who authenticates learns nothing more.
+    /// `capabilities.extendedAgentCard` answers `GetExtendedAgentCard` with
+    /// `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 require.
+    /// Until 0.15 it served the public card in its place; to keep serving
+    /// the same content, pass the public card here.
     ///
     /// `build()` checks it as it checks the public card: it must be valid, a
     /// push-notification capability needs a sender, and the extensions this
@@ -402,8 +404,8 @@ impl RequestHandlerBuilder {
     /// or when the handler is not a public A2A server at all, as in a test.
     ///
     /// Without a card the dispatchers answer `/.well-known/agent-card.json`
-    /// with 404, `GetExtendedAgentCard` answers `ExtendedAgentCardNotConfigured`
-    /// unless [`with_extended_agent_card`](Self::with_extended_agent_card) set
+    /// with 404, `GetExtendedAgentCard` answers `UnsupportedOperationError`
+    /// (SPEC §13.3: nothing here declares the capability) unless [`with_extended_agent_card`](Self::with_extended_agent_card) set
     /// one, and nothing a card would declare is checked: streaming and push
     /// notifications are served, any input mode is accepted, no extension is
     /// required, and none is advertised.

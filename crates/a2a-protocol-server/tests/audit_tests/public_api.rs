@@ -279,7 +279,8 @@ async fn get_extended_agent_card_configured_with_capability() {
     // §13.3: the endpoint requires authentication; the unauthenticated test
     // handler must opt in explicitly to serve the card.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .with_agent_card(card)
+        .with_agent_card(card.clone())
+        .with_extended_agent_card(card)
         .allow_unauthenticated_extended_card()
         .build()
         .expect("build handler");
@@ -310,7 +311,7 @@ async fn get_extended_agent_card_without_capability_returns_unsupported() {
 }
 
 #[tokio::test]
-async fn get_extended_agent_card_unconfigured() {
+async fn get_extended_agent_card_with_no_card_is_unsupported() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .without_agent_card()
         .build()
@@ -318,8 +319,11 @@ async fn get_extended_agent_card_unconfigured() {
 
     let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::Protocol(ref e) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
-        "expected ExtendedAgentCardNotConfigured error, got {err:?}"
+        matches!(
+            err,
+            a2a_protocol_server::ServerError::UnsupportedOperation(_)
+        ),
+        "expected UnsupportedOperation (SPEC §13.3), got {err:?}"
     );
 }
 

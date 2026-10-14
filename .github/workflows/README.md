@@ -22,7 +22,7 @@ GitHub Actions workflows for the a2a-rust project.
 | **ITK nightly** | `itk-nightly.yml` | Nightly 02:00 UTC, manual | The A2A project's own Integration Testing Kit (`a2aproject/a2a-itk`) with this repository mounted as the system under test against every peer SDK line in its `matrix.yaml` — official Python, JavaScript, Go, Java, and a2a-rs — over JSON-RPC, gRPC and HTTP+JSON. Results (`itk_rust.json`, and since 2026-10-09 the ACTS nightly's `acts_rust.json`) are uploaded as a run artifact and, from `main`, to the rolling `nightly-metrics` prerelease the ITK dashboard reads. Not a PR gate |
 | **ACTS conformance** | `acts.yml` | PRs, push to `main`, manual; called by `release.yml` | The A2A project's conformance suite (ACTS, `a2aproject/a2a-itk` at a pinned revision) against this repository's ITK agent over JSON-RPC, gRPC and HTTP+JSON. Blocks on any failed or errored test at any level (`scripts/acts_predicate.py`), stricter than upstream's MUST-only `--require-conformant`; on a release its summary is attested onto the `.crate` files |
 | **Verification** | `verification.yml` | PRs touching the types crate, the halt path or `verification/`, push to `main`, manual | Proofs rather than tests: Kani over the task state machine and key parsing (`crates/a2a-protocol-types/src/kani_proofs.rs`), and the loom model of the halt/admission protocol (`verification/loom-halt`) |
-| **OSV-Scanner** | `osv.yml` | PRs, push to `main`, daily 06:27 UTC, manual | Every tracked lockfile against the OSV database. The eight `Cargo.lock` files block (on a PR, only findings the PR introduces); waivers live in the `osv-scanner.toml` beside each lockfile, each with a reason and an `ignoreUntil` date. The conformance peers' Go, Java, JavaScript and Python lockfiles are scanned and reported, never blocking |
+| **OSV-Scanner** | `osv.yml` | PRs, push to `main`, daily 06:27 UTC, manual | Every tracked lockfile against the OSV database. The eight `Cargo.lock` files block, on a PR as on `main` (a PR also gets a second job that names the findings it introduces); waivers live in the `osv-scanner.toml` beside each lockfile, each with a reason and an `ignoreUntil` date. The conformance peers' Go, Java, JavaScript and Python lockfiles are scanned and reported, never blocking |
 | **CodeQL** | `codeql.yml` | PRs, push to `main`, weekly, manual | Static analysis (`security-extended`) of the Rust sources, the workflows themselves (`actions`) and the gate scripts (`python`); results in Security → Code scanning |
 | **Scorecard** | `scorecard.yml` | Push to `main`, branch-protection changes, weekly, manual | OpenSSF Scorecard; published to api.scorecard.dev for the README badge and uploaded to code scanning. A dashboard, never a gate. Its shape is fixed by the Scorecard API's workflow restrictions, listed in the file |
 | **Dependabot** | `../dependabot.yml` | Weekly (Mondays 04:00 UTC) | Grouped minor/patch bumps for Cargo (workspace and the SLIMRPC binding) and GitHub Actions; majors arrive as separate PRs. Its commits are DCO-exempt by exact author identity (see `dco.yml`, `PROVENANCE.md` §3.2) |
@@ -43,6 +43,9 @@ requirement there):
 - `TCK self-test (echo-agent)` and the `TCK cross-language` matrix
 - `Mutation Testing (incremental)`
 - `Regression Gate` (benchmarks)
+- `OSV-Scanner / Rust lockfiles` — the blocking scan of `osv.yml`, which runs
+  on pull requests too since 2026-10-14; before then a finding already on
+  `main` could fail no pull request
 - `OSV-Scanner / Rust lockfiles (new findings)` — the PR job of `osv.yml`;
   the job's display name comes from the reusable workflow it calls, so check
   the exact string in a PR's checks list before adding it

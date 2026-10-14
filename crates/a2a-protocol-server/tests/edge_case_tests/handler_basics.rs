@@ -247,7 +247,7 @@ async fn list_tasks_page_size_zero_is_invalid_params() {
         )
         .await;
     assert!(
-        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidParams(m)) if m.contains("pageSize")),
+        matches!(&result, Err(a2a_protocol_server::error::ServerError::InvalidField { message: m, .. }) if m.contains("pageSize")),
         "{result:?}"
     );
 }
@@ -272,7 +272,7 @@ async fn push_config_not_supported_without_sender() {
 }
 
 #[tokio::test]
-async fn extended_agent_card_not_configured() {
+async fn extended_agent_card_with_no_card_is_unsupported() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .without_agent_card()
         .build()
@@ -280,7 +280,7 @@ async fn extended_agent_card_not_configured() {
     let result = handler.on_get_extended_agent_card(None).await;
     let err = result.expect_err("should return error when no card configured");
     assert!(
-        matches!(err, ServerError::Protocol(ref e) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
-        "expected ExtendedAgentCardNotConfigured, got {err:?}"
+        matches!(err, ServerError::UnsupportedOperation(_)),
+        "expected UnsupportedOperation (SPEC §13.3), got {err:?}"
     );
 }

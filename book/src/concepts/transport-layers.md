@@ -67,6 +67,12 @@ JSON-RPC supports batch requests — multiple operations in a single HTTP reques
 
 > **Note:** Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) cannot be used in batch requests and will return an error.
 
+A request with no `id` member is a notification (JSON-RPC 2.0 §4.1): the
+server runs it and sends no reply, alone (`204 No Content`) or in a batch
+(the array leaves it out; `204` when every member is one). A streaming
+method sent as a notification is not run. `"id": null` is a call and is
+answered.
+
 ### ID Handling
 
 JSON-RPC request IDs can be strings, numbers (including 0 and floats), or `null`. The server preserves the exact ID type in the response.

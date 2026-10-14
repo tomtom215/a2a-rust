@@ -460,3 +460,32 @@ fn an_overload_body_names_resource_exhausted() {
     assert_eq!(err.http_status(), 503);
     assert_eq!(err.status_name(), "RESOURCE_EXHAUSTED");
 }
+
+/// `InvalidField` is `InvalidParams` with the field named in a
+/// `google.rpc.BadRequest` detail (§3.3.2): the same code, label and text,
+/// so metrics and messages do not change, plus the detail.
+#[test]
+fn an_invalid_field_is_invalid_params_with_a_bad_request_detail() {
+    let err = ServerError::InvalidField {
+        field: "message.parts".into(),
+        message: "message must contain at least one part".into(),
+    };
+    assert_eq!(err.metric_label(), "invalid_params");
+    assert_eq!(
+        err.to_string(),
+        "invalid params: message must contain at least one part"
+    );
+    let a2a = err.to_a2a_error();
+    assert_eq!(a2a.code, ErrorCode::InvalidParams);
+    assert_eq!(a2a.message, "message must contain at least one part");
+    assert_eq!(
+        a2a.data,
+        Some(serde_json::json!({
+            "@type": "type.googleapis.com/google.rpc.BadRequest",
+            "fieldViolations": [{
+                "field": "message.parts",
+                "description": "message must contain at least one part"
+            }]
+        }))
+    );
+}

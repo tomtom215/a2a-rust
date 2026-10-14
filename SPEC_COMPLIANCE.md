@@ -8,11 +8,13 @@ every RFC 2119 statement in the specification and every `REQUIRED` proto
 field, one entry each, with what is open, at what severity, and which test
 says so. CI (`scripts/check_spec_ledger.py`) fails when it misses a
 requirement of the vendored specification or cites a test that does not
-exist. This matrix is the area-level summary; where they disagree, the ledger
-is the finer-grained record.
+exist. The ledger audits the v1.0.1 release's text, vendored as
+[`docs/implementation/a2a-v1.0.1-specification.md`](docs/implementation/a2a-v1.0.1-specification.md)
+and pinned by SHA-256. This matrix is the area-level summary; where they
+disagree, the ledger is the finer-grained record.
 
 This document maps each normative area of the
-[A2A v1.0 specification](https://a2a-protocol.org/v1.0.0/specification) to
+[A2A v1.0.1 specification](https://a2a-protocol.org/v1.0.1/specification/) to
 its implementation in this repository and to the test evidence that proves
 it. It is the single reference for a conformance review: every row names a
 spec section, where it lives in the code, and how it is verified.

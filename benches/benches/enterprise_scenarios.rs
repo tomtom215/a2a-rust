@@ -313,9 +313,14 @@ fn bench_rate_limiting(c: &mut Criterion) {
         });
     });
 
-    // With rate limiting (high limit so we don't get rejected)
+    // With rate limiting, at a limit no run can reach. Criterion sizes its
+    // iteration count from the measured speed, so any fixed budget is a
+    // speed the benchmark panics beyond: 100,000 per 60 s held while a send
+    // took 207 us and failed on 2026-10-14 at 95.5 us (86k iterations plus
+    // warm-up). The limiter counts and compares the same way whatever the
+    // limit, so the overhead measured is unchanged.
     let rate_config = a2a_protocol_server::RateLimitConfig::default()
-        .with_requests_per_window(100_000)
+        .with_requests_per_window(u64::MAX)
         .with_window_secs(60);
     let rate_limiter =
         a2a_protocol_server::RateLimitInterceptor::new(rate_config).expect("valid config");

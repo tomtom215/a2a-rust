@@ -489,7 +489,8 @@ async fn start_test_server_full() -> String {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(card)
+            .with_agent_card(card.clone())
+            .with_extended_agent_card(card)
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             // A sender is required as well as a store: `validate_and_store_push_config`
             // rejects with PushNotSupported when either is absent. Nothing is

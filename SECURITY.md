@@ -85,10 +85,16 @@ This policy covers **every crate published from this repository**:
   affected today; and it carries a **live advisory waiver** —
   `RUSTSEC-2026-0285`, ignored in `bindings/a2a-protocol-slimrpc/deny.toml`
   because `slim-auth 0.15.4` pins `aws-lc-rs =1.16.2` while `rustls 0.23.45`
-  needs `^1.18`, with no upstream release resolving it as of 2026-10-08
-  (the newer slim-auth 0.16 line pins `aws-lc-rs =1.16.3` the same way). A
-  report about that advisory is not new information; a report about anything
-  else in the binding is in scope and welcome.
+  needs `^1.18`, with no upstream release resolving it as of 2026-10-14
+  (the newer slim-auth 0.16 and 0.17 lines pin `aws-lc-rs =1.16.3` the same
+  way). For the same reason it waives, in its `osv-scanner.toml` and its
+  `deny.toml`, the three rustls advisories of 2026-10-14 that reach its
+  rustls 0.23.43 (RUSTSEC-2026-0346, -0348 and -0349, alias
+  GHSA-c8m5-c952-6cm4, GHSA-h2v8-394m-p7vv and GHSA-w44r-93j7-qv28; the
+  published crates require 0.23.46), and RUSTSEC-2024-0449, an unmaintained
+  YAML parser under the SLIM configuration crates. A report about any of
+  those is not new information; a report about anything else in the binding
+  is in scope and welcome.
 
 ## Reporting a Vulnerability
 

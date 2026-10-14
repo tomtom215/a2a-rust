@@ -70,6 +70,27 @@ fn a_callers_pseudo_header_never_reaches_the_handler() {
     assert_eq!(headers, metadata(&[("authorization", "Bearer token")]));
 }
 
+/// Audit register R41: a forwarding header names the client's address only
+/// when a proxy appended it, and nothing does on a SLIM session. Passed
+/// through, a caller's own `x-forwarded-for` became the rate-limit and
+/// auth-failure-throttle key whenever `trusted_proxy_hops > 0`. Dropped in
+/// any case, as the other filters are.
+#[test]
+fn a_callers_forwarding_headers_never_reach_the_handler() {
+    let headers = a2a_headers(
+        metadata(&[
+            ("x-forwarded-for", "203.0.113.7"),
+            ("X-Real-IP", "203.0.113.8"),
+            ("Forwarded", "for=203.0.113.9"),
+            ("authorization", "Bearer token"),
+        ]),
+        false,
+    )
+    .expect("no version declared, and none required");
+
+    assert_eq!(headers, metadata(&[("authorization", "Bearer token")]));
+}
+
 /// SLIM does not promise a case for its keys, and a filter that missed
 /// `Service` while catching `service` would leak exactly the case an
 /// attacker would pick.

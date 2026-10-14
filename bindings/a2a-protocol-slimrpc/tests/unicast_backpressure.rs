@@ -243,7 +243,7 @@ async fn a_consumer_that_stops_reading_does_not_stall_the_agent_or_other_calls()
 /// with no gap and no lag report.
 ///
 /// This is the half that distinguishes buffering from dropping. Multicast
-/// reports `N event(s) dropped: this stream's consumer fell behind`; unicast
+/// reports a `streamLagged` error with the dropped count; unicast
 /// must not, because nothing was dropped — the events waited in the per-RPC
 /// channel. A binding that started dropping here would fail this test, and
 /// that is the point: the trade has to be made on purpose, in the README's

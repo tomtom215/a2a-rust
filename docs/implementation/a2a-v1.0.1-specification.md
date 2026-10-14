@@ -1,28 +1,32 @@
 <!--
   VENDORED COPY — not authored here, and not to be edited by hand.
 
-  Source: https://github.com/a2aproject/A2A/blob/main/docs/specification.md
-  Retrieved: 2026-10-10, upstream commit 12e9d2fbb9ba (`main`). The
-  2026-08-30 copy was `f63dbb48`; the six lines that changed since are link
-  URLs only. `docs/compliance/spec-ledger.json` cites this file by line.
-  Refresh:   curl -sSL -o docs/implementation/v1.0.0-specification-complete.md \
-               https://raw.githubusercontent.com/a2aproject/A2A/main/docs/specification.md
+  Source:    https://github.com/a2aproject/A2A/blob/v1.0.1/docs/specification.md
+  Tag:       v1.0.1, commit 3303592588e388e62e0f69f701af531d2f4e3991, the
+             release proto/UPSTREAM pins a2a.proto to.
+  Retrieved: 2026-10-14. Everything below the blank line after this header is
+             the upstream file byte for byte; its SHA-256 is recorded in
+             docs/compliance/spec-ledger.json (`spec.sha256`), and
+             scripts/check_spec_ledger.py fails when the two disagree.
+  Refresh:   curl -sSL -o body.md \
+               https://raw.githubusercontent.com/a2aproject/A2A/v1.0.1/docs/specification.md
+             then replace the body, update `spec` in the ledger, and move every
+             entry's `spec_line` through the diff (see the ledger's method).
 
-  The previous snapshot was taken 2026-03-31 (`e131bad`) and was never
-  refreshed. Upstream then released **v1.0.1** (2026-05-28), whose commit
-  `757f0ec` rewrote six of §5.4's nine error-mapping rows, and changed type
-  names and the push notification Content-Type besides. Because A2A excludes
-  patch numbers from version negotiation (§3.6), both documents describe "A2A
-  1.0" and nothing on the wire distinguishes them — which is how a snapshot
-  goes stale without ever looking stale. This repository's SDK and its TCK both
-  implemented the superseded table, so they agreed with each other and failed a
-  conformant third-party agent. Re-read this file against upstream before
-  trusting any claim derived from it.
+  Until 2026-10-14 this file was `v1.0.0-specification-complete.md` and held
+  upstream `main` at 12e9d2fbb9ba (retrieved 2026-10-10), which the ledger
+  audited. That text is not the v1.0.1 release: it differs by 65 lines.
+  Most are link URLs, the type name `TaskPushNotificationConfig` where v1.0.1
+  says `PushNotificationConfig` (a name the v1.0.1 proto does not define),
+  and example fixes. One is normative, §7.6.4 "In-Task Authorization Scope",
+  added after the release. The ledger now audits the release, and keeps that
+  section's entries apart, under `after_release`.
 
-  Corrected 2026-09-01: this header previously said upstream "amended the
-  document in place under the same `1.0.0` version string". It did not — the
-  change shipped as a tagged patch release, and A2A's `v1.0.0` tag still
-  carries the old table. See `docs/official-tck-findings.md` §21.1.
+  Because A2A excludes patch numbers from version negotiation (§3.6), v1.0.0
+  and v1.0.1 both describe "A2A 1.0" and nothing on the wire distinguishes
+  them; v1.0.1 (2026-05-28) rewrote six of §5.4's nine error-mapping rows. A
+  snapshot goes stale without looking stale. See
+  `docs/official-tck-findings.md` §21.1 for how that happened here once.
 -->
 
 # Agent2Agent (A2A) Protocol Specification
@@ -153,7 +157,7 @@ Centering the proto file as the normative source ensures protocol neutrality, re
 
 ### 2.1. Requirements Language
 
-The keywords "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).
+The keywords "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://tools.ietf.org/html/rfc2119).
 
 ### 2.2. Core Concepts
 
@@ -350,7 +354,7 @@ Creates a push notification configuration for a task to receive asynchronous upd
 
 **Outputs:**
 
-- [`TaskPushNotificationConfig`](#431-taskpushnotificationconfig): Created configuration with assigned ID
+- [`PushNotificationConfig`](#431-pushnotificationconfig): Created configuration with assigned ID
 
 **Errors:**
 
@@ -375,7 +379,7 @@ Retrieves an existing push notification configuration for a task.
 
 **Outputs:**
 
-- [`TaskPushNotificationConfig`](#431-taskpushnotificationconfig): The requested configuration
+- [`PushNotificationConfig`](#431-pushnotificationconfig): The requested configuration
 
 **Errors:**
 
@@ -499,7 +503,7 @@ The `historyLength` parameter appears in multiple operations and controls how mu
 
 #### 3.2.5. Metadata
 
-A flexible key-value map for passing additional context or parameters with operations. Metadata keys must be strings, and values can be any valid JSON value. [Extensions](#46-extensions) can be used to strongly type metadata values for specific use cases.
+A flexible key-value map for passing additional context or parameters with operations. Metadata keys and are strings and values can be any valid value that can be represented in JSON. [`Extensions`](#46-extensions) can be used to strongly type metadata values for specific use cases.
 
 #### 3.2.6 Service Parameters
 
@@ -568,7 +572,7 @@ All error responses in the A2A protocol, regardless of binding, **MUST** convey 
 
 1. **Error Code**: A machine-readable identifier for the error type (e.g., string code, numeric code, or protocol-specific status)
 2. **Error Message**: A human-readable description of the error
-3. **Error Details** (optional): An array of objects providing additional structured information about the error. Each object in the array **MUST** include a `@type` key that identifies the object's type (using [ProtoJSON `Any` representation](https://protobuf.dev/programming-guides/json/)). Well-known types from the [`google.rpc` error model](https://cloud.google.com/apis/design/errors#error_model) (e.g., `ErrorInfo`, `BadRequest`) **SHOULD** be used where applicable. Error details may be used for:
+3. **Error Details** (optional): An array of objects providing additional structured information about the error. Each object in the array **MUST** include a `@type` key that identifies the object's type (using [ProtoJSON `Any` representation](https://protobuf.dev/programming-guides/json)). Well-known types from the [`google.rpc` error model](https://cloud.google.com/apis/design/errors#error_model) (e.g., `ErrorInfo`, `BadRequest`) **SHOULD** be used where applicable. Error details may be used for:
     - Affected fields or parameters
     - Contextual information (e.g., task ID, timestamp)
     - Suggestions for resolution
@@ -698,7 +702,7 @@ The A2A protocol provides three complementary mechanisms for clients to receive 
 - Client does not maintain persistent connection
 - Asynchronous delivery, client must be reachable via HTTP
 - Best for: Server-to-server integrations, long-running tasks, event-driven architectures
-- Operations: Create ([Section 3.1.7](#317-create-push-notification-config)), Get ([Section 3.1.8](#318-get-push-notification-config)), List ([Section 3.1.9](#319-list-push-notification-configs)), Delete ([Section 3.1.10](#3110-delete-push-notification-config))
+- Operations: Create ([Section 3.1.7](#317-create-push-notification-config)), Get ([Section 3.1.8](#76-taskspushnotificationconfigget)), List ([Section 3.1.9](#319-list-push-notification-configs)), Delete ([Section 3.1.10](#3110-delete-push-notification-config))
 - Event types: TaskStatusUpdateEvent ([Section 4.2.1](#421-taskstatusupdateevent)), TaskArtifactUpdateEvent ([Section 4.2.2](#422-taskartifactupdateevent)), WebHook payloads ([Section 4.3](#43-push-notification-objects))
 - Requires `AgentCard.capabilities.pushNotifications` to be `true`
 - Regardless of the protocol binding being used by the agent, WebHook calls use plain HTTP and the JSON payloads as defined in the HTTP protocol binding
@@ -854,11 +858,11 @@ The A2A protocol defines a canonical data model using Protocol Buffers. All prot
 
 ### 4.3. Push Notification Objects
 
-<a id="TaskPushNotificationConfig"></a>
+<a id="PushNotificationConfig"></a>
 
-#### 4.3.1. TaskPushNotificationConfig
+#### 4.3.1. PushNotificationConfig
 
-{{ proto_to_table("TaskPushNotificationConfig") }}
+{{ proto_to_table("PushNotificationConfig") }}
 
 <a id="PushNotificationAuthenticationInfo"></a>
 
@@ -897,7 +901,7 @@ The webhook payload is a [`StreamResponse`](#323-stream-response) object contain
 
 **Authentication:**
 
-The agent MUST include authentication credentials in the request headers as specified in the [`TaskPushNotificationConfig.authentication`](#432-authenticationinfo) field. The format follows standard HTTP authentication patterns (Bearer tokens, Basic auth, etc.).
+The agent MUST include authentication credentials in the request headers as specified in the [`PushNotificationConfig.authentication`](#432-authenticationinfo) field. The format follows standard HTTP authentication patterns (Bearer tokens, Basic auth, etc.).
 
 **Client Responsibilities:**
 
@@ -1400,11 +1404,11 @@ Authorization: Bearer token
 HTTP/1.1 200 OK
 Content-Type: text/event-stream
 
-data: {"task": {"id": "task-uuid", "contextId": "context-uuid", "status": {"state": "TASK_STATE_WORKING"}}}
+data: {"task": {"id": "task-uuid", "status": {"state": "TASK_STATE_WORKING"}}}
 
-data: {"artifactUpdate": {"taskId": "task-uuid", "contextId": "context-uuid", "artifact": {"parts": [{"text": "# Climate Change Report\n\n"}]}}}
+data: {"artifactUpdate": {"taskId": "task-uuid", "artifact": {"parts": [{"text": "# Climate Change Report\n\n"}]}}}
 
-data: {"statusUpdate": {"taskId": "task-uuid", "contextId": "context-uuid", "status": {"state": "TASK_STATE_COMPLETED"}}}
+data: {"statusUpdate": {"taskId": "task-uuid", "status": {"state": "TASK_STATE_COMPLETED"}}}
 ```
 
 ### 6.3. Multi-Turn Interaction
@@ -1988,16 +1992,6 @@ If using in-band credential exchange, we recommend adhering to the following sec
 - Credentials SHOULD be bound to the agent which originated the request, such that only this agent is able to use the credentials. This ensures that credentials propagating through a chain of A2A requests are only usable by the requesting agent.
 - Credentials containing sensitive information SHOULD be only readable by the agent which originated the request, such as by encrypting the credential.
 
-#### 7.6.4 In-Task Authorization Scope
-
-The `TASK_STATE_AUTH_REQUIRED` state signals that additional authorization is required to continue processing a Task. The A2A protocol does not define the scope, representation, validity, or revocation semantics of the authorization decision or credential obtained in response to this state.
-
-Agents MUST NOT treat the `TASK_STATE_AUTH_REQUIRED` state transition, by itself, as authorization for any particular operation. The meaning and scope of any resulting authorization decision or credential MUST be defined by the agent's implementation, by the credential issuer, or by an A2A extension.
-
-If an implementation requires authorization for specific operations, it is responsible for defining how the authorized operation is identified and how that authorization is checked before the operation is performed.
-
-A credential or authorization decision obtained while a Task is in `TASK_STATE_AUTH_REQUIRED` MUST NOT be assumed to authorize subsequent messages on the Task unless that behavior is explicitly defined by the implementation, credential issuer, or extension.
-
 ## 8. Agent Discovery: The Agent Card
 
 <span id="5-agent-discovery-the-agent-card"></span>
@@ -2038,11 +2032,11 @@ Clients **MUST** follow these rules:
 
 ### 8.4. Agent Card Signing
 
-Agent Cards **MAY** be digitally signed using JSON Web Signature (JWS) as defined in [RFC 7515](https://datatracker.ietf.org/doc/html/rfc7515) to ensure authenticity and integrity. Signatures allow clients to verify that an Agent Card has not been tampered with and originates from the claimed provider.
+Agent Cards **MAY** be digitally signed using JSON Web Signature (JWS) as defined in [RFC 7515](https://tools.ietf.org/html/rfc7515) to ensure authenticity and integrity. Signatures allow clients to verify that an Agent Card has not been tampered with and originates from the claimed provider.
 
 #### 8.4.1. Canonicalization Requirements
 
-Before signing, the Agent Card content **MUST** be canonicalized using the JSON Canonicalization Scheme (JCS) as defined in [RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785). This ensures consistent signature generation and verification across different JSON implementations.
+Before signing, the Agent Card content **MUST** be canonicalized using the JSON Canonicalization Scheme (JCS) as defined in [RFC 8785](https://tools.ietf.org/html/rfc8785). This ensures consistent signature generation and verification across different JSON implementations.
 
 **Canonicalization Rules:**
 
@@ -2094,7 +2088,7 @@ After applying RFC 8785:
 
 #### 8.4.2. Signature Format
 
-Signatures use the JSON Web Signature (JWS) format as defined in [RFC 7515](https://datatracker.ietf.org/doc/html/rfc7515). The [`AgentCardSignature`](#447-agentcardsignature) object represents JWS components using three fields:
+Signatures use the JSON Web Signature (JWS) format as defined in [RFC 7515](https://tools.ietf.org/html/rfc7515). The [`AgentCardSignature`](#447-agentcardsignature) object represents JWS components using three fields:
 
 - **`protected`** (required, string): Base64url-encoded JSON object containing the JWS Protected Header
 - **`signature`** (required, string): Base64url-encoded signature value
@@ -2200,7 +2194,7 @@ Clients verifying Agent Card signatures **MUST**:
       }
     }
   },
-  "securityRequirements": [{ "schemes": { "google": { "list": ["openid", "profile", "email"] } } }],
+  "security": [{ "google": ["openid", "profile", "email"] }],
   "defaultInputModes": ["application/json", "text/plain"],
   "defaultOutputModes": ["application/json", "image/png"],
   "skills": [
@@ -2259,7 +2253,7 @@ Agent Card content changes infrequently relative to the frequency at which clien
 
 #### 8.6.2. Client Requirements
 
-- Clients **SHOULD** honor HTTP caching semantics as defined in [RFC 9111](https://datatracker.ietf.org/doc/html/rfc9111) when fetching Agent Cards
+- Clients **SHOULD** honor HTTP caching semantics as defined in [RFC 9111](https://www.rfc-editor.org/rfc/rfc9111) when fetching Agent Cards
 - When a cached Agent Card has expired, clients **SHOULD** use conditional requests (`If-None-Match` with the stored `ETag`, or `If-Modified-Since`) to avoid re-downloading unchanged cards
 - When the server does not include caching headers, clients **MAY** apply an implementation-specific default cache duration
 
@@ -2607,7 +2601,7 @@ Sends a message with streaming updates.
 
 {{ proto_to_table("SendMessageRequest") }}
 
-**Response:** Server streaming [`StreamResponse`](#323-stream-response) objects.
+**Response:** Server streaming [`StreamResponse`](#stream-response) objects.
 
 #### 10.4.3. GetTask
 
@@ -2649,15 +2643,17 @@ Subscribe to task updates via streaming. Returns `UnsupportedOperationError` if 
 
 {{ proto_to_table("SubscribeToTaskRequest") }}
 
-**Response:** Server streaming [`StreamResponse`](#323-stream-response) objects.
+**Response:** Server streaming [`StreamResponse`](#stream-response) objects.
 
 #### 10.4.7. CreateTaskPushNotificationConfig
 
 Creates a push notification configuration for a task.
 
-**Request:** See [`TaskPushNotificationConfig`](#431-taskpushnotificationconfig) object definition.
+**Request:**
 
-**Response:** See [`TaskPushNotificationConfig`](#431-taskpushnotificationconfig) object definition.
+{{ proto_to_table("CreateTaskPushNotificationConfigRequest") }}
+
+**Response:** See [`PushNotificationConfig`](#431-pushnotificationconfig) object definition.
 
 #### 10.4.8. GetTaskPushNotificationConfig
 
@@ -2667,7 +2663,7 @@ Retrieves an existing push notification configuration for a task.
 
 {{ proto_to_table("GetTaskPushNotificationConfigRequest") }}
 
-**Response:** See [`TaskPushNotificationConfig`](#431-taskpushnotificationconfig) object definition.
+**Response:** See [`PushNotificationConfig`](#431-pushnotificationconfig) object definition.
 
 #### 10.4.9. ListTaskPushNotificationConfigs
 
@@ -3162,7 +3158,7 @@ When implementing push notifications, both agents (as webhook callers) and clien
 **Configuration Security:**
 
 - Webhook URLs **SHOULD** use HTTPS to protect payload confidentiality in transit
-- Authentication tokens in [`TaskPushNotificationConfig`](#431-taskpushnotificationconfig) **SHOULD** be treated as secrets and rotated periodically
+- Authentication tokens in [`PushNotificationConfig`](#431-pushnotificationconfig) **SHOULD** be treated as secrets and rotated periodically
 - Agents **SHOULD** securely store push notification configurations and credentials
 - Clients **SHOULD** use unique, single-purpose tokens for each push notification configuration
 
@@ -3541,7 +3537,7 @@ For **Clients** upgrading from pre-0.3.x:
 
 1. Update parsers to expect wrapper objects with member names as discriminators
 2. When constructing requests, use the new wrapper format
-3. Implement version detection based on `protocolVersion` in the agent's `supportedInterfaces` entries
+3. Implement version detection based on the agent's `protocolVersions` in the `AgentCard`
 4. Consider maintaining backward compatibility by detecting and handling both formats during a transition period
 
 For **Servers** upgrading from pre-0.3.x:
@@ -3549,7 +3545,7 @@ For **Servers** upgrading from pre-0.3.x:
 1. Update serialization logic to emit wrapper objects
 2. **Breaking:** The `kind` field is no longer part of the protocol and should not be emitted
 3. Update deserialization to expect wrapper objects with member names
-4. Ensure each `AgentInterface` in the `AgentCard` declares the correct `protocolVersion` (e.g., "1.0" or later)
+4. Ensure the `AgentCard` declares the correct `protocolVersions` (e.g., ["1.0"] or later)
 
 **Rationale:**
 

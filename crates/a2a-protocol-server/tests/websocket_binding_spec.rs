@@ -166,3 +166,59 @@ async fn a_stream_is_frames_then_the_marker() {
         "{kinds:?}"
     );
 }
+
+async fn task_count(ws: &mut Ws, probe: usize) -> usize {
+    let id = format!("probe-{probe}");
+    let v = call(
+        ws,
+        json!({"jsonrpc": "2.0", "id": id, "method": "ListTasks", "params": {}}),
+    )
+    .await;
+    assert_eq!(v["id"], id, "every frame answers a probe; got {v}");
+    v["result"]["tasks"].as_array().map_or(0, Vec::len)
+}
+
+/// §3: a notification is run and sent nothing, whether it succeeds, fails
+/// or names no method; a streaming one is not run (JSON-RPC 2.0 §4.1, audit
+/// register R21). Each was answered with a null id. Requests run
+/// concurrently, so the probe is a call polled until the notified send's
+/// task shows up.
+#[tokio::test]
+async fn a_notification_is_run_and_sent_nothing() {
+    let addr = server().await;
+    let mut ws = connect(&format!("ws://{addr}/"), true).await.unwrap();
+    let send_params =
+        json!({"message": {"messageId": "m-1", "role": "ROLE_USER", "parts": [{"text": "hi"}]}});
+    for (method, params) in [
+        ("SendMessage", send_params.clone()),
+        ("SendStreamingMessage", send_params),
+        ("GetTask", json!({"id": "no-such-task"})),
+        ("NoSuchMethod", json!({})),
+    ] {
+        let frame = json!({"jsonrpc": "2.0", "method": method, "params": params});
+        ws.send(WsMessage::Text(frame.to_string().into()))
+            .await
+            .unwrap();
+    }
+
+    let mut probe = 0;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            probe += 1;
+            if task_count(&mut ws, probe).await > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the notified send's task within 5 s");
+
+    let late = tokio::time::timeout(std::time::Duration::from_millis(300), ws.next()).await;
+    assert!(late.is_err(), "no frame for a notification: {late:?}");
+    assert_eq!(
+        task_count(&mut ws, probe + 1).await,
+        1,
+        "the send was run, the streaming send was not"
+    );
+}

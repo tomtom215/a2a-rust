@@ -106,10 +106,13 @@ impl RestTransport {
             .ok_or_else(|| ClientError::Transport(format!("no REST route for method: {method}")))?;
 
         let (uri, body_params) = self.build_uri(&route, params)?;
+        // §11.1: `application/a2a+json` "SHOULD be used for requests and
+        // responses" (audit register R50); `application/json` is still
+        // accepted from a server that does not label its answers the A2A way.
         let accept = if streaming {
             "text/event-stream"
         } else {
-            "application/json"
+            "application/a2a+json, application/json"
         };
 
         let hyper_method = match route.http_method {
@@ -118,19 +121,21 @@ impl RestTransport {
             HttpMethod::Delete => hyper::Method::DELETE,
         };
 
-        let body =
-            if route.http_method == HttpMethod::Get || route.http_method == HttpMethod::Delete {
-                // For GET/DELETE, body is empty; params were in the path.
-                Full::new(Bytes::new())
-            } else {
-                let bytes = serde_json::to_vec(&body_params).map_err(ClientError::Serialization)?;
-                Full::new(Bytes::from(bytes))
-            };
+        let has_body = route.http_method == HttpMethod::Post;
+        let body = if has_body {
+            let bytes = serde_json::to_vec(&body_params).map_err(ClientError::Serialization)?;
+            Full::new(Bytes::from(bytes))
+        } else {
+            // For GET/DELETE, body is empty; params were in the path.
+            Full::new(Bytes::new())
+        };
 
-        let mut builder = hyper::Request::builder()
-            .method(hyper_method)
-            .uri(uri)
-            .header(header::CONTENT_TYPE, a2a_protocol_types::JSON_CONTENT_TYPE)
+        let mut builder = hyper::Request::builder().method(hyper_method).uri(uri);
+        // A request with no body has no content to label.
+        if has_body {
+            builder = builder.header(header::CONTENT_TYPE, a2a_protocol_types::A2A_CONTENT_TYPE);
+        }
+        builder = builder
             .header(
                 a2a_protocol_types::A2A_VERSION_HEADER,
                 a2a_protocol_types::A2A_VERSION,
@@ -614,15 +619,48 @@ mod tests {
         assert_eq!(accept, "text/event-stream");
     }
 
+    /// §11.1 (audit register R50): `application/a2a+json` first, and
+    /// `application/json` from a server that does not label the A2A way.
     #[test]
-    fn build_request_non_streaming_sets_json_accept() {
+    fn build_request_non_streaming_accepts_a2a_json_first() {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({});
         let req = transport
             .build_request("SendMessage", &params, &HashMap::new(), false)
             .unwrap();
         let accept = req.headers().get("accept").unwrap().to_str().unwrap();
-        assert_eq!(accept, "application/json");
+        assert_eq!(accept, "application/a2a+json, application/json");
+    }
+
+    /// §11.1 (audit register R50): a body is labelled `application/a2a+json`;
+    /// a GET or DELETE has no body and no `Content-Type`. Every request was
+    /// labelled `application/json`, bodiless ones included.
+    #[test]
+    fn build_request_labels_a_body_and_only_a_body() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let content_type = |method: &str, params: serde_json::Value| {
+            transport
+                .build_request(method, &params, &HashMap::new(), false)
+                .unwrap()
+                .headers()
+                .get("content-type")
+                .map(|v| v.to_str().unwrap().to_owned())
+        };
+        assert_eq!(
+            content_type("SendMessage", serde_json::json!({})).as_deref(),
+            Some("application/a2a+json")
+        );
+        assert_eq!(
+            content_type("GetTask", serde_json::json!({"id": "t1"})),
+            None
+        );
+        assert_eq!(
+            content_type(
+                "DeleteTaskPushNotificationConfig",
+                serde_json::json!({"taskId": "t1", "id": "c1"})
+            ),
+            None
+        );
     }
 
     #[test]

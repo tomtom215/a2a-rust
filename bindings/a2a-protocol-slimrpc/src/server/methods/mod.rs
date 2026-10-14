@@ -54,6 +54,14 @@ fn is_transport_key(key: &str) -> bool {
     .any(|reserved| key.eq_ignore_ascii_case(reserved))
 }
 
+/// Headers through which an HTTP proxy chain reports the client's address.
+/// Only a proxy can vouch for them, and a SLIM session has none.
+fn is_forwarding_key(key: &str) -> bool {
+    ["x-forwarded-for", "x-real-ip", "forwarded"]
+        .iter()
+        .any(|forwarding| key.eq_ignore_ascii_case(forwarding))
+}
+
 /// What every method closure holds: the handler, and whether a call that
 /// declares no `A2A-Version` is refused.
 pub(super) struct Served {
@@ -106,9 +114,16 @@ fn a2a_headers(
     // A `:` key names what the binding records (`:peer-addr`, `:path`), and
     // this one records neither: from a caller it would be a claim read as
     // fact, so it is dropped. Until 2026-10-13 it was passed through.
+    // Forwarding headers are dropped too: no proxy appends to them on a SLIM
+    // session, so with `trusted_proxy_hops > 0` the rate limiter and the
+    // auth-failure throttle took the caller's own claim as its address and
+    // let it pick its bucket (audit register R41; passed through until
+    // 2026-10-14).
     let mut pairs: Vec<(String, String)> = metadata
         .into_iter()
-        .filter(|(key, _)| !is_transport_key(key) && !key.starts_with(':'))
+        .filter(|(key, _)| {
+            !is_transport_key(key) && !key.starts_with(':') && !is_forwarding_key(key)
+        })
         .collect();
     pairs.sort_unstable();
     let mut headers = std::collections::HashMap::<String, String>::new();

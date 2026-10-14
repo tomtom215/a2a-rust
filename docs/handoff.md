@@ -11,7 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
+Last updated 2026-10-14 — `claude/funny-heisenberg-e6tl83`: main's three red
+workflows (docs site, OSV-Scanner, the rate-limit benchmark) and Dependabot
+#169. Before that, 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
 left after #165, OpenTelemetry 0.33, a versioned documentation site, the
 weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
 JSON-RPC `RetryInfo`, §13.1 caller isolation by default, Dependabot #166
@@ -114,7 +116,11 @@ the *content* merge.
 | `claude/peaceful-ptolemy-noka5b` | merged | **Merged as `10f3435` via [#144](https://github.com/tomtom215/a2a-rust/pull/144).** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). This row said "open — no PR yet" until 2026-10-02; `git log --oneline --merges | grep 144` settles it. See its section below. |
 | `claude/clever-curie-wbfxzc` | merged | **Merged via [#147](https://github.com/tomtom215/a2a-rust/pull/147) (`d4f32eb`) and [#148](https://github.com/tomtom215/a2a-rust/pull/148) (`775fe46`).** The 0.14.1 release for GHSA-hr9h-6jvf-wvg6 and its provenance re-measurement. It had no row here. |
 | `claude/eager-galileo-h4x21s` | merged | **Merged as `7ce2d24` via [#149](https://github.com/tomtom215/a2a-rust/pull/149).** The 2026-10-02 SDK comparison, the in-memory store's TTL-sweep fix (`831b8ef`), `examples/swarm`, and `docs/swarm-orchestration.md`. This row said "open — no PR yet" until 2026-10-06; `git log --oneline --merges | grep 149` settles it. See its section below. |
-| `claude/zealous-lovelace-n5ulfc` | open — no PR yet | **Destined for `main`.** Telemetry, Langfuse, the span conventions and client spans. See its section below. |
+| `claude/zealous-lovelace-n5ulfc` | merged | **Merged as `dbe63687` via [#162](https://github.com/tomtom215/a2a-rust/pull/162).** Telemetry, Langfuse, the span conventions and client spans. This row said "open — no PR yet" until 2026-10-14. See its section below. |
+| `claude/bold-gauss-9qc9dc` | merged | **Merged as `f824b035` via [#163](https://github.com/tomtom215/a2a-rust/pull/163).** Compliance, audit and human oversight. It had no row here. |
+| `claude/nifty-fermat-roj04f` | merged | **Merged as `6ce5dc9a` via [#165](https://github.com/tomtom215/a2a-rust/pull/165).** The spec ledger. It had no row here. |
+| `claude/tender-cray-bsfw83` | merged | **Merged as `2b0a3abd` via [#168](https://github.com/tomtom215/a2a-rust/pull/168) on 2026-10-14.** Items 1-107 of its section. It had no row here. |
+| `claude/funny-heisenberg-e6tl83` | open | **Destined for `main`.** Started from `2b0a3abd`: main's three red workflows first, then the spec, the EU AI Act and the rest. See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -946,6 +952,401 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
 
+## `claude/funny-heisenberg-e6tl83` — main green again, then v1.0.1 and the rest
+
+Started from `2b0a3abd` (#168's merge). Commits are authored and signed off
+as the maintainer with no `Co-Authored-By` or session trailers, by the
+maintainer's instruction (DCO), as on `claude/tender-cray-bsfw83`.
+
+**Step 0: three workflows were red on `main` at `2b0a3abd`.** Each was
+reproduced locally before its fix.
+
+1. `fix(docs):` Deploy Documentation, step `Versioned site is complete`:
+   `dev/api/index.html: a non-root page must be noindex with no canonical`.
+   `docs.yml`'s API step writes that page with no `</head>`;
+   `make_noindex` removed its canonical link and added `noindex` only by
+   replacing `</head>`, so the page had neither. Reproduced with the real
+   build (mdBook 0.4.40, the four crates' rustdoc, the step body extracted
+   from `docs.yml` and run as written): 794 book pages, 1 fault. A page
+   with no `</head>` now gets the tag after its doctype; the same build then
+   checks 0 faults. The prover's fixture for that check now runs
+   `docs.yml`'s own API step (`API_STEP` in
+   `prove_workflow_gates_fail.py`); its healthy case failed before the fix
+   with five faults, the dev API index and the four crate indexes, whose
+   fixture pages had no head either. This workflow runs only on pushes to
+   `main`, so no pull request could have caught it.
+2. `ci(osv):` OSV-Scanner, job `Rust lockfiles`: RUSTSEC-2024-0449
+   (unsafe-libyaml 0.2.11) unignored in the binding's lockfile, reproduced
+   with osv-scanner 2.6.0 (exit 1, the same table). #168 waived it in the
+   binding's `deny.toml` and not in its `osv-scanner.toml`; it is mirrored
+   now, and all eight lockfiles scan clean with the workflow's arguments.
+   The scheduled runs on `f3fdddc9` (before #168) were red on it too. The
+   "unused ignore" warning for RUSTSEC-2026-0285 is osv-scanner matching
+   the advisory by its GHSA id; both entries stay, and the file says why.
+   On a pull request the blocking job was skipped and only the
+   new-findings job ran, so a finding already on `main` failed nothing;
+   `rust` now runs on pull requests too, as cargo-deny does. Found while
+   checking the waiver: agntcy-slim-config 0.17.3 (under agntcy-slim-rpc
+   3.3.1) replaces serde_yaml with yaml_serde, and agntcy-slim-auth 0.17.x
+   takes regorus 0.12.0, so the SLIM 3.x upgrade (audit register R13)
+   removes unsafe-libyaml. It does not clear RUSTSEC-2026-0285:
+   mls-rs-crypto-awslc 0.25.0, the newest, still pins aws-lc-rs =1.16.3.
+3. `fix(bench):` Benchmarks, `enterprise_scenarios`: `with_rate_limit`
+   panicked at "rate limit exceeded: 100000 requests per 60 seconds".
+   Criterion sizes its sample from the measured speed: 86k iterations at
+   95.5 us a send on `2b0a3abd` against 40k at 207 us on `6ce5dc9a`, so the
+   fixed budget was spent inside one window. The limit is `u64::MAX`; the
+   limiter compares the count against it the same way whatever it is.
+   What made a send 2.2x faster was the runner, not the code. Both CI runs
+   used runner image 20261004.327.1 and rustc 1.99.0; across the 217
+   benchmarks the two logs share, the median new/old ratio is 0.62, and pure
+   serialization (`protocol/type_serde`, which the code changes cannot speed
+   up that far) is at 0.58, while the sleep-bound `timer_calibration` and
+   `slow_consumer` stay at 1.00. Measured on one machine (this container: 4
+   cores, Intel Xeon @ 2.10GHz, `cargo bench`, two rounds interleaved
+   old/new): serialization within ±12% with no consistent direction; a send
+   379 and 344 us at `6ce5dc9a`, 401 and 416 us at `2b0a3abd`. Round 1 ran
+   beside compiles of mine and its intervals are wide. So a 6-21% slower
+   send at the newer commit is suggested, not shown; it needs the
+   six-interleaved-runs, pinned-core method in "Environment notes" below
+   before it is called a regression. Open.
+4. `ci:` Dependabot #169, `ossf/scorecard-action` 2.5.0; tag `v2.5.0`
+   peels to the pinned `fa7117db`.
+5. The incremental mutation run on `a0084513` (38531404074): shard 0
+   passed, mutation step 08:15:38 to 10:03:18. Shards 1-7 started after
+   the merge (08:11:58), when `origin/main` already held the PR, so their
+   diff was empty and they skipped as "No source changes to mutate"; the
+   aggregate gate passed on one shard's report. The merged source was still
+   graded in full: `crates/*/src` is identical between `10827fae` and
+   `a0084513` (`git diff` prints nothing), and `10827fae`'s run
+   (38516495025) passed all eight shards. Not fixed, low: a shard that
+   starts after its PR merges grades nothing and the gate accepts that.
+
+6. `fix(deps):` rustls 0.23.46. RustSec published four rustls advisories
+   at 2026-10-14 10:34 UTC (advisory-db 2290866), all patched in 0.23.46:
+   GHSA-w44r-93j7-qv28 (classical key-exchange downgrade), -c8m5-c952-6cm4
+   (`Debug` prints session secrets), -vp88-798v-h67f (ECH), -h2v8-394m-p7vv
+   (Brotli, `brotli` feature only). `check_advisory_floors.py` found the
+   published manifests' `>=0.23.45` admitting 0.23.45 under all four (8
+   pairs; 0 after). The floors are `>=0.23.46` in the client, server and sdk
+   manifests, normal and dev; the root and both harness locks take 0.23.46
+   (version and checksum lines only); `prove_gates_fail.sh`'s
+   `advisory_floors` injection now looks for the new floor. The binding
+   stays at 0.23.43 (aws-lc-rs, as for RUSTSEC-2026-0285) and waives the
+   three that reach it in `osv-scanner.toml` by GHSA id. cargo-deny cannot
+   take them yet: it matches `ignore` by RUSTSEC id only (cargo-deny 0.20.2,
+   checked by ignoring RUSTSEC-2026-0285 by its GHSA alias: it was still
+   reported), and the database lists the four under the placeholder
+   RUSTSEC-0000-0000. **When RustSec assigns their ids, the binding's
+   `cargo-deny` step fails until `deny.toml` waives the three.** (They were
+   assigned that afternoon and did; item 22.) Checked:
+   neither the binding nor the crates implement a `ClientSessionStore`, and
+   the binding's lock gives rustls no brotli dependency.
+7. `ci:` `check_advisory_floors.py` retries a transient fetch. The static
+   checks job on #170 failed on one `Connection reset by peer` from crates.io
+   in that script, which the PR did not touch. Resets, timeouts, 429 and 5xx
+   are retried three times (2, 4, 8 s); other answers are not. An offline
+   self-test runs first on every invocation; 11 of 11 hand-applied mutants of
+   the retry code fail it, three of them only after the self-test gained a
+   500 case, a check that the original error is the one raised, and a
+   payload a constant cannot match.
+
+**Step 1: A2A v1.0.1.**
+
+8. `docs(ledger):` the ledger audits the v1.0.1 release. The vendored copy
+   it was made against was upstream `main` at `12e9d2fb`, byte-identical to
+   that commit's `docs/specification.md` (checked with `cmp`), and not tag
+   `v1.0.1` (`3303592`, the commit `proto/UPSTREAM` already pins the proto
+   to): 65 lines differ. Most are link URLs, `TaskPushNotificationConfig`
+   where v1.0.1 says `PushNotificationConfig` (which the v1.0.1 proto does not
+   define), and fixes to examples. One is normative: §7.6.4, three MUST/MUST
+   NOT statements on `TASK_STATE_AUTH_REQUIRED`, added after the release.
+   The copy is now the tag's text as
+   `docs/implementation/a2a-v1.0.1-specification.md`, with its SHA-256 in the
+   ledger's `spec.sha256`. `check_spec_ledger.py` checks the pin first; a
+   one-character edit to the copy fails it, naming both hashes. Lines were
+   mapped by `difflib` (equal runs, and equal-length replaced blocks, line
+   for line): 191 entries moved, 3 had no counterpart (all §7.6.4) and moved
+   to `after_release`, which the checker validates for evidence and
+   vocabulary and the summary lists apart. Line numbers inside notes were
+   remapped by pattern (`line N`, `see N`, `(N)`, ranges). The first pass
+   also rewrote the year in "(2026-10-12)"-style dates; it was caught from
+   the printed changes before anything was written out, the pattern was
+   given a date guard, and the dates in notes were checked identical before
+   and after (189 of them). A second pass missed two references with no
+   keyword before them ("and 2929-2930", "Same as 2258."), fixed by hand
+   after listing every four-digit number left in the shifted range. The
+   checker then passes: every v1.0.1 keyword line has an entry and every
+   cited line is normative. `docs/swarm-scale-findings.md` cited the old
+   copy at line 651, where the sentence it quotes was at 653; it now cites
+   the new copy's line. Counts for v1.0.1: 509 entries, TESTED 316,
+   APPLICATION 87, SUPPORTED 56, NOT_APPLICABLE 22, PARTIAL 20,
+   NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0.
+9. `docs(compliance):` the audit register's open items are in the
+   repository, as `docs/compliance/audit-register.md`. The register (R1-R67)
+   lived in the previous session's scratchpad; the repository refers to 54
+   of its ids. Its eleven open items (R12, R13, R19, R21, R33, R36(b), R41,
+   R49, R50, R66, R67) and the ledger entries that need a decision each give
+   the code's current behaviour, the spec text, the options and a
+   recommendation. The behaviour was verified from source at `9b08a860` by a
+   read-only agent and spot-checked by hand at eight of its citations (all
+   held). Two corrections came out of it: R13's "no per-caller scoping" is
+   too strong (an A2A credential in SLIM metadata still reaches the
+   interceptors; what is missing is the transport-verified identity), and
+   2.3.0's `Context` does expose `session().source()`. Found besides: a JWT
+   with no `sub` is served from the tenant's shared partition under the
+   default isolation (R12); SLIMRPC sets no `:peer-addr`, so with
+   `trusted_proxy_hops = 0` the auth-failure throttle never throttles a
+   SLIMRPC caller (R41); a multicast lag report is a `Transport` error, not
+   the typed `streamLagged` (R66); the extended-card handler's doc says
+   `Internal` where it returns `-32007`; an empty appending chunk for an
+   unknown artifact id stores a zero-part artifact. **Nothing in it is
+   implemented until the maintainer decides it.**
+
+**The maintainer's decisions, 2026-10-14.** Every register recommendation
+approved as written; R49 / §1.4: generate the types from the proto now, not
+the check first; R12: read the old partition keys for one release;
+OpenTelemetry (Step 4): instrumentation on by default in every crate, the
+OTLP exporter default-on in `a2a-protocol-sdk` only; R68 (new, below):
+follow the text. The register's status column tracks what is done.
+
+10. `fix(server)!:` §3.1.11 / §13.3 — `GetExtendedAgentCard` follows the
+    text in both cases (register: the §13.3 row, and R68). A card that
+    declares `extendedAgentCard` with no `with_extended_agent_card` answers
+    `ExtendedAgentCardNotConfiguredError`; it served the public card in its
+    place, and the ledger marked line 3165's MUST TESTED on the no-card
+    path, the only one that returned `-32007`. A handler with no card at all
+    and no extended card answers `UnsupportedOperationError`. R68 was found
+    while implementing the second: making that path `-32004` left `-32007`
+    with no path, which is what showed the first. Both new tests failed
+    before the change (`get_extended_agent_card_with_no_card_at_all_is_unsupported`,
+    `a_declared_card_with_no_extended_card_is_not_configured`). The four
+    unit tests, thirteen integration tests (eleven server, one client, one
+    sdk) and every example, the TCK SUT and
+    the advanced-scenarios bench that declared the capability now pass
+    their public card to `with_extended_agent_card` too, which keeps the
+    content they serve unchanged; agent-team's authentication test needs one
+    so the refusal it checks is still the missing authenticator. The
+    builder docs, the book's agent-cards page (a table of the five cases)
+    and the upgrading guide (a compiled example) say so. Ledger: §13.3 line
+    3164 PARTIAL to TESTED; 419, 575, 3164 and 3165 re-pointed at the new
+    tests and lines, with notes saying what changed; the citations into the
+    edited file moved through the diff (`git diff -U0`, by script), and the
+    seven that named rewritten lines or the renamed test were re-pointed by
+    hand. Counts: TESTED 317, PARTIAL 19.
+11. `docs(compliance):` the control map traces each EU AI Act control to
+    code. `controls.toml` rows take `code = ["path.rs::Symbol"]` (or
+    `::Type::method`); `check_compliance_map.py` fails when a cited symbol
+    is not declared in that file (a method's type may be declared elsewhere
+    and implemented there), and when an AI Act row marked supported or
+    partial cites no code. The eight such rows now cite 26 symbols, all
+    resolved. Proven by injection: a renamed method, a missing file, a
+    method under the wrong type, a renamed type, and a supported row
+    without code each fail it, naming the row. The preamble said Article
+    25(4) "exempts free and open-source components from the value-chain
+    duties"; the article's exemption is from that paragraph's written
+    agreement only, for components other than general-purpose AI models,
+    and Regulation (EU) 2026/1744 rewrote the paragraph's first
+    subparagraph and kept it (both read in the Official Journal text,
+    fetched from the Publications Office's CELLAR service; EUR-Lex itself
+    answered 202 with an empty body). The rest of Step 2 (the articles the
+    map does not cover yet) is open.
+
+12. `fix(server):` a2a.proto `Artifact.parts` — an appended chunk with no
+    parts is refused at the event queue and dropped by both processors
+    (register: the proto `Artifact.parts` row). Three tests failed before:
+    the queue's table in `executor_event_fields.rs` gained "appended chunk
+    without parts"; `an_artifact_update_with_no_parts_is_dropped_appended_or_not`
+    (background processor; it replaces the test that called an empty append
+    legitimate, and adds the unknown-id case that stored a zero-part
+    artifact); `an_appended_chunk_with_no_parts_is_dropped` (sync
+    collector). Hand mutants: restoring the append exemption in any of the
+    three places is the pre-fix code each new test failed on; removing the
+    validation is caught by the non-append cases already there. The book's
+    pitfalls and streaming pages and the upgrading guide say how to end a
+    streamed artifact (`lastChunk: true` on the chunk with the last part).
+    Ledger: proto `Artifact.parts` PARTIAL to TESTED (TESTED 318, PARTIAL
+    18). Three of that entry's six `impl_evidence` lines pointed at
+    unrelated code before this change (`in_memory.rs:508` and `:570`,
+    comments; `sync_collector.rs:394`, a state-transition log line): the
+    checker verifies test names, not implementation lines, so these drift
+    silently. Re-pointed by reading the code.
+13. `docs(compliance):` five more EU AI Act rows, each read in the Official
+    Journal text: Art. 14(4)(a) (monitoring and anomalies; partial: per-call
+    outcomes to interceptors and `Metrics`, spans named by method, failed
+    and timed-out executors), Art. 15(4) (resilience to errors and faults;
+    partial: executor timeout, bounded shutdown, push retries within
+    timeouts, events refused at the queue, a PostgreSQL store shared by
+    replicas), and three integrator rows that say where the SDK carries
+    nothing: 13(1)-(2) and 13(3)(a)-(e), 14(1)-(3) and 14(4)(b)-(c), 15(1)-(3).
+    Two claims first written into those rows were narrowed to what a cited
+    test shows (spans: named by their method, not "carry the method, task
+    and outcome"; replicas: the PostgreSQL store, whose test CI runs with
+    `--ignored`). Then integrator rows for the rest of what the Act asks of
+    providers and deployers: Art. 4 as replaced by 2026/1744 (AI literacy),
+    9, 10 and 17 (risk management, data, QMS), 11 with Annex IV (technical
+    documentation; the row names the per-crate CycloneDX SBOMs `release.yml`
+    attaches, the provenance manifest, the ADRs and the ledger as material a
+    provider can cite), 26(1)-(2), (5) and 27 (deployer duties, FRIA), and
+    50(3)-(4). The map is 37 controls, 72 cited tests, 33 cited
+    implementations. Not mapped, deliberately: the general-purpose AI model
+    chapter (Arts. 51-56; the SDK is not a model) and the authorities'
+    chapters.
+14. `fix(server):` audit register R36(b) — a task snapshot that changes the
+    task's state is held to `can_transition_to`, as a status update is. The
+    background processor's invalid-transition path is now a shared helper
+    (`fail_invalid_transition`), so a snapshot moving `Working` back to
+    `Submitted` marks the task failed, and one leaving a terminal state is
+    refused as `TerminalStateConflict` before the store sees it; the sync
+    collector answers `InvalidStateTransition`. Six new tests; the two
+    "back to Submitted" tests failed before the change. Hand mutants, each
+    run against the server lib suite: `current != next` to `true` in the
+    background processor, removing its terminal refusal, dropping
+    `current != next` in the sync collector, and replacing the sync check
+    with `false` each fail one test. The third survived until the sync
+    collector's `a_submitted_snapshot_of_a_submitted_task_is_stored` was
+    added (`Submitted` to itself is the one same-state move
+    `can_transition_to` refuses).
+
+15. `fix(server):` audit register R21 — a JSON-RPC notification (no `id`
+    member) is run and not answered (JSON-RPC 2.0 §4.1): `204 No Content`
+    alone, left out of a batch's array (`204` when nothing is left), no
+    frame over WebSocket, and no answer when refused on its headers. The new
+    `dispatch/jsonrpc/notification.rs` holds the HTTP side so `mod.rs` stays
+    under 500 lines (496); the WebSocket dispatch helpers take an optional
+    writer. One narrowing of the approved option (b), recorded in the
+    register: a streaming method sent as a notification is refused rather
+    than run, as inside a batch. Tests: `tests/jsonrpc_notifications.rs`
+    (seven; six failed before, the seventh guards an id-less object that is
+    not a Request) and `a_notification_is_run_and_sent_nothing` in
+    `tests/websocket_binding_spec.rs` (failed before: the send's answer
+    arrived with a null id). Two tests pinned the old answer and were
+    changed: `jsonrpc_absent_id_request_answered_with_null_id` is removed,
+    and `without_an_id_the_refusal_keeps_a_null_one` loses its notification
+    case. Hand mutants: `is_notification` always true, `notify` a no-op, and
+    the WebSocket streaming guard off each fail a test (the first was
+    rewritten once after it did not build: the unused import is an error
+    under `-D warnings`). Ledger §9.3 (2270): the "Not followed" clause is
+    replaced, and the new tests are cited.
+
+16. `fix(server):` the background processor's `fail_invalid_transition`
+    (item 14) read `task_id`, `current` and `next` only in trace lines, so a
+    build without the `tracing` feature failed under `-D warnings` (unused
+    variables). Found by building the SLIMRPC binding, which depends on the
+    server crate without `tracing`, before any push; CI's
+    `--no-default-features` clippy step would have caught it too.
+17. `fix(client):` audit register R50 — the REST client labels a request
+    body `application/a2a+json` (§11.1 SHOULD), sends no `Content-Type` on a
+    GET or DELETE, and asks `Accept: application/a2a+json, application/json`.
+    `build_request_labels_a_body_and_only_a_body` is new;
+    `build_request_non_streaming_accepts_a2a_json_first` replaces the test
+    that pinned `application/json`. Ledger: the client §11.1 entry (2750)
+    NOT_SUPPORTED to TESTED (TESTED 319, NOT_SUPPORTED 7). Breaks a2a-java
+    1.3.0.Final and older over HTTP+JSON; the upgrading guide says so.
+18. `fix(slimrpc):` audit register R66 — a multicast member's lag report is
+    `ClientError::Protocol(A2aError::stream_lagged(n))`, read by
+    `is_stream_lagged`; it was `Transport` text. A unicast SLIMRPC stream's
+    lag is still the server's text without the marker (no details encoding
+    in the SLIMRPC spec), so the register's "one check on every binding"
+    holds for multicast and the four other bindings, not SLIMRPC unicast.
+    `tests/multicast_backpressure.rs` checks the typed signal where it
+    matched text, and a unit test pins `lag_report`. And R41, first half:
+    the binding drops a caller's `x-forwarded-for`, `x-real-ip` and
+    `forwarded` (`a_callers_forwarding_headers_never_reach_the_handler`).
+    The second half, keying an unidentified caller by its peer, waits for
+    R13's SLIM 3.x upgrade and its verified peer; the register and the
+    ledger's §13.4 note say so.
+
+19. `fix(examples, itk, slimrpc):` PR #170's CI on `571cfbcc` was red from
+    item 10 (R68) in eight checks, all one cause or its mirror image. Item 10
+    gave an extended card to the restricted agents of agent-team
+    (`surface.rs`), echo-agent and incident-response, whose cards declare no
+    capabilities, so `build()` refused them (SDK dogfood, Example surface
+    coverage). It missed two handlers outside the workspace whose cards do
+    declare one: the ITK agent (`itk/src/main.rs`; ACTS) and the SLIMRPC
+    binding's test fixture (`tests/common/mod.rs`;
+    `e2e::extended_agent_card_advertises_the_slimrpc_binding`, which failed
+    the SLIMRPC and Test coverage jobs). Each restricted agent is back to no
+    extended card; the ITK agent and the fixture serve their public card as
+    the extended one when they declare it. Running the example binaries
+    CI runs (it had stopped at echo-agent) found three more: the surface
+    agents of genai-agent, rig-agent and multi-lang-team (`surface.rs`)
+    declare an extended card and set none, so `GetExtendedAgentCard`
+    answered `-32007` on every binding; each now serves its public card as
+    the extended one. The other red checks on earlier
+    heads were already fixed: `interceptor_on_complete` (item 11, macOS and
+    mutants shard 0 on `9fcc65a5`).
+
+20. `fix(server):` audit register R19 — a `google.protobuf.Struct` error
+    detail is written in the ProtoJSON `Any` form, `{"@type", "value"}`; a
+    non-object `data` is the `Struct` `{"value": …}`, which is what the gRPC
+    binding already sent. `A2aError::lag_marker` and the REST client's
+    `error_frame::struct_detail` read both shapes. Three tests pinned the
+    flat shape and now read `value` (`jsonrpc_error_details.rs`,
+    `streaming_error_envelope_tests.rs` twice, and a WebSocket unit test);
+    the three new tests failed with the old code restored. Hand mutants on
+    the readers: unwrap regardless of other fields (caught by the new
+    `a_flat_struct_with_a_value_field_and_others_stays_flat`), never unwrap,
+    and no `value` lookup in `lag_marker`. `scripts/go_sdk_interop.sh`
+    passes both directions (137, 0 failures, debug build); its Go client
+    does not inspect details, so it cannot see the shape change itself. The
+    register's option (c) also asked to report the shape to a2a-go: the
+    draft went to the maintainer in the session's report, not into this
+    repository, because it cites a2a-go's code from these notes and was not
+    checked against a2a-go's source this session. Filing it is the
+    maintainer's call. The
+    ledger's §11.7 citations into `sse.rs` started at line 335, inside
+    `error_details`, from before this change; both are re-pointed at
+    `build_sse_response` (362).
+
+21. `fix(server):` §3.3.2 SHOULD — the handler's own request checks carry
+    a `google.rpc.BadRequest` naming the field, through the new
+    `ServerError::InvalidField { field, message }` (same code, status,
+    message and metric label as `InvalidParams`). Changing `InvalidParams`'
+    payload instead fails the semver gate at 0.14.1. 35 tests matched these
+    errors as `InvalidParams` and were rewritten mechanically inside their
+    own bodies; code outside this repository that does the same still
+    compiles and stops matching, which the upgrading guide spells out. New:
+    `a_handler_check_names_the_field_over_http_json` and `..._over_jsonrpc`
+    (both failed with the old sources restored) and an `error/tests.rs`
+    unit test. Ledger: the §3.3.2 SHOULD (544) PARTIAL to TESTED (TESTED
+    320, PARTIAL 17); eight `impl_evidence` lines the edit moved were
+    re-pointed by their text. R67 (query-string API keys) and R12 (issuer
+    in the caller key) are recorded in the register as waiting on the
+    maintainer: R67's approved option breaks `ClientRequest`, which needs a
+    0.15 release; R12's read-through needs a design decision across six
+    stores.
+
+22. `fix(slimrpc):` RustSec assigned the three rustls advisories that reach
+    the binding's rustls 0.23.43 their ids (RUSTSEC-2026-0346, -0348,
+    -0349), and the binding's cargo-deny step failed on `5cd159c3` as item 6
+    said it would. `deny.toml` waives them by those ids, with the same
+    reachability notes as `osv-scanner.toml`'s GHSA waivers; SECURITY.md
+    names both. `cargo deny check advisories` in the binding (cargo-deny
+    0.20.2) reported the three and FAILED before, and `advisories ok` after.
+
+**Lessons, new this session.**
+- A failing test's name is not its address. `every_handler_method_reports_its_outcome`
+  exists in two files; item 10's fix went to the one in
+  `method_routing_completeness.rs` and its re-run covered only that file,
+  so the other (`interceptor_on_complete.rs`) reached a pushed head red.
+  Re-run the binary the failure came from (`Running tests/<file>` above it
+  in the log).
+- A green workspace suite says nothing about the example binaries, the ITK
+  agent or the SLIMRPC binding: CI runs eleven `cargo run` steps
+  (`grep -n "cargo run" .github/workflows/*.yml`) and two crates outside the
+  workspace. A change to what `build()` accepts reaches all of them; run them
+  before pushing it. Item 10 was applied by pattern ("every handler gets an
+  extended card") instead of by reading each card, and the restricted agents
+  are the counter-example the pattern missed.
+- `cargo clippy --all-features` is not CI's clippy. CI also runs it with
+  `--no-default-features` and once per feature (`cargo hack ... --each-feature`,
+  ci.yml:491), and a value read only in a trace line is unused without
+  `tracing`. Run the matrix (ci.yml:441-463 and :491) before a push that adds
+  a function.
+- The ledger's `impl_evidence` line numbers are unverified by any check and
+  were found wrong in three of six citations of one entry. Treat any of
+  them as a pointer to re-read, and re-point what an edit touches.
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
 Picked up after #165 merged (`6ce5dc9`); pull request #168. Commits are

@@ -57,7 +57,7 @@ async fn context_id_over_max_length_fails() {
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidField { .. }),
         "context_id of 1025 chars should be rejected with InvalidParams, got {err_msg}"
     );
 }
@@ -114,7 +114,7 @@ async fn task_id_over_max_length_fails() {
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidField { .. }),
         "task_id of 1025 chars should be rejected with InvalidParams, got {err_msg}"
     );
 }
@@ -195,7 +195,7 @@ async fn whitespace_only_context_id_rejected() {
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidField { .. }),
         "whitespace-only context_id should be rejected with InvalidParams, got {err_msg}"
     );
 }
@@ -220,7 +220,7 @@ async fn whitespace_only_task_id_rejected() {
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidField { .. }),
         "whitespace-only task_id should be rejected with InvalidParams, got {err_msg}"
     );
 }

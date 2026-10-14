@@ -354,6 +354,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The handler's own request checks name the field at fault** (server;
+  §3.3.2 SHOULD, audit register). An empty or over-long id, a message with
+  no role or no parts, metadata that is not an object or too large, a part's
+  `raw` that is not base64, a push config's required ids, `url`, scheme,
+  token or credentials, `ListTasks`' `pageSize` and `statusTimestampAfter`,
+  and a bad REST query parameter now answer `InvalidParams` with a
+  `google.rpc.BadRequest` detail naming the field. They named it in the
+  message only. They are the new `ServerError::InvalidField { field, message }`,
+  which answers with the same code, status, message and metric label as
+  `InvalidParams`; code matching `ServerError::InvalidParams` on these errors
+  matches `InvalidField` too (see the upgrading guide).
+
+- **A `google.protobuf.Struct` error detail is written as ProtoJSON writes
+  an `Any`** (server; §3.3.2, §9.5, §11.6, audit register R19). An error's
+  `data` went into its details array with its fields beside `@type`
+  (`{"@type":"…Struct","streamLagged":6}`), which a ProtoJSON decoder of
+  `google.protobuf.Any` rejects: `Struct` is a special-cased well-known type,
+  whose `Any` carries its JSON under `value`. It is now
+  `{"@type":"…Struct","value":{"streamLagged":6}}`, and a non-object `data`
+  is the `Struct` `{"value": …}`, the detail the gRPC binding already sent.
+  This SDK's clients read both shapes. A client that read the fields beside
+  `@type` (a2a-go's `errordetails.Typed` does) reads them under `value`.
+
+- **The REST client labels its requests `application/a2a+json`** (client;
+  §11.1, audit register R50). A request body is sent as
+  `application/a2a+json`, a GET or DELETE carries no `Content-Type`, and a
+  non-streaming call sends `Accept: application/a2a+json, application/json`.
+  Every request was labelled `application/json`, bodiless ones included.
+  a2a-java 1.3.0.Final and older refuse any other request type; see the
+  upgrading guide.
+
+- **SLIMRPC: a multicast member's lag report is the typed `streamLagged`
+  error** (binding; audit register R66). The multicast client built it as a
+  `Transport` error carrying only text, so `ClientError::is_stream_lagged`
+  missed it. The stream still ends there. A unicast SLIMRPC stream's lag
+  still arrives as the server's error text without the marker: the SLIMRPC
+  specification defines no error details.
+
+- **SLIMRPC: a caller's forwarding headers are dropped** (binding; audit
+  register R41). `x-forwarded-for`, `x-real-ip` and `forwarded` reached the
+  handler, where with `trusted_proxy_hops > 0` the rate limiter and the
+  auth-failure throttle took the caller's own value as its address. No proxy
+  appends to them on a SLIM session.
+
+- **A JSON-RPC notification is run and gets no reply** (server; JSON-RPC
+  2.0 §4.1 under A2A §9, audit register R21). A request with no `id` member
+  was run and answered with `"id": null`. It is now answered with
+  `204 No Content` over HTTP; a batch's array leaves notifications out (and
+  is `204` when every member is one); WebSocket sends no frame. A streaming
+  method sent as a notification is refused rather than run, as inside a
+  batch. A notification refused on its headers gets no answer either.
+  `"id": null` is a call and is still answered. Six of the seven new HTTP
+  tests and the WebSocket test failed before the change; the seventh guards
+  an id-less object that is not a valid Request, still Invalid Request.
+
+- **A task snapshot is held to the state-transition rules a status update
+  is** (server; audit register R36(b)). An executor's `Task` snapshot was
+  stored without `can_transition_to`, so one moving a `Working` task back to
+  `Submitted` was stored as written. The background processor now marks the
+  task failed for such a snapshot and refuses one leaving a terminal state,
+  as it does for a status update; the sync collector answers
+  `InvalidStateTransition`. A snapshot that keeps the task's state is stored
+  as before.
+
+- **An appended artifact chunk with no parts is refused** (server; a2a.proto
+  `Artifact.parts`, approved in the audit register). The event queue refused
+  an artifact update with no parts unless it was an append, and the
+  processors exempted appends too, so an empty chunk for an artifact id the
+  task did not hold was stored as a zero-part artifact. All three paths now
+  apply the proto's rule to every chunk; each new test failed before the
+  change. The upgrading guide says what an executor that ended a stream
+  with an empty last chunk does instead.
+
+- **`GetExtendedAgentCard` answers `ExtendedAgentCardNotConfiguredError`
+  when the card declares the capability and no extended card is set**
+  (server; §3.1.11, §13.3, audit register R68). It served the public card in
+  the extended card's place, and the ledger marked §13.3's MUST TESTED on the
+  one other path that returned `-32007`. A handler with no card at all
+  (`without_agent_card()`) and no extended card answers
+  `UnsupportedOperationError` where it answered `-32007` (§13.3, approved in
+  the register). The examples, the TCK SUT and the ITK agent that declare the
+  capability now pass their public card to `with_extended_agent_card`, which
+  keeps what they serve unchanged. The upgrading guide says how to do the same.
+
 - **The event queue refuses an executor's event the gRPC binding cannot
   carry** (server; spec §4: every binding MUST represent the same thing). A
   `raw` part that is not base64, an integer beyond ±2^53 in metadata or a
@@ -1346,6 +1430,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
+  four rustls advisories on 2026-10-14, all patched in 0.23.46
+  (GHSA-w44r-93j7-qv28, an unauthenticated ServerHello downgrading later
+  connections to classical key exchange; GHSA-c8m5-c952-6cm4, `Debug` of
+  client session values printing TLS secrets; GHSA-vp88-798v-h67f, buffered
+  data sent to the outer server after an ECH rejection; GHSA-h2v8-394m-p7vv,
+  Brotli certificate decompression, only with rustls's `brotli` feature).
+  The published manifests required `>=0.23.45`, so a consumer could keep an
+  affected rustls; they now require `>=0.23.46`, and the root and both
+  benchmark-harness lockfiles take 0.23.46. `check_advisory_floors.py` found
+  it: 8 requirement/advisory pairs, 0 after the change. The SLIMRPC binding
+  stays on 0.23.43 for RUSTSEC-2026-0285's reason (aws-lc-rs), and waives
+  the three that reach 0.23.43 in its `osv-scanner.toml`; cargo-deny matches
+  waivers only by RUSTSEC id, which these advisories do not have yet.
 - **The client's debug output names headers and JSON keys, never their
   values** (client). `ClientRequest`, `ClientResponse`, `CardFetchOptions` and
   `WebSocketTransportConfig` derived `Debug`, so `{req:?}` in an interceptor
@@ -1466,6 +1564,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **`check_advisory_floors.py` retries a transient fetch.** One connection
+  reset from crates.io failed the gate on a pull request that touched none
+  of its inputs. A reset, a timeout, a 429 or a 5xx is now retried up to
+  three times, 2, 4 and 8 s apart; any other answer is not. An offline
+  self-test of those rules runs first on every invocation (`--self-test`
+  runs only it), and fails under each of 11 hand-applied mutants of the
+  retry code.
+- **The control map covers EU AI Act Articles 13 to 15 in full**: new rows
+  for 14(4)(a) (monitoring) and 15(4) (resilience), both partial with cited
+  code and tests, and integrator rows for the obligations only a provider or
+  deployer can meet (13(1)-(3)(e), 14(1)-(3) and (4)(b)-(c), 15(1)-(3)), and
+  for Arts. 4 (as replaced), 9, 10, 11 with Annex IV, 17, 26, 27 and
+  50(3)-(4). 37 controls in all.
+- **The regulatory control map cites the code behind each EU AI Act
+  control**, as `code = ["path.rs::Symbol"]`, and `check_compliance_map.py`
+  fails when a cited symbol is not declared in its file or when a supported
+  or partial AI Act row cites none (26 symbols across 8 rows). Its preamble
+  no longer says Article 25(4) exempts open-source components from "the
+  value-chain duties": the exemption is from that paragraph's written
+  agreement only.
+- **The audit register's open items are committed**, as
+  `docs/compliance/audit-register.md`: eleven decisions (R12, R13, R19, R21,
+  R33, R36(b), R41, R49, R50, R66, R67) and the ledger entries that need one,
+  each with the code's current behaviour at file and line, the spec text,
+  the options and a recommendation. None is implemented yet.
+- **The spec ledger audits the v1.0.1 release.** Its entries were made
+  against upstream `main` at `12e9d2fb` (retrieved 2026-10-10), which is not
+  the release: it differs from tag `v1.0.1` by 65 lines, mostly link URLs and
+  type names, plus one section added after the release, §7.6.4 ("In-Task
+  Authorization Scope"). The vendored copy is now the tag's text, byte for
+  byte, as `docs/implementation/a2a-v1.0.1-specification.md` (it was
+  `v1.0.0-specification-complete.md`). Its SHA-256 is pinned in the ledger,
+  and `check_spec_ledger.py` fails when the text changes without the
+  entries. Every `spec_line`, and every spec line number cited in a note, was
+  moved through a line map built from the two texts: 191 entries moved. The
+  three §7.6.4 entries are kept under `after_release`, outside the counts,
+  because v1.0.1 does not contain them. Two requirement quotes now use
+  v1.0.1's wording, `PushNotificationConfig`, and note that the v1.0.1 proto
+  calls that message `TaskPushNotificationConfig`. The ledger has 509 entries
+  for v1.0.1: TESTED 316, APPLICATION 87, SUPPORTED 56, NOT_APPLICABLE 22,
+  PARTIAL 20, NOT_SUPPORTED 8.
+- **The versioned documentation site deploys again.** `docs.yml` failed on
+  `main` at `2b0a3abd`: its API step writes `/dev/api/index.html` as a
+  redirect page with no `</head>`, and `build_docs_site.py`'s `make_noindex`
+  removed the page's canonical link but added `noindex` only before
+  `</head>`, so the page had neither and the site check refused it. A page
+  without `</head>` now gets the tag after its doctype. The workflow-gate
+  prover's fixture for the site check now runs `docs.yml`'s own API step
+  instead of a hand-made dev book, and its healthy case failed before the
+  fix with the fault CI reported. The full build (13 release lines and dev)
+  checks clean locally: 794 book pages, 0 faults.
+- **OSV-Scanner on the SLIMRPC binding.** RUSTSEC-2024-0449 (unsafe-libyaml,
+  unmaintained) was waived in the binding's `deny.toml` but not in its
+  `osv-scanner.toml`, so the scan failed on `main`; the waiver is mirrored.
+  The file now says why RUSTSEC-2026-0285 is listed under both of its ids
+  (osv-scanner matches it by the GHSA id and reports the RUSTSEC entry as
+  unused, a warning). `osv.yml`'s blocking `Rust lockfiles` job runs on pull
+  requests too: until now a pull request ran only the job that reports
+  findings new against the base, so a finding already on `main` failed no
+  pull request. That is what cargo-deny in `ci.yml` already does.
+- **Workflow actions** (Dependabot #169): `ossf/scorecard-action` 2.5.0
+  (`fa7117d`, the commit tag `v2.5.0` peels to).
 - **`keep_alive_comments_reset_the_idle_bound` tolerates a runner stall**
   (client tests). It failed on Windows on `9aacd7a` and on `main` at
   `6ce5dc9`: the stub and the client share one thread, so a stall longer

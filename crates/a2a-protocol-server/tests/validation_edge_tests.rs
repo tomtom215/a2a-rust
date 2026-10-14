@@ -852,7 +852,7 @@ async fn reference_task_ids_are_validated_like_the_other_ids() {
             Some(vec![TaskId::new("t-ok"), TaskId::new(bad.clone())]);
         let result = handler.on_send_message(params, false, None).await;
         assert!(
-            matches!(&result, Err(ServerError::InvalidParams(m)) if m.contains("reference_task_ids")),
+            matches!(&result, Err(ServerError::InvalidField { message: m, .. }) if m.contains("reference_task_ids")),
             "an id of {} chars: {result:?}",
             bad.len()
         );

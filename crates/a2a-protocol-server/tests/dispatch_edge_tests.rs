@@ -207,7 +207,7 @@ async fn rest_tenant_prefix_stripping() {
 async fn rest_extended_card_not_configured() {
     let addr = start_rest_server(make_handler()).await;
     let (status, _) = http_request(addr, "GET", "/extendedAgentCard", None, None).await;
-    // ExtendedAgentCardNotConfigured → 400 per Section 5.4
+    // No card at all: UnsupportedOperationError (SPEC §13.3) → 400 per §5.4
     assert_eq!(status, 400);
 }
 

@@ -68,6 +68,7 @@ fn handler(version: &str) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Done)
             .with_agent_card(card(version))
+            .with_extended_agent_card(card(version))
             .allow_unauthenticated_extended_card()
             .build()
             .expect("handler"),

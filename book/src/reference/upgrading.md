@@ -379,6 +379,130 @@ the task's streams without one. The handler now writes `Canceled` after such a
 hook (spec §3.1.2), so the check passes it, and fails a hook that errors,
 panics or overruns.
 
+### `GetExtendedAgentCard` with no extended card configured
+
+A card that declares `capabilities.extendedAgentCard` and a handler built
+without `with_extended_agent_card` now answers `GetExtendedAgentCard` with
+`ExtendedAgentCardNotConfiguredError` (`-32007`), as §3.1.11 and §13.3
+require; it used to serve the public card in the extended card's place. To
+serve the same content as before, pass the public card to
+`with_extended_agent_card` too:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::RequestHandlerBuilder;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true));
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card.clone())
+    .with_extended_agent_card(card)
+    .allow_unauthenticated_extended_card()
+    .build()
+    .unwrap();
+# let _ = handler;
+# }
+```
+
+A handler built with `without_agent_card()` and no extended card answers
+`UnsupportedOperationError` (`-32004`) where it answered `-32007`: nothing on
+it declares the capability. Both are HTTP `400`.
+
+### An appended artifact chunk needs a part
+
+An executor's `TaskArtifactUpdateEvent` with `append: true` and no parts is
+refused by the event queue (`InvalidParams`), as one without `append` already
+was: a2a.proto's `Artifact.parts` "Must contain at least one part" and makes
+no exception for a chunk. An executor that ended a streamed artifact with an
+empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
+last part instead.
+
+### Request-field errors are `ServerError::InvalidField`
+
+The handler's own checks of a request field (ids, a message's role, parts and
+metadata, a push config's fields, `ListTasks` filters, REST query
+parameters) return `ServerError::InvalidField { field, message }`, which
+answers as `InvalidParams` does plus a `google.rpc.BadRequest` detail naming
+the field. They returned `ServerError::InvalidParams(message)`. The wire, the
+message and the `invalid_params` metric label are unchanged; a `match` or
+`matches!` on the variant is not, and still compiles. Match either variant,
+or the code:
+
+```rust
+use a2a_protocol_server::ServerError;
+use a2a_protocol_types::error::ErrorCode;
+
+fn is_invalid_params(err: &ServerError) -> bool {
+    matches!(err, ServerError::InvalidParams(_) | ServerError::InvalidField { .. })
+        || err.to_a2a_error().code == ErrorCode::InvalidParams
+}
+
+let err = ServerError::InvalidField {
+    field: "message.parts".into(),
+    message: "message must contain at least one part".into(),
+};
+assert!(is_invalid_params(&err));
+```
+
+### An error's `data` detail is a ProtoJSON `Any`
+
+The JSON-RPC, HTTP+JSON and WebSocket bindings carry an error's `data` as a
+`google.protobuf.Struct` detail in the error's details array. Its fields
+were written beside `@type`; they are now under `value`, as ProtoJSON writes
+an `Any` holding a `Struct`:
+
+```json
+{"@type": "type.googleapis.com/google.protobuf.Struct", "value": {"streamLagged": 6}}
+```
+
+`A2aError::is_stream_lagged` and `dropped_event_count` read both shapes, as
+does the REST client's stream decoder. Code that read a detail's fields
+directly, or a client in another language that reads them beside `@type`,
+reads `value` instead.
+
+### The REST client sends `application/a2a+json`
+
+The HTTP+JSON client labels a request body `application/a2a+json`, as §11.1
+asks, and asks for `application/a2a+json, application/json`. A GET or DELETE
+has no body and now no `Content-Type`. a2a-java 1.3.0.Final and older refuse
+a request labelled anything but `application/json`
+(`ContentTypeNotSupportedError`); 1.4.0.Final accepts it. A client that must
+reach an older a2a-java server uses its JSON-RPC interface.
+
+### A SLIMRPC multicast lag is `is_stream_lagged`
+
+A multicast member that fell behind ends with the typed `streamLagged` error,
+as a lagging stream does on the JSON-RPC, HTTP+JSON, WebSocket and gRPC
+bindings, so `ClientError::is_stream_lagged()` and `dropped_event_count()`
+read it. Code that matched the old message text (`"event(s) dropped"`)
+matches `is_stream_lagged()` instead. A unicast SLIMRPC stream's lag is
+still the server's error text, without the marker.
+
+### A JSON-RPC notification gets no reply
+
+A JSON-RPC request with no `id` member is a notification, and "the Server
+MUST NOT reply to a Notification, including those that are within a batch
+request" (JSON-RPC 2.0 §4.1). The server ran one and answered it with
+`"id": null`; it now runs it and answers nothing: `204 No Content` over HTTP
+for a notification alone, a batch's array without the notifications' answers
+(`204` when every member is one), and no frame over WebSocket. A streaming
+method sent as a notification is not run, as in a batch: a stream is its
+only answer. A client that sent requests without an `id` and read the reply
+sends an `id`. `"id": null` is a call, and is still answered.
+
+### A task snapshot cannot move a task back to `Submitted`
+
+An executor's `Task` snapshot that changes the task's state is held to the
+transitions a status update is. For one moving a task back to `Submitted`,
+the background processor marks the task failed, and a blocking send answers
+`InvalidStateTransition` (an `InvalidParams` error), as each does for such a
+status update. One leaving a terminal state is refused. A snapshot in the
+task's current state is stored as before.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

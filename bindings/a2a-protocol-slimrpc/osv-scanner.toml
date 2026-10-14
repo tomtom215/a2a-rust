@@ -1,17 +1,58 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# osv-scanner's view of this binding's Cargo.lock. Mirrors the one ignore in
-# this directory's deny.toml, whose note gives the full dependency chain; the
-# GHSA id is the same advisory under its GitHub alias, which osv-scanner
-# reports separately.
+# osv-scanner's view of this binding's Cargo.lock. Mirrors the ignores in
+# this directory's deny.toml, whose notes give the full dependency chains.
+#
+# RUSTSEC-2026-0285 is listed twice, under both of its ids. OSV publishes the
+# rustls advisory as GHSA-2mjx-qc3c-rqvc with the RUSTSEC id as an alias, and
+# osv-scanner 2.6.0 matches it by the GHSA id: it reports "GHSA-2mjx-qc3c-rqvc
+# and 1 alias have been filtered out" and calls the RUSTSEC entry an unused
+# ignore. That warning does not fail the scan. The RUSTSEC entry stays because
+# it is the id deny.toml and the advisory database use, and because which id
+# OSV treats as primary is OSV's choice: if it flips, the GHSA entry becomes
+# the unused one and the waiver still holds. Both entries carry the same date
+# and are removed together.
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0285"
 ignoreUntil = 2027-01-08
-reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; agntcy-slim-auth pins it below that through mls-rs-crypto-awslc (0.23.0 =1.16.2 in the locked tree; the newest, 0.25.0 under slim-auth 0.16.3, still =1.16.3, checked 2026-10-08). The binding is unpublished. See deny.toml."
+reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; agntcy-slim-auth pins it below that through mls-rs-crypto-awslc (0.23.0 =1.16.2 in the locked tree; the newest, 0.25.0 under slim-auth 0.16.3 to 0.17.3, still =1.16.3, checked 2026-10-14). The binding is unpublished. See deny.toml."
 
 [[IgnoredVulns]]
 id = "GHSA-2mjx-qc3c-rqvc"
 ignoreUntil = 2027-01-08
-reason = "Alias of RUSTSEC-2026-0285; see that entry."
+reason = "Alias of RUSTSEC-2026-0285, the id osv-scanner matches it by; see that entry and this file's header."
+
+# Mirrors deny.toml's waiver, added there 2026-10-12 and missing here until
+# the scheduled and push runs on main failed on it (2026-10-13, 2026-10-14).
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+ignoreUntil = 2027-01-08
+reason = "unsafe-libyaml 0.2.11 is unmaintained (informational, not a vulnerability). It arrives through serde_yaml 0.9.34+deprecated, required by agntcy-slim-config 0.16.1 and regorus 0.11.0 in the locked tree. agntcy-slim-config 0.17.3 (under agntcy-slim-rpc 3.3.1) moves to yaml_serde and regorus 0.12.0 drops serde_yaml, so the SLIM 3.x upgrade removes it; remove this entry with that upgrade. See deny.toml."
+
+# The rustls 0.23.46 advisories, published 2026-10-14 (advisory-db 2290866,
+# "Add rustls 0.23.46 advisories"). The root workspace and the published
+# crates' floors moved to 0.23.46 the same day; this binding cannot, for the
+# reason RUSTSEC-2026-0285 gives: 0.23.46 needs aws-lc-rs ^1.18. Three of the
+# four reach the locked 0.23.43. The fourth, GHSA-vp88-798v-h67f (ECH),
+# lists 0.23.43 as unaffected and is not waived. They are waived here by their
+# GHSA ids, which is how osv-scanner matches them. cargo-deny matches only
+# RUSTSEC ids (checked with cargo-deny 0.20.2: an ignore naming
+# RUSTSEC-2026-0285's GHSA alias did not suppress it). RustSec assigned their
+# ids later the same day (RUSTSEC-2026-0346, -0348, -0349), and deny.toml
+# waives them by those.
+[[IgnoredVulns]]
+id = "GHSA-w44r-93j7-qv28"
+ignoreUntil = 2027-01-08
+reason = "rustls < 0.23.46: an unauthenticated ServerHello's key-exchange group is remembered for the server name, downgrading later connections to classical key exchange. Not reachable from this binding's fix (rustls 0.23.46 needs aws-lc-rs ^1.18; see RUSTSEC-2026-0285). The binding is unpublished."
+
+[[IgnoredVulns]]
+id = "GHSA-c8m5-c952-6cm4"
+ignoreUntil = 2027-01-08
+reason = "rustls < 0.23.46: Debug of TLS client session values prints the master secret or resumption PSK; exposed only through a custom ClientSessionStore that logs them with Debug, which this binding does not have. Not reachable from the fix, as for RUSTSEC-2026-0285. The binding is unpublished."
+
+[[IgnoredVulns]]
+id = "GHSA-h2v8-394m-p7vv"
+ignoreUntil = 2027-01-08
+reason = "rustls < 0.23.46: Brotli certificate decompression can allocate 1 GiB. Only with rustls's non-default brotli feature, which this binding's lock does not enable (rustls 0.23.43 has no brotli dependency in Cargo.lock). Not reachable from the fix, as for RUSTSEC-2026-0285. The binding is unpublished."

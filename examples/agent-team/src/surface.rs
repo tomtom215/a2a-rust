@@ -188,16 +188,20 @@ pub async fn start() -> SurfaceEndpoints {
         websocket: format!("ws://{ws_a}"),
     };
 
+    let surface_card = card(
+        &ep,
+        "Surface Agent",
+        AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
+    );
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(SurfaceExecutor)
-            .with_agent_card(card(
-                &ep,
-                "Surface Agent",
-                AgentCapabilities::none()
-                    .with_streaming(true)
-                    .with_push_notifications(true)
-                    .with_extended_agent_card(true),
-            ))
+            .with_agent_card(surface_card.clone())
+            // §3.1.11: the card declares an extended card, so one is set; the
+            // public card is served as it.
+            .with_extended_agent_card(surface_card)
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
             // §13.3 wants the extended card authenticated; this agent ships no

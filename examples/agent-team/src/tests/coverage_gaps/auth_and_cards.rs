@@ -181,7 +181,10 @@ pub async fn test_extended_card_requires_auth(ctx: &TestContext) -> TestResult {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)
-            .with_agent_card(card)
+            .with_agent_card(card.clone())
+            // Configured, so the refusal under test is the missing
+            // authenticator, not §3.1.11's "not configured".
+            .with_extended_agent_card(card)
             .build()
             .expect("build unauthenticated extended-card handler"),
     );

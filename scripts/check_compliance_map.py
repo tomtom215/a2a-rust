@@ -16,6 +16,14 @@ behind it. This script makes the citations load-bearing.
     or that function carries no `#[test]` / `#[tokio::test]` / `#[sqlx::test]`
     attribute in the lines above it;
   * a cited evidence path does not exist;
+  * a cited implementation (`code = [...]`, `path::Symbol` or
+    `path::Type::method`) is not defined in that file: the file is missing,
+    or no `fn`/`struct`/`enum`/`trait`/`type`/`const`/`static`/`mod`/
+    `macro_rules!` of that name is declared there (for `Type::method`, the
+    method is, and the type is declared or has an `impl` block there);
+  * an EU AI Act row the SDK `supported` or partly supports cites no code,
+    so its chain from provision to implementation to test to document is
+    incomplete;
   * a cited CI step (`ci = [...]`) appears in no workflow under
     `.github/workflows/` — the string must occur verbatim in one;
   * a row's status and fields disagree: `supported` backed by neither a test
@@ -79,6 +87,30 @@ def test_exists(ref: str) -> str | None:
     return f"{ref}: no `fn {name}` in {path}"
 
 
+DEFINES = r"\b(?:fn|struct|enum|trait|type|const|static|mod|union)\s+{name}\b|macro_rules!\s*{name}\b"
+
+
+def code_exists(ref: str) -> str | None:
+    """None if `path::Symbol` (or `path::Type::method`) is defined there."""
+    if ".rs::" not in ref:
+        return f"{ref!r} is not of the form path/to/file.rs::Symbol"
+    path, symbol = ref.split(".rs::", 1)
+    path += ".rs"
+    f = ROOT / path
+    if not f.is_file():
+        return f"{ref}: {path} does not exist"
+    text = f.read_text(encoding="utf-8")
+    *owners, item = symbol.split("::")
+    for name in owners:
+        # A method's type may be declared elsewhere and implemented here.
+        impl = rf"\bimpl\b[^{{;]*\b{re.escape(name)}\b"
+        if not (re.search(DEFINES.format(name=re.escape(name)), text) or re.search(impl, text)):
+            return f"{ref}: `{name}` is neither defined nor implemented in {path}"
+    if not re.search(DEFINES.format(name=re.escape(item)), text):
+        return f"{ref}: nothing named `{item}` is defined in {path}"
+    return None
+
+
 def validate(doc: dict) -> list[str]:
     errors: list[str] = []
     sources = {s["id"]: s for s in doc.get("sources", [])}
@@ -124,6 +156,13 @@ def validate(doc: dict) -> list[str]:
         for e in c.get("evidence", []):
             if not (ROOT / e).exists():
                 errors.append(f"{cid}: evidence {e} does not exist")
+        code = c.get("code", [])
+        if c.get("source") == "ai-act" and status in ("supported", "partial") and not code:
+            errors.append(f"{cid}: `{status}` cites no code; name what implements it in `code`")
+        for ref in code:
+            why = code_exists(ref)
+            if why:
+                errors.append(f"{cid}: {why}")
     return errors
 
 
@@ -173,7 +212,8 @@ def render(doc: dict) -> str:
             "|---|---|---|---|---|---|---|",
         ]
         for c in rows:
-            ev = [f"`{t.rsplit('::', 1)[1]}`" for t in c.get("tests", [])]
+            ev = [f"code: `{r.split('.rs::', 1)[1]}`" for r in c.get("code", [])]
+            ev += [f"`{t.rsplit('::', 1)[1]}`" for t in c.get("tests", [])]
             ev += [f"CI: {cell(x)}" for x in c.get("ci", [])]
             ev += [f"[{Path(e).name}](../../{e})" for e in c.get("evidence", [])]
             tests = "<br>".join(ev) or "—"
@@ -219,7 +259,9 @@ def main() -> int:
         return 1
     n = len(doc["control"])
     t = sum(len(c.get("tests", [])) for c in doc["control"])
-    print(f"check_compliance_map: {n} control(s), {t} cited test(s), all present; map current")
+    k = sum(len(c.get("code", [])) for c in doc["control"])
+    print(f"check_compliance_map: {n} control(s), {t} cited test(s), {k} cited implementation(s), "
+          "all present; map current")
     return 0
 
 
