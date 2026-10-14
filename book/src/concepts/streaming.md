@@ -76,6 +76,8 @@ the same ID:
 - **Parts** are appended to the existing artifact's parts list
 - **Metadata** is merged key by key at the top level: new keys override existing keys
 - If no artifact with the matching ID exists, a new artifact is created
+- A chunk must carry at least one part, as every `Artifact` must; the queue
+  refuses an empty one, so `lastChunk: true` goes on the chunk with the last part
 
 ### Task
 

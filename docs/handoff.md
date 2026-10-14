@@ -1151,6 +1151,36 @@ follow the text. The register's status column tracks what is done.
     answered 202 with an empty body). The rest of Step 2 (the articles the
     map does not cover yet) is open.
 
+12. `fix(server):` a2a.proto `Artifact.parts` — an appended chunk with no
+    parts is refused at the event queue and dropped by both processors
+    (register: the proto `Artifact.parts` row). Three tests failed before:
+    the queue's table in `executor_event_fields.rs` gained "appended chunk
+    without parts"; `an_artifact_update_with_no_parts_is_dropped_appended_or_not`
+    (background processor; it replaces the test that called an empty append
+    legitimate, and adds the unknown-id case that stored a zero-part
+    artifact); `an_appended_chunk_with_no_parts_is_dropped` (sync
+    collector). Hand mutants: restoring the append exemption in any of the
+    three places is the pre-fix code each new test failed on; removing the
+    validation is caught by the non-append cases already there. The book's
+    pitfalls and streaming pages and the upgrading guide say how to end a
+    streamed artifact (`lastChunk: true` on the chunk with the last part).
+    Ledger: proto `Artifact.parts` PARTIAL to TESTED (TESTED 318, PARTIAL
+    18). Three of that entry's six `impl_evidence` lines pointed at
+    unrelated code before this change (`in_memory.rs:508` and `:570`,
+    comments; `sync_collector.rs:394`, a state-transition log line): the
+    checker verifies test names, not implementation lines, so these drift
+    silently. Re-pointed by reading the code.
+
+**Lessons, new this session.**
+- A failing test's name is not its address. `every_handler_method_reports_its_outcome`
+  exists in two files; item 10's fix went to the one in
+  `method_routing_completeness.rs` and its re-run covered only that file,
+  so the other (`interceptor_on_complete.rs`) reached a pushed head red.
+  Re-run the binary the failure came from (`Running tests/<file>` above it
+  in the log).
+- The ledger's `impl_evidence` line numbers are unverified by any check and
+  were found wrong in three of six citations of one entry. Treat any of
+  them as a pointer to re-read, and re-point what an edit touches.
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
 Picked up after #165 merged (`6ce5dc9`); pull request #168. Commits are

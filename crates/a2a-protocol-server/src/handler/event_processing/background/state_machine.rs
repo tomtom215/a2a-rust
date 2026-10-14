@@ -189,10 +189,9 @@ pub(super) async fn process_event_with(
             Outcome::Persisted
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
-            // Validate artifact has at least one part per A2A spec (unless appending).
-            if update.append != Some(true)
-                && let Err(_e) = update.artifact.validate()
-            {
+            // a2a.proto `Artifact.parts`: at least one part, an appended
+            // chunk included (since 2026-10-14; appends were exempt).
+            if let Err(_e) = update.artifact.validate() {
                 trace_warn!(
                     task_id = %task_id,
                     "dropping artifact with empty parts (spec violation)"
@@ -1403,18 +1402,20 @@ mod tests {
         .await;
     }
 
-    /// Kills `replace != with ==` on `update.append != Some(true)`, the guard
-    /// deciding whether an artifact is validated for empty parts.
+    /// a2a.proto `Artifact.parts`: "Must contain at least one part", an
+    /// appended chunk included (audit register, proto `Artifact.parts` row,
+    /// 2026-10-14). The queue's writer refuses such an event; this processor
+    /// also drops one that reaches it another way.
     ///
-    /// Inverted, validation runs on appends instead of on fresh artifacts, so
-    /// a spec-violating empty artifact is accepted and a legitimate empty
-    /// append chunk is dropped. Both directions are asserted; either alone
-    /// leaves half the mutation alive.
+    /// Until 2026-10-14 an empty append chunk was exempt: one for an artifact
+    /// the task held changed nothing, and one for an id it did not hold was
+    /// stored as a zero-part artifact. The third case is the one that fails
+    /// without the change.
     #[tokio::test]
-    async fn empty_parts_are_rejected_only_when_not_appending() {
+    async fn an_artifact_update_with_no_parts_is_dropped_appended_or_not() {
         let limits = default_limits();
 
-        // A fresh artifact with no parts violates the spec and must be dropped.
+        // A fresh artifact with no parts.
         let mut task = make_task("t1", TaskState::Working);
         run(
             artifact_event("t1", "art-1", vec![], None),
@@ -1424,13 +1425,11 @@ mod tests {
         .await;
         assert!(
             task.artifacts.as_ref().is_none_or(Vec::is_empty),
-            "an empty non-append artifact is a spec violation and must be \
-             dropped, not recorded: {:?}",
+            "an empty non-append artifact must be dropped: {:?}",
             task.artifacts
         );
 
-        // An append chunk carrying no new parts is legitimate — it is not
-        // validated, because the artifact it extends already has parts.
+        // An empty append to an artifact the task holds changes nothing.
         let mut task = make_task("t1", TaskState::Working);
         run(
             artifact_event("t1", "art-1", vec![Part::text("a")], None),
@@ -1451,9 +1450,24 @@ mod tests {
         assert_eq!(
             arts.len(),
             1,
-            "an empty append must not remove or duplicate the artifact: {arts:?}"
+            "an empty append must not add an artifact: {arts:?}"
         );
         assert_eq!(arts[0].parts.len(), 1, "parts unchanged by an empty append");
+
+        // An empty append for an artifact the task does not hold.
+        let mut task = make_task("t1", TaskState::Working);
+        run(
+            artifact_event("t1", "art-new", vec![], Some(true)),
+            &mut task,
+            &limits,
+        )
+        .await;
+        assert!(
+            task.artifacts.as_ref().is_none_or(Vec::is_empty),
+            "an empty append for an unknown artifact must not store a zero-part \
+             artifact: {:?}",
+            task.artifacts
+        );
     }
 
     /// Kills `replace == with !=` on `update.append == Some(true)`, which

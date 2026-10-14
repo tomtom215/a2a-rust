@@ -21,7 +21,7 @@ use crate::portable::{inexact_number, standard_base64};
 
 /// Refuses `event` when a REQUIRED field is unset: a message's `message_id`,
 /// `role` or `parts`, an artifact's `artifact_id` or `parts` (an appended
-/// chunk may have none), or a status's `state`, in the event itself or in a
+/// chunk's included), or a status's `state`, in the event itself or in a
 /// task snapshot's status, artifacts and history.
 ///
 /// # Errors
@@ -31,13 +31,13 @@ pub(super) fn check_required_fields(event: &StreamResponse) -> A2aResult<()> {
     match event {
         StreamResponse::Message(message) => check_message(message, "message"),
         StreamResponse::StatusUpdate(update) => check_status(&update.status),
+        // a2a.proto `Artifact.parts`: "Must contain at least one part". An
+        // appended chunk is an `Artifact` too; until 2026-10-14 it was let
+        // through empty, and one for an artifact id the task did not hold was
+        // stored as a zero-part artifact.
         StreamResponse::ArtifactUpdate(update) => {
             check_artifact_id(&update.artifact)?;
-            if update.append == Some(true) {
-                Ok(())
-            } else {
-                update.artifact.validate()
-            }
+            update.artifact.validate()
         }
         StreamResponse::Task(task) => {
             check_status(&task.status)?;

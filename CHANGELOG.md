@@ -354,6 +354,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **An appended artifact chunk with no parts is refused** (server; a2a.proto
+  `Artifact.parts`, approved in the audit register). The event queue refused
+  an artifact update with no parts unless it was an append, and the
+  processors exempted appends too, so an empty chunk for an artifact id the
+  task did not hold was stored as a zero-part artifact. All three paths now
+  apply the proto's rule to every chunk; each new test failed before the
+  change. The upgrading guide says what an executor that ended a stream
+  with an empty last chunk does instead.
+
 - **`GetExtendedAgentCard` answers `ExtendedAgentCardNotConfiguredError`
   when the card declares the capability and no extended card is set**
   (server; §3.1.11, §13.3, audit register R68). It served the public card in

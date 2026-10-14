@@ -445,9 +445,15 @@ A `FileContent` with neither `bytes` nor `uri` set is semantically invalid. Alwa
 
 ### Artifact parts must not be empty
 
-`Artifact` must contain at least one `Part` per the A2A spec. Call
-`artifact.validate()` before emitting artifacts from your executor.
-The server validates this during event processing and drops invalid artifacts.
+`Artifact` must contain at least one `Part` per the A2A spec, and an
+appended chunk (`append: true`) is an `Artifact` too: a2a.proto makes no
+exception for it. Call `artifact.validate()` before emitting artifacts from
+your executor. The event queue refuses an artifact update with no parts
+(`InvalidParams` to the executor's `write`), and event processing drops one
+that reaches it another way. To mark the end of a streamed artifact, set
+`lastChunk: true` on the chunk that carries its last part, rather than
+sending an empty chunk after it; until 0.15 an empty appended chunk was
+accepted.
 
 ### Artifact append must merge metadata
 

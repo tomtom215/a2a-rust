@@ -412,6 +412,15 @@ A handler built with `without_agent_card()` and no extended card answers
 `UnsupportedOperationError` (`-32004`) where it answered `-32007`: nothing on
 it declares the capability. Both are HTTP `400`.
 
+### An appended artifact chunk needs a part
+
+An executor's `TaskArtifactUpdateEvent` with `append: true` and no parts is
+refused by the event queue (`InvalidParams`), as one without `append` already
+was: a2a.proto's `Artifact.parts` "Must contain at least one part" and makes
+no exception for a chunk. An executor that ended a streamed artifact with an
+empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
+last part instead.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

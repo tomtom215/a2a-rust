@@ -409,10 +409,9 @@ impl SyncCollector {
                 state.record_for_push(self.push_sender.is_some(), stream_resp);
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
-                // Validate artifact has at least one part per A2A spec (unless appending).
-                if update.append != Some(true)
-                    && let Err(_e) = update.artifact.validate()
-                {
+                // a2a.proto `Artifact.parts`: at least one part, an appended
+                // chunk included (since 2026-10-14; appends were exempt).
+                if let Err(_e) = update.artifact.validate() {
                     trace_warn!(
                         task_id = %task_id,
                         "dropping artifact with empty parts (spec violation)"
@@ -1032,12 +1031,12 @@ mod tests {
     // could distinguish. Each names the mutant it kills, so a later reader can
     // tell a load-bearing assertion from a decorative one.
 
-    /// Kills `replace != with ==` on the `append != Some(true)` validation
-    /// gate. Under that mutant only *appending* updates are validated, so a
-    /// non-appending artifact with no parts — a spec violation — is stored
-    /// instead of dropped. The in-memory writer refuses such an event since
-    /// 2026-10-11, so this sends it straight to the collector's channel, as
-    /// any other `EventQueueWriter` could.
+    /// A non-appending artifact with no parts, a spec violation, is dropped
+    /// rather than stored. Until 2026-10-14 the check exempted appends, and
+    /// this test killed the mutant that inverted the exemption; with the
+    /// exemption gone it kills the check's removal. The in-memory writer
+    /// refuses such an event since 2026-10-11, so this sends it straight to
+    /// the collector's channel, as any other `EventQueueWriter` could.
     #[tokio::test]
     async fn artifact_with_empty_parts_is_dropped_when_not_appending() {
         use a2a_protocol_types::artifact::{Artifact, ArtifactId};
@@ -1093,6 +1092,62 @@ mod tests {
         assert!(
             artifacts.is_empty(),
             "an artifact with no parts must be dropped when not appending, got {artifacts:?}"
+        );
+    }
+
+    /// a2a.proto `Artifact.parts`: an appended chunk with no parts is
+    /// dropped too, since 2026-10-14. One for an artifact id the task did not
+    /// hold was stored as a zero-part artifact. Sent straight to the
+    /// collector's channel, past the writer that now refuses it, as any other
+    /// `EventQueueWriter` could.
+    #[tokio::test]
+    async fn an_appended_chunk_with_no_parts_is_dropped() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-empty-append");
+        task_store
+            .save(&make_task("t-empty-append", TaskState::Working))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .without_agent_card()
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (tx, reader) = tokio::sync::mpsc::channel(1);
+        let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new("t-empty-append"),
+            context_id: ContextId::new("ctx-1"),
+            artifact: Artifact {
+                id: ArtifactId::new("art-unknown"),
+                name: None,
+                description: None,
+                parts: vec![],
+                extensions: None,
+                metadata: None,
+            },
+            append: Some(true),
+            last_chunk: Some(true),
+            metadata: None,
+        });
+        tx.send(Arc::new(Ok(
+            crate::streaming::event_queue::StreamEvent::at(1, event),
+        )))
+        .await
+        .unwrap();
+        drop(tx);
+
+        let collected = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await
+            .expect("collect_events should succeed");
+        let artifacts = collected.task.artifacts.unwrap_or_default();
+        assert!(
+            artifacts.is_empty(),
+            "an appended chunk with no parts must be dropped, got {artifacts:?}"
         );
     }
 

@@ -1334,7 +1334,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:459",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:458",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:209"
    ],
    "test_evidence": [
@@ -2945,8 +2945,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:489",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:360"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:488",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:359"
    ],
    "test_evidence": [],
    "notes": "SDK persists every agent Message event into Task.history (capped at 1024).",
@@ -3936,7 +3936,7 @@
     "crates/a2a-protocol-server/src/handler/input_modes.rs nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs an_invalid_produced_card_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
    "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) HotReloadAgentCardHandler::new and update are infallible and do not validate (a change would break their signatures). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked. Since 2026-10-14 the queue writer also refuses an executor message (event, status message, snapshot history) with no parts and a snapshot artifact with no parts (R36).",
    "auditor": "C",
@@ -8442,9 +8442,9 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:59"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:872 process_event_invalid_state_transition_returns_error",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:871 process_event_invalid_state_transition_returns_error",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
    "notes": "Always serialized; the queue writer refuses an executor status update or task snapshot in Unspecified (since 2026-10-14, audit register R36; a snapshot bypassed the transition rule, so one was stored and served), and the processors refuse a status transition into it (can_transition_to rule 2). Client JSON missing -> serde error; gRPC 0 decodes as Unspecified (tolerated).",
    "auditor": "G",
@@ -8495,7 +8495,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:211",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:489"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:488"
    ],
    "test_evidence": [],
    "notes": "Agent Messages are returned/streamed exactly as the executor wrote them; the SDK neither stamps the task's contextId onto them nor checks it. Hook: executor has ctx.context_id (request_context.rs:46) to set it.",
@@ -8524,7 +8524,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:2309 an_empty_message_id_is_refused",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
    "notes": "JSON-RPC/WS: absent messageId -> serde error -> InvalidParams -32602; REST -> 400 INVALID_ARGUMENT; gRPC absent == \"\" -> validate_id -> InvalidParams -> INVALID_ARGUMENT; empty/whitespace on any binding -> InvalidParams naming `message.id`. Server always serializes messageId (non-optional) but does not validate executor-authored agent message ids. Client refuses a response missing it (ClientError::Serialization). Only handler-level test; no wire test of an absent messageId. An executor-written message (event, status message, snapshot history) with an empty messageId is refused at the queue writer since 2026-10-14 (audit register R36); it was stored and served.",
    "auditor": "G",
@@ -8549,7 +8549,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs an_unspecified_role_is_refused",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
    "notes": "validate_send_params refuses ROLE_UNSPECIFIED (what an absent gRPC enum decodes to) with InvalidParams, as the JSON bindings refuse a missing role. An executor-written message with ROLE_UNSPECIFIED is refused at the queue writer since 2026-10-14 (R36).",
    "auditor": "G",
@@ -8572,7 +8572,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:503 empty_message_parts_returns_invalid_params",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
    "notes": "Absent parts defaults to [] (ProtoJSON omits empty repeated) and is rejected in the shared handler with InvalidParams(\"message must contain at least one part\") on all four bindings (-32602 / 400 / INVALID_ARGUMENT). Server always serializes `parts`. Client tolerates absence (default []). Tests are handler-level only. An executor-written message with no parts is refused at the queue writer since 2026-10-14 (R36).",
    "auditor": "G",
@@ -8589,9 +8589,9 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:404",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:463",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:289",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:299"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:462",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:288",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:298"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs a_repeated_artifact_id_replaces_on_the_blocking_path",
@@ -8618,7 +8618,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:156 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
    "notes": "Always serialized as `artifactId` (non-optional). An executor-written artifact (update or snapshot) with an empty artifactId is refused at the queue writer since 2026-10-14 (R36); until then it was stored and served. Client JSON refuses an artifact without artifactId; gRPC tolerates \"\".",
    "auditor": "G",
@@ -8631,25 +8631,27 @@
    "keyword": "Must",
    "binds": "both",
    "requirement": "The content of the artifact. Must contain at least one part.",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:192",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:394",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:508",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:570",
-    "crates/a2a-protocol-types/src/artifact.rs:153",
-    "crates/a2a-protocol-types/src/artifact.rs:88"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:642",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:40",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:194",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:414",
+    "crates/a2a-protocol-types/src/artifact.rs:154"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1414 empty_parts_are_rejected_only_when_not_appending",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1042 artifact_with_empty_parts_is_dropped_when_not_appending",
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1415 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1104 an_appended_chunk_with_no_parts_is_dropped",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1041 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
     "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts"
    ],
-   "notes": "A non-appending artifact with no parts is refused at the event-queue write (InvalidParams to the executor) so live subscribers never see it; persistence also drops one from any other writer (sync_collector test). Remaining: an appending chunk (append=true) with no parts is accepted everywhere, as the processors were written to allow; the proto's rule has no such exception. Maintainer call whether to refuse it.",
+   "notes": "An artifact update with no parts is refused at the event-queue write (InvalidParams to the executor), so live subscribers never see it, and both processors drop one from any other writer. Since 2026-10-14 this holds for an appended chunk too (approved in the audit register): appends were exempt, and an empty chunk for an artifact id the task did not hold was stored as a zero-part artifact. The queue test and both processor tests failed before the change. The impl citations were re-pointed by reading the code: three of the six before pointed at unrelated lines.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 288,
@@ -8828,11 +8830,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:404",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:205"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:204"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1103 artifact_append_merges_into_the_existing_artifact",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1224 artifact_append_targets_the_matching_id_not_another"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1158 artifact_append_merges_into_the_existing_artifact",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1279 artifact_append_targets_the_matching_id_not_another"
    ],
    "notes": "Parts extended and metadata merged into the artifact with matching id.",
    "auditor": "G",

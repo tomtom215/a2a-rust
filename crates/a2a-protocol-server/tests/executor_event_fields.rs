@@ -104,6 +104,17 @@ fn broken() -> Vec<(&'static str, StreamResponse)> {
             .unwrap(),
         ),
         (
+            // a2a.proto `Artifact.parts`: "Must contain at least one part",
+            // with no exception for an appended chunk (audit register,
+            // proto Artifact.parts row).
+            "appended chunk without parts",
+            serde_json::from_value(json!({"artifactUpdate": {
+                "taskId": "", "contextId": "", "artifact": artifact("a-9", json!([])),
+                "append": true, "lastChunk": true
+            }}))
+            .unwrap(),
+        ),
+        (
             "snapshot without state",
             snapshot("TASK_STATE_UNSPECIFIED", json!([]), json!([])),
         ),
