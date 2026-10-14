@@ -104,10 +104,10 @@ This frame is a transport marker, not a `StreamResponse`. A stream that fails
 ends with a JSON-RPC error frame for its `id` instead, and no marker.
 
 **Reconnection.** There is no resumption. The HTTP binding's
-`Last-Event-ID` has no counterpart here, so a client whose connection drops
-opens a new one and calls `SubscribeToTask`. That stream's first event is the
-task's current snapshot, from which the client continues; events in between
-are not replayed.
+`Last-Event-ID` has no counterpart here, and the server ignores one on the
+upgrade request, so a client whose connection drops opens a new one and calls
+`SubscribeToTask`. That stream's first event is the task's current snapshot,
+from which the client continues; events in between are not replayed.
 
 ## 5. Errors (§5.4, §12.4)
 

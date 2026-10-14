@@ -815,6 +815,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `Last-Event-ID` on a WebSocket upgrade no longer replays the event
+  log** (server, `websocket` feature). The WebSocket binding has no
+  resumption: a resubscribe starts from the task's snapshot. But the
+  upgrade request's headers reach every call on the connection, so one
+  carrying `Last-Event-ID` made every `SubscribeToTask` on it replay the log
+  from that position. The header is now dropped at the handshake.
 - **A refused credential names its challenge on gRPC and SLIMRPC** (server,
   `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD include the
   authentication challenge and specify the scheme). The HTTP bindings send

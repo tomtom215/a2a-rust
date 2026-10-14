@@ -1734,6 +1734,15 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     397 and 573; 87 citations into the three edited files follow their
     lines (the 74 bare ones checked byte for byte against the old source).
     Mutants 8 of 8.
+93. `fix(server):` a `Last-Event-ID` on a WebSocket upgrade no longer
+    replays the event log (audit register R42; in Fixed). The binding page
+    promised no resumption, but the upgrade's headers reach every call on
+    the connection, so every `SubscribeToTask` replayed the log from it.
+    `extract_upgrade_headers` drops the header.
+    `ws_upgrade_last_event_id_does_not_replay_the_log` received the snapshot
+    and the replayed events before the fix. Ledger 3030; 35 citations into
+    `websocket.rs` follow the shifted lines (every bare one checked against
+    the old source). Mutants 2 of 2.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

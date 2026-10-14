@@ -669,9 +669,15 @@ impl WebSocketDispatcher {
 
 /// The upgrade request's header fields, read as the HTTP bindings read them
 /// ([`header_fields`](super::header_fields)), plus the request path (under
-/// `":path"`).
+/// `":path"`), less `Last-Event-ID`.
+///
+/// This binding has no resumption: a resubscribe starts from the task's
+/// snapshot. `Last-Event-ID` is the HTTP binding's resumption cursor, and
+/// these headers reach every call on the connection, so until 2026-10-14 one
+/// on the upgrade made every `SubscribeToTask` replay the log from it.
 fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
     let mut map = super::header_fields(req.headers());
+    map.remove("last-event-id");
     // The pseudo-header name cannot collide with a real HTTP/1 header (colons
     // are not valid in field names), and it is what
     // `PathSegmentTenantResolver` documents reading.
