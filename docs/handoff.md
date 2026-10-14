@@ -11,7 +11,9 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
+Last updated 2026-10-14 — `claude/funny-heisenberg-e6tl83`: main's three red
+workflows (docs site, OSV-Scanner, the rate-limit benchmark) and Dependabot
+#169. Before that, 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
 left after #165, OpenTelemetry 0.33, a versioned documentation site, the
 weekly mutation sweep, the ledger's last GAP (§3.3.4), push timeouts,
 JSON-RPC `RetryInfo`, §13.1 caller isolation by default, Dependabot #166
@@ -114,7 +116,11 @@ the *content* merge.
 | `claude/peaceful-ptolemy-noka5b` | merged | **Merged as `10f3435` via [#144](https://github.com/tomtom215/a2a-rust/pull/144).** N21 (the maintainer chose the admission side), the adopter's four reports, the claims ledger, and the drop-path hunt (N24–N32, N16, N18). This row said "open — no PR yet" until 2026-10-02; `git log --oneline --merges | grep 144` settles it. See its section below. |
 | `claude/clever-curie-wbfxzc` | merged | **Merged via [#147](https://github.com/tomtom215/a2a-rust/pull/147) (`d4f32eb`) and [#148](https://github.com/tomtom215/a2a-rust/pull/148) (`775fe46`).** The 0.14.1 release for GHSA-hr9h-6jvf-wvg6 and its provenance re-measurement. It had no row here. |
 | `claude/eager-galileo-h4x21s` | merged | **Merged as `7ce2d24` via [#149](https://github.com/tomtom215/a2a-rust/pull/149).** The 2026-10-02 SDK comparison, the in-memory store's TTL-sweep fix (`831b8ef`), `examples/swarm`, and `docs/swarm-orchestration.md`. This row said "open — no PR yet" until 2026-10-06; `git log --oneline --merges | grep 149` settles it. See its section below. |
-| `claude/zealous-lovelace-n5ulfc` | open — no PR yet | **Destined for `main`.** Telemetry, Langfuse, the span conventions and client spans. See its section below. |
+| `claude/zealous-lovelace-n5ulfc` | merged | **Merged as `dbe63687` via [#162](https://github.com/tomtom215/a2a-rust/pull/162).** Telemetry, Langfuse, the span conventions and client spans. This row said "open — no PR yet" until 2026-10-14. See its section below. |
+| `claude/bold-gauss-9qc9dc` | merged | **Merged as `f824b035` via [#163](https://github.com/tomtom215/a2a-rust/pull/163).** Compliance, audit and human oversight. It had no row here. |
+| `claude/nifty-fermat-roj04f` | merged | **Merged as `6ce5dc9a` via [#165](https://github.com/tomtom215/a2a-rust/pull/165).** The spec ledger. It had no row here. |
+| `claude/tender-cray-bsfw83` | merged | **Merged as `2b0a3abd` via [#168](https://github.com/tomtom215/a2a-rust/pull/168) on 2026-10-14.** Items 1-107 of its section. It had no row here. |
+| `claude/funny-heisenberg-e6tl83` | open | **Destined for `main`.** Started from `2b0a3abd`: main's three red workflows first, then the spec, the EU AI Act and the rest. See its section below. |
 
 `release/v0.12.1`, `claude/wizardly-tesla-0f358t`, `claude/prove-gates-needle`
 and `claude/relaxed-planck-c4hsn0` can all be deleted: their contents are on
@@ -945,6 +951,30 @@ delegation handle)~~ landed on `claude/bold-gauss-9qc9dc` (below); next in
 * Measure throughput on one pinned core with `/proc/<pid>/stat` user and
   system time; two-core runs are latency-bound and the VM's noise is ±5–10%
   there. Use 6 interleaved runs and compare medians.
+
+## `claude/funny-heisenberg-e6tl83` — main green again, then v1.0.1 and the rest
+
+Started from `2b0a3abd` (#168's merge). Commits are authored and signed off
+as the maintainer with no `Co-Authored-By` or session trailers, by the
+maintainer's instruction (DCO), as on `claude/tender-cray-bsfw83`.
+
+**Step 0: three workflows were red on `main` at `2b0a3abd`.** Each was
+reproduced locally before its fix.
+
+1. `fix(docs):` Deploy Documentation, step `Versioned site is complete`:
+   `dev/api/index.html: a non-root page must be noindex with no canonical`.
+   `docs.yml`'s API step writes that page with no `</head>`;
+   `make_noindex` removed its canonical link and added `noindex` only by
+   replacing `</head>`, so the page had neither. Reproduced with the real
+   build (mdBook 0.4.40, the four crates' rustdoc, the step body extracted
+   from `docs.yml` and run as written): 794 book pages, 1 fault. A page
+   with no `</head>` now gets the tag after its doctype; the same build then
+   checks 0 faults. The prover's fixture for that check now runs
+   `docs.yml`'s own API step (`API_STEP` in
+   `prove_workflow_gates_fail.py`); its healthy case failed before the fix
+   with five faults, the dev API index and the four crate indexes, whose
+   fixture pages had no head either. This workflow runs only on pushes to
+   `main`, so no pull request could have caught it.
 
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 

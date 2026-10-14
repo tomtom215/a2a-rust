@@ -1466,6 +1466,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The versioned documentation site deploys again.** `docs.yml` failed on
+  `main` at `2b0a3abd`: its API step writes `/dev/api/index.html` as a
+  redirect page with no `</head>`, and `build_docs_site.py`'s `make_noindex`
+  removed the page's canonical link but added `noindex` only before
+  `</head>`, so the page had neither and the site check refused it. A page
+  without `</head>` now gets the tag after its doctype. The workflow-gate
+  prover's fixture for the site check now runs `docs.yml`'s own API step
+  instead of a hand-made dev book, and its healthy case failed before the
+  fix with the fault CI reported. The full build (13 release lines and dev)
+  checks clean locally: 794 book pages, 0 faults.
 - **`keep_alive_comments_reset_the_idle_bound` tolerates a runner stall**
   (client tests). It failed on Windows on `9aacd7a` and on `main` at
   `6ce5dc9`: the stub and the client share one thread, so a stall longer
