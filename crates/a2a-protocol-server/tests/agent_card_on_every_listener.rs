@@ -135,3 +135,28 @@ async fn the_grpc_listener_serves_the_card() {
     let (status, _) = get(addr, "GET", "/.well-known/other.json").await;
     assert_eq!(status, 404);
 }
+
+/// A request line that arrives in pieces is waited for, not handed to the
+/// WebSocket handshake on its first bytes.
+#[tokio::test]
+async fn a_card_request_sent_in_pieces_is_still_the_card() {
+    let addr = Arc::new(WebSocketDispatcher::new(handler(true)))
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .unwrap();
+    let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+    s.set_nodelay(true).unwrap();
+    s.write_all(b"GET /.well-known/age").await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    s.write_all(b"nt-card.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut out = Vec::new();
+    tokio::time::timeout(std::time::Duration::from_secs(5), s.read_to_end(&mut out))
+        .await
+        .expect("answered and closed")
+        .unwrap();
+    let text = String::from_utf8_lossy(&out);
+    assert!(text.starts_with("HTTP/1.1 200"), "{text}");
+    assert_is_card(text.split_once("\r\n\r\n").map_or("", |(_, b)| b));
+}
