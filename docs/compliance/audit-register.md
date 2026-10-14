@@ -33,10 +33,10 @@ release text; the ledger's own numbering).
 | R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | done |
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
-| R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | approved |
+| R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
 | R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | approved |
-| R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | approved |
-| R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | approved |
+| R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
+| R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | custom `Transport` impls, if the trait changes | approved |
 | R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 state | a deployer relying on the public card being served | done |
 
@@ -200,6 +200,16 @@ never throttles and every unidentified caller shares one rate-limit bucket.
 binding**, and key unidentified SLIMRPC callers by the session's source name
 (or the verified peer once R13 lands).
 
+**Half done (2026-10-14).** The binding drops `x-forwarded-for`, `x-real-ip`
+and `forwarded` from caller metadata, case-insensitively
+(`is_forwarding_key` in `bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs`; test
+`a_callers_forwarding_headers_never_reach_the_handler`), so a SLIMRPC caller
+no longer picks its rate-limit or throttle key. Keying an unidentified caller
+by its peer waits for R13: the 3.x upgrade brings the verified peer, and a
+source name read from 2.3.0's session is not known to be verified. Until
+then every unidentified SLIMRPC caller shares the anonymous bucket and is
+not throttled, as before with `trusted_proxy_hops = 0`.
+
 ## R49 / §1.4 — the types are not generated from the proto
 
 **Now.** Only the prost types (feature `proto`) are generated. The public
@@ -239,6 +249,14 @@ none without, and `Accept: application/a2a+json, application/json`.** a2a-java
 older refuse anything but `application/json`, and that break goes in the
 upgrading guide.
 
+**Done (2026-10-14)**, as recommended, in `build_request`
+(`crates/a2a-protocol-client/src/transport/rest/request.rs`): a POST body is labelled
+`application/a2a+json`, a GET or DELETE has no `Content-Type`, and a
+non-streaming `Accept` is `application/a2a+json, application/json`. Tests:
+`build_request_labels_a_body_and_only_a_body` and
+`build_request_non_streaming_accepts_a2a_json_first` (which replaces the test
+that pinned `application/json`).
+
 ## R66 — a multicast member's lag report
 
 **Now.** `bindings/a2a-protocol-slimrpc/src/multicast/fanout.rs:128-129` sends the member an `Err`
@@ -248,6 +266,12 @@ error is `ClientError::Transport("N event(s) dropped…")`, not the typed
 
 **Recommendation: keep it terminal and make it the typed `streamLagged`
 error**, so one check (`is_stream_lagged`) recognises a lag on every binding.
+
+**Done (2026-10-14).** `lag_report` returns
+`ClientError::Protocol(A2aError::stream_lagged(missed))`; the binding's unit
+test `a_lag_report_is_the_typed_stream_lagged_signal` and
+`tests/multicast_backpressure.rs` check `is_stream_lagged` and the dropped
+count where the latter matched the message text.
 
 ## R67 — an API key in the query string is refused
 

@@ -1228,6 +1228,49 @@ follow the text. The register's status column tracks what is done.
     under `-D warnings`). Ledger §9.3 (2270): the "Not followed" clause is
     replaced, and the new tests are cited.
 
+16. `fix(server):` the background processor's `fail_invalid_transition`
+    (item 14) read `task_id`, `current` and `next` only in trace lines, so a
+    build without the `tracing` feature failed under `-D warnings` (unused
+    variables). Found by building the SLIMRPC binding, which depends on the
+    server crate without `tracing`, before any push; CI's
+    `--no-default-features` clippy step would have caught it too.
+17. `fix(client):` audit register R50 — the REST client labels a request
+    body `application/a2a+json` (§11.1 SHOULD), sends no `Content-Type` on a
+    GET or DELETE, and asks `Accept: application/a2a+json, application/json`.
+    `build_request_labels_a_body_and_only_a_body` is new;
+    `build_request_non_streaming_accepts_a2a_json_first` replaces the test
+    that pinned `application/json`. Ledger: the client §11.1 entry (2750)
+    NOT_SUPPORTED to TESTED (TESTED 319, NOT_SUPPORTED 7). Breaks a2a-java
+    1.3.0.Final and older over HTTP+JSON; the upgrading guide says so.
+18. `fix(slimrpc):` audit register R66 — a multicast member's lag report is
+    `ClientError::Protocol(A2aError::stream_lagged(n))`, read by
+    `is_stream_lagged`; it was `Transport` text. A unicast SLIMRPC stream's
+    lag is still the server's text without the marker (no details encoding
+    in the SLIMRPC spec), so the register's "one check on every binding"
+    holds for multicast and the four other bindings, not SLIMRPC unicast.
+    `tests/multicast_backpressure.rs` checks the typed signal where it
+    matched text, and a unit test pins `lag_report`. And R41, first half:
+    the binding drops a caller's `x-forwarded-for`, `x-real-ip` and
+    `forwarded` (`a_callers_forwarding_headers_never_reach_the_handler`).
+    The second half, keying an unidentified caller by its peer, waits for
+    R13's SLIM 3.x upgrade and its verified peer; the register and the
+    ledger's §13.4 note say so.
+
+19. `fix(examples, itk, slimrpc):` PR #170's CI on `571cfbcc` was red from
+    item 10 (R68) in eight checks, all one cause or its mirror image. Item 10
+    gave an extended card to the restricted agents of agent-team
+    (`surface.rs`), echo-agent and incident-response, whose cards declare no
+    capabilities, so `build()` refused them (SDK dogfood, Example surface
+    coverage). It missed two handlers outside the workspace whose cards do
+    declare one: the ITK agent (`itk/src/main.rs`; ACTS) and the SLIMRPC
+    binding's test fixture (`tests/common/mod.rs`;
+    `e2e::extended_agent_card_advertises_the_slimrpc_binding`, which failed
+    the SLIMRPC and Test coverage jobs). Each restricted agent is back to no
+    extended card; the ITK agent and the fixture serve their public card as
+    the extended one when they declare it. The other red checks on earlier
+    heads were already fixed: `interceptor_on_complete` (item 11, macOS and
+    mutants shard 0 on `9fcc65a5`).
+
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`
   exists in two files; item 10's fix went to the one in
@@ -1235,6 +1278,18 @@ follow the text. The register's status column tracks what is done.
   so the other (`interceptor_on_complete.rs`) reached a pushed head red.
   Re-run the binary the failure came from (`Running tests/<file>` above it
   in the log).
+- A green workspace suite says nothing about the example binaries, the ITK
+  agent or the SLIMRPC binding: CI runs eleven `cargo run` steps
+  (`grep -n "cargo run" .github/workflows/*.yml`) and two crates outside the
+  workspace. A change to what `build()` accepts reaches all of them; run them
+  before pushing it. Item 10 was applied by pattern ("every handler gets an
+  extended card") instead of by reading each card, and the restricted agents
+  are the counter-example the pattern missed.
+- `cargo clippy --all-features` is not CI's clippy. CI also runs it with
+  `--no-default-features` and once per feature (`cargo hack ... --each-feature`,
+  ci.yml:491), and a value read only in a trace line is unused without
+  `tracing`. Run the matrix (ci.yml:441-463 and :491) before a push that adds
+  a function.
 - The ledger's `impl_evidence` line numbers are unverified by any check and
   were found wrong in three of six citations of one entry. Treat any of
   them as a pointer to re-read, and re-point what an edit touches.

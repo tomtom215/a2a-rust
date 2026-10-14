@@ -209,9 +209,9 @@ async fn a_consumer_that_falls_behind_is_told_what_it_missed() {
     let mut saw_lag_report = false;
     for _ in 0..CHATTY_EVENTS {
         match tokio::time::timeout(Duration::from_secs(5), a.next()).await {
+            // The typed signal every binding sends (audit register R66).
             Ok(Some(Err(e))) => {
-                let msg = e.to_string();
-                if msg.contains("dropped") && msg.contains("fell behind") {
+                if e.is_stream_lagged() && e.dropped_event_count().is_some_and(|n| n > 0) {
                     saw_lag_report = true;
                     break;
                 }

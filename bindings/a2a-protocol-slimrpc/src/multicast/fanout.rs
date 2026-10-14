@@ -155,9 +155,22 @@ pub(super) async fn fan_out_to_members(
     // Dropping `senders` ends every member stream that is still open.
 }
 
-/// The error a lagging consumer is handed in place of the events it missed.
+/// The error a lagging consumer is handed in place of the events it missed:
+/// the typed `streamLagged` signal the other bindings send, so
+/// [`ClientError::is_stream_lagged`] recognises a lag on every binding
+/// (audit register R66). It was a `Transport` error carrying only text.
 fn lag_report(missed: u64) -> ClientError {
-    ClientError::Transport(format!(
-        "{missed} event(s) dropped: this stream's consumer fell behind"
-    ))
+    ClientError::Protocol(a2a_protocol_types::error::A2aError::stream_lagged(missed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lag_report;
+
+    #[test]
+    fn a_lag_report_is_the_typed_stream_lagged_signal() {
+        let err = lag_report(7);
+        assert!(err.is_stream_lagged(), "{err:?}");
+        assert_eq!(err.dropped_event_count(), Some(7));
+    }
 }

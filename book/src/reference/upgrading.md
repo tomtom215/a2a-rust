@@ -421,6 +421,24 @@ no exception for a chunk. An executor that ended a streamed artifact with an
 empty `lastChunk: true` chunk sets `lastChunk: true` on the chunk carrying the
 last part instead.
 
+### The REST client sends `application/a2a+json`
+
+The HTTP+JSON client labels a request body `application/a2a+json`, as §11.1
+asks, and asks for `application/a2a+json, application/json`. A GET or DELETE
+has no body and now no `Content-Type`. a2a-java 1.3.0.Final and older refuse
+a request labelled anything but `application/json`
+(`ContentTypeNotSupportedError`); 1.4.0.Final accepts it. A client that must
+reach an older a2a-java server uses its JSON-RPC interface.
+
+### A SLIMRPC multicast lag is `is_stream_lagged`
+
+A multicast member that fell behind ends with the typed `streamLagged` error,
+as a lagging stream does on the JSON-RPC, HTTP+JSON, WebSocket and gRPC
+bindings, so `ClientError::is_stream_lagged()` and `dropped_event_count()`
+read it. Code that matched the old message text (`"event(s) dropped"`)
+matches `is_stream_lagged()` instead. A unicast SLIMRPC stream's lag is
+still the server's error text, without the marker.
+
 ### A JSON-RPC notification gets no reply
 
 A JSON-RPC request with no `id` member is a notification, and "the Server

@@ -525,11 +525,13 @@ impl A2aError {
     /// failed: the task goes on, and `GetTask` shows its state. This SDK's
     /// servers send it only when the task's event log cannot replay what the
     /// consumer missed (spec §3.5.2). On the JSON-RPC, HTTP+JSON, WebSocket
-    /// and gRPC bindings it is the stream's last frame; the SLIMRPC binding
+    /// and gRPC bindings it is the stream's last frame; a SLIMRPC server
     /// sends the error's text without the marker, so this returns `false`
-    /// there. To resynchronize, subscribe again: the new stream begins with
-    /// a fresh `Task` snapshot, and over SSE a `Last-Event-ID` resumes it
-    /// after the last position seen, while the log still holds it.
+    /// there, though a SLIMRPC multicast member that falls behind on the
+    /// client side is handed this signal. To resynchronize, subscribe
+    /// again: the new stream begins with a fresh `Task` snapshot, and over
+    /// SSE a `Last-Event-ID` resumes it after the last position seen, while
+    /// the log still holds it.
     ///
     /// It is detected by the [`STREAM_LAGGED_MARKER`] key in [`A2aError::data`]
     /// rather than by code or message, because the code is a generic

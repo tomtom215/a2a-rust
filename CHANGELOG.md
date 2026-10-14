@@ -354,6 +354,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The REST client labels its requests `application/a2a+json`** (client;
+  §11.1, audit register R50). A request body is sent as
+  `application/a2a+json`, a GET or DELETE carries no `Content-Type`, and a
+  non-streaming call sends `Accept: application/a2a+json, application/json`.
+  Every request was labelled `application/json`, bodiless ones included.
+  a2a-java 1.3.0.Final and older refuse any other request type; see the
+  upgrading guide.
+
+- **SLIMRPC: a multicast member's lag report is the typed `streamLagged`
+  error** (binding; audit register R66). The multicast client built it as a
+  `Transport` error carrying only text, so `ClientError::is_stream_lagged`
+  missed it. The stream still ends there. A unicast SLIMRPC stream's lag
+  still arrives as the server's error text without the marker: the SLIMRPC
+  specification defines no error details.
+
+- **SLIMRPC: a caller's forwarding headers are dropped** (binding; audit
+  register R41). `x-forwarded-for`, `x-real-ip` and `forwarded` reached the
+  handler, where with `trusted_proxy_hops > 0` the rate limiter and the
+  auth-failure throttle took the caller's own value as its address. No proxy
+  appends to them on a SLIM session.
+
 - **A JSON-RPC notification is run and gets no reply** (server; JSON-RPC
   2.0 §4.1 under A2A §9, audit register R21). A request with no `id` member
   was run and answered with `"id": null`. It is now answered with
@@ -390,9 +411,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one other path that returned `-32007`. A handler with no card at all
   (`without_agent_card()`) and no extended card answers
   `UnsupportedOperationError` where it answered `-32007` (§13.3, approved in
-  the register). The examples and the TCK SUT that declare the capability
-  now pass their public card to `with_extended_agent_card`, which keeps what
-  they serve unchanged. The upgrading guide says how to do the same.
+  the register). The examples, the TCK SUT and the ITK agent that declare the
+  capability now pass their public card to `with_extended_agent_card`, which
+  keeps what they serve unchanged. The upgrading guide says how to do the same.
 
 - **The event queue refuses an executor's event the gRPC binding cannot
   carry** (server; spec §4: every binding MUST represent the same thing). A
