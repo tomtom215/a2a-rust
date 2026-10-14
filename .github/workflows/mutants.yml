@@ -1059,11 +1059,18 @@ jobs:
         # mutants sliced put 145 a2a-server mutants in each of four shards and
         # only a2a-types ones in two; round-robin puts 91-92 a2a-server, 41-42
         # a2a-types and 11-12 a2a-client mutants in every shard, and the eight
-        # listings partition the 1,160 exactly. Run 38495126684's eight shards
-        # took 615 minutes in all, 77 each if evenly mixed, against its slowest
-        # sliced shard's 114; mixed, each shard also pays the a2a-server
-        # baseline, 164-254 s in that run against a types-only shard's 26-37 s.
-        # That is a projection from the run's timings, not a measurement.
+        # listings partition the 1,160 exactly. Measured on those same 1,160
+        # (the source did not change between the two pushes): sliced, run
+        # 38515154450 lost four shards to the timeout at 7,229-7,237 s;
+        # round-robin, run 38516495025 finished all eight in 4,755-6,571 s and
+        # passed. Its slowest shard took 110 minutes, not the 77 first projected
+        # by dividing run 38495126684's total evenly, which assumed a mutant's
+        # cost does not depend on the one before it; round-robin used 787
+        # runner-minutes against the sliced run's 722, cut short. The likely
+        # cause, not measured, is rebuilds: an a2a-types mutant makes the next
+        # a2a-server one rebuild what depends on it. Ten minutes of headroom is
+        # thin; splitting this job by crate, as the full sweep is, would keep
+        # round-robin within one crate.
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       INCREMENTAL_SHARDS: 8

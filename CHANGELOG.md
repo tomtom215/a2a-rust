@@ -1522,8 +1522,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   held whichever crates' files fell to it: in three runs on this branch the
   slowest shard, all `a2a-server` mutants, took 114 to 120 minutes against a
   120-minute timeout, while in one of them the two holding only `a2a-types`
-  mutants took 20 and 27. Projected from one run's timings, the slowest
-  shard drops to about 77 minutes.
+  mutants took 20 and 27. On the same 1,160 mutants, the last sliced run
+  lost four of its eight shards to that timeout; the first round-robin run
+  finished all eight in 79 to 110 minutes and passed.
 - **A failed executor is shown to be logged** (§3.3.2: servers SHOULD log
   system errors). `executor_failure_logged.rs` asserts the ERROR event
   that names the task and the cause; it fails with the call deleted,

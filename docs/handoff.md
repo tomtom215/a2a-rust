@@ -562,6 +562,11 @@ by no test; the cargo-mutants patch (kept here, not upstreamed — see `scripts/
   deliberately wrong code as the control that must fail.
 - **Count before writing a number.** A CHANGELOG draft said "36 of them
   run"; the diff says 79. Numbers in records come from a command.
+- **A cost model that divides a run's total evenly assumes each unit's cost
+  is independent of order.** cargo-mutants' build cost is not: dealing a
+  PR's mutants round-robin across crates made its slowest shard take 110
+  minutes where the even split said 77 (item 107). Quote a projection as one,
+  and replace it with the first run's measurement.
 - **A mutant a crate's own tests cannot reach is a coverage fact about that
   crate.** cargo-mutants runs only the mutated crate's tests: the client's
   gRPC success path was covered from the server and SDK crates and
@@ -1931,8 +1936,18 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     listings: sliced, four shards of 145 `a2a-server` mutants and two of
     `a2a-types` only; round-robin, every shard 91-92 `a2a-server`, 41-42
     `a2a-types`, 11-12 `a2a-client`, the eight together exactly the 1,160.
-    The ~77-minute slowest shard is a projection from `3f152a79`'s run; read
-    the first run after this commit to replace it with a measurement.
+    Measured: `10827fae`'s run (same source as `ee7df1e7`, so the same
+    1,160 mutants) finished all eight shards in 4,755-6,571 s and passed,
+    where `ee7df1e7`'s sliced run lost four shards to the timeout at
+    7,229-7,237 s, as `96decb0b`'s lost three. The ~77 minutes this item
+    first projected was wrong: it divided `3f152a79`'s total evenly, as if a
+    mutant's cost did not depend on the one before it. Round-robin used 787
+    runner-minutes against the sliced run's 722 (cut short), likely because
+    an `a2a-types` mutant makes the next `a2a-server` one rebuild its
+    dependents (not measured: the per-mutant times are in the run's
+    artifacts). The slowest shard has ten minutes of headroom; the next step,
+    if a push brings it closer, is to split the job by crate as the full
+    sweep is, so round-robin stays within one crate.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 318,
 PARTIAL 20, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
