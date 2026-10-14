@@ -1414,6 +1414,12 @@ follows is a new pull request.
     NOT_SUPPORTED 4); the register's MAY row is closed for §3.1.9, §8.4.2
     and §13.3.
 
+34. `feat(server):` spec §14 SHOULD — `serve::Server::with_tls` and
+    `with_tls_pem` (`tls-rustls`) terminate TLS on the HTTP listener.
+    Ledger 3342 PARTIAL to TESTED. Not done: TLS on `serve`,
+    `serve_with_addr` and the WebSocket listener, whose card peek reads the
+    raw socket before any handshake.
+
 **Lessons, new this session.**
 - Two ledger entries can share a `spec_line` (§3.1.9's MUST and MAY are
   both line 381). Select an entry by `spec_line` and `keyword`; this

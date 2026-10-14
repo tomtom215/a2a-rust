@@ -69,6 +69,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config is opened under its old partition and sealed again under the new
   one, and a task id the new partition already holds refuses the whole run.
   A second run moves nothing.
+- **`serve::Server::with_tls`** and **`Server::with_tls_pem`** (server,
+  `tls-rustls`; spec §14: "Implementations SHOULD support HTTPS to ensure
+  authenticity and integrity of the Agent Card"). Only the gRPC listener
+  terminated TLS; the HTTP listener needed a reverse proxy. The graceful
+  `Server` now runs each connection's TLS handshake on its own task, within
+  `ServeConfig::header_read_timeout` when that is set, and then serves HTTP/2
+  or HTTP/1.1 as ALPN agreed (`h2` and `http/1.1` are offered when the
+  configuration names none). A failed handshake closes the connection and
+  counts as a failed connection. `with_tls_pem` builds rustls' safe defaults
+  on the `ring` provider from a PEM chain and key, and refuses a key that is
+  not the certificate's. `serve`, `serve_with_addr` and the WebSocket
+  listener stay plaintext.
 - **`ExtendedCardProvider`** and
   **`RequestHandlerBuilder::with_extended_card_provider`** (server; spec
   §13.3: "Agents MAY return different extended card content based on the

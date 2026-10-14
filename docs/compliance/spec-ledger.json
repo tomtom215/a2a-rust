@@ -4224,17 +4224,25 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Implementations SHOULD support HTTPS to ensure authenticity and integrity of the Agent Card",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/tls.rs:108",
-    "crates/a2a-protocol-server/Cargo.toml:58",
-    "book/src/deployment/production.md:9"
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs with_tls",
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs with_tls_pem",
+    "crates/a2a-protocol-server/src/serve/graceful/mod.rs spawn_connection",
+    "book/src/deployment/production.md:7"
    ],
-   "test_evidence": [],
-   "notes": "Client fetches over HTTPS (rustls). Server HTTP listeners (serve/, JSON-RPC/REST/WS) do not terminate TLS; docs require a reverse proxy; only gRPC has native TLS (grpc-tls).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/serve_tls.rs the_agent_card_is_served_over_https_on_http1_and_http2",
+    "crates/a2a-protocol-server/tests/serve_tls.rs a_plaintext_request_gets_no_http_answer",
+    "crates/a2a-protocol-server/tests/serve_tls.rs a_stalled_handshake_is_closed_at_the_header_read_timeout",
+    "crates/a2a-protocol-server/tests/serve_tls.rs the_default_alpn_list_negotiates_h2_and_http1"
+   ],
+   "notes": "Since 2026-10-14 serve::Server terminates TLS (Server::with_tls, with_tls_pem; tls-rustls, on by default in a2a-protocol-sdk), so the agent card and every JSON-RPC and HTTP+JSON call can be served over HTTPS by the process itself; gRPC has had it since grpc-tls. The client fetches over HTTPS (rustls). Still plaintext: the quick-start serve/serve_with_addr and the WebSocket listener, which the deployment page puts behind a TLS-terminating proxy. Before: only gRPC terminated TLS.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 3343,
