@@ -966,15 +966,9 @@ async fn process_ws_message(
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListPushConfigsParams = ws_params(&p)?;
-                    h.on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(hdr))
+                    h.on_list_push_configs_page(&params, Some(hdr))
                         .await
-                        .map(|configs| {
-                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                                configs,
-                                next_page_token: None,
-                            };
-                            serde_json::to_value(&resp).unwrap_or_default()
-                        })
+                        .map(|resp| serde_json::to_value(&resp).unwrap_or_default())
                         .map_err(|e| e.to_a2a_error())
                 })
             })

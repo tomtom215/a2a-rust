@@ -371,14 +371,14 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let configs = h
+                let page = h
                     .handler
-                    .on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(&headers))
+                    .on_list_push_configs_page(&params, Some(&headers))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Pb(pb::ListTaskPushNotificationConfigsResponse {
-                    configs: configs.into_iter().map(Into::into).collect(),
-                    next_page_token: String::new(),
+                    configs: page.configs.into_iter().map(Into::into).collect(),
+                    next_page_token: page.next_page_token.unwrap_or_default(),
                 }))
             }
         },

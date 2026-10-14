@@ -32,6 +32,7 @@ mod limits;
 mod locks;
 mod messaging;
 mod push_config;
+mod push_config_page;
 mod shutdown;
 
 pub use halt::{HaltReport, HaltScope};

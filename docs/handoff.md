@@ -1392,7 +1392,19 @@ follows is a new pull request.
     is REQUIRED-repeated yet empty for a listing with no matches); the
     upstream report is a draft the maintainer files.
 
+30. `feat(types):` spec §8.4.2 MAY — `sign_card_es256_with_jku` and
+    `sign_card_ed25519_with_jku`; a non-https `jku` is refused. Ledger
+    NOT_SUPPORTED to SUPPORTED.
+
+31. `feat(server):` spec §3.1.9 MAY — `ListTaskPushNotificationConfigs`
+    pages through `RequestHandler::on_list_push_configs_page` on every
+    binding. Ledger NOT_SUPPORTED to SUPPORTED (SUPPORTED 58,
+    NOT_SUPPORTED 5).
+
 **Lessons, new this session.**
+- Two ledger entries can share a `spec_line` (§3.1.9's MUST and MAY are
+  both line 381). Select an entry by `spec_line` and `keyword`; this
+  branch first wrote the pagination change over the MUST entry.
 - In these crates an item in a private module is `pub`, not `pub(crate)`:
   `clippy::redundant_pub_crate` is denied, and this branch wrote it wrong
   three times (`rest::query`, `legacy_card`, `dispatch::well_known`). Run

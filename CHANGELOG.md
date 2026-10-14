@@ -69,6 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config is opened under its old partition and sealed again under the new
   one, and a task id the new partition already holds refuses the whole run.
   A second run moves nothing.
+- **`ListTaskPushNotificationConfigs` pages its configs** (server; spec
+  §3.1.9: "MAY support pagination for tasks with many configurations").
+  `pageSize` and `pageToken` were ignored and `nextPageToken` was always
+  absent. With either, the configs are ordered by id and a page carries a
+  `nextPageToken` while more remain; a token names the last config
+  returned, so a config created or deleted between pages neither repeats
+  nor shifts the rest. A token this server did not give is
+  `InvalidField(pageToken)`, and `pageSize: 0` is unset, as proto3 reads it.
+  Without either, every config is returned as before. Every binding pages
+  through the new `RequestHandler::on_list_push_configs_page`.
 - **`signing::sign_card_es256_with_jku`** and **`sign_card_ed25519_with_jku`**
   (types; spec §8.4.2: the protected header MAY include `jku`). The
   signers took no `jku`; these put one in the protected header, where the

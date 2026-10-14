@@ -447,14 +447,10 @@ impl JsonRpcDispatcher {
             "ListTaskPushNotificationConfigs" => {
                 let params =
                     parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req)?;
-                let configs = self
+                let resp = self
                     .handler
-                    .on_list_push_configs(&params.task_id, params.tenant.as_deref(), headers)
+                    .on_list_push_configs_page(&params, headers)
                     .await?;
-                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                    configs,
-                    next_page_token: None,
-                };
                 Ok(success_response_bytes(id, &resp))
             }
             "DeleteTaskPushNotificationConfig" => {

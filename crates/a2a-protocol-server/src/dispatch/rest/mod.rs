@@ -36,8 +36,8 @@ use crate::streaming::build_sse_response;
 
 use error_response::not_found_response;
 use query::{
-    contains_path_traversal, parse_list_tasks_query, parse_query_param, parse_query_param_u32,
-    percent_decode_path, strip_tenant_prefix,
+    contains_path_traversal, list_push_configs_params, parse_list_tasks_query, parse_query_param,
+    parse_query_param_u32, percent_decode_path, strip_tenant_prefix,
 };
 use response::{health_response, read_body_limited, set_path_field};
 
@@ -446,7 +446,7 @@ impl RestDispatcher {
                     "ListTaskPushNotificationConfigs",
                     "/tasks/{task_id}/pushNotificationConfigs",
                     headers,
-                    self.handle_list_push_configs(task_id, tenant, headers),
+                    self.handle_list_push_configs(task_id, query, tenant, headers),
                 )
                 .await
             }
@@ -737,23 +737,20 @@ impl RestDispatcher {
     async fn handle_list_push_configs(
         &self,
         task_id: &str,
+        query: &str,
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let task_id = percent_decode_path(task_id);
-        let task_id = task_id.as_str();
+        let params = match list_push_configs_params(task_id, query, tenant) {
+            Ok(params) => params,
+            Err(e) => return server_error_to_response(&e),
+        };
         match self
             .handler
-            .on_list_push_configs(task_id, tenant, Some(headers))
+            .on_list_push_configs_page(&params, Some(headers))
             .await
         {
-            Ok(configs) => {
-                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                    configs,
-                    next_page_token: None,
-                };
-                json_ok_response(&resp)
-            }
+            Ok(resp) => json_ok_response(&resp),
             Err(e) => server_error_to_response(&e),
         }
     }
