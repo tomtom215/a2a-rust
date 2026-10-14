@@ -997,6 +997,19 @@ reproduced locally before its fix.
    95.5 us a send on `2b0a3abd` against 40k at 207 us on `6ce5dc9a`, so the
    fixed budget was spent inside one window. The limit is `u64::MAX`; the
    limiter compares the count against it the same way whatever it is.
+   What made a send 2.2x faster was the runner, not the code. Both CI runs
+   used runner image 20261004.327.1 and rustc 1.99.0; across the 217
+   benchmarks the two logs share, the median new/old ratio is 0.62, and pure
+   serialization (`protocol/type_serde`, which the code changes cannot speed
+   up that far) is at 0.58, while the sleep-bound `timer_calibration` and
+   `slow_consumer` stay at 1.00. Measured on one machine (this container: 4
+   cores, Intel Xeon @ 2.10GHz, `cargo bench`, two rounds interleaved
+   old/new): serialization within ±12% with no consistent direction; a send
+   379 and 344 us at `6ce5dc9a`, 401 and 416 us at `2b0a3abd`. Round 1 ran
+   beside compiles of mine and its intervals are wide. So a 6-21% slower
+   send at the newer commit is suggested, not shown; it needs the
+   six-interleaved-runs, pinned-core method in "Environment notes" below
+   before it is called a regression. Open.
 4. `ci:` Dependabot #169, `ossf/scorecard-action` 2.5.0; tag `v2.5.0`
    peels to the pinned `fa7117db`.
 5. The incremental mutation run on `a0084513` (38531404074): shard 0
