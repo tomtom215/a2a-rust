@@ -638,7 +638,10 @@ impl InMemoryQueueWriter {
         // subscribers were sent it; an appending chunk may be empty, as the
         // processors allow), and a message's id, role and parts, an
         // artifact's id, a status's state, wherever the executor wrote them.
-        if let Err(e) = super::content::check_required_fields(&event) {
+        // Then only what the gRPC binding can carry (spec §4, R64).
+        if let Err(e) = super::content::check_required_fields(&event)
+            .and_then(|()| super::content::make_portable(&mut event))
+        {
             return Box::pin(std::future::ready(Err(e)));
         }
         if let Err(e) = self.check_event_size(&event) {

@@ -917,8 +917,7 @@ mod tests {
         use a2a_protocol_types::events::StreamResponse;
         use tokio_stream::StreamExt;
 
-        use crate::streaming::EventQueueWriter;
-        use crate::streaming::event_queue::new_in_memory_queue;
+        use crate::streaming::event_queue::StreamEvent;
 
         fn message(metadata: serde_json::Value) -> Message {
             Message {
@@ -938,24 +937,23 @@ mod tests {
             }
         }
 
-        let (writer, reader) = new_in_memory_queue();
         // `json_to_struct` rejects any metadata that is not a JSON object, so
-        // this first event cannot cross into protobuf.
-        writer
-            .write(StreamResponse::Message(message(serde_json::json!(
-                "not-an-object"
-            ))))
-            .await
-            .expect("write of the unconvertible event");
-        // A perfectly convertible event queued behind it. Reaching this one is
-        // the observable difference the mutation would make.
-        writer
-            .write(StreamResponse::Message(message(
-                serde_json::json!({"ok": true}),
-            )))
-            .await
-            .expect("write of the convertible event");
-        drop(writer);
+        // the first event cannot cross into protobuf. The queue writer refuses
+        // such an event since 2026-10-14, but a reader can still be handed one
+        // it did not check, replayed from a task stored before that; so it is
+        // sent here below the writer, straight onto the reader's channel. A
+        // perfectly convertible event follows it: reaching that one is the
+        // observable difference the mutation would make.
+        let (tx, rx) = tokio::sync::broadcast::channel(8);
+        let reader = crate::streaming::InMemoryQueueReader::new(rx);
+        for (seq, metadata) in [
+            (1, serde_json::json!("not-an-object")),
+            (2, serde_json::json!({"ok": true})),
+        ] {
+            let event = StreamEvent::at(seq, StreamResponse::Message(message(metadata)));
+            tx.send(std::sync::Arc::new(Ok(event))).expect("a receiver");
+        }
+        drop(tx);
 
         let mut stream = reader_to_native_stream(reader, 8);
 

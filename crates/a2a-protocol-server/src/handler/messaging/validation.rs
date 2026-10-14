@@ -15,6 +15,7 @@ use super::super::RequestHandler;
 use super::super::helpers::{unset_if_empty, validate_id, validate_metadata_object};
 use super::decisions::json_byte_len;
 use crate::error::{ServerError, ServerResult};
+use crate::portable::{inexact_number, standard_base64};
 
 impl RequestHandler {
     /// Validates the request in place: proto3 defaults are unset, then ids,
@@ -143,38 +144,6 @@ fn make_portable(params: &mut MessageSendParams) -> ServerResult<()> {
         }
     }
     Ok(())
-}
-
-/// `raw` decoded as the gRPC conversion decodes it, and encoded again as
-/// standard padded base64.
-fn standard_base64(raw: &str) -> Result<String, base64::DecodeError> {
-    use base64::Engine as _;
-    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
-    let bytes = STANDARD
-        .decode(raw)
-        .or_else(|_| STANDARD_NO_PAD.decode(raw))
-        .or_else(|_| URL_SAFE.decode(raw))
-        .or_else(|_| URL_SAFE_NO_PAD.decode(raw))?;
-    Ok(STANDARD.encode(bytes))
-}
-
-/// The first integer in `value` that a protobuf double cannot hold exactly:
-/// one beyond ±2^53, the bound the gRPC conversion applies. A number that
-/// is not an `i64` is a float, which is exact, or an integer above
-/// `i64::MAX`, which is not.
-fn inexact_number(value: &serde_json::Value) -> Option<&serde_json::Number> {
-    const MAX_EXACT: u64 = 1 << 53;
-    match value {
-        serde_json::Value::Number(n) => {
-            let exact = n
-                .as_i64()
-                .map_or_else(|| !n.is_u64(), |i| i.unsigned_abs() <= MAX_EXACT);
-            (!exact).then_some(n)
-        }
-        serde_json::Value::Array(items) => items.iter().find_map(inexact_number),
-        serde_json::Value::Object(fields) => fields.values().find_map(inexact_number),
-        _ => None,
-    }
 }
 
 /// Rejects a `metadata` object whose JSON encoding exceeds `max_meta` bytes.

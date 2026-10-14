@@ -153,7 +153,10 @@ a message with no `messageId`, no role or no parts; an artifact with no
 `artifactId`, or no parts unless it is an appended chunk; a status in
 `TASK_STATE_UNSPECIFIED`. That holds for a message, a status update and its
 message, an artifact update, and a task snapshot's status, artifacts and
-history. The write returns `InvalidParams` naming the field, and `?`
+history. It refuses, too, what a client's message is refused for because
+the gRPC binding cannot carry it: a `raw` part that is not base64, an
+integer beyond ±2^53 in metadata or a `data` part, a `metadata` that is not
+a JSON object. The write returns `InvalidParams` naming the field, and `?`
 returns it from `execute`, which fails the task.
 
 ## RequestContext

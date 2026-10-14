@@ -146,7 +146,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:69",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:70",
     "crates/a2a-protocol-server/src/handler/input_modes.rs:91"
    ],
    "test_evidence": [
@@ -279,7 +279,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:791"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:794"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader"
@@ -337,7 +337,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:257",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:69"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:70"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/input_modes.rs:192 an_undeclared_media_type_is_refused_as_content_type_not_supported"
@@ -395,7 +395,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:129",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:704"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:707"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs a_message_only_stream_is_exactly_one_message",
@@ -416,8 +416,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:704",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:887"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:707",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:890"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs a_message_only_stream_is_exactly_one_message",
@@ -459,8 +459,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:508",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:565",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:887",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:963",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:890",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:966",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:116",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:310"
@@ -524,7 +524,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:103",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:791"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:794"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
@@ -828,8 +828,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:116",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:77",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:232",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:887",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:963",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:890",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:966",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92"
    ],
    "test_evidence": [
@@ -1560,7 +1560,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:29",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:51",
     "crates/a2a-protocol-server/src/handler/capability.rs:106",
     "crates/a2a-protocol-server/src/dispatch/version.rs:123"
    ],
@@ -1711,11 +1711,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:25",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:26",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:257",
     "crates/a2a-protocol-server/src/handler/helpers.rs:275",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:44",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:61"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:62"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:164 reject_whitespace_only_context_id",
@@ -1739,8 +1739,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:45",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:99"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:46",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:100"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/actionable_errors.rs:63 each_refusal_names_the_parameter_and_what_is_accepted"
@@ -1759,7 +1759,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:38",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:197",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:166",
     "crates/a2a-protocol-server/src/handler/helpers.rs:70",
     "crates/a2a-protocol-server/src/dispatch/version.rs:123"
    ],
@@ -2200,7 +2200,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50",
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:67"
    ],
    "test_evidence": [
@@ -2549,7 +2549,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2595 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2598 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken"
    ],
@@ -2603,9 +2603,9 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1133",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1155",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1285",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1136",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1158",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1288",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:393",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:290",
@@ -2618,10 +2618,10 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:253 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:138 a_replay_over_the_limit_ends_with_stream_lagged",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:410 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2595 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2342 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2598 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2345 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1807 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1810 subscribe_creates_independent_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:295 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:200 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:208 a_turn_longer_than_a_poll_keeps_its_first_events",
@@ -2969,14 +2969,16 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "All protocol bindings MUST provide functionally equivalent representations of these data structures.",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:148",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:168",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:118",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:150",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:165"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:119",
+    "crates/a2a-protocol-server/src/portable.rs:13",
+    "crates/a2a-protocol-server/src/portable.rs:28",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:107",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:643"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/proto_golden_fixtures.rs:137 golden_fixtures_from_official_sdk_roundtrip",
@@ -2984,12 +2986,13 @@
     "crates/a2a-protocol-server/tests/portable_content.rs:82 a_raw_part_that_is_not_base64_is_refused",
     "crates/a2a-protocol-server/tests/portable_content.rs:92 a_raw_part_is_kept_in_standard_base64",
     "crates/a2a-protocol-server/tests/portable_content.rs:102 an_integer_protobuf_cannot_carry_exactly_is_refused_wherever_it_is",
-    "crates/a2a-protocol-server/tests/portable_content.rs:149 an_accepted_message_converts_to_protobuf"
+    "crates/a2a-protocol-server/tests/portable_content.rs:149 an_accepted_message_converts_to_protobuf",
+    "crates/a2a-protocol-server/tests/executor_event_portability.rs:139 an_executor_event_grpc_cannot_carry_is_refused"
    ],
-   "notes": "One domain model (serde JSON) with a prost conversion layer for gRPC; golden fixtures from the official Python SDK prove JSON<->proto equivalence. What a client sends is checked since 2026-10-13 (make_portable): a raw part must be base64, read as the gRPC conversion reads it and kept in standard padded form; an integer beyond ±2^53 in metadata or a data part, which the gRPC conversion refuses, is InvalidParams. Before, any such value was stored, and the task could not be read over gRPC (GetTask, ListTasks pages with it and SubscribeToTask answered INTERNAL). Remaining (why PARTIAL/low): an executor's events are not checked, so an artifact holding such a value is served over JSON and fails a gRPC read.",
+   "notes": "One domain model (serde JSON) with a prost conversion layer for gRPC; golden fixtures from the official Python SDK prove JSON<->proto equivalence. What a client sends is checked since 2026-10-13 (make_portable): a raw part must be base64, read as the gRPC conversion reads it and kept in standard padded form; an integer beyond ±2^53 in metadata or a data part, which the gRPC conversion refuses, is InvalidParams. Before, any such value was stored, and the task could not be read over gRPC (GetTask, ListTasks pages with it and SubscribeToTask answered INTERNAL). An executor's events are held to the same rules at the queue writer since 2026-10-14 (content.rs make_portable, audit register R64), in every event kind and in a task snapshot's status, artifacts and history: a raw part that is not base64, an integer beyond ±2^53, or a metadata that is not a JSON object (all a google.protobuf.Struct holds) is InvalidParams before the event is persisted or broadcast, and raw is kept in standard padded form. Before, such an artifact was served over JSON and failed a gRPC read. A task store written before the check can still hold one; the gRPC stream then ends at it (dispatch/grpc/native.rs reader_to_native_stream_stops_after_a_conversion_error).",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 873,
@@ -3297,10 +3300,10 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs:127",
     "crates/a2a-protocol-server/src/handler/helpers.rs:22",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:218",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:187",
     "crates/a2a-protocol-server/src/handler/push_config.rs:25",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:49",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:118"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:119"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:459 bind_equiv_002",
@@ -3881,7 +3884,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/task.rs:411",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts"
@@ -3899,8 +3902,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:62"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:63"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts"
@@ -3922,7 +3925,7 @@
     "crates/a2a-protocol-server/src/builder.rs build",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs valid_card",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:27"
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:30"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs validate_refuses_each_empty_required_array",
@@ -4039,7 +4042,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:215",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts"
@@ -4587,7 +4590,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:659",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:662",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:88"
    ],
    "test_evidence": [],
@@ -6457,7 +6460,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:335-376",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:791-891"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:794-894"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
@@ -8483,7 +8486,7 @@
     "crates/a2a-protocol-types/src/task.rs:318",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:238",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:375",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:56"
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:59"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:872 process_event_invalid_state_transition_returns_error",
@@ -8513,19 +8516,21 @@
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:33",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:150"
+    "crates/a2a-protocol-server/src/portable.rs:13",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:149"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:273 tck_part_requires_content_field",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:612 part_without_content_is_rejected",
     "crates/a2a-protocol-types/src/message.rs:1066 part_deserialize_rejects_multiple_content_members",
     "crates/a2a-protocol-server/tests/portable_content.rs:82 a_raw_part_that_is_not_base64_is_refused",
-    "crates/a2a-protocol-server/tests/portable_content.rs:92 a_raw_part_is_kept_in_standard_base64"
+    "crates/a2a-protocol-server/tests/portable_content.rs:92 a_raw_part_is_kept_in_standard_base64",
+    "crates/a2a-protocol-server/tests/executor_event_portability.rs:139 an_executor_event_grpc_cannot_carry_is_refused"
    ],
-   "notes": "Zero or >1 content members rejected by the hand-rolled Deserialize; gRPC absent oneof -> ConvertError -> INVALID_ARGUMENT. On the server that surfaces as JSON-RPC/WS -32602, REST 400 INVALID_ARGUMENT. Server serializes PartContent as exactly one member. No wire-level dispatcher test sends a content-less part, only type-level tests. A raw member must be base64 at JSON ingress (standard or URL-safe, padded or not) and is kept in standard padded form, as a gRPC read gives it, since 2026-10-13.",
+   "notes": "Zero or >1 content members rejected by the hand-rolled Deserialize; gRPC absent oneof -> ConvertError -> INVALID_ARGUMENT. On the server that surfaces as JSON-RPC/WS -32602, REST 400 INVALID_ARGUMENT. Server serializes PartContent as exactly one member. No wire-level dispatcher test sends a content-less part, only type-level tests. A raw member must be base64 at JSON ingress (standard or URL-safe, padded or not) and is kept in standard padded form, as a gRPC read gives it, since 2026-10-13. An executor's raw parts are held to the same rule at the queue writer since 2026-10-14 (audit register R64).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 255,
@@ -8554,7 +8559,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/message.rs:104",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:49",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50",
     "crates/a2a-protocol-server/src/handler/helpers.rs:21",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:153",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
@@ -8562,7 +8567,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1202",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:68"
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:71"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:2309 an_empty_message_id_is_refused",
@@ -8586,8 +8591,8 @@
     "crates/a2a-protocol-types/src/message.rs:76",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:66",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:155",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:28",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:68"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:29",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:71"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs an_unspecified_role_is_refused",
@@ -8608,8 +8613,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/message.rs:120",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:62",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:68"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:63",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:71"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:503 empty_message_parts_returns_invalid_params",
@@ -8656,7 +8661,7 @@
     "crates/a2a-protocol-types/src/artifact.rs:67",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:204",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:87"
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:90"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format",

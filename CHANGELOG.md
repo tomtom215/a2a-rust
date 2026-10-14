@@ -354,6 +354,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The event queue refuses an executor's event the gRPC binding cannot
+  carry** (server; spec §4: every binding MUST represent the same thing). A
+  `raw` part that is not base64, an integer beyond ±2^53 in metadata or a
+  `data` part, or a `metadata` that is not a JSON object, written by an
+  executor, was stored and served over JSON, and the task then answered
+  `INTERNAL` over gRPC. The write now returns `InvalidParams` naming the
+  field, as a client's message already did, and a `raw` that is base64 is
+  kept in standard padded form.
 - **The event queue refuses an executor's event missing a REQUIRED field**
   (server; a2a.proto). A message with no `messageId`, role or parts, an
   artifact with no `artifactId`, or a status in `TASK_STATE_UNSPECIFIED`,

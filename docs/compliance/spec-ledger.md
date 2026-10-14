@@ -28,7 +28,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §1 | 2 |  |  |  | 4 | 1 | 7 |
 | §2 |  |  | 1 |  | 1 | 1 | 3 |
 | §3 | 89 | 20 | 20 | 2 | 3 | 3 | 137 |
-| §4 | 6 | 5 | 2 |  | 1 | 1 | 15 |
+| §4 | 7 | 5 | 2 |  | 1 |  | 15 |
 | §5 | 25 | 2 | 2 |  | 3 | 3 | 35 |
 | §7 | 7 | 13 | 2 |  |  |  | 22 |
 | §8 | 29 | 5 | 5 | 2 |  | 4 | 45 |
@@ -40,7 +40,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 5 | 5 | 3 |  |  | 2 | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 80 | 11 | 6 |  | 8 | 1 | 106 |
-| **All** | **317** | **88** | **56** | **8** | **22** | **21** | **512** |
+| **All** | **318** | **88** | **56** | **8** | **22** | **20** | **512** |
 
 ## Open items, most severe first
 
@@ -53,7 +53,6 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
 | low | PARTIAL | §3.3.2 (line 544) | Well-known types from the google.rpc error model (e.g., ErrorInfo, BadRequest) SHOULD be used where applicable | ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Remaining: the handler's own validation failures (empty message.i… |
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
-| low | PARTIAL | §4 (line 768) | All protocol bindings MUST provide functionally equivalent representations of these data structures. | One domain model (serde JSON) with a prost conversion layer for gRPC; golden fixtures from the official Python SDK prove JSON<->proto equivalence. What a client sends is checked since 2026-10-13 (make_portable): a raw part must be base64, read as the gRPC con… |
 | low | PARTIAL | §5.4 (line 1194) | Custom protocol bindings MUST define equivalent error code mappings that preserve the semantic meaning of each A2A error type. | WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |

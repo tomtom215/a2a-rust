@@ -1884,9 +1884,33 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     behaviour change and is left to the maintainer. A private intra-doc
     link in the same file did not resolve under `--document-private-items`;
     it does now.
+105. `fix(server):` the event queue refuses an executor's event the gRPC
+    binding cannot carry (audit register R64; in Behaviour Changes): a
+    `raw` part that is not base64, an integer beyond ±2^53 in metadata or a
+    `data` part, a `metadata` that is not a JSON object, in every event
+    kind; `raw` that is base64 is kept in standard padded form. The register
+    left refusing or converting lossily to the maintainer; refusing is what
+    R6 does for a client's message and what R36 does at the same writer,
+    and a lossy conversion would change an agent's data without a word.
+    R6's `standard_base64` and `inexact_number` moved to `portable.rs`,
+    which both paths use; their bodies are unchanged (diffed against HEAD),
+    and they are `pub` in that private module. `tests/executor_event_portability.rs`
+    writes twelve such events; all twelve were accepted before. The gRPC
+    dispatcher's `reader_to_native_stream_stops_after_a_conversion_error`
+    made its unconvertible event through the writer, which now refuses it;
+    it sends the event onto the reader's channel instead (a store written
+    before this check can still replay one), and still kills its `||`→`&&`
+    mutant. Fifteen hand-applied mutants fail the new test: the writer
+    skipping the check, each event kind's and each field's check removed,
+    `raw` left as written, the object check off, and `exact` never
+    refusing. The writer mutant, first written as a bare `Ok(())`, did not
+    build (the check became dead code under `-D warnings`); it runs the
+    check on a copy and ignores the result instead. Ledger 768 (§4) moves
+    from PARTIAL to TESTED; 768 and 225 cite `portable.rs` for the two moved
+    functions.
 
-**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
-PARTIAL 21, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
+**Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 318,
+PARTIAL 20, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30
 proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
 
 **Lessons, new this session.**
@@ -1972,7 +1996,7 @@ proven, 0 unproven, 23 exempt of 53. Static checks: 29 of 29 locally.
    deliberately: `fetch_jwks` takes a URL the caller trusts, not one the card
    names), and §12 (line 2985; SLIMRPC's own spec maps two errors
    differently from A2A §5.4). §3.5.2 (line 692) moved to low with item 36.
-   The 21 PARTIAL left are these three and 18 low.
+   The 20 PARTIAL left are these three and 17 low.
 9. Pin freshness (`pin-freshness.yml`, every third Monday; next 2026-10-26,
    or dispatch it with `force`). Its 2026-10-05 grading run had three red
    legs: python-sdk never graded (no PyYAML; fixed on this branch), go-sdk
