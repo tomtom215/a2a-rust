@@ -8,10 +8,13 @@
 pub mod caching;
 pub mod dynamic_handler;
 pub mod hot_reload;
+mod per_caller;
 pub mod static_handler;
 
 pub use dynamic_handler::{AgentCardProducer, DynamicAgentCardHandler};
 pub use hot_reload::HotReloadAgentCardHandler;
+pub use per_caller::ExtendedCardProvider;
+pub(crate) use per_caller::for_caller;
 pub use static_handler::StaticAgentCardHandler;
 
 /// CORS `Access-Control-Allow-Origin` header value for public agent cards.

@@ -177,8 +177,8 @@ pub use a2a_protocol_types as __types;
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use agent_card::{
-    AgentCardProducer, CORS_ALLOW_ALL, DynamicAgentCardHandler, HotReloadAgentCardHandler,
-    StaticAgentCardHandler,
+    AgentCardProducer, CORS_ALLOW_ALL, DynamicAgentCardHandler, ExtendedCardProvider,
+    HotReloadAgentCardHandler, StaticAgentCardHandler,
 };
 pub use auth::{
     ApiKeyAuthInterceptor, AuthFailureThrottle, AuthFailureThrottleConfig,

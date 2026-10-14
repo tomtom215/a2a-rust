@@ -1401,6 +1401,19 @@ follows is a new pull request.
     binding. Ledger NOT_SUPPORTED to SUPPORTED (SUPPORTED 58,
     NOT_SUPPORTED 5).
 
+32. `test(server):` mutants incremental shard 0 on `cbf821ee` (#171) found
+    two survivors. The card peek's deadline guard gets a test; the gRPC
+    `.well-known` service's `poll_ready` is equivalent and carries
+    `#[mutants::skip]`. ADR 0006, ROADMAP.md and mutants.toml now count
+    six skipped mutants (they said three; five were in the source).
+
+33. `feat(server):` spec §13.3 MAY: `ExtendedCardProvider` and
+    `RequestHandlerBuilder::with_extended_card_provider` choose each
+    caller's extended card from the configured one, checked as the
+    configured one is. Ledger NOT_SUPPORTED to SUPPORTED (SUPPORTED 59,
+    NOT_SUPPORTED 4); the register's MAY row is closed for §3.1.9, §8.4.2
+    and §13.3.
+
 **Lessons, new this session.**
 - Two ledger entries can share a `spec_line` (§3.1.9's MUST and MAY are
   both line 381). Select an entry by `spec_line` and `keyword`; this

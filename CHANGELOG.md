@@ -69,6 +69,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config is opened under its old partition and sealed again under the new
   one, and a task id the new partition already holds refuses the whole run.
   A second run moves nothing.
+- **`ExtendedCardProvider`** and
+  **`RequestHandlerBuilder::with_extended_card_provider`** (server; spec
+  §13.3: "Agents MAY return different extended card content based on the
+  authenticated client's identity or authorization level"). Every
+  authenticated caller got the one configured extended card. A provider is
+  given the request's `CallContext` once the interceptor chain has
+  authenticated it, and the configured extended card, which `build()` then
+  requires; it returns the card for that caller, or an error that refuses
+  the request. Its card is checked as the configured one is (valid, push
+  notifications only with a push sender, the server's extensions added
+  when missing, refused when signed without them), and one that fails is
+  an internal error, not served.
 - **`ListTaskPushNotificationConfigs` pages its configs** (server; spec
   §3.1.9: "MAY support pagination for tasks with many configurations").
   `pageSize` and `pageToken` were ignored and `nextPageToken` was always

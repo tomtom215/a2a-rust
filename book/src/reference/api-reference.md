@@ -367,6 +367,7 @@ are rustdoc's job.
 | `PushSender` | Webhook delivery |
 | `ServerInterceptor` | Server-side middleware |
 | `AgentCardProducer` | Dynamic agent card generation |
+| `ExtendedCardProvider` | Chooses each caller's extended agent card (§13.3; `with_extended_card_provider`) |
 | `Dispatcher` | HTTP dispatch trait (for `serve()`) |
 | `Metrics` | Pluggable metrics observer (requests, latency, errors) |
 | `TenantResolver` | Extracts tenant from request context |

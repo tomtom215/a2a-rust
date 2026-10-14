@@ -86,6 +86,11 @@ pub struct RequestHandler {
     pub(crate) agent_card: Option<AgentCard>,
     /// What `GetExtendedAgentCard` serves in place of `agent_card`.
     pub(crate) extended_agent_card: Option<AgentCard>,
+    /// Chooses the extended card for each caller (spec §13.3), if set.
+    pub(crate) extended_card_provider: Option<Arc<dyn crate::agent_card::ExtendedCardProvider>>,
+    /// The extensions `build()` advertised on the cards, added again to a
+    /// card the provider chooses.
+    pub(crate) advertised_extensions: Vec<a2a_protocol_types::extensions::AgentExtension>,
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
@@ -444,6 +449,10 @@ impl std::fmt::Debug for RequestHandler {
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
             .field("extended_agent_card", &self.extended_agent_card.is_some())
+            .field(
+                "extended_card_provider",
+                &self.extended_card_provider.is_some(),
+            )
             .field("metrics", &"<dyn Metrics>")
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)

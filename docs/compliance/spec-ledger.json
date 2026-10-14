@@ -1211,10 +1211,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:85"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:86"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:202 get_extended_agent_card_without_capability_returns_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:203 get_extended_agent_card_without_capability_returns_unsupported"
    ],
    "notes": "",
    "auditor": "A",
@@ -1230,10 +1230,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:180 a_declared_card_with_no_extended_card_is_not_configured"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 a_declared_card_with_no_extended_card_is_not_configured"
    ],
    "notes": "Returned when the handler's card declares the capability and no extended card is set with with_extended_agent_card (since 2026-10-14, audit register R68). Until then the public card was served in the extended card's place, and -32007 was returned only by a handler with no card at all, which now answers UnsupportedOperationError (see 3164).",
    "auditor": "A",
@@ -1252,13 +1252,13 @@
     "crates/a2a-protocol-client/src/methods/extended_card.rs:28",
     "crates/a2a-protocol-client/src/auth.rs:186",
     "crates/a2a-protocol-client/src/auth.rs:276 api_key",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:105",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:211",
     "crates/a2a-protocol-client/src/transport/mod.rs:268 with_query"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:257 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:219 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_authenticator_is_refused",
     "crates/a2a-protocol-client/src/auth/tests.rs:238 an_api_key_goes_where_the_scheme_says",
     "crates/a2a-protocol-sdk/tests/api_key_placement_e2e.rs:94 an_api_key_reaches_the_agent_over_json_rpc",
     "crates/a2a-protocol-client/tests/api_key_query.rs:119 jsonrpc_puts_the_key_in_the_url",
@@ -1279,11 +1279,11 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:392",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:90"
+    "crates/a2a-protocol-server/src/builder.rs:394",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:354 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
    "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one. Without it a card that declares the capability answers ExtendedAgentCardNotConfiguredError (since 2026-10-14; the public card used to be served). One extended card for every authenticated caller: no per-caller variation (see 3144). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56).",
    "auditor": "A",
@@ -2052,13 +2052,13 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:261",
     "crates/a2a-protocol-server/src/handler/push_config.rs:333",
     "crates/a2a-protocol-server/src/handler/push_config.rs:404",
-    "crates/a2a-protocol-server/src/builder.rs:765"
+    "crates/a2a-protocol-server/src/builder.rs:785"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push",
-    "crates/a2a-protocol-server/src/builder.rs:1237 build_refuses_a_card_declaring_push_without_a_sender"
+    "crates/a2a-protocol-server/src/builder.rs:1275 build_refuses_a_card_declaring_push_without_a_sender"
    ],
    "notes": "All four ops refuse when the card does not declare pushNotifications, and when no push sender is wired. build() refuses a card that declares pushNotifications with no sender, so a served card never advertises operations that refuse. Until 2026-10-13 only Create checked the sender and such a card was served.",
    "auditor": "B",
@@ -2096,13 +2096,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:85",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:86",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:202 get_extended_agent_card_without_capability_returns_unsupported",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:180 a_declared_card_with_no_extended_card_is_not_configured",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:163 get_extended_agent_card_with_no_card_at_all_is_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:203 get_extended_agent_card_without_capability_returns_unsupported",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 a_declared_card_with_no_extended_card_is_not_configured",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:164 get_extended_agent_card_with_no_card_at_all_is_unsupported"
    ],
    "notes": "The handler's card decides: not declared, UnsupportedOperation; declared, the extended card if one is set, else ExtendedAgentCardNotConfigured (since 2026-10-14; the public card was served); no card at all, the extended card if one is set, else UnsupportedOperation (since 2026-10-14; it was NotConfigured).",
    "auditor": "B",
@@ -3320,7 +3320,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:128",
+    "crates/a2a-protocol-server/src/handler/mod.rs:133",
     "crates/a2a-protocol-server/src/handler/helpers.rs:22",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:211",
     "crates/a2a-protocol-server/src/handler/push_config.rs:25",
@@ -3380,7 +3380,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:103"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:718 bind_equiv_004",
@@ -3399,7 +3399,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:576",
+    "crates/a2a-protocol-server/src/builder.rs:596",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:341"
    ],
    "test_evidence": [
@@ -4120,7 +4120,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:103"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:870 bind_equiv_004_enforcement"
@@ -4288,11 +4288,11 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:392",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:90"
+    "crates/a2a-protocol-server/src/builder.rs:394",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:354 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
    "notes": "with_extended_agent_card (since 2026-10-14) sets an extended card with whatever the operator adds; before, the handler served the public card.",
    "auditor": "C",
@@ -4308,11 +4308,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:103"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:219 get_extended_agent_card_without_authenticator_is_refused",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:257 get_extended_agent_card_with_authenticator_gates_on_credentials"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials"
    ],
    "notes": "Refuses unless an authenticating interceptor is registered or operator opts out explicitly.",
    "auditor": "C",
@@ -4476,7 +4476,7 @@
     "crates/a2a-protocol-server/src/auth/mod.rs:6",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:147",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:211",
-    "crates/a2a-protocol-server/src/builder.rs:573"
+    "crates/a2a-protocol-server/src/builder.rs:593"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
@@ -4784,10 +4784,10 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:575"
+    "crates/a2a-protocol-server/src/builder.rs:595"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:1276 builder_empty_agent_card_interfaces_errors"
+    "crates/a2a-protocol-server/src/builder.rs:1314 builder_empty_agent_card_interfaces_errors"
    ],
    "notes": "Builder only rejects an empty supported_interfaces list; content is author-supplied.",
    "auditor": "D",
@@ -4802,7 +4802,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:575"
+    "crates/a2a-protocol-server/src/builder.rs:595"
    ],
    "test_evidence": [],
    "notes": "No derivation or cross-check of the card's interfaces against the dispatchers actually mounted.",
@@ -4836,7 +4836,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:575"
+    "crates/a2a-protocol-server/src/builder.rs:595"
    ],
    "test_evidence": [],
    "notes": "No uniqueness constraint on interface URLs.",
@@ -7082,7 +7082,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:41",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:63",
     "crates/a2a-protocol-server/src/handler/push_config.rs:145",
-    "crates/a2a-protocol-server/src/handler/mod.rs:274"
+    "crates/a2a-protocol-server/src/handler/mod.rs:279"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/interceptor_tests.rs:199 error_in_before_stops_chain",
@@ -7477,13 +7477,13 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:42",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:103",
-    "crates/a2a-protocol-server/src/builder.rs:526"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104",
+    "crates/a2a-protocol-server/src/builder.rs:546"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:219 get_extended_agent_card_without_authenticator_is_refused",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:257 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:380 without_a_public_card_a_configured_extended_card_is_served"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:220 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:381 without_a_public_card_a_configured_extended_card_is_served"
    ],
    "notes": "Refused unless an interceptor reporting authenticates()==true is registered, or the operator opts out with allow_unauthenticated_extended_card(). The check applies to an extended card set with with_extended_agent_card too, with or without a public card on the handler.",
    "auditor": "F",
@@ -7500,7 +7500,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:1",
-    "crates/a2a-protocol-server/src/builder.rs:513"
+    "crates/a2a-protocol-server/src/builder.rs:533"
    ],
    "test_evidence": [],
    "notes": "No cross-check between the registered auth interceptor(s) and card.security_schemes/security_requirements (grep for security_schemes in server src finds nothing outside tests); keeping them consistent is on the operator.",
@@ -7513,16 +7513,23 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY return different extended card content based on the authenticated client's identity or authorization level",
-   "status": "NOT_SUPPORTED",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:84"
+    "crates/a2a-protocol-server/src/agent_card/per_caller.rs ExtendedCardProvider",
+    "crates/a2a-protocol-server/src/agent_card/per_caller.rs for_caller",
+    "crates/a2a-protocol-server/src/builder.rs with_extended_card_provider"
    ],
-   "test_evidence": [],
-   "notes": "One extended card (with_extended_agent_card) for every authenticated caller; no per-caller card provider hook.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs each_caller_is_served_the_card_chosen_for_it",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs the_provider_can_refuse_a_caller",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs an_unauthenticated_request_is_refused_before_the_provider",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs over_rest_each_caller_gets_its_own_body_and_etag"
+   ],
+   "notes": "Since 2026-10-14 an ExtendedCardProvider (RequestHandlerBuilder::with_extended_card_provider) chooses each caller's extended card from the configured one, after the interceptor chain authenticated the request, or refuses the caller. Its card is checked as build() checks the configured one (valid, push notifications only with a push sender, the server's extensions advertised, refused when signed without them). Before: one extended card (with_extended_agent_card) for every authenticated caller.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 3145,
@@ -7553,11 +7560,11 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:392",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:90"
+    "crates/a2a-protocol-server/src/builder.rs:394",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:354 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
    "notes": "with_extended_agent_card serves a card with skills the public one lacks; the test adds one. Until 2026-10-14 the public and extended card were the same (audit register R56).",
    "auditor": "F",
@@ -7573,11 +7580,11 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:392",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:90"
+    "crates/a2a-protocol-server/src/builder.rs:394",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:429 build_checks_the_extended_card_as_it_checks_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:430 build_checks_the_extended_card_as_it_checks_the_public_one"
    ],
    "notes": "The extended card is any valid card the operator sets, capabilities included; build() advertises this server's extensions on it as on the public card. Until 2026-10-14 there was one card.",
    "auditor": "F",
@@ -7593,8 +7600,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:392",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:90"
+    "crates/a2a-protocol-server/src/builder.rs:394",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [],
    "notes": "Organization-specific content in the one extended card (with_extended_agent_card); user-specific content needs per-caller variation, which the handler does not provide (3144).",
@@ -7641,10 +7648,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:42",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:103"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:257 get_extended_agent_card_with_authenticator_gates_on_credentials"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials"
    ],
    "notes": "Interceptor chain runs before the card is produced (method-level permission check possible via ctx.method()=='GetExtendedAgentCard'). Since 2026-10-14 with_extended_agent_card serves content distinct from the public card, and it is produced only after the chain and the authentication requirement (3142).",
    "auditor": "F",
@@ -7703,12 +7710,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:85",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:97"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:86",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:98"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:202 get_extended_agent_card_without_capability_returns_unsupported",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:163 get_extended_agent_card_with_no_card_at_all_is_unsupported"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:203 get_extended_agent_card_without_capability_returns_unsupported",
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:164 get_extended_agent_card_with_no_card_at_all_is_unsupported"
    ],
    "notes": "Not declared by the handler's card: UnsupportedOperationError. No card on the handler at all and no extended card: UnsupportedOperationError too, since 2026-10-14 (the register's §13.3 row, approved); it answered ExtendedAgentCardNotConfigured, asserting a declaration the handler cannot see. A handler with no public card but an extended card serves it (the card published elsewhere declares the capability).",
    "auditor": "F",
@@ -7724,10 +7731,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:180 a_declared_card_with_no_extended_card_is_not_configured"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:181 a_declared_card_with_no_extended_card_is_not_configured"
    ],
    "notes": "Declared by the handler's card with no with_extended_agent_card: ExtendedAgentCardNotConfiguredError, since 2026-10-14 (audit register R68). Until then this entry was TESTED on the no-card path, the only one that returned -32007; a declared card with no extended card served the public card instead, which this MUST forbids. The test failed before the change.",
    "auditor": "F",
@@ -8927,7 +8934,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:574",
+    "crates/a2a-protocol-server/src/builder.rs:594",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:38"
    ],
    "test_evidence": [],
@@ -8946,7 +8953,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:615",
-    "crates/a2a-protocol-server/src/builder.rs:574",
+    "crates/a2a-protocol-server/src/builder.rs:594",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:38"
    ],
@@ -8969,7 +8976,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:615",
-    "crates/a2a-protocol-server/src/builder.rs:574",
+    "crates/a2a-protocol-server/src/builder.rs:594",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:51"
    ],
@@ -9020,7 +9027,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:615",
-    "crates/a2a-protocol-server/src/builder.rs:574",
+    "crates/a2a-protocol-server/src/builder.rs:594",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:352",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:57"
    ],
@@ -9043,7 +9050,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:227",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:321",
-    "crates/a2a-protocol-server/src/builder.rs:754",
+    "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:615"
@@ -9066,7 +9073,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:248",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:324",
-    "crates/a2a-protocol-server/src/builder.rs:754",
+    "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:615"
@@ -9090,7 +9097,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:574",
+    "crates/a2a-protocol-server/src/builder.rs:594",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:259",
     "crates/a2a-protocol-client/src/builder/selection.rs:79"
    ],
@@ -9113,7 +9120,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:251",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:327",
-    "crates/a2a-protocol-server/src/builder.rs:754",
+    "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:615"
@@ -9158,7 +9165,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:268",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:360",
-    "crates/a2a-protocol-server/src/builder.rs:754",
+    "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
@@ -9180,7 +9187,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:275",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:363",
-    "crates/a2a-protocol-server/src/builder.rs:754",
+    "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
@@ -9202,7 +9209,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs:282",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:366",
-    "crates/a2a-protocol-server/src/builder.rs:754",
+    "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
    ],
@@ -9537,14 +9544,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:120 a_card_that_does_not_validate_is_refused"
@@ -9582,14 +9589,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
@@ -9645,14 +9652,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
@@ -9673,14 +9680,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
@@ -9701,14 +9708,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
@@ -9781,14 +9788,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
@@ -9939,14 +9946,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
@@ -9967,14 +9974,14 @@
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:421",
-    "crates/a2a-protocol-server/src/builder.rs:755",
+    "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1309 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1347 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:563 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
    ],
