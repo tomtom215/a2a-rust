@@ -92,8 +92,11 @@ pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
 ///     .with_timeout(Duration::from_secs(5));
 /// assert_eq!(options.timeout(), Duration::from_secs(5));
 /// assert_eq!(options.headers().len(), 1);
+/// assert!(!format!("{options:?}").contains("s3cret"));
 /// ```
-#[derive(Debug, Clone)]
+///
+/// Its `Debug` prints header names, never values.
+#[derive(Clone)]
 pub struct CardFetchOptions {
     headers: HashMap<String, String>,
     timeout: Duration,
@@ -101,6 +104,17 @@ pub struct CardFetchOptions {
     /// [`with_signature_keys`](Self::with_signature_keys).
     #[cfg(feature = "signing")]
     signature_keys: Option<a2a_protocol_types::signing::Jwks>,
+}
+
+impl std::fmt::Debug for CardFetchOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut f = f.debug_struct("CardFetchOptions");
+        f.field("header_names", &crate::redact::names(self.headers.keys()))
+            .field("timeout", &self.timeout);
+        #[cfg(feature = "signing")]
+        f.field("signature_keys", &self.signature_keys);
+        f.finish()
+    }
 }
 
 impl Default for CardFetchOptions {

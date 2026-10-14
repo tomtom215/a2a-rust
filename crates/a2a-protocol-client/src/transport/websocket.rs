@@ -194,7 +194,9 @@ struct WriteCommand {
 /// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
 /// which cover every field; a struct literal is not available outside this
 /// crate, so a field added later does not break callers.
-#[derive(Debug, Clone)]
+///
+/// Its `Debug` prints the names of `extra_headers`, never their values.
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct WebSocketTransportConfig {
     /// Timeout for unary responses and for the first frame of a stream.
@@ -274,6 +276,24 @@ struct WsTls(Arc<rustls::ClientConfig>);
 impl std::panic::UnwindSafe for WsTls {}
 #[cfg(feature = "tls-rustls")]
 impl std::panic::RefUnwindSafe for WsTls {}
+
+impl std::fmt::Debug for WebSocketTransportConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut f = f.debug_struct("WebSocketTransportConfig");
+        f.field("request_timeout", &self.request_timeout)
+            .field(
+                "extra_header_names",
+                &crate::redact::names(self.extra_headers.keys()),
+            )
+            .field("extensions", &self.extensions)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("max_message_size", &self.max_message_size)
+            .field("max_pending_requests", &self.max_pending_requests);
+        #[cfg(feature = "tls-rustls")]
+        f.field("tls", &self.tls);
+        f.finish()
+    }
+}
 
 impl Default for WebSocketTransportConfig {
     fn default() -> Self {

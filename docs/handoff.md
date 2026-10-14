@@ -1544,10 +1544,10 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     request, and the plain functions do not cache) and 273 cite the code
     by its current lines; six proto `REQUIRED` entries (431, 432, 434,
     468, 472, 481) cited a `.headers()` call and now cite the card parse,
-    as 435 to 439 do. Not done, and raised instead: the resolver takes
-    no `CardFetchOptions`, because `CardFetchOptions` derives `Debug` and
-    prints its headers, an `Authorization` among them, and a resolver
-    holding one would print it too.
+    as 435 to 439 do. Not done: the resolver takes no
+    `CardFetchOptions`. It was held back because `CardFetchOptions` then
+    printed its headers, an `Authorization` among them, through `Debug`;
+    item 99 removes that reason, and the resolver still takes none.
 78. `fix(types):` §5.7 — the `oneof` wrappers skip unknown fields (audit
     register R46). `SendMessageResponse`, `StreamResponse` and
     `OAuthFlows` derived serde's externally tagged encoding, which fails on
@@ -1789,6 +1789,22 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     `HttpPushSender`'s own lines have since audit O16.
     `a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` saw the
     secret in the failure line before the fix. Ledger 3138. Mutants 2 of 2.
+99. `fix(client):` the client's `Debug` output names headers and JSON
+    keys, never values (audit register R17, adopter audit O17; in
+    Security). `ClientRequest`, `ClientResponse`, `CardFetchOptions` and
+    `WebSocketTransportConfig` derived it. A scan of every crate for a
+    derived `Debug` over a field named for a header, token, secret or
+    credential found no other: the hits elsewhere hold header names,
+    cancellation tokens, page tokens and token URLs. `redact::names`
+    sorts, so a debug-print is the same line every time.
+    `tests/debug_redaction.rs` pins each type's exact output under every
+    feature set that changes it; all five tests failed before.
+    `interceptor.rs` passed 500 lines, so its tests moved to
+    `interceptor/tests.rs` (checked byte for byte). Ledger 3194, which binds
+    both sides and cited only server evidence. Mutants 18 of 18; the one
+    that drops the sort is caught through `HashMap` iteration order, so
+    only by chance, though six names come out sorted by accident about
+    once in 720 maps.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

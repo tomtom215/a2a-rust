@@ -1301,6 +1301,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The client's debug output names headers and JSON keys, never their
+  values** (client). `ClientRequest`, `ClientResponse`, `CardFetchOptions` and
+  `WebSocketTransportConfig` derived `Debug`, so `{req:?}` in an interceptor
+  printed the `Authorization` an auth interceptor had added, a
+  `CardFetchOptions` printed the bearer token its own example sets, and a
+  push-config call's request or response printed the webhook's `token` and
+  `credentials`. They print header names, sorted, and the top-level keys of
+  `params` and `result` now, as the server's `CallContext` does; read a value
+  from its field when you want one. The fields' names in that output changed
+  with it: `extra_header_names`, `header_names`, `param_keys`, `result_keys`.
 - **A failed push delivery is logged with the webhook's origin, not its
   URL** (server). The background delivery's failure and timeout warnings
   logged the whole webhook URL, so a secret in its path or query
