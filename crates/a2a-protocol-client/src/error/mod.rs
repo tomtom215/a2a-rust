@@ -114,6 +114,11 @@ pub enum ClientError {
     /// vice-versa).  Check the agent card's `supported_interfaces` to select
     /// the correct protocol binding.
     ProtocolBindingMismatch(String),
+
+    /// An agent's security scheme this client cannot send a credential with:
+    /// an `APIKeySecurityScheme` that places the key in the query string, or
+    /// names a header or cookie no request can carry.
+    InvalidAuthScheme(String),
 }
 
 impl fmt::Display for ClientError {
@@ -151,6 +156,9 @@ impl fmt::Display for ClientError {
                     f,
                     "protocol binding mismatch: {msg}; check the agent card's supported_interfaces"
                 )
+            }
+            Self::InvalidAuthScheme(msg) => {
+                write!(f, "cannot authenticate with this security scheme: {msg}")
             }
         }
     }

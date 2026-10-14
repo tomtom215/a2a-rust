@@ -1239,17 +1239,21 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:28",
-    "crates/a2a-protocol-client/src/auth.rs:182",
+    "crates/a2a-protocol-client/src/auth.rs:186",
+    "crates/a2a-protocol-client/src/auth.rs:266 api_key",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:83",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:211"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:208 get_extended_agent_card_with_authenticator_gates_on_credentials",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:172 get_extended_agent_card_without_authenticator_is_refused"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:172 get_extended_agent_card_without_authenticator_is_refused",
+    "crates/a2a-protocol-client/src/auth/tests.rs:238 an_api_key_goes_where_the_scheme_says",
+    "crates/a2a-protocol-sdk/tests/api_key_placement_e2e.rs:94 an_api_key_reaches_the_agent_over_json_rpc"
    ],
-   "notes": "Client: get_extended_agent_card does not check that credentials matching the card's schemes are attached; the caller must register AuthInterceptor. Server side refuses the call unless an authenticating interceptor exists (or allow_unauthenticated_extended_card opt-out).",
+   "notes": "Client: get_extended_agent_card does not check that credentials matching the card's schemes are attached; the caller must register an interceptor for one of them. For an APIKeySecurityScheme, AuthInterceptor::api_key sends the key in the header or cookie the scheme names, over JSON-RPC, HTTP+JSON and gRPC (e2e against ApiKeyAuthInterceptor); until 2026-10-14 the only API-key path wrote Authorization, which such an agent refuses. A key placed in the query string is refused with ClientError::InvalidAuthScheme: no transport can add a query parameter (open, maintainer decision). Server side refuses the call unless an authenticating interceptor exists (or allow_unauthenticated_extended_card opt-out).",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
   },
   {
    "spec_line": 424,

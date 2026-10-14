@@ -177,7 +177,8 @@ impl ClientError {
             | Self::InvalidEndpoint(_)
             | Self::AuthRequired { .. }
             | Self::CapabilityNotDeclared { .. }
-            | Self::ProtocolBindingMismatch(_) => false,
+            | Self::ProtocolBindingMismatch(_)
+            | Self::InvalidAuthScheme(_) => false,
         }
     }
 }

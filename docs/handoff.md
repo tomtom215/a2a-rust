@@ -1743,6 +1743,16 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     and the replayed events before the fix. Ledger 3030; 35 citations into
     `websocket.rs` follow the shifted lines (every bare one checked against
     the old source). Mutants 2 of 2.
+94. `feat(client):` `AuthInterceptor::api_key` (audit register R35; in
+    Added). It sends an `APIKeySecurityScheme`'s key in the header or cookie
+    the scheme names; `with_scheme("api-key")` writes `Authorization`.
+    `api_key_placement_e2e.rs` runs both against `ApiKeyAuthInterceptor`
+    over JSON-RPC, HTTP+JSON and gRPC: the old placement gets `401`, the new
+    one reaches the handler. A query-string key is refused with the new
+    `ClientError::InvalidAuthScheme`: no transport can add a query
+    parameter, which needs a `Transport` change and is put to the
+    maintainer. `auth.rs` passed 500 lines, so its tests moved to
+    `auth/tests.rs` (checked byte for byte). Ledger 423. Mutants 9 of 9.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 12, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

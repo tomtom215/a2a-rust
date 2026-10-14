@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AuthInterceptor::api_key`** (client; spec §4.5.2, §3.1.11). An
+  agent whose card declares an `APIKeySecurityScheme` reads its key from the
+  header or cookie the scheme names; the client could only write the key
+  into `Authorization`, which such an agent refuses. `api_key` sends it
+  where the scheme says, over JSON-RPC, HTTP+JSON and gRPC. A scheme that
+  places the key in the query string, or names a header no request can
+  carry, is refused when the interceptor is made, with the new
+  `ClientError::InvalidAuthScheme`.
 - **`ClientBuilder::with_extensions`** and
   **`WebSocketTransportConfig::with_extensions`** (client; spec §3.2.6: the
   `A2A-Extensions` service parameter lists the extension URIs "the client

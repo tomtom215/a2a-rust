@@ -102,6 +102,41 @@ let client = ClientBuilder::new(url)
 
 Your own hooks implement `CallInterceptor` and are added the same way.
 
+### API keys
+
+An agent whose card declares an `APIKeySecurityScheme` (spec §4.5.2) reads
+its key from the header or cookie the scheme names, so
+`AuthInterceptor::api_key` sends it there; `AuthInterceptor::with_scheme(..,
+"api-key")` writes `Authorization`, which such an agent never reads:
+
+```rust
+# use a2a_protocol_sdk::client::ClientBuilder;
+# let url = "http://agent.example.com";
+use std::sync::Arc;
+use a2a_protocol_client::auth::{
+    AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, SessionId,
+};
+use a2a_protocol_types::security::{ApiKeyLocation, ApiKeySecurityScheme};
+
+// As the agent's card declares it in `securitySchemes`.
+let scheme = ApiKeySecurityScheme {
+    location: ApiKeyLocation::Header,
+    name: "X-API-Key".into(),
+    description: None,
+};
+let store = Arc::new(InMemoryCredentialsStore::new());
+let session = SessionId::new("me");
+store.set(session.clone(), "api-key", "my-key".into());
+let client = ClientBuilder::new(url)
+    .with_interceptor(AuthInterceptor::api_key(store, session, "api-key", &scheme).unwrap())
+    .build()
+    .unwrap();
+```
+
+A scheme that places the key in the query string is refused with
+`ClientError::InvalidAuthScheme`: no transport here can add a query parameter
+to a call yet.
+
 ### Extensions
 
 Ask the agent to use extensions (spec §3.2.6, `A2A-Extensions`):
