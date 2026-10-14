@@ -39,9 +39,9 @@ reason = "unsafe-libyaml 0.2.11 is unmaintained (informational, not a vulnerabil
 # lists 0.23.43 as unaffected and is not waived. They are waived here by their
 # GHSA ids, which is how osv-scanner matches them. cargo-deny matches only
 # RUSTSEC ids (checked with cargo-deny 0.20.2: an ignore naming
-# RUSTSEC-2026-0285's GHSA alias did not suppress it), and the database still
-# lists these under the placeholder RUSTSEC-0000-0000, so deny.toml gets its
-# entries once the ids are assigned.
+# RUSTSEC-2026-0285's GHSA alias did not suppress it). RustSec assigned their
+# ids later the same day (RUSTSEC-2026-0346, -0348, -0349), and deny.toml
+# waives them by those.
 [[IgnoredVulns]]
 id = "GHSA-w44r-93j7-qv28"
 ignoreUntil = 2027-01-08

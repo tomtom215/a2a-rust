@@ -1038,7 +1038,8 @@ reproduced locally before its fix.
    checked by ignoring RUSTSEC-2026-0285 by its GHSA alias: it was still
    reported), and the database lists the four under the placeholder
    RUSTSEC-0000-0000. **When RustSec assigns their ids, the binding's
-   `cargo-deny` step fails until `deny.toml` waives the three.** Checked:
+   `cargo-deny` step fails until `deny.toml` waives the three.** (They were
+   assigned that afternoon and did; item 22.) Checked:
    neither the binding nor the crates implement a `ClientSessionStore`, and
    the binding's lock gives rustls no brotli dependency.
 7. `ci:` `check_advisory_floors.py` retries a transient fetch. The static
@@ -1315,6 +1316,14 @@ follow the text. The register's status column tracks what is done.
     maintainer: R67's approved option breaks `ClientRequest`, which needs a
     0.15 release; R12's read-through needs a design decision across six
     stores.
+
+22. `fix(slimrpc):` RustSec assigned the three rustls advisories that reach
+    the binding's rustls 0.23.43 their ids (RUSTSEC-2026-0346, -0348,
+    -0349), and the binding's cargo-deny step failed on `5cd159c3` as item 6
+    said it would. `deny.toml` waives them by those ids, with the same
+    reachability notes as `osv-scanner.toml`'s GHSA waivers; SECURITY.md
+    names both. `cargo deny check advisories` in the binding (cargo-deny
+    0.20.2) reported the three and FAILED before, and `advisories ok` after.
 
 **Lessons, new this session.**
 - A failing test's name is not its address. `every_handler_method_reports_its_outcome`

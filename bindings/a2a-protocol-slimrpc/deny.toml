@@ -175,9 +175,23 @@ yanked  = "deny"
 # The release condition is met; what remains is the binding's move from
 # agntcy-slim-rpc 2.3.0 to 3.x, a major version. osv-scanner.toml beside
 # this file carries the matching waiver.
+#
+# RUSTSEC-2026-0346, -0348 and -0349 (rustls < 0.23.46), added 2026-10-14,
+# the day RustSec assigned them their ids (they were listed as
+# RUSTSEC-0000-0000 that morning, which cargo-deny cannot match, so this
+# check failed on PR #170 the moment they were). They reach the locked
+# rustls 0.23.43, and 0.23.46 is out of reach for the same aws-lc-rs reason
+# as RUSTSEC-2026-0285 above. osv-scanner.toml waives them by their GHSA ids
+# (0346 = GHSA-c8m5-c952-6cm4, 0348 = GHSA-h2v8-394m-p7vv, 0349 =
+# GHSA-w44r-93j7-qv28), with the reachability of each. The fourth rustls
+# advisory of that day lists 0.23.43 as unaffected and is not waived.
+# Remove them with RUSTSEC-2026-0285, when rustls 0.23.46 resolves here.
 ignore  = [
     { id = "RUSTSEC-2026-0285", reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; slim-auth 0.15.4 -> mls-rs-crypto-awslc 0.23.0 pins aws-lc-rs =1.16.2. No upstream release resolves this yet (checked 2026-09-16). See the note above." },
     { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml (unmaintained) via serde_yaml, required by every agntcy-slim-config release through 0.17.2. No upstream release resolves this yet (checked 2026-10-12). See the note above." },
+    { id = "RUSTSEC-2026-0346", reason = "rustls < 0.23.46: Debug of TLS client session values prints secrets; needs a custom ClientSessionStore that logs with Debug, which this binding does not have. 0.23.46 is out of reach (aws-lc-rs, as RUSTSEC-2026-0285). See the note above." },
+    { id = "RUSTSEC-2026-0348", reason = "rustls < 0.23.46: Brotli certificate decompression can allocate 1 GiB; only with rustls's non-default brotli feature, which this lock does not enable. 0.23.46 is out of reach (aws-lc-rs, as RUSTSEC-2026-0285). See the note above." },
+    { id = "RUSTSEC-2026-0349", reason = "rustls < 0.23.46: an unauthenticated ServerHello can downgrade later connections to classical key exchange. 0.23.46 is out of reach (aws-lc-rs, as RUSTSEC-2026-0285); the binding is unpublished. See the note above." },
 ]
 
 # ---------------------------------------------------------------------------
