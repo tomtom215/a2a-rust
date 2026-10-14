@@ -289,9 +289,11 @@ async fn an_api_key_goes_where_the_scheme_says() {
     ] {
         let made =
             AuthInterceptor::api_key(Arc::clone(&store), session.clone(), "api-key", &refused);
+        // The message leaves `made` out: an interceptor's Debug prints no
+        // key, but CodeQL counts anything `api_key` returns as one.
         assert!(
             matches!(made, Err(ClientError::InvalidAuthScheme(_))),
-            "{refused:?}: {made:?}"
+            "{refused:?} must be refused with InvalidAuthScheme"
         );
     }
 }
