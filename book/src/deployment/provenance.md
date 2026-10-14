@@ -72,6 +72,10 @@ canonicalized with protobuf field presence first (§8.4.1): a field holding
 its default value is left out unless it is `REQUIRED` or `optional`. The
 older `sign_agent_card` and `sign_agent_card_ed25519` take the key id as an
 `Option` and are deprecated, since leaving it out breaks §8.4.2.
+`sign_card_es256_with_jku` and `sign_card_ed25519_with_jku` add the `jku`
+(the JWK Set URL, which must be `https://`) that §8.4.2 allows. A verifier
+still chooses which key sets to trust; this SDK's verification never
+follows a card's `jku`.
 
 ## Marking and signing content
 

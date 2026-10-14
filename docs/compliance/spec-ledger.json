@@ -4238,7 +4238,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:527"
+    "crates/a2a-protocol-types/src/signing.rs:579"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:78 canonicalize_sorts_object_keys_lexicographically"
@@ -4931,8 +4931,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:322",
-    "crates/a2a-protocol-types/src/signing.rs:370"
+    "crates/a2a-protocol-types/src/signing.rs:333",
+    "crates/a2a-protocol-types/src/signing.rs:383"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:316 sign_and_verify_roundtrip"
@@ -4952,7 +4952,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:50",
     "crates/a2a-protocol-types/src/signing.rs:74",
-    "crates/a2a-protocol-types/src/signing.rs:327"
+    "crates/a2a-protocol-types/src/signing.rs:338"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:85 rfc8785_appendix_b_from_json_text",
@@ -5111,7 +5111,7 @@
     "crates/a2a-protocol-types/src/signing.rs:99"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:874 sign_and_verify_card_in_wire_shape"
+    "crates/a2a-protocol-types/src/signing.rs:926 sign_and_verify_card_in_wire_shape"
    ],
    "notes": "",
    "auditor": "D",
@@ -5126,8 +5126,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:330",
-    "crates/a2a-protocol-types/src/signing.rs:377"
+    "crates/a2a-protocol-types/src/signing.rs:342",
+    "crates/a2a-protocol-types/src/signing.rs:390"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs the_deprecated_signer_omits_kid_when_given_none"
@@ -5145,9 +5145,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:322",
-    "crates/a2a-protocol-types/src/signing.rs:331",
-    "crates/a2a-protocol-types/src/signing.rs:378"
+    "crates/a2a-protocol-types/src/signing.rs:333",
+    "crates/a2a-protocol-types/src/signing.rs:343",
+    "crates/a2a-protocol-types/src/signing.rs:391"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs protected_header_carries_alg_typ_and_kid"
@@ -5166,8 +5166,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:330",
-    "crates/a2a-protocol-types/src/signing.rs:377"
+    "crates/a2a-protocol-types/src/signing.rs:342",
+    "crates/a2a-protocol-types/src/signing.rs:390"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs protected_header_carries_alg_typ_and_kid"
@@ -5183,18 +5183,22 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "The protected header **MAY** include: `jku`",
-   "status": "NOT_SUPPORTED",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:322",
-    "crates/a2a-protocol-types/src/signing.rs:433"
+    "crates/a2a-protocol-types/src/signing.rs sign_card_es256_with_jku",
+    "crates/a2a-protocol-types/src/signing.rs sign_card_ed25519_with_jku",
+    "crates/a2a-protocol-types/src/signing.rs protected_header"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:1063 signature_header_reads_jku_from_a_foreign_signer"
+    "crates/a2a-protocol-types/src/signing.rs:1115 signature_header_reads_jku_from_a_foreign_signer",
+    "crates/a2a-protocol-types/tests/signing_jku.rs the_jku_is_in_the_signed_header_and_the_card_still_verifies",
+    "crates/a2a-protocol-types/tests/signing_jku.rs a_jku_that_is_not_https_is_refused"
    ],
-   "notes": "Signers take no jku parameter; signature_header reads jku from foreign signatures.",
+   "notes": "Since 2026-10-14 sign_card_es256_with_jku and sign_card_ed25519_with_jku put jku in the protected header, covered by the signature, and refuse one that is not https:// (RFC 7515 §4.1.2); signature_header reads jku from any signer. This SDK's verification never follows jku (§8.4.3 line 2122). Before: signers took no jku parameter.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
   },
   {
    "spec_line": 2121,
@@ -5205,8 +5209,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:658 verify_card_with_jwks",
-    "crates/a2a-protocol-types/src/signing.rs:679 verify_card_json_with_jwks"
+    "crates/a2a-protocol-types/src/signing.rs:710 verify_card_with_jwks",
+    "crates/a2a-protocol-types/src/signing.rs:731 verify_card_json_with_jwks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:204 a_card_verifies_when_any_of_its_signatures_does"
@@ -5225,7 +5229,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:433",
+    "crates/a2a-protocol-types/src/signing.rs:485",
     "crates/a2a-protocol-types/src/signing/keys.rs:231",
     "crates/a2a-protocol-client/src/jwks.rs:58"
    ],
@@ -5248,7 +5252,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json",
-    "crates/a2a-protocol-types/src/signing.rs:679 verify_card_json_with_jwks",
+    "crates/a2a-protocol-types/src/signing.rs:731 verify_card_json_with_jwks",
     "crates/a2a-protocol-client/src/discovery.rs:629 verify_card_signatures"
    ],
    "test_evidence": [
@@ -5272,7 +5276,7 @@
     "crates/a2a-protocol-types/src/signing.rs:99"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:874 sign_and_verify_card_in_wire_shape"
+    "crates/a2a-protocol-types/src/signing.rs:926 sign_and_verify_card_in_wire_shape"
    ],
    "notes": "",
    "auditor": "D",
@@ -5287,7 +5291,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:606"
+    "crates/a2a-protocol-types/src/signing.rs:658"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:85 rfc8785_appendix_b_from_json_text"
@@ -5305,13 +5309,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:705",
-    "crates/a2a-protocol-types/src/signing.rs:504"
+    "crates/a2a-protocol-types/src/signing.rs:757",
+    "crates/a2a-protocol-types/src/signing.rs:556"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:405 verify_rejects_tampered_card",
     "crates/a2a-protocol-types/tests/signing_tests.rs:438 verify_rejects_wrong_public_key",
-    "crates/a2a-protocol-types/src/signing.rs:989 a_signature_with_crit_is_refused"
+    "crates/a2a-protocol-types/src/signing.rs:1041 a_signature_with_crit_is_refused"
    ],
    "notes": " The signature is JWS (RFC 7515), whose §4.1.11 makes a JWS naming in crit an extension the recipient does not understand invalid. This verifier understands none, so since 2026-10-13 any crit, in the protected header or the unprotected one (where it may not appear), is refused; it was ignored, and a signature with crit [\"exp\"] verified forever.",
    "auditor": "D",
@@ -5329,7 +5333,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:629 verify_card_signatures",
     "crates/a2a-protocol-client/src/builder/mod.rs:150",
-    "crates/a2a-protocol-types/src/signing.rs:679 verify_card_json_with_jwks"
+    "crates/a2a-protocol-types/src/signing.rs:731 verify_card_json_with_jwks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/card_signature_verification.rs:75 a_signed_card_is_verified_when_keys_are_supplied",
@@ -5368,7 +5372,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:552"
+    "crates/a2a-protocol-types/src/signing.rs:604"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:128 a_jwks_verifies_by_kid_and_alg"
@@ -5386,7 +5390,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:466"
+    "crates/a2a-protocol-types/src/signing.rs:518"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:155 removing_a_key_from_the_set_revokes_it"
@@ -5404,7 +5408,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:584"
+    "crates/a2a-protocol-types/src/signing.rs:636"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:204 a_card_verifies_when_any_of_its_signatures_does"

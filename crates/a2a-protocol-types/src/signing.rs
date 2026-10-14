@@ -312,10 +312,21 @@ fn write_canonical_string(s: &str, buf: &mut Vec<u8>) {
 /// The JWS protected header for a card signature (§8.4.2): `alg` and `kid`
 /// MUST be present and `typ` SHOULD be `"JOSE"`. `kid` is optional here only
 /// for the deprecated entry points that always allowed omitting it.
-fn protected_header(alg: &str, key_id: Option<&str>) -> A2aResult<String> {
+fn protected_header(alg: &str, key_id: Option<&str>, jku: Option<&str>) -> A2aResult<String> {
     let mut header = serde_json::json!({ "alg": alg, "typ": "JOSE" });
     if let Some(kid) = key_id {
         header["kid"] = serde_json::Value::String(kid.to_owned());
+    }
+    if let Some(jku) = jku {
+        // RFC 7515 §4.1.2: the key set "MUST" be fetched over a connection
+        // that provides integrity protection, and "the identity of the
+        // server MUST be validated": TLS.
+        if !jku.starts_with("https://") || jku.len() == "https://".len() {
+            return Err(A2aError::invalid_params(format!(
+                "jku must be an https:// URL (RFC 7515 §4.1.2): {jku:?}"
+            )));
+        }
+        header["jku"] = serde_json::Value::String(jku.to_owned());
     }
     let header_json = serde_json::to_vec(&header)
         .map_err(|e| A2aError::internal(format!("header serialization: {e}")))?;
@@ -326,9 +337,10 @@ fn sign_es256(
     card: &AgentCard,
     pkcs8_key: &[u8],
     key_id: Option<&str>,
+    jku: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
     let canonical = canonicalize_card(card)?;
-    let protected = protected_header("ES256", key_id)?;
+    let protected = protected_header("ES256", key_id, jku)?;
 
     // JWS input: BASE64URL(header) || '.' || BASE64URL(payload)
     let payload_b64 = URL_SAFE_NO_PAD.encode(&canonical);
@@ -355,10 +367,11 @@ fn sign_ed25519(
     card: &AgentCard,
     pkcs8_key: &[u8],
     key_id: Option<&str>,
+    jku: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
     let key_pair = signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8_key)
         .map_err(|e| A2aError::internal(format!("invalid Ed25519 key: {e}")))?;
-    let protected = protected_header("EdDSA", key_id)?;
+    let protected = protected_header("EdDSA", key_id, jku)?;
     let signing_input = format!(
         "{protected}.{}",
         URL_SAFE_NO_PAD.encode(canonicalize_card(card)?)
@@ -390,7 +403,7 @@ pub fn sign_card_es256(
     pkcs8_key: &[u8],
     key_id: &str,
 ) -> A2aResult<AgentCardSignature> {
-    sign_es256(card, pkcs8_key, Some(key_id))
+    sign_es256(card, pkcs8_key, Some(key_id), None)
 }
 
 /// Signs an [`AgentCard`] with Ed25519 (JWS `EdDSA`, RFC 8037), as
@@ -408,7 +421,46 @@ pub fn sign_card_ed25519(
     pkcs8_key: &[u8],
     key_id: &str,
 ) -> A2aResult<AgentCardSignature> {
-    sign_ed25519(card, pkcs8_key, Some(key_id))
+    sign_ed25519(card, pkcs8_key, Some(key_id), None)
+}
+
+/// [`sign_card_es256`], with the JWK Set URL a verifier can fetch the key
+/// from in the protected header (spec §8.4.2: the protected header MAY
+/// include `jku`).
+///
+/// `jku` must be an `https://` URL (RFC 7515 §4.1.2 requires TLS for it).
+/// It is signed with the card, so it cannot be changed without breaking the
+/// signature, but it is the signer's claim: a verifier should still fetch
+/// keys only from a URL it trusts, which is why this SDK's own verification
+/// takes the keys from the caller and never follows `jku`.
+///
+/// # Errors
+///
+/// [`A2aError::invalid_params`] for a `jku` that is not `https://`; then
+/// those of [`sign_card_es256`].
+pub fn sign_card_es256_with_jku(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: &str,
+    jku: &str,
+) -> A2aResult<AgentCardSignature> {
+    sign_es256(card, pkcs8_key, Some(key_id), Some(jku))
+}
+
+/// [`sign_card_ed25519`], with `jku` in the protected header, as
+/// [`sign_card_es256_with_jku`].
+///
+/// # Errors
+///
+/// [`A2aError::invalid_params`] for a `jku` that is not `https://`; then
+/// those of [`sign_card_ed25519`].
+pub fn sign_card_ed25519_with_jku(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: &str,
+    jku: &str,
+) -> A2aResult<AgentCardSignature> {
+    sign_ed25519(card, pkcs8_key, Some(key_id), Some(jku))
 }
 
 /// Signs an [`AgentCard`] with ES256; `key_id` may be omitted.
@@ -429,7 +481,7 @@ pub fn sign_agent_card(
     pkcs8_key: &[u8],
     key_id: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
-    sign_es256(card, pkcs8_key, key_id)
+    sign_es256(card, pkcs8_key, key_id, None)
 }
 
 /// Signs an [`AgentCard`] with Ed25519; `key_id` may be omitted.
@@ -450,7 +502,7 @@ pub fn sign_agent_card_ed25519(
     pkcs8_key: &[u8],
     key_id: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
-    sign_ed25519(card, pkcs8_key, key_id)
+    sign_ed25519(card, pkcs8_key, key_id, None)
 }
 
 // ── JWS protected header ────────────────────────────────────────────────────
@@ -1040,8 +1092,8 @@ mod tests {
         let header = signature_header(&sig).unwrap();
         assert_eq!(header.alg, "ES256");
         assert_eq!(header.kid.as_deref(), Some("my-key-id"));
-        // This SDK's signer does not emit `jku`; a card verified via `jku`
-        // must have been signed by something that does.
+        // No `jku` unless the signer is given one
+        // (`sign_card_es256_with_jku`).
         assert_eq!(header.jku, None);
     }
 
@@ -1061,9 +1113,8 @@ mod tests {
 
     #[test]
     fn signature_header_reads_jku_from_a_foreign_signer() {
-        // The spec's own §8.4.2 example header. Constructed by hand rather
-        // than via sign_agent_card, because this SDK does not emit `jku` —
-        // the point is that a *verifier* can read one written by anything.
+        // The spec's own §8.4.2 example header, constructed by hand: a
+        // *verifier* can read a `jku` written by any signer.
         let header = serde_json::json!({
             "alg": "ES256",
             "typ": "JOSE",

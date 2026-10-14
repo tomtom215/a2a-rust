@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config is opened under its old partition and sealed again under the new
   one, and a task id the new partition already holds refuses the whole run.
   A second run moves nothing.
+- **`signing::sign_card_es256_with_jku`** and **`sign_card_ed25519_with_jku`**
+  (types; spec §8.4.2: the protected header MAY include `jku`). The
+  signers took no `jku`; these put one in the protected header, where the
+  signature covers it, and refuse one that is not `https://` (RFC 7515
+  §4.1.2).
 - **`CachingCardResolver::with_options`** and
   **`ClientBuilder::from_signed_card`** (client; spec §14: clients SHOULD
   verify signatures when present). The caching resolver fetched with
