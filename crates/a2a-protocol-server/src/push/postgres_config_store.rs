@@ -44,7 +44,7 @@ pub struct PostgresPushConfigStore {
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]
 fn to_a2a_error(e: sqlx::Error) -> A2aError {
-    A2aError::internal(format!("postgres error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", &e)
 }
 
 impl PostgresPushConfigStore {

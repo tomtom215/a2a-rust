@@ -139,6 +139,9 @@ pub mod serve;
 // Private: the SQLite pragmas were written out four times before this.
 #[cfg(feature = "sqlite")]
 mod sqlite_pool;
+// Private: which database errors a retry may get past (spec §3.3.2).
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod sql_error;
 pub mod store;
 pub mod streaming;
 pub mod tenant_config;

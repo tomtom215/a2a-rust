@@ -49,6 +49,15 @@ pub trait TaskStore: Send + Sync + 'static {
 # }
 ```
 
+An error a store returns answers the request: `A2aError::internal` as HTTP
+`500` and gRPC `INTERNAL`, which tell a client not to retry. When a retry may
+get past it, because the database is busy, has no free connection or is
+restarting, return `A2aError::unavailable` instead: HTTP `503` with status
+`UNAVAILABLE`, gRPC `UNAVAILABLE` (§3.3.2), which a client retries. The SQL
+stores do. A send and a push config's creation answer `500` either way: a
+client re-sends those on `503` as refused before any work began, and a store
+failure can come after the executor ran.
+
 ### InMemoryTaskStore
 
 The default implementation with optional TTL and capacity limits:

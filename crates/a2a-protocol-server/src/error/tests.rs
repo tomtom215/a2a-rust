@@ -399,6 +399,46 @@ fn a_halt_maps_to_unavailable_on_every_binding() {
     assert_eq!(err.to_string(), "halted: incident 42");
 }
 
+/// §3.3.2: a temporary failure (a store whose database cannot answer for
+/// now) answers `503` and `UNAVAILABLE`, keeping the `-32603` code; an
+/// ordinary internal error stays `500` and `INTERNAL` (audit register R57).
+#[test]
+fn a_temporary_failure_is_503_unavailable() {
+    let err = ServerError::Protocol(A2aError::unavailable("database busy"));
+    assert_eq!(err.http_status(), 503);
+    assert_eq!(err.status_name(), "UNAVAILABLE");
+    assert_eq!(err.to_a2a_error().code, ErrorCode::InternalError);
+
+    let err = ServerError::Protocol(A2aError::internal("corrupt row"));
+    assert_eq!(err.http_status(), 500);
+    assert_eq!(err.status_name(), "INTERNAL");
+}
+
+/// A call a client may not repeat answers a temporary failure as `INTERNAL`,
+/// message and details kept; any other error passes through as it was.
+#[test]
+fn a_call_that_may_not_be_repeated_is_not_called_temporary() {
+    let mut busy = A2aError::unavailable("database busy");
+    busy.data = Some(serde_json::json!([{"k": 1}]));
+    let err = ServerError::Protocol(busy).not_retry_safe();
+    assert_eq!(err.http_status(), 500);
+    assert_eq!(err.status_name(), "INTERNAL");
+    let wire = err.to_a2a_error();
+    assert_eq!(wire.message, "database busy");
+    assert_eq!(wire.data, Some(serde_json::json!([{"k": 1}])));
+
+    let err = ServerError::Protocol(A2aError::unavailable("database busy")).not_retry_safe();
+    assert_eq!(err.http_status(), 500);
+    assert_eq!(err.to_a2a_error().data, None);
+
+    let limited = ServerError::Protocol(A2aError::rate_limited(
+        "slow down",
+        std::time::Duration::from_secs(3),
+    ))
+    .not_retry_safe();
+    assert_eq!(limited.http_status(), 429);
+}
+
 /// §13.4: a rate-limit refusal answers `429` and `RESOURCE_EXHAUSTED` on the
 /// HTTP+JSON binding, keeping the `-32603` code §3.3.2 gives for it.
 #[test]

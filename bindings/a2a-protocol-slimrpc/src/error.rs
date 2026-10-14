@@ -143,6 +143,13 @@ pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
     if a2a.retry_after().is_some() {
         return RpcError::resource_exhausted(a2a.message);
     }
+    // Spec §3.3.2: a temporary failure is `UNAVAILABLE`, as on the gRPC
+    // binding: a halted handler, or a store that cannot answer for now. Both
+    // fell through to their A2A code, `INTERNAL`, which tells a client not to
+    // retry.
+    if matches!(err, ServerError::Halted(_)) || a2a.is_unavailable() {
+        return RpcError::new(RpcCode::Unavailable, a2a.message);
+    }
     let message = format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message);
     // A refused credential carries its A2A code (`InvalidRequest`) and, beside
     // it, which refusal it is (ADR 0014). The code alone would send
@@ -349,6 +356,24 @@ mod tests {
         ] {
             assert_eq!(error_code_to_rpc_code(code), want, "{code:?}");
         }
+    }
+
+    /// §3.3.2: a halt and a store that cannot answer for now are both
+    /// `UNAVAILABLE`, as on the gRPC binding; an internal error is not.
+    #[test]
+    fn a_temporary_failure_and_a_halt_are_unavailable() {
+        for err in [
+            ServerError::Halted("incident".into()),
+            ServerError::Protocol(A2aError::unavailable("database busy")),
+        ] {
+            assert_eq!(
+                server_error_to_rpc_error(&err).code(),
+                RpcCode::Unavailable,
+                "{err}"
+            );
+        }
+        let err = server_error_to_rpc_error(&ServerError::Protocol(A2aError::internal("corrupt")));
+        assert_eq!(err.code(), RpcCode::Internal);
     }
 
     /// A rate-limit refusal is retryable, as an overload is.

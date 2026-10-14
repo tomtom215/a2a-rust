@@ -318,6 +318,11 @@ pub struct A2aError {
     /// anyway.
     #[serde(skip)]
     retry_after_secs: Option<std::num::NonZeroU32>,
+    /// Set by [`unavailable`](Self::unavailable); see
+    /// [`is_unavailable`](Self::is_unavailable). Not on the wire: each
+    /// binding answers it with its own status instead.
+    #[serde(skip)]
+    unavailable: bool,
 }
 
 impl A2aError {
@@ -340,6 +345,7 @@ impl A2aError {
             data: None,
             auth_rejection: None,
             retry_after_secs: None,
+            unavailable: false,
         }
     }
 
@@ -352,6 +358,7 @@ impl A2aError {
             data: Some(data),
             auth_rejection: None,
             retry_after_secs: None,
+            unavailable: false,
         }
     }
 
@@ -405,6 +412,38 @@ impl A2aError {
         err.retry_after_secs =
             Some(std::num::NonZeroU32::new(secs).unwrap_or(std::num::NonZeroU32::MIN));
         err
+    }
+
+    /// Fails a request because something it needs cannot answer for now,
+    /// such as a database with no free connection or a file another writer
+    /// holds, so the same request may succeed if retried. Spec §3.3.2: servers
+    /// SHOULD tell temporary failures from permanent ones, and give HTTP `503`
+    /// and gRPC `UNAVAILABLE` as the codes for one. The code stays
+    /// `InternalError` (-32603), the JSON-RPC example §3.3.2 gives; what marks
+    /// it temporary is the binding's status: HTTP `503` with the AIP-193
+    /// status `UNAVAILABLE`, gRPC `UNAVAILABLE`.
+    ///
+    /// ```
+    /// use a2a_protocol_types::error::{A2aError, ErrorCode};
+    ///
+    /// let busy = A2aError::unavailable("database busy");
+    /// assert!(busy.is_unavailable());
+    /// assert_eq!(busy.code, ErrorCode::InternalError);
+    /// assert!(!A2aError::internal("corrupt row").is_unavailable());
+    /// ```
+    #[must_use]
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        let mut err = Self::internal(message);
+        err.unavailable = true;
+        err
+    }
+
+    /// Whether this error is a temporary failure built with
+    /// [`unavailable`](Self::unavailable). Never read from the wire: a client
+    /// sees the binding's status instead.
+    #[must_use]
+    pub const fn is_unavailable(&self) -> bool {
+        self.unavailable
     }
 
     /// How long a caller refused by [`rate_limited`](Self::rate_limited)

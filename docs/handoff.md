@@ -1837,6 +1837,24 @@ disagree, and that is the maintainer's to reconcile — it was not edited.
     card was always the public one are corrected. Several of their
     citations already pointed at the wrong lines (575 at `result`); they
     cite the match arms now.
+102. `fix(server):` a database that cannot answer for now is a temporary
+    failure (audit register R57; in Fixed and Added). `A2aError::unavailable`
+    marks it as `rate_limited` marks a refusal, with a field that is not on
+    the wire (`A2aError` stays 96 bytes, measured). One classifier,
+    `sql_error.rs`, serves the ten store conversions; the backend is passed
+    in, since a Postgres SQLSTATE can be all digits and the first version,
+    which told them apart by parsing, read `08000` as a SQLite code (the
+    table test caught it). The exception is the decision to know about:
+    `SendMessage`, `SendStreamingMessage` and creating a push config keep
+    `INTERNAL` (`ServerError::not_retry_safe`), because the client re-sends
+    those on `503` as refused before processing (`retry.rs`), and a store
+    failure can come after the executor ran; two mutants that dropped the
+    exception showed both calls answering `503`. The SLIMRPC binding now
+    answers a halt `UNAVAILABLE`, as gRPC did. `tests/sql_transient_errors.rs`
+    starves a one-connection pool: the read failed `500 INTERNAL` before.
+    Mutants 23 of 23 (two in the SLIMRPC workspace). Ledger 532. Postgres
+    paths are compiled and their codes table-tested, not run against a
+    database here; CI's Postgres job runs those stores.
 
 **Counts at this head, re-derived.** Spec ledger: 512 entries, TESTED 317,
 PARTIAL 21, NOT_SUPPORTED 8, GAP 0, IMPLEMENTED_UNTESTED 0. Gate prover: 30

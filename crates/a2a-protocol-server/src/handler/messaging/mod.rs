@@ -145,7 +145,8 @@ impl RequestHandler {
             self.send_message_inner(params, streaming, method_name, headers)
                 .await
         })
-        .await;
+        .await
+        .map_err(crate::error::ServerError::not_retry_safe);
         #[cfg(feature = "tracing")]
         if let Ok(SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),

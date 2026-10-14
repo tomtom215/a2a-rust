@@ -206,7 +206,8 @@ impl RequestHandler {
                 .await;
                 call.finish(result).await
             })
-            .await;
+            .await
+            .map_err(ServerError::not_retry_safe);
 
         let elapsed = start.elapsed();
         match &result {

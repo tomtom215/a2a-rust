@@ -103,6 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   §13.1): keeps one set of records per tenant, shared by every caller in it,
   now that an authenticating interceptor isolates callers by default. See
   Behaviour Changes.
+- **`A2aError::unavailable` and `A2aError::is_unavailable`** (types; spec
+  §3.3.2). A failure a retry may get past: HTTP `503` with status
+  `UNAVAILABLE`, gRPC and SLIMRPC `UNAVAILABLE`, JSON-RPC `-32603` as before.
+  For a custom store; the SQL stores use it (see Fixed).
 - **`RequestHandlerBuilder::with_extended_agent_card`** (server; spec §3.1.11,
   §13.3). The card `GetExtendedAgentCard` serves to an authenticated caller,
   distinct from the public one: a further skill, more detailed capabilities.
@@ -839,6 +843,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A database that cannot answer for now is a temporary failure** (server,
+  `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD tell temporary failures
+  from permanent ones). Every SQL store answered every database error as
+  internal (HTTP `500`, gRPC `INTERNAL`), so a pool with no free connection, a
+  busy `SQLite` file, or a lost or restarting Postgres told a client not to
+  retry a request that would have succeeded a moment later. Those answer HTTP
+  `503` with status `UNAVAILABLE` and gRPC `UNAVAILABLE` now; other database
+  errors, and every error on a send or a push config's creation, stay
+  `INTERNAL`. This SDK's client re-sends those two calls on `503` as refused
+  before any work began, and a store failure can come after the executor ran.
+  The SLIMRPC binding answers a halted handler `UNAVAILABLE` too, as gRPC
+  already did; it answered `INTERNAL`.
 - **A signed agent card is verified as received** (client, types;
   `signing` feature; spec §8.4.3). The signer signs every field it serves,
   and the client verified the card after reading it into an `AgentCard`,

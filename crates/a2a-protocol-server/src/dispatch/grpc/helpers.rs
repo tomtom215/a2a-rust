@@ -134,7 +134,7 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     if matches!(err, ServerError::Overloaded(_)) || err.retry_after().is_some() {
         return tonic::Code::ResourceExhausted;
     }
-    if matches!(err, ServerError::Halted(_)) {
+    if matches!(err, ServerError::Halted(_)) || err.is_unavailable() {
         return tonic::Code::Unavailable;
     }
     // A refused credential has its own codes (N36); `status_name` is the

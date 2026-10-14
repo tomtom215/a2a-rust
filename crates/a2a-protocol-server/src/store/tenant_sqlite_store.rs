@@ -232,7 +232,7 @@ impl TenantAwareSqliteTaskStore {
 use crate::sqlite_pool::sqlite_pool;
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {
-    A2aError::internal(format!("sqlite error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite error", e)
 }
 
 #[allow(clippy::manual_async_fn)]

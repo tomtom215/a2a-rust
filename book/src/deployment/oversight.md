@@ -39,8 +39,8 @@ handler.halt(HaltScope::All, "oncall:alice", "model provider incident").await;
 While a scope is halted:
 
 - **New sends are refused,** including sends that would continue a waiting task.
-  HTTP+JSON answers `503` with status `UNAVAILABLE`, gRPC `UNAVAILABLE`, and
-  JSON-RPC an internal error. Each message reads `halted: <reason>`.
+  HTTP+JSON answers `503` with status `UNAVAILABLE`, gRPC and SLIMRPC
+  `UNAVAILABLE`, and JSON-RPC an internal error. Each message reads `halted: <reason>`.
 - **Running tasks are stopped.** Each task's cancellation token fires. An
   executor that returns on it without a terminal state has its task ended
   `canceled` by its `cancel` hook, as on shutdown. An executor that uses a

@@ -297,7 +297,7 @@ pub(super) mod journal;
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]
 fn to_a2a_error(e: sqlx::Error) -> A2aError {
-    A2aError::internal(format!("sqlite error: {e}"))
+    crate::sql_error::sql_error(crate::sql_error::Db::Sqlite, "sqlite error", &e)
 }
 
 /// Builds the `UPDATE` that splices an artifact delta into the stored JSON,

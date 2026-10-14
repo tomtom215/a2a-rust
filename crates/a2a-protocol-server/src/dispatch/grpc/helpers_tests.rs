@@ -218,6 +218,20 @@ fn a_halt_is_unavailable() {
     assert_eq!(status.message(), "halted: incident");
 }
 
+/// §3.3.2: a store that cannot answer for now is `UNAVAILABLE`, which a
+/// client retries; an internal error stays `INTERNAL` (audit register R57).
+#[test]
+fn a_temporary_failure_is_unavailable() {
+    use a2a_protocol_types::error::A2aError;
+    let status = server_error_to_status(&ServerError::Protocol(A2aError::unavailable(
+        "database busy",
+    )));
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert_eq!(status.message(), "database busy");
+    let status = server_error_to_status(&ServerError::Protocol(A2aError::internal("corrupt")));
+    assert_eq!(status.code(), tonic::Code::Internal);
+}
+
 // extract_metadata
 #[test]
 fn extract_metadata_ascii_keys() {
