@@ -1102,6 +1102,38 @@ reproduced locally before its fix.
    unknown artifact id stores a zero-part artifact. **Nothing in it is
    implemented until the maintainer decides it.**
 
+**The maintainer's decisions, 2026-10-14.** Every register recommendation
+approved as written; R49 / §1.4: generate the types from the proto now, not
+the check first; R12: read the old partition keys for one release;
+OpenTelemetry (Step 4): instrumentation on by default in every crate, the
+OTLP exporter default-on in `a2a-protocol-sdk` only; R68 (new, below):
+follow the text. The register's status column tracks what is done.
+
+10. `fix(server)!:` §3.1.11 / §13.3 — `GetExtendedAgentCard` follows the
+    text in both cases (register: the §13.3 row, and R68). A card that
+    declares `extendedAgentCard` with no `with_extended_agent_card` answers
+    `ExtendedAgentCardNotConfiguredError`; it served the public card in its
+    place, and the ledger marked line 3165's MUST TESTED on the no-card
+    path, the only one that returned `-32007`. A handler with no card at all
+    and no extended card answers `UnsupportedOperationError`. R68 was found
+    while implementing the second: making that path `-32004` left `-32007`
+    with no path, which is what showed the first. Both new tests failed
+    before the change (`get_extended_agent_card_with_no_card_at_all_is_unsupported`,
+    `a_declared_card_with_no_extended_card_is_not_configured`). The four
+    unit tests, thirteen integration tests (eleven server, one client, one
+    sdk) and every example, the TCK SUT and
+    the advanced-scenarios bench that declared the capability now pass
+    their public card to `with_extended_agent_card` too, which keeps the
+    content they serve unchanged; agent-team's authentication test needs one
+    so the refusal it checks is still the missing authenticator. The
+    builder docs, the book's agent-cards page (a table of the five cases)
+    and the upgrading guide (a compiled example) say so. Ledger: §13.3 line
+    3164 PARTIAL to TESTED; 419, 575, 3164 and 3165 re-pointed at the new
+    tests and lines, with notes saying what changed; the citations into the
+    edited file moved through the diff (`git diff -U0`, by script), and the
+    seven that named rewritten lines or the renamed test were re-pointed by
+    hand. Counts: TESTED 317, PARTIAL 19.
+
 ## `claude/tender-cray-bsfw83` — after #165: two MUSTs, OTel 0.33, versioned docs, the sweep
 
 Picked up after #165 merged (`6ce5dc9`); pull request #168. Commits are

@@ -136,6 +136,7 @@ async fn start() -> A2aClient {
     let handler = Arc::new(
         RequestHandlerBuilder::new(CompletingExecutor)
             .with_agent_card(agent_card())
+            .with_extended_agent_card(agent_card())
             .with_push_sender(NoopPushSender)
             // Lets `get_extended_agent_card` below answer over gRPC without an
             // authenticated principal; the plaintext test fixture has none.

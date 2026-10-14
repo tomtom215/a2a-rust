@@ -137,16 +137,20 @@ pub(crate) async fn start_agent(
         ws: format!("ws://{ws_bind}"),
     };
 
+    let card = make_card(
+        &url,
+        &endpoints.grpc,
+        &endpoints.ws,
+        name,
+        description,
+        skill,
+    );
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(executor)
-            .with_agent_card(make_card(
-                &url,
-                &endpoints.grpc,
-                &endpoints.ws,
-                name,
-                description,
-                skill,
-            ))
+            .with_agent_card(card.clone())
+            // §3.1.11: the card declares an extended card, so one is set; the
+            // public card is served as it.
+            .with_extended_agent_card(card)
             .with_push_config_store(InMemoryPushConfigStore::new())
             .with_push_sender(HttpPushSender::new().allow_private_urls())
             // Spec §13.3 wants the extended card authenticated; this demo
@@ -338,7 +342,8 @@ pub(crate) async fn start_restricted_agent() -> Result<String, Box<dyn std::erro
 
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(LogSearchExecutor)
-            .with_agent_card(card)
+            .with_agent_card(card.clone())
+            .with_extended_agent_card(card)
             .build()?,
     );
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));

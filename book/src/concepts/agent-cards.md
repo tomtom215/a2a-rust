@@ -212,13 +212,21 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 
 `build()` checks the extended card as it checks the public one, and advertises
 the same extensions on it, since a client that fetches it uses its capabilities
-from then on. Without `with_extended_agent_card`, the public card is served as
-the extended one, so an authenticated caller learns nothing more.
+from then on.
 
-If the capability is `false` or absent, the server returns `UnsupportedOperationError`,
-and `build()` refuses an extended card it would never serve.
-`ExtendedAgentCardNotConfiguredError` is returned when the handler has neither
-card.
+The answers follow §3.1.11 and §13.3:
+
+| Public card | `with_extended_agent_card` | `GetExtendedAgentCard` answers |
+|---|---|---|
+| does not declare `extendedAgentCard` | — | `UnsupportedOperationError` (and `build()` refuses an extended card it would never serve) |
+| declares it | set | the extended card |
+| declares it | not set | `ExtendedAgentCardNotConfiguredError` |
+| none (`without_agent_card()`) | set | the extended card |
+| none (`without_agent_card()`) | not set | `UnsupportedOperationError` |
+
+Until 0.15 a declared card with no extended card served the public card in its
+place. To keep serving that content, pass the public card to
+`with_extended_agent_card` as well.
 
 The operation must be authenticated (§13.3): without an authenticating
 interceptor (e.g. `BearerTokenAuthInterceptor`, `JwtAuthInterceptor`) the server

@@ -16,6 +16,7 @@ async fn get_extended_agent_card_returns_card() {
     // opt-in is required for the endpoint to serve the card.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .with_agent_card(minimal_agent_card())
+        .with_extended_agent_card(minimal_agent_card())
         .allow_unauthenticated_extended_card()
         .build()
         .expect("build handler");
@@ -32,7 +33,7 @@ async fn get_extended_agent_card_returns_card() {
 }
 
 #[tokio::test]
-async fn get_extended_agent_card_not_configured() {
+async fn get_extended_agent_card_with_no_card_is_unsupported() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .without_agent_card()
         .build()
@@ -40,8 +41,11 @@ async fn get_extended_agent_card_not_configured() {
 
     let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::Protocol(ref e) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
-        "expected ExtendedAgentCardNotConfigured, got {err:?}"
+        matches!(
+            err,
+            a2a_protocol_server::ServerError::UnsupportedOperation(_)
+        ),
+        "expected UnsupportedOperation (SPEC §13.3), got {err:?}"
     );
 }
 
@@ -75,6 +79,7 @@ async fn builder_defaults_work() {
 async fn builder_with_agent_card() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .with_agent_card(minimal_agent_card())
+        .with_extended_agent_card(minimal_agent_card())
         .with_push_sender(MockPushSender)
         .allow_unauthenticated_extended_card()
         .build()

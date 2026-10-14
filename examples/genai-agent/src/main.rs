@@ -320,6 +320,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut builder = RequestHandlerBuilder::new(executor)
             .with_agent_card(make_agent_card(&url, &model))
+            // §3.1.11: the card declares an extended card, so one is set; the
+            // public card is served as it.
+            .with_extended_agent_card(make_agent_card(&url, &model))
             // The push-config store is the builder's default, which follows
             // the task store: tenant-aware when an authenticating interceptor
             // below isolates callers' tasks (spec §13.1).

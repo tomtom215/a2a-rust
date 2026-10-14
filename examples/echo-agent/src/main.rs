@@ -117,6 +117,9 @@ async fn main() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
             .with_agent_card(make_agent_card(&endpoints))
+            // §3.1.11: the card declares an extended card, so one is set; the
+            // public card is served as it.
+            .with_extended_agent_card(make_agent_card(&endpoints))
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
             // Spec §13.3 requires the extended card to be authenticated. This
@@ -279,7 +282,8 @@ async fn start_restricted_agent() -> String {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(card)
+            .with_agent_card(card.clone())
+            .with_extended_agent_card(card)
             .build()
             .expect("build restricted handler"),
     );
@@ -323,7 +327,8 @@ async fn server_only(bind_addr: &str) {
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(card)
+            .with_agent_card(card.clone())
+            .with_extended_agent_card(card)
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
             .allow_unauthenticated_extended_card()

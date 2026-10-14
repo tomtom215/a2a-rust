@@ -354,6 +354,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **`GetExtendedAgentCard` answers `ExtendedAgentCardNotConfiguredError`
+  when the card declares the capability and no extended card is set**
+  (server; §3.1.11, §13.3, audit register R68). It served the public card in
+  the extended card's place, and the ledger marked §13.3's MUST TESTED on the
+  one other path that returned `-32007`. A handler with no card at all
+  (`without_agent_card()`) and no extended card answers
+  `UnsupportedOperationError` where it answered `-32007` (§13.3, approved in
+  the register). The examples and the TCK SUT that declare the capability
+  now pass their public card to `with_extended_agent_card`, which keeps what
+  they serve unchanged. The upgrading guide says how to do the same.
+
 - **The event queue refuses an executor's event the gRPC binding cannot
   carry** (server; spec §4: every binding MUST represent the same thing). A
   `raw` part that is not base64, an integer beyond ±2^53 in metadata or a

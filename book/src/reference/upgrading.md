@@ -379,6 +379,39 @@ the task's streams without one. The handler now writes `Canceled` after such a
 hook (spec §3.1.2), so the check passes it, and fails a hook that errors,
 panics or overruns.
 
+### `GetExtendedAgentCard` with no extended card configured
+
+A card that declares `capabilities.extendedAgentCard` and a handler built
+without `with_extended_agent_card` now answers `GetExtendedAgentCard` with
+`ExtendedAgentCardNotConfiguredError` (`-32007`), as §3.1.11 and §13.3
+require; it used to serve the public card in the extended card's place. To
+serve the same content as before, pass the public card to
+`with_extended_agent_card` too:
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::server::RequestHandlerBuilder;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true));
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card.clone())
+    .with_extended_agent_card(card)
+    .allow_unauthenticated_extended_card()
+    .build()
+    .unwrap();
+# let _ = handler;
+# }
+```
+
+A handler built with `without_agent_card()` and no extended card answers
+`UnsupportedOperationError` (`-32004`) where it answered `-32007`: nothing on
+it declares the capability. Both are HTTP `400`.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with

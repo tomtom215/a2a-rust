@@ -16,23 +16,29 @@ file and line was opened, not recalled), the text it is measured against, the
 options, and a recommendation. Under the maintainer's directive to be
 completely v1.0.1-conformant, the recommendation is the conformant option
 unless that would break something worse, in which case the item says what.
-**Nothing below is implemented until the maintainer decides it.** Spec line
+**Decided 2026-10-14 by the maintainer:** every recommendation below is
+approved as written, with two specifics: R49 / §1.4 takes option (b), the
+types generated from the proto now, not the check first; R12 reads the old
+partition keys as a fallback for one release. The status column says which
+are done; each is implemented as its own tested commit, with any breaking
+change in the upgrading guide. Spec line
 numbers are in `docs/implementation/a2a-v1.0.1-specification.md` (the v1.0.1
 release text; the ledger's own numbering).
 
-| Id | Area | Recommendation | Breaks |
-|---|---|---|---|
-| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions |
-| R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) |
-| R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` |
-| R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply |
-| R33 | first frame of a send stream | keep, documented | — |
-| R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one |
-| R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known |
-| R49 | types not generated from the proto | see §1.4 below | the public types' API |
-| R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers |
-| R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text |
-| R67 | API key in the query string | carry query parameters on the HTTP transports | custom `Transport` impls, if the trait changes |
+| Id | Area | Recommendation | Breaks | Status |
+|---|---|---|---|---|
+| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (old keys read for one release) | approved |
+| R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) | approved |
+| R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | approved |
+| R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | approved |
+| R33 | first frame of a send stream | keep, documented | — | approved |
+| R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | approved |
+| R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | approved |
+| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | approved |
+| R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | approved |
+| R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | approved |
+| R67 | API key in the query string | carry query parameters on the HTTP transports | custom `Transport` impls, if the trait changes | approved |
+| R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 state | a deployer relying on the public card being served | done |
 
 ## R12 — a JWT caller is its `sub` alone
 
@@ -246,13 +252,35 @@ transports and refused by gRPC.
 compiling and refuses a query parameter it does not handle, rather than (c),
 which overloads the header map.
 
+## R68 — a declared extended card with none configured served the public card
+
+Found 2026-10-14 while implementing the §13.3 row below, and decided the
+same day: follow the text.
+
+**Was.** `handler/lifecycle/extended_card.rs` answered a card that declares
+`capabilities.extendedAgentCard`, on a handler with no
+`with_extended_agent_card`, by serving the public card. `-32007` was returned
+only when the handler had no card at all, and the ledger marked §13.3 line
+3165 TESTED on that path alone.
+
+**Text.** §3.1.11 (line 419): `ExtendedAgentCardNotConfiguredError`: "The
+agent declares support but does not have an extended agent card configured."
+§13.3 (line 3165): "When support is declared but no extended card is
+configured, the operation **MUST** return
+[`ExtendedAgentCardNotConfiguredError`]."
+
+**Now.** That case returns `-32007`; the examples and the TCK SUT that declare
+the capability pass their public card to `with_extended_agent_card`, so what
+they serve is unchanged. `a_declared_card_with_no_extended_card_is_not_configured`
+failed before the change.
+
 ## Ledger entries that need a decision
 
 | Ledger entry | Now | Recommendation |
 |---|---|---|
 | §8.4.3 (line 2122), medium: "Retrieve the public key using the `kid` and `jku` (or from a trusted key store)" | `kid` lookup in a caller-supplied JWKS, tested; `jku` decoded, never followed | **TESTED**: the trusted-key-store branch is what is implemented. Following a card's own `jku` would let a card name the key that vouches for it. |
 | §12 (line 2977) and §5.4 (line 1194), medium/low: custom bindings define "equivalent error code mappings that preserve the semantic meaning" | SLIMRPC follows its own spec's table (UNIMPLEMENTED where A2A's gRPC column says FAILED_PRECONDITION) | **TESTED**, with the conflict reported upstream: the text asks for an equivalent mapping that preserves meaning, not the gRPC column. |
-| §13.3 (line 3164): no card and no extended card | `-32007 ExtendedAgentCardNotConfigured` (`crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:83-87`) | `UnsupportedOperationError`: a handler with neither card cannot serve the operation, and `-32007` asserts a capability it cannot know is declared. |
+| §13.3 (line 3164): no card and no extended card | `-32007 ExtendedAgentCardNotConfigured` (`crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:83-87`, before the change) | **Done**: `UnsupportedOperationError`; a handler with neither card cannot serve the operation, and `-32007` asserts a capability it cannot know is declared. |
 | proto `Artifact.parts` (line 287): "Must contain at least one part" | an `append: true` chunk with no parts is accepted (`crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36-37`), and one for an unknown artifact id stores a zero-part artifact | Refuse it at the queue write. |
 | App. A.2 (line 3421): clients prefer new names, dual-handle, warn on legacy forms | legacy enum spellings and `AgentCard.url` parsed; no fallback for `supportsAuthenticatedExtendedCard`; no warning; `url` not folded into `supportedInterfaces` | Implement: the fallback, a warning (client, `tracing`), and `url` plus `preferredTransport` folded into an interface. |
 | §5.7 (line 1263): required arrays non-empty | `ListTasksResponse.tasks` may be empty (the spec contradicts itself); `HotReloadAgentCardHandler::update` does not validate | Report the contradiction upstream; add a validating `try_update`, deprecate `update`. |

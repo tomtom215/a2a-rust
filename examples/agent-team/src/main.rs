@@ -97,6 +97,9 @@ async fn main() {
     let analyzer_handler = Arc::new(
         RequestHandlerBuilder::new(CodeAnalyzerExecutor)
             .with_agent_card(code_analyzer_card(&analyzer_url))
+            // §3.1.11: the card declares an extended card (Test 68), so one is
+            // set; the public card is served as it.
+            .with_extended_agent_card(code_analyzer_card(&analyzer_url))
             .with_interceptor(AuditInterceptor::new("CodeAnalyzer"))
             .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
             .with_executor_timeout(std::time::Duration::from_secs(30))

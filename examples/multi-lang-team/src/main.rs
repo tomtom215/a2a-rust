@@ -409,6 +409,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 reachable: reachable.clone(),
             })
             .with_agent_card(make_coordinator_card(&format!("http://{addr}")))
+            // §3.1.11: declared, so set; the public card is served as it.
+            .with_extended_agent_card(make_coordinator_card(&format!("http://{addr}")))
             .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
             .allow_unauthenticated_extended_card()
