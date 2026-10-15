@@ -5,6 +5,10 @@
 
 Umbrella re-export crate for the A2A protocol v1.0 Rust SDK.
 
+Part of [a2a-rust](https://github.com/tomtom215/a2a-rust), an independent
+(not official) A2A SDK written against specification release 1.0.1. Guide:
+<https://a2a-rust.com> · API: <https://docs.rs/a2a-protocol-sdk>.
+
 ## Overview
 
 - Re-exports `a2a-protocol-types`, `a2a-protocol-client`, and `a2a-protocol-server`
@@ -74,8 +78,8 @@ defaults, so `default-features = false` here removes both.
 | `auth-jwt` | No | `a2a-protocol-server` |
 | `audit` | No | `a2a-protocol-types`, `a2a-protocol-server` |
 
-The server's `conformance` feature and the types crate's `proto` feature
-are not forwarded; depend on those crates directly to enable them.
+The server's `conformance` feature, the client's `testing` feature and the
+types crate's `proto` feature are not forwarded; depend on those crates directly to enable them.
 
 ## When to Use
 

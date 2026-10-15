@@ -5,6 +5,10 @@
 
 Pure A2A protocol v1.0 data types -- serde only, no I/O.
 
+Part of [a2a-rust](https://github.com/tomtom215/a2a-rust), an independent
+(not official) A2A SDK written against specification release 1.0.1. Guide:
+<https://a2a-rust.com> · API: <https://docs.rs/a2a-protocol-types>.
+
 ## Overview
 
 - All A2A v1.0 wire types with zero I/O dependencies
@@ -23,7 +27,7 @@ Pure A2A protocol v1.0 data types -- serde only, no I/O.
 | `error` | `A2aError`, `ErrorCode`, `A2aResult` | Protocol errors (14 codes) |
 | `jsonrpc` | `JsonRpcRequest`, `JsonRpcResponse` | JSON-RPC 2.0 envelope |
 | `events` | `StreamResponse`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent` | SSE streaming events |
-| `security` | `SecurityScheme`, `SecurityRequirement` | API Key, OAuth 2.0, OpenID, mTLS |
+| `security` | `SecurityScheme`, `SecurityRequirement` | API Key, HTTP auth, OAuth 2.0, OpenID, mTLS |
 | `params` | `MessageSendParams`, `TaskQueryParams`, `ListTasksParams` | Method parameters for all 11 A2A methods |
 | `responses` | `SendMessageResponse`, `TaskListResponse` | Method result types |
 | `push` | `TaskPushNotificationConfig` | Push notification config |
@@ -34,7 +38,7 @@ Pure A2A protocol v1.0 data types -- serde only, no I/O.
 
 | Feature | Default | Purpose |
 |---------|---------|---------|
-| `signing` | No | Agent card signing (JWS/ES256, RFC 8785 canonicalization). Adds `ring` and `base64`, and turns on serde_json's `float_roundtrip`. |
+| `signing` | No | Agent card signing (JWS with ES256 or EdDSA/Ed25519, RFC 8785 canonicalization). Adds `ring` and `base64`, and turns on serde_json's `float_roundtrip`. |
 | `audit` | No | Audit record schema, hash chains, ES256/Ed25519-signed checkpoints and chain verification (`audit::verify_chain`); implies `signing` |
 | `proto` | No | The canonical A2A protobuf messages (`lf.a2a.v1`, prost-generated) and lossless conversions to and from these types. |
 
@@ -96,7 +100,8 @@ assert_eq!(A2A_VERSION_HEADER, "A2A-Version");
 ## Design Notes
 
 - **ID newtypes** for type safety: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
-- **`#[non_exhaustive]`** on enums for forward-compatible additions
+- **Generated from the proto**: the message and enum types are generated from the vendored `a2a.proto` (ADR 0016) and checked for drift in CI
+- **`#[non_exhaustive]`** on enums for forward-compatible additions, except three closed sets fixed by their standards: `ApiKeyLocation`, `JsonRpcRequestId` and `JsonRpcResponse`
 - **ProtoJSON naming**: `TaskState::Completed` serializes as `"TASK_STATE_COMPLETED"`
 - **No unsafe library code**: `#![forbid(unsafe_code)]` covers `src/`. The build script is outside the attribute's reach and, with the `proto` feature, sets `PROTOC` through `std::env::set_var`, which edition 2024 makes `unsafe`
 - **All types documented**: `#![deny(missing_docs)]`
