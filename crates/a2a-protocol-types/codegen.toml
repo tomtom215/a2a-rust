@@ -62,7 +62,6 @@ TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
 # Proto types still hand-written, each to be moved here in its ADR 0016 phase.
 [pending]
 APIKeySecurityScheme = "phase 5, security schemes"
-Artifact = "phase 3, task and message"
 AuthenticationInfo = "phase 4, requests and responses"
 AuthorizationCodeOAuthFlow = "phase 5, security schemes"
 CancelTaskRequest = "phase 4, requests and responses"
@@ -78,7 +77,6 @@ ListTaskPushNotificationConfigsRequest = "phase 4, requests and responses"
 ListTaskPushNotificationConfigsResponse = "phase 4, requests and responses"
 ListTasksRequest = "phase 4, requests and responses"
 ListTasksResponse = "phase 4, requests and responses"
-Message = "phase 3, task and message"
 MutualTlsSecurityScheme = "phase 5, security schemes"
 OAuth2SecurityScheme = "phase 5, security schemes"
 OAuthFlows = "phase 5, a oneof"
@@ -93,11 +91,7 @@ SendMessageResponse = "phase 5, a oneof"
 StreamResponse = "phase 5, a oneof"
 StringList = "phase 5, security schemes"
 SubscribeToTaskRequest = "phase 4, requests and responses"
-Task = "phase 3, task and message"
-TaskArtifactUpdateEvent = "phase 3, task and message"
 TaskPushNotificationConfig = "phase 4, requests and responses"
-TaskStatus = "phase 3, task and message"
-TaskStatusUpdateEvent = "phase 3, task and message"
 
 # ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -296,3 +290,118 @@ implementation does the same, popping `url` and folding it into
 
 Read it if you have it; to publish an agent's address, use
 `supported_interfaces`."""
+
+[messages.TaskStatus]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+
+[messages.Task]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+doc_append = """
+The wire `kind` field (`"task"`) is injected by enclosing discriminated
+unions such as [`crate::events::StreamResponse`] and
+[`crate::responses::SendMessageResponse`]. Standalone `Task` values received
+over the wire may include `kind`; serde silently tolerates unknown fields, so
+no action is needed on the receiving side."""
+
+[messages.Task.fields.id]
+type = "crate::task::TaskId"
+why = "task ids are a newtype, so one cannot be passed where a context id is meant"
+
+[messages.Task.fields.context_id]
+type = "crate::task::ContextId"
+aliases = ["context_id"]
+serde = ["default = \"crate::task::empty_context_id\""]
+why = "a newtype like the other ids; absent reads as empty, since ProtoJSON omits an empty string"
+doc_append = """
+The proto leaves `context_id` optional, and `ProtoJSON` printers omit an
+empty string, so a peer's task may arrive without the key; it parses
+as an empty id rather than failing the whole response."""
+
+[messages.Message]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+
+[messages.Message.fields.message_id]
+rename = "id"
+type = "crate::message::MessageId"
+aliases = ["message_id"]
+why = "a newtype like the other ids, named id on its own type as Task's is"
+
+[messages.Message.fields.context_id]
+type = "Option<crate::task::ContextId>"
+aliases = ["context_id"]
+why = "the context id newtype"
+
+[messages.Message.fields.task_id]
+type = "Option<crate::task::TaskId>"
+aliases = ["task_id"]
+why = "the task id newtype"
+
+[messages.Message.fields.parts]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element. The A2A
+protocol does not define behavior for empty parts lists.
+
+Parsing treats absence as empty (`ProtoJSON` printers omit empty
+repeated fields; the gRPC binding already decodes it that way) — the
+server rejects empty parts with a structured invalid-params error
+instead of a JSON type error, uniformly across bindings."""
+
+[messages.Message.fields.reference_task_ids]
+type = "Option<Vec<crate::task::TaskId>>"
+aliases = ["reference_task_ids"]
+why = "the task id newtype"
+
+[messages.Artifact]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+
+[messages.Artifact.fields.artifact_id]
+rename = "id"
+type = "crate::artifact::ArtifactId"
+aliases = ["artifact_id"]
+why = "a newtype like the other ids, named id on its own type as Task's is"
+
+[messages.Artifact.fields.parts]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element. The A2A
+protocol does not define behavior for empty parts lists.
+
+Parsing treats absence as empty (`ProtoJSON` printers omit empty
+repeated fields; the gRPC binding already decodes it that way) — the
+server-side event processors drop empty-parts artifacts explicitly."""
+
+[messages.TaskStatusUpdateEvent]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+In v1.0 this wraps [`TaskStatus`](crate::task::TaskStatus) directly instead
+of separate `state`/`message` fields, and the `final` field is gone."""
+
+[messages.TaskStatusUpdateEvent.fields.task_id]
+type = "crate::task::TaskId"
+aliases = ["task_id"]
+why = "the task id newtype"
+
+[messages.TaskStatusUpdateEvent.fields.context_id]
+type = "crate::task::ContextId"
+aliases = ["context_id"]
+why = "the context id newtype"
+
+[messages.TaskArtifactUpdateEvent]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+The wire `kind` field (`"artifact-update"`) is injected by the enclosing
+[`StreamResponse`](crate::events::StreamResponse) discriminated union."""
+
+[messages.TaskArtifactUpdateEvent.fields.task_id]
+type = "crate::task::TaskId"
+aliases = ["task_id"]
+why = "the task id newtype"
+
+[messages.TaskArtifactUpdateEvent.fields.context_id]
+type = "crate::task::ContextId"
+aliases = ["context_id"]
+why = "the context id newtype"
+
+[messages.TaskArtifactUpdateEvent.fields.last_chunk]
+aliases = ["last_chunk"]

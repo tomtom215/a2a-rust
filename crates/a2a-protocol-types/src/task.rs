@@ -18,7 +18,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::Artifact;
-use crate::message::Message;
 
 // ── TaskId ────────────────────────────────────────────────────────────────────
 
@@ -302,22 +301,7 @@ impl std::fmt::Display for TaskState {
 
 // ── TaskStatus ────────────────────────────────────────────────────────────────
 
-/// The current status of a [`Task`], combining state with an optional message
-/// and timestamp.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskStatus {
-    /// Current lifecycle state.
-    pub state: TaskState,
-
-    /// Optional agent message accompanying this status (e.g. error details).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<Message>,
-
-    /// ISO 8601 timestamp of when this status was set.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
-}
+pub use crate::generated::task::TaskStatus;
 
 impl TaskStatus {
     /// Creates a [`TaskStatus`] with just a state and no timestamp.
@@ -361,46 +345,11 @@ impl TaskStatus {
 // ── Task ──────────────────────────────────────────────────────────────────────
 
 /// `Task::context_id` when a peer leaves it out.
-const fn empty_context_id() -> ContextId {
+pub(crate) const fn empty_context_id() -> ContextId {
     ContextId(String::new())
 }
 
-/// A unit of work managed by an A2A agent.
-///
-/// The wire `kind` field (`"task"`) is injected by enclosing discriminated
-/// unions such as [`crate::events::StreamResponse`] and
-/// [`crate::responses::SendMessageResponse`]. Standalone `Task` values received
-/// over the wire may include `kind`; serde silently tolerates unknown fields, so
-/// no action is needed on the receiving side.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Task {
-    /// Unique task identifier.
-    pub id: TaskId,
-
-    /// Conversation context this task belongs to.
-    ///
-    /// The proto leaves `context_id` optional, and `ProtoJSON` printers omit an
-    /// empty string, so a peer's task may arrive without the key; it parses
-    /// as an empty id rather than failing the whole response.
-    #[serde(alias = "context_id", default = "empty_context_id")]
-    pub context_id: ContextId,
-
-    /// Current status of the task.
-    pub status: TaskStatus,
-
-    /// Historical messages exchanged during this task.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub history: Option<Vec<Message>>,
-
-    /// Artifacts produced by this task.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub artifacts: Option<Vec<Artifact>>,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+pub use crate::generated::task::Task;
 
 impl Task {
     /// A task in `status`, with no history, artifacts or metadata — what a

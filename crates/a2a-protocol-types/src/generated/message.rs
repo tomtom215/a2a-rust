@@ -24,3 +24,47 @@ pub enum MessageRole {
     #[serde(rename = "ROLE_AGENT", alias = "agent")]
     Agent = 2,
 }
+
+/// `Message` is one unit of communication between client and server.
+///
+/// It can be
+/// associated with a context and/or a task. For server messages, `context_id` must
+/// be provided, and `task_id` only if a task was created. For client messages, both
+/// fields are optional, with the caveat that if both are provided, they have to
+/// match (the `context_id` has to be the one that is set on the task). If only
+/// `task_id` is provided, the server will infer `context_id` from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Message {
+    /// The unique identifier (e.g. UUID) of the message. This is created by the message creator.
+    #[serde(rename = "messageId", alias = "message_id")]
+    pub id: crate::message::MessageId,
+    /// Optional. The context id of the message. If set, the message will be associated with the given context.
+    #[serde(alias = "context_id", skip_serializing_if = "Option::is_none")]
+    pub context_id: Option<crate::task::ContextId>,
+    /// Optional. The task id of the message. If set, the message will be associated with the given task.
+    #[serde(alias = "task_id", skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<crate::task::TaskId>,
+    /// Identifies the sender of the message.
+    pub role: crate::message::MessageRole,
+    /// Parts is the container of the message content.
+    ///
+    /// **Spec requirement:** Must contain at least one element. The A2A
+    /// protocol does not define behavior for empty parts lists.
+    ///
+    /// Parsing treats absence as empty (`ProtoJSON` printers omit empty
+    /// repeated fields; the gRPC binding already decodes it that way) — the
+    /// server rejects empty parts with a structured invalid-params error
+    /// instead of a JSON type error, uniformly across bindings.
+    #[serde(default)]
+    pub parts: Vec<crate::message::Part>,
+    /// Optional. Any metadata to provide along with the message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    /// The URIs of extensions that are present or contributed to this Message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Vec<String>>,
+    /// A list of task IDs that this message references for additional context.
+    #[serde(alias = "reference_task_ids", skip_serializing_if = "Option::is_none")]
+    pub reference_task_ids: Option<Vec<crate::task::TaskId>>,
+}

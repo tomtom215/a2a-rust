@@ -71,16 +71,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `crates/a2a-protocol-types/codegen.toml`. The generator refuses a
   configuration entry for a type, field or value the proto does not have,
   and a proto type the configuration does not mention. CI's static checks
-  regenerate in memory and fail on any difference. Phases 1 and 2 of 6:
+  regenerate in memory and fail on any difference. Phases 1 to 3 of 6:
   `TaskState`, `MessageRole`, `AgentInterface`, `AgentProvider`,
   `AgentExtension`, then the agent card family (`AgentCard`,
-  `AgentCapabilities`, `AgentSkill`, `AgentCardSignature`) are generated,
-  at their existing paths; the other 37 proto types are listed as pending.
-  Docs now come from the proto's comments, with the Rust-specific notes
-  kept. Fields follow the proto's order, so `AgentProvider` serializes
-  `url` before `organization`, and `AgentCard` writes `provider` and
-  `version` after `supportedInterfaces`. Card signatures are unaffected:
-  they sign the RFC 8785 canonical form, which sorts keys.
+  `AgentCapabilities`, `AgentSkill`, `AgentCardSignature`), then `Task`,
+  `TaskStatus`, `Message`, `Artifact`, `TaskStatusUpdateEvent` and
+  `TaskArtifactUpdateEvent` are generated, at their existing paths; the
+  other 31 proto types are listed as pending. Docs now come from the
+  proto's comments, with the Rust-specific notes kept. Fields follow the
+  proto's order, so `AgentProvider` serializes `url` before
+  `organization`, `AgentCard` writes `provider` and `version` after
+  `supportedInterfaces`, a `Task` writes `artifacts` before `history`, and
+  a `Message` writes `contextId` and `taskId` before `role`. Card
+  signatures are unaffected: they sign the RFC 8785 canonical form, which
+  sorts keys.
 - **`migrate_caller_keys`** on `TenantAwareSqliteTaskStore`,
   `TenantAwarePostgresTaskStore`, `TenantAwareSqlitePushConfigStore` and
   `TenantAwarePostgresPushConfigStore`, with `store::caller_keys` (server;

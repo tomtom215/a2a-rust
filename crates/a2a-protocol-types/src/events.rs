@@ -19,71 +19,18 @@
 //! | `"statusUpdate"` | [`TaskStatusUpdateEvent`] |
 //! | `"artifactUpdate"` | [`TaskArtifactUpdateEvent`] |
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use crate::artifact::Artifact;
 use crate::message::Message;
-use crate::task::{ContextId, Task, TaskId, TaskStatus};
+use crate::task::Task;
 
 // ── TaskStatusUpdateEvent ─────────────────────────────────────────────────────
 
-/// A streaming event that reports a change in task state.
-///
-/// In v1.0, this wraps [`TaskStatus`] directly instead of separate
-/// `state`/`message` fields. The `final` field has been removed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskStatusUpdateEvent {
-    /// The task whose status changed.
-    #[serde(alias = "task_id")]
-    pub task_id: TaskId,
-
-    /// Conversation context the task belongs to.
-    #[serde(alias = "context_id")]
-    pub context_id: ContextId,
-
-    /// The new task status (state + optional message + timestamp).
-    pub status: TaskStatus,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+pub use crate::generated::events::TaskStatusUpdateEvent;
 
 // ── TaskArtifactUpdateEvent ───────────────────────────────────────────────────
 
-/// A streaming event that delivers a new or updated artifact.
-///
-/// The wire `kind` field (`"artifact-update"`) is injected by the enclosing
-/// [`StreamResponse`] discriminated union.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskArtifactUpdateEvent {
-    /// The task that produced the artifact.
-    #[serde(alias = "task_id")]
-    pub task_id: TaskId,
-
-    /// Conversation context the task belongs to.
-    #[serde(alias = "context_id")]
-    pub context_id: ContextId,
-
-    /// The artifact being delivered.
-    pub artifact: Artifact,
-
-    /// If `true`, this event's artifact parts should be appended to the
-    /// previously-received artifact with the same ID rather than replacing it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub append: Option<bool>,
-
-    /// If `true`, this is the final chunk for the artifact.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "last_chunk")]
-    pub last_chunk: Option<bool>,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+pub use crate::generated::events::TaskArtifactUpdateEvent;
 
 // ── StreamResponse ────────────────────────────────────────────────────────────
 
@@ -126,9 +73,9 @@ crate::oneof::oneof_deserialize!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifact::ArtifactId;
+    use crate::artifact::{Artifact, ArtifactId};
     use crate::message::Part;
-    use crate::task::{ContextId, TaskState};
+    use crate::task::{ContextId, TaskId, TaskState, TaskStatus};
 
     #[test]
     fn status_update_event_roundtrip() {

@@ -80,53 +80,7 @@ impl std::fmt::Display for MessageRole {
 
 // ── Message ───────────────────────────────────────────────────────────────────
 
-/// A message exchanged between a client and an agent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Message {
-    /// Unique message identifier.
-    #[serde(rename = "messageId")]
-    #[serde(alias = "message_id")]
-    pub id: MessageId,
-
-    /// Role of the message originator.
-    pub role: MessageRole,
-
-    /// Message content parts.
-    ///
-    /// **Spec requirement:** Must contain at least one element. The A2A
-    /// protocol does not define behavior for empty parts lists.
-    ///
-    /// Parsing treats absence as empty (`ProtoJSON` printers omit empty
-    /// repeated fields; the gRPC binding already decodes it that way) — the
-    /// server rejects empty parts with a structured invalid-params error
-    /// instead of a JSON type error, uniformly across bindings.
-    #[serde(default)]
-    pub parts: Vec<Part>,
-
-    /// Task this message belongs to, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "task_id")]
-    pub task_id: Option<TaskId>,
-
-    /// Conversation context this message belongs to, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "context_id")]
-    pub context_id: Option<ContextId>,
-
-    /// IDs of tasks referenced by this message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "reference_task_ids")]
-    pub reference_task_ids: Option<Vec<TaskId>>,
-
-    /// URIs of extensions used in this message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Vec<String>>,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+pub use crate::generated::message::Message;
 
 impl Message {
     /// Creates a message with the given id, role and parts.

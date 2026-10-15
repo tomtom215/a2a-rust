@@ -261,6 +261,7 @@ fn doc(
 ) -> Result<String, String> {
     let mut text = match doc {
         Some(doc) => doc.trim().to_owned(),
+        None if indent == 0 => short_first_paragraph(&escape(comment)),
         None => escape(comment),
     };
     if let Some(append) = append {
@@ -282,6 +283,30 @@ fn doc(
         }
     }
     Ok(out)
+}
+
+/// The longest first paragraph clippy's `too_long_first_doc_paragraph`
+/// accepts on an item (197 characters passed and 210 failed, measured here).
+const FIRST_PARAGRAPH_MAX: usize = 200;
+
+/// `text` with its first paragraph ended after the first sentence when that
+/// paragraph is longer than [`FIRST_PARAGRAPH_MAX`]: rustdoc shows the first
+/// paragraph as the item's summary.
+fn short_first_paragraph(text: &str) -> String {
+    let end = text.find("\n\n").unwrap_or(text.len());
+    let first = &text[..end];
+    if first.chars().count() <= FIRST_PARAGRAPH_MAX {
+        return text.to_owned();
+    }
+    let sentence = first
+        .match_indices(". ")
+        .map(|(i, _)| i)
+        .find(|&i| !first[..i].ends_with("e.g") && !first[..i].ends_with("i.e"));
+    let Some(i) = sentence else {
+        return text.to_owned();
+    };
+    let rest = first[i + 2..].trim_start();
+    format!("{}.\n\n{rest}{}", &first[..i], &text[end..])
 }
 
 /// A proto comment as Markdown that reads as it was written: outside code
@@ -435,6 +460,19 @@ mod tests {
     #[test]
     fn escape_leaves_code_spans_alone() {
         assert_eq!(escape("a [b] `<c>` <d>"), "a \\[b\\] `<c>` \\<d\\>");
+    }
+
+    #[test]
+    fn a_long_first_paragraph_ends_after_its_first_sentence() {
+        let long = format!("One (e.g. this). Two {}\nthree.\n\nNext.", "x".repeat(200));
+        assert_eq!(
+            short_first_paragraph(&long),
+            format!(
+                "One (e.g. this).\n\nTwo {}\nthree.\n\nNext.",
+                "x".repeat(200)
+            )
+        );
+        assert_eq!(short_first_paragraph("Short. Text."), "Short. Text.");
     }
 
     #[test]
