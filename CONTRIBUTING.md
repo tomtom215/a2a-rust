@@ -207,7 +207,9 @@ says derived forms **MUST** be regenerated from the proto rather than edited
 by hand. Their definitions live in `crates/a2a-protocol-types/src/generated/`,
 and every file there says so in its first lines; each file is included
 (`include!`) by the module that documents its types, not compiled as a module
-of its own (ADR 0016 measures why).
+of its own (ADR 0016 measures why). A hand-written type under a generated
+type's name, anywhere in the repository, fails the same check: use the
+generated one, or name yours differently.
 
 - To follow a proto change, update every vendored copy
   (`check_proto_copies.sh` names them), then regenerate.

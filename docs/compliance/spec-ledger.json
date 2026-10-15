@@ -34,13 +34,16 @@
    "keyword": "MUST",
    "binds": "both",
    "requirement": "SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather than edited manually.",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/build.rs:6",
     "tools/a2a-codegen/src/emit.rs emit",
+    "tools/a2a-codegen/src/oneof.rs emit",
     "tools/a2a-codegen/src/config.rs validate",
+    "tools/a2a-codegen/src/shadow.rs find",
     "crates/a2a-protocol-types/codegen.toml",
+    ".github/workflows/ci.yml:88",
     "crates/a2a-protocol-types/src/generated/task.rs:67",
     "crates/a2a-protocol-types/src/generated/responses.rs:11",
     "crates/a2a-protocol-types/src/generated/security.rs:191"
@@ -49,9 +52,12 @@
     "crates/a2a-protocol-types/tests/proto_schema_sync.rs:53 canonical_proto_copies_are_identical",
     "crates/a2a-protocol-types/tests/proto_schema_sync.rs:70 canonical_proto_matches_specification_copy",
     "crates/a2a-protocol-types/tests/generated_enums.rs every_task_state_has_its_proto_number",
-    "tools/a2a-codegen/src/config.rs an_entry_for_something_the_proto_lacks_is_refused"
+    "tools/a2a-codegen/src/config.rs an_entry_for_something_the_proto_lacks_is_refused",
+    "tools/a2a-codegen/src/config.rs a_deprecated_member_needs_a_note_and_only_it",
+    "tools/a2a-codegen/src/shadow.rs declarations_are_found_with_any_visibility",
+    "tools/a2a-codegen/src/shadow.rs other_lines_declare_nothing"
    ],
-   "notes": "Since 2026-10-15 the public serde types are being moved to code generated from a2a.proto (ADR 0016, register R49): tools/a2a-codegen (protox, no protoc) writes crates/a2a-protocol-types/src/generated/ from the proto and codegen.toml, and CI's static checks fail when the checked-in output differs. Phases 1 to 4 of 6 generate TaskState, MessageRole, AgentInterface, AgentProvider and AgentExtension, then AgentCard, AgentCapabilities, AgentSkill and AgentCardSignature, then Task, TaskStatus, Message, Artifact and the two update events, then the 14 request, parameter and response types, then the 12 security-scheme and OAuth-flow messages, then the five oneofs: every proto type is generated. This stays PARTIAL until phase 6 adds the check that no hand-written type shadows a generated one. The prost message types (feature `proto`, build.rs) were generated already.",
+   "notes": "Every public serde type that mirrors a2a.proto is generated from it (ADR 0016, register R49): tools/a2a-codegen (protox, no protoc) writes crates/a2a-protocol-types/src/generated/ from the proto and codegen.toml, which records each deliberate difference with its reason and is refused when it names anything the proto lacks or omits a proto type. All 46 proto types and the PartContent enum are generated; the prost message types come from build.rs. CI's static checks run `a2a-codegen --check` (ci.yml:88), which fails when a generated file differs from what the proto makes (proven by the gate prover with a hand edit to generated/task.rs) and when any Rust file git knows of, outside src/generated/ and the generator, declares a struct, enum, union or type under one of the 47 generated names (shown 2026-10-15 by four injections: a struct in a tracked file, one in an untracked file, a type alias, a pub(crate) enum; each failed naming file and line). The vendored proto copies are checked byte-identical to the v1.0.1 release (check_proto_copies.sh, the two proto_schema_sync tests). The serde-prost conversions are hand-written code, not a derived form: each builds its target with a full struct literal (no `..Default::default()` in src/proto/convert/), so a field the proto adds to either generated side fails to compile until mapped. Not checked mechanically: that a hand-written conversion maps a field correctly, which the conversion round-trip tests and the proto_convert fuzz target cover.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-15)"

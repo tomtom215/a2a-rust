@@ -26,7 +26,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 
 | Chapter | TESTED | APPLICATION | SUPPORTED | NOT_SUPPORTED | NOT_APPLICABLE | PARTIAL | Total |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| §1 | 2 |  |  |  | 4 | 1 | 7 |
+| §1 | 3 |  |  |  | 4 |  | 7 |
 | §2 | 1 |  | 1 |  | 1 |  | 3 |
 | §3 | 90 | 20 | 21 | 1 | 3 | 2 | 137 |
 | §4 | 7 | 5 | 2 |  | 1 |  | 15 |
@@ -41,13 +41,12 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 7 | 5 | 3 |  |  |  | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 81 | 11 | 6 |  | 8 |  | 106 |
-| **All** | **327** | **87** | **59** | **4** | **22** | **10** | **509** |
+| **All** | **328** | **87** | **59** | **4** | **22** | **9** | **509** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Since 2026-10-15 the public serde types are being moved to code generated from a2a.proto (ADR 0016, register R49): tools/a2a-codegen (protox, no protoc) writes crates/a2a-protocol-types/src/generated/ from the proto and codegen.toml, and CI's static checks fa… |
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |

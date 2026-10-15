@@ -59,9 +59,6 @@ TaskState = "task::TaskState"
 TaskStatus = "task::TaskStatus"
 TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
 
-# Proto types still hand-written, each to be moved here in its ADR 0016 phase.
-[pending]
-
 # ── Enums ────────────────────────────────────────────────────────────────────
 
 [enums.TaskState]

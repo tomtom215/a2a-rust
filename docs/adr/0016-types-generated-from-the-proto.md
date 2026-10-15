@@ -137,8 +137,12 @@ Xeon VM).
 `cargo run --manifest-path tools/a2a-codegen/Cargo.toml -- --check`
 regenerates in memory and fails, naming the first file that differs, when
 the checked-in output is not byte-identical. It runs in CI's static checks.
-After the migration, a second check refuses a hand-written `struct` or
-`enum` outside `src/generated/` whose name is a proto message's Rust name.
+Then it refuses a hand-written `struct`, `enum`, `union` or `type` declared
+under the Rust name of any generated type (each proto type's, and
+`PartContent`'s) in a Rust file git knows of, tracked or untracked and not
+ignored, outside `src/generated/` and the generator itself, whose model of
+the proto has a `Message` of its own. The output names each declaration by
+file and line.
 
 ### The public API
 
@@ -161,6 +165,11 @@ tests unchanged and passing at every step:
 5. Security schemes and the `oneof`s (`Part`, `SecurityScheme`,
    `OAuthFlows`, `StreamResponse`, `SendMessageResponse`).
 6. The shadowing check, then the ledger's §1.4 entry and register R49.
+
+All six were done on 2026-10-15; every proto type is generated, and the
+configuration's `[pending]` table, which held the types not yet moved, is
+gone. A type a later proto release adds is generated, or listed there with
+its reason, before `--check` passes.
 
 ## Alternatives considered
 

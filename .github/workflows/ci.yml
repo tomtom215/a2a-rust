@@ -83,7 +83,9 @@ jobs:
       # types under crates/a2a-protocol-types/src/generated/ are (ADR 0016);
       # this regenerates them in memory and fails when the checked-in files
       # differ, so a proto change, a codegen.toml change or a hand edit to a
-      # generated file cannot land without the other.
+      # generated file cannot land without the other. It also fails when any
+      # Rust file outside src/generated/ and the generator declares a type
+      # under a generated type's name, so no hand-written copy can shadow one.
       - name: Generated types match the proto
         run: cargo run --locked --manifest-path tools/a2a-codegen/Cargo.toml -- --check
 

@@ -1420,7 +1420,8 @@ follows is a new pull request.
     `serve_with_addr` and the WebSocket listener, whose card peek reads the
     raw socket before any handshake.
 
-35. `feat(types):` audit register R49, phases 1 to 5 of 6 (ADR 0016).
+35. `feat(types):` audit register R49, phases 1 to 5 of 6 (ADR 0016);
+    phase 6 is item 37.
     The public types are generated from `a2a.proto` by `tools/a2a-codegen`
     (out of workspace, `protox`), shaped by
     `crates/a2a-protocol-types/codegen.toml`; CI runs `--check`.
@@ -1428,12 +1429,7 @@ follows is a new pull request.
     family, phase 3 the task, message and artifact types and their
     events, phase 4 the requests and responses, phase 5 the security
     schemes and the five `oneof`s, in the form ADR 0016 records).
-    **Next session: phase 6.** First the shadowing check ADR 0016
-    describes (a hand-written `struct` or `enum` outside `src/generated/`
-    named as a proto message's Rust name fails), wired into the static
-    checks; then the ledger's §1.4 entry from PARTIAL, with its
-    evidence, and register R49 closed; then remove the empty `[pending]`
-    table. The recipe used for each type, for a proto change later: copy
+    The recipe used for each type, for a proto change later: copy
     its derives and each field's deviations into `codegen.toml` (a field
     the proto lacks is an `[[messages.X.extra]]` entry), `write`, replace
     the hand definitions with one `include!("generated/<module>.rs")` in
@@ -1466,6 +1462,24 @@ follows is a new pull request.
     all present. Not mapped, as before: Arts. 51-56 (general-purpose AI
     models) and the authorities' and procedural chapters (sandboxes, the AI
     Office's powers, Arts. 75a-75d, penalties beyond 99(4)(da)).
+37. `feat(codegen):` audit register R49 phase 6, closing R49. `--check`
+    also refuses a hand-written `struct`, `enum`, `union` or `type` under
+    any of the 47 generated names (46 proto types, `PartContent`) in a Rust
+    file git lists (tracked, or untracked and not ignored) outside
+    `src/generated/` and `tools/a2a-codegen/` (`tools/a2a-codegen/src/shadow.rs`).
+    A scan before writing it found no such declaration among the
+    repository's 838 Rust files but the generator's own `Message`. Shown
+    by four injections, each failing with file and line, and passing once
+    undone: a `struct Task` in the server's `lib.rs`, a `struct AgentCard`
+    in a new untracked file, `type TaskState = u8`, `pub(crate) enum
+    PartContent`. The gate prover still proves the step with its one
+    injection (a hand edit to `generated/task.rs`); the shadowing half is
+    proven by the unit tests and those injections, not by the prover. The
+    ledger's §1.4 MUST is TESTED (ledger: TESTED 328, PARTIAL 9,
+    SUPPORTED 59, NOT_SUPPORTED 4, APPLICATION 87, NOT_APPLICABLE 22 of
+    509); the empty `[pending]` table is gone, the schema keeping the field
+    for a type a later proto release adds. **Next session:** the remaining
+    PARTIAL MUSTs (§3.1.6, §3.5.2, §5.7, §12.4, §12.6), then handoff Step 3.
 
 **Lessons, new this session.**
 - Tests and semver-checks passing do not show a serde change is

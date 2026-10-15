@@ -34,7 +34,7 @@ release text; the ledger's own numbering).
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
-| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 5 of 6 done (ADR 0016) |
+| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | done (ADR 0016; the ledger's §1.4 entry is TESTED) |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
@@ -330,6 +330,12 @@ records, with no API change (202 pass) and the same wire behaviour: 35
 inputs across the five, parsed and re-serialized by a build of each tree,
 print the same lines except one error message's member order. Every proto
 type is generated; phase 6 (the shadowing check, then this entry) remains.
+**Phase 6 done, R49 closed (2026-10-15):** `a2a-codegen --check` also
+fails when any Rust file outside `src/generated/` and the generator declares
+a type under one of the 47 generated names, shown by four injections (a
+`struct` in a tracked file, one in an untracked file, a `type` alias, a
+`pub(crate) enum`). The ledger's §1.4 MUST moves from PARTIAL to TESTED, and
+the configuration's empty `[pending]` table is removed.
 
 ## R50 — the REST client sends `application/json`
 

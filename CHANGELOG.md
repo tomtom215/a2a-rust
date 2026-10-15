@@ -71,7 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `crates/a2a-protocol-types/codegen.toml`. The generator refuses a
   configuration entry for a type, field or value the proto does not have,
   and a proto type the configuration does not mention. CI's static checks
-  regenerate in memory and fail on any difference. Phases 1 to 5 of 6:
+  regenerate in memory and fail on any difference, and on any hand-written
+  type, anywhere in the repository, declared under a generated type's name.
+  Over the migration's phases,
   `TaskState`, `MessageRole`, `AgentInterface`, `AgentProvider`,
   `AgentExtension`, then the agent card family (`AgentCard`,
   `AgentCapabilities`, `AgentSkill`, `AgentCardSignature`), then `Task`,
