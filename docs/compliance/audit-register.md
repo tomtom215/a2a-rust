@@ -1,49 +1,75 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# Audit register — open items
+# Audit register
 
 The spec audit of `claude/tender-cray-bsfw83` kept a register, R1 to R67, of
 findings against the A2A specification, the proto and the RFCs they cite. It
-lived in that session's scratchpad and was never committed; the handoff,
-the CHANGELOG and the spec ledger refer to its entries by number (54 distinct
-ids). The entries it closed are recorded where they were fixed: each fix's
-handoff item and CHANGELOG entry names its register id. This file holds the
-items still open, so the register's open half is in the repository.
+lived in that session's scratchpad and was never committed. This file holds
+the items that were open when it was committed (2026-10-14), R12 to R67, and
+those found since, R68 and R69, with what became of each. The handoff, the
+CHANGELOG and the spec ledger refer to 54 of the R1-R67 ids; an entry closed
+before this file existed is recorded in the handoff item that fixed it, and
+those closed since also name their id in the CHANGELOG.
 
-Each item gives what the code does now, read from source at `9b08a860` (each
-file and line was opened, not recalled), the text it is measured against, the
-options, and a recommendation. Under the maintainer's directive to be
-completely v1.0.1-conformant, the recommendation is the conformant option
-unless that would break something worse, in which case the item says what.
-**Decided 2026-10-14 by the maintainer:** every recommendation below is
-approved as written, with two specifics: R49 / §1.4 takes option (b), the
-types generated from the proto now, not the check first; R12 reads the old
-partition keys as a fallback for one release. The status column says which
-are done; each is implemented as its own tested commit, with any breaking
-change in the upgrading guide. Spec line
-numbers are in `docs/implementation/a2a-v1.0.1-specification.md` (the v1.0.1
-release text; the ledger's own numbering).
+How to read an item: **Was** is what the code did when the item was found,
+read from source at the commit named (`9b08a860` for R12 to R67; each file
+and line was opened, not recalled). **Text** is what it is measured against,
+then the options and the recommendation as they were put to the maintainer,
+the decision, and, once implemented, **Done**: what the code does now. Under
+the maintainer's directive to be completely v1.0.1-conformant, the
+recommendation is the conformant option unless that would break something
+worse, in which case the item says what. Spec line numbers are those of the
+upstream v1.0.1 text, the ledger's own numbering; in the vendored copy,
+`docs/implementation/a2a-v1.0.1-specification.md`, add 31 for its header.
+Proto line numbers are in `proto/a2a_v1/a2a.proto`.
 
-| Id | Area | Recommendation | Breaks | Status |
-|---|---|---|---|---|
-| R12 | JWT caller identity | key by issuer and subject; refuse a token with no `sub` | re-keys stored partitions (a one-shot migration per store); bare approver allowlists | done |
-| R13 | SLIMRPC caller identity | move to agntcy-slim-rpc 3.x and record the verified peer | the binding's API (unpublished) | approved |
-| R19 | `Struct` error details | write ProtoJSON `Any` (`{"@type", "value"}`), read both shapes | a2a-go reading our `data` | done; a2a-go report drafted, not filed |
-| R21 | JSON-RPC notifications | execute, never reply | a client that relied on a reply | done |
-| R33 | first frame of a send stream | keep, documented | — | approved |
-| R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
-| R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
-| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | done (ADR 0016; the ledger's §1.4 entry is TESTED) |
-| R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
-| R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
-| R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
-| R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 state | a deployer relying on the public card being served | done |
-| R69 | a subscription across replicas loses an event | the store reports the log position a saved task reflects (option a) | the `TaskStore` trait (a defaulted method) and the SQL schemas (a column) | done (option (a), decided 2026-10-15) |
+## Decisions
+
+- **2026-10-14.** The recommendations for R12 to R67 and the ledger rows put
+  to the maintainer (the last section) are approved as written, with two
+  specifics: R49 / §1.4 takes option (b), the types generated from the proto
+  now, not the check first; R12 migrates the stored partition keys once per
+  store (decided the same day, replacing an earlier "read the old keys for
+  one release"). R67 takes option (b), and the next release is 0.15.0. The
+  dispositions recorded for §3.1.6, §3.5.2, §8.6 / §8.6.2, §11.1 (server),
+  §12.4 and §12.6 are approved as recorded.
+- **2026-10-14.** R68: follow the text.
+- **2026-10-15.** R49's form: a generator in this repository writes the types
+  out of the proto, checked in (ADR 0016).
+- **2026-10-15.** R69: option (a).
+
+## Open
+
+| Item | What remains | Waiting on |
+|---|---|---|
+| R13 | upgrade the six SLIM crates to the line agntcy-slim-rpc 3.x requires, record the verified peer, ship an interceptor that authenticates from it | work (approved) |
+| R41, second half | key an unidentified SLIMRPC caller by its verified peer | R13 |
+| §3.5.2 catch-up paging | a lagged stream's catch-up stops after one `subscribe_replay_limit` read (1,000 events) and ends with `streamLagged`, where it could page through the log; a consumer slower than its producer would then read the store indefinitely | the maintainer's call (a change to an approved disposition) |
+| §12.4 (line 3016), SLIMRPC error details | `agntcy-slim-rpc` sends an error's code and message only, in 2.3.0 (pinned) and 3.4.1 (latest) | upstream |
+| §5.4 SHOULD (line 1194) | the SLIMRPC specification's mapping table has no row for -32007, -32008 or -32009 | upstream: `docs/upstream/slimrpc-a2a-error-mapping-report.md` |
+| Reports to file | §12 / §5.4: `docs/upstream/slimrpc-a2a-error-mapping-report.md`; §5.7: `docs/upstream/a2a-required-empty-array-report.md`; R19 to a2a-go: not in the repository, because it cites a2a-go's code as an earlier session described it and was not checked against a2a-go's source | the maintainer, to check and send |
+
+## Done
+
+| Id | Area | What changed | Commit |
+|---|---|---|---|
+| R12 | JWT caller identity | a caller is `bearer:<label>`, `api-key:<label>` or `jwt:<issuer>:<sub>`; a JWT with no `sub` is refused under caller isolation; `migrate_caller_keys` per store | `67c30964` |
+| R19 | `Struct` error details | written as ProtoJSON's `Any` (`{"@type", "value"}`), both shapes read | `5cd159c3` |
+| R21 | JSON-RPC notifications | executed, never answered | `d57cec90` |
+| R33 | first frame of a send stream | kept, with the reasoning recorded in the ledger's §3.1.2 entry | this file and the ledger |
+| R36(b) | task snapshot moving back to `Submitted` | held to the state-transition rules at the queue | `14bd2d5f` |
+| R41, first half | `x-forwarded-for` over SLIMRPC | forwarding headers dropped from caller metadata | `8e5cf1a7` |
+| R49 | types not generated from the proto | generated from `a2a.proto` by `tools/a2a-codegen` (ADR 0016); the ledger's §1.4 entry is TESTED | `21cb5989` to `f0a2b40c` |
+| R50 | REST client `Content-Type` | `application/a2a+json` with a body, none without | `8e5cf1a7` |
+| R66 | multicast member lag | the typed `streamLagged`, still terminal | `8e5cf1a7` |
+| R67 | API key in the query string | `ClientRequest::query_params` on the HTTP transports; the move to 0.15.0 | `edc8bbc0` |
+| R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError` | `cd7c6d11` |
+| R69 | a subscription across replicas loses an event | the store reports the log position a saved task reflects | `29c8966a` |
 
 ## R12 — a JWT caller is its `sub` alone
 
-**Now.** `crates/a2a-protocol-server/src/auth/jwt.rs:763-765` records `principal.subject` as the caller;
+**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/auth/jwt.rs:763-765` records `principal.subject` as the caller;
 `principal.issuer` is never used for identity. `crates/a2a-protocol-server/src/store/tenant/context.rs:70`
 keys the partition `{tenant}\u{1f}{caller}`. So one `sub` from two accepted
 issuers shares a partition, and so does an API-key or bearer label equal to a
@@ -58,7 +84,7 @@ boundaries." RFC 7519 §4.1.2: the subject is "locally unique in the context of
 the issuer or be globally unique".
 
 **Options.** (a) Keep. (b) Key the caller as scheme + issuer + subject
-(`jwt:<iss>:<sub>`, `apikey:<label>`, `bearer:<label>`), and refuse a JWT with
+(`jwt:<iss>:<sub>`, `api-key:<label>`, `bearer:<label>`), and refuse a JWT with
 no `sub` when caller isolation is on. (c) (b) without the refusal.
 
 **Recommendation: (b).** `sub` is only unique within its issuer, and a
@@ -68,13 +94,11 @@ invisible to their owners unless a migration maps the old keys, so it ships
 with a documented migration (or a read-through of the old key for one
 release).
 
-**Waiting on a design pass (2026-10-14).** The partition is read in 38
-places across six stores (tasks and push configs, each in memory, SQLite
-and PostgreSQL). A read-through of the old key has to decide what a write,
-a list and a page token do when a caller has rows under both keys; a
-one-shot migration per store is the alternative. Approved as "read old keys
-one release"; the design goes back to the maintainer before it is built,
-because the scheme+issuer key also changes what an approver allowlist,
+The design pass (2026-10-14) found the partition read in 38 places across
+six stores (tasks and push configs, each in memory, SQLite and PostgreSQL),
+and a read-through having to settle what a write, a list and a page token do
+for a caller with rows under both keys; it went back to the maintainer,
+because the qualified key also changes what an approver allowlist,
 `requested_by` and the audit actor compare against.
 
 **Decided (2026-10-14): a one-shot migration per store** that rewrites the
@@ -119,15 +143,15 @@ deployer, because the old key records neither scheme nor issuer.
   (SQLite: tasks, events, keys, a collision, a sealed config), two Postgres
   tests in `postgres_store_tests.rs` (run against a local PostgreSQL 16),
   and unit tests in `caller_id`, `caller_keys` and `approval::tests`.
-  Hand mutants: 29, all killed (11 on the identities and the refusal, 18
-  on the gate and the four migrations).
+  Hand mutants: 29, all killed (11 for the identities, 18 for the gate and
+  the migrations).
 
 ## R13 — SLIMRPC records no caller identity
 
-**Now.** The binding depends on agntcy-slim-rpc 2.3.0 (`bindings/a2a-protocol-slimrpc/Cargo.toml:66`,
+**Now (read 2026-10-15).** The binding depends on agntcy-slim-rpc 2.3.0 (`bindings/a2a-protocol-slimrpc/Cargo.toml:66`,
 `bindings/a2a-protocol-slimrpc/Cargo.lock`). It builds the request's headers from SLIM metadata only
-(`bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:80`), drops transport keys and every `:`-prefixed key
-(line 111), and never sets a caller identity or `:peer-addr`. 2.3.0's `Context`
+(`bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:88`), drops transport keys, every `:`-prefixed key and
+the forwarding headers (line 125), and never sets a caller identity or `:peer-addr`. 2.3.0's `Context`
 exposes `session().source()` (the session's peer name) but no claims; whether
 SLIM verified that name is not visible from the crate. A credential sent as
 metadata (`authorization`) still reaches the handler's interceptors, which
@@ -138,28 +162,33 @@ missing is the transport-verified identity.
 **MUST** "Maintain Security".
 
 **Options.** (a) Keep, document that SLIMRPC callers must present an A2A
-credential. (b) Upgrade the four SLIM crates to the 3.x line, record the
+credential. (b) Upgrade the six SLIM crates the binding depends on (rpc,
+auth, datapath, service, config, session) to the line agntcy-slim-rpc 3.x
+requires, record the
 MLS-verified peer subject and issuer under `:`-prefixed keys the caller
 cannot forge (the binding already drops caller-sent `:` keys), and ship an
-interceptor that authenticates from them. The 3.x accessors
-(`Context::peer_subject`, `peer_issuer`, MLS sessions only) are as the
-previous session read them and are to be confirmed against 3.3.1's source.
+interceptor that authenticates from them. The 3.x accessors exist as
+described: `Context::peer_subject` and `peer_issuer`, through
+`SessionContext::peer_identity`, `None` on a session without MLS
+(`src/context.rs` in agntcy-slim-rpc 3.3.1, read 2026-10-15; 3.4.1, the
+latest 3.x, has both at lines 78 and 86).
 
 **Recommendation: (b).** It also removes RUSTSEC-2024-0449:
 agntcy-slim-config 0.17.3, which agntcy-slim-rpc 3.3.1 requires, replaces
-serde_yaml with yaml_serde (checked against the crates.io index,
+serde_yaml with yaml_serde, and agntcy-slim-auth 0.17.3 takes regorus 0.12,
+which drops serde_yaml too (checked against the crates.io index,
 2026-10-14). It does not fix RUSTSEC-2026-0285 or the 2026-10-14 rustls
 advisories: mls-rs-crypto-awslc 0.25.0 still pins aws-lc-rs =1.16.3.
 
 ## R19 — `Struct` error details are written flat
 
-**Now.** `crates/a2a-protocol-server/src/streaming/sse.rs:330-339` copies `A2aError.data`'s fields into the
+**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/streaming/sse.rs:330-339` copies `A2aError.data`'s fields into the
 detail and adds `"@type": "type.googleapis.com/google.protobuf.Struct"`; a
 non-object goes under `"value"`. Used by JSON-RPC, HTTP+JSON and their
 streams. The doc says it is written "the way a2a-go writes and reads one".
 
 **Text.** §3.3.2 (line 544): each detail "**MUST** include a `@type` key …
-(using ProtoJSON `Any` representation)"; §9 (line 2437) and §11.6 the same.
+(using ProtoJSON `Any` representation)"; §9.5 (line 2437) and §11.6 the same.
 In ProtoJSON, an `Any` holding a well-known type with a special JSON mapping
 is `{"@type": …, "value": <that type's JSON>}`; the flat form is the encoding
 for an ordinary message. The ProtoJSON guide's "Special-cased well-known
@@ -184,20 +213,20 @@ two carry the same detail. `A2aError::lag_marker` and the REST client's
 field is an object named `value` reads as the `Any` form, an ambiguity the
 flat form cannot avoid. `scripts/go_sdk_interop.sh` passes both directions
 (137 checks, 0 failures; its Go client does not inspect error details). The
-report to a2a-go is not filed: the draft cites a2a-go's code from these notes
-rather than from a reading this session, so it is the maintainer's to check
-and file.
+report to a2a-go is not filed and not in the repository: it cites a2a-go's
+code as the earlier audit session described it, not as read from a2a-go's
+source, so the maintainer should check it before filing.
 
 ## R21 — JSON-RPC notifications are answered
 
-**Now.** `crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:303` and `:372` take
+**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:303` and `:372` take
 `rpc_req.id.to_response_id()` with no check for an absent `id`, so a
 notification is executed and answered with `"id": null`; the batch loop
 (`:239-265`) and the WebSocket path (`crates/a2a-protocol-server/src/dispatch/websocket.rs:856`) do the same.
 `crates/a2a-protocol-server/tests/jsonrpc_edge_tests.rs` `jsonrpc_absent_id_request_answered_with_null_id`
 pins it.
 
-**Text.** §9 (line 2270): "All JSON-RPC requests **MUST** follow the standard
+**Text.** §9.3 (line 2270): "All JSON-RPC requests **MUST** follow the standard
 JSON-RPC 2.0 format". JSON-RPC 2.0 §4.1: "The Server MUST NOT reply to a
 Notification, including those that are within a batch request."
 
@@ -235,9 +264,12 @@ first would break line 208 for an agent that answers with a `Message`. The
 wait ends at the executor's first event, which is the earliest anything is
 known. Record as a disposition, with the reasoning, in the ledger.
 
+**Decided (2026-10-14): keep. Done (2026-10-15):** the ledger's §3.1.2 entry
+for line 212 records the wait and this reasoning.
+
 ## R36(b) — a task snapshot may move a task back to `Submitted`
 
-**Now.** `crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:381-384` and
+**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:381-384` and
 `crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:524-526` store an executor's `Task` snapshot without
 `can_transition_to`, which forbids re-entering `Submitted`
 (`crates/a2a-protocol-types/src/task.rs:318`) and is applied only to status updates. The store refuses only
@@ -247,16 +279,18 @@ writes over a terminal state.
 same transition is refused, through the processors' existing mark-failed
 path. No test pins the current acceptance.
 
-**Done (2026-10-14).** Both processors now hold a snapshot that changes the
-task's state to `can_transition_to`: the background processor marks the task
-failed through the status branch's path and refuses a move out of a terminal
-state itself, and the sync collector answers `InvalidStateTransition`. A
-snapshot in the task's current state is stored as before.
+**Done (2026-10-14).** Both processors now check a snapshot that changes the
+task's state against `can_transition_to`: the background processor marks the
+task failed through the status branch's path and refuses a move out of a
+terminal state itself, and the sync collector answers
+`InvalidStateTransition`. A snapshot in the task's current state is stored as
+before. Tests: six, in `state_machine.rs` and `sync_collector.rs`; the two
+"back to `Submitted`" tests fail on the old source.
 
 ## R41 — SLIMRPC believes a caller's `x-forwarded-for`
 
-**Now.** The binding passes caller metadata named `x-forwarded-for` into the
-request's headers (`bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:111` drops only transport and `:`
+**Was (at `9b08a860`).** The binding passed caller metadata named `x-forwarded-for` into the
+request's headers (`bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:111` dropped only transport and `:`
 keys). With `trusted_proxy_hops > 0`, `crates/a2a-protocol-server/src/rate_limit/identity.rs:41,50` and
 `crates/a2a-protocol-server/src/auth/throttle.rs:191-195` take the caller's own value as the client address:
 no proxy appends to it on the SLIM path, so the caller picks its rate-limit
@@ -279,7 +313,7 @@ not throttled, as before with `trusted_proxy_hops = 0`.
 
 ## R49 / §1.4 — the types are not generated from the proto
 
-**Now.** Only the prost types (feature `proto`) are generated. The public
+**Was (at `9b08a860`).** Only the prost types (feature `proto`) are generated. The public
 serde types are hand-written and guarded by golden fixtures, proptests and a
 check that the vendored proto copies are identical, not by a check that the
 types match the proto.
@@ -295,8 +329,9 @@ hand-written types, and add a mechanical check that every proto message,
 field, JSON name, `REQUIRED` marker and enum value has its Rust counterpart
 and nothing else exists.
 
-**Recommendation.** Only (b) meets the text. (c) is the strongest check
-short of it and can land first, so drift fails CI while (b) is planned. This
+**Recommendation** (as put to the maintainer; the decision below
+superseded the (c)-first order). Only (b) meets the text. (c) is the
+strongest check short of it and can land first, so drift fails CI while (b) is planned. This
 is the largest change in the register; it needs the maintainer's decision on
 the API break before any work.
 
@@ -340,7 +375,7 @@ the configuration's empty `[pending]` table is removed.
 
 ## R50 — the REST client sends `application/json`
 
-**Now.** `crates/a2a-protocol-client/src/transport/rest/request.rs:133` sends
+**Was (at `9b08a860`).** `crates/a2a-protocol-client/src/transport/rest/request.rs:133` sends
 `Content-Type: application/json`, and `:112` sends the same `Accept`; GET and
 DELETE send the `Content-Type` with no body. No test asserts the request
 `Content-Type`.
@@ -364,7 +399,7 @@ that pinned `application/json`).
 
 ## R66 — a multicast member's lag report
 
-**Now.** `bindings/a2a-protocol-slimrpc/src/multicast/fanout.rs:128-129` sends the member an `Err`
+**Was (at `9b08a860`).** `bindings/a2a-protocol-slimrpc/src/multicast/fanout.rs:128-129` sends the member an `Err`
 that ends its stream (`crates/a2a-protocol-client/src/streaming/event_stream.rs:485-487`). The
 error is `ClientError::Transport("N event(s) dropped…")`, not the typed
 `streamLagged` error the other bindings send.
@@ -373,14 +408,14 @@ error is `ClientError::Transport("N event(s) dropped…")`, not the typed
 error**, so one check (`is_stream_lagged`) recognises a lag on every binding.
 
 **Done (2026-10-14).** `lag_report` returns
-`ClientError::Protocol(A2aError::stream_lagged(missed))`; the binding's unit
-test `a_lag_report_is_the_typed_stream_lagged_signal` and
-`tests/multicast_backpressure.rs` check `is_stream_lagged` and the dropped
-count where the latter matched the message text.
+`ClientError::Protocol(A2aError::stream_lagged(missed))`. The binding's unit
+test `a_lag_report_is_the_typed_stream_lagged_signal` pins `lag_report`, and
+`tests/multicast_backpressure.rs`, which matched the message text, now
+checks `is_stream_lagged` and the dropped count.
 
 ## R67 — an API key in the query string is refused
 
-**Now.** `crates/a2a-protocol-client/src/auth.rs:281-284` refuses `ApiKeyLocation::Query`; the
+**Was (at `9b08a860`).** `crates/a2a-protocol-client/src/auth.rs:281-284` refuses `ApiKeyLocation::Query`; the
 `Transport` trait carries headers only (`crates/a2a-protocol-client/src/transport/mod.rs:200`, `:212`).
 
 **Text.** a2a.proto `APIKeySecurityScheme.location`: "Valid values are
@@ -396,8 +431,8 @@ transports and refused by gRPC.
 compiling and refuses a query parameter it does not handle, rather than (c),
 which overloads the header map.
 
-
-**Blocked (2026-10-14), a release decision.** The query parameters have to
+**Blocked (2026-10-14), a release decision** (superseded by the decision
+below). The query parameters have to
 reach the transports through `ClientRequest`, whose fields are all public
 and which is not `#[non_exhaustive]`: adding one breaks a struct literal,
 and `cargo-semver-checks` (ci.yml, `semver`) fails a break the version does
@@ -417,9 +452,10 @@ after any query the REST route builds, and `RetryTransport` passes them to
 every attempt. The trait's default refuses a non-empty query with
 `InvalidAuthScheme`, which is what gRPC, WebSocket, the SLIMRPC binding and
 any custom transport that does not override it answer. The crates are at
-0.15.0 (the binding at 0.7.0), so `cargo-semver-checks` reads the field as a
-minor-version break, and until the tag it no longer blocks an accidental
-break on this line either, as at 0.14.0. Tests:
+0.15.0 (the binding at 0.7.0), so `cargo-semver-checks` accepts the new
+field as a minor-version break. Until 0.15.0 is tagged and becomes the
+baseline, it also accepts any other accidental break, as it did before
+0.14.0 was tagged. Tests:
 `crates/a2a-protocol-client/tests/api_key_query.rs` (both transports, a
 route with its own query, a retry, a stream with and without the retry
 wrapper, a transport that refuses), `auth::tests` for the placement, and
@@ -540,20 +576,20 @@ keeps a position whose effect it overwrote (a lost update older than R69), and
 during a rolling upgrade a replica on an earlier release leaves the position
 behind, so a subscriber can receive events twice (not lose them).
 
-## Ledger entries that need a decision
+## Ledger entries put to the maintainer
 
 | Ledger entry | Now | Recommendation |
 |---|---|---|
-| §8.4.3 (line 2122), medium: "Retrieve the public key using the `kid` and `jku` (or from a trusted key store)" | `kid` lookup in a caller-supplied JWKS, tested; `jku` decoded, never followed | **Done**: TESTED. The trusted-key-store branch is what is implemented. Following a card's own `jku` would let a card name the key that vouches for it. |
-| §12 (line 2977) and §5.4 (line 1194), medium/low: custom bindings define "equivalent error code mappings that preserve the semantic meaning" | SLIMRPC follows its own spec's table (UNIMPLEMENTED where A2A's gRPC column says FAILED_PRECONDITION) | **Done**: both MUSTs TESTED. The text asks for an equivalent mapping that preserves meaning, not the gRPC column. The upstream report is drafted for the maintainer, not filed. |
+| §8.4.3 (line 2122), was medium: "Retrieve the public key using the `kid` and `jku` (or from a trusted key store)" | `kid` lookup in a caller-supplied JWKS, tested; `jku` decoded, never followed | **Done**: TESTED. The trusted-key-store branch is what is implemented. Following a card's own `jku` would let a card name the key that vouches for it. |
+| §12 (line 2977) and §5.4 (line 1194), was medium/low: custom bindings define "equivalent error code mappings that preserve the semantic meaning" | SLIMRPC follows its own spec's table (UNIMPLEMENTED where A2A's gRPC column says FAILED_PRECONDITION) | **Done**: both MUSTs TESTED. The text asks for an equivalent mapping that preserves meaning, not the gRPC column. The upstream report is drafted for the maintainer, not filed. |
 | §13.3 (line 3164): no card and no extended card | `-32007 ExtendedAgentCardNotConfigured` (`crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:83-87`, before the change) | **Done**: `UnsupportedOperationError`; a handler with neither card cannot serve the operation, and `-32007` asserts a capability it cannot know is declared. |
 | proto `Artifact.parts` (line 287): "Must contain at least one part" | an `append: true` chunk with no parts was accepted (`crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36-37`, before the change), and one for an unknown artifact id stored a zero-part artifact | **Done**: refused at the queue write and dropped by both processors. |
-| App. A.2 (line 3421): clients prefer new names, dual-handle, warn on legacy forms | legacy enum spellings and `AgentCard.url` parsed; no fallback for `supportsAuthenticatedExtendedCard`; no warning; `url` not folded into `supportedInterfaces` | **Done** (`crates/a2a-protocol-client/src/legacy_card.rs`): a fetched or extended card's `url`, `preferredTransport` and `additionalInterfaces` fold into `supportedInterfaces`, `supportsAuthenticatedExtendedCard` and A.2.2's `supportsExtendedAgentCard` into `capabilities.extendedAgentCard`, and each is named in a `tracing` warning. Not done: A.2.1's `kind` discriminator on parts and events, which only a v0.3 interface sends and which the client never selects. |
+| App. A.2 (line 3421): clients prefer new names, dual-handle, warn on legacy forms | legacy enum spellings and `AgentCard.url` parsed; no fallback for `supportsAuthenticatedExtendedCard`; no warning; `url` not folded into `supportedInterfaces` | **Done** (`crates/a2a-protocol-client/src/legacy_card.rs`): a fetched or extended card's `url`, `preferredTransport` and `additionalInterfaces` fold into `supportedInterfaces`, `supportsAuthenticatedExtendedCard` and A.2.2's `supportsExtendedAgentCard` into `capabilities.extendedAgentCard`, and each is named in a `tracing` warning. Not done: A.2.1's `kind` discriminator on parts and events, which only a v0.3 interface sends, and the client never selects a v0.3 interface. |
 | §5.7 (line 1263): required arrays non-empty | `ListTasksResponse.tasks` may be empty (the spec contradicts itself); `HotReloadAgentCardHandler::update` does not validate | **Done**: `try_update` validates as `reload_from_json` does, and `update` is deprecated (one hand mutant, killed). The upstream report on `ListTasksResponse.tasks` is drafted for the maintainer, not filed; the entry stays PARTIAL on that contradiction alone. |
 | §8.1 (line 1970): a server MUST make an agent card available | JSON-RPC, REST and axum serve it; WebSocket and gRPC serve none | **Done**: the WebSocket listener peeks the request line and answers a card fetch as HTTP/1.1 (`dispatch/websocket/card.rs`); the gRPC router gains a `.well-known` service and accepts HTTP/1.1 when there is a card (`dispatch/grpc/well_known.rs`). Both answer through `dispatch/well_known.rs` with the HTTP dispatchers' card handler. 8 hand mutants, all killed. |
 | §14 (line 3342): implementations SHOULD support HTTPS | only gRPC terminates TLS | **Done** for `serve::Server` (`Server::with_tls`, `with_tls_pem`, under `tls-rustls`): the handshake runs per connection within the header read timeout, ALPN offers `h2` and `http/1.1`, and a failed handshake counts as a failed connection. 8 hand mutants, all killed. `serve`, `serve_with_addr` and the WebSocket listener stay plaintext, behind a proxy. |
 | §14 (line 3344): clients SHOULD verify signatures when present | opt-in, per fetch; `CachingCardResolver` and `ClientBuilder::from_card` take no keys | **Done**: `CachingCardResolver::with_options(CardFetchOptions)`, and `ClientBuilder::from_signed_card(json, keys)`, which verifies the JSON as given (a typed `AgentCard` drops fields the signer covered). 3 hand mutants, all killed. |
-| §3.3.2 (line 544): use `BadRequest` where applicable | the handler's own validation names the field in the message only | **Done** as a new `ServerError::InvalidField { field, message }`: changing `InvalidParams`' payload would fail the semver gate at 0.14.1; the new variant answers exactly as `InvalidParams` does, plus the detail. |
-| §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016) | dispositions recorded in each entry's notes | Approve each as recorded, or name the ones to change. §3.5.2 also has R69, found since. |
-| §12.6 (line 3033): custom bindings MUST define how authentication challenges are communicated | approved as recorded: the WebSocket binding answers a refused credential `-32600` with no `data`, so its challenge is dropped | **Done** (2026-10-15), beyond the approved disposition: the `-32600` carries an `ErrorInfo` from `a2a-rust.com`, `UNAUTHENTICATED` with the challenge as `www-authenticate` metadata or `PERMISSION_DENIED` (binding specification §6), and the client reports them as `401` and `403`. The entry is TESTED; 9 hand mutants, all killed. |
+| §3.3.2 (line 544): use `BadRequest` where applicable | the handler's own validation names the field in the message only | **Done** as a new `ServerError::InvalidField { field, message }`: at 0.14.1, when this was done, changing `InvalidParams`' payload would have failed the semver gate; the new variant answers exactly as `InvalidParams` does, plus the detail. |
+| §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016) | dispositions recorded in each entry's notes | **Approved as recorded (2026-10-14).** Since then: §3.5.2 had R69, now done, and the catch-up paging awaits a call (Open, above); §12.4 cannot close here (Open, above); §3.1.6's idle bound stands unless the maintainer reopens it. |
+| §12.6 (line 3033): custom bindings MUST define how authentication challenges are communicated | approved as recorded: the WebSocket binding answers a refused credential `-32600` with no `data`, so its challenge is dropped | **Done** (2026-10-15), beyond the approved disposition: the `-32600` carries an `ErrorInfo` from `a2a-rust.com`, `UNAUTHENTICATED` with the challenge as `www-authenticate` metadata or `PERMISSION_DENIED` (binding specification §6), and the client reports them as `401` and `403`. The entry is TESTED; 9 hand mutants, all killed, and a tenth, on the mid-stream error path no refusal reaches, survived, so that path was left unchanged. |
 | MAY, NOT_SUPPORTED: §3.1.9 pagination, §3.6.1, §8.4.2 `jku` in signers, §8.6.2 default cache lifetime, §11.5 repeated query fields, §11.7 final snapshot, §13.3 per-caller extended card | not implemented | **Done** for three, now SUPPORTED: §3.1.9 pagination (`RequestHandler::on_list_push_configs_page`, every binding; 10 hand mutants, all killed), §8.4.2 (`sign_card_es256_with_jku` and `sign_card_ed25519_with_jku`, https only; 5 killed) and §13.3 (`ExtendedCardProvider`, `RequestHandlerBuilder::with_extended_card_provider`; 10 killed). The other four stay NOT_SUPPORTED, with the reasons in their entries. |

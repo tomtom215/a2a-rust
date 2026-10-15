@@ -544,7 +544,7 @@
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:1599 subscribe_to_task_returns_an_sse_stream"
    ],
-   "notes": "The stream is returned before the executor finishes (the cooperative-executor test returns the stream while the executor waits on a Notify); events are broadcast as written.",
+   "notes": "The stream is returned before the executor finishes (the cooperative-executor test returns the stream while the executor waits on a Notify); events are broadcast as written. Disposition (audit register R33, approved 2026-10-14): a send stream's first frame waits for the executor's first event, with no time bound. Line 208 requires a message-only stream to contain exactly one Message, so a Task sent before the executor shows which kind of stream it is would break that MUST for an agent that answers with a Message; the executor's first event is the earliest the kind is known, so the wait ends there.",
    "auditor": "A",
    "source": "spec"
   },
