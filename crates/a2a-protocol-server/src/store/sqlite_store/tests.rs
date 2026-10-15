@@ -837,3 +837,23 @@ async fn add_applied_seq_adds_the_column_once_and_reports_real_failures() {
         "an ALTER that fails for another reason is an error"
     );
 }
+
+/// The losing side of two processes adding the column at once: it found the
+/// column missing, the other process's `ALTER` landed first, and its own fails
+/// with "duplicate column". That failure is the outcome it wanted, so it is
+/// success; a real failure (no such table) is still an error.
+#[tokio::test]
+async fn an_alter_that_loses_the_race_to_add_applied_seq_succeeds() {
+    let pool = sqlite_pool("sqlite::memory:").await.expect("pool");
+    sqlx::query("CREATE TABLE t (id TEXT, applied_seq INTEGER)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    alter_add_applied_seq(&pool, "t")
+        .await
+        .expect("a duplicate column after a lost race is success");
+    assert!(
+        alter_add_applied_seq(&pool, "no_such_table").await.is_err(),
+        "an ALTER that fails for another reason is an error"
+    );
+}

@@ -466,19 +466,26 @@ const MULTI_PART_GUARD: &str = sql_write_allowed!(" AND ", "state", "?3");
 /// outcome it wanted, so the list is read again rather than the error
 /// returned.
 pub(crate) async fn add_applied_seq(pool: &SqlitePool, table: &str) -> Result<(), sqlx::Error> {
-    let has_column = || async {
-        let columns = sqlx::query(&format!("PRAGMA table_info({table})"))
-            .fetch_all(pool)
-            .await?;
-        Ok::<_, sqlx::Error>(
-            columns
-                .iter()
-                .any(|c| c.get::<String, _>("name") == "applied_seq"),
-        )
-    };
-    if has_column().await? {
+    if has_applied_seq(pool, table).await? {
         return Ok(());
     }
+    alter_add_applied_seq(pool, table).await
+}
+
+/// Whether `table` has the `applied_seq` column.
+async fn has_applied_seq(pool: &SqlitePool, table: &str) -> Result<bool, sqlx::Error> {
+    let columns = sqlx::query(&format!("PRAGMA table_info({table})"))
+        .fetch_all(pool)
+        .await?;
+    Ok(columns
+        .iter()
+        .any(|c| c.get::<String, _>("name") == "applied_seq"))
+}
+
+/// The `ALTER` that [`add_applied_seq`] runs once it found the column
+/// missing. A failure is success when the column exists afterwards: that is
+/// the process that lost the race to another one adding it.
+async fn alter_add_applied_seq(pool: &SqlitePool, table: &str) -> Result<(), sqlx::Error> {
     match sqlx::query(&format!(
         "ALTER TABLE {table} ADD COLUMN applied_seq INTEGER"
     ))
@@ -486,7 +493,7 @@ pub(crate) async fn add_applied_seq(pool: &SqlitePool, table: &str) -> Result<()
     .await
     {
         Ok(_) => Ok(()),
-        Err(_) if has_column().await? => Ok(()),
+        Err(_) if has_applied_seq(pool, table).await? => Ok(()),
         Err(e) => Err(e),
     }
 }
