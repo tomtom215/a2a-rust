@@ -22,3 +22,4 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `a2a-itk-dashboard-enrolment-draft.md` | `a2aproject/a2a-itk` | Draft, not sent |
 | `a2a-required-empty-array-report.md` | `a2aproject/A2A` | Draft, not sent |
 | `slimrpc-a2a-error-mapping-report.md` | the SLIMRPC specification's owners, or `a2aproject/A2A` | Draft, not sent |
+| `a2a-go-a2a-json-errors-report.md` | `a2aproject/a2a-go` | Draft, held |

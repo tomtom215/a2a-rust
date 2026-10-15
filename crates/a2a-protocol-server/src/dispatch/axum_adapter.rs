@@ -221,8 +221,8 @@ async fn validate_a2a_request(
     next.run(req).await
 }
 
-/// Labels the response `application/a2a+json` for a client that asks for it,
-/// exactly as `RestDispatcher` does (§11.1; `dispatch::rest::media_type`).
+/// Labels the response's media type exactly as `RestDispatcher` does (§11.1;
+/// `dispatch::rest::media_type`).
 async fn negotiate_media_type(
     req: axum::extract::Request,
     next: axum::middleware::Next,

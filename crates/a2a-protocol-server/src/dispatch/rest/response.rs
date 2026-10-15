@@ -81,9 +81,9 @@ pub(super) fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
 /// Builds a JSON HTTP response with the given status and body.
 ///
 /// Labelled `application/json` here; the dispatcher relabels it
-/// `application/a2a+json` on the way out for a client that asks for that
-/// type (§11.1; see `dispatch::rest::media_type` for the rule and why it is not
-/// the unconditional default).
+/// `application/a2a+json` on the way out unless the request asked for
+/// `application/json` or for an event stream (§11.1; see
+/// `dispatch::rest::media_type` for the rule and why it is not unconditional).
 pub(super) fn build_json_response(
     status: u16,
     body: Vec<u8>,

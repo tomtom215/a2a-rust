@@ -6108,22 +6108,27 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:40-87",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:92-103",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:173-194",
+    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:50-63",
+    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:154-171",
+    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:94-105",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:224-240",
     "crates/a2a-protocol-types/src/lib.rs:87-98",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:218-233"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:170 rest_and_axum_negotiate_the_response_media_type",
+    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:174 rest_and_axum_negotiate_the_response_media_type",
+    "crates/a2a-protocol-server/tests/http_json_error_parity.rs:117 rest_and_axum_answer_operations_with_the_same_headers",
+    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:196 no_preference_is_the_a2a_type",
+    "crates/a2a-protocol-server/src/dispatch/rest/media_type.rs:232 go_sdk_streaming_headers_keep_json",
     "crates/a2a-protocol-server/tests/content_type_essence.rs:94 http_json_reads_the_media_type",
     "crates/a2a-protocol-server/tests/content_type_essence.rs:110 the_axum_router_reads_the_media_type",
-    "crates/a2a-protocol-server/tests/rest_vary.rs:78 rest_names_what_chose_the_media_type"
+    "crates/a2a-protocol-server/tests/rest_vary.rs:78 rest_names_what_chose_the_media_type",
+    "scripts/go_sdk_interop.sh Go SDK interop: both directions passed"
    ],
-   "notes": "Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2835-2836 and 2921-2922 are not matched by default. This is a deliberate interop trade-off for a2a-go (media_type.rs:8-25). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1): the type and subtype before any parameter, case-insensitively. It was compared by prefix, case-sensitively, so Application/JSON was refused and application/json-rpc accepted. Since 2026-10-13 a negotiated response names Accept and Content-Type in Vary (RFC 9110 §12.5.5), appended beside the extended card's Vary: Authorization, and every Accept line is read (§5.3); no Vary was sent, and only the first Accept line was read.",
+   "notes": "Since 2026-10-15 (maintainer decision) the server answers application/a2a+json whenever the request states no preference: no Accept, only wildcards or unrelated types, with or without an application/json body; before, those got application/json, so the spec examples at lines 2835-2836 and 2921-2922 were not matched by default. Accept still decides when it names either JSON type, and an a2a+json body is answered in kind. Remaining, why PARTIAL/low: a request whose Accept asks only for text/event-stream is answered application/json (only an error is JSON there). Released a2a-go v2.6.0 sends exactly that on SendStreamingMessage and SubscribeToTask (a2aclient/rest.go:115) and decodes an error body only under application/json (internal/rest/rest.go:276), so a refused Go stream would lose its error identity; read in the v2.6.0 source 2026-10-15, and go_sdk_interop.sh passes both directions on every binding with the rule. The report asking a2a-go to read a2a+json errors is docs/upstream/a2a-go-a2a-json-errors-report.md (held). Since 2026-10-13 the request's Content-Type is read as a media type (RFC 9110 §8.3.1), a negotiated response names Accept and Content-Type in Vary (RFC 9110 §12.5.5), and every Accept line is read (§5.3).",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 2750,

@@ -140,6 +140,18 @@ These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
 
+### HTTP+JSON answers `application/a2a+json` unless asked otherwise
+
+A response to a request that names no JSON type in `Accept` and sends no
+`application/a2a+json` body is labelled `application/a2a+json` (§11.1's
+SHOULD), on both `RestDispatcher` and the axum router; it was
+`application/json`. A client that reads only `application/json` keeps getting
+it by sending `Accept: application/json`. A request that asks only for
+`text/event-stream` still gets `application/json` errors, so that released
+a2a-go can read them. A JSON request body no longer decides the response
+type on its own: an `application/json` body with no `Accept` is answered as
+`application/a2a+json`.
+
 ### A parked subscription stays open until its task finishes
 
 `HandlerLimits::subscribe_max_idle` is an `Option<Duration>` and `None` by

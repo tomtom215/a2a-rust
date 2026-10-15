@@ -132,15 +132,18 @@ without breaking clients that cannot read it:
 - an `Accept` header that names `application/a2a+json` with a `q` at least as
   high as `application/json`'s gets `application/a2a+json`;
 - an `Accept` that prefers `application/json` gets `application/json`;
-- with no `Accept`, or only wildcards such as `*/*`, the response mirrors the
-  request's `Content-Type`;
-- anything else gets `application/json`.
+- otherwise, a request body labelled `application/a2a+json` gets that type;
+- otherwise, a request whose `Accept` asks for `text/event-stream` gets
+  `application/json`;
+- anything else, including no `Accept` at all, gets `application/a2a+json`.
 
 Successes and errors are labelled alike. The agent card (a §8.2 well-known
 resource, not an HTTP+JSON operation) and `/health` and `/ready` keep their
-own `application/json`. The default is not the A2A type
-because released a2a-go (v2.6.0) sends `Accept: application/json` and decodes
-an error body only under that type.
+own `application/json`. The event-stream rule is for released a2a-go
+(v2.6.0): its streaming calls send `Accept: text/event-stream` and nothing
+else, and it decodes an error body only under `application/json`, so a
+refused Go stream would otherwise lose its error. Its unary calls send
+`Accept: application/json`.
 
 ### Security
 

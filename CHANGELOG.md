@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **HTTP+JSON responds `application/a2a+json` when the request states no
+  preference** (server; spec §11.1 "Content-Type: application/a2a+json SHOULD
+  be used for requests and responses"). `RestDispatcher` and the axum router
+  answered `application/json` unless `Accept` preferred the A2A type or the
+  body was labelled with it. Now `Accept` still decides when it names either
+  JSON type, an `application/a2a+json` body is still answered in kind, a
+  request asking only for `text/event-stream` gets `application/json`
+  (released a2a-go v2.6.0 sends exactly that on its streaming calls and
+  decodes an error body only under `application/json`), and everything else,
+  including a request with no `Accept`, gets `application/a2a+json`.
+  `scripts/go_sdk_interop.sh` passes both directions on every binding. A
+  report asking a2a-go to read `application/a2a+json` errors is drafted,
+  held, in `docs/upstream/`.
 - **A `SubscribeToTask` stream has no idle bound by default** (server;
   spec §3.1.6 "The stream MUST terminate when the task reaches a terminal
   state"). `HandlerLimits::subscribe_max_idle` is `Option<Duration>`,
