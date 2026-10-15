@@ -173,21 +173,35 @@ fn emit_message(
         for alias in &fc.aliases {
             serde.push(format!("alias = {alias:?}"));
         }
-        let explicit_skip = fc
-            .serde
-            .iter()
-            .any(|s| s.starts_with("skip_serializing_if"));
-        if ty.starts_with("Option<") && !explicit_skip {
-            serde.push("skip_serializing_if = \"Option::is_none\"".to_owned());
-        }
-        serde.extend(fc.serde.iter().cloned());
-        if !serde.is_empty() {
-            let _ = writeln!(out, "    #[serde({})]", serde.join(", "));
-        }
-        let _ = writeln!(out, "    pub {field_name}: {ty},");
+        field(&mut out, &field_name, &ty, serde, &fc.serde);
+    }
+    for extra in &mc.extra {
+        out.push_str(&doc(
+            &format!("{}.{}", m.name, extra.name),
+            "",
+            Some(&extra.doc),
+            None,
+            1,
+        )?);
+        field(&mut out, &extra.name, &extra.ty, Vec::new(), &extra.serde);
     }
     out.push_str("}\n");
     Ok(out)
+}
+
+/// One field: its `#[serde(...)]` (the generated arguments, then the
+/// configured ones) and its declaration. An `Option` is skipped when absent
+/// unless the configuration says how it is skipped.
+fn field(out: &mut String, name: &str, ty: &str, mut serde: Vec<String>, configured: &[String]) {
+    let explicit_skip = configured.iter().any(|s| s.starts_with("skip_serializing"));
+    if ty.starts_with("Option<") && !explicit_skip {
+        serde.push("skip_serializing_if = \"Option::is_none\"".to_owned());
+    }
+    serde.extend(configured.iter().cloned());
+    if !serde.is_empty() {
+        let _ = writeln!(out, "    #[serde({})]", serde.join(", "));
+    }
+    let _ = writeln!(out, "    pub {name}: {ty},");
 }
 
 /// The default translation of a field's type (ADR 0016's table).
@@ -295,6 +309,22 @@ fn escape_line(line: &str) -> String {
             let _ = write!(out, "`{end}`{}", &word[end.len()..]);
             continue;
         }
+        if !in_code && ticks == 0 {
+            let start = word.len() - word.trim_start_matches(['(', '"', '\'']).len();
+            let end = word
+                .trim_end_matches([',', '.', ';', ':', ')', '"', '\''])
+                .len();
+            if start < end && is_identifier(&word[start..end]) {
+                let _ = write!(
+                    out,
+                    "{}`{}`{}",
+                    &word[..start],
+                    &word[start..end],
+                    &word[end..]
+                );
+                continue;
+            }
+        }
         for c in word.chars() {
             if c == '`' {
                 in_code = !in_code;
@@ -306,6 +336,17 @@ fn escape_line(line: &str) -> String {
         }
     }
     out
+}
+
+/// A word rustdoc readers take for code and clippy's `doc_markdown` wants in
+/// a code span: letters and digits with a capital after a lower-case letter
+/// (`AgentCard`, `ProtoJSON`).
+fn is_identifier(word: &str) -> bool {
+    word.chars().all(|c| c.is_ascii_alphanumeric())
+        && word
+            .as_bytes()
+            .windows(2)
+            .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
 }
 
 /// `TaskState` as `TASK_STATE`.
@@ -394,6 +435,19 @@ mod tests {
     #[test]
     fn escape_leaves_code_spans_alone() {
         assert_eq!(escape("a [b] `<c>` <d>"), "a \\[b\\] `<c>` \\<d\\>");
+    }
+
+    #[test]
+    fn identifiers_become_code_spans() {
+        assert_eq!(
+            escape("AgentCardSignature signs an AgentCard."),
+            "`AgentCardSignature` signs an `AgentCard`."
+        );
+        assert_eq!(
+            escape("(see ProtoJSON) A2A JSON"),
+            "(see `ProtoJSON`) A2A JSON"
+        );
+        assert_eq!(escape("`AgentCard` stays"), "`AgentCard` stays");
     }
 
     #[test]

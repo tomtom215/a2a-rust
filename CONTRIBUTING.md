@@ -211,7 +211,8 @@ and every file there says so in its first lines.
   (`check_proto_copies.sh` names them), then regenerate.
 - To change how a type looks in Rust (a field's type, an alias, a derive, a
   doc note), edit `crates/a2a-protocol-types/codegen.toml`, then regenerate.
-  A field whose type or name is not the default translation needs a `why`.
+  A field whose type or name is not the default translation needs a `why`,
+  and so does a Rust-only field (an `extra` entry, such as `AgentCard.url`).
 - To add behaviour, write an `impl` block in the type's own module
   (`src/task.rs` for `TaskState`), never in `src/generated/`.
 

@@ -64,6 +64,24 @@ pub struct MessageConfig {
     pub doc_append: Option<String>,
     #[serde(default)]
     pub fields: BTreeMap<String, FieldConfig>,
+    /// Fields the Rust type has and the proto does not, written after the
+    /// proto's in the order given.
+    #[serde(default)]
+    pub extra: Vec<ExtraField>,
+}
+
+/// A Rust-only field. It must say why the type carries something the proto
+/// does not.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtraField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(default)]
+    pub serde: Vec<String>,
+    pub doc: String,
+    pub why: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -130,6 +148,24 @@ impl Config {
             let Some(message) = schema.messages.iter().find(|m| &m.name == name) else {
                 continue;
             };
+            for extra in &config.extra {
+                let taken = message.fields.iter().any(|f| {
+                    let rust = config.fields.get(&f.name).and_then(|c| c.rename.as_ref());
+                    rust.unwrap_or(&f.name) == &extra.name
+                });
+                if taken {
+                    problems.push(format!(
+                        "{name}.{} is an extra field with a proto field's name",
+                        extra.name
+                    ));
+                }
+                if extra.why.trim().is_empty() {
+                    problems.push(format!(
+                        "{name}.{} is an extra field with an empty `why`",
+                        extra.name
+                    ));
+                }
+            }
             for (field, fc) in &config.fields {
                 if !message.fields.iter().any(|f| &f.name == field) {
                     problems.push(format!("{name}.{field} is not a field in the proto"));
@@ -236,6 +272,30 @@ mod tests {
         assert!(
             why.contains("Thing.id changes the default translation without a `why`"),
             "{why}"
+        );
+    }
+
+    #[test]
+    fn an_extra_field_may_not_shadow_a_proto_field() {
+        let why = problems(
+            "[paths]\nThing = \"m::Thing\"\n[messages.Thing]\nderives = []\n\
+             [[messages.Thing.extra]]\nname = \"id\"\ntype = \"u8\"\ndoc = \"d\"\nwhy = \"w\"\n",
+        );
+        assert!(
+            why.contains("Thing.id is an extra field with a proto field's name"),
+            "{why}"
+        );
+        let no_why = "[paths]\nThing = \"m::Thing\"\n[messages.Thing]\nderives = []\n\
+                      [[messages.Thing.extra]]\nname = \"old\"\ntype = \"u8\"\ndoc = \"d\"\n";
+        let err = Config::parse(no_why).unwrap_err();
+        assert!(err.contains("missing field `why`"), "{err}");
+        let blank_why = problems(
+            "[paths]\nThing = \"m::Thing\"\n[messages.Thing]\nderives = []\n\
+             [[messages.Thing.extra]]\nname = \"old\"\ntype = \"u8\"\ndoc = \"d\"\nwhy = \" \"\n",
+        );
+        assert!(
+            blank_why.contains("Thing.old is an extra field with an empty `why`"),
+            "{blank_why}"
         );
     }
 

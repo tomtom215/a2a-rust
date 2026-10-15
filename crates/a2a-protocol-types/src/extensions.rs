@@ -9,8 +9,6 @@
 //! A2A v1.0 specification. [`AgentExtension`] is referenced by
 //! [`crate::agent_card::AgentCapabilities`].
 
-use serde::{Deserialize, Serialize};
-
 // ── AgentExtension ────────────────────────────────────────────────────────────
 
 pub use crate::generated::extensions::AgentExtension;
@@ -30,22 +28,7 @@ impl AgentExtension {
 
 // ── AgentCardSignature ────────────────────────────────────────────────────────
 
-/// A cryptographic signature over an [`crate::agent_card::AgentCard`].
-///
-/// In v1.0, this is a structured type with JWS-style fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentCardSignature {
-    /// The JWS protected header (base64url-encoded).
-    pub protected: String,
-
-    /// The JWS signature (base64url-encoded).
-    pub signature: String,
-
-    /// Additional unprotected header parameters.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub header: Option<serde_json::Value>,
-}
+pub use crate::generated::extensions::AgentCardSignature;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -68,7 +68,9 @@ enum, where it goes and how it differs from the default translation:
 - per field: the Rust name, the Rust type (a newtype, `Option`, a boxed
   type), serde attributes (`alias`, `default`, `skip_serializing_if`,
   `with`), and documentation where the proto comment is not what a Rust
-  user needs.
+  user needs;
+- fields the Rust type has and the proto does not, each with its reason
+  (`AgentCard.url`, read from v0.3 cards and never written).
 
 Every entry names the proto element it changes, and the generator refuses
 to run when one names an element the proto does not have. Every proto

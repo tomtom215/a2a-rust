@@ -201,7 +201,9 @@ fn relative(full_name: &str) -> String {
 }
 
 /// The leading comment the proto gives the element at `path`, without the
-/// `//` markers; empty when it has none.
+/// `//` markers and what is addressed to tools or maintainers rather than
+/// readers: `protolint:` directives, `Next ID:` counters, and the internal
+/// `(-- ... --)` spans of AIP-192; empty when it has none.
 fn comment(pool: &DescriptorPool, path: &[i32], file: &str) -> String {
     let Some(file) = pool.get_file_by_name(file) else {
         return String::new();
@@ -212,14 +214,44 @@ fn comment(pool: &DescriptorPool, path: &[i32], file: &str) -> String {
     info.location
         .iter()
         .find(|l| l.path == path)
-        .and_then(|l| l.leading_comments.clone())
+        .and_then(|l| l.leading_comments.as_deref())
         .map(|c| {
-            c.lines()
+            without_internal(c)
+                .lines()
                 .map(|l| l.strip_prefix(' ').unwrap_or(l).trim_end())
+                .filter(|l| !l.starts_with("protolint:") && !l.starts_with("Next ID:"))
                 .collect::<Vec<_>>()
                 .join("\n")
                 .trim()
                 .to_owned()
         })
         .unwrap_or_default()
+}
+
+/// `text` without its AIP-192 internal comments, `(-- ... --)`, which may
+/// span lines. An unclosed `(--` runs to the end.
+fn without_internal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("(--") {
+        out.push_str(&rest[..start]);
+        rest = rest[start..]
+            .find("--)")
+            .map_or("", |end| &rest[start + end + 3..]);
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_internal;
+
+    #[test]
+    fn internal_comments_are_left_out() {
+        let text = " (-- api-linter: x=disabled\n     aip.dev/not-precedent: y --)\n Required. The header.\n";
+        assert_eq!(without_internal(text), " \n Required. The header.\n");
+        assert_eq!(without_internal("a (-- b --) c"), "a  c");
+        assert_eq!(without_internal("a (-- never closed"), "a ");
+    }
 }

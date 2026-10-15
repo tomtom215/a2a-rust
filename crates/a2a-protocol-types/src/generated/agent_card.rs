@@ -48,6 +48,113 @@ pub struct AgentInterface {
     pub protocol_version: String,
 }
 
+/// A self-describing manifest for an agent. It provides essential
+/// metadata including the agent's identity, capabilities, skills, supported
+/// communication methods, and security requirements.
+///
+/// Served at `/.well-known/agent-card.json`.
+///
+/// # Construction
+///
+/// Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
+/// struct literal: `new` takes the three things the type cannot invent — a
+/// name, a version, an interface — and defaults the rest, so a card built
+/// that way is valid by construction.
+///
+/// ```rust
+/// use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+///
+/// let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
+///     .with_description("Routes incidents to the right runbook")
+///     .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+/// assert_eq!(card.skills.len(), 1);
+/// ```
+///
+/// The builders live in `agent_card/builders.rs`. Three examples written in a
+/// single session on 2026-09-19 each hand-wrote a 38-to-45-line literal
+/// without finding them, which is what this section is here to prevent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCard {
+    /// A human readable name for the agent.
+    /// Example: "Recipe Agent"
+    pub name: String,
+    /// A human-readable description of the agent, assisting users and other agents
+    /// in understanding its purpose.
+    /// Example: "Agent that helps users with recipes and cooking."
+    pub description: String,
+    /// Ordered list of supported interfaces. The first entry is preferred.
+    ///
+    /// **Spec requirement:** Must contain at least one element — enforced by
+    /// [`validate`](Self::validate), not at parse time: `ProtoJSON` printers
+    /// omit empty repeated fields, so parsing treats absence as empty and
+    /// validation reports the real problem instead of a JSON type error.
+    #[serde(alias = "supported_interfaces", default)]
+    pub supported_interfaces: Vec<crate::agent_card::AgentInterface>,
+    /// The service provider of the agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<crate::agent_card::AgentProvider>,
+    /// The version of the agent.
+    /// Example: "1.0.0"
+    pub version: String,
+    /// A URL providing additional documentation about the agent.
+    #[serde(alias = "documentation_url", skip_serializing_if = "Option::is_none")]
+    pub documentation_url: Option<String>,
+    /// A2A Capability set supported by the agent.
+    pub capabilities: crate::agent_card::AgentCapabilities,
+    /// The security scheme details used for authenticating with this agent.
+    #[serde(alias = "security_schemes", skip_serializing_if = "Option::is_none")]
+    pub security_schemes: Option<crate::security::NamedSecuritySchemes>,
+    /// Security requirements for contacting the agent.
+    #[serde(
+        alias = "security_requirements",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub security_requirements: Option<Vec<crate::security::SecurityRequirement>>,
+    /// The set of interaction modes that the agent supports across all skills.
+    /// This can be overridden per skill. Defined as media types.
+    ///
+    /// `ProtoJSON` printers omit empty repeated fields; absence means empty.
+    #[serde(alias = "default_input_modes", default)]
+    pub default_input_modes: Vec<String>,
+    /// The media types supported as outputs from this agent.
+    ///
+    /// `ProtoJSON` printers omit empty repeated fields; absence means empty.
+    #[serde(alias = "default_output_modes", default)]
+    pub default_output_modes: Vec<String>,
+    /// Skills represent the abilities of an agent.
+    /// It is largely a descriptive concept but represents a more focused set of behaviors that the
+    /// agent is likely to succeed at.
+    ///
+    /// **Spec requirement:** Must contain at least one element. Parsing treats
+    /// absence as empty (`ProtoJSON` omits empty repeated fields).
+    #[serde(default)]
+    pub skills: Vec<crate::agent_card::AgentSkill>,
+    /// JSON Web Signatures computed for this `AgentCard`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signatures: Option<Vec<crate::extensions::AgentCardSignature>>,
+    /// Optional. A URL to an icon for the agent.
+    #[serde(alias = "icon_url", skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+    /// Primary URL of the agent — **accepted on input, never emitted.**
+    ///
+    /// This is the v0.3 top-level URL. The v1.0 `lf.a2a.v1` `AgentCard` has no
+    /// `url` field at all; `supported_interfaces` replaced it. Emitting it made
+    /// this SDK's card fail the specification's own JSON schema —
+    /// `'url' does not match any of the regexes: …` — which is what
+    /// `CARD-EXT-001` reports (see `docs/official-tck-findings.md` §13).
+    ///
+    /// It is still **parsed**, because a card published by a v0.3 peer carries
+    /// it and dropping the field would fail those cards outright. The reference
+    /// implementation does the same, popping `url` and folding it into
+    /// `supportedInterfaces`.
+    ///
+    /// Read it if you have it; to publish an agent's address, use
+    /// `supported_interfaces`.
+    #[serde(skip_serializing)]
+    pub url: Option<String>,
+}
+
 /// Represents the service provider of an agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,4 +165,65 @@ pub struct AgentProvider {
     /// The name of the agent provider's organization.
     /// Example: "Google"
     pub organization: String,
+}
+
+/// Defines optional capabilities supported by an agent.
+///
+/// [`AgentCapabilities::none`] (also its `Default`) leaves every flag unset;
+/// the `with_*` methods set them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct AgentCapabilities {
+    /// Indicates if the agent supports streaming responses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streaming: Option<bool>,
+    /// Indicates if the agent supports sending push notifications for asynchronous task updates.
+    #[serde(alias = "push_notifications", skip_serializing_if = "Option::is_none")]
+    pub push_notifications: Option<bool>,
+    /// A list of protocol extensions supported by the agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Vec<crate::extensions::AgentExtension>>,
+    /// Indicates if the agent supports providing an extended agent card when authenticated.
+    #[serde(alias = "extended_agent_card", skip_serializing_if = "Option::is_none")]
+    pub extended_agent_card: Option<bool>,
+}
+
+/// Represents a distinct capability or function that an agent can perform.
+///
+/// # Construction
+///
+/// [`AgentSkill::new`] takes the id, name and description; tags, examples and
+/// the two mode lists are set by the `with_*` methods beside it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSkill {
+    /// A unique identifier for the agent's skill.
+    pub id: String,
+    /// A human-readable name for the skill.
+    pub name: String,
+    /// A detailed description of the skill.
+    pub description: String,
+    /// A set of keywords describing the skill's capabilities.
+    ///
+    /// `ProtoJSON` printers omit empty repeated fields — a skill published by an
+    /// official SDK with no tags arrives without the key. Absence means empty;
+    /// failing the whole card parse over it is not interoperable.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Example prompts or scenarios that this skill can handle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub examples: Option<Vec<String>>,
+    /// The set of supported input media types for this skill, overriding the agent's defaults.
+    #[serde(alias = "input_modes", skip_serializing_if = "Option::is_none")]
+    pub input_modes: Option<Vec<String>>,
+    /// The set of supported output media types for this skill, overriding the agent's defaults.
+    #[serde(alias = "output_modes", skip_serializing_if = "Option::is_none")]
+    pub output_modes: Option<Vec<String>>,
+    /// Security schemes necessary for this skill.
+    #[serde(
+        alias = "security_requirements",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub security_requirements: Option<Vec<crate::security::SecurityRequirement>>,
 }

@@ -23,3 +23,18 @@ pub struct AgentExtension {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
 }
+
+/// `AgentCardSignature` represents a JWS signature of an `AgentCard`.
+/// This follows the JSON format of an RFC 7515 JSON Web Signature (JWS).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCardSignature {
+    /// Required. The protected JWS header for the signature. This is always a
+    /// base64url-encoded JSON object.
+    pub protected: String,
+    /// Required. The computed signature, base64url-encoded.
+    pub signature: String,
+    /// The unprotected JWS header values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<serde_json::Value>,
+}

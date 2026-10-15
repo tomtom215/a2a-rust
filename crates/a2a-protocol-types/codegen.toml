@@ -61,10 +61,6 @@ TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
 
 # Proto types still hand-written, each to be moved here in its ADR 0016 phase.
 [pending]
-AgentCapabilities = "phase 2, agent card"
-AgentCard = "phase 2, agent card"
-AgentCardSignature = "phase 2, agent card"
-AgentSkill = "phase 2, agent card"
 APIKeySecurityScheme = "phase 5, security schemes"
 Artifact = "phase 3, task and message"
 AuthenticationInfo = "phase 4, requests and responses"
@@ -174,3 +170,129 @@ accept."""
 [messages.AgentInterface.fields.protocol_version]
 aliases = ["protocol_version"]
 doc_append = "Spec §3.6: patch version numbers **SHOULD NOT** be used in agent cards."
+
+[messages.AgentCapabilities]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+[`AgentCapabilities::none`] (also its `Default`) leaves every flag unset;
+the `with_*` methods set them."""
+
+[messages.AgentCapabilities.fields.push_notifications]
+aliases = ["push_notifications"]
+
+[messages.AgentCapabilities.fields.extended_agent_card]
+aliases = ["extended_agent_card"]
+
+[messages.AgentSkill]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+# Construction
+
+[`AgentSkill::new`] takes the id, name and description; tags, examples and
+the two mode lists are set by the `with_*` methods beside it."""
+
+[messages.AgentSkill.fields.tags]
+serde = ["default"]
+doc_append = """
+`ProtoJSON` printers omit empty repeated fields — a skill published by an
+official SDK with no tags arrives without the key. Absence means empty;
+failing the whole card parse over it is not interoperable."""
+
+[messages.AgentSkill.fields.input_modes]
+aliases = ["input_modes"]
+
+[messages.AgentSkill.fields.output_modes]
+aliases = ["output_modes"]
+
+[messages.AgentSkill.fields.security_requirements]
+aliases = ["security_requirements"]
+
+[messages.AgentCardSignature]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AgentCard]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+Served at `/.well-known/agent-card.json`.
+
+# Construction
+
+Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
+struct literal: `new` takes the three things the type cannot invent — a
+name, a version, an interface — and defaults the rest, so a card built
+that way is valid by construction.
+
+```rust
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+
+let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
+    .with_description("Routes incidents to the right runbook")
+    .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+assert_eq!(card.skills.len(), 1);
+```
+
+The builders live in `agent_card/builders.rs`. Three examples written in a
+single session on 2026-09-19 each hand-wrote a 38-to-45-line literal
+without finding them, which is what this section is here to prevent."""
+
+[messages.AgentCard.fields.supported_interfaces]
+aliases = ["supported_interfaces"]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element — enforced by
+[`validate`](Self::validate), not at parse time: `ProtoJSON` printers
+omit empty repeated fields, so parsing treats absence as empty and
+validation reports the real problem instead of a JSON type error."""
+
+[messages.AgentCard.fields.documentation_url]
+aliases = ["documentation_url"]
+
+[messages.AgentCard.fields.security_schemes]
+type = "Option<crate::security::NamedSecuritySchemes>"
+aliases = ["security_schemes"]
+why = "a map has no default translation; the crate names this one NamedSecuritySchemes"
+
+[messages.AgentCard.fields.security_requirements]
+aliases = ["security_requirements"]
+
+[messages.AgentCard.fields.default_input_modes]
+aliases = ["default_input_modes"]
+serde = ["default"]
+doc_append = "`ProtoJSON` printers omit empty repeated fields; absence means empty."
+
+[messages.AgentCard.fields.default_output_modes]
+aliases = ["default_output_modes"]
+serde = ["default"]
+doc_append = "`ProtoJSON` printers omit empty repeated fields; absence means empty."
+
+[messages.AgentCard.fields.skills]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element. Parsing treats
+absence as empty (`ProtoJSON` omits empty repeated fields)."""
+
+[messages.AgentCard.fields.icon_url]
+aliases = ["icon_url"]
+
+[[messages.AgentCard.extra]]
+name = "url"
+type = "Option<String>"
+serde = ["skip_serializing"]
+why = "v0.3 cards carry a top-level url; parsing it keeps them readable"
+doc = """
+Primary URL of the agent — **accepted on input, never emitted.**
+
+This is the v0.3 top-level URL. The v1.0 `lf.a2a.v1` `AgentCard` has no
+`url` field at all; `supported_interfaces` replaced it. Emitting it made
+this SDK's card fail the specification's own JSON schema —
+`'url' does not match any of the regexes: …` — which is what
+`CARD-EXT-001` reports (see `docs/official-tck-findings.md` §13).
+
+It is still **parsed**, because a card published by a v0.3 peer carries
+it and dropping the field would fail those cards outright. The reference
+implementation does the same, popping `url` and folding it into
+`supportedInterfaces`.
+
+Read it if you have it; to publish an agent's address, use
+`supported_interfaces`."""

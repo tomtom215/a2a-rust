@@ -1420,20 +1420,30 @@ follows is a new pull request.
     `serve_with_addr` and the WebSocket listener, whose card peek reads the
     raw socket before any handshake.
 
-35. `feat(types):` audit register R49, phase 1 of 6 (ADR 0016). The
-    public types are generated from `a2a.proto` by `tools/a2a-codegen`
+35. `feat(types):` audit register R49, phases 1 and 2 of 6 (ADR 0016).
+    The public types are generated from `a2a.proto` by `tools/a2a-codegen`
     (out of workspace, `protox`), shaped by
-    `crates/a2a-protocol-types/codegen.toml`; CI runs `--check`. Five types
-    are generated; 41 are `[pending]` with their phase. **Next session:
-    phase 2, the agent card family** (`AgentCapabilities`, `AgentCard`,
-    `AgentCardSignature`, `AgentSkill`). Per type: copy its derives and
-    each field's deviations into `codegen.toml`, `write`, replace the hand
-    definition with a re-export, then run the crate's tests and
+    `crates/a2a-protocol-types/codegen.toml`; CI runs `--check`. Nine types
+    are generated (phase 2 added the agent card family); 37 are
+    `[pending]` with their phase. **Next session: phase 3, task and
+    message** (`Task`, `TaskStatus`, `Message`, `Artifact`,
+    `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`). Per type: copy
+    its derives and each field's deviations into `codegen.toml` (a field
+    the proto lacks is an `[[messages.X.extra]]` entry), `write`, replace
+    the hand definition with a re-export, then run the crate's tests and
     `cargo semver-checks check-release -p a2a-protocol-types --baseline-rev
     HEAD --all-features`, which compares against the same version and so
-    reports any API difference as a failure.
+    reports any API difference as a failure. Then re-point the ledger's
+    citations of the moved lines into `src/generated/` (phase 2 moved 29).
+    Once #171 has merged, add `tools/a2a-codegen/Cargo.lock` to `osv.yml`'s
+    `rust-pr` job: it is in `rust` only, since the base-branch scan fails
+    on a lockfile main does not have (phase 1 put it in both, and
+    `Rust lockfiles (new findings)` failed on `21cb5989`).
 
 **Lessons, new this session.**
+- Map the ledger's `path:line` citations through a diff once. A second
+  pass over the same diff reads the already-moved numbers as old ones and
+  moves them again; restore the ledger from `HEAD` and map once.
 - A test that asserts a `tracing` warning goes in a test binary of its own
   with a global subscriber (`hot_reload_warn_once.rs`,
   `legacy_card_warning.rs`). A thread-local capture in a unit-test binary
