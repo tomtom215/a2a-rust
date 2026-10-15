@@ -4370,7 +4370,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/legacy_card.rs a_v03_card_is_read_with_its_interfaces_and_extended_card",
-    "crates/a2a-protocol-client/src/legacy_card.rs a_legacy_card_is_warned_about_and_a_current_one_is_not",
+    "crates/a2a-protocol-client/tests/legacy_card_warning.rs a_legacy_card_is_warned_about_and_a_current_one_is_not",
     "crates/a2a-protocol-client/src/legacy_card.rs the_current_form_is_left_as_it_is",
     "crates/a2a-protocol-client/src/methods/extended_card.rs a_legacy_extended_card_is_read_in_its_current_form"
    ],

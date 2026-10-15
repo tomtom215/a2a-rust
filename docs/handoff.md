@@ -1421,6 +1421,12 @@ follows is a new pull request.
     raw socket before any handshake.
 
 **Lessons, new this session.**
+- A test that asserts a `tracing` warning goes in a test binary of its own
+  with a global subscriber (`hot_reload_warn_once.rs`,
+  `legacy_card_warning.rs`). A thread-local capture in a unit-test binary
+  races the global callsite-interest cache against sibling tests that reach
+  the callsite with no subscriber; this branch wrote one anyway, and it
+  failed once on CI (Test 1.88 on `a42fb507`) and never locally.
 - Two ledger entries can share a `spec_line` (§3.1.9's MUST and MAY are
   both line 381). Select an entry by `spec_line` and `keyword`; this
   branch first wrote the pagination change over the MUST entry.
