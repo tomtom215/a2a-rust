@@ -188,48 +188,7 @@ impl From<u64> for TaskVersion {
 
 // ── TaskState ─────────────────────────────────────────────────────────────────
 
-/// The lifecycle state of a [`Task`].
-///
-/// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
-/// `"TASK_STATE_COMPLETED"`, `"TASK_STATE_INPUT_REQUIRED"`, etc.
-/// Legacy lowercase/kebab-case values are accepted on deserialization.
-///
-/// This enum is closed to the v1.0 states. A future protocol revision that adds
-/// a state would be a wire-breaking change for the gRPC binding: an unknown
-/// `TASK_STATE_*` number from a newer peer is rejected by the protobuf
-/// conversion layer (with a field-scoped error) rather than silently discarded,
-/// so no task is ever reported in a bogus state.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum TaskState {
-    /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "TASK_STATE_UNSPECIFIED", alias = "unspecified")]
-    Unspecified,
-    /// Task received, not yet started.
-    #[serde(rename = "TASK_STATE_SUBMITTED", alias = "submitted")]
-    Submitted,
-    /// Task is actively being processed.
-    #[serde(rename = "TASK_STATE_WORKING", alias = "working")]
-    Working,
-    /// Agent requires additional input from the client to proceed.
-    #[serde(rename = "TASK_STATE_INPUT_REQUIRED", alias = "input-required")]
-    InputRequired,
-    /// Agent requires the client to complete an authentication step.
-    #[serde(rename = "TASK_STATE_AUTH_REQUIRED", alias = "auth-required")]
-    AuthRequired,
-    /// Task finished successfully.
-    #[serde(rename = "TASK_STATE_COMPLETED", alias = "completed")]
-    Completed,
-    /// Task finished with an error.
-    #[serde(rename = "TASK_STATE_FAILED", alias = "failed")]
-    Failed,
-    /// Task was canceled by the client.
-    #[serde(rename = "TASK_STATE_CANCELED", alias = "canceled")]
-    Canceled,
-    /// Task was rejected by the agent before execution.
-    #[serde(rename = "TASK_STATE_REJECTED", alias = "rejected")]
-    Rejected,
-}
+pub use crate::generated::task::TaskState;
 
 impl TaskState {
     /// Every variant, in declaration order.

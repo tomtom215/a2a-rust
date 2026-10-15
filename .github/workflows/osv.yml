@@ -84,6 +84,7 @@ jobs:
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
         --lockfile=verification/loom-halt/Cargo.lock
+        --lockfile=tools/a2a-codegen/Cargo.lock
 
   # Inline rather than through the reusable workflow, step for step what that
   # workflow runs (osv-scanner-reusable.yml at v2.6.0), so this workflow has
@@ -119,6 +120,7 @@ jobs:
             --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
             --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
             --lockfile=verification/loom-halt/Cargo.lock
+            --lockfile=tools/a2a-codegen/Cargo.lock
         continue-on-error: true
       - name: Check that the scan completed
         if: ${{ steps.scan.outcome == 'failure' }}

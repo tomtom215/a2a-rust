@@ -79,6 +79,14 @@ jobs:
       - name: Vendored protos agree
         run: ./scripts/check_proto_copies.sh
 
+      # Spec §1.4: derived forms MUST be regenerated from the proto. The public
+      # types under crates/a2a-protocol-types/src/generated/ are (ADR 0016);
+      # this regenerates them in memory and fails when the checked-in files
+      # differ, so a proto change, a codegen.toml change or a hand edit to a
+      # generated file cannot land without the other.
+      - name: Generated types match the proto
+        run: cargo run --locked --manifest-path tools/a2a-codegen/Cargo.toml -- --check
+
       # CONTRIBUTING's 500-line rule was a PR-checklist item with nothing
       # enforcing it, and the count printed beside it had drifted from 46/139
       # to 77/310 unnoticed. This is a ratchet: existing long files stay

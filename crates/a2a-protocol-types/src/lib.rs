@@ -118,6 +118,7 @@ pub mod error;
 pub mod events;
 pub mod extensions;
 pub mod failure;
+mod generated;
 pub mod idempotency;
 pub mod jsonrpc;
 pub mod message;

@@ -13,31 +13,7 @@ use serde::{Deserialize, Serialize};
 
 // ── AgentExtension ────────────────────────────────────────────────────────────
 
-/// Describes an optional extension that an agent supports.
-///
-/// Extensions are identified by a URI and may carry an arbitrary JSON
-/// parameter block understood by the extension spec.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentExtension {
-    /// Unique URI identifying the extension (e.g. `"https://example.com/ext/v1"`).
-    pub uri: String,
-
-    /// Human-readable description of the extension's purpose.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// Whether clients **must** support this extension to interact correctly.
-    ///
-    /// A value of `true` means the agent cannot operate meaningfully without
-    /// the client understanding this extension.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required: Option<bool>,
-
-    /// Extension-specific parameters; structure is defined by the extension URI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
-}
+pub use crate::generated::extensions::AgentExtension;
 
 impl AgentExtension {
     /// Creates a minimal [`AgentExtension`] with only a URI.

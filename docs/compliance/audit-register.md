@@ -34,7 +34,7 @@ release text; the ledger's own numbering).
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
-| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | approved |
+| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phase 1 of 6 done (ADR 0016) |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
@@ -298,6 +298,15 @@ and nothing else exists.
 short of it and can land first, so drift fails CI while (b) is planned. This
 is the largest change in the register; it needs the maintainer's decision on
 the API break before any work.
+
+**Decided (2026-10-15), the form of (b):** a generator in this repository
+writes today's types out of the proto, checked in, with CI failing when they
+drift (ADR 0016). **Phase 1 done (2026-10-15):** `tools/a2a-codegen`, its
+configuration and validation, the CI check, and five generated types
+(`TaskState`, `MessageRole`, `AgentInterface`, `AgentProvider`,
+`AgentExtension`). The one API change the step makes, `TaskState`'s
+discriminants becoming its proto numbers, was found by
+`cargo semver-checks --baseline-rev HEAD` and is in the upgrading guide.
 
 ## R50 — the REST client sends `application/json`
 

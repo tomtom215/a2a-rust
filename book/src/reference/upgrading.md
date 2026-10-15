@@ -140,6 +140,15 @@ These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
 
+### `TaskState` numbers its variants as the proto does
+
+`TaskState` is now generated from `a2a.proto` (spec §1.4, ADR 0016), and each
+variant's discriminant is its proto number. `TaskState::Completed as i32` was
+5 (its place in the old declaration) and is now 3, as `TASK_STATE_COMPLETED`
+is in the proto and in the prost enum. Only code that casts a `TaskState` to
+an integer sees a difference; `TaskState::ALL` lists the variants as before.
+The wire form, `"TASK_STATE_COMPLETED"`, is unchanged.
+
 ### `build()` refuses an agent card the spec does not allow
 
 Spec §5.7: a required array MUST contain at least one element.

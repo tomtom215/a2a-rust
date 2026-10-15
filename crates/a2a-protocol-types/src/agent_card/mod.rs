@@ -24,42 +24,7 @@ use crate::security::{NamedSecuritySchemes, SecurityRequirement};
 
 // ── AgentInterface ────────────────────────────────────────────────────────────
 
-/// A transport interface offered by an agent.
-///
-/// # Construction
-///
-/// [`AgentInterface::jsonrpc`], [`AgentInterface::grpc`] and
-/// [`AgentInterface::rest`] take a URL and fill in the binding name and the
-/// protocol version; [`AgentInterface::new`] takes an arbitrary binding.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInterface {
-    /// Base URL of this interface endpoint.
-    pub url: String,
-
-    /// Protocol binding identifier — the spec's canonical values are
-    /// `"JSONRPC"`, `"GRPC"`, and `"HTTP+JSON"` (§5.3).
-    ///
-    /// §12 permits custom bindings, and §5.8 says a custom binding **SHOULD**
-    /// be identified by a **URI** rather than a bare name, so that two
-    /// projects cannot define incompatible bindings under the same word. This
-    /// crate's own WebSocket binding is
-    /// [`WEBSOCKET_BINDING_URI`](crate::WEBSOCKET_BINDING_URI); it advertised
-    /// the bare `"WEBSOCKET"` before 0.11.0, which readers should still
-    /// accept.
-    #[serde(alias = "protocol_binding")]
-    pub protocol_binding: String,
-
-    /// A2A protocol version string in `Major.Minor` form (e.g. `"1.0"`).
-    ///
-    /// Spec §3.6: patch version numbers SHOULD NOT be used in Agent Cards.
-    #[serde(alias = "protocol_version")]
-    pub protocol_version: String,
-
-    /// Optional tenant identifier for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-}
+pub use crate::generated::agent_card::AgentInterface;
 
 // ── AgentCapabilities ─────────────────────────────────────────────────────────
 
@@ -129,16 +94,7 @@ impl Default for AgentCapabilities {
 
 // ── AgentProvider ─────────────────────────────────────────────────────────────
 
-/// The organization that operates or publishes the agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentProvider {
-    /// Name of the organization.
-    pub organization: String,
-
-    /// URL of the organization's website.
-    pub url: String,
-}
+pub use crate::generated::agent_card::AgentProvider;
 
 // ── AgentSkill ────────────────────────────────────────────────────────────────
 

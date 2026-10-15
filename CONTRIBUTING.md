@@ -199,6 +199,35 @@ than by seeding the environment they read.
 
 ---
 
+## Changing a protocol type
+
+The public types that mirror `a2a.proto` (`Task`, `AgentCard`, `TaskState`
+and the rest; ADR 0016 lists which are done) are generated, because spec §1.4
+says derived forms **MUST** be regenerated from the proto rather than edited
+by hand. Their definitions live in `crates/a2a-protocol-types/src/generated/`,
+and every file there says so in its first lines.
+
+- To follow a proto change, update every vendored copy
+  (`check_proto_copies.sh` names them), then regenerate.
+- To change how a type looks in Rust (a field's type, an alias, a derive, a
+  doc note), edit `crates/a2a-protocol-types/codegen.toml`, then regenerate.
+  A field whose type or name is not the default translation needs a `why`.
+- To add behaviour, write an `impl` block in the type's own module
+  (`src/task.rs` for `TaskState`), never in `src/generated/`.
+
+```bash
+cargo run --manifest-path tools/a2a-codegen/Cargo.toml -- write
+```
+
+CI's static checks run the same command with `--check` and fail when the
+checked-in files are not what it generates. The generator refuses a
+`codegen.toml` entry for a type, field or value the proto does not have, and
+a proto type the file does not mention, so neither side can drift quietly.
+`tools/a2a-codegen` is outside the workspace with its own lockfile; it needs
+no `protoc`.
+
+---
+
 ## Extending a public trait
 
 `a2a-protocol-server` exposes eleven public traits, and **none of them are

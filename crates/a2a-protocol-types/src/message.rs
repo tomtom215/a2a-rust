@@ -65,23 +65,7 @@ impl AsRef<str> for MessageId {
 
 // ── MessageRole ───────────────────────────────────────────────────────────────
 
-/// The originator of a [`Message`].
-///
-/// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
-/// `"ROLE_USER"`, `"ROLE_AGENT"`, `"ROLE_UNSPECIFIED"`.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum MessageRole {
-    /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "ROLE_UNSPECIFIED", alias = "unspecified")]
-    Unspecified,
-    /// Sent by the human/client side.
-    #[serde(rename = "ROLE_USER", alias = "user")]
-    User,
-    /// Sent by the agent.
-    #[serde(rename = "ROLE_AGENT", alias = "agent")]
-    Agent,
-}
+pub use crate::generated::message::MessageRole;
 
 impl std::fmt::Display for MessageRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

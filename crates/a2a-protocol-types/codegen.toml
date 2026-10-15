@@ -1,0 +1,176 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# How tools/a2a-codegen turns proto/a2a_v1/a2a.proto into this crate's public
+# types (ADR 0016). Regenerate after editing this file or the proto:
+#
+#     cargo run --manifest-path tools/a2a-codegen/Cargo.toml -- write
+#
+# The generator refuses an entry for a type, field or value the proto does
+# not have, and a proto type this file does not mention. A field whose Rust
+# type or name is not the default translation says why.
+
+# Every proto message and enum's public Rust path, relative to the crate root.
+[paths]
+AgentCapabilities = "agent_card::AgentCapabilities"
+AgentCard = "agent_card::AgentCard"
+AgentCardSignature = "extensions::AgentCardSignature"
+AgentExtension = "extensions::AgentExtension"
+AgentInterface = "agent_card::AgentInterface"
+AgentProvider = "agent_card::AgentProvider"
+AgentSkill = "agent_card::AgentSkill"
+APIKeySecurityScheme = "security::ApiKeySecurityScheme"
+Artifact = "artifact::Artifact"
+AuthenticationInfo = "push::AuthenticationInfo"
+AuthorizationCodeOAuthFlow = "security::AuthorizationCodeFlow"
+CancelTaskRequest = "params::CancelTaskParams"
+ClientCredentialsOAuthFlow = "security::ClientCredentialsFlow"
+DeleteTaskPushNotificationConfigRequest = "params::DeletePushConfigParams"
+DeviceCodeOAuthFlow = "security::DeviceCodeFlow"
+GetExtendedAgentCardRequest = "params::GetExtendedAgentCardParams"
+GetTaskPushNotificationConfigRequest = "params::GetPushConfigParams"
+GetTaskRequest = "params::TaskQueryParams"
+HTTPAuthSecurityScheme = "security::HttpAuthSecurityScheme"
+ImplicitOAuthFlow = "security::ImplicitFlow"
+ListTaskPushNotificationConfigsRequest = "params::ListPushConfigsParams"
+ListTaskPushNotificationConfigsResponse = "responses::ListPushConfigsResponse"
+ListTasksRequest = "params::ListTasksParams"
+ListTasksResponse = "responses::TaskListResponse"
+Message = "message::Message"
+MutualTlsSecurityScheme = "security::MutualTlsSecurityScheme"
+OAuth2SecurityScheme = "security::OAuth2SecurityScheme"
+OAuthFlows = "security::OAuthFlows"
+OpenIdConnectSecurityScheme = "security::OpenIdConnectSecurityScheme"
+Part = "message::Part"
+PasswordOAuthFlow = "security::PasswordOAuthFlow"
+Role = "message::MessageRole"
+SecurityRequirement = "security::SecurityRequirement"
+SecurityScheme = "security::SecurityScheme"
+SendMessageConfiguration = "params::SendMessageConfiguration"
+SendMessageRequest = "params::MessageSendParams"
+SendMessageResponse = "responses::SendMessageResponse"
+StreamResponse = "events::StreamResponse"
+StringList = "security::StringList"
+SubscribeToTaskRequest = "params::TaskIdParams"
+Task = "task::Task"
+TaskArtifactUpdateEvent = "events::TaskArtifactUpdateEvent"
+TaskPushNotificationConfig = "push::TaskPushNotificationConfig"
+TaskState = "task::TaskState"
+TaskStatus = "task::TaskStatus"
+TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
+
+# Proto types still hand-written, each to be moved here in its ADR 0016 phase.
+[pending]
+AgentCapabilities = "phase 2, agent card"
+AgentCard = "phase 2, agent card"
+AgentCardSignature = "phase 2, agent card"
+AgentSkill = "phase 2, agent card"
+APIKeySecurityScheme = "phase 5, security schemes"
+Artifact = "phase 3, task and message"
+AuthenticationInfo = "phase 4, requests and responses"
+AuthorizationCodeOAuthFlow = "phase 5, security schemes"
+CancelTaskRequest = "phase 4, requests and responses"
+ClientCredentialsOAuthFlow = "phase 5, security schemes"
+DeleteTaskPushNotificationConfigRequest = "phase 4, requests and responses"
+DeviceCodeOAuthFlow = "phase 5, security schemes"
+GetExtendedAgentCardRequest = "phase 4, requests and responses"
+GetTaskPushNotificationConfigRequest = "phase 4, requests and responses"
+GetTaskRequest = "phase 4, requests and responses"
+HTTPAuthSecurityScheme = "phase 5, security schemes"
+ImplicitOAuthFlow = "phase 5, security schemes"
+ListTaskPushNotificationConfigsRequest = "phase 4, requests and responses"
+ListTaskPushNotificationConfigsResponse = "phase 4, requests and responses"
+ListTasksRequest = "phase 4, requests and responses"
+ListTasksResponse = "phase 4, requests and responses"
+Message = "phase 3, task and message"
+MutualTlsSecurityScheme = "phase 5, security schemes"
+OAuth2SecurityScheme = "phase 5, security schemes"
+OAuthFlows = "phase 5, a oneof"
+OpenIdConnectSecurityScheme = "phase 5, security schemes"
+Part = "phase 5, a oneof"
+PasswordOAuthFlow = "phase 5, security schemes"
+SecurityRequirement = "phase 5, security schemes"
+SecurityScheme = "phase 5, a oneof"
+SendMessageConfiguration = "phase 4, requests and responses"
+SendMessageRequest = "phase 4, requests and responses"
+SendMessageResponse = "phase 5, a oneof"
+StreamResponse = "phase 5, a oneof"
+StringList = "phase 5, security schemes"
+SubscribeToTaskRequest = "phase 4, requests and responses"
+Task = "phase 3, task and message"
+TaskArtifactUpdateEvent = "phase 3, task and message"
+TaskPushNotificationConfig = "phase 4, requests and responses"
+TaskStatus = "phase 3, task and message"
+TaskStatusUpdateEvent = "phase 3, task and message"
+
+# ── Enums ────────────────────────────────────────────────────────────────────
+
+[enums.TaskState]
+derives = ["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+On the wire each state is its `ProtoJSON` name (`"TASK_STATE_COMPLETED"`,
+spec §5.5); the v0.3 lowercase and kebab-case spellings are accepted on
+input.
+
+This enum is closed to the v1.0 states. A future protocol revision that adds
+a state would be a wire-breaking change for the gRPC binding: an unknown
+`TASK_STATE_*` number from a newer peer is rejected by the protobuf
+conversion layer (with a field-scoped error) rather than silently discarded,
+so no task is ever reported in a bogus state."""
+
+[enums.TaskState.values]
+TASK_STATE_UNSPECIFIED = { aliases = ["unspecified"] }
+TASK_STATE_SUBMITTED = { aliases = ["submitted"] }
+TASK_STATE_WORKING = { aliases = ["working"] }
+TASK_STATE_COMPLETED = { aliases = ["completed"] }
+TASK_STATE_FAILED = { aliases = ["failed"] }
+TASK_STATE_CANCELED = { aliases = ["canceled"] }
+TASK_STATE_INPUT_REQUIRED = { aliases = ["input-required"] }
+TASK_STATE_REJECTED = { aliases = ["rejected"] }
+TASK_STATE_AUTH_REQUIRED = { aliases = ["auth-required"] }
+
+[enums.Role]
+derives = ["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+On the wire each role is its `ProtoJSON` name (`"ROLE_USER"`, spec §5.5); the
+v0.3 lowercase spellings are accepted on input."""
+
+[enums.Role.values]
+ROLE_UNSPECIFIED = { aliases = ["unspecified"] }
+ROLE_USER = { aliases = ["user"] }
+ROLE_AGENT = { aliases = ["agent"] }
+
+# ── Messages ─────────────────────────────────────────────────────────────────
+
+[messages.AgentProvider]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AgentExtension]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AgentExtension.fields.uri]
+type = "String"
+why = "an extension is identified by its URI: one without is not an extension, so it is never absent"
+
+[messages.AgentInterface]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+[`AgentInterface::jsonrpc`], [`AgentInterface::grpc`] and
+[`AgentInterface::rest`] take a URL and fill in the binding name and the
+protocol version; [`AgentInterface::new`] takes an arbitrary binding."""
+
+[messages.AgentInterface.fields.protocol_binding]
+aliases = ["protocol_binding"]
+doc_append = """
+§12 permits custom bindings, and §5.8 says a custom binding **SHOULD** be
+identified by a **URI** rather than a bare name, so that two projects cannot
+define incompatible bindings under the same word. This crate's own WebSocket
+binding is [`WEBSOCKET_BINDING_URI`](crate::WEBSOCKET_BINDING_URI); it
+advertised the bare `"WEBSOCKET"` before 0.11.0, which readers should still
+accept."""
+
+[messages.AgentInterface.fields.protocol_version]
+aliases = ["protocol_version"]
+doc_append = "Spec §3.6: patch version numbers **SHOULD NOT** be used in agent cards."

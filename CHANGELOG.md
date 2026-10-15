@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`TaskState`'s discriminants are its proto numbers** (types; spec §1.4,
+  ADR 0016). `TaskState` is generated from `a2a.proto` now, and
+  `TaskState::Completed as i32` is 3, as `TASK_STATE_COMPLETED` is in the
+  proto and the prost enum; it was 5, its place in the hand-written
+  declaration. The wire form and `TaskState::ALL` are unchanged.
 - **`ClientRequest` has a new public field, `query_params`** (client;
   a2a.proto `APIKeySecurityScheme.location`: "Valid values are "query",
   "header", or "cookie""; audit register R67). The client refused an API
@@ -58,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Public types generated from `a2a.proto`** (types; spec §1.4: derived
+  forms "MUST be regenerated from the proto ... rather than edited
+  manually"; audit register R49, ADR 0016). `tools/a2a-codegen`, outside
+  the workspace, parses the proto with `protox` (no `protoc`) and writes
+  `crates/a2a-protocol-types/src/generated/`, shaped by
+  `crates/a2a-protocol-types/codegen.toml`. The generator refuses a
+  configuration entry for a type, field or value the proto does not have,
+  and a proto type the configuration does not mention. CI's static checks
+  regenerate in memory and fail on any difference. Phase 1 of 6:
+  `TaskState`, `MessageRole`, `AgentInterface`, `AgentProvider` and
+  `AgentExtension` are generated, at their existing paths; the other 41
+  proto types are listed as pending. Docs now come from the proto's
+  comments, with the Rust-specific notes kept. Fields follow the proto's
+  order, so `AgentProvider` serializes `url` before `organization`.
 - **`migrate_caller_keys`** on `TenantAwareSqliteTaskStore`,
   `TenantAwarePostgresTaskStore`, `TenantAwareSqlitePushConfigStore` and
   `TenantAwarePostgresPushConfigStore`, with `store::caller_keys` (server;

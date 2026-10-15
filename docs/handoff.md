@@ -1420,6 +1420,19 @@ follows is a new pull request.
     `serve_with_addr` and the WebSocket listener, whose card peek reads the
     raw socket before any handshake.
 
+35. `feat(types):` audit register R49, phase 1 of 6 (ADR 0016). The
+    public types are generated from `a2a.proto` by `tools/a2a-codegen`
+    (out of workspace, `protox`), shaped by
+    `crates/a2a-protocol-types/codegen.toml`; CI runs `--check`. Five types
+    are generated; 41 are `[pending]` with their phase. **Next session:
+    phase 2, the agent card family** (`AgentCapabilities`, `AgentCard`,
+    `AgentCardSignature`, `AgentSkill`). Per type: copy its derives and
+    each field's deviations into `codegen.toml`, `write`, replace the hand
+    definition with a re-export, then run the crate's tests and
+    `cargo semver-checks check-release -p a2a-protocol-types --baseline-rev
+    HEAD --all-features`, which compares against the same version and so
+    reports any API difference as a failure.
+
 **Lessons, new this session.**
 - A test that asserts a `tracing` warning goes in a test binary of its own
   with a global subscriber (`hot_reload_warn_once.rs`,
