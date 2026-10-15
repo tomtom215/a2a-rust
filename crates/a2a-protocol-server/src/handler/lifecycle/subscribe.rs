@@ -213,21 +213,32 @@ impl RequestHandler {
             // process restarted. The task itself is not finished, so §3.1.6
             // says the stream must stay open; it starts from the snapshot and
             // the reattach hook waits for the next turn's queue.
-            // The hook replays the log after the stream's position, and the
-            // snapshot is the task as of the turns already run, so the
-            // stream starts at the log's end: from 0 it replayed the whole
-            // history at the next turn. No queue here does not mean no turn
-            // is running: another replica sharing the store may be writing.
-            // So the end is read first and the task after it. An event
-            // logged and stored between the two reads is then in the
-            // snapshot and replayed too, where the other order lost one
-            // logged between them: it was in neither.
+            // The hook replays the log after the stream's position, so the
+            // stream starts at the position the snapshot reflects: from 0 it
+            // replayed the whole history at the next turn. No queue here
+            // does not mean no turn is running: another replica sharing the
+            // store may be writing, and its processor logs each event before
+            // it stores the state the event leads to. So the position comes
+            // from the store with the task, in one read
+            // (`TaskStore::get_with_position`). Until 2026-10-15 the
+            // subscription read the log's end and then the task: an event
+            // logged before the first read and stored after the second was
+            // in neither the snapshot nor the replay, and one logged and
+            // stored between them was in both (audit register R69). A store
+            // that cannot say keeps that order, the one that loses less.
             let mut task = stored;
             let mut after = 0;
             if self.task_store.supports_event_log() {
-                after = self.task_store.last_event_seq(task_id).await?;
-                if let Some(now) = self.task_store.get(task_id).await? {
+                if let Some((now, Some(through))) =
+                    self.task_store.get_with_position(task_id).await?
+                {
                     task = now;
+                    after = through;
+                } else {
+                    after = self.task_store.last_event_seq(task_id).await?;
+                    if let Some(now) = self.task_store.get(task_id).await? {
+                        task = now;
+                    }
                 }
             }
             shape(&mut task);

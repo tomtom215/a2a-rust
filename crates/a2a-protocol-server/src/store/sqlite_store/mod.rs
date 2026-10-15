@@ -173,6 +173,13 @@ impl SqliteTaskStore {
             .execute(&pool)
             .await?;
 
+        // The other half of migration 8: the log position each write stores
+        // (`TaskStore::get_with_position`, audit register R69). Added to a
+        // database an earlier version created, which `CREATE TABLE IF NOT
+        // EXISTS` leaves as it was.
+        add_applied_seq(&pool, "tasks").await?;
+        add_applied_seq(&pool, "task_artifact_appends").await?;
+
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)")
             .execute(&pool)
             .await?;
@@ -221,13 +228,19 @@ impl SqliteTaskStore {
     /// the replay already describes.
     async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<()> {
         let mut query_builder = sqlx::QueryBuilder::new(
-            "INSERT INTO task_artifact_appends (task_id, artifact, seq, part) SELECT * FROM (",
+            "INSERT INTO task_artifact_appends (task_id, artifact, seq, part, applied_seq) \
+             SELECT * FROM (",
         );
+        // The position this write folds rides on its rows: the task row is
+        // not written by an append, and a second statement to stamp it would
+        // cost the round trip the journal exists to save.
+        let applied = crate::store::applied::current_for_sql();
         query_builder.push_values(rows, |mut b, (artifact, seq, part)| {
             b.push_bind(task.id.0.clone())
                 .push_bind(artifact)
                 .push_bind(seq)
-                .push_bind(part);
+                .push_bind(part)
+                .push_bind(applied);
         });
         query_builder.push(") WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ");
         query_builder.push_bind(task.id.0.clone());
@@ -373,7 +386,8 @@ fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<Del
                 .join(", ");
             Ok(Some(DeltaStatement {
                 sql: Cow::Owned(format!(
-                    "UPDATE tasks SET data = json_set(data, {exprs}) \
+                    "UPDATE tasks SET data = json_set(data, {exprs}), \
+                     applied_seq = COALESCE(?4, applied_seq) \
                      WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'{MULTI_PART_GUARD}"
                 )),
                 payload,
@@ -425,7 +439,7 @@ struct DeltaStatement {
 /// the refusal.
 const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "UPDATE tasks SET data = json_set(data, '$.artifacts[' || ?3 || '].parts[#]', \
-     json_extract(?1, '$[0]')) \
+     json_extract(?1, '$[0]')), applied_seq = COALESCE(?5, applied_seq) \
      WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
     "state",
     "?4"
@@ -433,8 +447,8 @@ const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
 
 /// Append a whole artifact at the end of the array.
 const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
-    "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')) \
-     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
+    "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')), \
+     applied_seq = COALESCE(?4, applied_seq) WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
     "state",
     "?3"
 ));
@@ -444,6 +458,39 @@ const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
 const MULTI_PART_GUARD: &str = sql_write_allowed!(" AND ", "state", "?3");
 
 #[allow(clippy::manual_async_fn)]
+/// Adds the `applied_seq` column to `table` unless it has it.
+///
+/// `SQLite` has no `ADD COLUMN IF NOT EXISTS`, so the column list is read
+/// first. Two processes opening one database can both find it missing; the
+/// one whose `ALTER` loses is answered "duplicate column", which is the
+/// outcome it wanted, so the list is read again rather than the error
+/// returned.
+pub(crate) async fn add_applied_seq(pool: &SqlitePool, table: &str) -> Result<(), sqlx::Error> {
+    let has_column = || async {
+        let columns = sqlx::query(&format!("PRAGMA table_info({table})"))
+            .fetch_all(pool)
+            .await?;
+        Ok::<_, sqlx::Error>(
+            columns
+                .iter()
+                .any(|c| c.get::<String, _>("name") == "applied_seq"),
+        )
+    };
+    if has_column().await? {
+        return Ok(());
+    }
+    match sqlx::query(&format!(
+        "ALTER TABLE {table} ADD COLUMN applied_seq INTEGER"
+    ))
+    .execute(pool)
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(_) if has_column().await? => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 impl TaskStore for SqliteTaskStore {
     fn supports_idempotency(&self) -> bool {
         true
@@ -540,6 +587,13 @@ impl TaskStore for SqliteTaskStore {
             // tasks without one.
             let status_ts = super::status_timestamp_sqlite(task.status.timestamp.as_deref());
 
+            // A write outside a position scope keeps the stored position,
+            // and the journal rows it supersedes below may hold the latest
+            // one (an append stamps its rows, not the task row), so the upsert
+            // keeps the larger of the two. Without that, the position the
+            // journal held went with its rows, and the task read back as
+            // reflecting fewer events than it did.
+            //
             // One transaction, because the document and the journal are two
             // halves of one fact. `data` now contains every part, so the
             // journal rows are superseded; a crash between the two statements
@@ -553,13 +607,17 @@ impl TaskStore for SqliteTaskStore {
             // `crate::store::terminal`): a stored terminal row in another state
             // is left alone and the statement changes nothing.
             let written = sqlx::query(sql_write_allowed!(
-                "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')))
+                "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
+                 VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')), ?6)
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = excluded.updated_at
+                     updated_at = excluded.updated_at,
+                     applied_seq = COALESCE(excluded.applied_seq, NULLIF(MAX(
+                         COALESCE(tasks.applied_seq, -1),
+                         COALESCE((SELECT MAX(j.applied_seq) FROM task_artifact_appends j
+                                    WHERE j.task_id = tasks.id), -1)), -1))
                  WHERE ",
                 "tasks.state",
                 "excluded.state"
@@ -569,6 +627,7 @@ impl TaskStore for SqliteTaskStore {
             .bind(&state)
             .bind(&data)
             .bind(&status_ts)
+            .bind(crate::store::applied::current_for_sql())
             .execute(&mut *tx)
             .await
             .map_err(to_a2a_error)?
@@ -658,8 +717,11 @@ impl TaskStore for SqliteTaskStore {
             if let Some(index) = stmt.index {
                 query = query.bind(i64::try_from(index).unwrap_or(i64::MAX));
             }
-            // The terminal guard's operand, always the last parameter.
-            query = query.bind(task.status.state.to_string());
+            // The terminal guard's operand, then the position the write
+            // stores, always the last two parameters.
+            query = query
+                .bind(task.status.state.to_string())
+                .bind(crate::store::applied::current_for_sql());
 
             let affected = query
                 .execute(&self.pool)
@@ -717,7 +779,8 @@ impl TaskStore for SqliteTaskStore {
                 "UPDATE tasks
                     SET data = json_set(data, '$.status', json(?1)),
                         state = ?2,
-                        updated_at = COALESCE(?3, strftime('%Y-%m-%d %H:%M:%f','now'))
+                        updated_at = COALESCE(?3, strftime('%Y-%m-%d %H:%M:%f','now')),
+                        applied_seq = COALESCE(?5, applied_seq)
                   WHERE id = ?4 AND ",
                 "state",
                 "?2"
@@ -726,6 +789,7 @@ impl TaskStore for SqliteTaskStore {
             .bind(&state)
             .bind(&status_ts)
             .bind(task.id.0.as_str())
+            .bind(crate::store::applied::current_for_sql())
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?
@@ -771,6 +835,47 @@ impl TaskStore for SqliteTaskStore {
                 }
                 None => Ok(None),
             }
+        })
+    }
+
+    /// The task as [`get`](TaskStore::get) reads it, with the position its
+    /// row or its journal records, whichever write came last, in one read
+    /// transaction so the two cannot come from different writes.
+    fn get_with_position<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await.map_err(to_a2a_error)?;
+            let row: Option<(String, Option<i64>)> =
+                sqlx::query_as("SELECT data, applied_seq FROM tasks WHERE id = ?1")
+                    .bind(id.0.as_str())
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(to_a2a_error)?;
+            let Some((data, row_applied)) = row else {
+                tx.commit().await.map_err(to_a2a_error)?;
+                return Ok(None);
+            };
+            let rows: Vec<journal::Row> = sqlx::query_as(journal::SELECT_FOR_TASK_SQL)
+                .bind(id.0.as_str())
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(to_a2a_error)?;
+            let (journal_applied,): (Option<i64>,) = sqlx::query_as(
+                "SELECT MAX(applied_seq) FROM task_artifact_appends WHERE task_id = ?1",
+            )
+            .bind(id.0.as_str())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_a2a_error)?;
+            tx.commit().await.map_err(to_a2a_error)?;
+
+            let mut task: Task = serde_json::from_str(&data)
+                .map_err(|e| A2aError::internal(format!("failed to deserialize task: {e}")))?;
+            journal::splice(&mut task, rows)?;
+            let applied = crate::store::applied::from_sql(row_applied.max(journal_applied));
+            Ok(Some((task, applied)))
         })
     }
 

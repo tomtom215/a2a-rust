@@ -63,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`TaskStore::get_with_position` and `store::AppliedPosition`** (server;
+  audit register R69). `get_with_position` returns a task with the event-log
+  position the stored record reflects; its default reports none. The
+  processors run each event's writes inside `AppliedPosition::scope(seq, …)`,
+  and every shipped store records `AppliedPosition::current()` atomically with
+  the write, keeping the stored position on a write outside a scope. The SQL
+  stores gain an `applied_seq` column: `SQLite` migration 8 and PostgreSQL
+  migration 7 for `with_migrations`, and every `from_pool` adds it to a
+  database an earlier version created, checking for it first so a start takes
+  no lock on a table that has it (the book's *Task & Config Stores* page has
+  the contract for a custom store). The `SQLite` migration runner now skips an
+  `ADD COLUMN` whose column exists, so `with_migrations` succeeds on a
+  database `from_pool` has already opened.
+
 - **Public types generated from `a2a.proto`** (types; spec §1.4: derived
   forms "MUST be regenerated from the proto ... rather than edited
   manually"; audit register R49, ADR 0016). `tools/a2a-codegen`, outside
@@ -1103,6 +1117,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **A subscription on another replica no longer loses the event being
+  stored** (server; spec §3.5.2, "Each stream MUST receive the same events
+  in the same order"; audit register R69). A `SubscribeToTask` on a replica
+  with no live queue read the log's end and then the task. A processor on
+  the replica running the task logs each event before it stores the state
+  the event leads to, so an event logged before the first read and stored
+  after the second was in neither the snapshot nor the replay, and the
+  subscriber never saw it, with no `streamLagged`; one logged and stored
+  between the reads arrived twice. The subscription now reads the task with
+  the log position it reflects, in one store read
+  (`TaskStore::get_with_position`), and replays from there. Every shipped
+  store keeps that position; a custom store that does not falls back to the
+  old order. During a rolling upgrade, a replica still on an earlier release
+  does not write the position, so a subscriber can receive events its
+  snapshot already holds twice until every replica runs this release.
+
+- **A turn after a failed log append no longer reuses that append's
+  position** (server; spec §3.5.2). The processor carries on past a failed
+  append and stores the event's effect, so the stored task can reflect a
+  position the log does not hold. The next turn was numbered from the log's
+  end alone, so its first event took that position, and a subscriber that had
+  seen the failed event live, or started from the stored task, dropped it as
+  delivered. A turn is now numbered after the later of the log's end and the
+  stored position; the skipped position is a hole a replay reports as
+  `streamLagged`. Stores that report no position keep the old numbering.
 
 - **The WebSocket and gRPC listeners serve the agent card** (server; spec
   §8.1, "A2A Servers **MUST** make an Agent Card available", §8.2). A

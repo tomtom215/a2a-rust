@@ -453,6 +453,40 @@ store does not get it for free. To give the same guarantee, apply
 a refusal with `TerminalStateConflict::into_error`. A read followed by a write
 is not enough — that is the race the rule exists to close.
 
+### The log position a stored task reflects
+
+A `SubscribeToTask` on a replica with no live queue for the task starts from
+the stored task and replays the task's event log after the position that task
+reflects. A processor logs each event before it stores the state the event
+leads to, so on another replica the log's end can be one event ahead of the
+stored task. Only the store can say which events a stored task already holds:
+`TaskStore::get_with_position` returns the task and that position, read
+together.
+
+Every store shipped here keeps it. The processors run each event's writes
+inside `store::AppliedPosition::scope(seq, …)`; a store reads
+`AppliedPosition::current()` in each write method and stores it in the same
+atomic write (the SQL stores' `applied_seq` column), keeping the stored value
+when it is `None`. A write outside a scope, such as the send path's history
+append, changes no logged event's effect, so it keeps the stored position.
+
+Two cases it does not cover. A write that read the task before another
+replica's write landed and saved over it keeps that write's position while
+losing its effect; that lost update predates the position. And a replica on
+an earlier release does not write the position, so during a rolling upgrade a
+subscriber can receive events its snapshot already holds a second time.
+Duplicates, not losses, and they stop once every replica runs this release.
+
+A custom store that keeps a log should do the same, and override
+`get_with_position` to read the task and its position together. One that does
+not keeps the trait's default, no position, and a subscription falls back to
+reading the log's end and then the task, which can lose the one event another
+replica has logged and not yet stored.
+
+The SQL stores add the column themselves: migration 8 (`SQLite`) and 7
+(`PostgreSQL`) for `with_migrations`, and `from_pool` for a database an earlier
+version created.
+
 ## Next Steps
 
 - **[Production Hardening](../deployment/production.md)** — Deployment checklist

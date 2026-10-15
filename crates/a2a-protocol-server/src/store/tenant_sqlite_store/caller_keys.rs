@@ -38,8 +38,8 @@ impl TenantAwareSqliteTaskStore {
             // has no ON UPDATE, so the tasks are copied, the events moved to
             // the copies, and only then the originals deleted.
             let tasks = sqlx::query(
-                "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, created_at)
-                 SELECT ?1, id, context_id, state, data, updated_at, created_at
+                "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, created_at, applied_seq)
+                 SELECT ?1, id, context_id, state, data, updated_at, created_at, applied_seq
                  FROM tenant_tasks WHERE tenant_id = ?2",
             )
             .bind(&new)

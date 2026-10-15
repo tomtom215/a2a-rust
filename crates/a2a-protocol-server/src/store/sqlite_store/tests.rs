@@ -810,3 +810,30 @@ async fn list_empty_store() {
         "no pagination token for empty results"
     );
 }
+
+/// `add_applied_seq` adds the column once, leaves a table that has it alone,
+/// and reports a failure it did not cause itself: only "the column now
+/// exists" is taken as success after an `ALTER` fails.
+#[tokio::test]
+async fn add_applied_seq_adds_the_column_once_and_reports_real_failures() {
+    let pool = sqlite_pool("sqlite::memory:").await.expect("pool");
+    sqlx::query("CREATE TABLE t (id TEXT)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    add_applied_seq(&pool, "t").await.expect("added");
+    add_applied_seq(&pool, "t").await.expect("already there");
+    let columns = sqlx::query("PRAGMA table_info(t)")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    let named = columns
+        .iter()
+        .filter(|c| c.get::<String, _>("name") == "applied_seq")
+        .count();
+    assert_eq!(named, 1);
+    assert!(
+        add_applied_seq(&pool, "no_such_table").await.is_err(),
+        "an ALTER that fails for another reason is an error"
+    );
+}

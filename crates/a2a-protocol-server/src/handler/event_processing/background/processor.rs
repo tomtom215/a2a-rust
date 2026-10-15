@@ -167,14 +167,17 @@ impl<'a> Processor<'a> {
                 release(event);
             }
         };
-        let outcome = process_event_with(
+        let fold = process_event_with(
             event.map(|e| e.event),
             self.task_id,
             &mut self.last_task,
             self.deps,
             Some(&on_persisted),
-        )
-        .await;
+        );
+        // The store records `seq` with each write the fold makes, so a
+        // subscriber elsewhere knows which events the stored task reflects
+        // (`TaskStore::get_with_position`, audit register R69).
+        let outcome = crate::store::applied::scope_if(seq, fold).await;
 
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,

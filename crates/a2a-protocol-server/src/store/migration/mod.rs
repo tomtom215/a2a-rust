@@ -27,6 +27,7 @@
 //! | 5 | Add `task_artifact_appends` — the journal streaming appends are written to |
 //! | 6 | Add `idempotency_keys` — the index client-supplied send keys are claimed in |
 //! | 7 | Add `task_events` — the per-task log of what the agent emitted |
+//! | 8 | Add `applied_seq` to `tasks` and `task_artifact_appends` — the log position each write stores |
 //!
 //! This table listed 1 to 3 while seven existed — the failure mode of a list
 //! maintained by hand beside one maintained by the compiler. The test below
@@ -142,6 +143,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
         // append, so the failure would be a silently empty history rather
         // than a loud error at startup.
         sql: super::sqlite_store::event_log::CREATE_TABLE_SQL,
+    },
+    Migration {
+        version: 8,
+        description: "Add applied_seq: the log position each task write stores",
+        // `from_pool` adds the same columns, checking for them first; see
+        // `sqlite_store::add_applied_seq`. A `NULL` reads as "no position"
+        // (`TaskStore::get_with_position`, audit register R69).
+        sql: "ALTER TABLE tasks ADD COLUMN applied_seq INTEGER;
+ALTER TABLE task_artifact_appends ADD COLUMN applied_seq INTEGER;",
     },
 ];
 
@@ -272,6 +282,21 @@ impl MigrationRunner {
                 if trimmed.is_empty() {
                     continue;
                 }
+                // `SQLite` has no `ADD COLUMN IF NOT EXISTS`, and a store's
+                // `from_pool` adds the columns it needs itself, so a database
+                // it opened first can already hold one a migration adds.
+                if let Some((table, column)) = added_column(trimmed) {
+                    let exists: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+                    )
+                    .bind(table)
+                    .bind(column)
+                    .fetch_one(&mut *conn)
+                    .await?;
+                    if exists > 0 {
+                        continue;
+                    }
+                }
                 sqlx::query(trimmed).execute(&mut *conn).await?;
             }
 
@@ -290,206 +315,24 @@ impl MigrationRunner {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
-
-    /// Helper to create an in-memory `SQLite` pool.
-    async fn memory_pool() -> SqlitePool {
-        SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("failed to open in-memory sqlite")
+/// The table and column of an `ALTER TABLE <table> ADD [COLUMN] <column> …`
+/// statement, or `None` for any other statement.
+fn added_column(statement: &str) -> Option<(&str, &str)> {
+    let mut words = statement.split_whitespace();
+    let keyword = |w: Option<&str>, k: &str| w.is_some_and(|w| w.eq_ignore_ascii_case(k));
+    if !keyword(words.next(), "ALTER") || !keyword(words.next(), "TABLE") {
+        return None;
     }
-
-    #[test]
-    fn the_module_doc_table_lists_every_migration() {
-        // The table above said 1 to 3 while seven existed. A hand-maintained
-        // list beside a compiler-maintained one drifts; this notices.
-        let doc = include_str!("migration.rs");
-        for migration in BUILTIN_MIGRATIONS {
-            let row = format!("//! | {} |", migration.version);
-            assert!(
-                doc.contains(&row),
-                "the module doc table has no row for migration {}",
-                migration.version
-            );
-        }
-        let rows = doc
-            .lines()
-            .filter(|l| l.starts_with("//! | ") && !l.starts_with("//! | Version"))
-            .count();
-        assert_eq!(rows, BUILTIN_MIGRATIONS.len(), "the doc table has drifted");
+    let table = words.next()?;
+    if !keyword(words.next(), "ADD") {
+        return None;
     }
-
-    #[tokio::test]
-    async fn current_version_starts_at_zero() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool);
-        assert_eq!(runner.current_version().await.unwrap(), 0);
+    let mut column = words.next()?;
+    if column.eq_ignore_ascii_case("COLUMN") {
+        column = words.next()?;
     }
-
-    #[tokio::test]
-    async fn run_pending_applies_all_builtin_migrations() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool.clone());
-
-        // Derived from the list rather than restating it: this test is about
-        // "every builtin migration is applied, in order", and hardcoding the
-        // versions made adding one a failure in five tests that were not about
-        // the new migration at all.
-        let expected: Vec<u32> = BUILTIN_MIGRATIONS.iter().map(|m| m.version).collect();
-        let latest = *expected.last().expect("there is at least one migration");
-
-        let applied = runner.run_pending().await.unwrap();
-        assert_eq!(applied, expected);
-        assert_eq!(runner.current_version().await.unwrap(), latest);
-
-        // The journal streaming appends are written to must exist here, not
-        // only in `from_pool`'s inline DDL. It shipped in one and not the
-        // other, and the constructor documented as recommended for production
-        // was the one without it.
-        let journal = sqlx::query("PRAGMA table_info(task_artifact_appends)")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        assert!(
-            !journal.is_empty(),
-            "a migrated schema must carry task_artifact_appends"
-        );
-
-        // Verify the tasks table exists with the expected columns.
-        let row = sqlx::query("PRAGMA table_info(tasks)")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        let columns: Vec<String> = row.iter().map(|r| r.get::<String, _>("name")).collect();
-        assert!(columns.contains(&"id".to_string()));
-        assert!(columns.contains(&"context_id".to_string()));
-        assert!(columns.contains(&"state".to_string()));
-        assert!(columns.contains(&"data".to_string()));
-        assert!(columns.contains(&"updated_at".to_string()));
-        assert!(columns.contains(&"created_at".to_string()));
-    }
-
-    #[tokio::test]
-    async fn run_pending_is_idempotent() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool);
-
-        let first = runner.run_pending().await.unwrap();
-        let expected: Vec<u32> = BUILTIN_MIGRATIONS.iter().map(|m| m.version).collect();
-        assert_eq!(first, expected);
-
-        let second = runner.run_pending().await.unwrap();
-        assert_eq!(second, [] as [u32; 0]);
-
-        let latest = BUILTIN_MIGRATIONS
-            .last()
-            .expect("there is at least one migration")
-            .version;
-        assert_eq!(runner.current_version().await.unwrap(), latest);
-    }
-
-    #[tokio::test]
-    async fn pending_migrations_returns_unapplied() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool);
-
-        let pending = runner.pending_migrations().await.unwrap();
-        assert_eq!(pending.len(), BUILTIN_MIGRATIONS.len());
-        assert_eq!(pending[0].version, 1);
-        assert_eq!(pending[1].version, 2);
-        assert_eq!(pending[2].version, 3);
-        assert_eq!(pending[3].version, 4);
-
-        runner.run_pending().await.unwrap();
-
-        let pending = runner.pending_migrations().await.unwrap();
-        assert!(pending.is_empty());
-    }
-
-    #[tokio::test]
-    async fn partial_application_tracks_correctly() {
-        // Apply only V1 using a custom migration set, then switch to full set.
-        let pool = memory_pool().await;
-
-        let v1_only: &[Migration] = &BUILTIN_MIGRATIONS[..1];
-        // Safety: we need a 'static reference for the runner. In tests this is
-        // fine because the slice is already 'static (subset of BUILTIN_MIGRATIONS).
-        let runner = MigrationRunner::with_migrations(pool.clone(), v1_only);
-        let applied = runner.run_pending().await.unwrap();
-        assert_eq!(applied, vec![1]);
-        assert_eq!(runner.current_version().await.unwrap(), 1);
-
-        // Now create a runner with all migrations — everything after v1 is
-        // pending. Derived from the list so that adding a migration does not
-        // fail a test about partial application.
-        let after_v1: Vec<u32> = BUILTIN_MIGRATIONS
-            .iter()
-            .map(|m| m.version)
-            .filter(|v| *v > 1)
-            .collect();
-        let latest = *after_v1.last().expect("there is more than one migration");
-
-        let full_runner = MigrationRunner::new(pool);
-        let pending = full_runner.pending_migrations().await.unwrap();
-        assert_eq!(pending.len(), after_v1.len());
-        assert_eq!(pending[0].version, 2);
-
-        let applied = full_runner.run_pending().await.unwrap();
-        assert_eq!(applied, after_v1);
-        assert_eq!(full_runner.current_version().await.unwrap(), latest);
-    }
-
-    #[tokio::test]
-    async fn schema_versions_table_records_metadata() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool.clone());
-        runner.run_pending().await.unwrap();
-
-        let rows = sqlx::query(
-            "SELECT version, description, applied_at FROM schema_versions ORDER BY version",
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-
-        assert_eq!(rows.len(), BUILTIN_MIGRATIONS.len());
-        assert_eq!(rows[0].get::<i32, _>("version"), 1);
-        assert_ne!(rows[0].get::<String, _>("description"), "");
-        assert_ne!(rows[0].get::<String, _>("applied_at"), "");
-    }
-
-    #[tokio::test]
-    async fn updated_at_index_exists_after_migrations() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool.clone());
-        runner.run_pending().await.unwrap();
-
-        let rows = sqlx::query(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_updated_at'",
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-
-        assert_eq!(rows.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn composite_index_exists_after_v3() {
-        let pool = memory_pool().await;
-        let runner = MigrationRunner::new(pool.clone());
-        runner.run_pending().await.unwrap();
-
-        let rows = sqlx::query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_context_id_state'")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-
-        assert_eq!(rows.len(), 1);
-    }
+    Some((table, column))
 }
+
+#[cfg(test)]
+mod tests;

@@ -102,6 +102,10 @@ impl TaskStore for AuditedTaskStore {
         self.inner.get(id)
     }
 
+    fn get_with_position<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<(Task, Option<u64>)>> {
+        self.inner.get_with_position(id)
+    }
+
     fn list<'a>(&'a self, params: &'a ListTasksParams) -> Fut<'a, TaskListResponse> {
         self.inner.list(params)
     }

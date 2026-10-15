@@ -1514,8 +1514,31 @@ follows is a new pull request.
       specification's own contradiction, and its upstream report is a
       draft the maintainer files.
 
-**Next:** R69 option (a), which the maintainer chose on 2026-10-15, is the
-next commit; the catch-up paging still awaits a call.
+39. `fix(server):` §3.5.2, audit register R69 option (a), chosen by the
+    maintainer on 2026-10-15. `TaskStore::get_with_position` returns a task
+    with the event-log position it reflects; the processors run each event's
+    writes inside `store::AppliedPosition::scope`, and all six shipped stores
+    record the position atomically with the write, keeping it on an
+    unscoped write. The SQL stores gain `applied_seq` (`SQLite` migration 8,
+    PostgreSQL migration 7, and every `from_pool`); SQLite's journal rows
+    carry their own, and the contract test found a full save dropping the
+    journal's position with its rows, now kept. A subscription with no live
+    queue starts at the stored position. The R69 test is committed and fails
+    with the old order; `tests/applied_position.rs` holds every store to the
+    contract, PostgreSQL run against a local PostgreSQL 16 (the 72
+    `postgres_store_tests`, 3 `caller_key_migration` and 7 `multi_replica`
+    tests pass too). 23 hand mutants, all killed. The ledger's §3.5.2 entry
+    is back to `low`, PARTIAL on its `streamLagged` cases. An independent
+    review before the commit reproduced two defects the change introduced,
+    fixed in it: a failed append's position reused by the next turn (a turn
+    is now numbered after the later of the log's end and the stored
+    position), and `with_migrations` failing on a database `from_pool` had
+    opened (the `SQLite` runner skips an existing column). See the register's
+    R69 entry.
+
+**Next:** the catch-up paging awaits the maintainer's call; then the
+independent review of the register, the handoff, the stream code and the
+READMEs (2026-10-15).
 
 **Lessons, new this session.**
 - Tests and semver-checks passing do not show a serde change is

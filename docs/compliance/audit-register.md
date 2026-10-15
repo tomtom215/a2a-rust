@@ -39,7 +39,7 @@ release text; the ledger's own numbering).
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
 | R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 state | a deployer relying on the public card being served | done |
-| R69 | a subscription across replicas loses an event | the store reports the log position a saved task reflects (option a) | the `TaskStore` trait (a defaulted method) and the SQL schemas (a column) | decided 2026-10-15: option (a); in progress |
+| R69 | a subscription across replicas loses an event | the store reports the log position a saved task reflects (option a) | the `TaskStore` trait (a defaulted method) and the SQL schemas (a column) | done (option (a), decided 2026-10-15) |
 
 ## R12 — a JWT caller is its `sub` alone
 
@@ -500,6 +500,45 @@ same order."
   between one event's append and its save.
 
 **Recommendation.** (a), which also removes the duplicate the ledger records.
+
+**Done (option (a)).** `TaskStore::get_with_position` returns the task with
+the position it reflects, and a subscription with no live queue starts there
+(`crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs`,
+`snapshot_and_live`). The processors run each event's writes inside
+`AppliedPosition::scope` (`crates/a2a-protocol-server/src/store/applied.rs`),
+and all six shipped stores record the position atomically with the write,
+keeping it on a write outside a scope. SQLite's journal rows carry their own,
+and a full save keeps the larger of the row's and the journal's. The SQL
+stores add an `applied_seq` column (`SQLite` migration 8, PostgreSQL migration
+7, and every `from_pool` for an earlier database). The test above is
+committed as `an_event_logged_before_the_read_and_stored_after_it_is_not_lost`
+(`crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs`) and fails
+with the subscription's old order; `crates/a2a-protocol-server/tests/applied_position.rs`
+holds every store to the contract, PostgreSQL included when
+`A2A_TEST_POSTGRES_URL` is set. 23 hand mutants, all killed.
+
+An independent review of the change before it was committed found, and
+reproduced, two defects it had introduced, both fixed in the same commit:
+
+- **A failed append handed its position to the next turn.** The fold is
+  stored with the position of an event whose append failed, so the stored
+  position could be past the log's end; the next turn, numbered from the
+  log's end, reused it, and a subscriber that started from the stored task
+  dropped that turn's first event. The same reuse already lost the event for
+  a subscriber that had seen the failed event live, before this change. A turn
+  is now numbered after the later of the two (`resume_after`,
+  `crates/a2a-protocol-server/src/handler/messaging/admission.rs`); tests in
+  `tests/event_log_tests/failed_append.rs`.
+- **`with_migrations` failed on a database `from_pool` had opened** ("duplicate
+  column name"). The `SQLite` runner now skips an `ADD COLUMN` whose column
+  exists; test `a_column_from_pool_already_added_does_not_fail_its_migration`.
+
+It also found the PostgreSQL `from_pool` taking an `ACCESS EXCLUSIVE` lock on
+every start (measured in `pg_locks`; now a check that takes none), and two
+limits now documented rather than fixed: a stale write from another replica
+keeps a position whose effect it overwrote (a lost update older than R69), and
+during a rolling upgrade a replica on an earlier release leaves the position
+behind, so a subscriber can receive events twice (not lose them).
 
 ## Ledger entries that need a decision
 

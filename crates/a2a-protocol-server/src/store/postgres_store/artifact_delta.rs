@@ -85,7 +85,8 @@ impl PostgresTaskStore {
         let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
             "UPDATE tasks SET data = jsonb_set(\
                  data, ARRAY['artifacts', $3::text, 'parts'], \
-                 (data->'artifacts'->($3::int)->'parts') || $1::jsonb) \
+                 (data->'artifacts'->($3::int)->'parts') || $1::jsonb), \
+                 applied_seq = COALESCE($5, applied_seq) \
              WHERE id = $2 \
                AND jsonb_typeof(data->'artifacts') = 'array' \
                AND jsonb_typeof(data->'artifacts'->($3::int)->'parts') = 'array' \
@@ -97,6 +98,7 @@ impl PostgresTaskStore {
         .bind(task.id.0.as_str())
         .bind(idx)
         .bind(task.status.state.to_string())
+        .bind(crate::store::applied::current_for_sql())
         .execute(&self.pool)
         .await
         .map_err(to_a2a_error)?
@@ -125,7 +127,8 @@ impl PostgresTaskStore {
 
         let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
             "UPDATE tasks SET data = jsonb_set(\
-                 data, ARRAY['artifacts'], (data->'artifacts') || $1::jsonb) \
+                 data, ARRAY['artifacts'], (data->'artifacts') || $1::jsonb), \
+                 applied_seq = COALESCE($4, applied_seq) \
              WHERE id = $2 AND jsonb_typeof(data->'artifacts') = 'array' AND ",
             "state",
             "$3"
@@ -133,6 +136,7 @@ impl PostgresTaskStore {
         .bind(&payload)
         .bind(task.id.0.as_str())
         .bind(task.status.state.to_string())
+        .bind(crate::store::applied::current_for_sql())
         .execute(&self.pool)
         .await
         .map_err(to_a2a_error)?

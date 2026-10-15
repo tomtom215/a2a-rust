@@ -159,6 +159,10 @@ impl TenantAwareSqliteTaskStore {
             .execute(&pool)
             .await?;
 
+        // The log position each write stores (`TaskStore::get_with_position`,
+        // audit register R69), added to a table an earlier version created.
+        super::sqlite_store::add_applied_seq(&pool, "tenant_tasks").await?;
+
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx ON tenant_tasks(tenant_id, context_id)",
         )
@@ -339,13 +343,14 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             // every write path — the trait's default deltas included — comes
             // through here.
             let written = sqlx::query(crate::store::terminal::sql_write_allowed!(
-                "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, strftime('%Y-%m-%d %H:%M:%f','now')))
+                "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
+                 VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, strftime('%Y-%m-%d %H:%M:%f','now')), ?7)
                  ON CONFLICT(tenant_id, id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = excluded.updated_at
+                     updated_at = excluded.updated_at,
+                     applied_seq = COALESCE(excluded.applied_seq, tenant_tasks.applied_seq)
                  WHERE ",
                 "tenant_tasks.state",
                 "excluded.state"
@@ -356,6 +361,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             .bind(&state)
             .bind(&data)
             .bind(&status_ts)
+            .bind(crate::store::applied::current_for_sql())
             .execute(&self.pool)
             .await
             .map_err(|e| to_a2a_error(&e))?
@@ -404,6 +410,29 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 }
                 None => Ok(None),
             }
+        })
+    }
+
+    fn get_with_position<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
+        Box::pin(async move {
+            let tenant = TenantContext::partition();
+            let row: Option<(String, Option<i64>)> = sqlx::query_as(
+                "SELECT data, applied_seq FROM tenant_tasks WHERE tenant_id = ?1 AND id = ?2",
+            )
+            .bind(&tenant)
+            .bind(id.0.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
+            row.map(|(data, applied)| {
+                let task: Task = serde_json::from_str(&data)
+                    .map_err(|e| A2aError::internal(format!("deserialize: {e}")))?;
+                Ok((task, crate::store::applied::from_sql(applied)))
+            })
+            .transpose()
         })
     }
 

@@ -19,6 +19,7 @@
 //! | 4 | Add `idempotency_keys` — the index client-supplied send keys are claimed in |
 //! | 5 | Add `task_events` — the per-task log of what the agent emitted |
 //! | 6 | Add `CHECK (seq > 0)` to `task_events` |
+//! | 7 | Add `applied_seq` to `tasks` — the log position each write stores |
 //!
 //! This table listed 1 and 2 while five existed. [`BUILTIN_PG_MIGRATIONS`] is
 //! the list; the test below fails if the two stop agreeing on how many there
@@ -119,6 +120,14 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         // PostgreSQL in CI, so the Postgres suites are `#[ignore]`d. Reviewed
         // as SQL and compiled.
         sql: super::postgres_store::event_log::ADD_SEQ_POSITIVE_SQL,
+    },
+    PgMigration {
+        version: 7,
+        description: "Add applied_seq: the log position each task write stores",
+        // `from_pool` runs the same statement; `IF NOT EXISTS` makes either
+        // order safe. A `NULL` reads as "no position"
+        // (`TaskStore::get_with_position`, audit register R69).
+        sql: "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS applied_seq BIGINT",
     },
 ];
 

@@ -5,6 +5,7 @@
 
 //! Task storage backend.
 
+pub mod applied;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
@@ -45,6 +46,7 @@ mod event_log_sql;
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 mod tenant_event_log;
 
+pub use applied::AppliedPosition;
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at

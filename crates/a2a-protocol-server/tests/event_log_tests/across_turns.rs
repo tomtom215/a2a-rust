@@ -30,7 +30,7 @@ use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{TaskId, TaskState};
 use tokio::sync::Notify;
 
-use super::{NoLog, Unreadable, WritesWhileSubscribing};
+use super::{NoLog, StoresAfterTheRead, Unreadable, WritesWhileSubscribing};
 
 /// One turn per message. `start` parks the task after one artifact; `hold`
 /// does too, but waits to be released first, so a subscriber can attach to
@@ -316,13 +316,30 @@ async fn a_finished_turn_the_log_cannot_replay_is_reported_as_a_lag() {
 /// With no queue on this replica a turn may still run on another sharing the
 /// store. An event it logs and stores while this one reads the log's end and
 /// the task reaches the subscriber in the snapshot, and is not replayed: read
-/// the other way round, the task first, it was in neither.
+/// the other way round, the task first, it was in neither. This is the
+/// fallback for a store that reports no position.
 #[tokio::test]
 async fn an_event_logged_elsewhere_while_subscribing_is_not_lost() {
+    logged_and_stored_elsewhere(false).await;
+}
+
+/// The same through a store that reports the position a stored task
+/// reflects: the event, stored with its position before the read, is in the
+/// snapshot once and is not replayed (audit register R69).
+#[tokio::test]
+async fn an_event_stored_elsewhere_with_its_position_reaches_the_subscriber_once() {
+    logged_and_stored_elsewhere(true).await;
+}
+
+async fn logged_and_stored_elsewhere(positioned: bool) {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let armed = Arc::new(AtomicBool::new(false));
-    let store = WritesWhileSubscribing(Arc::new(InMemoryTaskStore::new()), Arc::clone(&armed));
+    let store = WritesWhileSubscribing(
+        Arc::new(InMemoryTaskStore::new()),
+        Arc::clone(&armed),
+        positioned,
+    );
     let handler = handler(Turns::default(), store);
     let task = send(&handler, "start", None).await;
     // Long enough for the turn's executor to return and its queue to go.
@@ -338,10 +355,7 @@ async fn an_event_logged_elsewhere_while_subscribing_is_not_lost() {
         )
         .await
         .expect("subscribe");
-    assert!(
-        !armed.load(Ordering::SeqCst),
-        "the subscription read the log's end"
-    );
+    assert!(!armed.load(Ordering::SeqCst), "the other writer ran");
     let first = reader.read().await.expect("a frame").expect("not an error");
     let StreamResponse::Task(snapshot) = first.event else {
         panic!("the Task first: {first:?}");
@@ -359,4 +373,59 @@ async fn an_event_logged_elsewhere_while_subscribing_is_not_lost() {
     let seen = seen.await.expect("drain");
     assert!(seen.error.is_none(), "{seen:?}");
     assert_eq!(seen.artifacts, expected("fast"), "other-1 is not replayed");
+}
+
+/// The same, with the other replica between its append and its save while
+/// this one reads: `other-1` is logged before the log's end is read and
+/// stored after the task is. It is not in the snapshot, so the stream owes
+/// it, from the log.
+#[tokio::test]
+async fn an_event_logged_before_the_read_and_stored_after_it_is_not_lost() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let armed = Arc::new(AtomicBool::new(false));
+    let store = StoresAfterTheRead(
+        Arc::new(InMemoryTaskStore::new()),
+        Arc::clone(&armed),
+        Arc::default(),
+    );
+    let handler = handler(Turns::default(), store);
+    let task = send(&handler, "start", None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    armed.store(true, Ordering::SeqCst);
+    let mut reader = handler
+        .on_resubscribe(
+            TaskIdParams {
+                tenant: None,
+                id: task.0.clone(),
+            },
+            None,
+        )
+        .await
+        .expect("subscribe");
+    assert!(!armed.load(Ordering::SeqCst), "the other writer ran");
+    let first = reader.read().await.expect("a frame").expect("not an error");
+    let StreamResponse::Task(snapshot) = first.event else {
+        panic!("the Task first: {first:?}");
+    };
+    let in_snapshot: Vec<_> = snapshot
+        .artifacts
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| a.id.0)
+        .collect();
+
+    let seen = drain(reader);
+    send(&handler, "fast", Some(&task)).await;
+    let seen = seen.await.expect("drain");
+    assert!(seen.error.is_none(), "{seen:?}");
+    let reached = in_snapshot
+        .iter()
+        .chain(&seen.artifacts)
+        .filter(|a| *a == "other-1")
+        .count();
+    assert_eq!(
+        reached, 1,
+        "other-1 reaches the subscriber once: snapshot {in_snapshot:?}, events {seen:?}"
+    );
 }

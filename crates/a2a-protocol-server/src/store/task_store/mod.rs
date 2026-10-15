@@ -120,6 +120,34 @@ pub trait TaskStore: Send + Sync + 'static {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>>;
 
+    /// Retrieves a task with the position in its event log that the stored
+    /// record reflects: every logged event up to that position is folded into
+    /// it, and none after.
+    ///
+    /// A subscription on a replica with no live queue for the task starts its
+    /// stream from this record, and replays the log after this position. A
+    /// processor logs each event before it stores the state the event leads
+    /// to, so the log's end can hold an event the record does not reflect
+    /// yet; without the position, that event was neither in the snapshot nor
+    /// replayed (audit register R69). See
+    /// [`AppliedPosition`](crate::store::AppliedPosition) for how a store
+    /// learns the position of each write.
+    ///
+    /// The default reads [`get`](Self::get) and reports no position, which the
+    /// subscription treats as unknown: it falls back to reading the log's end
+    /// and then the task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    #[allow(clippy::type_complexity)]
+    fn get_with_position<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
+        Box::pin(async move { Ok(self.get(id).await?.map(|task| (task, None))) })
+    }
+
     /// Lists tasks matching the given filter parameters.
     ///
     /// # Errors

@@ -119,7 +119,7 @@ a2a-rust/
 │   │       │   │       ├── mod.rs          # Core CRUD, TaskStore impl
 │   │       │   │       └── eviction/       # TTL + capacity eviction
 │   │       │   ├── sqlite_store/       # SqliteTaskStore (feature-gated)
-│   │       │   ├── migration.rs        # Schema migration runner
+│   │       │   ├── migration/          # Schema migration runner
 │   │       │   ├── tenant_sqlite_store.rs # TenantAwareSqliteTaskStore
 │   │       │   ├── postgres_store/     # PostgresTaskStore (feature-gated)
 │   │       │   ├── pg_migration.rs     # PostgreSQL migration runner
