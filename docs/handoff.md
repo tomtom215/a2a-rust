@@ -26,10 +26,18 @@ only: when something here is done, delete it rather than annotating it.
   `c9035931` on 2026-10-15. Work continues on `claude/lucid-edison-4hn5kb`,
   started from that merge; no pull request is open for it yet.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. The PARTIAL entries at MUST level are §3.5.2 (an explicit
-  `streamLagged` only where the log no longer holds the events, since
-  paging), §5.7 (the spec contradicts itself; upstream draft below)
-  and §12.4 (agntcy-slim-rpc carries no error details).
+  authority on the counts. No entry is NOT_SUPPORTED since 2026-10-15. The
+  five PARTIAL entries each wait on something outside this repository:
+  §3.5.2 MUST (an explicit `streamLagged` only where the log no longer
+  holds the events), §5.7 MUST (the spec contradicts itself), §12.4 MUST
+  and §5.4 SHOULD (agntcy-slim-rpc carries no error details; the SLIMRPC
+  table lacks three rows), §11.1 SHOULD (a2a-go reads only
+  `application/json` errors). The reports are in `docs/upstream/`, held.
+- **Ledger citations drift:** the checker verifies test names, not line
+  text, so any edit above a cited line moves its citation silently. After
+  editing a cited file, re-derive test lines by name and map
+  `impl_evidence` lines through a line diff from the last commit (this
+  branch's commits did both; 52, then 63 citations had drifted).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers. `CONTRIBUTING.md` and `PROVENANCE.md` §3.2 say the same
   since 2026-10-15.
@@ -59,11 +67,10 @@ that code could close and R69.
    release itself follows `RELEASING.md` and needs the signing key below.
    Debt is *Open engineering* below, by the maintainer's priority.
 4. **The 2026-10-15 decisions** (*Decisions the maintainer made*): the idle
-   bound, lag paging, `application/a2a+json` and card freshness are built
-   (this branch's commits); the three metric changes go with Step 4, and
-   the part-level at-rest cipher (approved the same day for GDPR-25-1 and
-   GDPR-32-1a) with the EU AI Act work. The remaining spec MAYs: §11.5
-   repeated query parameters and §11.7 a final `Task` snapshot.
+   bound, lag paging, `application/a2a+json`, card freshness and R13 are
+   built (this branch's commits); the three metric changes go with Step 4,
+   and the part-level at-rest cipher (approved the same day for GDPR-25-1
+   and GDPR-32-1a) with the EU AI Act work, next.
 
 ## Waiting on the maintainer
 
