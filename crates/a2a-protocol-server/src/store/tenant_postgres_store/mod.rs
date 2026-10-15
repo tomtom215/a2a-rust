@@ -116,6 +116,10 @@ impl TenantAwarePostgresTaskStore {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 PRIMARY KEY (tenant_id, id)
             )",
+                // The log position each write stores
+                // (`TaskStore::get_with_position`, audit register R69), added
+                // to a table an earlier version created.
+                crate::store::pg_schema::ADD_APPLIED_SEQ_TO_TENANT_TASKS,
                 // Keyed `(tenant_id, key)` like `tenant_tasks` is keyed
                 // `(tenant_id, id)`. Without the tenant in the primary key, one
                 // tenant's key would collide with another's and the second
@@ -190,6 +194,8 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", e)
 }
 
+mod caller_keys;
+mod list;
 mod store_impl;
 
 #[cfg(test)]

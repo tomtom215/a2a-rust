@@ -17,7 +17,8 @@ nightly").
 protocol on top of `a2a-protocol-server` and `a2a-protocol-client`:
 
 - Incoming messages carry a serialized `itk.Instruction`
-  (`protos/instruction.proto`, vendored verbatim from upstream) — as a raw
+  (`protos/instruction.proto`, vendored from upstream: identical from the
+  `syntax` line on, below a two-line provenance comment) — as a raw
   `application/x-protobuf` part, a part named `instruction.bin`, or base64
   text.
 - **`ReturnResponse`** returns its text, optionally *holding* the task in
@@ -63,7 +64,7 @@ Two layers, both in CI (`.github/workflows/itk.yml`):
    ```bash
    git clone https://github.com/a2aproject/a2a-itk
    ln -s "$(git -C .. rev-parse --show-toplevel)" a2a-itk/agents/repo
-   cd a2a-itk && uv run run_tests.py --sdks current,python_v10
+   cd a2a-itk && uv sync && uv run python run_tests.py --sdks current,python_v10
    ```
 
    In CI this runs as the **`workflow_dispatch`-only** (manual)
@@ -74,3 +75,27 @@ Two layers, both in CI (`.github/workflows/itk.yml`):
    provisioned on GitHub-hosted CI. A maintainer with registry access (or
    a future public ITK lockfile) can trigger it from the Actions tab. The
    in-repo self-test (1) is the authoritative automated gate.
+
+## ACTS system under test
+
+The same binary is also the system under test for the A2A project's
+conformance suite (ACTS, in a2a-itk). `run_itk.sh` runs ACTS instead of
+the traversal set when `ITK_ACTS_RUN=1`.
+
+- `src/acts.rs` implements the ACTS `tck-*` behaviours: a plain-text
+  message beginning with one of those prefixes produces the scripted
+  outcome the suite expects. `../acts/sut-behaviors.yaml` (at the
+  repository root) declares the same prefixes to the runner, and a unit
+  test in `src/acts.rs` checks that the two lists match.
+- `src/acts_client_parse.rs` implements `tck-client-parse`, which runs a
+  wire payload through this SDK's real client against a loopback fixture.
+- `src/acts_modes.rs` covers the extra passes the runner starts:
+  `ITK_ACTS_REDUCED_CAPABILITIES` (advertise no optional capability) and
+  `ITK_ACTS_AUTH` (declare and enforce a bearer scheme), plus the guard on
+  the extended agent card in every pass.
+
+[`acts.yml`](../.github/workflows/acts.yml) runs ACTS on JSON-RPC, gRPC
+and HTTP+JSON at a pinned a2a-itk revision as a merge gate, and
+`release.yml` calls it for the tagged commit. `itk-nightly.yml` runs it
+nightly without the gate. Reports from the pinned revision are kept under
+`../acts/reports/`.

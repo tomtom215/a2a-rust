@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
+use a2a_protocol_server::auth::caller_id;
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, ServerInterceptor};
 use a2a_protocol_types::AgentCapabilities;
@@ -132,7 +133,9 @@ impl ServerInterceptor for Guard {
                 return Ok(());
             }
             self.bearer.before(ctx).await?;
-            if ctx.caller_identity() == Some(LIMITED_CALLER) {
+            // The bundled bearer interceptor names a labelled caller
+            // `bearer:<label>` (audit register R12).
+            if ctx.caller_identity() == Some(caller_id::bearer(LIMITED_CALLER).as_str()) {
                 return Err(A2aError::permission_denied("not permitted"));
             }
             Ok(())
@@ -148,5 +151,36 @@ impl ServerInterceptor for Guard {
 
     fn authenticates(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(token: &str) -> CallContext {
+        CallContext::new("GetTask").with_http_header("authorization", format!("Bearer {token}"))
+    }
+
+    /// ACTS `SEC-AUTH-002` needs `403` for the limited caller and success
+    /// for the runner. The guard compares the identity the SDK records,
+    /// whose form changed once already (audit register R12), and only ACTS,
+    /// which needs the docker image, would otherwise notice.
+    #[tokio::test]
+    async fn the_guard_refuses_the_limited_caller_and_admits_the_runner() {
+        let guard = Guard::new(Scope::Everything);
+        guard
+            .before(&ctx(VALID_TOKEN))
+            .await
+            .expect("the runner is admitted");
+        let refused = guard
+            .before(&ctx(INSUFFICIENT_TOKEN))
+            .await
+            .expect_err("the limited caller is refused");
+        assert_eq!(
+            refused.auth_rejection().map(|r| r.kind()),
+            Some(a2a_protocol_types::auth_rejection::AuthRejectionKind::PermissionDenied),
+            "{refused:?}"
+        );
     }
 }

@@ -139,7 +139,8 @@ Both transcripts below are verbatim from the run described above — a debug
 build, Qwen3-1.7B on four CPU cores, ~5 s each. The *prose* varies between
 runs, as any model's does; the artifacts and the trace lines do not.
 
-One round, because the service exists:
+One round, because the service exists (the output below is summarised from
+the JSON-RPC response, not printed by `curl` as shown):
 
 ```console
 $ curl -sS -X POST http://127.0.0.1:8080 -H 'Content-Type: application/json' \
@@ -206,12 +207,14 @@ server, which is the point of both being OpenAI-compatible.
 
 ## Talking to the agent
 
+In server mode, with `A2A_BIND_ADDR=127.0.0.1:8080`:
+
 ```bash
 # Agent discovery
-curl http://127.0.0.1:<port>/.well-known/agent-card.json
+curl http://127.0.0.1:8080/.well-known/agent-card.json
 
 # Send a message (JSON-RPC binding)
-curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' -d '{
+curl -X POST http://127.0.0.1:8080 -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' -d '{
   "jsonrpc": "2.0", "id": 1, "method": "SendMessage",
   "params": {"message": {"messageId": "m1", "role": "ROLE_USER",
              "parts": [{"text": "What is the capital of France?"}]}}
@@ -219,12 +222,28 @@ curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A
 
 # Full conformance suite — 21/21 graded, 1 N/A on this binding, gated by
 # tck.yml's tck-example-agents job. The command below reproduces it locally.
-cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
+cargo run -p a2a-tck -- --url http://127.0.0.1:8080 --binding jsonrpc
 ```
 
-Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
+## Two modes
+
+**The default run checks itself and exits.** Without `A2A_BIND_ADDR`, the
+binary serves all four bindings on random loopback ports, says whether a
+provider answered (`LLM leg: EXERCISED` or `LLM leg: NOT EXERCISED`), drives
+every A2A method over every binding, prints the coverage matrix, and exits
+`0` when all 44 cells ran, `1` when a call failed, or `2` when a cell never
+ran. With no provider reachable, each task completes with a labelled
+mechanical reply, so the protocol surface is measured either way.
+
+**Server mode** starts when `A2A_BIND_ADDR` is set, serves JSON-RPC there
+until Ctrl+C, and has the failure semantics below. It permits push-notification
+webhooks on loopback and private addresses (`allow_private_urls`), so it is a
+local test server, not a deployment template; `genai-agent`'s server mode
+shows the guarded default.
 
 ## Failure semantics
+
+In server mode:
 
 | Condition | Task state |
 |-----------|-----------|

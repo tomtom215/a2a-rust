@@ -39,9 +39,13 @@ protobuf runtime — no code shared with prost).
 Only needed when the corpus changes or the canonical schema revision moves:
 
 ```sh
-pip install a2a-sdk
+pip install --require-hashes -r .github/requirements/a2a-sdk.txt
 python3 tck/scripts/grpc_wire_compat.py generate
 ```
+
+This installs the `a2a-sdk` release that the `grpc-wire-compat` CI job's
+`check-golden` step uses. Bytes generated with a different SDK release can
+fail that step.
 
 Commit the corpus and `bin/` changes together. The fixture test refuses to
 pass with fewer than 30 fixtures, so a wiped directory cannot silently

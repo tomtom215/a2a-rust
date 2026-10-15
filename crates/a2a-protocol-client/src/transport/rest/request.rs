@@ -95,17 +95,21 @@ impl RestTransport {
         Ok((uri, remaining))
     }
 
+    /// Builds the request, with `query` appended to the route's URL after any
+    /// query the route itself builds (audit register R67).
     pub(super) fn build_request(
         &self,
         method: &str,
         params: &serde_json::Value,
         extra_headers: &HashMap<String, String>,
         streaming: bool,
+        query: &[(String, String)],
     ) -> ClientResult<hyper::Request<Full<Bytes>>> {
         let route = route_for(method)
             .ok_or_else(|| ClientError::Transport(format!("no REST route for method: {method}")))?;
 
         let (uri, body_params) = self.build_uri(&route, params)?;
+        let uri = crate::transport::with_query(&uri, query);
         // §11.1: `application/a2a+json` "SHOULD be used for requests and
         // responses" (audit register R50); `application/json` is still
         // accepted from a server that does not label its answers the A2A way.
@@ -157,9 +161,20 @@ impl RestTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
+        self.execute_request_with_query(method, params, extra_headers, &[])
+            .await
+    }
+
+    pub(super) async fn execute_request_with_query(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        extra_headers: &HashMap<String, String>,
+        query: &[(String, String)],
+    ) -> ClientResult<serde_json::Value> {
         trace_info!(method, base_url = %self.inner.base_url, "sending REST request");
 
-        let req = self.build_request(method, &params, extra_headers, false)?;
+        let req = self.build_request(method, &params, extra_headers, false, query)?;
 
         // Single deadline across header fetch AND body read (see the JSON-RPC
         // transport for the rationale): `request_timeout` is a per-call budget,
@@ -499,7 +514,7 @@ mod tests {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({"message": {"role": "user", "parts": []}});
         let req = transport
-            .build_request("SendMessage", &params, &HashMap::new(), false)
+            .build_request("SendMessage", &params, &HashMap::new(), false, &[])
             .unwrap();
         assert_eq!(req.method(), hyper::Method::POST);
         // POST should have a non-empty body
@@ -513,7 +528,7 @@ mod tests {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({"id": "task-1"});
         let req = transport
-            .build_request("GetTask", &params, &HashMap::new(), false)
+            .build_request("GetTask", &params, &HashMap::new(), false, &[])
             .unwrap();
         assert_eq!(req.method(), hyper::Method::GET);
         let size = req.body().size_hint().exact().unwrap_or(1);
@@ -531,6 +546,7 @@ mod tests {
                 &params,
                 &HashMap::new(),
                 false,
+                &[],
             )
             .unwrap();
         assert_eq!(req.method(), hyper::Method::DELETE);
@@ -613,7 +629,7 @@ mod tests {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({});
         let req = transport
-            .build_request("SendStreamingMessage", &params, &HashMap::new(), true)
+            .build_request("SendStreamingMessage", &params, &HashMap::new(), true, &[])
             .unwrap();
         let accept = req.headers().get("accept").unwrap().to_str().unwrap();
         assert_eq!(accept, "text/event-stream");
@@ -626,7 +642,7 @@ mod tests {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({});
         let req = transport
-            .build_request("SendMessage", &params, &HashMap::new(), false)
+            .build_request("SendMessage", &params, &HashMap::new(), false, &[])
             .unwrap();
         let accept = req.headers().get("accept").unwrap().to_str().unwrap();
         assert_eq!(accept, "application/a2a+json, application/json");
@@ -640,7 +656,7 @@ mod tests {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let content_type = |method: &str, params: serde_json::Value| {
             transport
-                .build_request(method, &params, &HashMap::new(), false)
+                .build_request(method, &params, &HashMap::new(), false, &[])
                 .unwrap()
                 .headers()
                 .get("content-type")
@@ -671,7 +687,7 @@ mod tests {
         extra.insert("x-custom-header".to_string(), "custom-value".to_string());
         extra.insert("authorization".to_string(), "Bearer tok".to_string());
         let req = transport
-            .build_request("SendMessage", &params, &extra, false)
+            .build_request("SendMessage", &params, &extra, false, &[])
             .unwrap();
         assert_eq!(
             req.headers()
@@ -695,7 +711,8 @@ mod tests {
     fn build_request_unknown_method_returns_error() {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({});
-        let result = transport.build_request("NonExistentMethod", &params, &HashMap::new(), false);
+        let result =
+            transport.build_request("NonExistentMethod", &params, &HashMap::new(), false, &[]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         match err {

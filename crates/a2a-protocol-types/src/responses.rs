@@ -14,66 +14,17 @@
 //! | `ListTasks` | [`TaskListResponse`] |
 //! | `GetExtendedAgentCard` | [`AgentCard`] (re-exported as [`AuthenticatedExtendedCardResponse`]) |
 
-use serde::{Deserialize, Serialize};
-
 use crate::agent_card::AgentCard;
-use crate::message::Message;
 use crate::task::Task;
 
 // ── SendMessageResponse ───────────────────────────────────────────────────────
 
-/// The result of a `SendMessage` call: either a [`Task`] or a [`Message`].
-///
-/// Per v1.0 spec, the response uses the proto `oneof payload` pattern.
-/// In JSON this is externally tagged: `{"task": {...}}` or `{"message": {...}}`.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SendMessageResponse {
-    /// The agent accepted the message and created (or updated) a task.
-    Task(Task),
-
-    /// The agent responded immediately with a message (no task created).
-    Message(Message),
-}
-
-crate::oneof::oneof_deserialize!(
-    SendMessageResponse,
-    [Task(Task) = "task", Message(Message) = "message",]
-);
+// `SendMessageResponse` is generated: see the `include!` below. Its `Deserialize` is generated with it.
 
 // ── TaskListResponse ──────────────────────────────────────────────────────────
 
-/// The result of a `ListTasks` call: a page of tasks with pagination.
-///
-/// Per A2A spec, `next_page_token`, `page_size`, and `total_size` are
-/// required fields (always present on the wire). `next_page_token` is
-/// empty string when there are no more pages.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskListResponse {
-    /// The tasks in this page of results.
-    ///
-    /// `ProtoJSON` printers omit empty repeated fields, so an official-SDK
-    /// server with zero matching tasks legitimately sends no `tasks` key.
-    #[serde(default)]
-    pub tasks: Vec<Task>,
-
-    /// Pagination token for the next page; empty string on the last page.
-    #[serde(default)]
-    #[serde(alias = "next_page_token")]
-    pub next_page_token: String,
-
-    /// The actual page size used by the server.
-    #[serde(default)]
-    #[serde(alias = "page_size")]
-    pub page_size: u32,
-
-    /// Total number of tasks matching the query (across all pages).
-    #[serde(default)]
-    #[serde(alias = "total_size")]
-    pub total_size: u32,
-}
+// The proto-generated types of this module (ADR 0016), `TaskListResponse` first.
+include!("generated/responses.rs");
 
 impl TaskListResponse {
     /// Creates a single-page response.
@@ -95,21 +46,7 @@ impl TaskListResponse {
 
 // ── ListPushConfigsResponse ────────────────────────────────────────────────────
 
-/// The result of a `ListTaskPushNotificationConfigs` call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListPushConfigsResponse {
-    /// The push notification configs in this page of results.
-    ///
-    /// `ProtoJSON` printers omit empty repeated fields, so absence means empty.
-    #[serde(default)]
-    pub configs: Vec<crate::push::TaskPushNotificationConfig>,
-
-    /// Pagination token for the next page; absent on the last page.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "next_page_token")]
-    pub next_page_token: Option<String>,
-}
+// `ListPushConfigsResponse` is generated: see the `include!` above.
 
 // ── AuthenticatedExtendedCardResponse ─────────────────────────────────────────
 
@@ -124,7 +61,7 @@ pub type AuthenticatedExtendedCardResponse = AgentCard;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{MessageId, MessageRole, Part};
+    use crate::message::{Message, MessageId, MessageRole, Part};
     use crate::task::{ContextId, TaskId, TaskState, TaskStatus};
 
     fn make_task() -> Task {

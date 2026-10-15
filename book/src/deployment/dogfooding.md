@@ -208,7 +208,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 | **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
 | **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics/mod.rs` — `ConnectionPoolStats`, `on_connection_pool_stats` |
 | **Hot-reload agent cards** | `crates/a2a-protocol-server/src/agent_card/hot_reload.rs` — file polling + SIGHUP reload |
-| **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration.rs` — `MigrationRunner`, V1–V7 migrations |
+| **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration/` — `MigrationRunner`, V1–V8 migrations |
 | **Per-tenant configuration** | `crates/a2a-protocol-server/src/tenant_config/mod.rs` — `PerTenantConfig`, `TenantLimits` |
 | **TenantResolver trait** | `crates/a2a-protocol-server/src/tenant_resolver.rs` — header, bearer token, path segment strategies |
 | **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps/feature_gated.rs` — test 79 (`signing` feature) |

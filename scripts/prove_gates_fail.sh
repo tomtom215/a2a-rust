@@ -322,6 +322,8 @@ injection_for() {
             echo "fmt:$TYPES_LIB" ;;
         "./scripts/check_proto_copies.sh")
             echo "proto" ;;
+        *"tools/a2a-codegen/Cargo.toml -- --check"*)
+            echo "codegen" ;;
         "./scripts/check_file_lengths.sh")
             echo "file_length" ;;
         "./scripts/check_panic_hooks.sh")
@@ -490,6 +492,7 @@ expected_marker() {
     case "$kind" in
         fmt)              echo "gate_probe_fmt" ;;
         proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
+        codegen)          echo "task.rs differs from what the proto generates" ;;
         file_length)      echo "gate_probe_long.rs" ;;
         panic_hook)       echo "gate_probe_hook.rs" ;;
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
@@ -601,6 +604,11 @@ PY
         proto)
             note_touched "tck/proto/a2a_v1/a2a.proto"
             printf '\n// gate probe: injected drift\n' >>tck/proto/a2a_v1/a2a.proto ;;
+        # A hand edit to a generated file, which is what the gate exists to
+        # refuse.
+        codegen)
+            note_touched "crates/a2a-protocol-types/src/generated/task.rs"
+            printf '\n// gate probe: a hand edit\n' >>crates/a2a-protocol-types/src/generated/task.rs ;;
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;

@@ -10,19 +10,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`TaskState`'s discriminants are its proto numbers** (types; spec §1.4,
+  ADR 0016). `TaskState` is generated from `a2a.proto` now, and
+  `TaskState::Completed as i32` is 3, as `TASK_STATE_COMPLETED` is in the
+  proto and the prost enum; it was 5, its place in the hand-written
+  declaration. The wire form and `TaskState::ALL` are unchanged.
+- **`ClientRequest` has a new public field, `query_params`** (client;
+  a2a.proto `APIKeySecurityScheme.location`: "Valid values are "query",
+  "header", or "cookie""; audit register R67). The client refused an API
+  key that goes in the query string, because a request reached the
+  transports with headers only. An interceptor now adds query parameters
+  to `query_params`, and the JSON-RPC and HTTP+JSON transports append them
+  to the request URL, percent-encoded, after any query the route builds
+  itself; a retried call sends them on every attempt. `Debug` prints their
+  names, never their values. A struct literal that names every field of
+  `ClientRequest` no longer compiles: build it with `ClientRequest::new`,
+  or add `query_params: Vec::new()`. This field is why the next release
+  is 0.15.0 rather than 0.14.2.
+
+  The `Transport` trait gains `send_request_with_query` and
+  `send_streaming_request_with_query`, with defaults, so a custom
+  transport still compiles. The default sends a call with no query
+  parameters as before and refuses one with them, with
+  `ClientError::InvalidAuthScheme`, rather than send it without its
+  credential. gRPC, WebSocket and the SLIMRPC binding have no query string
+  and refuse the same way.
+
+- **A caller is named by how it authenticated** (server; spec §13.1,
+  RFC 7519 §4.1.2; audit register R12). The bundled interceptors record
+  `bearer:<label>`, `api-key:<label>` and `jwt:<issuer>:<sub>` (the issuer
+  percent-encoded) where they recorded the bare label or `sub`. A `sub` is
+  unique only within its issuer, so one `sub` from two accepted issuers was
+  one caller: one task partition, one rate-limit budget, one approver. The
+  new identity is what caller isolation, the rate limiter, the audit actor,
+  `ApprovalRequest.requested_by` and `ApprovalGate::with_approvers` see.
+  **An approver allowlist of bare names matches nobody**: write it with
+  `auth::caller_id`, e.g. `caller_id::bearer("alice")`. Code that compares
+  `CallContext::caller_identity()` against a label must compare against the
+  qualified form. **Stored partitions keep their old keys until migrated**:
+  run `migrate_caller_keys` once on each SQLite or PostgreSQL tenant-aware
+  task and push-config store (see Added), or each caller's tasks and
+  webhooks are not found under its new identity. A pending approval stored
+  before the upgrade names its requester bare; the four-eyes check still
+  refuses that requester, under any issuer.
+- **A JWT with no `sub` is refused under caller isolation** (server; audit
+  register R12). It authenticated and named nobody, and under the default
+  isolation was served the tenant's shared records. It is now refused with
+  `PermissionDenied` unless callers share tasks
+  (`share_tasks_across_callers`).
+
 ### Added
 
+- **`TaskStore::get_with_position` and `store::AppliedPosition`** (server;
+  audit register R69). `get_with_position` returns a task with the event-log
+  position the stored record reflects; its default reports none. The
+  processors run each event's writes inside `AppliedPosition::scope(seq, …)`,
+  and every shipped store records `AppliedPosition::current()` atomically with
+  the write, keeping the stored position on a write outside a scope. The SQL
+  stores gain an `applied_seq` column: `SQLite` migration 8 and PostgreSQL
+  migration 7 for `with_migrations`, and every `from_pool` adds it to a
+  database an earlier version created, checking for it first so a start takes
+  no lock on a table that has it (the book's *Task & Config Stores* page has
+  the contract for a custom store). The `SQLite` migration runner now skips an
+  `ADD COLUMN` whose column exists, so `with_migrations` succeeds on a
+  database `from_pool` has already opened.
+
+- **Public types generated from `a2a.proto`** (types; spec §1.4: derived
+  forms "MUST be regenerated from the proto ... rather than edited
+  manually"; audit register R49, ADR 0016). `tools/a2a-codegen`, outside
+  the workspace, parses the proto with `protox` (no `protoc`) and writes
+  `crates/a2a-protocol-types/src/generated/`, shaped by
+  `crates/a2a-protocol-types/codegen.toml`. The generator refuses a
+  configuration entry for a type, field or value the proto does not have,
+  and a proto type the configuration does not mention. CI's static checks
+  regenerate in memory and fail on any difference, and on any hand-written
+  type, anywhere in the repository, declared under a generated type's name.
+  Over the migration's phases,
+  `TaskState`, `MessageRole`, `AgentInterface`, `AgentProvider`,
+  `AgentExtension`, then the agent card family (`AgentCard`,
+  `AgentCapabilities`, `AgentSkill`, `AgentCardSignature`), then `Task`,
+  `TaskStatus`, `Message`, `Artifact`, `TaskStatusUpdateEvent` and
+  `TaskArtifactUpdateEvent`, then the 14 request, parameter and response
+  types (`MessageSendParams`, `ListTasksParams`, `TaskListResponse`,
+  `TaskPushNotificationConfig` and the rest), then the 12 security-scheme
+  and OAuth-flow messages (`ApiKeySecurityScheme`, `SecurityRequirement`,
+  `StringList` and the rest), then the five `oneof`s (`Part` with
+  `PartContent`, `SecurityScheme`, `OAuthFlows`, `StreamResponse`,
+  `SendMessageResponse`) are generated, at their existing paths: every
+  proto type now is. Docs now come from the
+  proto's comments, with the Rust-specific notes kept. Fields follow the
+  proto's order, so `AgentProvider` serializes `url` before
+  `organization`, `AgentCard` writes `provider` and `version` after
+  `supportedInterfaces`, a `Task` writes `artifacts` before `history`, and
+  a `Message` writes `contextId` and `taskId` before `role`, and the
+  security schemes write `description` first. The one other observable
+  change is the member list in `OAuthFlows`' two-flows error, now in the
+  proto's order (`deviceCode` last). Card
+  signatures are unaffected: they sign the RFC 8785 canonical form, which
+  sorts keys.
+- **`migrate_caller_keys`** on `TenantAwareSqliteTaskStore`,
+  `TenantAwarePostgresTaskStore`, `TenantAwareSqlitePushConfigStore` and
+  `TenantAwarePostgresPushConfigStore`, with `store::caller_keys` (server;
+  audit register R12). The old key does not record the scheme or issuer, so
+  the deployer gives a map from an old caller name to its new identity;
+  `caller_keys::bearer_labels`, `api_key_labels` and `jwt_subjects(issuer)`
+  cover a deployment that used one authenticator. One transaction per call:
+  a task moves with its logged events and idempotency keys, a sealed push
+  config is opened under its old partition and sealed again under the new
+  one, and a task id the new partition already holds refuses the whole run.
+  A second run moves nothing.
+- **`serve::Server::with_tls`** and **`Server::with_tls_pem`** (server,
+  `tls-rustls`; spec §14: "Implementations SHOULD support HTTPS to ensure
+  authenticity and integrity of the Agent Card"). Only the gRPC listener
+  terminated TLS; the HTTP listener needed a reverse proxy. The graceful
+  `Server` now runs each connection's TLS handshake on its own task, within
+  `ServeConfig::header_read_timeout` when that is set, and then serves HTTP/2
+  or HTTP/1.1 as ALPN agreed (`h2` and `http/1.1` are offered when the
+  configuration names none). A failed handshake closes the connection and
+  counts as a failed connection. `with_tls_pem` builds rustls' safe defaults
+  on the `ring` provider from a PEM chain and key, and refuses a key that is
+  not the certificate's. `serve`, `serve_with_addr` and the WebSocket
+  listener stay plaintext.
+- **`ExtendedCardProvider`** and
+  **`RequestHandlerBuilder::with_extended_card_provider`** (server; spec
+  §13.3: "Agents MAY return different extended card content based on the
+  authenticated client's identity or authorization level"). Every
+  authenticated caller got the one configured extended card. A provider is
+  given the request's `CallContext` once the interceptor chain has
+  authenticated it, and the configured extended card, which `build()` then
+  requires; it returns the card for that caller, or an error that refuses
+  the request. Its card is checked as the configured one is (valid, push
+  notifications only with a push sender, the server's extensions added
+  when missing, refused when signed without them), and one that fails is
+  an internal error, not served.
+- **`ListTaskPushNotificationConfigs` pages its configs** (server; spec
+  §3.1.9: "MAY support pagination for tasks with many configurations").
+  `pageSize` and `pageToken` were ignored and `nextPageToken` was always
+  absent. With either, the configs are ordered by id and a page carries a
+  `nextPageToken` while more remain; a token names the last config
+  returned, so a config created or deleted between pages neither repeats
+  nor shifts the rest. A token this server did not give is
+  `InvalidField(pageToken)`, and `pageSize: 0` is unset, as proto3 reads it.
+  Without either, every config is returned as before. Every binding pages
+  through the new `RequestHandler::on_list_push_configs_page`.
+- **`signing::sign_card_es256_with_jku`** and **`sign_card_ed25519_with_jku`**
+  (types; spec §8.4.2: the protected header MAY include `jku`). The
+  signers took no `jku`; these put one in the protected header, where the
+  signature covers it, and refuse one that is not `https://` (RFC 7515
+  §4.1.2).
+- **`CachingCardResolver::with_options`** and
+  **`ClientBuilder::from_signed_card`** (client; spec §14: clients SHOULD
+  verify signatures when present). The caching resolver fetched with
+  default options, so it could not verify a signed card at all, and a
+  client built from a card the caller held had no way to verify it. The
+  resolver now fetches with the `CardFetchOptions` it is given, signature
+  keys included, and caches nothing that fails; `from_signed_card` (feature
+  `signing`) verifies the card's JSON as given, before reading it into an
+  `AgentCard`, then builds as `from_card` does.
+- **`auth::caller_id`** (server): `bearer`, `api_key` and `jwt` build the
+  identities the bundled interceptors record.
 - **`DispatchConfig::with_agent_card_max_age`** (server; spec §8.6.1: the
   card's `max-age` SHOULD suit how often it changes). The JSON-RPC, REST
   and axum dispatchers served the public card with `max-age=3600` and no
   way to change it; it is now the deployment's, defaulting to 3600.
 - **`AuthInterceptor::api_key`** (client; spec §4.5.2, §3.1.11). An
   agent whose card declares an `APIKeySecurityScheme` reads its key from the
-  header or cookie the scheme names; the client could only write the key
-  into `Authorization`, which such an agent refuses. `api_key` sends it
-  where the scheme says, over JSON-RPC, HTTP+JSON and gRPC. A scheme that
-  places the key in the query string, or names a header no request can
-  carry, is refused when the interceptor is made, with the new
+  header, cookie or query parameter the scheme names; the client could only
+  write the key into `Authorization`, which such an agent refuses. `api_key`
+  sends it where the scheme says: a header or cookie over JSON-RPC,
+  HTTP+JSON and gRPC, and a query parameter over JSON-RPC and HTTP+JSON
+  (see Breaking Changes). A name that is not an HTTP token (RFC 9110
+  `tchar`), which no header or cookie can carry, is refused when the
+  interceptor is made, for a query parameter too, with the new
   `ClientError::InvalidAuthScheme`.
 - **`ClientBuilder::with_extensions`** and
   **`WebSocketTransportConfig::with_extensions`** (client; spec §3.2.6: the
@@ -353,6 +514,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#151). `Server::bind` now delegates to it.
 
 ### Behaviour Changes
+
+- **A credential refused over WebSocket says so in the body** (server and
+  client; A2A §12.6 "Handle Challenges", §3.3.2). The `-32600` the
+  WebSocket binding answers now carries a `google.rpc.ErrorInfo` from
+  `a2a-rust.com`: `UNAUTHENTICATED` with the challenge an HTTP binding sends
+  as `WWW-Authenticate` in its `www-authenticate` metadata, or
+  `PERMISSION_DENIED` (binding specification §6). It had no `data`, so
+  nothing told it from a malformed request, and the challenge was dropped.
+  The client reports the two as `ClientError::UnexpectedStatus` with status
+  `401` and `403`, on a unary call and as a stream's first item, so
+  `BearerAuthInterceptor` drops a refused token over WebSocket as it does
+  over HTTP and gRPC; they were `ClientError::Protocol(InvalidRequest)`
+  (see the upgrading guide).
 
 - **The handler's own request checks name the field at fault** (server;
   §3.3.2 SHOULD, audit register). An empty or over-long id, a message with
@@ -944,6 +1118,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A subscription on another replica no longer loses the event being
+  stored** (server; spec §3.5.2, "Each stream MUST receive the same events
+  in the same order"; audit register R69). A `SubscribeToTask` on a replica
+  with no live queue read the log's end and then the task. A processor on
+  the replica running the task logs each event before it stores the state
+  the event leads to, so an event logged before the first read and stored
+  after the second was in neither the snapshot nor the replay, and the
+  subscriber never saw it, with no `streamLagged`; one logged and stored
+  between the reads arrived twice. The subscription now reads the task with
+  the log position it reflects, in one store read
+  (`TaskStore::get_with_position`), and replays from there. Every shipped
+  store keeps that position; a custom store that does not falls back to the
+  old order. During a rolling upgrade, a replica still on an earlier release
+  does not write the position, so a subscriber can receive events its
+  snapshot already holds twice until every replica runs this release.
+
+- **A turn after a failed log append no longer reuses that append's
+  position** (server; spec §3.5.2). The processor carries on past a failed
+  append and stores the event's effect, so the stored task can reflect a
+  position the log does not hold. The next turn was numbered from the log's
+  end alone, so its first event took that position, and a subscriber that had
+  seen the failed event live, or started from the stored task, dropped it as
+  delivered. A turn is now numbered after the later of the log's end and the
+  stored position; the skipped position is a hole a replay reports as
+  `streamLagged`. Stores that report no position keep the old numbering.
+
+- **The WebSocket and gRPC listeners serve the agent card** (server; spec
+  §8.1, "A2A Servers **MUST** make an Agent Card available", §8.2). A
+  deployment on either alone published none; both now answer `GET` and
+  `HEAD` of `/.well-known/agent-card.json` as the HTTP dispatchers do
+  (`ETag`, conditional requests, `max-age=3600`), and `404` without a card.
+  The WebSocket listener reads the request line without consuming it and
+  hands every other connection to the handshake unchanged. **A gRPC
+  dispatcher with a card now accepts HTTP/1.1 connections** (tonic's
+  `accept_http1`), because a card fetch is usually HTTP/1.1; gRPC is
+  HTTP/2 either way. `GrpcDispatcher::into_service` is unchanged and
+  serves no card.
+- **A v0.3 agent card is read with its legacy fields** (client; spec App.
+  A.2, A.2.2). A card fetched from its well-known path, or returned by
+  `GetExtendedAgentCard`, that names its address with v0.3's top-level
+  `url`, `preferredTransport` and `additionalInterfaces` has them folded
+  into `supportedInterfaces` (with the card's `protocolVersion`, or `0.3`),
+  and `supportsAuthenticatedExtendedCard` or `supportsExtendedAgentCard` is
+  read as `capabilities.extendedAgentCard`. A field the v1.0 form sets wins.
+  Each legacy field found is named in a `tracing` warning. Such a card used
+  to come back with no interfaces and no extended card; interface
+  selection still passes over a 0.3 interface for a 1.x one.
 - **A database that cannot answer for now is a temporary failure** (server,
   `a2a-protocol-slimrpc`; spec §3.3.2: servers SHOULD tell temporary failures
   from permanent ones). Every SQL store answered every database error as
@@ -1341,6 +1562,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- **`HotReloadAgentCardHandler::update`**, for **`try_update`** (server;
+  spec §5.7: arrays marked as required MUST contain at least one element).
+  `update` stored any card; `try_update` checks it as `reload_from_json`
+  checks a reloaded one (`AgentCard::validate` and
+  `validate_security_schemes`) and refuses with `InvalidParams`, leaving
+  the current card in place.
 - **`ClientConfig::preferred_bindings` and `ClientConfig::with_preferred_bindings`**
   (client). Nothing reads them once `ClientBuilder::from_card` follows the
   card's interface order (spec §8.3.2); setting them changed nothing a caller
@@ -1577,6 +1804,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployer can meet (13(1)-(3)(e), 14(1)-(3) and (4)(b)-(c), 15(1)-(3)), and
   for Arts. 4 (as replaced), 9, 10, 11 with Annex IV, 17, 26, 27 and
   50(3)-(4). 37 controls in all.
+- **The control map follows Regulation (EU) 2026/1744, the Digital Omnibus on
+  AI**, read in its Official Journal edition, and the AI Act's own Articles 5,
+  6, 16, 43 and 47-49, read in theirs. New integrator rows for Art. 4a (bias
+  detection with special-category data), the Art. 5 prohibitions (the
+  original eight, and the two 2026/1744 added, from 2 December 2026), Art. 6
+  (classification, the Annex III exception, safety components as redefined),
+  Art. 16, Art. 25(2) and (4) (now fineable under Art. 99(4)(da); the SDK is
+  under the open-source exemption), and Arts. 43 and 47-49 (conformity
+  assessment, declaration, CE marking, registration). Rows 9-10-17, 11,
+  15(5), 26-27, 50(2), 72(2) and 73 carry the amended text: among it the
+  2 December 2026 deadline for Art. 50(2) where a generative system was on
+  the market before 2 August 2026 (Art. 111(4)), and Art. 42(3), under which
+  meeting the Cyber Resilience Act's Art. 12(1) conditions satisfies Art.
+  15's cybersecurity requirements. The source note gives the amended
+  application dates and Annex XIV's notified-body code for agentic AI.
+  44 controls, 28 of them AI Act rows.
 - **The regulatory control map cites the code behind each EU AI Act
   control**, as `code = ["path.rs::Symbol"]`, and `check_compliance_map.py`
   fails when a cited symbol is not declared in its file or when a supported

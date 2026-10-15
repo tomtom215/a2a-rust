@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
 # a2a-rust brand kit
 
@@ -49,3 +50,6 @@ The amber **2** in `a2a-rust` (agent-**2**-agent) is the brand's hero device.
 - `avatar.svg` — avatar with live text; `avatar-outlined.svg` is the same with text converted to paths (the favicon master).
 
 Reproducing requires the **Space Grotesk** and **JetBrains Mono** fonts installed.
+The sources name the fonts by family only; they do not load the WOFF2 web-font
+copies in `book/static/fonts/`, which are the ones the book and the benchmark
+dashboard use.

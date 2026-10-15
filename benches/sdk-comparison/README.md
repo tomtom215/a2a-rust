@@ -8,12 +8,14 @@ Reproduces [`docs/sdk-comparison-2026-10-02.md`](../../docs/sdk-comparison-2026-
 writes new files rather than editing those, so the two runs can be diffed.
 
 ```text
-harness/agent-a2a-rs     the benchmark agent on a2a-rs (=0.4.1 / =0.5.1 / client =0.2.7)
+harness/agent-a2a-rs     the benchmark agent on a2a-rs (a2a-lf =0.4.1, a2a-server-lf =0.5.1, a2a-client-lf =0.2.7)
 harness/agent-a2a-rust   the same agent on a2a-rust (a2a-protocol-sdk =0.14.1)
 harness/loadgen          SDK-agnostic closed-loop JSON-RPC load generator
 harness/shared/llm.rs    the model client both agents compile in (`--features llm`)
+harness/shared/alloc_count.rs  counting global allocator both agents compile in (`--features alloc-count`)
 scripts/                 the procedures; each one says what it measures in its header
 results/                 the 2026-10-02 run
+results/swarm/           output of examples/swarm, cited by docs/swarm-orchestration.md; no script here produces it
 ```
 
 Each harness crate is standalone, with an empty `[workspace]` and its own
@@ -24,7 +26,8 @@ other's, and the lockfile records exactly what was measured. Build with
 ## Setup
 
 ```bash
-export WORK=$HOME/sdk-comparison-work     # scratch directory; nothing below writes into the repo
+# Run from benches/sdk-comparison: H is taken from the current directory.
+export WORK=$HOME/sdk-comparison-work     # scratch directory; the build commands below write only there
 H=$PWD/harness
 for a in agent-a2a-rs agent-a2a-rust loadgen; do (cd $H/$a && cargo metadata --locked >/dev/null); done
 
@@ -46,7 +49,19 @@ Agent switches, all environment variables:
 | `SQLITE_URL` | a2a-rust (`--features sqlite`) | Uses `SqliteTaskStore`. |
 | `AUTH_TOKEN` | a2a-rust | Requires `Authorization: Bearer <token>`. |
 | `NO_TTL_SWEEP=1` | a2a-rust | Sets `eviction_interval = 0`. Attribution probe only. |
-| `LLM_URL` | both (`--features llm`) | OpenAI-compatible chat endpoint; defaults to `127.0.0.1:11434`. |
+| `UNBOUNDED_STORE=1` | a2a-rust | Sets `max_capacity = None` and `task_ttl = None`, so nothing is evicted. Attribution probe only. |
+| `MAX_EVENTS_PER_TASK=<n>` | a2a-rust | Bounds the event log at `n` events per task. Attribution probe only. |
+| `RUN_SECS=<n>` | both | Exits after `n` seconds, so a profiler that reports on exit (dhat, heaptrack) gets a clean exit. |
+| `LLM_URL` | both (`--features llm`) | OpenAI-compatible chat endpoint; defaults to `http://127.0.0.1:11434/v1/chat/completions`. |
+
+`NO_TTL_SWEEP`, `UNBOUNDED_STORE` and `MAX_EVENTS_PER_TASK` each replace the
+whole task-store config with their own (`main.rs` calls
+`with_task_store_config` once per variable), so set at most one of them.
+
+Build features besides `llm` and `sqlite`: `alloc-count` (both agents) prints
+cumulative `allocs=` / `bytes=` totals to stderr every 500 ms; `dhat-heap`
+(both agents) writes a dhat heap profile on exit, so pair it with `RUN_SECS`.
+The two each install a global allocator and cannot be enabled together.
 
 ## The procedures
 
@@ -57,8 +72,8 @@ Agent switches, all environment variables:
 | Tenant isolation | `python3 scripts/tenant_probe.py http://127.0.0.1:<port> <label>`, against each agent | §5.1 |
 | Persistence and auth | `B=$WORK/target-rust-feat/release/agent-a2a-rust scripts/feature_probe.sh` | §5.1 |
 | Live model | start `llama-server` (below) and both `--features llm` agents on ports 3101 and 3102, then `python3 scripts/llm_e2e.py 4` | §4.4 |
-| Client × server interop | `target-*-llm/release/client http://127.0.0.1:<port> "llm:<prompt>"`, all four pairings | §3.3 |
-| ACTS / ITK | `ITK_CHECKOUT=<a2a-itk @ b57c5332> scripts/run_acts.sh <sdk checkout> <a2a-rs\|a2a-rust>`; `run_itk.sh` takes the same arguments | §3.1, §3.2 |
+| Client × server interop | `$WORK/target-*-llm/release/client http://127.0.0.1:<port> "llm:<prompt>"`, all four pairings | §3.3 |
+| ACTS / ITK | `ITK_CHECKOUT=<a2a-itk @ b57c5332> scripts/run_acts.sh <sdk checkout> <a2a-rs\|a2a-rust>`; `run_itk.sh` takes the same arguments. Both write into the checkout: they replace `<sdk checkout>/itk/a2a-itk` with a copy of `ITK_CHECKOUT`. | §3.1, §3.2 |
 
 `run_perf.sh` and `run_mem.sh` pin the server to CPUs 0–1 and the load
 generator to CPUs 2–3 with `taskset`, so they need 4 cores. They expect the

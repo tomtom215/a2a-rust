@@ -3269,3 +3269,127 @@ async fn postgres_list_follows_the_proto() {
     list_proto::list_follows_the_proto(&tenant).await;
     db.drop_db().await;
 }
+
+// ── Caller-key migration (audit register R12) ───────────────────────────────
+
+/// Postgres checks the event log's foreign key at once, unlike a deferred
+/// check, so the migration's copy-then-move-then-delete order is what this
+/// proves; `caller_key_migration.rs` covers the same ground on `SQLite`.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_pg_task_store_moves_a_callers_partition_whole() {
+    use a2a_protocol_server::store::{IdempotencyClaim, caller_keys};
+    let db = TestDb::create("caller_keys_tasks").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open store");
+    let msg = MessageId::new("m-1");
+    TenantContext::scope("acme\u{1f}alice", async {
+        store.save(&make_task("t-1", "c-1")).await.unwrap();
+        store
+            .append_event(
+                &TaskId::new("t-1"),
+                1,
+                &StreamResponse::Task(make_task("t-1", "c-1")),
+            )
+            .await
+            .unwrap();
+        store
+            .claim_idempotency_key("k-1", &msg, &TaskId::new("t-1"))
+            .await
+            .unwrap();
+    })
+    .await;
+    TenantContext::scope("acme", store.save(&make_task("t-shared", "c-1")))
+        .await
+        .unwrap();
+
+    let moved = store
+        .migrate_caller_keys(caller_keys::jwt_subjects(Some("https://idp.example")))
+        .await
+        .expect("migrate");
+    assert_eq!((moved.partitions, moved.rows), (1, 3), "{moved:?}");
+
+    let new = "acme\u{1f}jwt:https%3A//idp.example:alice";
+    TenantContext::scope(new, async {
+        assert!(store.get(&TaskId::new("t-1")).await.unwrap().is_some());
+        assert_eq!(
+            store
+                .read_events(&TaskId::new("t-1"), 0, 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        let claim = store
+            .claim_idempotency_key("k-1", &msg, &TaskId::new("t-2"))
+            .await
+            .unwrap();
+        assert!(matches!(claim, IdempotencyClaim::Replay(_)), "{claim:?}");
+    })
+    .await;
+    let left = TenantContext::scope("acme\u{1f}alice", store.get(&TaskId::new("t-1")))
+        .await
+        .unwrap();
+    assert!(left.is_none());
+    let shared = TenantContext::scope("acme", store.get(&TaskId::new("t-shared")))
+        .await
+        .unwrap();
+    assert!(shared.is_some());
+
+    // A task already under the new key refuses the next run whole.
+    TenantContext::scope("acme\u{1f}bob", store.save(&make_task("t-3", "c-1")))
+        .await
+        .unwrap();
+    TenantContext::scope("acme\u{1f}bob", store.save(&make_task("t-4", "c-1")))
+        .await
+        .unwrap();
+    TenantContext::scope("acme\u{1f}bearer:bob", store.save(&make_task("t-4", "c-1")))
+        .await
+        .unwrap();
+    assert!(
+        store
+            .migrate_caller_keys(caller_keys::bearer_labels())
+            .await
+            .is_err()
+    );
+    let kept = TenantContext::scope("acme\u{1f}bob", store.get(&TaskId::new("t-3")))
+        .await
+        .unwrap();
+    assert!(kept.is_some(), "the refused run moved nothing");
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_pg_push_store_seals_a_moved_config_again() {
+    use a2a_protocol_server::store::caller_keys;
+    let db = TestDb::create("caller_keys_push").await;
+    let store = TenantAwarePostgresPushConfigStore::new(&db.url)
+        .await
+        .expect("open store")
+        .with_cipher(std::sync::Arc::new(aes_gcm::Aes256Gcm::new(&[42; 32])));
+    let mut config = make_push_config("t-1");
+    config.id = Some("cfg-1".into());
+    TenantContext::scope("acme\u{1f}alice", store.set(config.clone()))
+        .await
+        .unwrap();
+
+    let moved = store
+        .migrate_caller_keys(caller_keys::bearer_labels())
+        .await
+        .expect("migrate");
+    assert_eq!((moved.partitions, moved.rows), (1, 1), "{moved:?}");
+    let read = TenantContext::scope("acme\u{1f}bearer:alice", store.get("t-1", "cfg-1"))
+        .await
+        .unwrap()
+        .expect("opens under the new key");
+    assert_eq!(read.url, config.url);
+    let left = TenantContext::scope("acme\u{1f}alice", store.get("t-1", "cfg-1"))
+        .await
+        .unwrap();
+    assert!(left.is_none());
+
+    db.drop_db().await;
+}

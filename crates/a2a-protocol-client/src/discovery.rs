@@ -299,6 +299,8 @@ struct CachedCard {
 #[derive(Debug, Clone)]
 pub struct CachingCardResolver {
     url: String,
+    /// What each fetch sends and checks; see [`with_options`](Self::with_options).
+    options: CardFetchOptions,
     cache: Arc<RwLock<Option<CachedCard>>>,
     /// The extended card for an authenticated session; see
     /// [`install_extended_card`](Self::install_extended_card).
@@ -316,6 +318,7 @@ impl CachingCardResolver {
         let url = build_card_url(base_url, AGENT_CARD_PATH)?;
         Ok(Self {
             url,
+            options: CardFetchOptions::default(),
             cache: Arc::new(RwLock::new(None)),
             extended: Arc::new(RwLock::new(None)),
         })
@@ -330,9 +333,20 @@ impl CachingCardResolver {
         let url = build_card_url(base_url, path)?;
         Ok(Self {
             url,
+            options: CardFetchOptions::default(),
             cache: Arc::new(RwLock::new(None)),
             extended: Arc::new(RwLock::new(None)),
         })
+    }
+
+    /// Fetches with `options`: their headers and budget, and, with
+    /// `signing`, their signature keys, so a card that does not verify is
+    /// never cached or returned (spec §14: clients SHOULD verify signatures
+    /// when present). Default: [`CardFetchOptions::default`].
+    #[must_use]
+    pub fn with_options(mut self, options: CardFetchOptions) -> Self {
+        self.options = options;
+        self
     }
 
     /// Resolves the agent card, using a cached version if valid.
@@ -352,8 +366,7 @@ impl CachingCardResolver {
         trace_info!(url = %self.url, "resolving agent card (cached)");
         let cached = self.cache.read().await.clone();
         let (card, etag, last_modified) =
-            fetch_card_with_metadata(&self.url, cached.as_ref(), &CardFetchOptions::default())
-                .await?;
+            fetch_card_with_metadata(&self.url, cached.as_ref(), &self.options).await?;
 
         // Kept only with a validator to revalidate it by: without one no
         // `304` can answer for it. A `no-store` response comes back with
@@ -596,8 +609,10 @@ async fn fetch_card_with_metadata(
             serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
         verify_card_signatures(&received, options)?;
     }
-    let card =
-        serde_json::from_slice::<AgentCard>(&body_bytes).map_err(ClientError::Serialization)?;
+    let mut card: serde_json::Value =
+        serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
+    crate::legacy_card::read_as_current(&mut card);
+    let card = serde_json::from_value::<AgentCard>(card).map_err(ClientError::Serialization)?;
     Ok((card, etag, last_modified))
 }
 
@@ -611,7 +626,7 @@ async fn fetch_card_with_metadata(
 /// not model. Until 2026-10-14 the typed card was verified, so a correctly
 /// signed card from a peer on a later version was refused.
 #[cfg(feature = "signing")]
-fn verify_card_signatures(
+pub(crate) fn verify_card_signatures(
     card: &serde_json::Value,
     options: &CardFetchOptions,
 ) -> ClientResult<()> {

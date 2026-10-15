@@ -50,6 +50,24 @@ pub async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error>
     Ok(())
 }
 
+/// Adds `applied_seq` to `tasks` when it is missing. Not `ADD COLUMN IF NOT
+/// EXISTS`, which takes an `ACCESS EXCLUSIVE` lock on the table even when the
+/// column exists, held until this transaction commits, so every replica's
+/// start would block reads and queue behind long transactions. The check
+/// takes no lock on the table (measured on PostgreSQL 16 in `pg_locks`).
+pub const ADD_APPLIED_SEQ_TO_TASKS: &str = "DO $$ BEGIN \
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns \
+        WHERE table_schema = current_schema() AND table_name = 'tasks' \
+        AND column_name = 'applied_seq') \
+    THEN ALTER TABLE tasks ADD COLUMN applied_seq BIGINT; END IF; END $$";
+
+/// [`ADD_APPLIED_SEQ_TO_TASKS`] for the tenant-aware store's `tenant_tasks`.
+pub const ADD_APPLIED_SEQ_TO_TENANT_TASKS: &str = "DO $$ BEGIN \
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns \
+        WHERE table_schema = current_schema() AND table_name = 'tenant_tasks' \
+        AND column_name = 'applied_seq') \
+    THEN ALTER TABLE tenant_tasks ADD COLUMN applied_seq BIGINT; END IF; END $$";
+
 /// Runs `statements` in order, in one transaction that holds the schema lock.
 ///
 /// # Errors

@@ -47,7 +47,7 @@ jobs:
   # Renamed from `fmt` / "Format" on 2026-09-20. Exactly one of this job's
   # verdict-bearing steps runs `cargo fmt`; the other twenty are source, prose
   # and gate-inventory audits that have nothing to do with formatting. The old
-  # name cost real time — docs/handoff.md records a commit whose PR went red on
+  # name cost real time — docs/handoff-history.md records a commit whose PR went red on
   # a check named `Format` while `cargo fmt --check` passed, and the 0.13.0
   # diff then added two more steps to the same job without renaming it. A check
   # name that misdirects the person reading it is a failure of the gate as
@@ -78,6 +78,16 @@ jobs:
       # that both build, both pass their tests, and disagree on the wire.
       - name: Vendored protos agree
         run: ./scripts/check_proto_copies.sh
+
+      # Spec §1.4: derived forms MUST be regenerated from the proto. The public
+      # types under crates/a2a-protocol-types/src/generated/ are (ADR 0016);
+      # this regenerates them in memory and fails when the checked-in files
+      # differ, so a proto change, a codegen.toml change or a hand edit to a
+      # generated file cannot land without the other. It also fails when any
+      # Rust file outside src/generated/ and the generator declares a type
+      # under a generated type's name, so no hand-written copy can shadow one.
+      - name: Generated types match the proto
+        run: cargo run --locked --manifest-path tools/a2a-codegen/Cargo.toml -- --check
 
       # CONTRIBUTING's 500-line rule was a PR-checklist item with nothing
       # enforcing it, and the count printed beside it had drifted from 46/139

@@ -17,7 +17,7 @@ and the answer is almost always this page's first section.
 ## Turning them on
 
 ```toml
-a2a-protocol-sdk = { version = "0.14", features = ["otel"] }
+a2a-protocol-sdk = { version = "0.15", features = ["otel"] }
 ```
 
 * **`tracing`** — on by default in all three crates; with

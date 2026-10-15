@@ -52,7 +52,10 @@ the rate limiter's `"anonymous"` bucket. To give each credential an identity
 (`CallContext::caller_identity`), build the interceptor with
 `BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
 `ApiKeyAuthInterceptor::with_labelled_keys(…)`; the label, not the secret, is
-what reaches rate limiting, logs and metrics.
+what reaches rate limiting, logs and metrics. The identity is the scheme and
+the label, `bearer:caller-a` or `api-key:caller-a`, and a JWT's is
+`jwt:<issuer>:<sub>`; `a2a_protocol_server::auth::caller_id` builds each, for
+an approver allowlist or anything else that compares against one.
 
 An identity also scopes tasks (spec §13.1): with an authenticating
 interceptor, each identified caller gets a partition of its own, and another
@@ -68,7 +71,7 @@ signature and its `exp`/`nbf`/`iss`/`aud` claims. Keys come from a static
 `Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["auth-jwt", "tls-rustls"] }
+a2a-protocol-server = { version = "0.15", features = ["auth-jwt", "tls-rustls"] }
 ```
 
 `tls-rustls` is needed to fetch JWKS or OIDC discovery documents over

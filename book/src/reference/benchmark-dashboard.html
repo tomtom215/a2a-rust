@@ -5,9 +5,13 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>a2a-rust Benchmark Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<!-- Served from the site itself (book/static/), not a CDN: see book/static/vendor/README.md. -->
+<style>
+@font-face{font-family:'Space Grotesk';src:url('../fonts/SpaceGrotesk.woff2') format('woff2');font-weight:300 700;font-style:normal;font-display:swap}
+@font-face{font-family:'JetBrains Mono';src:url('../fonts/JetBrainsMono.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'JetBrains Mono';src:url('../fonts/JetBrainsMono-Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+</style>
+<script src="../vendor/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0c0c0e;--surface:#141417;--border:#232329;--cyan:#00e5cc;--amber:#f5a623;

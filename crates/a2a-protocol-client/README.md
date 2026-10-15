@@ -5,13 +5,17 @@
 
 HTTP client for the A2A protocol v1.0 -- async, hyper-backed, with pluggable transports.
 
+Part of [a2a-rust](https://github.com/tomtom215/a2a-rust), an independent
+(not official) A2A SDK written against specification release 1.0.1. Guide:
+<https://a2a-rust.com> · API: <https://docs.rs/a2a-protocol-client>.
+
 ## Overview
 
 - An async client for A2A v1.0 agents over all four bindings (v0.3-only agents are not reached; see below)
 - Built on hyper 1.x with tokio
 - Pluggable transport bindings: JSON-RPC 2.0 (default), REST, WebSocket, gRPC
 - Interceptor chain for auth, logging, custom middleware
-- Automatic retry with jittered exponential backoff
+- Opt-in retry (`ClientBuilder::with_retry_policy`) with jittered exponential backoff
 - SSE streaming for real-time events
 
 ## Quick Start
@@ -61,7 +65,7 @@ All 11 A2A v1.0 methods are methods of `A2aClient`:
 | Feature | Default | Purpose |
 |---------|---------|---------|
 | `tls-rustls` | Yes | HTTPS via rustls (no OpenSSL) |
-| `signing` | No | Forwards `a2a-protocol-types/signing`; the client signs and verifies nothing on its own |
+| `signing` | No | Makes `a2a_protocol_types::signing` available, and lets card discovery verify signatures when you pass trusted keys (`CardFetchOptions::with_signature_keys`, `with_require_signature`, to the `_with_options` fetchers); nothing is verified by default |
 | `tracing` | Yes | Structured logging and a `CLIENT` span per call; `default-features = false` compiles both out |
 | `otel` | No | Each call's `traceparent` names the call's own span, recorded by a `tracing-opentelemetry` layer (implies `tracing`; no exporter) |
 | `websocket` | No | WebSocket transport |
@@ -150,6 +154,8 @@ let client = ClientBuilder::new("http://localhost:3000")
 - `ClientBuilder::with_protocol_binding` overrides it by name: `JSONRPC`,
   `HTTP+JSON` (the legacy `REST` is accepted) and, with the `grpc` feature,
   `GRPC`; names compare ignoring ASCII case
+- gRPC connects asynchronously: call `build_grpc().await` instead of
+  `build()`, which returns `ClientError::Transport` for a gRPC selection
 - WebSocket (feature `websocket`) is not chosen by name: connect a
   `transport::WebSocketTransport` and pass it to
   `ClientBuilder::with_custom_transport`, which takes any `Transport`

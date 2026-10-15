@@ -4,7 +4,8 @@
 # ACTS reports, 2026-10-08
 
 The official A2A conformance suite (ACTS, `a2aproject/a2a-itk` at
-`82458ceac60208cc46ccbe52b68dbb8e1ca2614a`, that day's `main`) run against
+`82458ceac60208cc46ccbe52b68dbb8e1ca2614a`, that day's `main`, and the
+revision `.github/workflows/acts.yml` pins as `A2A_ITK_REVISION`) run against
 this repository's ITK agent (`itk/`) over JSON-RPC, gRPC and HTTP+JSON, after
 HTTP+JSON media-type negotiation was added.
 
@@ -15,7 +16,9 @@ HTTP+JSON media-type negotiation was added.
 | HTTP+JSON | 49/49 | 32/32 | 13/13 | none |
 
 `REST-CT-001` ("REST responses use application/a2a+json content type"), the
-one failure on every earlier run, passes.
+one failure on every earlier run, passes. The earlier run committed to this
+repository is the 2026-10-02 one, where it is the only non-pass:
+`benches/sdk-comparison/results/acts/acts-report-a2a-rust-rest-20261002T192454Z.json`.
 
 **How it was run.** `itk/run_itk.sh`'s settings with `ITK_ACTS_RUN=1
 ITK_ACTS_TRANSPORTS=jsonrpc,grpc,rest`, the a2a-itk checkout copied to
@@ -25,16 +28,19 @@ sandbox reaches the network through a TLS-re-terminating proxy. No test,
 scenario or runner file was changed. The agent was built inside the
 container from the uncommitted working tree that became the commit adding
 this file, before three edits clippy asked for in
-`dispatch/rest/media_type.rs`: `pub(crate)` items in a private module made
-`pub`, `filter_map(..).next()` written as `find_map(..)`, and comment
-wording. None changes behaviour; `rest_and_axum_negotiate_the_response_media_type`
-pins the behaviour and passes on the committed code.
+`crates/a2a-protocol-server/src/dispatch/rest/media_type.rs`: `pub(crate)`
+items in a private module made `pub`, `filter_map(..).next()` written as
+`find_map(..)`, and comment wording. None changes behaviour; `rest_and_axum_negotiate_the_response_media_type`
+(`crates/a2a-protocol-server/tests/http_json_error_parity.rs`) pins the
+behaviour and passes on the committed code.
 
 The `sdk.repository` field in each report reads
 `https://github.com/a2aproject/a2a-rust`; that is the shared driver's default
-for the `rust` line, not this repository's URL.
+for the `rust` line, not this repository's URL. `sdk.version` reads
+`"unknown"` in all three reports; the code measured is the working tree
+described above.
 
-Tally reproduced from the JSON with:
+Tally reproduced from the JSON with the following, run from this directory:
 
 ```sh
 python3 - acts-report-*.json <<'PY'

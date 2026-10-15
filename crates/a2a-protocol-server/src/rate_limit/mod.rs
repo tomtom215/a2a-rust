@@ -62,10 +62,11 @@
 //!    stops being per-caller.
 //!
 //!    `JwtAuthInterceptor` (the `auth-jwt` feature) records the
-//!    validated `sub`; [`ApiKeyAuthInterceptor`](crate::ApiKeyAuthInterceptor)
+//!    validated issuer and `sub`; [`ApiKeyAuthInterceptor`](crate::ApiKeyAuthInterceptor)
 //!    and [`BearerTokenAuthInterceptor`](crate::BearerTokenAuthInterceptor)
 //!    record a label when built with `with_labelled_keys` /
-//!    `with_labelled_tokens`. The credential is never the key: caller keys
+//!    `with_labelled_tokens`, each qualified by its scheme
+//!    ([`caller_id`](crate::auth::caller_id)). The credential is never the key: caller keys
 //!    reach a shared rate-limit table, logs and metrics, and a secret belongs
 //!    in none of those.
 //! 2. The client IP from `x-forwarded-for`, **only** when

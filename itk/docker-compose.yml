@@ -14,7 +14,7 @@ services:
     ports:
       - "9100:9100"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/.well-known/agent.json')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/.well-known/agent-card.json')"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -24,7 +24,8 @@ services:
     ports:
       - "9101:9101"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9101/.well-known/agent.json || exit 1"]
+      # node:22-slim has no wget; Node 22 has fetch.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9101/.well-known/agent-card.json').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -34,7 +35,7 @@ services:
     ports:
       - "9102:9102"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9102/.well-known/agent.json || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9102/.well-known/agent-card.json || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -44,7 +45,7 @@ services:
     ports:
       - "9103:9103"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9103/.well-known/agent.json || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9103/.well-known/agent-card.json || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -58,7 +59,7 @@ services:
     ports:
       - "9104:9104"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9104/.well-known/agent.json || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9104/.well-known/agent-card.json || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 10

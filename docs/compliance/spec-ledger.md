@@ -26,44 +26,35 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 
 | Chapter | TESTED | APPLICATION | SUPPORTED | NOT_SUPPORTED | NOT_APPLICABLE | PARTIAL | Total |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| §1 | 2 |  |  |  | 4 | 1 | 7 |
-| §2 |  |  | 1 |  | 1 | 1 | 3 |
-| §3 | 90 | 20 | 20 | 2 | 3 | 2 | 137 |
+| §1 | 3 |  |  |  | 4 |  | 7 |
+| §2 | 1 |  | 1 |  | 1 |  | 3 |
+| §3 | 90 | 20 | 21 | 1 | 3 | 2 | 137 |
 | §4 | 7 | 5 | 2 |  | 1 |  | 15 |
-| §5 | 25 | 2 | 2 |  | 3 | 3 | 35 |
+| §5 | 26 | 2 | 2 |  | 3 | 2 | 35 |
 | §7 | 5 | 12 | 2 |  |  |  | 19 |
-| §8 | 29 | 5 | 5 | 2 |  | 4 | 45 |
+| §8 | 31 | 5 | 6 | 1 |  | 2 | 45 |
 | §9 | 13 |  |  |  |  |  | 13 |
 | §10 | 6 |  |  |  |  |  | 6 |
 | §11 | 16 |  |  | 2 |  | 1 | 19 |
-| §12 | 7 | 1 | 7 |  | 1 | 3 | 19 |
-| §13 | 34 | 26 | 8 | 1 |  |  | 69 |
-| §14 | 5 | 5 | 3 |  |  | 2 | 15 |
+| §12 | 9 | 1 | 7 |  | 1 | 1 | 19 |
+| §13 | 34 | 26 | 9 |  |  |  | 69 |
+| §14 | 7 | 5 | 3 |  |  |  | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 81 | 11 | 6 |  | 8 |  | 106 |
-| **All** | **320** | **87** | **56** | **7** | **22** | **17** | **509** |
+| **All** | **329** | **87** | **59** | **4** | **22** | **8** | **509** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| medium | PARTIAL | §1.4 (line 107) | SDK language bindings, schemas, and any other derived forms MUST be regenerated from the proto (directly or via code generation) rather tha… | Only the prost message types (feature `proto`, build.rs) are generated from a2a.proto; the primary public serde types (Task, Message, TaskListResponse, AgentCard ...) are hand-written structs, guarded by golden fixtures/proptests rather than generated. proto_… |
-| medium | PARTIAL | §8.4.3 (line 2122) | 2. Retrieve the public key using the `kid` and `jku` (or from a trusted key store) | kid-based lookup in a caller-supplied JWKS is implemented and tested; jku is decoded but never followed (deliberately: fetch_jwks takes a caller-trusted URL), so jku retrieval is left to the application. |
-| medium | PARTIAL | §12 (line 2977) | Custom bindings MUST comply with all requirements defined in Section 5 | SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict i… |
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
-| low | PARTIAL | §5.4 (line 1194) | Custom protocol bindings MUST define equivalent error code mappings that preserve the semantic meaning of each A2A error type. | WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
-| low | PARTIAL | §8.1 (line 1970) | A2A Servers **MUST** make an Agent Card available. | Since 2026-10-12 RequestHandlerBuilder::build() refuses a handler with no agent card unless told without_agent_card() (for a card published elsewhere, or a handler that is not a public A2A server), and JSON-RPC, REST and axum serve the card at GET /.well-know… |
 | low | PARTIAL | §8.6 (line 2215) | Servers and clients **SHOULD** use standard HTTP caching mechanisms to reduce unnecessary network overhead. | Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store… |
 | low | PARTIAL | §8.6.2 (line 2225) | Clients **SHOULD** honor HTTP caching semantics as defined in RFC 9111 when fetching Agent Cards | CachingCardResolver revalidates every resolve with the stored validators (permitted by RFC 9111: a cache may always validate) and, since 2026-10-12, does not store a no-store response (RFC 9111 §5.2.2.5), nor one with no validator to revalidate by. Since 2026… |
 | low | PARTIAL | §11.1 (line 2750) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2835-2836 and 2921-2922 are not matched by … |
 | low | PARTIAL | §12.4 (line 3016) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
-| low | PARTIAL | §12.6 (line 3033) | Custom bindings MUST: Support Standard Schemes; Document Integration; Handle Challenges; Maintain Security | WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: n… |
-| low | PARTIAL | §14 (line 3342) | Implementations SHOULD support HTTPS to ensure authenticity and integrity of the Agent Card | Client fetches over HTTPS (rustls). Server HTTP listeners (serve/, JSON-RPC/REST/WS) do not terminate TLS; docs require a reverse proxy; only gRPC has native TLS (grpc-tls). |
-| low | PARTIAL | §14 (line 3344) | Clients SHOULD verify signatures when present | With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails… |
-| low | PARTIAL | App. A.2 (line 3421) | Client Implementations SHOULD: prefer new names; implement dual-handling; log a warning when receiving legacy-named objects | New names emitted; dual-handling for legacy enum spellings and AgentCard.url (parse-only). No fallback for legacy `supportsExtendedAgentCard` (no occurrence in code) and no warning is logged on legacy forms. |
 
 ## After the release
 

@@ -172,15 +172,17 @@ caller in a tenant saw the same tasks, and Bob could read, list, cancel and
 subscribe to Alice's, and register a webhook on them):
 
 * The partition is chosen by the identity the authenticating interceptor sets
-  (`BearerTokenAuthInterceptor::with_labelled_tokens`,
-  `ApiKeyAuthInterceptor::with_labelled_keys`, the JWT interceptor's subject;
-  a custom interceptor calls `CallContext::set_caller_identity`). Another
+  (`BearerTokenAuthInterceptor::with_labelled_tokens` as `bearer:<label>`,
+  `ApiKeyAuthInterceptor::with_labelled_keys` as `api-key:<label>`, the JWT
+  interceptor as `jwt:<issuer>:<sub>`, since 0.15, so one `sub` from two
+  issuers is two callers; a custom interceptor calls
+  `CallContext::set_caller_identity`). Another
   caller's task is `TaskNotFound`, the same answer as an id that does not
   exist, so its existence is not revealed, and `ListTasks` returns only the
   caller's own.
 * A request the interceptor lets through without naming anyone (an unlabelled
-  token or key, a JWT without `sub`) keeps the tenant's shared records, as
-  before. Those records are never an identified caller's, and an identified
+  token or key) keeps the tenant's shared records, as before. A JWT without
+  `sub` is refused with `PermissionDenied` instead, since 0.15. Those records are never an identified caller's, and an identified
   caller's are never theirs.
 * The halt switch, the tenant limits above, audit chains and metrics still see
   one tenant. Each caller's partition counts against the store's tenant limit:

@@ -65,23 +65,8 @@ impl AsRef<str> for MessageId {
 
 // ── MessageRole ───────────────────────────────────────────────────────────────
 
-/// The originator of a [`Message`].
-///
-/// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
-/// `"ROLE_USER"`, `"ROLE_AGENT"`, `"ROLE_UNSPECIFIED"`.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum MessageRole {
-    /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "ROLE_UNSPECIFIED", alias = "unspecified")]
-    Unspecified,
-    /// Sent by the human/client side.
-    #[serde(rename = "ROLE_USER", alias = "user")]
-    User,
-    /// Sent by the agent.
-    #[serde(rename = "ROLE_AGENT", alias = "agent")]
-    Agent,
-}
+// The proto-generated types of this module (ADR 0016), `MessageRole` first.
+include!("generated/message.rs");
 
 impl std::fmt::Display for MessageRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -96,53 +81,7 @@ impl std::fmt::Display for MessageRole {
 
 // ── Message ───────────────────────────────────────────────────────────────────
 
-/// A message exchanged between a client and an agent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Message {
-    /// Unique message identifier.
-    #[serde(rename = "messageId")]
-    #[serde(alias = "message_id")]
-    pub id: MessageId,
-
-    /// Role of the message originator.
-    pub role: MessageRole,
-
-    /// Message content parts.
-    ///
-    /// **Spec requirement:** Must contain at least one element. The A2A
-    /// protocol does not define behavior for empty parts lists.
-    ///
-    /// Parsing treats absence as empty (`ProtoJSON` printers omit empty
-    /// repeated fields; the gRPC binding already decodes it that way) — the
-    /// server rejects empty parts with a structured invalid-params error
-    /// instead of a JSON type error, uniformly across bindings.
-    #[serde(default)]
-    pub parts: Vec<Part>,
-
-    /// Task this message belongs to, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "task_id")]
-    pub task_id: Option<TaskId>,
-
-    /// Conversation context this message belongs to, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "context_id")]
-    pub context_id: Option<ContextId>,
-
-    /// IDs of tasks referenced by this message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "reference_task_ids")]
-    pub reference_task_ids: Option<Vec<TaskId>>,
-
-    /// URIs of extensions used in this message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Vec<String>>,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+// `Message` is generated: see the `include!` above.
 
 impl Message {
     /// Creates a message with the given id, role and parts.
@@ -361,40 +300,7 @@ impl Message {
 
 // ── Part ─────────────────────────────────────────────────────────────────────
 
-/// A content part within a [`Message`] or [`crate::artifact::Artifact`].
-///
-/// In v1.0, Part is a flat structure with a `oneof content` (text, raw, url, data)
-/// plus optional `metadata`, `filename`, and `mediaType` fields. The JSON member
-/// name acts as the type discriminator.
-///
-/// # Wire format examples
-///
-/// ```json
-/// {"text": "hello"}
-/// {"raw": "base64data", "filename": "f.png", "mediaType": "image/png"}
-/// {"url": "https://example.com/f.pdf", "filename": "f.pdf", "mediaType": "application/pdf"}
-/// {"data": {"key": "value"}, "mediaType": "application/json"}
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Part {
-    /// The content of this part (text, raw, url, or data).
-    #[serde(flatten)]
-    pub content: PartContent,
-
-    /// Arbitrary metadata for this part.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-
-    /// An optional filename (e.g., "document.pdf").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-
-    /// The media type (MIME type) of the part content.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "mediaType")]
-    pub media_type: Option<String>,
-}
+// `Part` is generated: see the `include!` above.
 
 /// Hand-rolled `Deserialize` for [`Part`] that reads all fields in a single
 /// pass, avoiding the intermediate `serde_json::Value` buffering caused by
@@ -674,26 +580,7 @@ impl Part {
 
 // ── PartContent ──────────────────────────────────────────────────────────────
 
-/// The content of a [`Part`], discriminated by JSON member name per v1.0 spec.
-///
-/// In JSON, the member name determines the variant:
-/// - `"text"` → text string content
-/// - `"raw"` → base64-encoded bytes
-/// - `"url"` → URL pointing to content
-/// - `"data"` → structured JSON data
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PartContent {
-    /// Plain-text content.
-    Text(String),
-    /// Raw byte content (base64-encoded in JSON).
-    Raw(String),
-    /// A URL pointing to the file's content.
-    Url(String),
-    /// Arbitrary structured data as a JSON value.
-    Data(serde_json::Value),
-}
+// `PartContent` is generated: see the `include!` above.
 
 // ── FileContent (legacy compatibility) ──────────────────────────────────────
 

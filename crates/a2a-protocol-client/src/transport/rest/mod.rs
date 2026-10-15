@@ -35,7 +35,7 @@
 //! | `GetExtendedAgentCard` | GET | `/extendedAgentCard` |
 
 pub(crate) mod error_frame;
-mod query;
+pub(crate) mod query;
 pub(crate) mod request;
 mod routing;
 mod streaming;
@@ -214,6 +214,26 @@ impl Transport for RestTransport {
         extra_headers: &'a HashMap<String, String>,
     ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
         Box::pin(self.execute_streaming_request(method, params, extra_headers))
+    }
+
+    fn send_request_with_query<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+        query: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+        Box::pin(self.execute_request_with_query(method, params, extra_headers, query))
+    }
+
+    fn send_streaming_request_with_query<'a>(
+        &'a self,
+        method: &'a str,
+        params: serde_json::Value,
+        extra_headers: &'a HashMap<String, String>,
+        query: &'a [(String, String)],
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+        Box::pin(self.execute_streaming_request_with_query(method, params, extra_headers, query))
     }
 }
 

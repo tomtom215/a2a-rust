@@ -44,7 +44,7 @@ went unexercised while `RESILIENT_REQUIRE_ALL` was set.
 PostgreSQL checks need a server this example cannot start. With
 `A2A_TEST_POSTGRES_URL` unset they print `[NOT RUN]` naming the variable and
 the process **exits 0** — right for a laptop. Set `RESILIENT_REQUIRE_ALL=1`
-(as CI should, since it provides the service) and the same run **exits 4**, so
+(as `ci.yml`'s `example-surface` job does, since it provides the service) and the same run **exits 4**, so
 a service that quietly stops being provisioned fails the job instead of
 downgrading a check to a printed line. A URL that is set but unreachable is a
 `[FAIL]` (exit `3`), not a `[NOT RUN]`: the operator asked for the check and

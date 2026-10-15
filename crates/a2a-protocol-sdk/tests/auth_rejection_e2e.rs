@@ -130,3 +130,72 @@ async fn a_refused_token_is_dropped_over_grpc() {
         .expect("client");
     recovers(&client, &provider).await;
 }
+
+/// Over WebSocket the credential rides the upgrade and a refusal arrives in
+/// the body (binding spec §6), so it is checked apart: it is the same `401`,
+/// on a unary call and on a stream, and drops the refused token. Recovering
+/// means a new connection, which the fresh token opens. Until 2026-10-15 the
+/// refusal was `Protocol(InvalidRequest)`, and no token was dropped.
+#[cfg(feature = "websocket")]
+#[tokio::test]
+async fn a_refused_token_is_a_401_over_websocket() {
+    use a2a_protocol_client::transport::websocket::{WebSocketTransport, WebSocketTransportConfig};
+    use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
+    use a2a_protocol_types::message::Message;
+    use a2a_protocol_types::params::MessageSendParams;
+
+    let addr = Arc::new(WebSocketDispatcher::new(handler()))
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .unwrap();
+    let url = format!("ws://{addr}");
+    let provider = Arc::new(RotatingProvider::default());
+    let connect = |token: &str| {
+        let headers = [("authorization".to_owned(), format!("Bearer {token}"))].into();
+        let (url, provider) = (url.clone(), Arc::clone(&provider));
+        async move {
+            let transport = WebSocketTransport::connect_with_config(
+                &url,
+                WebSocketTransportConfig::default().with_extra_headers(headers),
+            )
+            .await
+            .expect("connect");
+            ClientBuilder::new(&url)
+                .with_custom_transport(transport)
+                .with_interceptor(BearerAuthInterceptor::new(
+                    provider as Arc<dyn TokenProvider>,
+                ))
+                .build()
+                .expect("client")
+        }
+    };
+
+    let stale = connect("stale").await;
+    let first = stale.get_task(TaskQueryParams::new("nope")).await;
+    assert!(
+        matches!(
+            first,
+            Err(ClientError::UnexpectedStatus { status: 401, .. })
+        ),
+        "the refusal is a 401: {first:?}"
+    );
+    assert_eq!(*provider.invalidated.lock().unwrap(), ["stale"]);
+    let mut stream = stale
+        .stream_message(MessageSendParams::new(Message::user_text("m-1", "hi")))
+        .await
+        .expect("the stream opens; its first frame is the refusal");
+    let refused = stream.next().await;
+    assert!(
+        matches!(
+            refused,
+            Some(Err(ClientError::UnexpectedStatus { status: 401, .. }))
+        ),
+        "a stream's refusal is a 401 too: {refused:?}"
+    );
+
+    let fresh = connect("fresh").await;
+    match fresh.get_task(TaskQueryParams::new("nope")).await {
+        Err(ClientError::Protocol(e)) => assert_eq!(e.code, ErrorCode::TaskNotFound),
+        other => panic!("the fresh token reaches the handler: {other:?}"),
+    }
+}

@@ -285,7 +285,7 @@ async fn bad_pattern(url: &str, params: MessageSendParams) {
 
 ## gRPC Client
 
-> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.14", features = ["grpc"] }`
+> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.15", features = ["grpc"] }`
 
 `ClientBuilder::new(url).build_grpc().await?` (or `from_card(&card)?.build_grpc()`)
 builds a gRPC client that uses this builder's timeouts and limits; a transport

@@ -485,7 +485,7 @@ async fn handle_tasks_catchall(
                 "ListTaskPushNotificationConfigs",
                 (method.as_str(), "/tasks/{task_id}/pushNotificationConfigs"),
                 &hdrs,
-                handle_list_push_configs_inner(&state, &dec(task_id), tenant, &hdrs),
+                handle_list_push_configs_inner(&state, task_id, query, tenant, &hdrs),
             )
             .await
         }
@@ -850,21 +850,21 @@ async fn handle_get_push_config_inner(
 async fn handle_list_push_configs_inner(
     state: &A2aState,
     task_id: &str,
+    query: &str,
     tenant: Option<String>,
     hdrs: &HashMap<String, String>,
 ) -> axum::response::Response {
+    let params =
+        match super::rest::query::list_push_configs_params(task_id, query, tenant.as_deref()) {
+            Ok(params) => params,
+            Err(e) => return handler_error_to_response(&e),
+        };
     match state
         .handler
-        .on_list_push_configs(task_id, tenant.as_deref(), Some(hdrs))
+        .on_list_push_configs_page(&params, Some(hdrs))
         .await
     {
-        Ok(configs) => {
-            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                configs,
-                next_page_token: None,
-            };
-            a2a_json(&resp)
-        }
+        Ok(resp) => a2a_json(&resp),
         Err(e) => handler_error_to_response(&e),
     }
 }

@@ -5,7 +5,9 @@ Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 # Adversarial probe
 
 Black-box, over-the-wire adversarial harnesses for a **running** A2A server —
-one per request binding:
+seven probes: three that each target one request binding (JSON-RPC, WebSocket,
+gRPC) and four that each target one cross-cutting concern (authentication,
+load, streaming, push delivery). The HTTP+JSON (REST) binding has no probe.
 
 | Probe | Surface | Deps |
 |---|---|---|
@@ -125,7 +127,7 @@ vacuously (the push config field is `taskPushNotificationConfig`; the intuitive
 `pushNotificationConfig` is silently ignored, which is exactly the trap the
 hit-counter guards against).
 
-### Options
+### `probe.py` options
 
 ```
 --host HOST              default 127.0.0.1
@@ -137,7 +139,7 @@ hit-counter guards against).
 --quiet                  summary only
 ```
 
-### Exit status
+### `probe.py` exit status
 
 * `0` — every case was handled safely (server stayed alive, no leak, and, under
   `--expect-ssrf-guard`, every private/loopback webhook was rejected).
@@ -145,7 +147,13 @@ hit-counter guards against).
   returned 5xx, leaked a path/panic, or accepted a webhook it should reject.
 * `2` — no server answered at the target address.
 
-Exit `0`/`1` make the probe usable as a CI gate. Verify it in both directions:
+The other six probes take their own flags (each script's `--help` lists them)
+and use the same three exit codes: `0` clean, `1` at least one DANGER, `2` when
+a port it needs is not answering. `probe_grpc.py` also exits `2` when `grpcio`
+is not installed, and `1` when it cannot find or compile the proto.
+
+Exit `0`/`1` make `probe.py` usable as a CI gate, though no workflow in
+`.github/workflows/` runs it or any other probe here. Verify it in both directions:
 against the default (guard-on) server `--expect-ssrf-guard` exits `0`; against a
 server started with `A2A_ALLOW_PRIVATE_WEBHOOKS=1` it exits `1` and flags every
 `F*` case — a gate that only ever passes proves nothing.

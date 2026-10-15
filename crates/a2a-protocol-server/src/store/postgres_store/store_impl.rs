@@ -127,13 +127,14 @@ impl TaskStore for PostgresTaskStore {
             // updated the row concurrently, so a racing cancel cannot slip
             // between the check and the write.
             let written = sqlx::query(sql_write_allowed!(
-                "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()))
+                "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
+                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()), $6)
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
                      data = EXCLUDED.data,
-                     updated_at = EXCLUDED.updated_at
+                     updated_at = EXCLUDED.updated_at,
+                     applied_seq = COALESCE(EXCLUDED.applied_seq, tasks.applied_seq)
                  WHERE ",
                 "tasks.state",
                 "EXCLUDED.state"
@@ -143,6 +144,7 @@ impl TaskStore for PostgresTaskStore {
             .bind(&state)
             .bind(&data)
             .bind(&status_ts)
+            .bind(crate::store::applied::current_for_sql())
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?
@@ -268,7 +270,8 @@ impl TaskStore for PostgresTaskStore {
                 "UPDATE tasks
                     SET data = jsonb_set(data, ARRAY['status'], $1),
                         state = $2,
-                        updated_at = COALESCE(($3)::timestamptz, now())
+                        updated_at = COALESCE(($3)::timestamptz, now()),
+                        applied_seq = COALESCE($5, applied_seq)
                   WHERE id = $4 AND ",
                 "state",
                 "$2"
@@ -277,6 +280,7 @@ impl TaskStore for PostgresTaskStore {
             .bind(&state)
             .bind(&status_ts)
             .bind(task.id.0.as_str())
+            .bind(crate::store::applied::current_for_sql())
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?
@@ -311,6 +315,26 @@ impl TaskStore for PostgresTaskStore {
                 }
                 None => Ok(None),
             }
+        })
+    }
+
+    fn get_with_position<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
+        Box::pin(async move {
+            let row: Option<(serde_json::Value, Option<i64>)> =
+                sqlx::query_as("SELECT data, applied_seq FROM tasks WHERE id = $1")
+                    .bind(id.0.as_str())
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(to_a2a_error)?;
+            row.map(|(data, applied)| {
+                let task: Task = serde_json::from_value(data)
+                    .map_err(|e| A2aError::internal(format!("failed to deserialize task: {e}")))?;
+                Ok((task, crate::store::applied::from_sql(applied)))
+            })
+            .transpose()
         })
     }
 

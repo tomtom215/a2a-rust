@@ -2,8 +2,19 @@
 # Hash-locked Python requirements for CI
 
 Each `*.txt` here is generated from the `*.in` beside it and installed with
-`pip install --require-hashes -r`, so a workflow installs exactly the
-distributions recorded here (OpenSSF Scorecard, Pinned-Dependencies).
+`pip install --require-hashes -r`, so a workflow that installs from one gets
+exactly the distributions recorded in it (OpenSSF Scorecard,
+Pinned-Dependencies).
+
+Not every Python install in CI goes through these files. In `tck.yml` the
+`python` cross-language leg installs `itk/agents/python/requirements.txt`
+without hashes and the `python-sdk` leg installs `a2a-sdk[http-server]`
+unpinned; `pin-freshness.yml` installs the newest SDK on purpose; and
+`official-tck.yml` installs the cloned upstream TCK with `uv pip install -e .`.
+
+Run the commands below from this directory (`.github/requirements/`), with
+`NAME` one of the seven locks: `a2a-sdk`, `a2a-sdk-http`, `a2a-sdk-signing`,
+`httpx`, `itk-selftest`, `pyyaml`, `uv`.
 
 Regenerate one after changing its `.in`, or to take newer releases:
 
@@ -24,7 +35,10 @@ the latest release (1.2.2) when they were locked on 2026-10-12. The signing
 pin moved from 1.1.4 that day, after `itk/interop/card_signature_interop.py`
 matched all six of its cards' expectations against 1.2.2, the two expected
 divergences included. Its lock kept protobuf 6.33.6 until the same day's
-full regeneration took 7.36.2, which the other three locks already had; the
+full regeneration took 7.36.2, which `a2a-sdk.txt`, `a2a-sdk-http.txt` and
+`itk-selftest.txt` (the other locks that carry protobuf) already had; the
 interop matched all six again on it, under Python 3.12. Nothing moves them:
-neither Dependabot nor `pin-freshness.yml` (which grades the newest SDK on
-its own) reads these files, so regenerating them is a deliberate step.
+Dependabot does not read these files, `pin-freshness.yml` installs
+`pyyaml.txt` but resolves the newest SDK on its own and never rewrites a
+lock, and `osv.yml` does not scan them. Regenerating and auditing them is a
+deliberate step.

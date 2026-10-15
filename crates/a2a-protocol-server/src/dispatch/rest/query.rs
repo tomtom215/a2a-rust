@@ -73,6 +73,25 @@ pub fn parse_query_param_u32(query: &str, key: &str) -> Result<Option<u32>, Serv
         .transpose()
 }
 
+/// `ListTaskPushNotificationConfigs`' parameters from its path segment and
+/// query: `pageSize` and `pageToken` (spec §3.1.9, §11.5).
+///
+/// # Errors
+///
+/// `InvalidField` for a `pageSize` that is not a non-negative integer.
+pub fn list_push_configs_params(
+    task_id: &str,
+    query: &str,
+    tenant: Option<&str>,
+) -> Result<a2a_protocol_types::params::ListPushConfigsParams, ServerError> {
+    Ok(a2a_protocol_types::params::ListPushConfigsParams {
+        tenant: tenant.map(str::to_owned),
+        task_id: percent_decode_path(task_id),
+        page_size: parse_query_param_u32(query, "pageSize")?,
+        page_token: parse_query_param(query, "pageToken").filter(|t| !t.is_empty()),
+    })
+}
+
 /// Parses a single query parameter value as a string, with percent-decoding.
 pub fn parse_query_param(query: &str, key: &str) -> Option<String> {
     query.split('&').find_map(|pair| {

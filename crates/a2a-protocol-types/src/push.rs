@@ -10,30 +10,10 @@
 //! registers a [`TaskPushNotificationConfig`] for a specific task via the
 //! `CreateTaskPushNotificationConfig` method.
 
-use serde::{Deserialize, Serialize};
-
 // ── AuthenticationInfo ──────────────────────────────────────────────────────
 
-/// Authentication information used by an agent when calling a push webhook.
-///
-/// In v1.0, this uses singular `scheme` (not `schemes`). `credentials` is
-/// optional in the canonical protocol schema — a scheme may not need an
-/// explicit credential value.
-///
-/// `credentials` is a secret and is **redacted** in the [`Debug`]
-/// representation (its presence is shown, its value is not) so it cannot leak
-/// into logs via `{:?}`. Serialization is unaffected — the real value is still
-/// sent on the wire.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthenticationInfo {
-    /// Authentication scheme (e.g. `"bearer"`).
-    pub scheme: String,
-
-    /// Optional credential value (e.g. a static token).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub credentials: Option<String>,
-}
+// The proto-generated types of this module (ADR 0016), `AuthenticationInfo` first.
+include!("generated/push.rs");
 
 impl core::fmt::Debug for AuthenticationInfo {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -49,50 +29,7 @@ impl core::fmt::Debug for AuthenticationInfo {
 
 // ── TaskPushNotificationConfig ──────────────────────────────────────────────
 
-/// Configuration for delivering task updates to a webhook endpoint.
-///
-/// In v1.0, this is a single flat type combining the previous
-/// `PushNotificationConfig` and `TaskPushNotificationConfig`.
-///
-/// `token` is a secret and is **redacted** in the [`Debug`] representation
-/// (presence shown, value hidden), as is any `credentials` inside
-/// `authentication`, so a `{:?}` of a config tree cannot leak the shared
-/// secret into logs. Serialization is unaffected.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPushNotificationConfig {
-    /// Optional tenant identifier for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// Server-assigned configuration identifier.
-    ///
-    /// Absent when first creating the config; populated in the server response.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-
-    /// The task for which push notifications are configured.
-    ///
-    /// Optional in the canonical protocol schema: a config nested in
-    /// `SendMessageConfiguration` legitimately omits it (the task does not
-    /// exist yet), and servers assign it from context. A standalone
-    /// `CreateTaskPushNotificationConfig` call does require it — the server
-    /// rejects a missing task ID there with an invalid-params error.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "task_id")]
-    pub task_id: Option<String>,
-
-    /// HTTPS URL of the client's webhook endpoint.
-    pub url: String,
-
-    /// Optional shared secret for request verification.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
-
-    /// Authentication details the agent should use when calling the webhook.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub authentication: Option<AuthenticationInfo>,
-}
+// `TaskPushNotificationConfig` is generated: see the `include!` above.
 
 impl core::fmt::Debug for TaskPushNotificationConfig {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

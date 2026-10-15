@@ -39,8 +39,9 @@
 //!
 //! export OPENAI_API_KEY=local
 //! export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-//! cargo run -p mcp-a2a-agent                      # self-driving demo
-//! A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent   # serve
+//! cargo build -p mcp-a2a-agent                    # both binaries
+//! cargo run -p mcp-a2a-agent --bin mcp-a2a-agent  # self-driving demo
+//! A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent --bin mcp-a2a-agent   # serve
 //! ```
 
 use std::future::Future;

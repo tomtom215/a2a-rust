@@ -400,6 +400,18 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         })
     }
 
+    fn get_with_position<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
+        Box::pin(async move {
+            match self.get_existing_store().await {
+                Some(store) => store.get_with_position(id).await,
+                None => Ok(None),
+            }
+        })
+    }
+
     fn list<'a>(
         &'a self,
         params: &'a ListTasksParams,

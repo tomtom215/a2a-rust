@@ -62,6 +62,17 @@ pub struct ClientRequest {
     ///
     /// Auth interceptors use this to inject `Authorization` headers.
     pub extra_headers: HashMap<String, String>,
+
+    /// Parameters to append to the request URL's query string, in order.
+    ///
+    /// An [`AuthInterceptor`](crate::auth::AuthInterceptor) for an API key
+    /// located `in: query` puts it here (a2a.proto
+    /// `APIKeySecurityScheme.location`). The JSON-RPC and HTTP+JSON
+    /// transports send them; a transport that cannot refuses the call
+    /// rather than dropping them ([`Transport::send_request_with_query`](crate::transport::Transport::send_request_with_query)).
+    /// A credential in a URL can reach server and proxy access logs, which
+    /// is why the specification lists the header first.
+    pub query_params: Vec<(String, String)>,
 }
 
 impl ClientRequest {
@@ -72,6 +83,7 @@ impl ClientRequest {
             method: method.into(),
             params,
             extra_headers: HashMap::new(),
+            query_params: Vec::new(),
         }
     }
 }
@@ -107,6 +119,10 @@ impl std::fmt::Debug for ClientRequest {
             .field(
                 "extra_header_names",
                 &crate::redact::names(self.extra_headers.keys()),
+            )
+            .field(
+                "query_param_names",
+                &crate::redact::names(self.query_params.iter().map(|(name, _)| name)),
             )
             .finish()
     }

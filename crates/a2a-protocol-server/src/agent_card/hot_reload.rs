@@ -104,7 +104,35 @@ impl HotReloadAgentCardHandler {
     /// is no state in which the guarded value is half-updated for a later
     /// reader to observe. The same reasoning the rest of this workspace
     /// applies to its `std` mutexes.
+    #[deprecated(
+        since = "0.15.0",
+        note = "use `try_update`, which refuses a card the specification does not allow"
+    )]
     pub fn update(&self, card: AgentCard) {
+        self.replace(card);
+    }
+
+    /// Replaces the current agent card with `card` if it is one this server
+    /// may publish ([`AgentCard::validate`] and
+    /// [`AgentCard::validate_security_schemes`]; spec §5.7: arrays marked as
+    /// required MUST contain at least one element), as
+    /// [`reload_from_json`](Self::reload_from_json) checks a reloaded card.
+    /// [`update`](Self::update) stored any card, so a card with no skills
+    /// was served until the next reload.
+    ///
+    /// # Errors
+    ///
+    /// [`ServerError::InvalidParams`] naming what is wrong; the current card
+    /// stays in place.
+    pub fn try_update(&self, card: AgentCard) -> ServerResult<()> {
+        card.validate()
+            .and_then(|()| card.validate_security_schemes())
+            .map_err(|why| ServerError::InvalidParams(why.into()))?;
+        self.replace(card);
+        Ok(())
+    }
+
+    fn replace(&self, card: AgentCard) {
         let mut guard = self
             .card
             .write()
@@ -143,11 +171,7 @@ impl HotReloadAgentCardHandler {
     /// the current card stays in place.
     pub fn reload_from_json(&self, json: &str) -> ServerResult<()> {
         let card: AgentCard = serde_json::from_str(json)?;
-        card.validate()
-            .and_then(|()| card.validate_security_schemes())
-            .map_err(|why| ServerError::InvalidParams(why.into()))?;
-        self.update(card);
-        Ok(())
+        self.try_update(card)
     }
 
     /// Spawns a background task that periodically checks whether the file at
@@ -452,7 +476,7 @@ mod tests {
 
         let mut replacement = minimal_agent_card();
         replacement.name = "after-poison".to_string();
-        handler.update(replacement);
+        handler.try_update(replacement).unwrap();
         assert_eq!(handler.current().name, "after-poison", "and so must writes");
     }
 
@@ -465,7 +489,26 @@ mod tests {
         assert_eq!(current.version, card.version);
     }
 
+    /// Spec §5.7: a card with no skills is not one a server may publish, so
+    /// `try_update` refuses it and the current card stays.
     #[test]
+    fn try_update_refuses_a_card_the_spec_does_not_allow() {
+        let handler = HotReloadAgentCardHandler::new(minimal_agent_card());
+        let mut empty = minimal_agent_card();
+        empty.name = "no-skills".into();
+        empty.skills.clear();
+        let err = handler.try_update(empty).expect_err("refused");
+        assert!(matches!(err, ServerError::InvalidParams(_)), "{err:?}");
+        assert_eq!(handler.current().name, minimal_agent_card().name);
+
+        let mut valid = minimal_agent_card();
+        valid.name = "valid".into();
+        handler.try_update(valid).unwrap();
+        assert_eq!(handler.current().name, "valid");
+    }
+
+    #[test]
+    #[allow(deprecated)] // what `update` still does, until it is removed
     fn update_replaces_card() {
         let card1 = minimal_agent_card();
         let handler = HotReloadAgentCardHandler::new(card1);
@@ -571,7 +614,7 @@ mod tests {
 
         let mut new_card = minimal_agent_card();
         new_card.name = "Shared Update".into();
-        handler1.update(new_card);
+        handler1.try_update(new_card).unwrap();
 
         // Both clones should see the update.
         assert_eq!(handler2.current().name, "Shared Update");

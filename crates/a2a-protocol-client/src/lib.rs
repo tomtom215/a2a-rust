@@ -122,6 +122,7 @@ mod trace;
 mod call_span;
 mod declared;
 mod extensions;
+mod legacy_card;
 mod redact;
 
 pub mod auth;

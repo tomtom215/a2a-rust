@@ -65,7 +65,7 @@ missed it for differing only in `async move` or `()`.
 | …and with it | the same, on the patched source | 78 passed, 0 failed |
 | The four tests the patch adds | the difference between the two runs | `fnvalue::test::result_alias_named_like_result`, `fnvalue::test::pinned_boxed_future_yields_each_replacement`, `fnvalue::test::pin_of_something_else_is_not_a_boxed_future`, `visit::test::no_boxed_future_mutants_equivalent_to_source` |
 | The installer builds and verifies it | `scripts/install_cargo_mutants.sh` | exit 0 in 4 min 40 s; prints `…/cargo-mutants carries the patch`; `cargo mutants --version` prints `cargo-mutants 27.1.0` |
-| The binary CI uses is patched | the self-test the installer runs as its last step, in both `mutants.yml` jobs too (`mutants.yml` lines 320 and 969 run the installer) | lists `Ok(..)` for a `Result` alias and `Box::pin(async move{false})` for a boxed future, and no mutant of a body that already yields its replacement. That a stock 27.1.0 binary fails these checks was not re-run here; the stock unit-test run above lacks the four tests that exercise them |
+| The binary CI uses is patched | the self-test the installer runs as its last step, in CI too (the installer is the "Install cargo-mutants and nextest" step of the `mutants.yml` jobs `mutants-crate` and `mutants-incremental-shard`) | lists `Ok(..)` for a `Result` alias and `Box::pin(async move{false})` for a boxed future, and no mutant of a body that already yields its replacement. That a stock 27.1.0 binary fails these checks was not re-run here; the stock unit-test run above lacks the four tests that exercise them |
 
 The installed binary's own hash is not a proof of anything portable: it
 depends on the toolchain that built it (rustc 1.98.1 here, SHA-256

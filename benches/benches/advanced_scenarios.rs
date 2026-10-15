@@ -128,6 +128,10 @@ fn bench_tenant_resolver(c: &mut Criterion) {
 
 // ── Agent card hot-reload ───────────────────────────────────────────────────
 
+// `update` is deprecated for `try_update` (0.15), which also validates the
+// card. The swap benchmarks keep measuring the replacement alone, so their
+// recorded series stays comparable.
+#[allow(deprecated)]
 fn bench_agent_card_hot_reload(c: &mut Criterion) {
     let mut group = c.benchmark_group("advanced/agent_card_hot_reload");
     group.throughput(Throughput::Elements(1));

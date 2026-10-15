@@ -142,9 +142,9 @@ parse):
 | ExtensionSupportRequired | `-32008` |
 | VersionNotSupported | `-32009` |
 
-A refused credential is `-32600` (below). A mid-stream error keeps its own
-code and details, including the `streamLagged` marker of a subscriber that
-fell behind.
+A refused credential is `-32600` with the refusal detail of §6. A
+mid-stream error keeps its own code and details, including the
+`streamLagged` marker of a subscriber that fell behind.
 
 ## 6. Authentication (§12.6)
 
@@ -152,9 +152,24 @@ Credentials travel in the upgrade request's headers (`Authorization`,
 `X-API-Key`, or whatever the agent card's security schemes name) and are
 checked by the server's interceptors on every request. Because the connection
 is already upgraded, a refused credential cannot carry an HTTP status or a
-`WWW-Authenticate` challenge: it is answered `-32600` in the JSON-RPC body.
-Deployments whose clients need a `401` challenge authenticate the upgrade at a
-gateway or reverse proxy.
+`WWW-Authenticate` header, so the body carries both (A2A §12.6, "Handle
+Challenges"). It is answered `-32600` whose `data` holds a
+`google.rpc.ErrorInfo` from this binding's domain, `a2a-rust.com`:
+
+| Refusal | `reason` | `metadata` | HTTP equivalent |
+|---|---|---|---|
+| No usable credential: absent, malformed, expired or unknown | `UNAUTHENTICATED` | `www-authenticate`: the challenge, naming the scheme | `401` + `WWW-Authenticate` |
+| A valid credential that does not permit the operation | `PERMISSION_DENIED` | none | `403` |
+
+```json
+{"jsonrpc":"2.0","id":"1","error":{"code":-32600,"message":"authentication required","data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"UNAUTHENTICATED","domain":"a2a-rust.com","metadata":{"www-authenticate":"Bearer realm=\"a2a\""}}]}}
+```
+
+Other details the refusal carries come before it. The SDK's client reports
+the two as `ClientError::UnexpectedStatus` with status `401` and `403`, as it
+reports them on the other bindings, on a unary call and as a stream's first
+item. A credential is fixed for the connection, so a client recovers from an
+`UNAUTHENTICATED` by opening a new one with a new credential.
 
 Browsers cannot set `Authorization` on a WebSocket upgrade. This binding
 offers no in-band alternative; a browser client authenticates at a gateway
@@ -187,7 +202,7 @@ that accepts its cookie or ticket and forwards a header.
 | Service parameters | per request | per connection (upgrade headers) |
 | Streams | SSE, one HTTP response each | frames on the shared connection, ended by `stream_complete` |
 | Resumption | `Last-Event-ID` | none; resubscribe |
-| Refused credential | `401` + `WWW-Authenticate` / `403` | `-32600` in the body |
+| Refused credential | `401` + `WWW-Authenticate` / `403` | `-32600` with an `ErrorInfo` (`UNAUTHENTICATED` + `www-authenticate`, or `PERMISSION_DENIED`) |
 | Batches | supported | not supported (`-32600`) |
 | Binary payload frames | not applicable | refused with `-32700` |
 

@@ -13,23 +13,23 @@
 # a2a-rust — Agent2Agent (A2A) Protocol SDK for Rust
 
 [![CI](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml)
-[![TCK](https://github.com/tomtom215/a2a-rust/actions/workflows/tck.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/tck.yml)
+[![in-repo TCK](https://github.com/tomtom215/a2a-rust/actions/workflows/tck.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/tck.yml)
 [![codecov](https://codecov.io/gh/tomtom215/a2a-rust/graph/badge.svg)](https://codecov.io/gh/tomtom215/a2a-rust)
 [![Crates.io](https://img.shields.io/crates/v/a2a-protocol-sdk.svg)](https://crates.io/crates/a2a-protocol-sdk)
 [![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
-[![A2A Conformance](https://img.shields.io/badge/official%20TCK-87%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
+[![A2A Conformance](https://img.shields.io/badge/official%20TCK-83%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomtom215/a2a-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/tomtom215/a2a-rust)
 
-Pure Rust implementation of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.1** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
+A Rust implementation (no OpenSSL) of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.1** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
 
 Build, connect, and orchestrate AI agents with a type-safe, async-first SDK spanning four transports — JSON-RPC 2.0, REST, WebSocket, and gRPC — for both client and server.
 
 ## About
 
-The A2A protocol was originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025. The A2A project maintains its own [official SDKs](https://a2a-protocol.org/latest/sdk/) and publishes the specification and conformance suite this implementation is measured against.
+The A2A protocol was originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025. The A2A project maintains its own [official SDKs](https://a2a-protocol.org/latest/sdk/), including a Rust one ([`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs); [docs/sdk-comparison-2026-10-02.md](docs/sdk-comparison-2026-10-02.md) measures the two side by side), and publishes the specification and conformance suite this implementation is measured against.
 
 **This is an independent project.** It is not affiliated with, endorsed by, or governed by the A2A project, the Linux Foundation, or Google, and it is not an official SDK. It tracks the published v1.0.1 specification (released 2026-05-28); the protocol version on the wire remains `1.0`, because §3.6 keeps patch numbers out of requests, responses and Agent Cards. It is graded against the A2A project's two official conformance suites, the Technology Compatibility Kit and ACTS; where it falls short of either, this repository records exactly where and why (see [Project Status](#project-status)).
 
@@ -40,12 +40,12 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **A2A v1.0.1 wire types** | The spec's structs, enums, and fields, with serde annotations matched to the wire format |
-| **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`), and gRPC (`grpc`) — client and server |
+| **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`; a custom binding this project defines), and gRPC (`grpc`) — client and server |
 | **SLIMRPC binding** | A2A over the [AGNTCY SLIM](https://github.com/agntcy/slim) fabric via [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) — all eleven methods plus multicast. Community-contributed binding, **not** part of the ratified v1.0 spec, and outside the TCK conformance claim |
 | **SSE streaming** | Real-time `SendStreamingMessage` / `SubscribeToTask` with broadcast multi-subscriber event streams |
 | **Push notifications** | Pluggable `PushSender` trait with HTTP webhook implementation |
-| **Agent card discovery** | `/.well-known/agent-card.json` serving + client-side resolution; hot-reload via file polling or SIGHUP |
-| **Agent card signing** | JWS/ES256 with RFC 8785 JSON canonicalization (`signing` feature) |
+| **Agent card discovery** | `/.well-known/agent-card.json` serving + client-side resolution; hot-reload via file polling or SIGHUP (Unix) |
+| **Agent card signing** | JWS (ES256, or EdDSA with Ed25519) with RFC 8785 JSON canonicalization (`signing` feature) |
 | **HTTP caching** | `ETag`, `Last-Modified`, `304 Not Modified` for agent card endpoints |
 
 ### Server Framework
@@ -53,13 +53,13 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **Pluggable stores** | `TaskStore` / `PushConfigStore` traits; in-memory defaults + SQLite (`sqlite`) + PostgreSQL (`postgres`) with migrations |
-| **Multi-tenancy** | Tenant-aware stores, `PerTenantConfig` for per-tenant limits, `TenantResolver` strategies (header, bearer, path). Isolation needs the `TenantAware*` stores; a server whose stores cannot isolate **refuses** any request naming a tenant rather than serving it from shared records ([why](docs/sdk-comparison-2026-10-02.md#51-black-box-probes)) |
+| **Multi-tenancy** | Tenant-aware stores, `PerTenantConfig` for per-tenant limits, `TenantResolver` strategies (header, bearer, path). Isolation needs the `TenantAware*` stores; a server whose stores cannot isolate **refuses** any request naming a tenant rather than serving it from shared records (since 0.15.0; [the 0.14.1 probe that found the leak](docs/sdk-comparison-2026-10-02.md#51-black-box-probes)) |
 | **Executor ergonomics** | `agent_executor!` macro, `EventEmitter`, `boxed_future` — no manual `Pin<Box<dyn Future>>` |
-| **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc.; `ServerInterceptor::on_complete` runs once per call with its outcome — succeeded, failed or cancelled — so cleanup cannot be skipped by an error or a client that disconnects |
+| **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc.; `ServerInterceptor::on_complete` runs once per call with its outcome — succeeded, failed or cancelled — so cleanup cannot be skipped by an error or a client that disconnects (on a dropped call it runs in a spawned task, so it needs a live Tokio runtime) |
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
 | **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
-| **Graceful shutdown** | Ends work instead of orphaning it, and reports what it could not end. `Server::serve_with_shutdown()` stops accepting, lets in-flight tasks finish for up to `completion_grace`, cancels the rest and gives their executors `task_grace` to write a terminal event, then drains connections; its `ServeReport` names any task that ignored cancellation and any connection abandoned at the deadline. The gRPC and WebSocket dispatchers' `serve_with_shutdown()` do the same, and behind Axum `RequestHandler::finish_in_flight()` runs the task phases on its own. `RequestHandler::shutdown()` then runs the executor's cleanup hook; its `ShutdownReport` counts any live stream it cut |
-| **Server startup** | `serve()` / `serve_with_addr()` reduce ~25-line hyper boilerplate to one call. `Server::bind()` adds what a deployment needs on top: a shutdown signal, a `max_connections` ceiling, and traced connection errors |
+| **Graceful shutdown** | Ends work instead of orphaning it, and reports what it could not end. `Server::serve_with_shutdown()` stops accepting, lets in-flight tasks finish for up to `completion_grace`, cancels the rest and gives their executors `task_grace` to write a terminal event, then drains connections; its `ServeReport` counts the tasks that ignored cancellation and the connections abandoned at the deadline. The gRPC and WebSocket dispatchers' `serve_with_shutdown()` do the same, and behind Axum `RequestHandler::finish_in_flight()` runs the task phases on its own. `RequestHandler::shutdown()` then runs the executor's cleanup hook; its `ShutdownReport` counts any live stream it cut |
+| **Server startup** | `serve()` / `serve_with_addr()` start a listener in one call, with no limits and no shutdown. `Server::bind()` adds what a deployment needs on top: a shutdown signal, header-read and idle timeouts, an optional `max_connections` ceiling (`ServeConfig::with_max_connections`; unbounded by default), TLS on its own listener (`with_tls`, `tls-rustls`), and traced connection errors |
 
 ### Client
 
@@ -67,7 +67,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 |---|---|
 | **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **Idempotency keys** | A client-supplied key on `SendMessage` that the server deduplicates on, so a send that failed ambiguously can be retried without starting a second task. An extension (`https://a2a-rust.com/extensions/idempotency/v1`), **not** part of A2A v1.0, advertised on the agent card exactly when the configured `TaskStore` supports it |
-| **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client/SDK (`tls-rustls`; `default-features = false` opts either out), and the server's push sender delivers to HTTPS webhooks with it |
+| **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client/SDK (`tls-rustls`; `default-features = false` opts either out), and on the server it gives the push sender HTTPS webhooks and `Server` TLS on its own listener (`Server::with_tls`, `with_tls_pem`) |
 | **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
 
@@ -86,7 +86,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | | |
 |---|---|
 | **Authentication** | Bearer-token, API-key and JWT/OIDC interceptors. A refused credential answers each binding's own status — HTTP `401` with `WWW-Authenticate`, or `403`; gRPC `UNAUTHENTICATED` / `PERMISSION_DENIED` — so a client knows to refresh its token ([ADR 0014](docs/adr/0014-auth-rejection-status.md)) |
-| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, message parts refused in media types the agent card does not declare (`allow_undeclared_input_modes()` opts out), and split liveness (`/health`) / readiness (`/ready`, probes the task store) endpoints |
+| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, message parts refused in media types the agent card does not declare (`allow_undeclared_input_modes()` opts out), and split liveness (`/health`) / readiness (`/ready`, probes the task store) endpoints on the REST and Axum dispatchers |
 | **SSRF protection** | Push webhook URL validation, header injection prevention, SSE memory limits |
 | **CORS support** | `CorsConfig` for browser-based clients with preflight handling |
 | **Executor timeout** | Bounded by default (1 hour) so a hung executor cannot pin a task, its queue and its cancellation token forever; tune with `with_executor_timeout()` or opt out explicitly with `without_executor_timeout()` |
@@ -118,7 +118,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 crypto build) against 11 for `a2a-protocol-types` (normal dependencies, as
 `cargo tree -e normal` counts them, 2026-09-25). None of that reaches the four
 crates above, which do not depend on it. It is versioned independently and is
-currently on the `0.6` line —
+currently on the `0.7` line —
 [`bindings/a2a-protocol-slimrpc/Cargo.toml`](bindings/a2a-protocol-slimrpc/Cargo.toml)
 is the authority for its exact version — see
 [the book chapter](https://a2a-rust.com/bindings/slimrpc.html) for why, and for
@@ -130,9 +130,13 @@ the version-coupling rule that independence does *not* remove.
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.14"
+a2a-protocol-sdk = "0.15"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
+
+> `main` is the unreleased 0.15.0, and this page describes it. The latest
+> release on crates.io is 0.14.1: use `a2a-protocol-sdk = "0.14"` and read
+> [the README at v0.14.1](https://github.com/tomtom215/a2a-rust/tree/v0.14.1).
 
 ### A complete agent, and a client that calls it
 
@@ -210,36 +214,10 @@ Quick Start once did.
 
 ## Examples
 
-### Incident-Response Agent Team (the multi-agent tour)
-
-The hands-on answer to "how is an agent different from a wrapped prompt?":
-three cooperating agents triage a production incident — a vague alert parks
-the task in `INPUT_REQUIRED`, the operator's answer resumes the *same task*,
-the orchestrator delegates to a deterministic log-search agent and an
-LLM-backed runbook agent over real A2A calls, progress streams live, the
-incident report lands as an artifact, and a parked task can be cancelled.
-Runs fully local with Qwen3.5-0.8B (a ~500 MB Apache-2.0 model, via llama-server or Ollama) or
-with no model at all:
-
-```bash
-cargo run -p incident-response
-```
-
-### Agent Team (Full Dogfood)
-
-A 4-agent team that exercises the SDK broadly — 102 end-to-end tests on the default feature set, which already enables WebSocket, gRPC, Axum, SQLite, signing and OTel (87 with `--no-default-features`; both figures are what `cargo run -p agent-team` prints) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
-
-```bash
-cargo run -p agent-team
-
-# The same, with every feature (the defaults already cover the list above)
-cargo run -p agent-team --all-features
-```
-
 ### Hello Agent (smallest complete agent)
 
-The whole SDK in one screen — 28 lines of code above its tests (counted
-2026-09-24, blank and comment lines excluded), the SDK plus `tokio` for the
+The whole SDK in one screen — 32 lines of code above its tests (counted
+2026-10-15, blank and comment lines excluded), the SDK plus `tokio` for the
 runtime, no SDK feature flags. It greets whoever sends it a message:
 
 ```bash
@@ -273,10 +251,36 @@ bug whose only symptom is clients failing to call back. See
 
 ### Echo Agent
 
-A minimal example demonstrating both JSON-RPC and REST transports with synchronous and streaming modes:
+Serves all four bindings behind one handler, drives all eleven methods over each and prints the coverage matrix (exit `2` on a gap), then runs counter-tests against an agent that declares no optional capabilities:
 
 ```bash
 cargo run -p echo-agent
+```
+
+### Incident-Response Agent Team (the multi-agent tour)
+
+The hands-on answer to "how is an agent different from a wrapped prompt?":
+three cooperating agents triage a production incident — a vague alert parks
+the task in `INPUT_REQUIRED`, the operator's answer resumes the *same task*,
+the orchestrator delegates to a deterministic log-search agent and an
+LLM-backed runbook agent over real A2A calls, progress streams live, the
+incident report lands as an artifact, and a parked task can be cancelled.
+Runs fully local with Qwen3.5-0.8B (a ~500 MB Apache-2.0 model, via llama-server or Ollama) or
+with no model at all:
+
+```bash
+cargo run -p incident-response
+```
+
+### Agent Team (Full Dogfood)
+
+An agent team that exercises the SDK broadly — 102 end-to-end tests on the default feature set, which already enables WebSocket, gRPC, Axum, SQLite, signing and OTel (87 with `--no-default-features`; both figures are what `cargo run -p agent-team` prints) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
+
+```bash
+cargo run -p agent-team
+
+# The same, with every feature (the defaults already cover the list above)
+cargo run -p agent-team --all-features
 ```
 
 ### Multi-Language Agent Team
@@ -325,11 +329,14 @@ cargo run -p a2a-tck -- --url http://localhost:8080 --binding jsonrpc
 docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
 ```
 
+Every example, with its run command and what it needs: [examples/README.md](examples/README.md).
+
 ## Command line
 
 `a2a` is a command-line client over `a2a-protocol-client`: fetch a card, send
 or stream a message, get, cancel and list tasks, all as JSON, over any of the
-four bindings. It is **unpublished** — a `publish = false` workspace member,
+four bindings; offline, sign and verify a card (`card sign`, `card verify`) and
+verify an exported audit chain (`audit verify`). It is **unpublished** — a `publish = false` workspace member,
 built from this repository, not on crates.io:
 
 ```bash
@@ -392,7 +399,10 @@ The server uses a 3-layer architecture:
 | `GetExtendedAgentCard` | POST | `GET /extendedAgentCard` |
 
 gRPC serves the same eleven methods as `lf.a2a.v1.A2AService`, and WebSocket
-carries them as JSON-RPC messages over one connection.
+carries them as JSON-RPC messages over one connection. WebSocket is a custom
+binding in the sense of A2A §12, defined by this project
+(`https://a2a-rust.com/bindings/websocket/v1`); the official SDKs do not speak
+it.
 
 ## Testing
 
@@ -434,7 +444,7 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 Published as `0.x`. All 11 A2A methods are implemented across the four transports, alongside HTTP caching, agent-card signing, optional `tracing` and OpenTelemetry, TLS, and the request-hardening features listed above. The API is still stabilizing — minor versions may carry breaking changes, as described under [Stability](#stability). [`docs/implementation/plan.md`](docs/implementation/plan.md) covers the implementation history and beyond-spec extensions.
 
-Against the A2A project's official Technology Compatibility Kit, **87 of 114 MUST requirements pass and 5 fail** across the three profiles CI grades — 83 on the full profile, and the four capability-negotiation requirements (`CORE-CAP-001` to `004`) on the minimal and required-extension profiles, which a full-capability server cannot exercise (re-measured 2026-09-26 against `a2a-tck@main`). One failure, `CORE-SEND-003`, is a defect in the suite: the requirement declares no expected error, so it demands that a message part with an unsupported media type be accepted, and it began failing when 0.14.0 started answering the `ContentTypeNotSupportedError` that §3.1.1 requires ([§22](docs/official-tck-findings.md#22-core-send-003-the-suite-demands-success-where-311-requires-an-error)). The other four failures are the same cause, and it is not a deviation from the specification: the suite grades §5.4's error-mapping table against the copy of the specification it vendors, which its own `specification/version.json` records as A2A **v1.0.0**, taken 2026-03-13. A2A released **v1.0.1** on 2026-05-28, which rewrote six of that table's nine rows. Each of the four fails on exactly the one binding whose cell the two copies disagree about and passes on the bindings where they agree; this SDK answers what the published table says, as does the official Python SDK. They are baselined in `tck/conformance-baseline.json` with the evidence in [§20](docs/official-tck-findings.md#20-grpc-err-002-and-http_json-status-001-the-suites-vendored-specification-is-stale) and [§21](docs/official-tck-findings.md#21-core-cancel-002-and-stream-sub-003-two-more-rows-of-20s-stale-table), and they clear when the suite refreshes its copy — reported upstream as [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231). Of the remaining 22, 21 have no test function in the upstream suite and one (`CARD-EXT-002`) is structurally inapplicable — so they are unmeasured rather than passing. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps; [§16](docs/official-tck-findings.md#16-what-the-21-not-tested-musts-actually-are-one-family-at-a-time) accounts for the 21 family by family — six the upstream suite tags unautomatable, two it has ruled out of scope, and thirteen open backlog items in its own tracker — and shows why none can be closed from this repository.
+Against the A2A project's official Technology Compatibility Kit, **83 of 114 MUST requirements pass and 5 fail** on the full profile, with 5 skipped and 21 that have no upstream test (CI's run on `main` at `f824b03` on 2026-10-10, against `a2a-tck@263b9cf`; [§1](docs/official-tck-findings.md) has every dated measurement). The capability-negotiation requirements a full-capability server cannot exercise (`CORE-CAP-*`) are graded by CI's minimal and required-extension profiles instead. One failure, `CORE-SEND-003`, is a defect in the suite: the requirement declares no expected error, so it demands that a message part with an unsupported media type be accepted, and it began failing when 0.14.0 started answering the `ContentTypeNotSupportedError` that §3.1.1 requires ([§22](docs/official-tck-findings.md#22-core-send-003-the-suite-demands-success-where-311-requires-an-error)). The other four failures are the same cause, and it is not a deviation from the specification: the suite grades §5.4's error-mapping table against the copy of the specification it vendors, which its own `specification/version.json` records as A2A **v1.0.0**, taken 2026-03-13. A2A released **v1.0.1** on 2026-05-28, which rewrote six of that table's nine rows. Each of the four fails on exactly the one binding whose cell the two copies disagree about and passes on the bindings where they agree; this SDK answers what the published table says, as does the official Python SDK. They are baselined in `tck/conformance-baseline.json` with the evidence in [§20](docs/official-tck-findings.md#20-grpc-err-002-and-http_json-status-001-the-suites-vendored-specification-is-stale) and [§21](docs/official-tck-findings.md#21-core-cancel-002-and-stream-sub-003-two-more-rows-of-20s-stale-table), and they clear when the suite refreshes its copy — reported upstream as [a2aproject/a2a-tck#231](https://github.com/a2aproject/a2a-tck/issues/231). Of the remaining 22, 21 have no test function in the upstream suite and one (`CARD-EXT-002`) is structurally inapplicable — so they are unmeasured rather than passing. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps; [§16](docs/official-tck-findings.md#16-what-the-21-not-tested-musts-actually-are-one-family-at-a-time) accounts for the 21 family by family — six the upstream suite tags unautomatable, two it has ruled out of scope, and thirteen open backlog items in its own tracker — and shows why none can be closed from this repository.
 
 Against the A2A project's second suite, **ACTS** (a2aproject/a2a-itk), the ITK agent in [`itk/`](itk) is rated **conformant on all three bindings it grades, with every test passing at every level**: JSON-RPC 101/101, gRPC 88/88, HTTP+JSON 94/94 (measured 2026-10-08 against a2a-itk `82458cea`; the reports are in [`acts/reports/2026-10-08/`](acts/reports/2026-10-08/)). `REST-CT-001`, the one failure on earlier runs, passes since HTTP+JSON responses negotiate `application/a2a+json`: a client that asks for it gets it, and one that asks for `application/json`, as the official Go SDK does, keeps getting that.
 
@@ -445,7 +455,7 @@ Against the A2A project's second suite, **ACTS** (a2aproject/a2a-itk), the ITK a
 
 All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Since 2026-09-09 that is governed by [STABILITY.md](STABILITY.md): deprecate for at least one minor release before removing, batch breaking changes into at most one minor release per month (a release carrying a fix that cannot wait may declare an exception in its notes), list them under `### Breaking Changes` with a migration each, list observable changes with no signature change under `### Behaviour Changes`, and prove compatibility with `cargo-semver-checks` on every pull request. It also states what is designed to stay compatible and the criteria for `1.0`.
 
-The server crate's twelve public traits — `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`, `Metrics`, `Dispatcher`, `AgentCardProducer`, `RateLimitCounter`, and the two event-queue traits — are **unsealed and will stay that way**: they are the extension points a deployment substitutes its own infrastructure into, and the out-of-workspace [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) binding exists only because they are open. New trait methods are always added with defaults so external implementations keep compiling; the rules maintainers follow when doing so — including why a defaulted method is *not* free — are in [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait). Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the three deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie; `JsonRpcResponse` — JSON-RPC 2.0's result/error; and `JsonRpcRequestId` — JSON-RPC 2.0's absent/null/value id states), which stay exhaustive so consumers can match them completely.
+The server crate's public traits — `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`, `Metrics`, `Dispatcher`, `AgentCardProducer`, `ExtendedCardProvider`, `PushConfigCipher`, `RateLimitCounter`, `AuditStore` (`audit` feature) and the two event-queue traits — are **unsealed and will stay that way**: they are the extension points a deployment substitutes its own infrastructure into, and the out-of-workspace [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) binding exists only because they are open. New trait methods are always added with defaults so external implementations keep compiling; the rules maintainers follow when doing so — including why a defaulted method is *not* free — are in [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait). Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the three deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie; `JsonRpcResponse` — JSON-RPC 2.0's result/error; and `JsonRpcRequestId` — JSON-RPC 2.0's absent/null/value id states), which stay exhaustive so consumers can match them completely.
 
 ## Minimum Supported Rust Version
 

@@ -48,6 +48,12 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
   card you fetched yourself, `verify_card_json_with_jwks` takes its JSON;
   `verify_card_with_jwks` verifies a card as this SDK models it.
 
+- **Every way in:** a `CachingCardResolver` verifies with the options it is
+  given (`CachingCardResolver::new(url)?.with_options(options)`), and never
+  caches a card that fails. For a card you hold as JSON,
+  `ClientBuilder::from_signed_card(&json, keys)` verifies it as given and
+  then builds as `from_card` does. Both since 0.15.
+
 - **Algorithms:** ES256 (P-256) and EdDSA (Ed25519). A key is only ever
   tried under the algorithm its type is for.
 - **Revoking a key:** remove it from the set. A verifier that re-fetches the
@@ -66,6 +72,10 @@ canonicalized with protobuf field presence first (§8.4.1): a field holding
 its default value is left out unless it is `REQUIRED` or `optional`. The
 older `sign_agent_card` and `sign_agent_card_ed25519` take the key id as an
 `Option` and are deprecated, since leaving it out breaks §8.4.2.
+`sign_card_es256_with_jku` and `sign_card_ed25519_with_jku` add the `jku`
+(the JWK Set URL, which must be `https://`) that §8.4.2 allows. A verifier
+still chooses which key sets to trust; this SDK's verification never
+follows a card's `jku`.
 
 ## Marking and signing content
 

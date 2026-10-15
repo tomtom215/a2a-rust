@@ -58,12 +58,15 @@ as the comment. ADR 0006 records the review.
 | `tenant_config.rs` — `TenantLimits::builder` → `Default::default()` | The body *is* `TenantLimitsBuilder::default()`. In a function returning `TenantLimitsBuilder`, `Default::default()` resolves to `<TenantLimitsBuilder as Default>::default()` — the same call. |
 | `tenant_config.rs` — `PerTenantConfig::builder` → `Default::default()` | Identical argument for `PerTenantConfigBuilder`. |
 | `streaming/sse.rs` — `SseBodyWriter::close` → `()` | The body is `drop(self)` and the receiver is `self` by value. With or without the explicit `drop`, `self` is dropped when the function returns, and nothing follows it. |
+| `handler/messaging/terminal.rs` — `TerminalTracking::close` → a future of `Ok(())` (2026-09-22) | The body forwards to `InMemoryQueueWriter::close`, itself a no-op returning `Ok(())`: the channel closes when the writer drops. |
+| `interceptor/mod.rs` — the default `ServerInterceptor::on_complete` → `Box::pin(async move { () })` (2026-09-26) | The body is an empty future, and so is the mutant. |
+| `dispatch/grpc/well_known.rs` — `WellKnownCard::poll_ready` → `Poll::from(Ok(()))` (2026-10-14) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`; `Result<(), Infallible>` has no other value to return. |
 | `auth/jwt.rs` — `build_jwks_client` → `Default::default()` | Not an equivalence: the mutated variant is `#[cfg(not(feature = "tls-rustls"))]` and the sweep builds `--all-features`, so it is not compiled at all. See below. |
 
-The first three are equivalences of *form*: the mutated expression compiles to
+All but the last are equivalences of *form*: the mutated expression compiles to
 the same observable behaviour, so a test written against it could not fail.
 
-**The fourth is a different category, and ADR 0006 does not yet name it.**
+**The last is a different category, and ADR 0006 does not yet name it.**
 `build_jwks_client` has two `#[cfg]` variants — one for `tls-rustls`, one for
 its absence. cargo-mutants parses the source, sees both, and generates a
 mutant for each; the sweep then builds with `--all-features`, which *enables*
@@ -881,7 +884,7 @@ This is the category most worth clearing before any external review.
 
 * **The last complete gate sweep is 2026-09-19: `55 proven, 10 unproven, 0 not
   selected (of 65 gates)`.** That is `scripts/prove_gates_fail.sh` run to
-  completion in a detached worktree; `docs/handoff.md` records the run and why
+  completion in a detached worktree; `docs/handoff-history.md` records the run and why
   the ten are not stale needles (seven were already red on the clean tree —
   five wanting a PostgreSQL server, one the SLIMRPC SPIFFE suite, one a
   missing `cargo-hack`).
@@ -1108,7 +1111,7 @@ Work committed to and not yet built:
   extension can (`docs/swarm-orchestration.md`).
 * ~~**The in-diff mutation sweep over this work.**~~ **Done 2026-10-09:**
   every mutant in the B–F diff has run. Every miss now has a test, or is a
-  Kani harness that only Kani compiles. The handoff has the counts.
+  Kani harness that only Kani compiles. `docs/handoff-history.md` has the counts.
 * **Listing on the ITK dashboard.** This waits on upstream changes, drafted
   in `docs/upstream/a2a-itk-dashboard-enrolment-draft.md`.
 

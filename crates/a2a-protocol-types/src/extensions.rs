@@ -9,35 +9,10 @@
 //! A2A v1.0 specification. [`AgentExtension`] is referenced by
 //! [`crate::agent_card::AgentCapabilities`].
 
-use serde::{Deserialize, Serialize};
-
 // ── AgentExtension ────────────────────────────────────────────────────────────
 
-/// Describes an optional extension that an agent supports.
-///
-/// Extensions are identified by a URI and may carry an arbitrary JSON
-/// parameter block understood by the extension spec.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentExtension {
-    /// Unique URI identifying the extension (e.g. `"https://example.com/ext/v1"`).
-    pub uri: String,
-
-    /// Human-readable description of the extension's purpose.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// Whether clients **must** support this extension to interact correctly.
-    ///
-    /// A value of `true` means the agent cannot operate meaningfully without
-    /// the client understanding this extension.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required: Option<bool>,
-
-    /// Extension-specific parameters; structure is defined by the extension URI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
-}
+// The proto-generated types of this module (ADR 0016), `AgentExtension` first.
+include!("generated/extensions.rs");
 
 impl AgentExtension {
     /// Creates a minimal [`AgentExtension`] with only a URI.
@@ -54,22 +29,7 @@ impl AgentExtension {
 
 // ── AgentCardSignature ────────────────────────────────────────────────────────
 
-/// A cryptographic signature over an [`crate::agent_card::AgentCard`].
-///
-/// In v1.0, this is a structured type with JWS-style fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentCardSignature {
-    /// The JWS protected header (base64url-encoded).
-    pub protected: String,
-
-    /// The JWS signature (base64url-encoded).
-    pub signature: String,
-
-    /// Additional unprotected header parameters.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub header: Option<serde_json::Value>,
-}
+// `AgentCardSignature` is generated: see the `include!` above.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

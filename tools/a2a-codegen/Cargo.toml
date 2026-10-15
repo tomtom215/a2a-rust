@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-codegen"
+version     = "0.0.0"
+description = "Generates a2a-protocol-types' public types from a2a.proto (ADR 0016)"
+# A repository tool, never published. Outside the workspace, with its own
+# lockfile, so `protox` and its dependencies stay out of the published
+# crates' graph and their `cargo deny` gate (ADR 0016).
+publish      = false
+edition      = "2024"
+rust-version = "1.88"
+license      = "Apache-2.0"
+
+[dependencies]
+protox        = { version = ">=0.10, <0.11", default-features = false }
+prost-reflect = { version = ">=0.16, <0.17" }
+serde         = { version = "1", features = ["derive"] }
+toml          = { version = ">=0.8, <1", default-features = false, features = ["parse", "serde"] }
+sha2          = { version = ">=0.10, <0.11" }
+
+# Keeps this crate out of the repository's workspace.
+[workspace]
+members = ["."]

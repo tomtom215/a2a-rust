@@ -5,9 +5,19 @@
 
 Server framework for the A2A protocol v1.0 -- build, serve, and scale AI agents.
 
+Part of [a2a-rust](https://github.com/tomtom215/a2a-rust), an independent
+(not official) A2A SDK written against specification release 1.0.1. Guide:
+<https://a2a-rust.com> · API: <https://docs.rs/a2a-protocol-server>.
+
+```toml
+[dependencies]
+a2a-protocol-server = "0.15"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```
+
 ## Overview
 
-- A server framework for A2A v1.0 agents: all eleven methods over four bindings, graded by the official TCK with the results and gaps listed in the repository README's Project Status
+- All eleven A2A methods over JSON-RPC, HTTP+JSON and gRPC — the three bindings the official TCK grades — plus WebSocket, a custom binding (A2A §12) this project defines and grades with its in-repo runner. Results and gaps: [Project Status](https://github.com/tomtom215/a2a-rust#project-status)
 - Built on hyper 1.x with tokio async runtime
 - Pluggable dispatchers: JSON-RPC 2.0, REST, WebSocket, gRPC, Axum
 - Pluggable storage: in-memory, SQLite, PostgreSQL
@@ -50,9 +60,11 @@ serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
 
 `serve` is the shortest path, not the production one: it serves every
 connection with hyper's defaults, with no connection cap, no idle timeout,
-and no way to stop short of dropping its future. For a deployment, bind a `Server`, give it a `ServeConfig`, and hand it the signal
-that ends it; in-flight work finishes (or is cancelled after
-`completion_grace`) before the connections drain:
+and no way to stop short of dropping its future. For a deployment, bind a
+`Server`, give it a `ServeConfig`, and hand it the signal that ends it;
+in-flight work finishes (or is cancelled after `completion_grace`) before the
+connections drain. `ServeConfig::default()` adds header-read and idle
+timeouts but no connection cap; set one with `with_max_connections`:
 
 ```rust,no_run
 # use std::sync::Arc;
@@ -70,7 +82,7 @@ use a2a_protocol_server::{ServeConfig, Server};
 # let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card).build()?);
 let report = Server::bind("0.0.0.0:3000")
     .await?
-    .with_config(ServeConfig::default())
+    .with_config(ServeConfig::default().with_max_connections(10_000))
     .serve_with_shutdown(JsonRpcDispatcher::new(handler), async {
         let _ = tokio::signal::ctrl_c().await;
     })
@@ -83,21 +95,21 @@ println!("{report:?}");
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────┐
 │                  Dispatchers                      │
 │  JsonRpcDispatcher · RestDispatcher · A2aRouter   │
 │  WebSocketDispatcher · GrpcDispatcher             │
-├─────────────────────────────────────────────────┤
+├───────────────────────────────────────────────────┤
 │               RequestHandler                      │
 │  Interceptors · Rate Limiting · Multi-tenancy     │
-├─────────────────────────────────────────────────┤
+├───────────────────────────────────────────────────┤
 │              AgentExecutor (your code)            │
 │  EventEmitter · EventQueueWriter                  │
-├─────────────────────────────────────────────────┤
+├───────────────────────────────────────────────────┤
 │               Storage Layer                       │
 │  TaskStore · PushConfigStore · EventQueueManager  │
 │  InMemory · SQLite · PostgreSQL                   │
-└─────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────┘
 ```
 
 ## Key Types
@@ -113,9 +125,10 @@ println!("{report:?}");
 | `A2aRouter` | Axum framework integration (feature-gated) |
 | `TaskStore` | Trait -- pluggable task persistence |
 | `InMemoryTaskStore` | Default in-memory store |
-| `ServerInterceptor` | Trait -- before/after middleware hooks |
+| `ServerInterceptor` | Trait -- `before` / `after` / `on_complete` (runs on every outcome) |
 | `RateLimitInterceptor` | Fixed-window per-caller rate limiting |
-| `serve()` | One-liner HTTP server startup |
+| `serve()` | Shortest path: no limits, no shutdown |
+| `Server` + `ServeConfig` | Production listener: timeouts, optional connection cap, TLS (`tls-rustls`), graceful shutdown, `ServeReport` |
 
 ## Features
 
@@ -125,7 +138,7 @@ println!("{report:?}");
 |---------|---------|---------|
 | `signing` | No | Forwards `a2a-protocol-types/signing`; this crate itself neither signs nor verifies the card it serves |
 | `tracing` | Yes | Structured logging via the `tracing` crate; `default-features = false` compiles it out |
-| `tls-rustls` | No | HTTPS delivery for the bundled push-notification sender |
+| `tls-rustls` | No | HTTPS for the bundled push-notification sender, and TLS on `Server`'s own listener (`Server::with_tls`, `with_tls_pem`) |
 | `sqlite` | No | SQLite-backed task and push-config stores |
 | `postgres` | No | PostgreSQL-backed task and push-config stores |
 | `websocket` | No | WebSocket transport |
@@ -155,7 +168,7 @@ Pluggable via `TaskStore` and `PushConfigStore` traits:
 |-------|---------|----------|
 | `InMemoryTaskStore` | (default) | Development, testing, single-instance |
 | `SqliteTaskStore` | `sqlite` | Single-node production, edge |
-| `PostgresTaskStore` | `postgres` | Multi-node production |
+| `PostgresTaskStore` | `postgres` | Multi-replica deployments; see the guide's [Running More Than One Replica](https://a2a-rust.com/deployment/horizontal-scaling.html) for what does and does not cross replicas |
 
 All stores have tenant-aware variants for multi-tenancy.
 
@@ -167,12 +180,19 @@ Tenant resolution strategies:
 - `BearerTokenTenantResolver` -- from bearer token
 - `PathSegmentTenantResolver` -- from URL path
 
-Per-tenant configuration with `TenantLimits`.
+Per-tenant limits: `PerTenantConfig` (a default `TenantLimits` plus
+overrides) through `RequestHandlerBuilder::with_tenant_config`; its
+`rate_limit_rps` takes effect only through
+`RateLimitInterceptor::with_tenant_config`. Isolation needs the
+`TenantAware*` stores, and a handler whose stores cannot isolate refuses a
+request naming a tenant.
 
 ## Observability
 
 - `Metrics` trait for custom metrics callbacks
-- `OtelMetrics` (feature: `otel`) for native OTLP export
+- `otel::Telemetry` (feature: `otel`): one-call OTLP export of traces,
+  metrics and logs, configured from `OTEL_*`, with a Langfuse preset
+- `OtelMetrics` (feature: `otel`) for OTLP metrics alone
 - `tracing` integration (feature: `tracing`)
 
 ## License

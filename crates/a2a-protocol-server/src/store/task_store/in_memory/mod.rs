@@ -42,6 +42,7 @@ use tokio::sync::RwLock;
 
 use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore, TaskStoreConfig};
 use crate::metrics::{self, MetricsHandle};
+use crate::store::AppliedPosition;
 use crate::store::terminal::{TerminalStateConflict, refuses_write};
 
 /// Sort key for the update-order indexes: `(status timestamp in Unix millis,
@@ -83,6 +84,11 @@ pub(super) struct TaskEntry {
     /// one. Both ends are O(1) here, and the middle is never touched — an
     /// append out of order is the rare path.
     pub(super) log: VecDeque<RecordedEvent>,
+    /// The log position the stored task reflects
+    /// ([`TaskStore::get_with_position`]): set by a write made inside
+    /// [`AppliedPosition::scope`](crate::store::AppliedPosition), kept by
+    /// any other.
+    pub(super) applied: Option<u64>,
 }
 
 /// Internal data structure holding the primary store and secondary indexes.
@@ -195,10 +201,11 @@ impl StoreData {
         // an update that silently emptied the log would make the record of
         // what the agent emitted depend on how often its snapshot was
         // written.
-        let log = self
-            .entries
-            .get_mut(&task_id)
-            .map_or_else(VecDeque::new, |old| std::mem::take(&mut old.log));
+        let (log, applied) = self.entries.get_mut(&task_id).map_or_else(
+            || (VecDeque::new(), None),
+            |old| (std::mem::take(&mut old.log), old.applied),
+        );
+        let applied = AppliedPosition::current().or(applied);
         if let Some(old) = self.entries.get(&task_id) {
             let old_key = old.order_key;
             let old_ctx = old.task.context_id.0.clone();
@@ -228,6 +235,7 @@ impl StoreData {
                 last_updated,
                 order_key: key,
                 log,
+                applied,
             },
         );
     }
@@ -286,6 +294,7 @@ impl StoreData {
             entry.task.status = status;
             entry.order_key = key;
             entry.last_updated = last_updated;
+            entry.applied = AppliedPosition::current().or(entry.applied);
         }
         true
     }
@@ -930,10 +939,13 @@ impl TaskStore for InMemoryTaskStore {
                     drop(store);
                     return Err(conflict.into_error());
                 }
-                let applied = store
-                    .entries
-                    .get_mut(&task.id)
-                    .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
+                let applied = store.entries.get_mut(&task.id).is_some_and(|entry| {
+                    let applied = apply_delta(&mut entry.task, task, delta);
+                    if applied {
+                        entry.applied = AppliedPosition::current().or(entry.applied);
+                    }
+                    applied
+                });
                 if applied {
                     store.touch(&task.id, Instant::now());
                 }
@@ -1023,6 +1035,18 @@ impl TaskStore for InMemoryTaskStore {
             trace_debug!(task_id = %id, "fetching task");
             let store = self.data.read().await;
             let result = store.entries.get(id).map(|e| e.task.clone());
+            drop(store);
+            Ok(result)
+        })
+    }
+
+    fn get_with_position<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.data.read().await;
+            let result = store.entries.get(id).map(|e| (e.task.clone(), e.applied));
             drop(store);
             Ok(result)
         })

@@ -1,6 +1,8 @@
 /target
 # Out-of-workspace binding crates keep their own target/ (and their own lock).
 bindings/*/target/
+# The type generator is outside the workspace too (ADR 0016).
+tools/a2a-codegen/target/
 verification/*/target/
 
 # mdBook build output

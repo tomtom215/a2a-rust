@@ -20,43 +20,10 @@
 //! | `GetTaskPushNotificationConfig` | [`GetPushConfigParams`] |
 //! | `DeleteTaskPushNotificationConfig` | [`DeletePushConfigParams`] |
 
-use serde::{Deserialize, Serialize};
-
-use crate::message::Message;
-use crate::push::TaskPushNotificationConfig;
-use crate::task::TaskState;
-
 // ── SendMessageConfiguration ──────────────────────────────────────────────────
 
-/// Optional configuration for a `SendMessage` or `SendStreamingMessage` call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SendMessageConfiguration {
-    /// MIME types the client can accept as output (e.g. `["text/plain"]`).
-    ///
-    /// `ProtoJSON` printers (all official SDKs) omit empty repeated fields, so
-    /// absent on the wire means empty — "no preference". Requiring the key
-    /// rejected real official-SDK requests at parse time.
-    #[serde(default)]
-    #[serde(alias = "accepted_output_modes")]
-    pub accepted_output_modes: Vec<String>,
-
-    /// Push notification config to register alongside this message send.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "task_push_notification_config")]
-    pub task_push_notification_config: Option<TaskPushNotificationConfig>,
-
-    /// Number of historical messages to include in the response.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "history_length")]
-    pub history_length: Option<u32>,
-
-    /// If `true`, return immediately with the task object rather than waiting
-    /// for completion.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "return_immediately")]
-    pub return_immediately: Option<bool>,
-}
+// The proto-generated types of this module (ADR 0016), `SendMessageConfiguration` first.
+include!("../generated/params.rs");
 
 impl Default for SendMessageConfiguration {
     fn default() -> Self {
@@ -71,210 +38,46 @@ impl Default for SendMessageConfiguration {
 
 // ── MessageSendParams ─────────────────────────────────────────────────────────
 
-/// Parameters for the `SendMessage` and `SendStreamingMessage` methods.
-///
-/// Maps exactly to proto `SendMessageRequest` (lines 642-651 of a2a.proto).
-/// Context is specified via `message.context_id` per the proto definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessageSendParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// The message to send to the agent.
-    pub message: Message,
-
-    /// Optional send configuration.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub configuration: Option<SendMessageConfiguration>,
-
-    /// Arbitrary caller metadata attached to the request.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+// `MessageSendParams` is generated: see the `include!` above.
 
 // ── TaskQueryParams ───────────────────────────────────────────────────────────
 
-/// Parameters for the `GetTask` method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskQueryParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// ID of the task to retrieve.
-    pub id: String,
-
-    /// Number of historical messages to include in the response.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "history_length")]
-    pub history_length: Option<u32>,
-}
+// `TaskQueryParams` is generated: see the `include!` above.
 
 // ── TaskIdParams ──────────────────────────────────────────────────────────────
 
-/// Minimal parameters identifying a single task by ID.
-///
-/// Used for `SubscribeToTask`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskIdParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// ID of the target task.
-    pub id: String,
-}
+// `TaskIdParams` is generated: see the `include!` above.
 
 // ── CancelTaskParams ────────────────────────────────────────────────────────
 
-/// Parameters for the `CancelTask` method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CancelTaskParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// ID of the task to cancel.
-    pub id: String,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+// `CancelTaskParams` is generated: see the `include!` above.
 
 // ── ListTasksParams ───────────────────────────────────────────────────────────
 
-/// Parameters for the `ListTasks` method.
-///
-/// All fields are optional filters; omitting them returns all tasks visible to
-/// the caller (subject to the server's default page size).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListTasksParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// Filter to tasks belonging to this conversation context.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "context_id")]
-    pub context_id: Option<String>,
-
-    /// Filter to tasks in this state.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<TaskState>,
-
-    /// Maximum number of tasks to return per page. Clamped by the server
-    /// to `max_page_size` (default 1000). Clients may request any `u32` value
-    /// but the server will cap it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "page_size")]
-    pub page_size: Option<u32>,
-
-    /// Pagination cursor returned by the previous response.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "page_token")]
-    pub page_token: Option<String>,
-
-    /// Return only tasks whose status changed after this ISO 8601 timestamp.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "status_timestamp_after")]
-    pub status_timestamp_after: Option<String>,
-
-    /// If `true`, include artifact data in the returned tasks.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "include_artifacts")]
-    pub include_artifacts: Option<bool>,
-
-    /// Number of historical messages to include per task.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "history_length")]
-    pub history_length: Option<u32>,
-}
+// `ListTasksParams` is generated: see the `include!` above.
 
 // ── GetPushConfigParams ───────────────────────────────────────────────────────
 
-/// Parameters for the `GetTaskPushNotificationConfig` method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetPushConfigParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// The task whose push config to retrieve.
-    #[serde(alias = "task_id")]
-    pub task_id: String,
-
-    /// The server-assigned push config identifier.
-    pub id: String,
-}
+// `GetPushConfigParams` is generated: see the `include!` above.
 
 // ── DeletePushConfigParams ────────────────────────────────────────────────────
 
-/// Parameters for the `DeleteTaskPushNotificationConfig` method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeletePushConfigParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// The task whose push config to delete.
-    #[serde(alias = "task_id")]
-    pub task_id: String,
-
-    /// The server-assigned push config identifier.
-    pub id: String,
-}
+// `DeletePushConfigParams` is generated: see the `include!` above.
 
 // ── ListPushConfigsParams ────────────────────────────────────────────────────
 
-/// Parameters for the `ListTaskPushNotificationConfigs` method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListPushConfigsParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-
-    /// The task whose push configs to list.
-    #[serde(alias = "task_id")]
-    pub task_id: String,
-
-    /// Maximum number of configs to return per page.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "page_size")]
-    pub page_size: Option<u32>,
-
-    /// Pagination cursor returned by the previous response.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "page_token")]
-    pub page_token: Option<String>,
-}
+// `ListPushConfigsParams` is generated: see the `include!` above.
 
 // ── GetExtendedAgentCardParams ──────────────────────────────────────────────
 
-/// Parameters for the `GetExtendedAgentCard` method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetExtendedAgentCardParams {
-    /// Optional tenant for multi-tenancy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant: Option<String>,
-}
+// `GetExtendedAgentCardParams` is generated: see the `include!` above.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::MessageId;
+    use crate::message::{Message, MessageId};
 
     fn make_message() -> Message {
         Message::user_text("msg-1", "hello")

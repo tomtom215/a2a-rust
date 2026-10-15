@@ -30,7 +30,7 @@
 //! Requires the `websocket` feature flag:
 //!
 //! ```toml
-//! a2a-protocol-server = { version = "0.14", features = ["websocket"] }
+//! a2a-protocol-server = { version = "0.15", features = ["websocket"] }
 //! ```
 
 use std::collections::HashMap;
@@ -56,6 +56,7 @@ use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::EventQueueReader;
 
+mod card;
 mod shutdown;
 
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
@@ -405,6 +406,13 @@ impl WebSocketDispatcher {
         // Match the HTTP serve path: avoid ~40ms delayed-ACK latency on the
         // small text frames JSON-RPC produces.
         let _ = stream.set_nodelay(true);
+
+        // Spec §8.1: the agent card, at its well-known path, on this listener
+        // too. Anything else is the WebSocket handshake.
+        if card::asks_for_card(&stream, self.handshake_timeout).await {
+            card::serve(stream, super::well_known::card_handler(&self.handler)).await;
+            return Ok(());
+        }
 
         // Cap message/frame sizes at the protocol level so oversized input is
         // rejected during the read, before it is buffered in memory.
@@ -958,15 +966,9 @@ async fn process_ws_message(
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListPushConfigsParams = ws_params(&p)?;
-                    h.on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(hdr))
+                    h.on_list_push_configs_page(&params, Some(hdr))
                         .await
-                        .map(|configs| {
-                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                                configs,
-                                next_page_token: None,
-                            };
-                            serde_json::to_value(&resp).unwrap_or_default()
-                        })
+                        .map(|resp| serde_json::to_value(&resp).unwrap_or_default())
                         .map_err(|e| e.to_a2a_error())
                 })
             })
@@ -1149,8 +1151,7 @@ async fn dispatch_simple<'a, F>(
             send_json(writer, &success).await;
         }
         Err(e) => {
-            let err_resp =
-                JsonRpcErrorResponse::new(id, crate::streaming::sse::jsonrpc_error_from(&e));
+            let err_resp = JsonRpcErrorResponse::new(id, ws_error(&e));
             send_json(writer, &err_resp).await;
         }
     }
@@ -1167,11 +1168,56 @@ async fn send_json<T: serde::Serialize + Sync>(writer: &WsSink, value: &T) {
 
 /// Sends a server error as a JSON-RPC error response.
 async fn send_error(writer: &WsSink, id: JsonRpcId, err: &ServerError) {
-    let resp = JsonRpcErrorResponse::new(
-        id,
-        crate::streaming::sse::jsonrpc_error_from(&err.to_a2a_error()),
-    );
+    let resp = JsonRpcErrorResponse::new(id, ws_error(&err.to_a2a_error()));
     send_json(writer, &resp).await;
+}
+
+/// The domain of the refusal detail [`ws_error`] adds: this binding's own,
+/// the host of its URI ([`a2a_protocol_types::WEBSOCKET_BINDING_URI`]), since
+/// A2A defines no authentication reason.
+const WS_REFUSAL_DOMAIN: &str = "a2a-rust.com";
+
+/// `err` as a WebSocket frame's JSON-RPC error: the JSON-RPC binding's code
+/// and details, and, for a refused credential, the binding's refusal detail
+/// (binding spec §6, A2A §12.6 "Handle Challenges").
+///
+/// Over HTTP a refusal is a `401` with `WWW-Authenticate`, or a `403`; on an
+/// upgraded connection there is no status to send, so the body says it: a
+/// `google.rpc.ErrorInfo` with reason `UNAUTHENTICATED` (carrying the
+/// challenge as `www-authenticate` metadata, as the gRPC binding's status
+/// does) or `PERMISSION_DENIED`. Until 2026-10-15 the frame was a bare
+/// `-32600` with no `data`, which a client cannot tell from a malformed
+/// request, and the challenge was dropped.
+fn ws_error(err: &a2a_protocol_types::error::A2aError) -> JsonRpcError {
+    let mut error = crate::streaming::sse::jsonrpc_error_from(err);
+    if let Some(detail) = refusal_detail(err) {
+        match &mut error.data {
+            Some(serde_json::Value::Array(details)) => details.push(detail),
+            data => *data = Some(serde_json::Value::Array(vec![detail])),
+        }
+    }
+    error
+}
+
+/// The refusal detail for `err`, or `None` when it refuses no credential.
+fn refusal_detail(err: &a2a_protocol_types::error::A2aError) -> Option<serde_json::Value> {
+    use a2a_protocol_types::AuthRejectionKind;
+    let rejection = err.auth_rejection()?;
+    let reason = match rejection.kind() {
+        AuthRejectionKind::Unauthenticated => "UNAUTHENTICATED",
+        // `PermissionDenied`, and any kind added later: refusing is the safe
+        // reading of a refusal this binding does not know, as over HTTP.
+        _ => "PERMISSION_DENIED",
+    };
+    let mut detail = serde_json::json!({
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": reason,
+        "domain": WS_REFUSAL_DOMAIN,
+    });
+    if let Some(challenge) = rejection.challenge() {
+        detail["metadata"] = serde_json::json!({ "www-authenticate": challenge });
+    }
+    Some(detail)
 }
 
 /// The answer to a request over the per-connection concurrency cap: an

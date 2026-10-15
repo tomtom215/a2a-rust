@@ -140,7 +140,7 @@ git checkout -b release/vX.Y.Z main
 # re-breaks the gate, because that file now differs from the pinned commit too.
 # In practice that forces content and release prep into two pull requests in
 # that order, prep second, with the manifest regenerated in the prep commit —
-# which is exactly how 0.12.1 shipped (docs/handoff.md, "0.12.1"). The
+# which is exactly how 0.12.1 shipped (docs/handoff-history.md, "0.12.1"). The
 # v0.11.0 tag died on 2026-08-30 to the other half of the same rule: the
 # manifest was regenerated before a benchmark bot push landed, so it pinned a
 # tree the release no longer had. Wait for automation to settle, regenerate,

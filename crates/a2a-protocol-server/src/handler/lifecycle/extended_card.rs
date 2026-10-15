@@ -45,7 +45,8 @@ impl RequestHandler {
                 // refused. This was the one operation that skipped it.
                 self.ensure_required_extensions(&call_ctx)?;
 
-                self.extended_card_for_this_call()
+                let card = self.extended_card_for_this_call()?;
+                crate::agent_card::for_caller(self, &call_ctx, card).await
             }
             .await;
             call.finish(result).await

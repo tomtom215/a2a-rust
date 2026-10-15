@@ -1,0 +1,855 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# How tools/a2a-codegen turns proto/a2a_v1/a2a.proto into this crate's public
+# types (ADR 0016). Regenerate after editing this file or the proto:
+#
+#     cargo run --manifest-path tools/a2a-codegen/Cargo.toml -- write
+#
+# The generator refuses an entry for a type, field or value the proto does
+# not have, and a proto type this file does not mention. A field whose Rust
+# type or name is not the default translation says why.
+
+# Every proto message and enum's public Rust path, relative to the crate root.
+[paths]
+AgentCapabilities = "agent_card::AgentCapabilities"
+AgentCard = "agent_card::AgentCard"
+AgentCardSignature = "extensions::AgentCardSignature"
+AgentExtension = "extensions::AgentExtension"
+AgentInterface = "agent_card::AgentInterface"
+AgentProvider = "agent_card::AgentProvider"
+AgentSkill = "agent_card::AgentSkill"
+APIKeySecurityScheme = "security::ApiKeySecurityScheme"
+Artifact = "artifact::Artifact"
+AuthenticationInfo = "push::AuthenticationInfo"
+AuthorizationCodeOAuthFlow = "security::AuthorizationCodeFlow"
+CancelTaskRequest = "params::CancelTaskParams"
+ClientCredentialsOAuthFlow = "security::ClientCredentialsFlow"
+DeleteTaskPushNotificationConfigRequest = "params::DeletePushConfigParams"
+DeviceCodeOAuthFlow = "security::DeviceCodeFlow"
+GetExtendedAgentCardRequest = "params::GetExtendedAgentCardParams"
+GetTaskPushNotificationConfigRequest = "params::GetPushConfigParams"
+GetTaskRequest = "params::TaskQueryParams"
+HTTPAuthSecurityScheme = "security::HttpAuthSecurityScheme"
+ImplicitOAuthFlow = "security::ImplicitFlow"
+ListTaskPushNotificationConfigsRequest = "params::ListPushConfigsParams"
+ListTaskPushNotificationConfigsResponse = "responses::ListPushConfigsResponse"
+ListTasksRequest = "params::ListTasksParams"
+ListTasksResponse = "responses::TaskListResponse"
+Message = "message::Message"
+MutualTlsSecurityScheme = "security::MutualTlsSecurityScheme"
+OAuth2SecurityScheme = "security::OAuth2SecurityScheme"
+OAuthFlows = "security::OAuthFlows"
+OpenIdConnectSecurityScheme = "security::OpenIdConnectSecurityScheme"
+Part = "message::Part"
+PasswordOAuthFlow = "security::PasswordOAuthFlow"
+Role = "message::MessageRole"
+SecurityRequirement = "security::SecurityRequirement"
+SecurityScheme = "security::SecurityScheme"
+SendMessageConfiguration = "params::SendMessageConfiguration"
+SendMessageRequest = "params::MessageSendParams"
+SendMessageResponse = "responses::SendMessageResponse"
+StreamResponse = "events::StreamResponse"
+StringList = "security::StringList"
+SubscribeToTaskRequest = "params::TaskIdParams"
+Task = "task::Task"
+TaskArtifactUpdateEvent = "events::TaskArtifactUpdateEvent"
+TaskPushNotificationConfig = "push::TaskPushNotificationConfig"
+TaskState = "task::TaskState"
+TaskStatus = "task::TaskStatus"
+TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
+
+# ── Enums ────────────────────────────────────────────────────────────────────
+
+[enums.TaskState]
+derives = ["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+On the wire each state is its `ProtoJSON` name (`"TASK_STATE_COMPLETED"`,
+spec §5.5); the v0.3 lowercase and kebab-case spellings are accepted on
+input.
+
+This enum is closed to the v1.0 states. A future protocol revision that adds
+a state would be a wire-breaking change for the gRPC binding: an unknown
+`TASK_STATE_*` number from a newer peer is rejected by the protobuf
+conversion layer (with a field-scoped error) rather than silently discarded,
+so no task is ever reported in a bogus state."""
+
+[enums.TaskState.values]
+TASK_STATE_UNSPECIFIED = { aliases = ["unspecified"] }
+TASK_STATE_SUBMITTED = { aliases = ["submitted"] }
+TASK_STATE_WORKING = { aliases = ["working"] }
+TASK_STATE_COMPLETED = { aliases = ["completed"] }
+TASK_STATE_FAILED = { aliases = ["failed"] }
+TASK_STATE_CANCELED = { aliases = ["canceled"] }
+TASK_STATE_INPUT_REQUIRED = { aliases = ["input-required"] }
+TASK_STATE_REJECTED = { aliases = ["rejected"] }
+TASK_STATE_AUTH_REQUIRED = { aliases = ["auth-required"] }
+
+[enums.Role]
+derives = ["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+On the wire each role is its `ProtoJSON` name (`"ROLE_USER"`, spec §5.5); the
+v0.3 lowercase spellings are accepted on input."""
+
+[enums.Role.values]
+ROLE_UNSPECIFIED = { aliases = ["unspecified"] }
+ROLE_USER = { aliases = ["user"] }
+ROLE_AGENT = { aliases = ["agent"] }
+
+# ── Messages ─────────────────────────────────────────────────────────────────
+
+[messages.AgentProvider]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AgentExtension]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AgentExtension.fields.uri]
+type = "String"
+why = "an extension is identified by its URI: one without is not an extension, so it is never absent"
+
+[messages.AgentInterface]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+[`AgentInterface::jsonrpc`], [`AgentInterface::grpc`] and
+[`AgentInterface::rest`] take a URL and fill in the binding name and the
+protocol version; [`AgentInterface::new`] takes an arbitrary binding."""
+
+[messages.AgentInterface.fields.protocol_binding]
+aliases = ["protocol_binding"]
+doc_append = """
+§12 permits custom bindings, and §5.8 says a custom binding **SHOULD** be
+identified by a **URI** rather than a bare name, so that two projects cannot
+define incompatible bindings under the same word. This crate's own WebSocket
+binding is [`WEBSOCKET_BINDING_URI`](crate::WEBSOCKET_BINDING_URI); it
+advertised the bare `"WEBSOCKET"` before 0.11.0, which readers should still
+accept."""
+
+[messages.AgentInterface.fields.protocol_version]
+aliases = ["protocol_version"]
+doc_append = "Spec §3.6: patch version numbers **SHOULD NOT** be used in agent cards."
+
+[messages.AgentCapabilities]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+[`AgentCapabilities::none`] (also its `Default`) leaves every flag unset;
+the `with_*` methods set them."""
+
+[messages.AgentCapabilities.fields.push_notifications]
+aliases = ["push_notifications"]
+
+[messages.AgentCapabilities.fields.extended_agent_card]
+aliases = ["extended_agent_card"]
+
+[messages.AgentSkill]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+# Construction
+
+[`AgentSkill::new`] takes the id, name and description; tags, examples and
+the two mode lists are set by the `with_*` methods beside it."""
+
+[messages.AgentSkill.fields.tags]
+serde = ["default"]
+doc_append = """
+`ProtoJSON` printers omit empty repeated fields — a skill published by an
+official SDK with no tags arrives without the key. Absence means empty;
+failing the whole card parse over it is not interoperable."""
+
+[messages.AgentSkill.fields.input_modes]
+aliases = ["input_modes"]
+
+[messages.AgentSkill.fields.output_modes]
+aliases = ["output_modes"]
+
+[messages.AgentSkill.fields.security_requirements]
+aliases = ["security_requirements"]
+
+[messages.AgentCardSignature]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AgentCard]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+Served at `/.well-known/agent-card.json`.
+
+# Construction
+
+Prefer [`AgentCard::new`] and the twelve `with_*` methods beside it over a
+struct literal: `new` takes the three things the type cannot invent — a
+name, a version, an interface — and defaults the rest, so a card built
+that way is valid by construction.
+
+```rust
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+
+let card = AgentCard::new("triage", "1.0.0", AgentInterface::jsonrpc("http://localhost:8080"))
+    .with_description("Routes incidents to the right runbook")
+    .with_skill(AgentSkill::new("triage", "Triage", "Classifies an incident"));
+assert_eq!(card.skills.len(), 1);
+```
+
+The builders live in `agent_card/builders.rs`. Three examples written in a
+single session on 2026-09-19 each hand-wrote a 38-to-45-line literal
+without finding them, which is what this section is here to prevent."""
+
+[messages.AgentCard.fields.supported_interfaces]
+aliases = ["supported_interfaces"]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element — enforced by
+[`validate`](Self::validate), not at parse time: `ProtoJSON` printers
+omit empty repeated fields, so parsing treats absence as empty and
+validation reports the real problem instead of a JSON type error."""
+
+[messages.AgentCard.fields.documentation_url]
+aliases = ["documentation_url"]
+
+[messages.AgentCard.fields.security_schemes]
+type = "Option<crate::security::NamedSecuritySchemes>"
+aliases = ["security_schemes"]
+why = "a map has no default translation; the crate names this one NamedSecuritySchemes"
+
+[messages.AgentCard.fields.security_requirements]
+aliases = ["security_requirements"]
+
+[messages.AgentCard.fields.default_input_modes]
+aliases = ["default_input_modes"]
+serde = ["default"]
+doc_append = "`ProtoJSON` printers omit empty repeated fields; absence means empty."
+
+[messages.AgentCard.fields.default_output_modes]
+aliases = ["default_output_modes"]
+serde = ["default"]
+doc_append = "`ProtoJSON` printers omit empty repeated fields; absence means empty."
+
+[messages.AgentCard.fields.skills]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element. Parsing treats
+absence as empty (`ProtoJSON` omits empty repeated fields)."""
+
+[messages.AgentCard.fields.icon_url]
+aliases = ["icon_url"]
+
+[[messages.AgentCard.extra]]
+name = "url"
+type = "Option<String>"
+serde = ["skip_serializing"]
+why = "v0.3 cards carry a top-level url; parsing it keeps them readable"
+doc = """
+Primary URL of the agent — **accepted on input, never emitted.**
+
+This is the v0.3 top-level URL. The v1.0 `lf.a2a.v1` `AgentCard` has no
+`url` field at all; `supported_interfaces` replaced it. Emitting it made
+this SDK's card fail the specification's own JSON schema —
+`'url' does not match any of the regexes: …` — which is what
+`CARD-EXT-001` reports (see `docs/official-tck-findings.md` §13).
+
+It is still **parsed**, because a card published by a v0.3 peer carries
+it and dropping the field would fail those cards outright. The reference
+implementation does the same, popping `url` and folding it into
+`supportedInterfaces`.
+
+Read it if you have it; to publish an agent's address, use
+`supported_interfaces`."""
+
+[messages.TaskStatus]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+
+[messages.Task]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+doc_append = """
+The wire `kind` field (`"task"`) is injected by enclosing discriminated
+unions such as [`crate::events::StreamResponse`] and
+[`crate::responses::SendMessageResponse`]. Standalone `Task` values received
+over the wire may include `kind`; serde silently tolerates unknown fields, so
+no action is needed on the receiving side."""
+
+[messages.Task.fields.id]
+type = "crate::task::TaskId"
+why = "task ids are a newtype, so one cannot be passed where a context id is meant"
+
+[messages.Task.fields.context_id]
+type = "crate::task::ContextId"
+aliases = ["context_id"]
+serde = ["default = \"crate::task::empty_context_id\""]
+why = "a newtype like the other ids; absent reads as empty, since ProtoJSON omits an empty string"
+doc_append = """
+The proto leaves `context_id` optional, and `ProtoJSON` printers omit an
+empty string, so a peer's task may arrive without the key; it parses
+as an empty id rather than failing the whole response."""
+
+[messages.Message]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+
+[messages.Message.fields.message_id]
+rename = "id"
+type = "crate::message::MessageId"
+aliases = ["message_id"]
+why = "a newtype like the other ids, named id on its own type as Task's is"
+
+[messages.Message.fields.context_id]
+type = "Option<crate::task::ContextId>"
+aliases = ["context_id"]
+why = "the context id newtype"
+
+[messages.Message.fields.task_id]
+type = "Option<crate::task::TaskId>"
+aliases = ["task_id"]
+why = "the task id newtype"
+
+[messages.Message.fields.parts]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element. The A2A
+protocol does not define behavior for empty parts lists.
+
+Parsing treats absence as empty (`ProtoJSON` printers omit empty
+repeated fields; the gRPC binding already decodes it that way) — the
+server rejects empty parts with a structured invalid-params error
+instead of a JSON type error, uniformly across bindings."""
+
+[messages.Message.fields.reference_task_ids]
+type = "Option<Vec<crate::task::TaskId>>"
+aliases = ["reference_task_ids"]
+why = "the task id newtype"
+
+[messages.Artifact]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+
+[messages.Artifact.fields.artifact_id]
+rename = "id"
+type = "crate::artifact::ArtifactId"
+aliases = ["artifact_id"]
+why = "a newtype like the other ids, named id on its own type as Task's is"
+
+[messages.Artifact.fields.parts]
+serde = ["default"]
+doc_append = """
+**Spec requirement:** Must contain at least one element. The A2A
+protocol does not define behavior for empty parts lists.
+
+Parsing treats absence as empty (`ProtoJSON` printers omit empty
+repeated fields; the gRPC binding already decodes it that way) — the
+server-side event processors drop empty-parts artifacts explicitly."""
+
+[messages.TaskStatusUpdateEvent]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+In v1.0 this wraps [`TaskStatus`](crate::task::TaskStatus) directly instead
+of separate `state`/`message` fields, and the `final` field is gone."""
+
+[messages.TaskStatusUpdateEvent.fields.task_id]
+type = "crate::task::TaskId"
+aliases = ["task_id"]
+why = "the task id newtype"
+
+[messages.TaskStatusUpdateEvent.fields.context_id]
+type = "crate::task::ContextId"
+aliases = ["context_id"]
+why = "the context id newtype"
+
+[messages.TaskArtifactUpdateEvent]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = """
+The wire `kind` field (`"artifact-update"`) is injected by the enclosing
+[`StreamResponse`] discriminated union."""
+
+[messages.TaskArtifactUpdateEvent.fields.task_id]
+type = "crate::task::TaskId"
+aliases = ["task_id"]
+why = "the task id newtype"
+
+[messages.TaskArtifactUpdateEvent.fields.context_id]
+type = "crate::task::ContextId"
+aliases = ["context_id"]
+why = "the context id newtype"
+
+[messages.TaskArtifactUpdateEvent.fields.last_chunk]
+aliases = ["last_chunk"]
+
+# ── Requests and responses ───────────────────────────────────────────────────
+
+[messages.SendMessageConfiguration]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.SendMessageConfiguration.fields.accepted_output_modes]
+type = "Vec<String>"
+aliases = ["accepted_output_modes"]
+serde = ["default"]
+why = "absent and empty both mean no preference, so the field is a plain list"
+doc_append = """
+`ProtoJSON` printers (all official SDKs) omit empty repeated fields, so
+absent on the wire means empty — "no preference". Requiring the key
+rejected real official-SDK requests at parse time."""
+
+[messages.SendMessageConfiguration.fields.task_push_notification_config]
+aliases = ["task_push_notification_config"]
+
+[messages.SendMessageConfiguration.fields.history_length]
+type = "Option<u32>"
+aliases = ["history_length"]
+why = "a history length counts messages; u32 refuses a negative one at parse time"
+
+[messages.SendMessageConfiguration.fields.return_immediately]
+aliases = ["return_immediately"]
+
+[messages.SendMessageRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = "Context is given by `message.context_id`, as the proto defines it."
+
+[messages.GetTaskRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.GetTaskRequest.fields.history_length]
+type = "Option<u32>"
+aliases = ["history_length"]
+why = "a history length counts messages; u32 refuses a negative one at parse time"
+
+[messages.SubscribeToTaskRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.CancelTaskRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTasksRequest]
+derives = ["Debug", "Clone", "Default", "Serialize", "Deserialize"]
+doc_append = """
+All fields are optional filters; omitting them returns all tasks visible to
+the caller (subject to the server's default page size)."""
+
+[messages.ListTasksRequest.fields.context_id]
+aliases = ["context_id"]
+
+[messages.ListTasksRequest.fields.page_size]
+type = "Option<u32>"
+aliases = ["page_size"]
+why = "a page size counts items; u32 refuses a negative one at parse time"
+doc_append = """
+Clamped by the server to `max_page_size` (default 1000): a client may ask
+for any `u32`, and the server caps it."""
+
+[messages.ListTasksRequest.fields.page_token]
+aliases = ["page_token"]
+
+[messages.ListTasksRequest.fields.history_length]
+type = "Option<u32>"
+aliases = ["history_length"]
+why = "a history length counts messages; u32 refuses a negative one at parse time"
+
+[messages.ListTasksRequest.fields.status_timestamp_after]
+aliases = ["status_timestamp_after"]
+
+[messages.ListTasksRequest.fields.include_artifacts]
+aliases = ["include_artifacts"]
+
+[messages.GetTaskPushNotificationConfigRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.GetTaskPushNotificationConfigRequest.fields.task_id]
+aliases = ["task_id"]
+
+[messages.DeleteTaskPushNotificationConfigRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.DeleteTaskPushNotificationConfigRequest.fields.task_id]
+aliases = ["task_id"]
+
+[messages.ListTaskPushNotificationConfigsRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTaskPushNotificationConfigsRequest.fields.task_id]
+aliases = ["task_id"]
+
+[messages.ListTaskPushNotificationConfigsRequest.fields.page_size]
+type = "Option<u32>"
+aliases = ["page_size"]
+why = "a page size counts items; u32 refuses a negative one at parse time"
+
+[messages.ListTaskPushNotificationConfigsRequest.fields.page_token]
+aliases = ["page_token"]
+
+[messages.GetExtendedAgentCardRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTasksResponse]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTasksResponse.fields.tasks]
+serde = ["default"]
+doc_append = """
+`ProtoJSON` printers omit empty repeated fields, so an official-SDK
+server with zero matching tasks legitimately sends no `tasks` key."""
+
+[messages.ListTasksResponse.fields.next_page_token]
+aliases = ["next_page_token"]
+serde = ["default"]
+doc_append = "Empty on the last page; `ProtoJSON` omits an empty string, so absent reads as empty."
+
+[messages.ListTasksResponse.fields.page_size]
+type = "u32"
+aliases = ["page_size"]
+serde = ["default"]
+why = "a page size counts items; u32 refuses a negative one at parse time"
+
+[messages.ListTasksResponse.fields.total_size]
+type = "u32"
+aliases = ["total_size"]
+serde = ["default"]
+why = "a count of tasks; u32 refuses a negative one at parse time"
+
+[messages.ListTaskPushNotificationConfigsResponse]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTaskPushNotificationConfigsResponse.fields.configs]
+type = "Vec<crate::push::TaskPushNotificationConfig>"
+serde = ["default"]
+why = "absent and empty both mean no configs, so the field is a plain list"
+doc_append = "`ProtoJSON` printers omit empty repeated fields, so absence means empty."
+
+[messages.ListTaskPushNotificationConfigsResponse.fields.next_page_token]
+aliases = ["next_page_token"]
+
+[messages.AuthenticationInfo]
+derives = ["Clone", "Serialize", "Deserialize"]
+doc_append = """
+`credentials` is a secret and is **redacted** in the [`Debug`]
+representation (its presence is shown, its value is not) so it cannot leak
+into logs via `{:?}`. Serialization is unaffected — the real value is still
+sent on the wire."""
+
+[messages.TaskPushNotificationConfig]
+derives = ["Clone", "Serialize", "Deserialize"]
+doc_append = """
+`token` is a secret and is **redacted** in the [`Debug`] representation
+(presence shown, value hidden), as is any `credentials` inside
+`authentication`, so a `{:?}` of a config tree cannot leak the shared
+secret into logs. Serialization is unaffected."""
+
+[messages.TaskPushNotificationConfig.fields.task_id]
+aliases = ["task_id"]
+doc_append = """
+Optional in the canonical protocol schema: a config nested in
+`SendMessageConfiguration` legitimately omits it (the task does not
+exist yet), and servers assign it from context. A standalone
+`CreateTaskPushNotificationConfig` call does require it — the server
+rejects a missing task ID there with an invalid-params error."""
+
+# ── Security schemes ─────────────────────────────────────────────────────────
+
+[messages.StringList]
+derives = ["Debug", "Clone", "Serialize"]
+doc_append = """
+# Wire format
+
+The spec's JSON is the ProtoJSON of that message, `{"list": ["read"]}`,
+and that is the only form emitted: `a2a.proto` is the normative
+definition of the data objects, the spec's own agent-card example writes
+`"schemes": {"google": {"list": ["openid", …]}}`, and the official Python
+SDK (`MessageToDict`) emits the same.
+
+Three further forms are **accepted**, because real peers send them:
+
+| Received | Read as | Who sends it |
+|---|---|---|
+| `{}` | empty | ProtoJSON printers omit an empty repeated field |
+| `["read"]` | `["read"]` | a2a-go v2.5.0 (`a2a/auth.go`: `Schemes map[…]SecuritySchemeScopes`) |
+| `null` | empty | a2a-go v2.5.0, for a nil scope slice |
+
+Accepting the bare array is what lets this SDK read a Go agent's card at
+all. The other direction, a2a-go reading the spec form this SDK emits,
+needs a fix in a2a-go. `Deserialize` is written by hand, beside this type,
+to accept them."""
+
+[messages.StringList.fields.list]
+type = "Vec<String>"
+why = "absent and empty both mean no values, so the field is a plain list"
+doc_append = """
+`ProtoJSON` printers omit empty repeated fields: an empty `StringList`
+arrives as `{}`, so absence means empty (a scheme requiring no scopes
+is common and valid)."""
+
+[messages.SecurityRequirement]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.SecurityRequirement.fields.schemes]
+type = "std::collections::HashMap<String, crate::security::StringList>"
+serde = ["default"]
+why = "a map of scheme name to its scopes; absent reads as empty"
+doc_append = "`ProtoJSON` printers omit empty maps, so absence means empty."
+
+[messages.APIKeySecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.APIKeySecurityScheme.fields.location]
+type = "crate::security::ApiKeyLocation"
+aliases = ["in"]
+why = "the proto's three locations as an enum, so an unknown one is refused at parse time"
+doc_append = """
+Emitted as `"location"`, the field name in `a2a.proto`. v0.3 called
+this `"in"` (the OpenAPI spelling) and that spelling is still accepted,
+so a card from an older peer still parses."""
+
+[messages.HTTPAuthSecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.HTTPAuthSecurityScheme.fields.bearer_format]
+aliases = ["bearer_format"]
+
+[messages.OAuth2SecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.OAuth2SecurityScheme.fields.oauth2_metadata_url]
+aliases = ["oauth2_metadata_url"]
+
+[messages.OpenIdConnectSecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.OpenIdConnectSecurityScheme.fields.open_id_connect_url]
+aliases = ["open_id_connect_url"]
+
+[messages.MutualTlsSecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AuthorizationCodeOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.authorization_url]
+aliases = ["authorization_url"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.token_url]
+aliases = ["token_url"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.pkce_required]
+aliases = ["pkce_required"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.ClientCredentialsOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ClientCredentialsOAuthFlow.fields.token_url]
+aliases = ["token_url"]
+
+[messages.ClientCredentialsOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.ClientCredentialsOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.DeviceCodeOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.DeviceCodeOAuthFlow.fields.device_authorization_url]
+aliases = ["device_authorization_url"]
+
+[messages.DeviceCodeOAuthFlow.fields.token_url]
+aliases = ["token_url"]
+
+[messages.DeviceCodeOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.DeviceCodeOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.ImplicitOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ImplicitOAuthFlow.fields.authorization_url]
+type = "String"
+aliases = ["authorization_url"]
+why = "required since this type was written, and the flow cannot be used without it; optional would break the API"
+
+[messages.ImplicitOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.ImplicitOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.PasswordOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.PasswordOAuthFlow.fields.token_url]
+type = "String"
+aliases = ["token_url"]
+why = "required since this type was written, and the flow cannot be used without it; optional would break the API"
+
+[messages.PasswordOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.PasswordOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+# ── The oneofs ───────────────────────────────────────────────────────────────
+
+[messages.StreamResponse]
+derives = ["Debug", "Clone", "Serialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+Externally tagged: serialized as a single-key object (`{"task": …}`,
+`{"statusUpdate": …}`, …) whose `camelCase` key names the variant. This
+matches the `ProtoJSON` encoding of the `StreamResponse.payload` `oneof` on
+the wire — it is **not** an untagged union, and must not be "corrected" to
+one without breaking wire compatibility."""
+
+[messages.StreamResponse.oneofs.payload]
+deserialize_macro = true
+
+[messages.SendMessageResponse]
+derives = ["Debug", "Clone", "Serialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+In JSON this is the proto's `oneof payload`, externally tagged:
+`{"task": {...}}` or `{"message": {...}}`."""
+
+[messages.SendMessageResponse.oneofs.payload]
+deserialize_macro = true
+
+[messages.OAuthFlows]
+derives = ["Debug", "Clone", "Serialize"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+Per the proto definition, this is a `oneof flow` — exactly one flow type
+can be specified. Serialized as an externally tagged enum in JSON."""
+
+[messages.OAuthFlows.oneofs.flow]
+deserialize_macro = true
+
+[messages.OAuthFlows.oneofs.flow.variants.implicit]
+deprecated = "deprecated in A2A 1.0; use Authorization Code + PKCE"
+doc_append = """
+Kept so cards that still declare it parse (spec §1.4: deprecated
+definitions stay until the next major version), and marked
+`#[deprecated]` as the proto marks the field:
+
+```compile_fail
+#[deny(deprecated)]
+fn implicit(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
+    matches!(f, a2a_protocol_types::security::OAuthFlows::Implicit(_))
+}
+```"""
+
+[messages.OAuthFlows.oneofs.flow.variants.password]
+deprecated = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code"
+doc_append = """
+Kept and marked as [`Implicit`](Self::Implicit) is:
+
+```compile_fail
+#[deny(deprecated)]
+fn password(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
+    matches!(f, a2a_protocol_types::security::OAuthFlows::Password(_))
+}
+```"""
+
+[messages.SecurityScheme]
+derives = ["Debug", "Clone"]
+attrs = ["#[non_exhaustive]"]
+doc_append = """
+# Wire format
+
+In A2A v1.0 this is the `SecurityScheme` **`oneof`** from `a2a.proto`, so
+its ProtoJSON encoding is a single-key object naming the arm:
+
+```json
+{"apiKeySecurityScheme": {"location": "header", "name": "X-Api-Key"}}
+{"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}
+```
+
+v0.3 used the OpenAPI-style internally tagged form instead
+(`{"type": "apiKey", "in": "header", …}`). **Both are accepted**; only the
+v1.0 form is emitted, because §5.5 governs emission and the schema is the
+normative definition of the JSON shape. `Serialize` and `Deserialize` are
+written by hand, beside this type, for that.
+
+This changed in 0.8: earlier releases emitted the v0.3 form. A reference
+`a2a-sdk` client parsed that via its own legacy-compatibility shim, but a
+peer feeding the card straight to `ParseDict(…, ignore_unknown_fields=True)`
+silently got schemes with **empty contents** — it saw the agent declare
+authentication it could not use. See `docs/official-tck-findings.md` §7."""
+
+[messages.SecurityScheme.oneofs.scheme.variants.api_key_security_scheme]
+rename = "ApiKey"
+why = "the variant names the scheme; the type already says SecurityScheme"
+
+[messages.SecurityScheme.oneofs.scheme.variants.http_auth_security_scheme]
+rename = "Http"
+why = "the variant names the scheme; the type already says SecurityScheme"
+
+[messages.SecurityScheme.oneofs.scheme.variants.oauth2_security_scheme]
+rename = "OAuth2"
+type = "Box<crate::security::OAuth2SecurityScheme>"
+why = "the variant names the scheme; boxed, as the largest arm, to keep the enum small"
+doc_append = "Boxed to reduce the enum's stack size."
+
+[messages.SecurityScheme.oneofs.scheme.variants.open_id_connect_security_scheme]
+rename = "OpenIdConnect"
+why = "the variant names the scheme; the type already says SecurityScheme"
+
+[messages.SecurityScheme.oneofs.scheme.variants.mtls_security_scheme]
+rename = "MutualTls"
+why = "the variant names the scheme, spelled as its type MutualTlsSecurityScheme is"
+
+[messages.Part]
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize"]
+doc_append = """
+On the wire the member that is set names the content, beside the other
+fields, and `Deserialize` is written by hand, beside this type, to read
+them in one pass:
+
+```json
+{"text": "hello"}
+{"raw": "base64data", "filename": "f.png", "mediaType": "image/png"}
+{"url": "https://example.com/f.pdf", "filename": "f.pdf", "mediaType": "application/pdf"}
+{"data": {"key": "value"}, "mediaType": "application/json"}
+```"""
+
+[messages.Part.oneofs.content]
+path = "message::PartContent"
+derives = ["Debug", "Clone", "PartialEq", "Eq", "Serialize", "Deserialize"]
+attrs = ["#[non_exhaustive]"]
+field_doc = "The content of this part (text, raw, url, or data)."
+doc = """
+The content of a [`Part`], discriminated by JSON member name per v1.0 spec.
+
+In JSON, the member name determines the variant:
+- `"text"` → text string content
+- `"raw"` → base64-encoded bytes
+- `"url"` → URL pointing to content
+- `"data"` → structured JSON data"""
+
+[messages.Part.oneofs.content.variants.raw]
+type = "String"
+why = "proto bytes are base64 text in ProtoJSON, and kept as that text"

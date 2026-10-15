@@ -143,6 +143,11 @@ impl PostgresTaskStore {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )",
+                // The log position each write stores
+                // (`TaskStore::get_with_position`, audit register R69), added
+                // to a table an earlier version created; the other half of pg
+                // migration 7.
+                super::pg_schema::ADD_APPLIED_SEQ_TO_TASKS,
                 // The other half of pg migration 4. It must exist here too, or a
                 // store built by `from_pool` refuses every keyed send.
                 idempotency::CREATE_TABLE_SQL,

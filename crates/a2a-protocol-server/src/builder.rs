@@ -92,9 +92,9 @@ pub(crate) enum CallerIsolation {
     /// authenticating interceptor.
     Shared,
     /// A partition per identified caller; a request no interceptor identified
-    /// (an unlabelled bearer token or API key, a JWT without `sub`) stays in
-    /// the tenant's shared records, as it would with no isolation. The
-    /// default with an authenticating interceptor.
+    /// (an unlabelled bearer token or API key) stays in the tenant's shared
+    /// records, as it would with no isolation, and a JWT without `sub` is
+    /// refused. The default with an authenticating interceptor.
     IdentifiedCallers,
     /// A partition per caller, and a request no interceptor identified is
     /// refused: [`RequestHandlerBuilder::isolate_tasks_by_caller`].
@@ -157,6 +157,7 @@ pub struct RequestHandlerBuilder {
     interceptors: ServerInterceptorChain,
     agent_card: CardSetting,
     extended_agent_card: Option<Box<AgentCard>>,
+    extended_card_provider: Option<Arc<dyn crate::agent_card::ExtendedCardProvider>>,
     executor_timeout: Option<Duration>,
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
@@ -195,6 +196,7 @@ impl RequestHandlerBuilder {
             interceptors: ServerInterceptorChain::new(),
             agent_card: CardSetting::Unset,
             extended_agent_card: None,
+            extended_card_provider: None,
             executor_timeout: Some(DEFAULT_EXECUTOR_TIMEOUT),
             event_queue_capacity: None,
             max_event_size: None,
@@ -394,6 +396,24 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Chooses, per caller, the extended card `GetExtendedAgentCard` serves
+    /// (spec §13.3: "Agents MAY return different extended card content based
+    /// on the authenticated client's identity or authorization level").
+    ///
+    /// The provider is given the request's [`CallContext`](crate::CallContext),
+    /// after the interceptor chain has authenticated it, and the card set with
+    /// [`with_extended_agent_card`](Self::with_extended_agent_card), which
+    /// `build()` therefore requires. The card it returns is checked as that
+    /// one is; see [`ExtendedCardProvider`](crate::agent_card::ExtendedCardProvider).
+    #[must_use]
+    pub fn with_extended_card_provider(
+        mut self,
+        provider: impl crate::agent_card::ExtendedCardProvider,
+    ) -> Self {
+        self.extended_card_provider = Some(Arc::new(provider));
+        self
+    }
+
     /// Builds a handler with no agent card.
     ///
     /// Spec §8.1: an A2A server MUST make an agent card available, so
@@ -531,9 +551,9 @@ impl RequestHandlerBuilder {
     /// Partitioning is already **the default whenever an interceptor
     /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates)**,
     /// with one difference: by default a request no interceptor identified (an
-    /// unlabelled bearer token or API key, a JWT without `sub`) keeps the
-    /// tenant's shared records, as it would with no isolation, so credentials
-    /// that name nobody behave as before. Call this when every caller must be
+    /// unlabelled bearer token or API key) keeps the tenant's shared records,
+    /// as it would with no isolation, so credentials that name nobody behave
+    /// as before. A JWT without `sub` is refused under either. Call this when every caller must be
     /// identified: such a request is then refused with `PermissionDenied`, and
     /// `build()` refuses a chain with no authenticating interceptor.
     ///
@@ -771,6 +791,14 @@ impl RequestHandlerBuilder {
                 )));
             }
         }
+        if self.extended_card_provider.is_some() && extended_card.is_none() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "an extended card provider is set, but no extended card: the provider \
+                 chooses each caller's card from the one set with with_extended_agent_card, \
+                 so set that card too"
+                    .to_owned(),
+            ));
+        }
         if let (Some((_, public)), Some(_)) = (public_card, extended_card)
             && public.capabilities.extended_agent_card != Some(true)
         {
@@ -878,8 +906,8 @@ impl RequestHandlerBuilder {
             CardSetting::Unset | CardSetting::Without => None,
         };
         let mut extended_agent_card = self.extended_agent_card.map(|card| *card);
+        let mut wanted: Vec<AgentExtension> = Vec::new();
         if agent_card.is_some() || extended_agent_card.is_some() {
-            let mut wanted: Vec<AgentExtension> = Vec::new();
             if task_store.supports_idempotency() {
                 wanted.push(AgentExtension {
                     uri: idempotency::IDEMPOTENCY_EXTENSION_URI.to_owned(),
@@ -1033,6 +1061,8 @@ impl RequestHandlerBuilder {
             interceptors,
             agent_card,
             extended_agent_card,
+            extended_card_provider: self.extended_card_provider,
+            advertised_extensions: wanted,
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
             limits: self.handler_limits,
@@ -1110,6 +1140,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
                 },
             )
             .field("extended_agent_card", &self.extended_agent_card.is_some())
+            .field(
+                "extended_card_provider",
+                &self.extended_card_provider.is_some(),
+            )
             .field("executor_timeout", &self.executor_timeout)
             .field("event_queue_capacity", &self.event_queue_capacity)
             .field("max_event_size", &self.max_event_size)
@@ -1142,7 +1176,11 @@ impl std::fmt::Debug for RequestHandlerBuilder {
 /// Adds to `card` each extension in `wanted` it does not declare, keeping an
 /// entry the operator wrote as it is. Refused on a signed card that would
 /// change, since the card served would no longer verify.
-fn advertise(which: &str, card: &mut AgentCard, wanted: &[AgentExtension]) -> ServerResult<()> {
+pub(crate) fn advertise(
+    which: &str,
+    card: &mut AgentCard,
+    wanted: &[AgentExtension],
+) -> ServerResult<()> {
     let declared = card.capabilities.extensions.as_deref().unwrap_or(&[]);
     let missing: Vec<AgentExtension> = wanted
         .iter()

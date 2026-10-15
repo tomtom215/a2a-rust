@@ -9,7 +9,7 @@ on individual crates when you only need a subset.
 
 ## Crate Map
 
-```
+```text
 a2a-protocol-sdk            ← umbrella re-export + prelude
   ├── a2a-protocol-server    ← server framework (agents)
   │     └── a2a-protocol-types
@@ -33,7 +33,7 @@ a2a-protocol-sdk            ← umbrella re-export + prelude
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.14"
+a2a-protocol-sdk = "0.15"
 ```
 
 ```rust
@@ -44,21 +44,21 @@ use a2a_protocol_sdk::prelude::*;
 
 ```toml
 [dependencies]
-a2a-protocol-types = "0.14"
+a2a-protocol-types = "0.15"
 ```
 
 **Client only (orchestrators):**
 
 ```toml
 [dependencies]
-a2a-protocol-client = "0.14"
+a2a-protocol-client = "0.15"
 ```
 
 **Server only (agents):**
 
 ```toml
 [dependencies]
-a2a-protocol-server = "0.14"
+a2a-protocol-server = "0.15"
 ```
 
 ## Feature Flags
@@ -69,9 +69,9 @@ enable them:
 
 | Feature | Crate(s) | Purpose |
 |---------|----------|---------|
-| `signing` | types, client, server | Agent card signing (JWS/ES256) |
-| `tls-rustls` | client, server | HTTPS via rustls, no OpenSSL (default in client/sdk; server variant enables HTTPS push delivery) |
-| `tracing` | client, server | Structured logging (zero-cost when off) |
+| `signing` | types, client, server | Agent card signing and verification (JWS with ES256 or EdDSA/Ed25519) |
+| `tls-rustls` | client, server | HTTPS via rustls, no OpenSSL (default in client/sdk; on the server, HTTPS push delivery and TLS on `Server`'s own listener) |
+| `tracing` | client, server | Structured logging (zero-cost when off; default in client, server and sdk) |
 | `sqlite` | server | SQLite-backed task and push config stores |
 | `postgres` | server | PostgreSQL-backed stores |
 | `websocket` | client, server | WebSocket transport |

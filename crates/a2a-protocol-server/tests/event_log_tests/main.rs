@@ -13,6 +13,7 @@
 
 mod across_turns;
 mod continuation_race;
+mod failed_append;
 mod live_resubscribe;
 mod log;
 mod log_holes;
@@ -223,63 +224,8 @@ impl TaskStore for Unreadable {
     }
 }
 
-/// The same store, where the first read of the log's end after the flag is
-/// set is preceded by another writer logging and storing one more artifact,
-/// `other-1`: what a replica running the task does while this one
-/// subscribes.
-#[derive(Debug)]
-struct WritesWhileSubscribing(Arc<InMemoryTaskStore>, Arc<std::sync::atomic::AtomicBool>);
-
-impl TaskStore for WritesWhileSubscribing {
-    delegate_required!();
-
-    fn supports_event_log(&self) -> bool {
-        true
-    }
-    fn append_event<'a>(
-        &'a self,
-        task_id: &'a TaskId,
-        seq: u64,
-        event: &'a StreamResponse,
-    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        self.0.append_event(task_id, seq, event)
-    }
-    fn last_event_seq<'a>(
-        &'a self,
-        task_id: &'a TaskId,
-    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
-        Box::pin(async move {
-            if self.1.swap(false, std::sync::atomic::Ordering::SeqCst) {
-                let mut task = self.0.get(task_id).await?.expect("the task");
-                let artifact =
-                    a2a_protocol_types::artifact::Artifact::new("other-1", vec![Part::text("x")]);
-                let event = StreamResponse::ArtifactUpdate(
-                    a2a_protocol_types::events::TaskArtifactUpdateEvent {
-                        task_id: task.id.clone(),
-                        context_id: task.context_id.clone(),
-                        artifact: artifact.clone(),
-                        append: None,
-                        last_chunk: Some(true),
-                        metadata: None,
-                    },
-                );
-                let seq = self.0.last_event_seq(task_id).await? + 1;
-                self.0.append_event(task_id, seq, &event).await?;
-                task.artifacts.get_or_insert_with(Vec::new).push(artifact);
-                self.0.save(&task).await?;
-            }
-            self.0.last_event_seq(task_id).await
-        })
-    }
-    fn read_events<'a>(
-        &'a self,
-        task_id: &'a TaskId,
-        after_seq: u64,
-        limit: usize,
-    ) -> std::pin::Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
-        self.0.read_events(task_id, after_seq, limit)
-    }
-}
+mod replicas;
+use replicas::{StoresAfterTheRead, WritesWhileSubscribing};
 
 /// The same store with the append at one position failing, as a storage
 /// hiccup leaves a log: the processor reports it and goes on, and the log

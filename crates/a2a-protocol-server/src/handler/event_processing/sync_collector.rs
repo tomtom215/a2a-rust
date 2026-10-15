@@ -302,7 +302,10 @@ impl SyncCollector {
         let _applying = seq
             .zip(self.applied.as_deref())
             .map(|(seq, mark)| mark.applying(seq));
-        let folded = self.process_event(event, task_id, state).await;
+        // The store records `seq` with each write, as the background
+        // processor's do (`TaskStore::get_with_position`, audit register R69).
+        let fold = self.process_event(event, task_id, state);
+        let folded = crate::store::applied::scope_if(seq, fold).await;
         self.unless_superseded(folded, task_id, state).await
     }
 

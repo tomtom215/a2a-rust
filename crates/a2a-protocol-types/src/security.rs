@@ -30,39 +30,8 @@ use serde::{Deserialize, Serialize};
 /// `AgentCard.securitySchemes`.
 pub type NamedSecuritySchemes = HashMap<String, SecurityScheme>;
 
-/// A list of strings used within a [`SecurityRequirement`] map value.
-///
-/// Proto equivalent: `StringList { repeated string list = 1; }`.
-///
-/// # Wire format
-///
-/// The spec's JSON is the ProtoJSON of that message, `{"list": ["read"]}`,
-/// and that is the only form emitted: `a2a.proto` is the normative
-/// definition of the data objects, the spec's own agent-card example writes
-/// `"schemes": {"google": {"list": ["openid", …]}}`, and the official Python
-/// SDK (`MessageToDict`) emits the same.
-///
-/// Three further forms are **accepted**, because real peers send them:
-///
-/// | Received | Read as | Who sends it |
-/// |---|---|---|
-/// | `{}` | empty | ProtoJSON printers omit an empty repeated field |
-/// | `["read"]` | `["read"]` | a2a-go v2.5.0 (`a2a/auth.go`: `Schemes map[…]SecuritySchemeScopes`) |
-/// | `null` | empty | a2a-go v2.5.0, for a nil scope slice |
-///
-/// Accepting the bare array is what lets this SDK read a Go agent's card at
-/// all. The other direction, a2a-go reading the spec form this SDK emits,
-/// needs a fix in a2a-go.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StringList {
-    /// The string values (e.g. OAuth scopes).
-    ///
-    /// `ProtoJSON` printers omit empty repeated fields: an empty `StringList`
-    /// arrives as `{}`, so absence means empty (a scheme requiring no scopes
-    /// is common and valid).
-    pub list: Vec<String>,
-}
+// The proto-generated types of this module (ADR 0016), `StringList` first.
+include!("generated/security.rs");
 
 impl<'de> Deserialize<'de> for StringList {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -112,63 +81,11 @@ impl<'de> serde::de::Visitor<'de> for StringListVisitor {
     }
 }
 
-/// A security requirement object mapping scheme names to their required scopes.
-///
-/// Proto equivalent: `SecurityRequirement { map<string, StringList> schemes = 1; }`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SecurityRequirement {
-    /// Map from scheme name to required scopes.
-    ///
-    /// `ProtoJSON` printers omit empty maps, so absence means empty.
-    #[serde(default)]
-    pub schemes: HashMap<String, StringList>,
-}
+// `SecurityRequirement` is generated: see the `include!` above.
 
 // ── SecurityScheme ────────────────────────────────────────────────────────────
 
-/// A security scheme supported by an agent.
-///
-/// # Wire format
-///
-/// In A2A v1.0 this is the `SecurityScheme` **`oneof`** from `a2a.proto`, so
-/// its ProtoJSON encoding is a single-key object naming the arm:
-///
-/// ```json
-/// {"apiKeySecurityScheme": {"location": "header", "name": "X-Api-Key"}}
-/// {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}
-/// ```
-///
-/// v0.3 used the OpenAPI-style internally tagged form instead
-/// (`{"type": "apiKey", "in": "header", …}`). **Both are accepted**; only the
-/// v1.0 form is emitted, because §5.5 governs emission and the schema is the
-/// normative definition of the JSON shape.
-///
-/// This changed in 0.8: earlier releases emitted the v0.3 form. A reference
-/// `a2a-sdk` client parsed that via its own legacy-compatibility shim, but a
-/// peer feeding the card straight to `ParseDict(…, ignore_unknown_fields=True)`
-/// silently got schemes with **empty contents** — it saw the agent declare
-/// authentication it could not use. See `docs/official-tck-findings.md` §7.
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum SecurityScheme {
-    /// API key authentication (`apiKeySecurityScheme`).
-    ApiKey(ApiKeySecurityScheme),
-
-    /// HTTP authentication, e.g. Bearer or Basic (`httpAuthSecurityScheme`).
-    Http(HttpAuthSecurityScheme),
-
-    /// OAuth 2.0 (`oauth2SecurityScheme`).
-    ///
-    /// Boxed to reduce the enum's stack size.
-    OAuth2(Box<OAuth2SecurityScheme>),
-
-    /// OpenID Connect (`openIdConnectSecurityScheme`).
-    OpenIdConnect(OpenIdConnectSecurityScheme),
-
-    /// Mutual TLS (`mtlsSecurityScheme`).
-    MutualTls(MutualTlsSecurityScheme),
-}
+// `SecurityScheme` is generated: see the `include!` above.
 
 /// The `oneof` arm names, in `(json_name, proto field name)` pairs.
 ///
@@ -328,25 +245,7 @@ impl<'de> Deserialize<'de> for SecurityScheme {
 
 // ── ApiKeySecurityScheme ──────────────────────────────────────────────────────
 
-/// API key security scheme: a token sent in a header, query parameter, or cookie.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApiKeySecurityScheme {
-    /// Where the API key is transmitted.
-    ///
-    /// Emitted as `"location"`, the field name in `a2a.proto`. v0.3 called
-    /// this `"in"` (the OpenAPI spelling) and that spelling is still accepted,
-    /// so a card from an older peer still parses.
-    #[serde(alias = "in")]
-    pub location: ApiKeyLocation,
-
-    /// Name of the header, query parameter, or cookie.
-    pub name: String,
-
-    /// Optional human-readable description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
+// `ApiKeySecurityScheme` is generated: see the `include!` above.
 
 /// Where an API key is placed in the request.
 ///
@@ -368,98 +267,13 @@ pub enum ApiKeyLocation {
 
 // ── HttpAuthSecurityScheme ────────────────────────────────────────────────────
 
-/// HTTP authentication security scheme (Bearer, Basic, etc.).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HttpAuthSecurityScheme {
-    /// The HTTP authentication scheme name (e.g. `"bearer"`, `"basic"`).
-    pub scheme: String,
-
-    /// Format hint for Bearer tokens (e.g. `"JWT"`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "bearer_format")]
-    pub bearer_format: Option<String>,
-
-    /// Optional human-readable description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
+// `HttpAuthSecurityScheme` is generated: see the `include!` above.
 
 // ── OAuth2SecurityScheme ──────────────────────────────────────────────────────
 
-/// OAuth 2.0 security scheme.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OAuth2SecurityScheme {
-    /// Available OAuth 2.0 flows.
-    pub flows: OAuthFlows,
+// `OAuth2SecurityScheme` is generated: see the `include!` above.
 
-    /// URL of the OAuth 2.0 server metadata document (RFC 8414).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "oauth2_metadata_url")]
-    pub oauth2_metadata_url: Option<String>,
-
-    /// Optional human-readable description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
-/// Available OAuth 2.0 flows for an [`OAuth2SecurityScheme`].
-///
-/// Per the proto definition, this is a `oneof flow` — exactly one flow type
-/// can be specified. Serialized as an externally tagged enum in JSON.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum OAuthFlows {
-    /// Authorization code flow.
-    AuthorizationCode(AuthorizationCodeFlow),
-
-    /// Client credentials flow.
-    ClientCredentials(ClientCredentialsFlow),
-
-    /// Device authorization flow (RFC 8628).
-    DeviceCode(DeviceCodeFlow),
-
-    /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
-    ///
-    /// Kept so cards that still declare it parse (spec §1.4: deprecated
-    /// definitions stay until the next major version), and marked
-    /// `#[deprecated]` as the proto marks the field:
-    ///
-    /// ```compile_fail
-    /// #[deny(deprecated)]
-    /// fn implicit(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
-    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Implicit(_))
-    /// }
-    /// ```
-    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE")]
-    Implicit(ImplicitFlow),
-
-    /// Resource owner password credentials flow (deprecated).
-    ///
-    /// Kept and marked as [`Implicit`](Self::Implicit) is:
-    ///
-    /// ```compile_fail
-    /// #[deny(deprecated)]
-    /// fn password(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
-    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Password(_))
-    /// }
-    /// ```
-    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
-    Password(PasswordOAuthFlow),
-}
-
-crate::oneof::oneof_deserialize!(
-    OAuthFlows,
-    [
-        AuthorizationCode(AuthorizationCodeFlow) = "authorizationCode" | "authorization_code",
-        ClientCredentials(ClientCredentialsFlow) = "clientCredentials" | "client_credentials",
-        DeviceCode(DeviceCodeFlow) = "deviceCode" | "device_code",
-        Implicit(ImplicitFlow) = "implicit",
-        Password(PasswordOAuthFlow) = "password",
-    ]
-);
+// `OAuthFlows` is generated: see the `include!` above. Its `Deserialize` is generated with it.
 
 impl OAuthFlows {
     /// [`SecurityScheme::validate`] for the flow. The proto marks no field
@@ -491,149 +305,23 @@ impl OAuthFlows {
     }
 }
 
-/// OAuth 2.0 authorization code flow.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthorizationCodeFlow {
-    /// URL of the authorization endpoint.
-    #[serde(alias = "authorization_url")]
-    pub authorization_url: String,
+// `AuthorizationCodeFlow` is generated: see the `include!` above.
 
-    /// URL of the token endpoint.
-    #[serde(alias = "token_url")]
-    pub token_url: String,
+// `ClientCredentialsFlow` is generated: see the `include!` above.
 
-    /// URL of the refresh token endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "refresh_url")]
-    pub refresh_url: Option<String>,
+// `DeviceCodeFlow` is generated: see the `include!` above.
 
-    /// Available scopes: name → description.
-    ///
-    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
-    /// without the key; absence means empty, as for `StringList::list`.
-    #[serde(default)]
-    pub scopes: HashMap<String, String>,
+// `ImplicitFlow` is generated: see the `include!` above.
 
-    /// Whether PKCE (RFC 7636) is required for this flow.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "pkce_required")]
-    pub pkce_required: Option<bool>,
-}
-
-/// OAuth 2.0 client credentials flow.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClientCredentialsFlow {
-    /// URL of the token endpoint.
-    #[serde(alias = "token_url")]
-    pub token_url: String,
-
-    /// URL of the refresh token endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "refresh_url")]
-    pub refresh_url: Option<String>,
-
-    /// Available scopes: name → description.
-    ///
-    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
-    /// without the key; absence means empty, as for `StringList::list`.
-    #[serde(default)]
-    pub scopes: HashMap<String, String>,
-}
-
-/// OAuth 2.0 device authorization flow (RFC 8628).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeviceCodeFlow {
-    /// URL of the device authorization endpoint.
-    #[serde(alias = "device_authorization_url")]
-    pub device_authorization_url: String,
-
-    /// URL of the token endpoint.
-    #[serde(alias = "token_url")]
-    pub token_url: String,
-
-    /// URL of the refresh token endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "refresh_url")]
-    pub refresh_url: Option<String>,
-
-    /// Available scopes: name → description.
-    ///
-    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
-    /// without the key; absence means empty, as for `StringList::list`.
-    #[serde(default)]
-    pub scopes: HashMap<String, String>,
-}
-
-/// OAuth 2.0 implicit flow (deprecated; retained for compatibility).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImplicitFlow {
-    /// URL of the authorization endpoint.
-    #[serde(alias = "authorization_url")]
-    pub authorization_url: String,
-
-    /// URL of the refresh token endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "refresh_url")]
-    pub refresh_url: Option<String>,
-
-    /// Available scopes: name → description.
-    ///
-    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
-    /// without the key; absence means empty, as for `StringList::list`.
-    #[serde(default)]
-    pub scopes: HashMap<String, String>,
-}
-
-/// OAuth 2.0 resource owner password credentials flow (deprecated but in spec).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PasswordOAuthFlow {
-    /// URL of the token endpoint.
-    #[serde(alias = "token_url")]
-    pub token_url: String,
-
-    /// URL of the refresh token endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "refresh_url")]
-    pub refresh_url: Option<String>,
-
-    /// Available scopes: name → description.
-    ///
-    /// ProtoJSON omits an empty map, so a peer's card with no scopes arrives
-    /// without the key; absence means empty, as for `StringList::list`.
-    #[serde(default)]
-    pub scopes: HashMap<String, String>,
-}
+// `PasswordOAuthFlow` is generated: see the `include!` above.
 
 // ── OpenIdConnectSecurityScheme ───────────────────────────────────────────────
 
-/// OpenID Connect security scheme.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenIdConnectSecurityScheme {
-    /// URL of the OpenID Connect discovery document.
-    #[serde(alias = "open_id_connect_url")]
-    pub open_id_connect_url: String,
-
-    /// Optional human-readable description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
+// `OpenIdConnectSecurityScheme` is generated: see the `include!` above.
 
 // ── MutualTlsSecurityScheme ───────────────────────────────────────────────────
 
-/// Mutual TLS security scheme.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MutualTlsSecurityScheme {
-    /// Optional human-readable description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
+// `MutualTlsSecurityScheme` is generated: see the `include!` above.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

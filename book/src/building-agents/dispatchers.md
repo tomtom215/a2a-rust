@@ -214,7 +214,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["websocket"] }
+a2a-protocol-server = { version = "0.15", features = ["websocket"] }
 ```
 
 ```rust,no_run
@@ -257,6 +257,9 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 - The binding's full specification (service parameters, data types, stream
   ordering and termination, error mapping, security) is
   [its own page](../bindings/websocket.md)
+- `GET /.well-known/agent-card.json` on the same port answers the agent card
+  as plain HTTP/1.1, as the HTTP dispatchers do (spec §8.1), since 0.15; any
+  other request goes to the WebSocket handshake
 
 ### Authentication and tenancy
 
@@ -336,7 +339,7 @@ Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature 
 `with_tls` — see [Transport Layers](../concepts/transport-layers.md#serving-tls):
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["grpc"] }
+a2a-protocol-server = { version = "0.15", features = ["grpc"] }
 ```
 
 ```rust,no_run
@@ -447,6 +450,13 @@ alongside the canonical service through 0.7 behind the off-by-default
 `grpc-legacy-json` feature, was **removed in 0.8**. The canonical service is
 the only gRPC surface.
 
+The agent card is served on the same port at `/.well-known/agent-card.json`
+(spec §8.1), since 0.15. A card fetch is usually HTTP/1.1, so a dispatcher
+with a card also accepts HTTP/1.1 connections; gRPC itself is HTTP/2 either
+way. Over TLS tonic offers only `h2` in ALPN, so a fetch there needs a client
+that speaks HTTP/2, as this SDK's does. `into_service()` below is the A2A
+service alone, without the card.
+
 ### Custom Server Setup
 
 For advanced scenarios, use `into_service()` to get a tonic service:
@@ -482,7 +492,7 @@ For projects already using Axum, the `axum` feature provides `A2aRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
-a2a-protocol-server = { version = "0.14", features = ["axum"] }
+a2a-protocol-server = { version = "0.15", features = ["axum"] }
 ```
 
 ```rust,no_run

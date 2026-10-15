@@ -10,6 +10,8 @@
 //!
 //! Requires the `postgres` feature flag.
 
+mod caller_keys;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

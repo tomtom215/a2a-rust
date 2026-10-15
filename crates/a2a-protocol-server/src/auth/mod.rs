@@ -58,6 +58,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
+pub mod caller_id;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 pub mod throttle;
@@ -264,8 +265,8 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                     ctx.set_auth_scheme("api-key");
                     Ok(())
                 }
-                CredentialMatch::Named(identity) => {
-                    ctx.set_caller_identity(identity);
+                CredentialMatch::Named(label) => {
+                    ctx.set_caller_identity(caller_id::api_key(label));
                     ctx.set_auth_scheme("api-key");
                     Ok(())
                 }
@@ -372,8 +373,8 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
                     ctx.set_auth_scheme("bearer");
                     Ok(())
                 }
-                CredentialMatch::Named(identity) => {
-                    ctx.set_caller_identity(identity);
+                CredentialMatch::Named(label) => {
+                    ctx.set_caller_identity(caller_id::bearer(label));
                     ctx.set_auth_scheme("bearer");
                     Ok(())
                 }
@@ -397,8 +398,9 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
 
 /// A resolved authenticated principal, stashed for downstream interceptors.
 ///
-/// `JwtAuthInterceptor` records the validated `sub` (and issuer) here; wrap it
-/// in an `Arc` so it is cheap to clone into request-scoped state.
+/// `JwtAuthInterceptor` builds the caller identity from its validated `sub`
+/// and issuer ([`caller_id::jwt`]). Wrap it in an `Arc` so it is cheap to
+/// clone into request-scoped state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct AuthenticatedPrincipal {

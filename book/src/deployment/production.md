@@ -8,9 +8,42 @@ A checklist and guide for deploying a2a-rust agents in production.
 
 Always use HTTPS in production. The **client** (and the server's push sender)
 ship TLS out of the box via the default `tls-rustls` feature — `https://`
-agents and webhooks work with no extra setup. The **server** does not
-terminate inbound TLS itself; put it behind a reverse proxy (nginx, Caddy,
-cloud load balancer):
+agents and webhooks work with no extra setup.
+
+The **server** terminates TLS itself on `serve::Server` (spec §14:
+"Implementations SHOULD support HTTPS"), with the same `tls-rustls` feature,
+which `a2a-protocol-sdk` enables by default. Give it a certificate chain and
+key in PEM, or a `rustls::ServerConfig` you built (client certificates,
+another crypto provider) with `with_tls`:
+
+```rust,no_run
+# use std::sync::Arc;
+# async fn run(
+#     handler: Arc<a2a_protocol_sdk::server::RequestHandler>,
+#     shutdown: impl std::future::Future<Output = ()> + Send,
+# ) -> std::io::Result<()> {
+use a2a_protocol_sdk::server::JsonRpcDispatcher;
+use a2a_protocol_sdk::server::serve::Server;
+
+let cert_chain = std::fs::read("/etc/a2a/cert.pem")?;
+let key = std::fs::read("/etc/a2a/key.pem")?;
+let report = Server::bind("0.0.0.0:443")
+    .await?
+    .with_tls_pem(&cert_chain, &key)?
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown)
+    .await;
+# let _ = report;
+# Ok(())
+# }
+```
+
+The listener then speaks TLS only, offering HTTP/2 and HTTP/1.1 by ALPN. A
+handshake must finish within `ServeConfig::header_read_timeout`; one that
+fails closes the connection and counts as failed in the connection-pool
+metrics. The quick-start `serve` and `serve_with_addr`, and the WebSocket
+listener, stay plaintext: run those behind a TLS-terminating reverse proxy
+(nginx, Caddy, a cloud load balancer), as is also the usual choice when
+certificates are managed outside the process:
 
 ```text
 Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
@@ -314,7 +347,7 @@ The client, the server and the SDK log through `tracing` by default (the
 
 ```toml
 [dependencies]
-a2a-protocol-server = "0.14"
+a2a-protocol-server = "0.15"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 

@@ -309,17 +309,16 @@ impl A2aService for A2aServiceImpl {
             request.into_inner().try_into().map_err(bad_request)?;
         match self
             .rpc_span("ListTaskPushNotificationConfigs", &headers)
-            .run(self.handler.on_list_push_configs(
-                &params.task_id,
-                params.tenant.as_deref(),
-                Some(&headers),
-            ))
+            .run(
+                self.handler
+                    .on_list_push_configs_page(&params, Some(&headers)),
+            )
             .await
         {
-            Ok(configs) => Ok(Response::new(
+            Ok(page) => Ok(Response::new(
                 apb::ListTaskPushNotificationConfigsResponse {
-                    configs: configs.into_iter().map(Into::into).collect(),
-                    next_page_token: String::new(),
+                    configs: page.configs.into_iter().map(Into::into).collect(),
+                    next_page_token: page.next_page_token.unwrap_or_default(),
                 },
             )),
             Err(e) => Err(server_error_to_status(&e)),
@@ -874,6 +873,33 @@ mod tests {
             configs.iter().any(|c| c.id == created.id),
             "the created config must appear in the listing"
         );
+    }
+
+    /// Spec §3.1.9: the page and its token reach the gRPC response.
+    #[tokio::test]
+    async fn list_push_configs_pages_with_a_token() {
+        let svc = service();
+        let task_id = seed_task(&svc).await;
+        for url in ["https://example.test/a", "https://example.test/b"] {
+            create_push(&svc, &task_id, url).await;
+        }
+        let list = |page_token: String| {
+            svc.list_task_push_notification_configs(Request::new(
+                apb::ListTaskPushNotificationConfigsRequest {
+                    tenant: String::new(),
+                    task_id: task_id.clone(),
+                    page_size: 1,
+                    page_token,
+                },
+            ))
+        };
+        let first = list(String::new()).await.unwrap().into_inner();
+        assert_eq!(first.configs.len(), 1);
+        assert!(!first.next_page_token.is_empty(), "one more remains");
+        let second = list(first.next_page_token).await.unwrap().into_inner();
+        assert_eq!(second.configs.len(), 1);
+        assert_ne!(second.configs[0].id, first.configs[0].id);
+        assert!(second.next_page_token.is_empty(), "the last page");
     }
 
     /// Deletion is asserted through the listing rather than the response.

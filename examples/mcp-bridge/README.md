@@ -81,20 +81,31 @@ servers:
 a2a-mcp-bridge http://127.0.0.1:8080      # or set A2A_AGENT_URL
 ```
 
+The crate is not published, so build the binary from this repository:
+`cargo build --release -p a2a-mcp-bridge --bin a2a-mcp-bridge` puts it at
+`target/release/a2a-mcp-bridge`, whose absolute path is the `command` in an MCP
+client's configuration; or `cargo install --path examples/mcp-bridge --bin
+a2a-mcp-bridge` puts it on your `PATH`.
+
 To see the whole path without wiring up a client, `bridge-demo` stands up a
 sample A2A agent, spawns the bridge against it as a real child process, and
 acts as an MCP client:
 
 ```bash
+cargo build -p a2a-mcp-bridge                    # both binaries
 cargo run -p a2a-mcp-bridge --bin bridge-demo
 ```
+
+`bridge-demo` spawns `a2a-mcp-bridge` from its own directory, and `cargo run
+--bin bridge-demo` builds only the demo: without the `cargo build` first it
+stops with "could not spawn …/a2a-mcp-bridge" (checked 2026-10-15).
 
 No model and no network — the bridge is protocol only, so this is
 deterministic.
 
 ## A verified run
 
-Verbatim from `cargo run -p a2a-mcp-bridge --bin bridge-demo` on 2026-09-19.
+From `cargo run -p a2a-mcp-bridge --bin bridge-demo` on 2026-09-19, verbatim except that the bridge's absolute path is shortened.
 
 ```console
 1. Sample A2A agent listening on http://127.0.0.1:35831

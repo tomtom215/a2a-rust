@@ -56,45 +56,8 @@ impl AsRef<str> for ArtifactId {
 
 // ── Artifact ──────────────────────────────────────────────────────────────────
 
-/// An output artifact produced by an agent.
-///
-/// Each artifact has a unique [`ArtifactId`] and carries its content as a
-/// non-empty list of [`Part`] values.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Artifact {
-    /// Unique artifact identifier.
-    #[serde(rename = "artifactId")]
-    #[serde(alias = "artifact_id")]
-    pub id: ArtifactId,
-
-    /// Optional human-readable name.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// Optional human-readable description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// Content parts.
-    ///
-    /// **Spec requirement:** Must contain at least one element. The A2A
-    /// protocol does not define behavior for empty parts lists.
-    ///
-    /// Parsing treats absence as empty (`ProtoJSON` printers omit empty
-    /// repeated fields; the gRPC binding already decodes it that way) — the
-    /// server-side event processors drop empty-parts artifacts explicitly.
-    #[serde(default)]
-    pub parts: Vec<Part>,
-
-    /// URIs of extensions used in this artifact.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Vec<String>>,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+// The proto-generated types of this module (ADR 0016), `Artifact` first.
+include!("generated/artifact.rs");
 
 impl Artifact {
     /// Creates a minimal [`Artifact`] with an ID and parts.

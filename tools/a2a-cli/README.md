@@ -5,8 +5,9 @@
 
 A command-line client for A2A agents, built on `a2a-protocol-client`.
 
-It is **unpublished** (`publish = false`, version `0.0.0`, like the examples)
-and is built from this repository:
+It is **unpublished** (`publish = false`) and is built from this repository.
+Its version tracks the SDK release, so a release binary reports which release
+it is:
 
 ```sh
 cargo run -p a2a-cli -- --help
@@ -25,7 +26,7 @@ reinterpreted, so what you read is what the agent sent.
 |---|---|---|
 | `a2a card <URL>` | agent card discovery (`GET /.well-known/agent-card.json`; a `<URL>` ending in `agent-card.json` is fetched as-is) | the card, pretty JSON |
 | `a2a send <URL> <TEXT> [--context-id ID] [--task-id ID] [--no-wait]` | `SendMessage` with one text part | `{"task": …}` or `{"message": …}`, pretty JSON |
-| `a2a stream <URL> <TEXT> [--context-id ID] [--task-id ID]` | `SendStreamingMessage` | one JSON object per line, until the terminal event |
+| `a2a stream <URL> <TEXT> [--context-id ID] [--task-id ID] [--no-wait]` | `SendStreamingMessage` | one JSON object per line, until the terminal event |
 | `a2a task get <URL> <TASK-ID>` | `GetTask` | the task, pretty JSON |
 | `a2a task cancel <URL> <TASK-ID>` | `CancelTask` | the task after cancellation, pretty JSON |
 | `a2a task list <URL> [--context-id ID] [--page-size N] [--page-token T]` | `ListTasks` | one page: `tasks`, `nextPageToken`, `pageSize`, `totalSize` |
@@ -70,7 +71,7 @@ its bundled roots, with no way to turn it off here.
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | Protocol or transport error. One `error: …` line on stderr; when the agent answered with a structured error, a second stderr line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. Nothing on stdout. |
+| `1` | Protocol or transport error. One `error: …` line on stderr; when the agent answered with a structured error, a second stderr line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. A network command prints nothing on stdout; an offline command still prints its report there. |
 | `2` | Usage error: unknown flag or command, missing argument, a value that does not parse (`--timeout 0`, `--header` without `=`). Reported by `clap`; no network is touched. |
 
 ## Transcript
@@ -80,7 +81,9 @@ Captured 2026-09-10 from a real run of the debug binary against
 cargo run -p echo-agent`, which serves JSON-RPC and HTTP+JSON on one port and
 a card advertising both) and `cargo run -p hello-agent` on port 3000. Each
 command is followed by its exit code. Ids and timestamps are whatever the
-agents generated.
+agents generated. The 404 from `hello-agent` below is from before it published
+a card (fixed the same day, see *What building it found*); discovery against
+it now succeeds.
 
 ```console
 $ a2a card http://127.0.0.1:3111
@@ -329,7 +332,9 @@ binary against it with `std::process::Command`, asserting exit codes and
 parsing the JSON it prints. Covered: `card`, `send` (discovery, `--binding
 rest`, `--binding jsonrpc`, `--context-id`), `stream`, `task get` (found and
 not found), `task cancel` of a running task, `task list`, every usage-error
-path, and an unreachable agent.
+path, and an unreachable agent. `tests/offline.rs` runs the offline commands on
+files: a card the binary signs verifies and a changed one does not, and an
+exported audit chain verifies and an edited one does not.
 
 gRPC and WebSocket are built into the binary and reachable with `--binding`,
 but the integration test serves only the two HTTP bindings; the transcript

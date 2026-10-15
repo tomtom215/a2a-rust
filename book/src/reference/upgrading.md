@@ -134,11 +134,20 @@ Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
 
-## 0.14 → next (unreleased)
+## 0.14 → 0.15 (unreleased)
 
 These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
+
+### `TaskState` numbers its variants as the proto does
+
+`TaskState` is now generated from `a2a.proto` (spec §1.4, ADR 0016), and each
+variant's discriminant is its proto number. `TaskState::Completed as i32` was
+5 (its place in the old declaration) and is now 3, as `TASK_STATE_COMPLETED`
+is in the proto and in the prost enum. Only code that casts a `TaskState` to
+an integer sees a difference; `TaskState::ALL` lists the variants as before.
+The wire form, `"TASK_STATE_COMPLETED"`, is unchanged.
 
 ### `build()` refuses an agent card the spec does not allow
 
@@ -503,6 +512,74 @@ the background processor marks the task failed, and a blocking send answers
 status update. One leaving a terminal state is refused. A snapshot in the
 task's current state is stored as before.
 
+### `ClientRequest` gains `query_params`
+
+An API key that the agent's card places in the query string is sent there
+now, so a request reaches the transports with query parameters as well as
+headers. `ClientRequest` has a new public field, `query_params`, and a struct
+literal that names every field no longer compiles. Build the request with
+`ClientRequest::new`, which leaves it empty:
+
+```rust
+use a2a_protocol_client::ClientRequest;
+
+let mut req = ClientRequest::new("GetTask", serde_json::json!({ "id": "t-1" }));
+assert!(req.query_params.is_empty());
+req.query_params.push(("api_key".into(), "k".into()));
+```
+
+A custom `Transport` still compiles: the new `send_request_with_query` and
+`send_streaming_request_with_query` methods have defaults, which send a call
+with no query parameters as before and refuse one with them
+(`ClientError::InvalidAuthScheme`). Override both if your transport has a URL
+to put them in. gRPC, WebSocket and the SLIMRPC binding refuse such a call.
+
+### A caller is named by how it authenticated
+
+The bundled interceptors record `bearer:<label>`, `api-key:<label>` and
+`jwt:<issuer>:<sub>` where they recorded the bare label or `sub`, so one `sub`
+from two issuers is two callers. Three things follow.
+
+An approver allowlist, or anything else that compares against an identity,
+names the new form. `auth::caller_id` builds it:
+
+```rust
+use a2a_protocol_server::approval::ApprovalGate;
+use a2a_protocol_server::auth::caller_id;
+
+let gate = ApprovalGate::new().with_approvers([
+    caller_id::bearer("alice"),
+    caller_id::jwt(Some("https://idp.example"), "bob"),
+]);
+# let _ = gate;
+```
+
+Records a SQLite or PostgreSQL tenant-aware store keeps under caller
+isolation are keyed by the old name. Move them once, before serving with
+0.15, or each caller's tasks and webhooks are not found. The old key does not
+say how the caller authenticated, so you give the map; the helpers cover a
+deployment that used one authenticator:
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::store::caller_keys;
+use a2a_protocol_server::store::tenant_sqlite_store::TenantAwareSqliteTaskStore;
+
+let tasks = TenantAwareSqliteTaskStore::new("sqlite:tasks.db").await?;
+let moved = tasks.migrate_caller_keys(caller_keys::bearer_labels()).await?;
+println!("{} partitions, {} rows", moved.partitions, moved.rows);
+# Ok(())
+# }
+```
+
+Run it on the push-config store too, with its cipher set: a sealed config's
+context names its partition, and the migration seals it again under the new
+one. For several authenticators, pass your own `Fn(&str) -> Option<String>`
+returning the new identity of each old name, or `None` to leave it.
+
+A JWT with no `sub` is refused with `PermissionDenied` under caller isolation;
+it used to be served the tenant's shared records.
+
 ### Error codes some clients may match on
 
 - A rate-limit refusal from `RateLimitInterceptor` is HTTP `429` with
@@ -514,6 +591,14 @@ task's current state is stored as before.
 - SLIMRPC status codes follow the SLIMRPC specification's table:
   `JSONParseError` is `INTERNAL`, `ContentTypeNotSupportedError`
   `UNIMPLEMENTED`, `VersionNotSupportedError` `FAILED_PRECONDITION`.
+- A credential refused over WebSocket is still `-32600`, now with an
+  `ErrorInfo` from `a2a-rust.com` (`UNAUTHENTICATED` with the challenge as
+  `www-authenticate` metadata, or `PERMISSION_DENIED`; the
+  [binding specification](../bindings/websocket.md#6-authentication-126)
+  §6). The SDK's client reports it as `ClientError::UnexpectedStatus` with
+  status `401` or `403`, as over HTTP and gRPC; code that matched
+  `ClientError::Protocol` with `ErrorCode::InvalidRequest` for it matches
+  `UnexpectedStatus` instead.
 
 ## 0.13 → 0.14
 
@@ -541,7 +626,7 @@ in an SDK built without default features. A build that did that and still
 reached `https://` agents was relying on the defect:
 
 ```toml
-a2a-protocol-sdk = { version = "0.14", default-features = false, features = ["tls-rustls"] }
+a2a-protocol-sdk = { version = "0.15", default-features = false, features = ["tls-rustls"] }
 ```
 
 ### A peer that goes away reads the same on every binding

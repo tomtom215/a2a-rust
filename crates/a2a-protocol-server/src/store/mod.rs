@@ -5,6 +5,7 @@
 
 //! Task storage backend.
 
+pub mod applied;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
@@ -17,6 +18,8 @@ pub(crate) mod cursor;
 /// Shared page-boundary arithmetic used by every task store.
 pub(crate) mod pagination;
 
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub mod caller_keys;
 #[cfg(feature = "sqlite")]
 pub mod migration;
 #[cfg(feature = "sqlite")]
@@ -43,6 +46,7 @@ mod event_log_sql;
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 mod tenant_event_log;
 
+pub use applied::AppliedPosition;
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at

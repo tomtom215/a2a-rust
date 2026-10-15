@@ -3,7 +3,7 @@
 
 # Agent Team — Full SDK Dogfood & E2E Test Suite
 
-A comprehensive end-to-end example that deploys 4 specialized A2A agents communicating over multiple transports, then runs a full test suite exercising every major SDK feature.
+An end-to-end example that deploys five specialized A2A agents over JSON-RPC, REST and gRPC, runs 100 end-to-end tests against them, then sweeps every A2A method over every binding against a sixth agent that serves all four.
 
 This is the project's primary integration test and SDK dogfood — if it passes, the SDK works.
 
@@ -12,31 +12,32 @@ This is the project's primary integration test and SDK dogfood — if it passes,
 | Agent | Transport | Role | Key features exercised |
 |-------|-----------|------|----------------------|
 | **CodeAnalyzer** | JSON-RPC | File analysis, LOC counting | Streaming, artifacts, multi-part messages |
-| **BuildMonitor** | REST | Cargo check/test runner | Streaming, cancellation, push notifications |
+| **BuildMonitor** | REST | Simulated cargo builds | Streaming, cancellation, push notifications |
 | **HealthMonitor** | JSON-RPC | Agent health checks | Push notifications, interceptors |
 | **Coordinator** | REST | Orchestration, delegation | A2A client calls, task aggregation, metrics |
-| **GrpcAnalyzer** | gRPC | Same as CodeAnalyzer | gRPC transport (requires `grpc` feature) |
+| **GrpcAnalyzer** | gRPC | Same as CodeAnalyzer | gRPC transport |
+| **Surface agent** | all four | Exists to be swept | Every method over every binding (`src/surface.rs`) |
 
 ## Running
 
 ```bash
-# Base test suite (81 tests):
-cargo run -p agent-team
-
-# With all optional features (94+ tests):
-cargo run -p agent-team --all-features
-
-# With structured logging:
-RUST_LOG=debug cargo run -p agent-team --features tracing
-
-# Individual feature flags:
-cargo run -p agent-team --features websocket   # +2 WebSocket tests
-cargo run -p agent-team --features grpc        # +3 gRPC tests
-cargo run -p agent-team --features axum        # +3 Axum framework tests
-cargo run -p agent-team --features sqlite      # +2 SQLite store tests
-cargo run -p agent-team --features signing     # +1 JWS signing test
-cargo run -p agent-team --features otel        # +1 OpenTelemetry test
+cargo run -p agent-team                                   # 102 results: 100 tests + the surface sweep
+RUST_LOG=debug cargo run -p agent-team --features tracing # with structured logging
 ```
+
+Every feature but `tracing` is on by default (`websocket`, `grpc`, `axum`,
+`sqlite`, `signing`, `otel`), so a bare run is the full suite. On 2026-10-15
+it printed `All 102 tests passed` and `Every claimed SDK feature was
+exercised`, and the sweep `44 exercised, 0 not applicable, 0 missing, of 44
+cells`. CI runs it with `--all-features` (`ci.yml`, job `dogfood`).
+
+A narrowed build (`--no-default-features --features …`) runs fewer tests,
+prints each feature area it did not build, and exits `2` by design: a
+dogfood run that skipped a feature area is not complete.
+
+Exit codes: `0` everything passed and every claimed area was built; `1` a test
+failed or the printed feature table drifted from the tests behind it; `2` a
+matrix gap or a feature area not built.
 
 ## Test categories
 
@@ -81,11 +82,11 @@ The test suite exercises 40+ SDK features including:
 │                        main()                                │
 │                                                              │
 │  1. Start webhook receiver (for push notification tests)     │
-│  2. Pre-bind 4 TCP listeners (get real addresses)            │
+│  2. Pre-bind the agents' listeners (get real addresses)      │
 │  3. Build agent cards with correct URLs                      │
 │  4. Build RequestHandlers with interceptors + metrics        │
-│  5. Start 4 agent servers (JSON-RPC + REST)                  │
-│  6. Run 81-94 E2E tests against the live agents              │
+│  5. Start the agents (JSON-RPC, REST, gRPC)                  │
+│  6. Run 100 E2E tests, then the 44-cell surface sweep        │
 │  7. Print results + metrics summary                          │
 └──────────┬──────────┬──────────┬──────────┬──────────────────┘
            │          │          │          │
@@ -98,7 +99,6 @@ The test suite exercises 40+ SDK features including:
 ## Prerequisites
 
 - Rust 1.88+ (MSRV)
-- `protoc` (only when `--features grpc` is enabled)
 - No external services — everything runs in-process
 
 ## License

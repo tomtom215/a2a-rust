@@ -186,7 +186,7 @@ impl RequestHandler {
                     // prevent, and invisible, because the sequence has no gap
                     // to show for it. A refused send is recoverable by retrying;
                     // a turn whose events were never recorded is not.
-                    match self.task_store.last_event_seq(task_id).await {
+                    match self.resume_after(task_id).await {
                         Ok(seq) => {
                             writer.seed_seq(seq);
                             // A lag catch-up resumes after the previous
@@ -223,6 +223,27 @@ impl RequestHandler {
                 )))
             }
         }
+    }
+
+    /// The position a new turn's events are numbered after: the later of the
+    /// log's end and the position the stored task reflects.
+    ///
+    /// They differ when an append failed. The processor carries on past a
+    /// failed append and stores the event's effect with its position, so the
+    /// stored task can reflect `P` while the log ends before it. Numbering from
+    /// the log's end alone gave the next turn's first event that same `P`, and
+    /// a subscriber already past `P` — one that started from the stored
+    /// position, or one that saw the failed event live — dropped it as
+    /// delivered. Past both, the failed position is a hole in the log, which a
+    /// replay reports, and no position names two events.
+    async fn resume_after(&self, task_id: &TaskId) -> a2a_protocol_types::error::A2aResult<u64> {
+        let end = self.task_store.last_event_seq(task_id).await?;
+        let stored = self
+            .task_store
+            .get_with_position(task_id)
+            .await?
+            .and_then(|(_, position)| position);
+        Ok(stored.map_or(end, |position| end.max(position)))
     }
 }
 

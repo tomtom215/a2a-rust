@@ -56,8 +56,11 @@ impl ApprovalGate {
         }
     }
 
-    /// Only these caller identities may approve (as authentication names
-    /// them: a JWT `sub`, a labelled key or token).
+    /// Only these caller identities may approve, as authentication names
+    /// them: [`caller_id`](crate::auth::caller_id) builds the bundled
+    /// interceptors' `jwt:<issuer>:<sub>`, `bearer:<label>` and
+    /// `api-key:<label>`. A bare `sub` or label matches no caller those
+    /// interceptors authenticated.
     #[must_use]
     pub fn with_approvers<I, S>(mut self, approvers: I) -> Self
     where
@@ -133,7 +136,14 @@ impl ApprovalGate {
         {
             return Err(denied("this caller may not approve"));
         }
-        if self.distinct_from_requester && pending.requested_by.as_deref() == Some(approver) {
+        if self.distinct_from_requester
+            && pending.requested_by.as_deref().is_some_and(|requester| {
+                // A request stored before 0.15 names its requester bare
+                // (audit register R12); the same caller must not approve it.
+                requester == approver
+                    || crate::auth::caller_id::unqualified(approver) == Some(requester)
+            })
+        {
             return Err(denied(
                 "an approval must come from someone other than the caller whose run asked",
             ));

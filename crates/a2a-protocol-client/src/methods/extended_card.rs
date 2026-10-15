@@ -52,7 +52,9 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(resp.result)
+        let mut result = resp.result;
+        crate::legacy_card::read_as_current(&mut result);
+        let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
             .map_err(ClientError::Serialization)?;
         self.adopt_capabilities(&card);
         Ok(card)
@@ -168,6 +170,27 @@ mod tests {
         assert_eq!(card.version, "1.0.0");
         assert_eq!(card.skills.len(), 1);
         assert_eq!(card.skills[0].id, "echo");
+    }
+
+    /// An extended card in the v0.3 form is read as the public one is (spec
+    /// App. A.2).
+    #[tokio::test]
+    async fn a_legacy_extended_card_is_read_in_its_current_form() {
+        let mut legacy = agent_card_json();
+        let obj = legacy.as_object_mut().unwrap();
+        obj.remove("supportedInterfaces");
+        obj.insert("url".into(), "http://localhost:8080/v03".into());
+        obj.insert("supportsAuthenticatedExtendedCard".into(), true.into());
+        let card = make_client(MockTransport::new(legacy))
+            .get_extended_agent_card()
+            .await
+            .unwrap();
+        assert_eq!(card.supported_interfaces.len(), 1);
+        assert_eq!(
+            card.supported_interfaces[0].url,
+            "http://localhost:8080/v03"
+        );
+        assert_eq!(card.capabilities.extended_agent_card, Some(true));
     }
 
     #[tokio::test]

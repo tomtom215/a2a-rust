@@ -18,7 +18,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::Artifact;
-use crate::message::Message;
 
 // ── TaskId ────────────────────────────────────────────────────────────────────
 
@@ -188,48 +187,8 @@ impl From<u64> for TaskVersion {
 
 // ── TaskState ─────────────────────────────────────────────────────────────────
 
-/// The lifecycle state of a [`Task`].
-///
-/// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
-/// `"TASK_STATE_COMPLETED"`, `"TASK_STATE_INPUT_REQUIRED"`, etc.
-/// Legacy lowercase/kebab-case values are accepted on deserialization.
-///
-/// This enum is closed to the v1.0 states. A future protocol revision that adds
-/// a state would be a wire-breaking change for the gRPC binding: an unknown
-/// `TASK_STATE_*` number from a newer peer is rejected by the protobuf
-/// conversion layer (with a field-scoped error) rather than silently discarded,
-/// so no task is ever reported in a bogus state.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum TaskState {
-    /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "TASK_STATE_UNSPECIFIED", alias = "unspecified")]
-    Unspecified,
-    /// Task received, not yet started.
-    #[serde(rename = "TASK_STATE_SUBMITTED", alias = "submitted")]
-    Submitted,
-    /// Task is actively being processed.
-    #[serde(rename = "TASK_STATE_WORKING", alias = "working")]
-    Working,
-    /// Agent requires additional input from the client to proceed.
-    #[serde(rename = "TASK_STATE_INPUT_REQUIRED", alias = "input-required")]
-    InputRequired,
-    /// Agent requires the client to complete an authentication step.
-    #[serde(rename = "TASK_STATE_AUTH_REQUIRED", alias = "auth-required")]
-    AuthRequired,
-    /// Task finished successfully.
-    #[serde(rename = "TASK_STATE_COMPLETED", alias = "completed")]
-    Completed,
-    /// Task finished with an error.
-    #[serde(rename = "TASK_STATE_FAILED", alias = "failed")]
-    Failed,
-    /// Task was canceled by the client.
-    #[serde(rename = "TASK_STATE_CANCELED", alias = "canceled")]
-    Canceled,
-    /// Task was rejected by the agent before execution.
-    #[serde(rename = "TASK_STATE_REJECTED", alias = "rejected")]
-    Rejected,
-}
+// The proto-generated types of this module (ADR 0016), `TaskState` first.
+include!("generated/task.rs");
 
 impl TaskState {
     /// Every variant, in declaration order.
@@ -343,22 +302,7 @@ impl std::fmt::Display for TaskState {
 
 // ── TaskStatus ────────────────────────────────────────────────────────────────
 
-/// The current status of a [`Task`], combining state with an optional message
-/// and timestamp.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskStatus {
-    /// Current lifecycle state.
-    pub state: TaskState,
-
-    /// Optional agent message accompanying this status (e.g. error details).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<Message>,
-
-    /// ISO 8601 timestamp of when this status was set.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
-}
+// `TaskStatus` is generated: see the `include!` above.
 
 impl TaskStatus {
     /// Creates a [`TaskStatus`] with just a state and no timestamp.
@@ -402,46 +346,11 @@ impl TaskStatus {
 // ── Task ──────────────────────────────────────────────────────────────────────
 
 /// `Task::context_id` when a peer leaves it out.
-const fn empty_context_id() -> ContextId {
+pub(crate) const fn empty_context_id() -> ContextId {
     ContextId(String::new())
 }
 
-/// A unit of work managed by an A2A agent.
-///
-/// The wire `kind` field (`"task"`) is injected by enclosing discriminated
-/// unions such as [`crate::events::StreamResponse`] and
-/// [`crate::responses::SendMessageResponse`]. Standalone `Task` values received
-/// over the wire may include `kind`; serde silently tolerates unknown fields, so
-/// no action is needed on the receiving side.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Task {
-    /// Unique task identifier.
-    pub id: TaskId,
-
-    /// Conversation context this task belongs to.
-    ///
-    /// The proto leaves `context_id` optional, and `ProtoJSON` printers omit an
-    /// empty string, so a peer's task may arrive without the key; it parses
-    /// as an empty id rather than failing the whole response.
-    #[serde(alias = "context_id", default = "empty_context_id")]
-    pub context_id: ContextId,
-
-    /// Current status of the task.
-    pub status: TaskStatus,
-
-    /// Historical messages exchanged during this task.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub history: Option<Vec<Message>>,
-
-    /// Artifacts produced by this task.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub artifacts: Option<Vec<Artifact>>,
-
-    /// Arbitrary metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
+// `Task` is generated: see the `include!` above.
 
 impl Task {
     /// A task in `status`, with no history, artifacts or metadata — what a

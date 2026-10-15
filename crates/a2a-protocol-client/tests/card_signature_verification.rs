@@ -180,3 +180,58 @@ async fn a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted() {
             .is_err()
     );
 }
+
+/// Spec §14: the caching resolver verifies with the options it was given.
+/// It took none, so a client resolving through it could not verify at all.
+#[tokio::test]
+async fn a_caching_resolver_verifies_with_its_options() {
+    use a2a_protocol_client::discovery::CachingCardResolver;
+    let with_keys = CardFetchOptions::default().with_signature_keys(keys());
+
+    let resolver = CachingCardResolver::new(&serve(&signed()).await)
+        .unwrap()
+        .with_options(with_keys.clone());
+    assert_eq!(resolver.resolve().await.unwrap().name, "signed-agent");
+
+    let mut tampered = signed();
+    tampered.name = "someone-else".into();
+    let resolver = CachingCardResolver::new(&serve(&tampered).await)
+        .unwrap()
+        .with_options(with_keys);
+    let err = resolver
+        .resolve()
+        .await
+        .expect_err("a tampered card is refused");
+    assert!(err.to_string().contains("signature"), "{err}");
+}
+
+/// Spec §14: a client built from a card the caller holds verifies it, as
+/// served (the JSON, not the typed card, which drops fields a later
+/// version's signer covered).
+#[test]
+fn a_client_built_from_a_signed_card_verifies_it() {
+    use a2a_protocol_client::ClientBuilder;
+    let json = serde_json::to_vec(&signed()).unwrap();
+    ClientBuilder::from_signed_card(&json, keys()).expect("a correctly signed card");
+
+    let mut tampered = signed();
+    tampered.name = "someone-else".into();
+    let err = ClientBuilder::from_signed_card(&serde_json::to_vec(&tampered).unwrap(), keys())
+        .expect_err("a tampered card is refused");
+    assert!(err.to_string().contains("signature"), "{err}");
+
+    let err = ClientBuilder::from_signed_card(&serde_json::to_vec(&card()).unwrap(), keys())
+        .expect_err("an unsigned card is refused");
+    assert!(err.to_string().contains("not signed"), "{err}");
+
+    // A field this SDK does not model is covered by the signature too.
+    let mut extended: serde_json::Value = serde_json::to_value(card()).unwrap();
+    extended["laterVersionField"] = serde_json::json!("x");
+    let typed: AgentCard = serde_json::from_value(extended.clone()).unwrap();
+    let sig = sign_card_ed25519(&typed, &hex(ED_PKCS8), "ed-1").unwrap();
+    extended["signatures"] = serde_json::to_value(vec![sig]).unwrap();
+    assert!(
+        ClientBuilder::from_signed_card(&serde_json::to_vec(&extended).unwrap(), keys()).is_err(),
+        "signed without the extra field, it does not verify with it"
+    );
+}

@@ -3,7 +3,9 @@
 
 # hello-agent
 
-The smallest complete A2A agent: **28 lines of code**, one dependency, one file.
+The smallest complete A2A agent: **32 lines of code** (above its tests, blank
+and comment lines excluded, counted 2026-10-15), one SDK dependency plus
+`tokio`, one file.
 
 ```sh
 cargo run -p hello-agent
@@ -57,6 +59,11 @@ It also publishes the card a client discovers it by:
 fn card(url: &str) -> AgentCard {
     AgentCard::new("hello-agent", "0.0.0", AgentInterface::jsonrpc(url))
         .with_description("Greets whoever sends it a message")
+        // Spec §5.7: a card publishes at least one skill, each with a tag.
+        .with_skill(
+            AgentSkill::new("hello", "Hello", "Greets whoever sends it a message")
+                .with_tags(["greeting"]),
+        )
 }
 ```
 

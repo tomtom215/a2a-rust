@@ -121,6 +121,12 @@ use super::{Dispatcher, connections, pause_after_accept_error};
 mod idle;
 use idle::IdleTimeout;
 
+mod connection;
+use connection::{Accepted, spawn_connection};
+
+#[cfg(feature = "tls-rustls")]
+mod tls;
+
 mod config;
 pub use config::{
     DEFAULT_COMPLETION_GRACE, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
@@ -159,6 +165,8 @@ pub struct ServeReport {
 pub struct Server {
     listener: TcpListener,
     config: ServeConfig,
+    #[cfg(feature = "tls-rustls")]
+    tls: Option<tls::Tls>,
 }
 
 impl Server {
@@ -198,6 +206,8 @@ impl Server {
         Self {
             listener,
             config: ServeConfig::default(),
+            #[cfg(feature = "tls-rustls")]
+            tls: None,
         }
     }
 
@@ -252,7 +262,12 @@ impl Server {
         dispatcher: impl Dispatcher,
         shutdown: impl Future<Output = ()> + Send,
     ) -> ServeReport {
-        let Self { listener, config } = self;
+        let Self {
+            listener,
+            config,
+            #[cfg(feature = "tls-rustls")]
+            tls,
+        } = self;
         let connections = connections::Connections::for_dispatcher(&dispatcher);
         let dispatcher = Arc::new(dispatcher);
         let graceful = hyper_util::server::graceful::GracefulShutdown::new();
@@ -304,8 +319,12 @@ impl Server {
             };
             accepted.fetch_add(1, Ordering::Relaxed);
             spawn_connection(
-                stream,
-                peer,
+                Accepted {
+                    stream,
+                    peer,
+                    #[cfg(feature = "tls-rustls")]
+                    tls: tls.clone(),
+                },
                 Arc::clone(&dispatcher),
                 graceful.watcher(),
                 permit,
@@ -335,66 +354,6 @@ impl Server {
         report.tasks = tasks;
         report
     }
-}
-
-/// Serves one accepted socket on its own task, watched for graceful shutdown.
-///
-/// `permit` rides along and is released when the connection ends, which is what
-/// makes [`ServeConfig::max_connections`] a ceiling on *concurrent* service
-/// rather than on total accepts.
-fn spawn_connection(
-    stream: tokio::net::TcpStream,
-    peer: SocketAddr,
-    dispatcher: Arc<impl Dispatcher>,
-    watcher: hyper_util::server::graceful::Watcher,
-    permit: tokio::sync::OwnedSemaphorePermit,
-    config: &ServeConfig,
-    connection: Option<connections::Connection>,
-) {
-    // Disable Nagle so small SSE frames are not held for a delayed ACK.
-    let _ = stream.set_nodelay(true);
-    // The idle timer wraps the socket *below* hyper, so it sees the bytes
-    // rather than the requests: a peer that stops mid-body never reaches a
-    // service call, and a layer above hyper would never hear about it.
-    let io = hyper_util::rt::TokioIo::new(IdleTimeout::new(stream, config.idle_timeout));
-    let header_read_timeout = config.header_read_timeout;
-
-    tokio::spawn(async move {
-        let service = super::service(
-            dispatcher,
-            connection.as_ref().map(connections::Connection::requests),
-            peer,
-        );
-        // The builder is bound rather than chained: `serve_connection` borrows
-        // it, and the connection future outlives the statement.
-        let mut builder =
-            hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
-        // Installing the timer is what makes `header_read_timeout` real. Hyper
-        // defaults it to 30s but silently drops it without one — `Time::check`
-        // logs "has default, but no timer set" and returns `None` — so every
-        // server built this way, including `serve`, has been running with no
-        // header timeout at all while appearing to have hyper's.
-        builder
-            .http1()
-            .timer(hyper_util::rt::TokioTimer::new())
-            .header_read_timeout(header_read_timeout);
-        builder.http2().timer(hyper_util::rt::TokioTimer::new());
-        let conn = builder.serve_connection(io, service);
-        // Unlike `serve`, the outcome is not discarded: a connection that died
-        // before serving anything is a fact an operator can act on, and
-        // dropping it makes the two cases indistinguishable.
-        // `_e` because `trace_warn!` compiles to nothing without the `tracing`
-        // feature, which would make a plain `e` an unused binding there. The
-        // repo's convention for a value that only a trace macro reads.
-        let result = watcher.watch(conn).await;
-        if let Err(_e) = &result {
-            trace_warn!(error = %_e, "connection error");
-        }
-        if let Some(connection) = connection {
-            connection.close(result.is_err());
-        }
-        drop(permit);
-    });
 }
 
 /// Waits out the in-flight connections, or reports the ones left behind.

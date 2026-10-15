@@ -750,18 +750,21 @@ impl ServerInterceptor for JwtAuthInterceptor {
         Box::pin(async move {
             let principal = self.authenticate(ctx).await?;
 
-            // The slot that comment was waiting for. `sub` is the caller's
-            // identity by definition, and unlike a bearer token or an API key
-            // it is not a credential — so it is safe to become a rate-limit
-            // bucket key, which may be stored in a shared database.
+            // `sub` names the caller within its issuer (RFC 7519 §4.1.2), so
+            // the identity carries both (audit register R12). Unlike a bearer
+            // token or an API key it is not a credential, so it is safe to
+            // become a rate-limit bucket key, which may be stored in a shared
+            // database.
             //
             // A token with no `sub` establishes no identity, so nothing is
-            // recorded and the caller falls back to whatever the consumer's
-            // own derivation says. Recording the issuer instead would bucket
-            // every caller from one issuer together, which is worse than
-            // admitting we do not know.
-            if let Some(subject) = principal.subject {
-                ctx.set_caller_identity(subject);
+            // recorded. Under caller isolation the handler refuses it rather
+            // than serve the tenant's shared partition. Recording the issuer
+            // instead would put every caller from one issuer together.
+            if let Some(subject) = principal.subject.as_deref() {
+                ctx.set_caller_identity(super::caller_id::jwt(
+                    principal.issuer.as_deref(),
+                    subject,
+                ));
             }
             ctx.set_auth_scheme("jwt");
             Ok(())
@@ -1172,6 +1175,8 @@ mod tests {
             !RS256_VALID.contains(identity),
             "the identity must be the subject, not a slice of the token"
         );
+        // The vector's `iss` and `sub` (audit register R12).
+        assert_eq!(identity, "jwt:https%3A//issuer.test:client-1");
     }
 
     /// A rejected token must not name anyone. Recording an identity from an
