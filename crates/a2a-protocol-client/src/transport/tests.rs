@@ -6,6 +6,7 @@
 //! Tests for [`super`]: body truncation and the response size limit.
 
 use super::*;
+use crate::error::ClientError;
 
 #[test]
 fn truncate_body_short_string_unchanged() {
@@ -243,4 +244,43 @@ async fn two_mib_body_is_within_the_default_ceiling() {
     .await
     .expect("2 MiB is well inside the 32 MiB default");
     assert_eq!(bytes.len(), BODY);
+}
+
+/// A WebSocket refusal detail (binding spec §6) with `reason` from `domain`.
+fn refusal(domain: &str, reason: &str) -> serde_json::Value {
+    serde_json::json!([{
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": reason,
+        "domain": domain,
+    }])
+}
+
+/// The two refusals are a `401` and a `403`, as on the HTTP bindings.
+#[test]
+fn a_websocket_refusal_is_the_http_status() {
+    for (reason, want) in [("UNAUTHENTICATED", 401), ("PERMISSION_DENIED", 403)] {
+        match jsonrpc_client_error(-32600, "no".into(), Some(refusal("a2a-rust.com", reason))) {
+            ClientError::UnexpectedStatus { status, body, .. } => {
+                assert_eq!((status, body.as_str()), (want, "no"), "{reason}");
+            }
+            other => panic!("{reason}: {other:?}"),
+        }
+    }
+}
+
+/// Only this binding's detail on `-32600` is a refusal: another domain, a
+/// reason it does not define, or another code is the error as sent.
+#[test]
+fn anything_else_stays_a_protocol_error() {
+    for (code, data) in [
+        (-32600, Some(refusal("example.com", "UNAUTHENTICATED"))),
+        (-32600, Some(refusal("a2a-rust.com", "QUOTA"))),
+        (-32603, Some(refusal("a2a-rust.com", "UNAUTHENTICATED"))),
+        (-32600, None),
+    ] {
+        match jsonrpc_client_error(code, "no".into(), data.clone()) {
+            ClientError::Protocol(e) => assert_eq!(e.code.as_i32(), code, "{data:?}"),
+            other => panic!("{code} {data:?}: {other:?}"),
+        }
+    }
 }

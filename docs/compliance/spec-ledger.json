@@ -1266,7 +1266,7 @@
     "crates/a2a-protocol-client/src/auth.rs:276 api_key",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:105",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:211",
-    "crates/a2a-protocol-client/src/transport/mod.rs:268 with_query"
+    "crates/a2a-protocol-client/src/transport/mod.rs:310 with_query"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials",
@@ -1429,8 +1429,8 @@
     "spec/slimrpc_v1/slimrpc.md:56"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2464 ws_upgrade_headers_drive_tenant_resolution",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:78 the_version_is_checked_at_the_handshake_with_a_query_fallback"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2508 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:81 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
    "notes": "WebSocket: the binding specification (book/src/bindings/websocket.md §2) states the mechanism (upgrade headers, once per connection), the A2A-Version query fallback, value constraints, the reserved :path key, and that parameters cannot vary per request. SLIMRPC: slimrpc.md §3. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "B",
@@ -2635,7 +2635,7 @@
    "binds": "server",
    "requirement": "Each stream MUST receive the same events in the same order",
    "status": "PARTIAL",
-   "severity": "low",
+   "severity": "medium",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1136",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1158",
@@ -2675,7 +2675,7 @@
     "crates/a2a-protocol-server/tests/event_log_tests/log_holes.rs:42 a_lag_across_a_hole_in_the_log_is_reported",
     "crates/a2a-protocol-server/tests/event_log_tests/log_holes.rs:105 a_resume_across_a_hole_in_the_log_starts_from_the_snapshot"
    ],
-   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Remaining as well: with no local queue the subscription reads the log's end and then the task, so an event another replica logs and stores between the two reads arrives twice. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently.",
+   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Remaining, each ending the stream with an explicit streamLagged: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log), more missed events than one replay reads (subscribe_replay_limit, 1,000), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Remaining as well (audit register R69; option (a) decided 2026-10-15, in progress): with no local queue the subscription reads the log's end and then the task. An event another replica logs and stores between the two reads arrives twice; and one it logs before the first read and stores after the second (a processor logs each non-terminal event before it stores it) is in neither the snapshot nor the replay, and is lost with no streamLagged. The loss was reproduced 2026-10-15 by a test whose store interleaves so; R69 describes the test, which fails today and lands with the fix. Nothing on the subscribing replica can tell whether the log's last event is in the stored task: the store does not say which position a saved task reflects. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -2825,7 +2825,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:197 version_metadata_refuses_another_minor_or_no_minor",
     "crates/a2a-protocol-server/src/dispatch/version.rs:181 version_metadata_accepts_this_major_minor_with_any_patch",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2528 ws_version_mismatch_rejects_handshake",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2572 ws_version_mismatch_rejects_handshake",
     "crates/a2a-protocol-server/tests/actionable_errors.rs (the refusal names the supported version)"
    ],
    "notes": "Since 2026-10-12 (maintainer decision) a request is served only when its A2A-Version names this server's Major.Minor, 1.0, with any patch; any other version, 1.1 included, is VersionNotSupportedError naming 1.0, on every binding through one validator (the WebSocket handshake had its own copy). Until then any 1.x was accepted and served with 1.0 semantics, as the official Python SDK still does (_is_version_compatible compares the major only).",
@@ -2874,7 +2874,7 @@
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:841 rest_missing_version_header_rejected_but_card_discovery_versionless",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:697 default_config_rejects_a_versionless_rpc",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2571 ws_missing_version_header_rejected_by_default",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2615 ws_missing_version_header_rejected_by_default",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs an_empty_version_is_refused_unless_none_is_required",
     "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs an_absent_version_is_refused_as_0_3_unless_none_is_required"
    ],
@@ -3313,10 +3313,10 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:906"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2183 ws_legacy_method_names_rejected",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2227 ws_legacy_method_names_rejected",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:198 every_spec_method_is_routed",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:225 nothing_outside_the_spec_set_is_routed",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:97 refusals_carry_the_documented_codes",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes",
     "tck/src/equivalence.rs:338 bind_equiv_001"
    ],
    "notes": "All 11 operations are routed on JSON-RPC, REST, gRPC and WebSocket (TCK --equivalence). WebSocket's leftover v0.3 alias message/stream was removed on 2026-10-12 and is now -32601 as over HTTP; shown to fail with the alias restored.",
@@ -4714,7 +4714,7 @@
     "crates/a2a-protocol-client/src/methods/tasks.rs:139",
     "crates/a2a-protocol-client/src/methods/tasks.rs:29",
     "crates/a2a-protocol-client/src/methods/push_config.rs:31",
-    "crates/a2a-protocol-client/src/streaming/event_stream.rs:688"
+    "crates/a2a-protocol-client/src/streaming/event_stream.rs:687"
    ],
    "test_evidence": [],
    "notes": "All three hooks exist; client EventStream only finishes on a terminal StatusUpdate (is_terminal, event_stream.rs:688), so it keeps reading after AUTH_REQUIRED. No automatic behaviour.",
@@ -5772,7 +5772,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:179 a_batch_of_notifications_gets_no_content",
     "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:191 a_notification_refused_on_its_headers_is_not_answered",
     "crates/a2a-protocol-server/tests/jsonrpc_notifications.rs:210 an_invalid_request_without_an_id_is_still_answered",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:187 a_notification_is_run_and_sent_nothing"
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:190 a_notification_is_run_and_sent_nothing"
    ],
    "notes": "`jsonrpc` must be exactly \"2.0\"; non-JSON answers -32700, JSON that is not a Request answers -32600. Client always emits `jsonrpc:\"2.0\"`, PascalCase method, params object. A request refused for its A2A-Version or Content-Type is answered with its own id, and a batch with one error per request, since 2026-10-13: both were refused before the body was read, so the response id was null (JSON-RPC 2.0 §5: the id MUST be the request's, null only when it cannot be detected) and a batch got one object. A batch beyond max_batch_size, and a body that is not JSON or over the size limit, still get one null-id refusal. Also since 2026-10-13, over HTTP and WebSocket: an id that is not a string, a number or null (JSON-RPC 2.0 §4) is -32600 with a null id, where it was run and echoed; an omitted params (§4.2: MAY be omitted) is read as {}, where it was \"missing params\"; a stream inside a batch is UnsupportedOperation (-32004), where it was -32602. Since 2026-10-14 a notification (no id member) is run and not answered (§4.1, audit register R21): 204 No Content alone or when a batch holds only notifications, left out of a batch's array, no WebSocket frame, and no answer when refused on its headers; a streaming method sent as one is refused rather than run. Until then each was answered with a null id.",
    "auditor": "E",
@@ -6566,9 +6566,9 @@
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:116-385"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2264 ws_push_config_methods_routed",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2437 ws_get_extended_agent_card_routed",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2025 ws_send_streaming_message_events",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2308 ws_push_config_methods_routed",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2481 ws_get_extended_agent_card_routed",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2069 ws_send_streaming_message_events",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:86 every_spec_method_is_registered"
    ],
    "notes": "Both bindings route all 11 v1.0 methods to the shared RequestHandler. WebSocket also accepts the v0.3 alias `message/stream` (websocket.rs:883). The module rustdoc (websocket.rs:20-23) says v0.3 names are rejected, while the book (dispatchers.md:225-229) documents the alias; the alias is untested (ws_legacy_method_names_rejected covers only message/send, tasks/list, tasks/get).",
@@ -6588,7 +6588,7 @@
     "bindings/a2a-protocol-slimrpc/src/codec.rs:1-130"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1792 ws_send_message_success",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1836 ws_send_message_success",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:119 send_message_round_trips_over_the_fabric"
    ],
    "notes": "WebSocket reuses the JSON-RPC ProtoJSON types. SLIMRPC uses the canonical lf.a2a.v1 protobuf messages.",
@@ -6608,7 +6608,7 @@
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:96-108"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1809 ws_get_task_not_found",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1853 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates"
    ],
    "notes": "Same handler, so the semantics match. Deviations: WebSocket ends every stream with a synthetic success frame `{\"result\":{\"status\":\"stream_complete\"}}` that is not a StreamResponse (documented). SLIMRPC accepts a missing a2a-version (methods/mod.rs:96 `validate_version_metadata(&headers, false)`), unlike the strict default of the other bindings. Its rationale comment (\"the gRPC binding already made exactly this trade\") is stale, since gRPC now enforces it (helpers.rs:42-51).",
@@ -6631,8 +6631,8 @@
     "spec/slimrpc_v1/slimrpc.md:1-270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:139 a_stream_is_frames_then_the_marker",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:97 refusals_carry_the_documented_codes"
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:142 a_stream_is_frames_then_the_marker",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes"
    ],
    "notes": "WebSocket now has a binding specification (book/src/bindings/websocket.md): connection, service parameters, messages, data types, streaming, errors, authentication, security, differences from JSON-RPC over HTTP. SLIMRPC follows the vendored upstream spec. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
@@ -6673,7 +6673,7 @@
     "spec/slimrpc_v1/slimrpc.md:56-90"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:78 the_version_is_checked_at_the_handshake_with_a_query_fallback"
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:81 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
    "notes": "WebSocket spec §2 covers transmission, value constraints, reserved names (:path) and fallback (A2A-Version query parameter only). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
@@ -6709,12 +6709,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1207-1216",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1251-1260",
     "bindings/a2a-protocol-slimrpc/src/error.rs:40-63",
     "bindings/a2a-protocol-slimrpc/src/error.rs:96-115"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1809 ws_get_task_not_found",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1853 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:206 a2a_errors_keep_their_identity_across_the_fabric"
    ],
@@ -6739,7 +6739,7 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_lagged_stream_reports_server_error_code",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_invalid_params_name_the_field"
    ],
-   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. A SLIMRPC multicast member that falls behind is handed the typed streamLagged error since 2026-10-14 (audit register R66); it was a Transport error carrying only text. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details, as its spec defines no details encoding.",
+   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. A SLIMRPC multicast member that falls behind is handed the typed streamLagged error since 2026-10-14 (audit register R66); it was a Transport error carrying only text. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details. Its spec lists optional details (§6.2) without an encoding, and agntcy-slim-rpc sends an error's code and message only: its error send (send_error_for_rpc in 2.3.0, which the binding pins; send_error_to in 3.4.1, the latest) drops details, and the receiver builds the error with none (both read 2026-10-15).",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
@@ -6778,7 +6778,7 @@
     "book/src/building-agents/dispatchers.md:220-229"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:97 refusals_carry_the_documented_codes"
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes"
    ],
    "notes": "WebSocket spec §1 and §5 document the handshake error body and the JSON-RPC error object with its typed data array, with a code table for every A2A error. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
    "auditor": "E",
@@ -6801,8 +6801,8 @@
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2025 ws_send_streaming_message_events",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:139 a_stream_is_frames_then_the_marker",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2069 ws_send_streaming_message_events",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:142 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:426 ws_upgrade_last_event_id_does_not_replay_the_log"
    ],
    "notes": "WebSocket spec §4: mechanism (frames carrying the request id), ordering (per stream in production order; streams on one connection interleave), reconnection (none; resubscribe, first event is the snapshot), termination (stream_complete marker, or an error frame). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Reconnection held only without a Last-Event-ID on the upgrade request: the upgrade's headers reach every call on the connection, so until 2026-10-14 one made every SubscribeToTask replay the event log from it. The header is now dropped at the handshake.",
@@ -6833,22 +6833,33 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Custom bindings MUST: Support Standard Schemes; Document Integration; Handle Challenges; Maintain Security",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/server/mod.rs:1-259",
-    "book/src/bindings/websocket.md",
+    "bindings/a2a-protocol-slimrpc/src/error.rs:160",
+    "book/src/bindings/websocket.md:149",
     "book/src/building-agents/dispatchers.md:231-243",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:686-705"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:686-705",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1191",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1203",
+    "crates/a2a-protocol-client/src/transport/mod.rs:116"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2464 ws_upgrade_headers_drive_tenant_resolution",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:344 a_jwt_identity_carries_an_a2a_call",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2508 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:266 a_refused_credential_carries_the_refusal_detail",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:316 a_refused_permission_carries_no_challenge",
+    "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:141 a_refused_token_is_a_401_over_websocket",
+    "crates/a2a-protocol-client/src/transport/tests.rs:260 a_websocket_refusal_is_the_http_status",
+    "crates/a2a-protocol-client/src/transport/tests.rs:274 anything_else_stays_a_protocol_error",
+    "bindings/a2a-protocol-slimrpc/src/error.rs:440 a_refused_credential_reaches_the_client_as_401_or_403",
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:384 a_jwt_identity_carries_an_a2a_call",
     "bindings/a2a-protocol-slimrpc/tests/spiffe.rs:94 a_spiffe_identity_carries_an_a2a_call"
    ],
-   "notes": "WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: no in-band challenge, which the binding cannot send; the documented workaround is a gateway. SLIMRPC authenticates at the transport and maps refusals to UNAUTHENTICATED/PERMISSION_DENIED.",
+   "notes": "Both custom bindings support the card's schemes, document how credentials travel, and say how a challenge is communicated. WebSocket (binding spec §6): credentials on the upgrade headers, checked by the interceptors on every request. Since 2026-10-15 a refused credential is -32600 carrying a google.rpc.ErrorInfo from a2a-rust.com, UNAUTHENTICATED with the challenge as www-authenticate metadata (as the gRPC binding's status carries it) or PERMISSION_DENIED, and the client reports the two as UnexpectedStatus 401/403, as on HTTP and gRPC, on a unary call and as a stream's first item. Until then the -32600 had no data: the challenge was dropped, and nothing told the refusal from a malformed request (the binding and e2e tests fail without the change, on the server half and on the client half). A credential is fixed for the connection, so recovering means a new one; browsers cannot set Authorization on the upgrade, and the documented route is a gateway. SLIMRPC authenticates at the transport (JWT, SPIFFE) and maps refusals to UNAUTHENTICATED/PERMISSION_DENIED, the challenge ending the UNAUTHENTICATED message, as SLIMRPC errors carry no details on the wire.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-15)"
   },
   {
    "spec_line": 3042,
@@ -6898,13 +6909,13 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:17-31",
     "book/src/bindings/websocket.md",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1783-2762"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1827-2806"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/out_of_process.rs (suite)",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1938 ws_oversized_message_rejected",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:139 a_stream_is_frames_then_the_marker",
-    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:97 refusals_carry_the_documented_codes",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1982 ws_oversized_message_rejected",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:142 a_stream_is_frames_then_the_marker",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:332 ws_json_without_a_method_returns_invalid_request"
    ],
    "notes": "WebSocket: examples and a differences table are in the binding spec (§3, §5, §8); TCK --equivalence compares it with the spec bindings; edge cases are tested in websocket.rs and websocket_*.rs. SLIMRPC is checked against upstream's spec and the official crate.",
@@ -8279,7 +8290,7 @@
     "crates/a2a-protocol-server/src/auth/mod.rs:9"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2437 ws_get_extended_agent_card_routed"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2481 ws_get_extended_agent_card_routed"
    ],
    "notes": "WebSocket routes through the same RequestHandler, so interceptors (auth, rate limit, audit) and tenant resolution apply identically per message.",
    "auditor": "F",
@@ -8550,7 +8561,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1222",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1266",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:33",
     "crates/a2a-protocol-server/src/portable.rs:13",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:149"
@@ -8602,7 +8613,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1222",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1266",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:71"
    ],
    "test_evidence": [
@@ -10057,7 +10068,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:571",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:22",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1222",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1266",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:145"
    ],
    "test_evidence": [

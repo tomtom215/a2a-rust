@@ -102,6 +102,48 @@ pub(crate) async fn collect_response_limited(
     }
 }
 
+/// A JSON-RPC error as the [`ClientError`] a caller acts on.
+///
+/// A credential the WebSocket binding refuses is reported in the body, since
+/// an upgraded connection has no status to send (binding spec §6): `-32600`
+/// with a `google.rpc.ErrorInfo` from `a2a-rust.com` whose reason is
+/// `UNAUTHENTICATED` or `PERMISSION_DENIED`. That is returned as the `401` or
+/// `403` the HTTP bindings answer and the gRPC transport maps its status to,
+/// so a caller, and [`BearerAuthInterceptor`](crate::BearerAuthInterceptor),
+/// see one shape whatever the binding. Until 2026-10-15 it was
+/// `Protocol(InvalidRequest)`, a malformed request to the caller. Every other
+/// error is [`ClientError::Protocol`], as [`map_jsonrpc_error`] maps it.
+pub(crate) fn jsonrpc_client_error(
+    code: i32,
+    message: String,
+    data: Option<serde_json::Value>,
+) -> crate::error::ClientError {
+    use crate::error::ClientError;
+    let refused = (code == a2a_protocol_types::ErrorCode::InvalidRequest.as_i32())
+        .then(|| data.as_ref()?.as_array())
+        .flatten()
+        .and_then(|details| {
+            details.iter().find_map(|d| {
+                let refusal = d.get("@type")?.as_str()?
+                    == "type.googleapis.com/google.rpc.ErrorInfo"
+                    && d.get("domain")?.as_str()? == "a2a-rust.com";
+                match d.get("reason")?.as_str()? {
+                    "UNAUTHENTICATED" if refusal => Some(401),
+                    "PERMISSION_DENIED" if refusal => Some(403),
+                    _ => None,
+                }
+            })
+        });
+    match refused {
+        Some(status) => ClientError::UnexpectedStatus {
+            status,
+            body: message,
+            retry_after: None,
+        },
+        None => ClientError::Protocol(map_jsonrpc_error(code, message, data)),
+    }
+}
+
 /// Maps a JSON-RPC error (code, message, optional `data`) to an
 /// [`A2aError`](a2a_protocol_types::A2aError), preserving information the old
 /// per-site mapping discarded.

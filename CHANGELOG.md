@@ -501,6 +501,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A credential refused over WebSocket says so in the body** (server and
+  client; A2A §12.6 "Handle Challenges", §3.3.2). The `-32600` the
+  WebSocket binding answers now carries a `google.rpc.ErrorInfo` from
+  `a2a-rust.com`: `UNAUTHENTICATED` with the challenge an HTTP binding sends
+  as `WWW-Authenticate` in its `www-authenticate` metadata, or
+  `PERMISSION_DENIED` (binding specification §6). It had no `data`, so
+  nothing told it from a malformed request, and the challenge was dropped.
+  The client reports the two as `ClientError::UnexpectedStatus` with status
+  `401` and `403`, on a unary call and as a stream's first item, so
+  `BearerAuthInterceptor` drops a refused token over WebSocket as it does
+  over HTTP and gRPC; they were `ClientError::Protocol(InvalidRequest)`
+  (see the upgrading guide).
+
 - **The handler's own request checks name the field at fault** (server;
   §3.3.2 SHOULD, audit register). An empty or over-long id, a message with
   no role or no parts, metadata that is not an object or too large, a part's

@@ -11,7 +11,7 @@ committed to and refuses speculative milestones; this one records where things
 stand, including decisions to *not* do something. When an item here becomes work
 the repository commits to, move it there and delete it here.
 
-Last updated 2026-10-14 — `claude/funny-heisenberg-e6tl83`: main's three red
+Last updated 2026-10-15 — `claude/funny-heisenberg-e6tl83`: main's three red
 workflows (docs site, OSV-Scanner, the rate-limit benchmark), Dependabot
 #169, the v1.0.1 re-anchor, the approved audit-register items, and R67 with
 the move to 0.15.0. Before that, 2026-10-12 — `claude/tender-cray-bsfw83`: the two spec MUSTs
@@ -1478,8 +1478,44 @@ follows is a new pull request.
     ledger's §1.4 MUST is TESTED (ledger: TESTED 328, PARTIAL 9,
     SUPPORTED 59, NOT_SUPPORTED 4, APPLICATION 87, NOT_APPLICABLE 22 of
     509); the empty `[pending]` table is gone, the schema keeping the field
-    for a type a later proto release adds. **Next session:** the remaining
-    PARTIAL MUSTs (§3.1.6, §3.5.2, §5.7, §12.4, §12.6), then handoff Step 3.
+    for a type a later proto release adds.
+38. `feat(server, client):` §12.6 — a credential refused over WebSocket
+    carries its refusal in the body: `-32600` with a `google.rpc.ErrorInfo`
+    from `a2a-rust.com`, `UNAUTHENTICATED` with the challenge as
+    `www-authenticate` metadata or `PERMISSION_DENIED` (binding
+    specification §6), which the client reports as `UnexpectedStatus` 401
+    and 403, on a unary call and as a stream's first item. It had no `data`,
+    so the challenge was dropped and the refusal read as a malformed
+    request; the maintainer had approved that as the recorded disposition,
+    and this goes past it. The binding and end-to-end tests fail with the
+    server half or the client half reverted; 9 hand mutants, all killed (a
+    tenth, on the mid-stream error path, survived because no refusal reaches
+    it, and that path was left unchanged instead). The ledger's §12.6 entry
+    is TESTED (TESTED 329, PARTIAL 8). The other four PARTIAL MUSTs:
+    - §3.5.2: **R69**, a subscription on a replica with no live queue can
+      lose the event another replica has logged and not yet stored,
+      silently; reproduced by a test (described in the register). The
+      ledger entry is now `medium`. Recommended fix: the store reports the
+      position a saved task reflects (register R69 (a)). Also open, as a
+      change to an approved behaviour: the lag catch-up gives up past one
+      `subscribe_replay_limit` read (1,000 events) where it could page
+      through the log; each page is bounded, but a consumer slower than its
+      producer would then read the store indefinitely instead of ending.
+    - §3.1.6 and §12.4: dispositions approved as recorded on 2026-10-14
+      (the register's decision table). §3.1.6's idle bound
+      (`subscribe_max_idle`, 300 s) ends a subscription to a task still not
+      terminal with a clean end of stream; reopen only if the maintainer
+      wants no bound, or an error that says to resubscribe. §12.4 cannot
+      close here: `agntcy-slim-rpc` sends an error's code and message only
+      (its error send, `send_error_for_rpc` in 2.3.0, which the binding
+      pins, and `send_error_to` in 3.4.1, the latest, drops `details`, and
+      the receiver builds the error with none; both read 2026-10-15).
+    - §5.7: nothing left in code; `ListTasksResponse.tasks` is the
+      specification's own contradiction, and its upstream report is a
+      draft the maintainer files.
+
+**Next:** R69 option (a), which the maintainer chose on 2026-10-15, is the
+next commit; the catch-up paging still awaits a call.
 
 **Lessons, new this session.**
 - Tests and semver-checks passing do not show a serde change is

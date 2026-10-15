@@ -39,6 +39,7 @@ release text; the ledger's own numbering).
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
 | R68 | extended card declared, none configured | `ExtendedAgentCardNotConfiguredError`, as §3.1.11 and §13.3 state | a deployer relying on the public card being served | done |
+| R69 | a subscription across replicas loses an event | the store reports the log position a saved task reflects (option a) | the `TaskStore` trait (a defaulted method) and the SQL schemas (a column) | decided 2026-10-15: option (a); in progress |
 
 ## R12 — a JWT caller is its `sub` alone
 
@@ -449,6 +450,57 @@ the capability pass their public card to `with_extended_agent_card`, so what
 they serve is unchanged. `a_declared_card_with_no_extended_card_is_not_configured`
 failed before the change.
 
+## R69 — a subscription across replicas can lose an event
+
+Found 2026-10-15 while working the §3.5.2 entry (line 692). Decided the same
+day by the maintainer: option (a).
+
+**Now.** A `SubscribeToTask` on a replica with no live queue for the task
+(`crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs`,
+`snapshot_and_live`) reads the log's last position, then the task, and starts
+the stream after that position; the snapshot is the task as read. Another
+replica sharing the store may be running the task, and its processor records
+each non-terminal event in the log before it stores the state the event leads
+to (`handler/event_processing/background/processor.rs`, `handle`, and
+`record_event` in `background/mod.rs`). Its last logged event can therefore
+be unstored when the task is read: that event is at or below the stream's
+start, so it is never replayed, and it is not in the snapshot. The subscriber
+loses it, and no `streamLagged` says so. The ledger recorded the mirror case
+only (an event logged and stored between the two reads arrives twice).
+
+**Shown by** a test, written 2026-10-15 and failing on this tree, not
+committed (a failing test cannot be, and one is not skipped): a `TaskStore`
+wrapper over `InMemoryTaskStore` that, on the first `last_event_seq` call
+after a flag is set, appends an `other-1` artifact event at the next position
+without saving it, and saves the task with `other-1` right after the next
+`get` has read it. In `tests/event_log_tests/across_turns.rs`'s setup, a
+`start` turn parks the task, the flag is set, `on_resubscribe` runs, and a
+`fast` turn follows. `other-1` reaches the subscriber 0 times: the snapshot
+holds `start-1` only, the stream `fast-1` to `fast-3`, and no error.
+
+**Text.** §3.5.2 (line 692): "Each stream MUST receive the same events in the
+same order."
+
+**Options.**
+- (a) The store reports the log position a saved task reflects: the processor
+  saves with the position of the event it folded, and a defaulted
+  `TaskStore` method returns the task with that position (`None` for a store
+  that does not keep it, which keeps today's behaviour). The subscription
+  starts after the position the snapshot reflects, so it neither loses nor
+  repeats an event. The in-memory, SQLite and PostgreSQL stores and their two
+  tenant-aware SQL counterparts keep it (a column and a migration for each of
+  the four SQL schemas); the tenant-aware in-memory store and the audit
+  wrapper forward it. Exact; the largest change.
+- (b) Replay the log's last event as well unless the snapshot is seen to
+  reflect it, judged per event kind (a status equal to the stored one, an
+  artifact chunk already present). No API change, but a judgment that can
+  repeat an event or, misjudged, still lose one.
+- (c) Leave it recorded in the ledger. Only deployments that run one task's
+  turns on one replica and subscribe on another are exposed, in the window
+  between one event's append and its save.
+
+**Recommendation.** (a), which also removes the duplicate the ledger records.
+
 ## Ledger entries that need a decision
 
 | Ledger entry | Now | Recommendation |
@@ -463,5 +515,6 @@ failed before the change.
 | §14 (line 3342): implementations SHOULD support HTTPS | only gRPC terminates TLS | **Done** for `serve::Server` (`Server::with_tls`, `with_tls_pem`, under `tls-rustls`): the handshake runs per connection within the header read timeout, ALPN offers `h2` and `http/1.1`, and a failed handshake counts as a failed connection. 8 hand mutants, all killed. `serve`, `serve_with_addr` and the WebSocket listener stay plaintext, behind a proxy. |
 | §14 (line 3344): clients SHOULD verify signatures when present | opt-in, per fetch; `CachingCardResolver` and `ClientBuilder::from_card` take no keys | **Done**: `CachingCardResolver::with_options(CardFetchOptions)`, and `ClientBuilder::from_signed_card(json, keys)`, which verifies the JSON as given (a typed `AgentCard` drops fields the signer covered). 3 hand mutants, all killed. |
 | §3.3.2 (line 544): use `BadRequest` where applicable | the handler's own validation names the field in the message only | **Done** as a new `ServerError::InvalidField { field, message }`: changing `InvalidParams`' payload would fail the semver gate at 0.14.1; the new variant answers exactly as `InvalidParams` does, plus the detail. |
-| §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016), §12.6 (line 3033) | dispositions recorded in each entry's notes | Approve each as recorded, or name the ones to change. |
+| §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016) | dispositions recorded in each entry's notes | Approve each as recorded, or name the ones to change. §3.5.2 also has R69, found since. |
+| §12.6 (line 3033): custom bindings MUST define how authentication challenges are communicated | approved as recorded: the WebSocket binding answers a refused credential `-32600` with no `data`, so its challenge is dropped | **Done** (2026-10-15), beyond the approved disposition: the `-32600` carries an `ErrorInfo` from `a2a-rust.com`, `UNAUTHENTICATED` with the challenge as `www-authenticate` metadata or `PERMISSION_DENIED` (binding specification §6), and the client reports them as `401` and `403`. The entry is TESTED; 9 hand mutants, all killed. |
 | MAY, NOT_SUPPORTED: §3.1.9 pagination, §3.6.1, §8.4.2 `jku` in signers, §8.6.2 default cache lifetime, §11.5 repeated query fields, §11.7 final snapshot, §13.3 per-caller extended card | not implemented | **Done** for three, now SUPPORTED: §3.1.9 pagination (`RequestHandler::on_list_push_configs_page`, every binding; 10 hand mutants, all killed), §8.4.2 (`sign_card_es256_with_jku` and `sign_card_ed25519_with_jku`, https only; 5 killed) and §13.3 (`ExtendedCardProvider`, `RequestHandlerBuilder::with_extended_card_provider`; 10 killed). The other four stay NOT_SUPPORTED, with the reasons in their entries. |

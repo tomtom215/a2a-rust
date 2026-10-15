@@ -591,6 +591,14 @@ it used to be served the tenant's shared records.
 - SLIMRPC status codes follow the SLIMRPC specification's table:
   `JSONParseError` is `INTERNAL`, `ContentTypeNotSupportedError`
   `UNIMPLEMENTED`, `VersionNotSupportedError` `FAILED_PRECONDITION`.
+- A credential refused over WebSocket is still `-32600`, now with an
+  `ErrorInfo` from `a2a-rust.com` (`UNAUTHENTICATED` with the challenge as
+  `www-authenticate` metadata, or `PERMISSION_DENIED`; the
+  [binding specification](../bindings/websocket.md#6-authentication-126)
+  §6). The SDK's client reports it as `ClientError::UnexpectedStatus` with
+  status `401` or `403`, as over HTTP and gRPC; code that matched
+  `ClientError::Protocol` with `ErrorCode::InvalidRequest` for it matches
+  `UnexpectedStatus` instead.
 
 ## 0.13 → 0.14
 

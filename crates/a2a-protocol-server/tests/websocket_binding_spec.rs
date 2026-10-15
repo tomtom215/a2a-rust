@@ -11,10 +11,15 @@
 
 use std::sync::Arc;
 
+use std::future::Future;
+use std::pin::Pin;
+
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::WebSocketDispatcher;
-use a2a_protocol_server::{EventEmitter, agent_executor};
+use a2a_protocol_server::interceptor::ServerInterceptor;
+use a2a_protocol_server::{BearerTokenAuthInterceptor, CallContext, EventEmitter, agent_executor};
 use a2a_protocol_types::TaskState;
+use a2a_protocol_types::error::{A2aError, A2aResult};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
@@ -31,13 +36,11 @@ type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn server() -> std::net::SocketAddr {
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(Done)
-            .without_agent_card()
-            .build()
-            .unwrap(),
-    );
-    Arc::new(WebSocketDispatcher::new(handler))
+    serve(RequestHandlerBuilder::new(Done).without_agent_card()).await
+}
+
+async fn serve(builder: RequestHandlerBuilder) -> std::net::SocketAddr {
+    Arc::new(WebSocketDispatcher::new(Arc::new(builder.build().unwrap())))
         .serve_with_addr("127.0.0.1:0")
         .await
         .unwrap()
@@ -221,4 +224,115 @@ async fn a_notification_is_run_and_sent_nothing() {
         1,
         "the send was run, the streaming send was not"
     );
+}
+
+/// Refuses every call as a known caller without the permission.
+struct Forbid;
+impl ServerInterceptor for Forbid {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async {
+            let mut refused = A2aError::permission_denied("not allowed");
+            refused.data = Some(json!({
+                "@type": "type.googleapis.com/google.rpc.Help",
+                "links": [{"description": "request access", "url": "https://example.com/access"}]
+            }));
+            Err(refused)
+        })
+    }
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// The refusal detail of an error frame, if it has one.
+fn refusal(frame: &Value) -> Option<&Value> {
+    frame["error"]["data"].as_array()?.iter().find(|d| {
+        d["@type"] == "type.googleapis.com/google.rpc.ErrorInfo" && d["domain"] == "a2a-rust.com"
+    })
+}
+
+/// §6: a refused credential is `-32600` carrying the binding's refusal
+/// detail, with the challenge an HTTP binding sends as `WWW-Authenticate`
+/// (A2A §12.6 "Handle Challenges"), on a unary and a streaming call alike.
+/// Until 2026-10-15 the frame had no `data`: nothing told it from a
+/// malformed request, and the challenge was lost.
+#[tokio::test]
+async fn a_refused_credential_carries_the_refusal_detail() {
+    let addr = serve(
+        RequestHandlerBuilder::new(Done)
+            .without_agent_card()
+            .with_interceptor(BearerTokenAuthInterceptor::new(["good"])),
+    )
+    .await;
+    let mut ws = connect(&format!("ws://{addr}/"), true).await.unwrap();
+    let send =
+        json!({"message": {"messageId": "m-1", "role": "ROLE_USER", "parts": [{"text": "hi"}]}});
+    for (id, method, params) in [
+        ("1", "GetTask", json!({"id": "task-9"})),
+        ("2", "SendStreamingMessage", send),
+    ] {
+        let v = call(
+            &mut ws,
+            json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
+        )
+        .await;
+        assert_eq!(v["id"], id, "{v}");
+        assert_eq!(v["error"]["code"], -32600, "{v}");
+        let detail = refusal(&v).unwrap_or_else(|| panic!("no refusal detail: {v}"));
+        assert_eq!(detail["reason"], "UNAUTHENTICATED", "{v}");
+        assert_eq!(
+            detail["metadata"]["www-authenticate"], "Bearer realm=\"a2a\"",
+            "{v}"
+        );
+    }
+
+    // The control: an accepted credential reaches the handler, whose error
+    // carries no refusal.
+    let mut req = format!("ws://{addr}/").into_client_request().unwrap();
+    req.headers_mut()
+        .insert("a2a-version", "1.0".parse().unwrap());
+    req.headers_mut()
+        .insert("authorization", "Bearer good".parse().unwrap());
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let v = call(
+        &mut ws,
+        json!({"jsonrpc": "2.0", "id": "3", "method": "GetTask", "params": {"id": "task-9"}}),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], -32001, "{v}");
+    assert!(refusal(&v).is_none(), "{v}");
+}
+
+/// §6: a caller refused the operation is `PERMISSION_DENIED`, with no
+/// challenge, since a new credential would not help; a detail the refusal
+/// carries itself is kept beside it.
+#[tokio::test]
+async fn a_refused_permission_carries_no_challenge() {
+    let addr = serve(
+        RequestHandlerBuilder::new(Done)
+            .without_agent_card()
+            .with_interceptor(Forbid),
+    )
+    .await;
+    let mut ws = connect(&format!("ws://{addr}/"), true).await.unwrap();
+    let v = call(
+        &mut ws,
+        json!({"jsonrpc": "2.0", "id": "1", "method": "GetTask", "params": {"id": "task-9"}}),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], -32600, "{v}");
+    let detail = refusal(&v).unwrap_or_else(|| panic!("no refusal detail: {v}"));
+    assert_eq!(detail["reason"], "PERMISSION_DENIED", "{v}");
+    assert!(detail.get("metadata").is_none(), "{v}");
+    assert_eq!(
+        v["error"]["data"][0]["@type"], "type.googleapis.com/google.rpc.Help",
+        "{v}"
+    );
+    assert_eq!(v["error"]["data"].as_array().map(Vec::len), Some(2), "{v}");
 }

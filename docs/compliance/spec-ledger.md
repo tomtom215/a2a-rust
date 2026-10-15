@@ -36,26 +36,25 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §9 | 13 |  |  |  |  |  | 13 |
 | §10 | 6 |  |  |  |  |  | 6 |
 | §11 | 16 |  |  | 2 |  | 1 | 19 |
-| §12 | 8 | 1 | 7 |  | 1 | 2 | 19 |
+| §12 | 9 | 1 | 7 |  | 1 | 1 | 19 |
 | §13 | 34 | 26 | 9 |  |  |  | 69 |
 | §14 | 7 | 5 | 3 |  |  |  | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 81 | 11 | 6 |  | 8 |  | 106 |
-| **All** | **328** | **87** | **59** | **4** | **22** | **9** | **509** |
+| **All** | **329** | **87** | **59** | **4** | **22** | **8** | **509** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
+| medium | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
 | low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
-| low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
 | low | PARTIAL | §8.6 (line 2215) | Servers and clients **SHOULD** use standard HTTP caching mechanisms to reduce unnecessary network overhead. | Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store… |
 | low | PARTIAL | §8.6.2 (line 2225) | Clients **SHOULD** honor HTTP caching semantics as defined in RFC 9111 when fetching Agent Cards | CachingCardResolver revalidates every resolve with the stored validators (permitted by RFC 9111: a cache may always validate) and, since 2026-10-12, does not store a no-store response (RFC 9111 §5.2.2.5), nor one with no validator to revalidate by. Since 2026… |
 | low | PARTIAL | §11.1 (line 2750) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Server labels responses application/a2a+json only when Accept prefers it or the request body was a2a+json. Otherwise, including a bare request with no Accept, it sends application/json, so the spec examples at lines 2835-2836 and 2921-2922 are not matched by … |
 | low | PARTIAL | §12.4 (line 3016) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
-| low | PARTIAL | §12.6 (line 3033) | Custom bindings MUST: Support Standard Schemes; Document Integration; Handle Challenges; Maintain Security | WebSocket spec §6 documents integration: credentials on the upgrade headers, checked per request; a refused credential is -32600 in the body with no 401/WWW-Authenticate (the connection is already upgraded), and browsers cannot set Authorization. Remaining: n… |
 
 ## After the release
 

@@ -788,12 +788,11 @@ impl WebSocketTransport {
                     code = err.error.code,
                     "JSON-RPC error over WebSocket"
                 );
-                let a2a = crate::transport::map_jsonrpc_error(
+                Err(crate::transport::jsonrpc_client_error(
                     err.error.code,
                     err.error.message,
                     err.error.data,
-                );
-                Err(ClientError::Protocol(a2a))
+                ))
             }
         }
     }
