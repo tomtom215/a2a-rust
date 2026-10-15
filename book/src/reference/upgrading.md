@@ -353,6 +353,19 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 # }
 ```
 
+### `CachingCardResolver` trusts the card's `max-age`
+
+Spec §8.6.2: clients SHOULD honor RFC 9111 when fetching agent cards.
+`CachingCardResolver::resolve` used to send a request on every call; it now
+returns the stored card without one while the card is fresh, for its
+`Cache-Control: max-age` (or `Expires`). A card the agent changes is seen
+once the stored one goes stale, which against this SDK's servers is up to
+`agent_card_max_age` (default 3600 s) later. To see a change at once, as
+before, build the resolver with `.with_always_revalidate(true)`, or lower
+the server's `max-age`. `with_options` now also starts the resolver with an
+empty cache, so a clone given other options no longer shares its original's
+stored or extended card.
+
 ### Push webhook timeouts: 10 s per request, 30 s per delivery
 
 `HttpPushSender`'s request timeout goes from 30 s to 10 s and

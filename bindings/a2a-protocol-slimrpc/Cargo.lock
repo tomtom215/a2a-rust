@@ -9,6 +9,7 @@ dependencies = [
  "a2a-protocol-types",
  "base64 0.23.1",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-util",
  "serde",

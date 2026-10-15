@@ -5464,20 +5464,27 @@
    "keyword": "SHOULD",
    "binds": "both",
    "requirement": "Servers and clients **SHOULD** use standard HTTP caching mechanisms to reduce unnecessary network overhead.",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:322",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:88",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:564",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:611"
+    "crates/a2a-protocol-client/src/discovery.rs:435",
+    "crates/a2a-protocol-client/src/discovery.rs:444",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:75",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:95",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:156",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:636",
+    "crates/a2a-protocol-server/src/dispatch/rest/response.rs:37"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one"
+    "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:83 a_fresh_card_is_served_without_a_request",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:95 a_card_past_its_max_age_is_revalidated",
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:66 a_cached_card_is_revalidated_with_its_validators"
    ],
-   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum, the extended card revalidates (private, no-cache, ETag). Client: CachingCardResolver revalidates; resolve_agent_card and fetch_card_from_url do no caching; the resolver does not store a no-store response, and max-age is not used to skip a request (see 2225).",
+   "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum (Cache-Control max-age, ETag), the extended card revalidates (private, no-cache, Vary: Authorization, ETag). Client: since 2026-10-15 CachingCardResolver is an RFC 9111 private cache of the public card: a fresh card is returned without a request, a stale one is revalidated with If-None-Match / If-Modified-Since (details in 2225). resolve_agent_card, fetch_card_from_url and their _with_options / _with_path variants are one-shot free functions with no state to keep a cache in; their rustdoc says they are uncached and points to CachingCardResolver, the SDK's caching mechanism. Counted as met on that reading: a caller that fetches a card repeatedly has the cache to use. Server impl_evidence re-cited 2026-10-15 to the lines that set the headers; the axum lines cited before had moved.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 2219,
@@ -5573,22 +5580,42 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients **SHOULD** honor HTTP caching semantics as defined in RFC 9111 when fetching Agent Cards",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:361",
-    "crates/a2a-protocol-client/src/discovery.rs:510",
-    "crates/a2a-protocol-client/src/discovery.rs:532-544"
+    "crates/a2a-protocol-client/src/discovery.rs:444",
+    "crates/a2a-protocol-client/src/discovery.rs:459",
+    "crates/a2a-protocol-client/src/discovery.rs:474",
+    "crates/a2a-protocol-client/src/discovery.rs:607",
+    "crates/a2a-protocol-client/src/discovery.rs:624",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:75",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:126",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:137"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-client/tests/card_freshness.rs:83 a_fresh_card_is_served_without_a_request",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:95 a_card_past_its_max_age_is_revalidated",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:117 a_304_renews_the_cards_freshness",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:142 a_no_cache_card_is_revalidated_on_every_resolve",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:156 a_no_store_card_is_fetched_again_however_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:170 always_revalidate_ignores_max_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:186 a_card_without_a_validator_is_kept_while_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:204 age_reduces_the_remaining_freshness",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:217 a_date_an_hour_old_is_an_hours_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:274 with_options_starts_a_new_cache",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:236 expires_counts_from_date_and_max_age_wins_over_it",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:262 an_invalid_or_past_expires_is_stale",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:274 no_cache_and_vary_star_are_never_fresh",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:324 the_age_is_the_larger_of_apparent_and_corrected_age",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:374 fresh_means_strictly_before_the_end_of_the_lifetime",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:98 a_no_store_card_is_not_kept",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:150 a_304_replaces_the_stored_validators",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:179 a_no_store_304_leaves_nothing_stored"
    ],
-   "notes": "CachingCardResolver revalidates every resolve with the stored validators (permitted by RFC 9111: a cache may always validate) and, since 2026-10-12, does not store a no-store response (RFC 9111 §5.2.2.5), nor one with no validator to revalidate by. Since 2026-10-13 the validators a 304 carries replace the stored ones (RFC 9111 §4.3.4), and a no-store 304 leaves nothing stored; before, the first 200's were kept, so the next revalidation sent an ETag the server had replaced. Remaining: max-age freshness is not used to skip the request (by choice, so hot-reloaded cards are seen at once), and resolve_agent_card / fetch_card_from_url do no caching.",
+   "notes": "Since 2026-10-15 CachingCardResolver honours freshness (RFC 9111 §4.2): a stored card is returned without a request while its age is less than its freshness lifetime, the lifetime being max-age, else Expires minus Date (§4.2.1; an invalid Expires is in the past, §5.3), and the age max(apparent_age, Age + response_delay) plus the time since arrival (§4.2.3). A stale card is revalidated with its validators, which a 304 replaces (§4.3.4, since 2026-10-13); the 304's own Cache-Control / Expires set the new freshness. no-cache and Vary: * revalidate on every resolve (§5.2.2.4, §4.1); no-store is not stored (§5.2.2.5, since 2026-10-12); a card is kept only with a validator or a lifetime. s-maxage and proxy-revalidate are shared-cache only; private permits this cache; must-revalidate holds because a stale card is never returned. Vary naming fields needs no handling: one resolver sends the same request fields on every fetch, and with_options (since 2026-10-15) starts a new cache, so a card stored under one credential is never returned for another; the resolver fetches the public card only, and an extended card (Vary: Authorization) is installed by the caller. with_always_revalidate(true) restores revalidation on every resolve. Deliberate simplifications, documented in discovery/freshness.rs: a 304 without Cache-Control or Expires leaves the card stale (§4.3.4 would carry the stored ones over; RFC 9110 §15.4.5 requires the 304 to send them), a qualified no-cache=\"field\" counts as unqualified, and there is no heuristic freshness except the opt-in default (2227). resolve_agent_card / fetch_card_from_url keep no cache (see 2215).",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 2226,
@@ -5616,15 +5643,23 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "When the server does not include caching headers, clients **MAY** apply an implementation-specific default cache duration",
-   "status": "NOT_SUPPORTED",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:322"
+    "crates/a2a-protocol-client/src/discovery.rs:420",
+    "crates/a2a-protocol-client/src/discovery.rs:474",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:126"
    ],
-   "test_evidence": [],
-   "notes": "No freshness lifetime; every resolve() hits the network.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/card_freshness.rs:230 no_default_lifetime_unless_asked_for",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:241 the_default_lifetime_keeps_a_card_with_no_caching_headers_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:258 the_default_lifetime_does_not_override_max_age",
+    "crates/a2a-protocol-client/src/discovery/freshness.rs:356 the_default_lifetime_fills_only_a_missing_one"
+   ],
+   "notes": "Since 2026-10-15, opt-in: CachingCardResolver::with_default_freshness(lifetime) gives a card whose response has no max-age and no Expires that freshness lifetime (RFC 9111 §4.2.2 heuristic freshness), less any Age it arrived with, capped at 2^31 s. It never applies to a no-cache, Vary: * or no-store response, and is off by default, so without it such a card is revalidated on every resolve.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 2236,

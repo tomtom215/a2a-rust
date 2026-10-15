@@ -89,6 +89,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CachingCardResolver::with_always_revalidate`** and
+  **`CachingCardResolver::with_default_freshness`** (client; spec §8.6.2).
+  `with_always_revalidate(true)` revalidates on every resolve however fresh
+  the card is, as the resolver did before this release, for an agent whose
+  card changes sooner than its `max-age` says. `with_default_freshness`
+  gives a card whose response has no `max-age` and no `Expires` a lifetime
+  (§8.6.2: clients MAY apply a default cache duration); without it, off by
+  default, such a card is revalidated on every resolve. The rustdoc of
+  `resolve_agent_card` and `fetch_card_from_url` now says they are one-shot
+  and uncached and points to the resolver. The client crate now depends on
+  `httpdate` directly, to read `Date` and `Expires`; it was already in the
+  graph through `hyper`.
+
 - **`TaskStore::get_with_position` and `store::AppliedPosition`** (server;
   audit register R69). `get_with_position` returns a task with the event-log
   position the stored record reflects; its default reports none. The
@@ -540,6 +553,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#151). `Server::bind` now delegates to it.
 
 ### Behaviour Changes
+
+- **`CachingCardResolver` uses a fresh card without a request** (client;
+  spec §8.6 and §8.6.2: clients SHOULD honor RFC 9111 when fetching Agent
+  Cards). `resolve()` sent a request on every call, so a card's
+  `Cache-Control: max-age` never saved one. It now returns the stored card
+  while it is fresh (RFC 9111 §4.2): for its `max-age`, or else its
+  `Expires` minus its `Date`, less the age it arrived with (`Age`, and
+  `Date` against the local clock; §4.2.3). A stale card is revalidated as
+  before; a card marked `no-cache` or `Vary: *` is revalidated on every
+  resolve, and a `no-store` card is still not stored. A card with a
+  lifetime and no `ETag` or `Last-Modified` is now kept while fresh, where
+  it was not kept at all. After a `304`, the card is as fresh as the `304`
+  says. **A card the agent changes is seen only once the stored one goes
+  stale**: up to an hour behind this SDK's server defaults (`max-age=3600`).
+  `with_always_revalidate(true)` restores the request on every resolve (see
+  Added).
+
+- **`CachingCardResolver::with_options` starts a new cache** (client;
+  RFC 9111 §4.1). A clone shares its original's cache and installed
+  extended card, so `resolver.clone().with_options(other)` returned a card
+  stored under the original's credential, and now, with freshness, would
+  have done so without a request. It starts with nothing stored and no
+  extended card.
 
 - **A credential refused over WebSocket says so in the body** (server and
   client; A2A §12.6 "Handle Challenges", §3.3.2). The `-32600` the
