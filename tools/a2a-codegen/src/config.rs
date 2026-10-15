@@ -68,6 +68,53 @@ pub struct MessageConfig {
     /// proto's in the order given.
     #[serde(default)]
     pub extra: Vec<ExtraField>,
+    /// Each of the message's `oneof`s, by its proto name.
+    #[serde(default)]
+    pub oneofs: BTreeMap<String, OneofConfig>,
+}
+
+/// A `oneof`, generated as an enum with one variant per member (ADR 0016).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OneofConfig {
+    /// The enum's path (`message::PartContent`) when the message has fields
+    /// besides this `oneof`; the message is then a struct whose field, named
+    /// after the `oneof`, holds the enum flattened. Absent when the message
+    /// is only this `oneof`: the message's own type is then the enum, with
+    /// the message's derives, attributes and docs.
+    pub path: Option<String>,
+    /// The enum's derives, when it has a `path`.
+    #[serde(default)]
+    pub derives: Vec<String>,
+    #[serde(default)]
+    pub attrs: Vec<String>,
+    /// The enum's docs, when it has a `path` (a `oneof` has no comment of
+    /// its own in the model).
+    pub doc: Option<String>,
+    /// The docs of the struct field that holds the enum.
+    pub field_doc: Option<String>,
+    /// Implement `Deserialize` with `crate::oneof::oneof_deserialize!`,
+    /// which skips unknown keys and refuses two members.
+    #[serde(default)]
+    pub deserialize_macro: bool,
+    #[serde(default)]
+    pub variants: BTreeMap<String, VariantConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VariantConfig {
+    /// The variant name, when not the member's name in `PascalCase`.
+    pub rename: Option<String>,
+    /// The variant's value type, when not the default translation.
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+    pub doc: Option<String>,
+    pub doc_append: Option<String>,
+    /// The `#[deprecated]` note; set exactly when the proto marks the member
+    /// deprecated.
+    pub deprecated: Option<String>,
+    pub why: Option<String>,
 }
 
 /// A Rust-only field. It must say why the type carries something the proto
@@ -166,9 +213,19 @@ impl Config {
                     ));
                 }
             }
+            problems.extend(oneof_problems(name, message, config));
             for (field, fc) in &config.fields {
                 if !message.fields.iter().any(|f| &f.name == field) {
                     problems.push(format!("{name}.{field} is not a field in the proto"));
+                }
+                if message
+                    .fields
+                    .iter()
+                    .any(|f| &f.name == field && f.oneof.is_some())
+                {
+                    problems.push(format!(
+                        "{name}.{field} is a oneof member; configure it under `oneofs`"
+                    ));
                 }
                 if (fc.ty.is_some() || fc.rename.is_some()) && fc.why.is_none() {
                     problems.push(format!(
@@ -195,6 +252,73 @@ impl Config {
     }
 }
 
+/// What is wrong with a message's `oneofs` configuration.
+fn oneof_problems(
+    name: &str,
+    message: &crate::proto::Message,
+    config: &MessageConfig,
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (oneof, members) in &message.oneofs {
+        let Some(oc) = config.oneofs.get(oneof) else {
+            problems.push(format!("{name}.{oneof} is a oneof with no `oneofs` entry"));
+            continue;
+        };
+        let alone = message
+            .fields
+            .iter()
+            .all(|f| f.oneof.as_ref() == Some(oneof));
+        if oc.path.is_none() && !alone {
+            problems.push(format!(
+                "{name}.{oneof} needs a `path`: the message has fields besides it"
+            ));
+        }
+        if oc.path.is_some() && oc.derives.is_empty() {
+            problems.push(format!("{name}.{oneof} has a `path` and no `derives`"));
+        }
+        for (member, vc) in &oc.variants {
+            let Some(f) = message.fields.iter().find(|f| &f.name == member) else {
+                problems.push(format!(
+                    "{name}.{oneof}.{member} is not a field in the proto"
+                ));
+                continue;
+            };
+            if !members.contains(member) {
+                problems.push(format!("{name}.{member} is not a member of {oneof}"));
+            }
+            if (vc.ty.is_some() || vc.rename.is_some()) && vc.why.is_none() {
+                problems.push(format!(
+                    "{name}.{oneof}.{member} changes the default translation without a `why`"
+                ));
+            }
+            if vc.deprecated.is_some() != f.deprecated {
+                problems.push(format!(
+                    "{name}.{oneof}.{member}: `deprecated` is set exactly when the proto marks \
+                     the member deprecated, and the proto {}",
+                    if f.deprecated { "does" } else { "does not" }
+                ));
+            }
+        }
+        for member in members {
+            let deprecated = message
+                .fields
+                .iter()
+                .any(|f| &f.name == member && f.deprecated);
+            if deprecated && !oc.variants.contains_key(member) {
+                problems.push(format!(
+                    "{name}.{oneof}.{member} is deprecated in the proto; give it a `deprecated` note"
+                ));
+            }
+        }
+    }
+    for oneof in config.oneofs.keys() {
+        if !message.oneofs.iter().any(|(o, _)| o == oneof) {
+            problems.push(format!("{name}.{oneof} is not a oneof in the proto"));
+        }
+    }
+    problems
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,6 +339,7 @@ mod tests {
                     required: true,
                     optional: false,
                     oneof: None,
+                    deprecated: false,
                     comment: "Its id.".into(),
                 }],
                 oneofs: Vec::new(),
@@ -228,6 +353,61 @@ mod tests {
             .unwrap()
             .validate(&schema())
             .unwrap_err()
+    }
+
+    fn with_oneof(deprecated: bool) -> Schema {
+        let member = |name: &str, deprecated| Field {
+            name: name.into(),
+            json_name: name.into(),
+            number: 1,
+            ty: FieldType::String,
+            repeated: false,
+            map_key: None,
+            required: false,
+            optional: false,
+            oneof: Some("choice".into()),
+            deprecated,
+            comment: "A member.".into(),
+        };
+        Schema {
+            messages: vec![Message {
+                name: "Pick".into(),
+                comment: "A pick.".into(),
+                fields: vec![member("left", false), member("right", deprecated)],
+                oneofs: vec![("choice".into(), vec!["left".into(), "right".into()])],
+            }],
+            enums: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_deprecated_member_needs_a_note_and_only_it() {
+        let base = "[paths]\nPick = \"m::Pick\"\n[messages.Pick]\nderives = []\n\
+                    [messages.Pick.oneofs.choice]\n";
+        let note = "[messages.Pick.oneofs.choice.variants.right]\ndeprecated = \"old\"\n";
+        let check = |toml: &str, deprecated| {
+            Config::parse(toml)
+                .unwrap()
+                .validate(&with_oneof(deprecated))
+        };
+        check(&format!("{base}{note}"), true).unwrap();
+        check(base, false).unwrap();
+        let missing = check(base, true).unwrap_err();
+        assert!(
+            missing.contains("Pick.choice.right is deprecated in the proto"),
+            "{missing}"
+        );
+        let extra = check(&format!("{base}{note}"), false).unwrap_err();
+        assert!(extra.contains("and the proto does not"), "{extra}");
+        let unconfigured =
+            Config::parse("[paths]\nPick = \"m::Pick\"\n[messages.Pick]\nderives = []\n")
+                .unwrap()
+                .validate(&with_oneof(false))
+                .unwrap_err();
+        assert!(
+            unconfigured.contains("Pick.choice is a oneof with no `oneofs` entry"),
+            "{unconfigured}"
+        );
     }
 
     #[test]

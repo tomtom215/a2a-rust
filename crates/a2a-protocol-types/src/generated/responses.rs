@@ -28,6 +28,28 @@ pub struct TaskListResponse {
     pub total_size: u32,
 }
 
+/// Represents the response for the `SendMessage` method.
+///
+/// In JSON this is the proto's `oneof payload`, externally tagged:
+/// `{"task": {...}}` or `{"message": {...}}`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum SendMessageResponse {
+    /// The task created or updated by the message.
+    Task(crate::task::Task),
+    /// A message from the agent.
+    Message(crate::message::Message),
+}
+
+crate::oneof::oneof_deserialize!(
+    SendMessageResponse,
+    [
+        Task(crate::task::Task) = "task",
+        Message(crate::message::Message) = "message",
+    ]
+);
+
 /// Represents a successful response for the `ListTaskPushNotificationConfigs`
 /// method.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

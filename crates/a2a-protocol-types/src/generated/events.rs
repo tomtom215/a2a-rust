@@ -51,3 +51,35 @@ pub struct TaskArtifactUpdateEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
+
+/// A wrapper object used in streaming operations to encapsulate different types of response data.
+///
+/// Externally tagged: serialized as a single-key object (`{"task": …}`,
+/// `{"statusUpdate": …}`, …) whose `camelCase` key names the variant. This
+/// matches the `ProtoJSON` encoding of the `StreamResponse.payload` `oneof` on
+/// the wire — it is **not** an untagged union, and must not be "corrected" to
+/// one without breaking wire compatibility.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum StreamResponse {
+    /// A Task object containing the current state of the task.
+    Task(crate::task::Task),
+    /// A Message object containing a message from the agent.
+    Message(crate::message::Message),
+    /// An event indicating a task status update.
+    StatusUpdate(crate::events::TaskStatusUpdateEvent),
+    /// An event indicating a task artifact update.
+    ArtifactUpdate(crate::events::TaskArtifactUpdateEvent),
+}
+
+crate::oneof::oneof_deserialize!(
+    StreamResponse,
+    [
+        Task(crate::task::Task) = "task",
+        Message(crate::message::Message) = "message",
+        StatusUpdate(crate::events::TaskStatusUpdateEvent) = "statusUpdate" | "status_update",
+        ArtifactUpdate(crate::events::TaskArtifactUpdateEvent) =
+            "artifactUpdate" | "artifact_update",
+    ]
+);

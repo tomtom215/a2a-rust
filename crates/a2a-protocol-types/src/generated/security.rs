@@ -49,6 +49,49 @@ pub struct SecurityRequirement {
     pub schemes: std::collections::HashMap<String, crate::security::StringList>,
 }
 
+/// Defines a security scheme that can be used to secure an agent's endpoints.
+///
+/// This is a discriminated union type based on the `OpenAPI` 3.2 Security Scheme Object.
+/// See: `https://spec.openapis.org/oas/v3.2.0.html#security-scheme-object`
+///
+/// # Wire format
+///
+/// In A2A v1.0 this is the `SecurityScheme` **`oneof`** from `a2a.proto`, so
+/// its ProtoJSON encoding is a single-key object naming the arm:
+///
+/// ```json
+/// {"apiKeySecurityScheme": {"location": "header", "name": "X-Api-Key"}}
+/// {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}
+/// ```
+///
+/// v0.3 used the OpenAPI-style internally tagged form instead
+/// (`{"type": "apiKey", "in": "header", …}`). **Both are accepted**; only the
+/// v1.0 form is emitted, because §5.5 governs emission and the schema is the
+/// normative definition of the JSON shape. `Serialize` and `Deserialize` are
+/// written by hand, beside this type, for that.
+///
+/// This changed in 0.8: earlier releases emitted the v0.3 form. A reference
+/// `a2a-sdk` client parsed that via its own legacy-compatibility shim, but a
+/// peer feeding the card straight to `ParseDict(…, ignore_unknown_fields=True)`
+/// silently got schemes with **empty contents** — it saw the agent declare
+/// authentication it could not use. See `docs/official-tck-findings.md` §7.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum SecurityScheme {
+    /// API key-based authentication.
+    ApiKey(crate::security::ApiKeySecurityScheme),
+    /// HTTP authentication (Basic, Bearer, etc.).
+    Http(crate::security::HttpAuthSecurityScheme),
+    /// OAuth 2.0 authentication.
+    ///
+    /// Boxed to reduce the enum's stack size.
+    OAuth2(Box<crate::security::OAuth2SecurityScheme>),
+    /// `OpenID` Connect authentication.
+    OpenIdConnect(crate::security::OpenIdConnectSecurityScheme),
+    /// Mutual TLS authentication.
+    MutualTls(crate::security::MutualTlsSecurityScheme),
+}
+
 /// Defines a security scheme using an API key.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,6 +162,61 @@ pub struct MutualTlsSecurityScheme {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
+
+/// Defines the configuration for the supported OAuth 2.0 flows.
+///
+/// Per the proto definition, this is a `oneof flow` — exactly one flow type
+/// can be specified. Serialized as an externally tagged enum in JSON.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum OAuthFlows {
+    /// Configuration for the OAuth Authorization Code flow.
+    AuthorizationCode(crate::security::AuthorizationCodeFlow),
+    /// Configuration for the OAuth Client Credentials flow.
+    ClientCredentials(crate::security::ClientCredentialsFlow),
+    /// Deprecated: Use Authorization Code + PKCE instead.
+    ///
+    /// Kept so cards that still declare it parse (spec §1.4: deprecated
+    /// definitions stay until the next major version), and marked
+    /// `#[deprecated]` as the proto marks the field:
+    ///
+    /// ```compile_fail
+    /// #[deny(deprecated)]
+    /// fn implicit(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
+    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Implicit(_))
+    /// }
+    /// ```
+    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE")]
+    Implicit(crate::security::ImplicitFlow),
+    /// Deprecated: Use Authorization Code + PKCE or Device Code.
+    ///
+    /// Kept and marked as [`Implicit`](Self::Implicit) is:
+    ///
+    /// ```compile_fail
+    /// #[deny(deprecated)]
+    /// fn password(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
+    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Password(_))
+    /// }
+    /// ```
+    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
+    Password(crate::security::PasswordOAuthFlow),
+    /// Configuration for the OAuth Device Code flow.
+    DeviceCode(crate::security::DeviceCodeFlow),
+}
+
+crate::oneof::oneof_deserialize!(
+    OAuthFlows,
+    [
+        AuthorizationCode(crate::security::AuthorizationCodeFlow) =
+            "authorizationCode" | "authorization_code",
+        ClientCredentials(crate::security::ClientCredentialsFlow) =
+            "clientCredentials" | "client_credentials",
+        Implicit(crate::security::ImplicitFlow) = "implicit",
+        Password(crate::security::PasswordOAuthFlow) = "password",
+        DeviceCode(crate::security::DeviceCodeFlow) = "deviceCode" | "device_code",
+    ]
+);
 
 /// Defines configuration details for the OAuth 2.0 Authorization Code flow.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

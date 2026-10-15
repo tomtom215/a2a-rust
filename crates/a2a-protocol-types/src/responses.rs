@@ -14,33 +14,12 @@
 //! | `ListTasks` | [`TaskListResponse`] |
 //! | `GetExtendedAgentCard` | [`AgentCard`] (re-exported as [`AuthenticatedExtendedCardResponse`]) |
 
-use serde::Serialize;
-
 use crate::agent_card::AgentCard;
-use crate::message::Message;
 use crate::task::Task;
 
 // ── SendMessageResponse ───────────────────────────────────────────────────────
 
-/// The result of a `SendMessage` call: either a [`Task`] or a [`Message`].
-///
-/// Per v1.0 spec, the response uses the proto `oneof payload` pattern.
-/// In JSON this is externally tagged: `{"task": {...}}` or `{"message": {...}}`.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SendMessageResponse {
-    /// The agent accepted the message and created (or updated) a task.
-    Task(Task),
-
-    /// The agent responded immediately with a message (no task created).
-    Message(Message),
-}
-
-crate::oneof::oneof_deserialize!(
-    SendMessageResponse,
-    [Task(Task) = "task", Message(Message) = "message",]
-);
+// `SendMessageResponse` is generated: see the `include!` below. Its `Deserialize` is generated with it.
 
 // ── TaskListResponse ──────────────────────────────────────────────────────────
 
@@ -82,7 +61,7 @@ pub type AuthenticatedExtendedCardResponse = AgentCard;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{MessageId, MessageRole, Part};
+    use crate::message::{Message, MessageId, MessageRole, Part};
     use crate::task::{ContextId, TaskId, TaskState, TaskStatus};
 
     fn make_task() -> Task {

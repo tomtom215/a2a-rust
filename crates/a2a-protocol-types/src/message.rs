@@ -300,40 +300,7 @@ impl Message {
 
 // ── Part ─────────────────────────────────────────────────────────────────────
 
-/// A content part within a [`Message`] or [`crate::artifact::Artifact`].
-///
-/// In v1.0, Part is a flat structure with a `oneof content` (text, raw, url, data)
-/// plus optional `metadata`, `filename`, and `mediaType` fields. The JSON member
-/// name acts as the type discriminator.
-///
-/// # Wire format examples
-///
-/// ```json
-/// {"text": "hello"}
-/// {"raw": "base64data", "filename": "f.png", "mediaType": "image/png"}
-/// {"url": "https://example.com/f.pdf", "filename": "f.pdf", "mediaType": "application/pdf"}
-/// {"data": {"key": "value"}, "mediaType": "application/json"}
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Part {
-    /// The content of this part (text, raw, url, or data).
-    #[serde(flatten)]
-    pub content: PartContent,
-
-    /// Arbitrary metadata for this part.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-
-    /// An optional filename (e.g., "document.pdf").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-
-    /// The media type (MIME type) of the part content.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "mediaType")]
-    pub media_type: Option<String>,
-}
+// `Part` is generated: see the `include!` above.
 
 /// Hand-rolled `Deserialize` for [`Part`] that reads all fields in a single
 /// pass, avoiding the intermediate `serde_json::Value` buffering caused by
@@ -613,26 +580,7 @@ impl Part {
 
 // ── PartContent ──────────────────────────────────────────────────────────────
 
-/// The content of a [`Part`], discriminated by JSON member name per v1.0 spec.
-///
-/// In JSON, the member name determines the variant:
-/// - `"text"` → text string content
-/// - `"raw"` → base64-encoded bytes
-/// - `"url"` → URL pointing to content
-/// - `"data"` → structured JSON data
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PartContent {
-    /// Plain-text content.
-    Text(String),
-    /// Raw byte content (base64-encoded in JSON).
-    Raw(String),
-    /// A URL pointing to the file's content.
-    Url(String),
-    /// Arbitrary structured data as a JSON value.
-    Data(serde_json::Value),
-}
+// `PartContent` is generated: see the `include!` above.
 
 // ── FileContent (legacy compatibility) ──────────────────────────────────────
 

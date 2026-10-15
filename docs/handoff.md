@@ -1420,21 +1420,20 @@ follows is a new pull request.
     `serve_with_addr` and the WebSocket listener, whose card peek reads the
     raw socket before any handshake.
 
-35. `feat(types):` audit register R49, phases 1 to 4 of 6 and half of
-    phase 5 (ADR 0016).
+35. `feat(types):` audit register R49, phases 1 to 5 of 6 (ADR 0016).
     The public types are generated from `a2a.proto` by `tools/a2a-codegen`
     (out of workspace, `protox`), shaped by
     `crates/a2a-protocol-types/codegen.toml`; CI runs `--check`.
-    Forty-one types are generated (phase 2 added the agent card family,
-    phase 3 the task, message and artifact types and their events, phase
-    4 the requests and responses, the first half of phase 5 the 12
-    security-scheme and OAuth-flow messages); 5 are `[pending]`.
-    **Next session: the rest of phase 5, the five `oneof`s** (`Part`,
-    `SecurityScheme`, `OAuthFlows`, `StreamResponse`,
-    `SendMessageResponse`). The emitter refuses a message with a `oneof`
-    today, so it first needs one form for them; each of the five has a
-    hand-written serde impl (`oneof.rs`'s macro, or its own) that must
-    keep its behaviour. Per type: copy
+    All 46 proto types are generated (phase 2 added the agent card
+    family, phase 3 the task, message and artifact types and their
+    events, phase 4 the requests and responses, phase 5 the security
+    schemes and the five `oneof`s, in the form ADR 0016 records).
+    **Next session: phase 6.** First the shadowing check ADR 0016
+    describes (a hand-written `struct` or `enum` outside `src/generated/`
+    named as a proto message's Rust name fails), wired into the static
+    checks; then the ledger's §1.4 entry from PARTIAL, with its
+    evidence, and register R49 closed; then remove the empty `[pending]`
+    table. The recipe used for each type, for a proto change later: copy
     its derives and each field's deviations into `codegen.toml` (a field
     the proto lacks is an `[[messages.X.extra]]` entry), `write`, replace
     the hand definitions with one `include!("generated/<module>.rs")` in
@@ -1443,14 +1442,20 @@ follows is a new pull request.
     HEAD --all-features`, which compares against the same version and so
     reports any API difference as a failure. Then re-point the ledger's
     citations of the moved lines into `src/generated/` (phase 2 moved 29,
-    phase 3 28, phase 4 13, phase 5's first half 23), each to the line
-    that carries what its entry claims.
+    phase 3 28, phase 4 13, phase 5 23 and 15), each to the line that
+    carries what its entry claims.
     Once #171 has merged, add `tools/a2a-codegen/Cargo.lock` to `osv.yml`'s
     `rust-pr` job: it is in `rust` only, since the base-branch scan fails
     on a lockfile main does not have (phase 1 put it in both, and
     `Rust lockfiles (new findings)` failed on `21cb5989`).
 
 **Lessons, new this session.**
+- Tests and semver-checks passing do not show a serde change is
+  behaviour-preserving. For the `oneof`s, one small program built against
+  each tree parsed 35 fixed inputs (every member, both spellings, unknown
+  keys, two members, v0.3 forms) and printed the re-serialized JSON or the
+  error; diffing the two outputs found the one change no test asserts (an
+  error message's member order). Do the same for any later serde change.
 - Where a type is defined changes its speed. Phase 3 moved `Message` into
   a private `generated` module and its serialization ran 50% to 89% slower
   at 16 codegen units without LTO (CI's Benchmarks job caught it on

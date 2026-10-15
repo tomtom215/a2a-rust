@@ -23,6 +23,59 @@ pub enum MessageRole {
     Agent = 2,
 }
 
+/// `Part` represents a container for a section of communication content.
+/// Parts can be purely textual, some sort of file (image, video, etc) or
+/// a structured data blob (i.e. JSON).
+///
+/// On the wire the member that is set names the content, beside the other
+/// fields, and `Deserialize` is written by hand, beside this type, to read
+/// them in one pass:
+///
+/// ```json
+/// {"text": "hello"}
+/// {"raw": "base64data", "filename": "f.png", "mediaType": "image/png"}
+/// {"url": "https://example.com/f.pdf", "filename": "f.pdf", "mediaType": "application/pdf"}
+/// {"data": {"key": "value"}, "mediaType": "application/json"}
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Part {
+    /// The content of this part (text, raw, url, or data).
+    #[serde(flatten)]
+    pub content: crate::message::PartContent,
+    /// Optional. metadata associated with this part.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    /// An optional `filename` for the file (e.g., "document.pdf").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// The `media_type` (MIME type) of the part content (e.g., "text/plain", "application/json", "image/png").
+    /// This field is available for all part types.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+}
+
+/// The content of a [`Part`], discriminated by JSON member name per v1.0 spec.
+///
+/// In JSON, the member name determines the variant:
+/// - `"text"` → text string content
+/// - `"raw"` → base64-encoded bytes
+/// - `"url"` → URL pointing to content
+/// - `"data"` → structured JSON data
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub enum PartContent {
+    /// The string content of the `text` part.
+    Text(String),
+    /// The `raw` byte content of a file. In JSON serialization, this is encoded as a base64 string.
+    Raw(String),
+    /// A `url` pointing to the file's content.
+    Url(String),
+    /// Arbitrary structured `data` as a JSON value (object, array, string, number, boolean, or null).
+    Data(serde_json::Value),
+}
+
 /// `Message` is one unit of communication between client and server.
 ///
 /// It can be

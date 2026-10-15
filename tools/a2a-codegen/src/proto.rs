@@ -30,7 +30,7 @@ pub struct Message {
     pub oneofs: Vec<(String, Vec<String>)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
     pub json_name: String,
@@ -43,6 +43,8 @@ pub struct Field {
     /// Declared `optional` (proto3 explicit presence).
     pub optional: bool,
     pub oneof: Option<String>,
+    /// Marked `[deprecated = true]`.
+    pub deprecated: bool,
     pub comment: String,
 }
 
@@ -154,6 +156,12 @@ fn message_of(
             required,
             optional: field.field_descriptor_proto().proto3_optional(),
             oneof,
+            deprecated: field
+                .field_descriptor_proto()
+                .options
+                .as_ref()
+                .and_then(|o| o.deprecated)
+                == Some(true),
             comment: comment(pool, field.path(), file.name()),
         });
     }

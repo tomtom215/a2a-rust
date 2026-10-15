@@ -93,6 +93,25 @@ The default translation, which most fields need nothing beyond:
 | JSON name | the proto's `json_name` (lowerCamelCase) |
 | enum value | the proto value name (`TASK_STATE_COMPLETED`) |
 
+### The `oneof`s
+
+A message that is only its `oneof` (`StreamResponse`, `SendMessageResponse`,
+`SecurityScheme`, `OAuthFlows`) is an enum with one variant per member,
+holding the member's value. A message with other fields beside its `oneof`
+(`Part`) is a struct whose field, named after the `oneof` (`content`), holds
+the `oneof`'s enum (`PartContent`) flattened, as ProtoJSON writes the member
+beside the other fields. A variant is named after its member and serialized
+under its JSON name; the configuration renames a variant (`ApiKey` for
+`api_key_security_scheme`) or changes its type (`Box<…>`) with a reason, as
+for a field. A member the proto marks `deprecated` carries `#[deprecated]`,
+and the generator refuses a configuration that adds or drops one.
+
+`Deserialize` is one of three things, chosen in the configuration: derived,
+generated as a call to `oneof_deserialize!` (which skips unknown keys and
+refuses two members, spec §5.7), or written by hand beside the type when the
+type reads more than the proto's form (`SecurityScheme` also reads v0.3's
+internally tagged form, and `Part` reads its fields in one pass).
+
 ### The output
 
 `crates/a2a-protocol-types/src/generated/`, one file per Rust module, each

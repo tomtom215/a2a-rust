@@ -34,7 +34,7 @@ release text; the ledger's own numbering).
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
-| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 4 of 6 and half of phase 5 done (ADR 0016) |
+| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 5 of 6 done (ADR 0016) |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
@@ -324,7 +324,12 @@ redacts their secrets.
 messages, with no API change (202 pass). `ApiKeySecurityScheme.location`
 stays the `ApiKeyLocation` enum, two deprecated flows keep a required URL
 the proto leaves optional, and `StringList` keeps its hand `Deserialize`
-(a2a-go's bare array). The five `oneof` types remain.
+(a2a-go's bare array).
+**Phase 5 done (2026-10-15):** the five `oneof`s, in the form ADR 0016 now
+records, with no API change (202 pass) and the same wire behaviour: 35
+inputs across the five, parsed and re-serialized by a build of each tree,
+print the same lines except one error message's member order. Every proto
+type is generated; phase 6 (the shadowing check, then this entry) remains.
 
 ## R50 — the REST client sends `application/json`
 

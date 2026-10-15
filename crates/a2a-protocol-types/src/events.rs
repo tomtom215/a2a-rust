@@ -19,11 +19,6 @@
 //! | `"statusUpdate"` | [`TaskStatusUpdateEvent`] |
 //! | `"artifactUpdate"` | [`TaskArtifactUpdateEvent`] |
 
-use serde::Serialize;
-
-use crate::message::Message;
-use crate::task::Task;
-
 // ── TaskStatusUpdateEvent ─────────────────────────────────────────────────────
 
 // The proto-generated types of this module (ADR 0016), `TaskStatusUpdateEvent` first.
@@ -35,39 +30,7 @@ include!("generated/events.rs");
 
 // ── StreamResponse ────────────────────────────────────────────────────────────
 
-/// A single event payload in an A2A streaming response.
-///
-/// Externally tagged: serialized as a single-key object (`{"task": …}`,
-/// `{"statusUpdate": …}`, …) whose `camelCase` key names the variant. This
-/// matches the `ProtoJSON` encoding of the `StreamResponse.payload` `oneof` on
-/// the wire — it is **not** an untagged union, and must not be "corrected" to
-/// one without breaking wire compatibility.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum StreamResponse {
-    /// A complete task object (initial response before streaming begins).
-    Task(Task),
-
-    /// A complete message (returned synchronously for short responses).
-    Message(Message),
-
-    /// A task state change event.
-    StatusUpdate(TaskStatusUpdateEvent),
-
-    /// An artifact delivery event.
-    ArtifactUpdate(TaskArtifactUpdateEvent),
-}
-
-crate::oneof::oneof_deserialize!(
-    StreamResponse,
-    [
-        Task(Task) = "task",
-        Message(Message) = "message",
-        StatusUpdate(TaskStatusUpdateEvent) = "statusUpdate" | "status_update",
-        ArtifactUpdate(TaskArtifactUpdateEvent) = "artifactUpdate" | "artifact_update",
-    ]
-);
+// `StreamResponse` is generated: see the `include!` above. Its `Deserialize` is generated with it.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -76,7 +39,7 @@ mod tests {
     use super::*;
     use crate::artifact::{Artifact, ArtifactId};
     use crate::message::Part;
-    use crate::task::{ContextId, TaskId, TaskState, TaskStatus};
+    use crate::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     #[test]
     fn status_update_event_roundtrip() {

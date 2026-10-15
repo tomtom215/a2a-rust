@@ -71,7 +71,7 @@ fn derive_path(derive: &str) -> String {
     }
 }
 
-fn derives(list: &[String]) -> String {
+pub(crate) fn derives(list: &[String]) -> String {
     list.iter()
         .map(|d| derive_path(d))
         .collect::<Vec<_>>()
@@ -80,7 +80,7 @@ fn derives(list: &[String]) -> String {
 
 /// `task::Task` as (`task`, `Task`). A nested path's file joins its
 /// modules with `_`.
-fn split_path(config: &Config, proto_name: &str) -> Result<(String, String), String> {
+pub(crate) fn split_path(config: &Config, proto_name: &str) -> Result<(String, String), String> {
     let path = config
         .paths
         .get(proto_name)
@@ -91,7 +91,7 @@ fn split_path(config: &Config, proto_name: &str) -> Result<(String, String), Str
     Ok((module.to_owned(), name.to_owned()))
 }
 
-fn rust_name(config: &Config, proto_name: &str) -> Result<String, String> {
+pub(crate) fn rust_name(config: &Config, proto_name: &str) -> Result<String, String> {
     split_path(config, proto_name).map(|(_, name)| name)
 }
 
@@ -143,10 +143,7 @@ fn emit_message(
     config: &Config,
 ) -> Result<String, String> {
     if !m.oneofs.is_empty() {
-        return Err(format!(
-            "{}: oneofs are not generated yet; keep it [pending]",
-            m.name
-        ));
+        return crate::oneof::emit(m, mc, config);
     }
     let name = rust_name(config, &m.name)?;
     let mut out = doc(
@@ -205,7 +202,13 @@ fn emit_message(
 /// One field: its `#[serde(...)]` (the generated arguments, then the
 /// configured ones) and its declaration. An `Option` is skipped when absent
 /// unless the configuration says how it is skipped.
-fn field(out: &mut String, name: &str, ty: &str, mut serde: Vec<String>, configured: &[String]) {
+pub(crate) fn field(
+    out: &mut String,
+    name: &str,
+    ty: &str,
+    mut serde: Vec<String>,
+    configured: &[String],
+) {
     let explicit_skip = configured.iter().any(|s| s.starts_with("skip_serializing"));
     if ty.starts_with("Option<") && !explicit_skip {
         serde.push("skip_serializing_if = \"Option::is_none\"".to_owned());
@@ -218,7 +221,7 @@ fn field(out: &mut String, name: &str, ty: &str, mut serde: Vec<String>, configu
 }
 
 /// The default translation of a field's type (ADR 0016's table).
-fn default_type(f: &Field, config: &Config) -> Result<String, String> {
+pub(crate) fn default_type(f: &Field, config: &Config) -> Result<String, String> {
     if f.map_key.is_some() {
         return Err("a map field needs an explicit `type`".to_owned());
     }

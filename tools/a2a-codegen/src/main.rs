@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 
 mod config;
 mod emit;
+mod oneof;
 mod proto;
 mod text;
 

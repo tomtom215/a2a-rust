@@ -85,48 +85,7 @@ impl<'de> serde::de::Visitor<'de> for StringListVisitor {
 
 // ── SecurityScheme ────────────────────────────────────────────────────────────
 
-/// A security scheme supported by an agent.
-///
-/// # Wire format
-///
-/// In A2A v1.0 this is the `SecurityScheme` **`oneof`** from `a2a.proto`, so
-/// its ProtoJSON encoding is a single-key object naming the arm:
-///
-/// ```json
-/// {"apiKeySecurityScheme": {"location": "header", "name": "X-Api-Key"}}
-/// {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}
-/// ```
-///
-/// v0.3 used the OpenAPI-style internally tagged form instead
-/// (`{"type": "apiKey", "in": "header", …}`). **Both are accepted**; only the
-/// v1.0 form is emitted, because §5.5 governs emission and the schema is the
-/// normative definition of the JSON shape.
-///
-/// This changed in 0.8: earlier releases emitted the v0.3 form. A reference
-/// `a2a-sdk` client parsed that via its own legacy-compatibility shim, but a
-/// peer feeding the card straight to `ParseDict(…, ignore_unknown_fields=True)`
-/// silently got schemes with **empty contents** — it saw the agent declare
-/// authentication it could not use. See `docs/official-tck-findings.md` §7.
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum SecurityScheme {
-    /// API key authentication (`apiKeySecurityScheme`).
-    ApiKey(ApiKeySecurityScheme),
-
-    /// HTTP authentication, e.g. Bearer or Basic (`httpAuthSecurityScheme`).
-    Http(HttpAuthSecurityScheme),
-
-    /// OAuth 2.0 (`oauth2SecurityScheme`).
-    ///
-    /// Boxed to reduce the enum's stack size.
-    OAuth2(Box<OAuth2SecurityScheme>),
-
-    /// OpenID Connect (`openIdConnectSecurityScheme`).
-    OpenIdConnect(OpenIdConnectSecurityScheme),
-
-    /// Mutual TLS (`mtlsSecurityScheme`).
-    MutualTls(MutualTlsSecurityScheme),
-}
+// `SecurityScheme` is generated: see the `include!` above.
 
 /// The `oneof` arm names, in `(json_name, proto field name)` pairs.
 ///
@@ -314,62 +273,7 @@ pub enum ApiKeyLocation {
 
 // `OAuth2SecurityScheme` is generated: see the `include!` above.
 
-/// Available OAuth 2.0 flows for an [`OAuth2SecurityScheme`].
-///
-/// Per the proto definition, this is a `oneof flow` — exactly one flow type
-/// can be specified. Serialized as an externally tagged enum in JSON.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum OAuthFlows {
-    /// Authorization code flow.
-    AuthorizationCode(AuthorizationCodeFlow),
-
-    /// Client credentials flow.
-    ClientCredentials(ClientCredentialsFlow),
-
-    /// Device authorization flow (RFC 8628).
-    DeviceCode(DeviceCodeFlow),
-
-    /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
-    ///
-    /// Kept so cards that still declare it parse (spec §1.4: deprecated
-    /// definitions stay until the next major version), and marked
-    /// `#[deprecated]` as the proto marks the field:
-    ///
-    /// ```compile_fail
-    /// #[deny(deprecated)]
-    /// fn implicit(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
-    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Implicit(_))
-    /// }
-    /// ```
-    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE")]
-    Implicit(ImplicitFlow),
-
-    /// Resource owner password credentials flow (deprecated).
-    ///
-    /// Kept and marked as [`Implicit`](Self::Implicit) is:
-    ///
-    /// ```compile_fail
-    /// #[deny(deprecated)]
-    /// fn password(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
-    ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Password(_))
-    /// }
-    /// ```
-    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
-    Password(PasswordOAuthFlow),
-}
-
-crate::oneof::oneof_deserialize!(
-    OAuthFlows,
-    [
-        AuthorizationCode(AuthorizationCodeFlow) = "authorizationCode" | "authorization_code",
-        ClientCredentials(ClientCredentialsFlow) = "clientCredentials" | "client_credentials",
-        DeviceCode(DeviceCodeFlow) = "deviceCode" | "device_code",
-        Implicit(ImplicitFlow) = "implicit",
-        Password(PasswordOAuthFlow) = "password",
-    ]
-);
+// `OAuthFlows` is generated: see the `include!` above. Its `Deserialize` is generated with it.
 
 impl OAuthFlows {
     /// [`SecurityScheme::validate`] for the flow. The proto marks no field
