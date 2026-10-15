@@ -9,7 +9,7 @@
 use super::{NoLog, handler_with, send_and_settle, states};
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::task::{TaskId, TaskState};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 use std::sync::Arc;
 
 #[tokio::test]
@@ -173,4 +173,41 @@ async fn a_store_without_a_log_says_so_rather_than_pretending() {
         "the default must refuse rather than report an empty log"
     );
     assert!(store.read_events(&id, 0, 10).await.is_err());
+}
+
+/// A store that leaves `get_with_position` at its default still finds its
+/// tasks: the default reads `get` and reports no position, which a
+/// subscription takes as "unknown" and falls back from. A default that
+/// answered `None` would make every task such a store holds look missing to
+/// `SubscribeToTask` on a replica with no live queue.
+#[tokio::test]
+async fn the_default_get_with_position_reads_the_task_and_reports_no_position() {
+    let store = NoLog(Arc::new(InMemoryTaskStore::new()));
+    let task = Task {
+        id: TaskId::new("t-1"),
+        context_id: ContextId::new("ctx-1"),
+        status: TaskStatus::new(TaskState::Working),
+        history: None,
+        artifacts: None,
+        metadata: None,
+    };
+    store.save(&task).await.expect("save");
+
+    let (found, position) = store
+        .get_with_position(&task.id)
+        .await
+        .expect("read")
+        .expect("the saved task is found");
+    assert_eq!(found.id, task.id);
+    assert_eq!(found.status.state, TaskState::Working);
+    assert_eq!(position, None, "the default knows no position");
+
+    assert!(
+        store
+            .get_with_position(&TaskId::new("t-missing"))
+            .await
+            .expect("read")
+            .is_none(),
+        "an unknown task is still None"
+    );
 }
