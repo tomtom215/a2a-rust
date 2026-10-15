@@ -219,7 +219,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:216"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:220"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:12 send_message_returns_completed_task"
@@ -237,7 +237,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:210"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:214"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/send_sync_tests.rs:174 message_only_executor_returns_a_message"
@@ -293,7 +293,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:794"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader"
@@ -431,7 +431,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:707",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:939"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:946"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs a_message_only_stream_is_exactly_one_message",
@@ -473,8 +473,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:508",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:565",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:939",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1015",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:946",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1062",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:116",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:310"
@@ -538,11 +538,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:103",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:794"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:1599 subscribe_to_task_returns_an_sse_stream"
+    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:1600 subscribe_to_task_returns_an_sse_stream"
    ],
    "notes": "The stream is returned before the executor finishes (the cooperative-executor test returns the stream while the executor waits on a Notify); events are broadcast as written. Disposition (audit register R33, approved 2026-10-14): a send stream's first frame waits for the executor's first event, with no time bound. Line 208 requires a message-only stream to contain exactly one Message, so a Task sent before the executor shows which kind of stream it is would break that MUST for an agent that answers with a Message; the executor's first event is the earliest the kind is known, so the wait ends there.",
    "auditor": "A",
@@ -782,7 +782,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:399",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:403",
     "crates/a2a-protocol-server/src/handler/capability.rs:39"
    ],
    "test_evidence": [
@@ -803,10 +803,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:408"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:412"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:676 resubscribe_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:779 resubscribe_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -821,10 +821,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:412"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:416"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:693 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:796 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "",
    "auditor": "A",
@@ -841,13 +841,13 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:110",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:150",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:254",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1157",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1165",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:266",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1208",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1216",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:774 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:837 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:101 by_default_a_parked_subscription_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:109 a_bound_too_large_for_the_clock_is_no_bound",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:119 an_operator_s_bound_still_ends_a_parked_subscription",
@@ -870,18 +870,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:178",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:213",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:217",
     "crates/a2a-protocol-server/src/streaming/event_queue/applied.rs:1",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:316"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:734 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1125 resubscribe_success_returns_reader",
-    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:207 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
-    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:213 a_first_subscribe_beside_a_blocking_send_misses_nothing",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:998 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1067 the_stream_skips_what_its_snapshot_already_holds",
-    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:252 a_first_subscribe_waits_for_the_store_rather_than_the_log"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:837 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1228 resubscribe_success_returns_reader",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:223 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:229 a_first_subscribe_beside_a_blocking_send_misses_nothing",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1101 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1170 the_stream_skips_what_its_snapshot_already_holds",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:268 a_first_subscribe_waits_for_the_store_rather_than_the_log"
    ],
    "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
    "auditor": "A",
@@ -901,7 +901,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:50"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1303 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:741 set_push_config_without_sender_returns_push_not_supported"
    ],
    "notes": "",
@@ -920,7 +920,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:57"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1294 set_push_config_for_missing_task_returns_task_not_found"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1285 set_push_config_for_missing_task_returns_task_not_found"
    ],
    "notes": "",
    "auditor": "A",
@@ -962,7 +962,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
-    "crates/a2a-protocol-server/tests/sqlite_store_tests.rs:189 push_delete"
+    "crates/a2a-protocol-server/tests/sqlite_store_tests.rs:192 push_delete"
    ],
    "notes": "No eviction/TTL in any push-config store; retention only purges terminal tasks. InMemoryPushConfigStore loses configs on process restart (inherent to in-memory).",
    "auditor": "A",
@@ -981,7 +981,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:261"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1303 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push"
    ],
@@ -1002,7 +1002,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:223"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1396 get_push_config_not_found_returns_task_not_found",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1387 get_push_config_not_found_returns_task_not_found",
     "crates/a2a-protocol-server/tests/handler_tests/push_config.rs:112 get_push_config_not_found"
    ],
    "notes": "",
@@ -1061,7 +1061,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:333"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1303 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push"
    ],
@@ -1146,7 +1146,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:404"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1303 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push"
    ],
@@ -1209,7 +1209,7 @@
     "crates/a2a-protocol-server/src/push/sqlite_config_store.rs:202"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1444 delete_push_config_nonexistent_returns_ok",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1435 delete_push_config_nonexistent_returns_ok",
     "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs:590 delete_push_config_nonexistent_returns_200",
     "crates/a2a-protocol-server/tests/tenant_sqlite_push_config_tests.rs:225 delete_nonexistent_succeeds"
    ],
@@ -1322,7 +1322,7 @@
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:382 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:426 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:452 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1023 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1114 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "A",
@@ -1341,7 +1341,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:65",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:204",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:242",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:147"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:151"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/inline_executor_tests.rs:162 an_interrupted_send_answers_before_its_executor_returns",
@@ -1361,7 +1361,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:461",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:209"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:213"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs:32 sync_mode_artifact_updates_appended",
@@ -1813,9 +1813,9 @@
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:73"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:225 cancel_nonexistent_task_returns_404",
+    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:226 cancel_nonexistent_task_returns_404",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:340 axum_get_nonexistent_task_returns_404",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1396 get_push_config_not_found_returns_task_not_found"
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1387 get_push_config_not_found_returns_task_not_found"
    ],
    "notes": "TaskNotFound (404/NOT_FOUND/-32001) for missing tasks and push configs on every binding.",
    "auditor": "B",
@@ -2070,7 +2070,7 @@
     "crates/a2a-protocol-server/src/builder.rs:785"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1312 push_ops_rejected_when_card_lacks_capability",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1303 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:755 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:208 no_sender_rejects_push",
     "crates/a2a-protocol-server/src/builder.rs:1275 build_refuses_a_card_declaring_push_without_a_sender"
@@ -2091,7 +2091,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:253",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:399"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:403"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:220 card_without_streaming_rejects_streaming",
@@ -2586,7 +2586,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2598 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2803 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken"
    ],
@@ -2640,17 +2640,17 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1229",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1258",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1288",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1318",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:919",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1066",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1339",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1368",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:427",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:662",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:294",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1281",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1310",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1340",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1370",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:926",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1113",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1391",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1420",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:431",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:725",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:298",
     "crates/a2a-protocol-server/src/store/applied.rs:62",
     "crates/a2a-protocol-server/src/handler/messaging/admission.rs:239"
    ],
@@ -2661,11 +2661,11 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:258 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:140 a_replay_over_the_limit_is_read_in_pages",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:415 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2751 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2495 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2803 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2547 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1960 subscribe_creates_independent_reader",
-    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:295 a_lag_while_the_log_trails_waits_for_the_log",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2012 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:312 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:200 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:208 a_turn_longer_than_a_poll_keeps_its_first_events",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:216 a_turn_that_parks_again_between_polls_reaches_the_subscriber",
@@ -2749,7 +2749,7 @@
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:200"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:483 rest_response_has_a2a_version_header",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:484 rest_response_has_a2a_version_header",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1192 add_metadata_injects_a2a_version"
    ],
    "notes": "A2A_VERSION = \"1.0\" used for headers and card builder; some test fixtures use \"1.0.0\" but no production path does.",
@@ -2797,7 +2797,7 @@
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:1192 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
-    "crates/a2a-protocol-client/src/discovery.rs:1600 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+    "crates/a2a-protocol-client/src/discovery.rs:1693 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs every_call_declares_the_protocol_version",
     "bindings/a2a-protocol-slimrpc/tests/multicast.rs every_invited_agent_answers_and_is_identifiable (against the version-required default)"
    ],
@@ -2916,7 +2916,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:841 rest_missing_version_header_rejected_but_card_discovery_versionless",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:843 rest_missing_version_header_rejected_but_card_discovery_versionless",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:697 default_config_rejects_a_versionless_rpc",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2615 ws_missing_version_header_rejected_by_default",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs an_empty_version_is_refused_unless_none_is_required",
@@ -3217,7 +3217,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:159",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:243",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:255",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:132"
    ],
    "test_evidence": [
@@ -4238,7 +4238,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:140 rest_wellknown_agent_card",
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:252 agent_card_get_returns_card_when_configured"
+    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:253 agent_card_get_returns_card_when_configured"
    ],
    "notes": "404 when no card configured.",
    "auditor": "C",
@@ -4826,7 +4826,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/well_known.rs WellKnownCard"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:252 agent_card_get_returns_card_when_configured",
+    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:253 agent_card_get_returns_card_when_configured",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:260 axum_agent_card_discovery",
     "crates/a2a-protocol-server/src/builder.rs build_refuses_a_handler_without_an_agent_card",
     "crates/a2a-protocol-server/src/builder.rs without_agent_card_builds_a_handler_with_no_card",
@@ -5660,7 +5660,7 @@
     "crates/a2a-protocol-client/src/discovery.rs:580-586"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:826 fetch_card_with_metadata_304_returns_cached",
+    "crates/a2a-protocol-client/src/discovery.rs:916 fetch_card_with_metadata_304_returns_cached",
     "crates/a2a-protocol-client/tests/card_revalidation.rs:66 a_cached_card_is_revalidated_with_its_validators"
    ],
    "notes": "CachingCardResolver revalidates on every resolve with If-None-Match and If-Modified-Since from the cached response; a server that answers 304 only to a request carrying both validators sees them on the second fetch. Shown to fail with the If-None-Match header removed.",
@@ -5707,7 +5707,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:439 json_response_has_content_type_and_version_header",
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:435 jsonrpc_accepts_a2a_content_type",
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:315 unsupported_content_type_returns_content_type_not_supported",
+    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:316 unsupported_content_type_returns_content_type_not_supported",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id",
     "crates/a2a-protocol-server/tests/content_type_essence.rs:78 json_rpc_reads_the_media_type"
    ],
@@ -5755,7 +5755,7 @@
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:333 header_fields_are_named_in_lowercase",
     "crates/a2a-protocol-server/tests/request_context_tests.rs:179 an_executor_sees_the_extensions_the_caller_activated",
-    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:107 json_rpc_reads_and_echoes_both_lines"
+    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:106 json_rpc_reads_and_echoes_both_lines"
    ],
    "notes": "Server reads A2A-Version/A2A-Extensions/auth from HTTP headers and forwards all headers to the handler; client sets A2A-Version and interceptor-supplied headers as HTTP headers.",
    "auditor": "E",
@@ -5800,8 +5800,8 @@
     "crates/a2a-protocol-client/src/extensions.rs:160 the_value_is_the_uris_comma_separated",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:103 json_rpc_sends_the_extensions_asked_for",
     "crates/a2a-protocol-server/src/dispatch/mod.rs:346 a_field_sent_as_several_lines_is_one_field",
-    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:107 json_rpc_reads_and_echoes_both_lines",
-    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:117 rest_reads_and_echoes_both_lines"
+    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:106 json_rpc_reads_and_echoes_both_lines",
+    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:116 rest_reads_and_echoes_both_lines"
    ],
    "notes": "The client sends what ClientBuilder::with_extensions asks for as one comma-joined field (extensions::header_value), and extra_headers, a HashMap, holds one field per name; server splits on commas and echoes activated extensions as one comma-joined field. A peer that sends A2A-Extensions as several header lines is read as one field, the lines joined in order with \", \" (dispatch::header_fields, RFC 9110 §5.3), on the JSON-RPC, HTTP+JSON, axum, gRPC and WebSocket bindings, and the JSON-RPC echo reads the same value. Until 2026-10-13 each binding kept the last line and the JSON-RPC echo the first.",
    "auditor": "E",
@@ -5835,7 +5835,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:89 a_refused_batch_gets_one_error_per_request",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:115 a_batch_past_the_limit_gets_one_refusal",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:125 jsonrpc_records_a_version_refusal_per_answer",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:126 jsonrpc_records_a_version_refusal_per_answer",
     "crates/a2a-protocol-types/src/jsonrpc.rs:746 a_request_id_must_be_a_string_a_number_or_null",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:76 an_id_of_another_type_is_an_invalid_request",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:117 omitted_params_are_read_as_an_empty_object",
@@ -5867,12 +5867,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:408-427",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:412-431",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:343-359",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:693 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:796 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3017).",
    "auditor": "E",
@@ -5966,7 +5966,7 @@
     "crates/a2a-protocol-server/src/streaming/sse.rs:242"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:315 unsupported_content_type_returns_content_type_not_supported",
+    "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:316 unsupported_content_type_returns_content_type_not_supported",
     "crates/a2a-protocol-server/tests/streaming_prestream_errors.rs:144 subscribe_to_unknown_task_is_a_plain_json_error",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs jsonrpc_stream_error_is_a_jsonrpc_error_response",
     "crates/a2a-protocol-client/tests/jsonrpc_stream_lag_tests.rs a_lagged_jsonrpc_stream_is_recognised_as_lagged",
@@ -6090,7 +6090,7 @@
     "crates/a2a-protocol-server/src/handler/helpers.rs:749 parse_extensions_header_drops_empty_segments",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:133 grpc_sends_the_extensions_asked_for",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones",
-    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:187 grpc_reads_both_lines"
+    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:186 grpc_reads_both_lines"
    ],
    "notes": "The client sends one a2a-extensions entry, the comma-joined list ClientBuilder::with_extensions asks for (one entry per key: extra_headers is a HashMap). On ingress, repeated a2a-extensions entries are one field, joined in order with \", \" (extract_metadata through dispatch::header_fields); until 2026-10-13 they collapsed to the last one.",
    "auditor": "E",
@@ -6233,9 +6233,9 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:347 rest_required_extension_enforced_and_echoed",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:841 rest_missing_version_header_rejected_but_card_discovery_versionless",
-    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:117 rest_reads_and_echoes_both_lines",
-    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:169 axum_reads_both_lines",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:843 rest_missing_version_header_rejected_but_card_discovery_versionless",
+    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:116 rest_reads_and_echoes_both_lines",
+    "crates/a2a-protocol-server/tests/repeated_header_lines.rs:168 axum_reads_both_lines",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:217 axum_enforces_the_protocol_version_except_for_discovery"
    ],
    "notes": "RestDispatcher validates A2A-Version and forwards headers. The axum adapter (A2aRouter) forwards headers and validates A2A-Version as RestDispatcher does (axum_adapter.rs:212, validate_a2a_request).",
@@ -6351,7 +6351,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:194-210",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:579",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:588",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:12-37",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:19-55",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:723"
    ],
    "test_evidence": [
@@ -6379,11 +6379,11 @@
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65-74",
     "crates/a2a-protocol-types/src/generated/task.rs:23-50",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:43-53",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:19-55"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:680 parse_list_tasks_query_with_status",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:110 build_query_string_handles_bool",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:128 build_query_string_handles_bool",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:235 list_tasks_invalid_status_timestamp_after_is_invalid_params"
    ],
    "notes": "Server also accepts `1` for true and legacy lowercase enum aliases. Both are lenient extensions.",
@@ -6396,18 +6396,20 @@
    "keyword": "MAY",
    "binds": "both",
    "requirement": "Repeated Fields: multiple values MAY be passed by repeating the parameter name or as comma-separated values",
-   "status": "NOT_SUPPORTED",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29",
-    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:58"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:19",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:41",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:96"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:144 build_query_string_handles_array_value"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:162 build_query_string_repeats_an_array_parameter"
    ],
-   "notes": "No v1.0 GET/DELETE request has a repeated field, so this has no wire effect today. The client would JSON-encode an array (`ids=%5B1%2C2%2C3%5D`), which matches neither MAY form, and parse_query_param returns only the first occurrence.",
+   "notes": "No v1.0 GET or DELETE request has a repeated field, so this has no wire effect today. Since 2026-10-15 the client sends an array by repeating the parameter, one per element (the first form the MAY names); it JSON-encoded the array (ids=%5B1%2C2%5D), which matched neither form. The server has no repeated field to read: parse_query_param returns a parameter's first occurrence, which is right for the single-valued fields every v1.0 route takes. Counted as SUPPORTED on that reading: what this SDK sends follows the MAY, and there is nothing for it to receive.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 2889,
@@ -6419,10 +6421,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:36-102",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:19-55"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:135 build_query_string_handles_nested_object"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:153 build_query_string_handles_nested_object"
    ],
    "notes": "Every operation with nested fields (SendMessage, CreateTaskPushNotificationConfig, CancelTask metadata) is routed POST, so the MUST holds by route design. build_query_string would still JSON-encode a nested object into the query instead of refusing it (test pins this), which is latent rather than wire-observable.",
    "auditor": "E",
@@ -6437,12 +6439,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:43-58",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:61-76",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:58-135"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:69 encode_query_value_encodes_special_chars",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:81 build_query_string_encodes_values",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:87 encode_query_value_encodes_special_chars",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:99 build_query_string_encodes_values",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:312 percent_decode_encoded_chars"
    ],
    "notes": "Client encodes everything except RFC 3986 unreserved chars. Server percent-decodes values (and `+` as space). Query keys are compared undecoded, which is harmless for the camelCase ASCII keys.",
@@ -6464,8 +6466,8 @@
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:276"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:653 rest_error_task_not_found_has_aip193_body",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:728 rest_error_push_not_supported_has_aip193_body",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:655 rest_error_task_not_found_has_aip193_body",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:730 rest_error_push_not_supported_has_aip193_body",
     "crates/a2a-protocol-server/tests/http_json_error_parity.rs:76 rest_and_axum_answer_the_same_failures_identically",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:446 axum_refusals_of_its_own_are_aip_193",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:764 a_dribbling_body_is_cut_off_at_the_configured_timeout"
@@ -6490,7 +6492,7 @@
     "crates/a2a-protocol-server/src/streaming/sse.rs:300"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:653 rest_error_task_not_found_has_aip193_body",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:655 rest_error_task_not_found_has_aip193_body",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:183 rest_stream_error_is_an_aip193_status",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data"
    ],
@@ -6571,12 +6573,12 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:362-376",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:794-943"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800-950"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:781 rest_streaming_events_are_bare_stream_response"
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:783 rest_streaming_events_are_bare_stream_response"
    ],
    "notes": "A single ordered per-task queue drives SSE, gRPC, WebSocket and SLIMRPC streams. REST frames are bare StreamResponse objects as the §11.7 example requires.",
    "auditor": "E",
@@ -6588,15 +6590,28 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "MAY optionally resend a final Task snapshot before closing",
-   "status": "NOT_SUPPORTED",
-   "severity": null,
+   "status": "SUPPORTED",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/sse.rs:362-405"
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:247",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:478",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1021",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1217",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:141"
    ],
-   "test_evidence": [],
-   "notes": "No code appends a final Task snapshot; the stream simply ends after the terminal/interrupted event.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/final_task_snapshot.rs:104 by_default_the_stream_closes_at_the_terminal_status",
+    "crates/a2a-protocol-server/tests/final_task_snapshot.rs:115 a_send_stream_ends_with_the_finished_task",
+    "crates/a2a-protocol-server/tests/final_task_snapshot.rs:136 a_subscription_ends_with_the_finished_task",
+    "crates/a2a-protocol-server/tests/final_task_snapshot.rs:183 with_the_queue_live_the_snapshot_waits_for_the_terminal_event",
+    "crates/a2a-protocol-server/tests/final_task_snapshot.rs:230 no_snapshot_is_sent_when_the_store_cannot_show_the_finished_task",
+    "crates/a2a-protocol-server/src/streaming/event_queue/final_snapshot_tests.rs:70 the_snapshot_follows_the_terminal_state_once",
+    "crates/a2a-protocol-server/src/streaming/event_queue/final_snapshot_tests.rs:101 a_read_dropped_while_the_snapshot_is_awaited_keeps_it",
+    "crates/a2a-protocol-server/src/streaming/event_queue/final_snapshot_tests.rs:118 no_terminal_state_no_snapshot"
+   ],
+   "notes": "Since 2026-10-15, opt-in (HandlerLimits::with_final_task_snapshot): a send stream and a SubscribeToTask stream send the task once more, as a Task without a position, after the terminal state and before closing, on every binding (they all stream the same reader). It is read once the queue's consumer has stored the terminal event (the applied mark), waiting at most subscribe_replay_catchup, and is sent only when that read is exact and the stored task is terminal: no snapshot rather than an older one. A send stream's snapshot is trimmed to the history the request asked for, as its first Task is. Off by default, so the stream still ends right after the terminal event unless asked.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 2977,
@@ -6653,7 +6668,7 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2308 ws_push_config_methods_routed",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2481 ws_get_extended_agent_card_routed",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2069 ws_send_streaming_message_events",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:86 every_spec_method_is_registered"
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:93 every_spec_method_is_registered"
    ],
    "notes": "Both bindings route all 11 v1.0 methods to the shared RequestHandler. WebSocket also accepts the v0.3 alias `message/stream` (websocket.rs:883). The module rustdoc (websocket.rs:20-23) says v0.3 names are rejected, while the book (dispatchers.md:225-229) documents the alias; the alias is untested (ws_legacy_method_names_rejected covers only message/send, tasks/list, tasks/get).",
    "auditor": "E",
@@ -6673,7 +6688,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1836 ws_send_message_success",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:119 send_message_round_trips_over_the_fabric"
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:126 send_message_round_trips_over_the_fabric"
    ],
    "notes": "WebSocket reuses the JSON-RPC ProtoJSON types. SLIMRPC uses the canonical lf.a2a.v1 protobuf messages.",
    "auditor": "E",
@@ -6693,7 +6708,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1853 ws_get_task_not_found",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates"
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:247 streaming_send_delivers_events_and_terminates"
    ],
    "notes": "Same handler, so the semantics match. Deviations: WebSocket ends every stream with a synthetic success frame `{\"result\":{\"status\":\"stream_complete\"}}` that is not a StreamResponse (documented). SLIMRPC accepts a missing a2a-version (methods/mod.rs:96 `validate_version_metadata(&headers, false)`), unlike the strict default of the other bindings. Its rationale comment (\"the gRPC binding already made exactly this trade\") is stale, since gRPC now enforces it (helpers.rs:42-51).",
    "auditor": "E",
@@ -6800,7 +6815,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1853 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:206 a2a_errors_keep_their_identity_across_the_fabric"
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:213 a2a_errors_keep_their_identity_across_the_fabric"
    ],
    "notes": "",
    "auditor": "E",
@@ -6884,7 +6899,7 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:686 extract_upgrade_headers"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:240 streaming_send_delivers_events_and_terminates",
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:247 streaming_send_delivers_events_and_terminates",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2069 ws_send_streaming_message_events",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:142 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:426 ws_upgrade_last_event_id_does_not_replay_the_log"
@@ -6976,7 +6991,7 @@
     "bindings/a2a-protocol-slimrpc/src/server/mod.rs:250-252"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:286 extended_agent_card_advertises_the_slimrpc_binding"
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:293 extended_agent_card_advertises_the_slimrpc_binding"
    ],
    "notes": "server.agent_interface() builds the interface with the upstream URI. The application must still push it onto card.supported_interfaces (README example).",
    "auditor": "E",
@@ -7044,7 +7059,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:39",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:61",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:41",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:389",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:393",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:40",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:183",
     "crates/a2a-protocol-server/src/handler/push_config.rs:143",
@@ -7256,7 +7271,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:159",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:243"
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:255"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:1156 http_push_sender_default",
@@ -7509,8 +7524,8 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_https_e2e.rs:199 https_push_delivered_over_real_tls",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1251 set_push_config_refuses_http_when_the_sender_is_https_only",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:1276 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1242 set_push_config_refuses_http_when_the_sender_is_https_only",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:1267 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:792 an_https_only_sender_refuses_http_before_connecting"
    ],
    "notes": "HTTPS delivery supported (tls-rustls feature, on by default via sdk) and tested over real TLS. Since 2026-10-12 opt-in HttpPushSender::https_only() refuses an http:// webhook at config creation (InvalidParams naming the reason, via PushSender::requires_https) and again at delivery before any connection, as the opt-in allowlist (line 3116) does for hosts. Off by default: plain http is still accepted unless a deployment sets it. Before: no option enforced https.",
@@ -7790,7 +7805,7 @@
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:382 the_extended_card_replaces_the_capabilities_checked",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:426 a_failed_extended_card_fetch_changes_nothing",
     "crates/a2a-protocol-client/tests/capability_check_tests.rs:452 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1023 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/src/discovery.rs:1114 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "F",
@@ -7983,7 +7998,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs:1080 oversized_body_is_refused_before_reading_and_names_the_size",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:409 axum_honors_configured_body_limit",
-    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:153 oversized_query_string_rejected",
+    "crates/a2a-protocol-server/tests/rest_edge_tests.rs:154 oversized_query_string_rejected",
     "crates/a2a-protocol-server/tests/rest_body_read_errors.rs:72 a_body_not_received_in_time_is_408",
     "crates/a2a-protocol-server/tests/rest_body_read_errors.rs:80 a_body_over_the_limit_is_413",
     "crates/a2a-protocol-server/tests/rest_body_read_errors.rs:92 a_body_stream_that_cannot_be_read_is_400"
@@ -8466,7 +8481,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:34",
     "crates/a2a-protocol-server/src/handler/helpers.rs:286",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:217"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:221"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:474 shape_response_history_covers_every_branch",
@@ -8672,7 +8687,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:211",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:215",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:491"
    ],
    "test_evidence": [],
@@ -10590,7 +10605,7 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:332",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:408",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:412",
     "crates/a2a-protocol-types/src/generated/params.rs:181",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"

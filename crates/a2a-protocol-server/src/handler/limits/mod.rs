@@ -233,6 +233,18 @@ pub struct HandlerLimits {
     ///
     /// Zero disables the wait.
     pub subscribe_replay_catchup: Duration,
+    /// Whether a stream sends the task once more, as a final `Task`
+    /// snapshot, after its terminal state and before it closes. Default:
+    /// `false`.
+    ///
+    /// Spec §11.7: an implementation "MAY optionally resend a final `Task`
+    /// snapshot before closing". The snapshot is read once the store holds
+    /// the terminal event, waiting at most
+    /// [`subscribe_replay_catchup`](Self::subscribe_replay_catchup) for it;
+    /// when the store cannot show the finished task by then, no snapshot is
+    /// sent rather than an older one. A send stream's snapshot carries the
+    /// history its request asked for, as the stream's first `Task` does.
+    pub final_task_snapshot: bool,
 }
 
 impl Default for HandlerLimits {
@@ -254,6 +266,7 @@ impl Default for HandlerLimits {
             subscribe_max_idle: None,
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),
+            final_task_snapshot: false,
         }
     }
 }
@@ -336,6 +349,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_subscribe_replay_catchup(mut self, catchup: Duration) -> Self {
         self.subscribe_replay_catchup = catchup;
+        self
+    }
+
+    /// Sets whether a stream ends with a final `Task` snapshot; see
+    /// [`final_task_snapshot`](Self::final_task_snapshot).
+    #[must_use]
+    pub const fn with_final_task_snapshot(mut self, on: bool) -> Self {
+        self.final_task_snapshot = on;
         self
     }
 

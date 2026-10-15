@@ -738,6 +738,12 @@ pub struct InMemoryQueueReader {
     reattaching: std::sync::Mutex<Option<Pin<Box<dyn Future<Output = Reattached> + Send>>>>,
     /// Consulted when the reader lags; see [`Self::with_catch_up`].
     catch_up: Option<CatchUpFn>,
+    /// Consulted once, when the stream reaches its terminal state, just
+    /// before it closes; see [`Self::with_final_snapshot`].
+    final_snapshot: Option<FinalSnapshotFn>,
+    /// The final-snapshot hook's answer while it is awaited, kept here for
+    /// the same cancel-safety reason as `reattaching`.
+    snapshotting: std::sync::Mutex<Option<FinalSnapshotFuture>>,
     /// The hook's answer while it is still being awaited, kept here for the
     /// same cancel-safety reason as `reattaching`.
     catching_up: std::sync::Mutex<Option<CatchUpFuture>>,
@@ -801,6 +807,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
             .field("pending", &self.pending.len())
             .field("reattach", &self.reattach.is_some())
             .field("catch_up", &self.catch_up.is_some())
+            .field("final_snapshot", &self.final_snapshot.is_some())
             .field("saw_terminal", &self.saw_terminal)
             .field("provisional", &self.provisional.is_some())
             .field("finished", &self.finished)
@@ -942,6 +949,14 @@ pub type CatchUpFuture = Pin<Box<dyn Future<Output = Option<CatchUpPage>> + Send
 /// missed from the task's event log. See [`InMemoryQueueReader::with_catch_up`].
 pub type CatchUpFn = Arc<dyn Fn(u64) -> CatchUpFuture + Send + Sync>;
 
+/// What a final-snapshot hook answers: the task as it stands once the stream's
+/// terminal event is stored, or `None` to send no snapshot.
+pub type FinalSnapshotFuture = Pin<Box<dyn Future<Output = Option<StreamResponse>> + Send>>;
+
+/// Called once a stream has delivered its terminal state, with the last
+/// position it delivered. See [`InMemoryQueueReader::with_final_snapshot`].
+pub type FinalSnapshotFn = Arc<dyn Fn(u64) -> FinalSnapshotFuture + Send + Sync>;
+
 /// Whether a stream frame reports a terminal task state.
 pub const fn carries_terminal_state(event: &StreamResponse) -> bool {
     match event {
@@ -990,6 +1005,36 @@ impl InMemoryQueueReader {
         self
     }
 
+    /// Attaches a hook whose answer the stream sends, once, after its
+    /// terminal state and before it closes (spec §11.7: an implementation
+    /// "MAY optionally resend a final `Task` snapshot before closing"). A
+    /// hook that answers `None` sends nothing. Without one, the default, the
+    /// stream closes right after the terminal state.
+    pub(crate) fn with_final_snapshot(mut self, hook: Option<FinalSnapshotFn>) -> Self {
+        self.final_snapshot = hook;
+        self
+    }
+
+    /// The final-snapshot hook's answer; `None` without a hook. Asked once:
+    /// the stream is finished as soon as it answers. Cancel-safe as
+    /// [`Self::catch_up`] is.
+    async fn final_snapshot(&mut self) -> Option<StreamResponse> {
+        let hook = self.final_snapshot.as_ref()?;
+        let through = self.replayed_through;
+        let answer = {
+            let slot = self
+                .snapshotting
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| hook(through)).await
+        };
+        *self
+            .snapshotting
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        answer
+    }
+
     /// Marks `position` as already accounted for: the writer's position when
     /// this reader attached, or the one its numbering resumes from. A lag
     /// catch-up starts after it, so it does not replay what came before the
@@ -1007,6 +1052,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            final_snapshot: None,
+            snapshotting: std::sync::Mutex::new(None),
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1087,6 +1134,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            final_snapshot: None,
+            snapshotting: std::sync::Mutex::new(None),
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1114,6 +1163,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            final_snapshot: None,
+            snapshotting: std::sync::Mutex::new(None),
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1163,8 +1214,9 @@ impl EventQueueReader for InMemoryQueueReader {
             // when the executor dropped its writer, so one still running
             // after its terminal status held the stream open.
             if self.saw_terminal {
+                let last = self.final_snapshot().await;
                 self.finished = true;
-                return None;
+                return last.map(|task| Ok(StreamEvent::unpositioned(task)));
             }
             if self.provisional.is_some() {
                 let mut first = self.next_live().await;

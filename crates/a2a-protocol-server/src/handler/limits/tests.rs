@@ -29,6 +29,7 @@ fn default_values() {
         Duration::from_millis(250)
     );
     assert_eq!(limits.subscribe_max_idle, None);
+    assert!(!limits.final_task_snapshot);
 }
 
 #[test]

@@ -135,6 +135,7 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `subscribe_reattach_interval` | `Duration` | 250 ms | How often a `SubscribeToTask` stream between turns checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays |
 | `subscribe_max_idle` | `Option<Duration>` | none | If set, how long a `SubscribeToTask` stream waits for a parked task to make progress before ending without a terminal state; the client resubscribes (§3.5.2). Unset, the stream runs until the terminal state or until the client goes (§3.1.6) |
 | `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events one read of the event log returns; a longer replay (a lag, a missed turn, a `Last-Event-ID` resumption) is read a page at a time |
+| `final_task_snapshot` | `bool` | `false` | Whether a stream sends the finished task once more, as a final `Task`, after its terminal state (§11.7) |
 | `subscribe_replay_catchup` | `Duration` | 2 seconds | How long a resuming `SubscribeToTask` waits for the event log to catch up with what was already broadcast; zero disables the wait |
 
 ### Build-Time Validation

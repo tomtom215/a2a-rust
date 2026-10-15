@@ -179,11 +179,15 @@ impl RequestHandler {
         &self,
         task_id: &TaskId,
         stored: a2a_protocol_types::task::Task,
-        shape: impl FnOnce(&mut a2a_protocol_types::task::Task),
+        shape: impl Fn(&mut a2a_protocol_types::task::Task) + Clone + Send + Sync + 'static,
         resume_after: Option<u64>,
     ) -> ServerResult<InMemoryQueueReader> {
-        let (reader, gap) = self.snapshot_and_live(task_id, stored, shape).await?;
-        let mut reader = self.with_stream_hooks(reader, task_id);
+        let (reader, gap) = self
+            .snapshot_and_live(task_id, stored, shape.clone())
+            .await?;
+        let mut reader = self
+            .with_stream_hooks(reader, task_id)
+            .with_final_snapshot(self.final_snapshot_hook(task_id.clone(), shape));
         if let Some(after_seq) = resume_after.or(gap) {
             self.replay_after(&mut reader, task_id, after_seq).await;
         }
@@ -454,6 +458,65 @@ impl RequestHandler {
                     complete: replayed.complete,
                 })
             }))
+        }))
+    }
+
+    /// Builds the hook that answers a stream's final `Task` snapshot (spec
+    /// §11.7), or `None` unless
+    /// [`HandlerLimits::final_task_snapshot`](crate::handler::HandlerLimits::final_task_snapshot)
+    /// is set.
+    ///
+    /// The snapshot must show the task the stream just finished, so it is
+    /// read once the queue's consumer has stored every event up to the last
+    /// position the stream delivered, waiting at most
+    /// `subscribe_replay_catchup`; a read that is not exact by then, or a
+    /// stored task that is not terminal, sends nothing rather than an older
+    /// state. With no live queue its consumer has finished, and the store is
+    /// read as it stands. It re-enters the request's tenant and caller, as
+    /// the other hooks do, and applies `shape`, the history trimming the
+    /// stream's first `Task` had.
+    pub(crate) fn final_snapshot_hook(
+        &self,
+        task_id: TaskId,
+        shape: impl Fn(&mut a2a_protocol_types::task::Task) + Send + Sync + 'static,
+    ) -> Option<crate::streaming::event_queue::FinalSnapshotFn> {
+        if !self.limits.final_task_snapshot {
+            return None;
+        }
+        let queues = self.event_queue_manager.clone();
+        let store = std::sync::Arc::clone(&self.task_store);
+        let wait = self.limits.subscribe_replay_catchup;
+        let partition = crate::store::tenant::TenantContext::capture();
+        let shape = std::sync::Arc::new(shape);
+        Some(std::sync::Arc::new(move |through| {
+            let (queues, store, task_id, shape) = (
+                queues.clone(),
+                std::sync::Arc::clone(&store),
+                task_id.clone(),
+                std::sync::Arc::clone(&shape),
+            );
+            Box::pin(partition.clone().scope(async move {
+                let read = match queues.applied_mark(&task_id).await {
+                    Some(mark) => {
+                        let read = mark
+                            .read_through(through, tokio::time::Instant::now() + wait, || {
+                                store.get(&task_id)
+                            })
+                            .await;
+                        if !read.exact {
+                            return None;
+                        }
+                        read.value
+                    }
+                    None => store.get(&task_id).await,
+                };
+                let mut task = read
+                    .ok()
+                    .flatten()
+                    .filter(|task| task.status.state.is_terminal())?;
+                shape(&mut task);
+                Some(a2a_protocol_types::events::StreamResponse::Task(task))
+            })) as crate::streaming::event_queue::FinalSnapshotFuture
         }))
     }
 

@@ -121,6 +121,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A final `Task` snapshot before a stream closes, opt-in** (server; spec
+  §11.7 "MAY optionally resend a final `Task` snapshot before closing").
+  With `HandlerLimits::with_final_task_snapshot(true)` a send stream and a
+  `SubscribeToTask` stream send the finished task once more, after the
+  terminal state, on every binding. It is read once the store holds the
+  terminal event, waiting at most `subscribe_replay_catchup`, and is not
+  sent when the store cannot show the finished task by then. A send
+  stream's snapshot carries the history its request asked for.
 - **`VersionQueryInterceptor` sends `A2A-Version` as a request parameter**
   (client; spec §3.6.1 "Clients MAY provide the `A2A-Version` as a request
   parameter instead of a header"). Opt-in, through `with_interceptor`: every
@@ -608,6 +616,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#151). `Server::bind` now delegates to it.
 
 ### Behaviour Changes
+
+- **The HTTP+JSON client sends an array query parameter by repeating it**
+  (client; spec §11.5 "Multiple values MAY be passed by repeating the
+  parameter name"). `ids=1&ids=2` where it sent one JSON-encoded value,
+  `ids=%5B1%2C2%5D`. No v1.0 GET or DELETE request has a repeated field, so
+  nothing on the wire changes today.
 
 - **`CachingCardResolver` uses a fresh card without a request** (client;
   spec §8.6 and §8.6.2: clients SHOULD honor RFC 9111 when fetching Agent
