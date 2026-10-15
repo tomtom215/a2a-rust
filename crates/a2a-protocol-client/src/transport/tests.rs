@@ -274,6 +274,15 @@ fn a_websocket_refusal_is_the_http_status() {
 fn anything_else_stays_a_protocol_error() {
     for (code, data) in [
         (-32600, Some(refusal("example.com", "UNAUTHENTICATED"))),
+        (-32600, Some(refusal("example.com", "PERMISSION_DENIED"))),
+        (
+            -32600,
+            Some(serde_json::json!([{
+                "@type": "type.googleapis.com/google.rpc.Help",
+                "reason": "PERMISSION_DENIED",
+                "domain": "a2a-rust.com",
+            }])),
+        ),
         (-32600, Some(refusal("a2a-rust.com", "QUOTA"))),
         (-32603, Some(refusal("a2a-rust.com", "UNAUTHENTICATED"))),
         (-32600, None),
