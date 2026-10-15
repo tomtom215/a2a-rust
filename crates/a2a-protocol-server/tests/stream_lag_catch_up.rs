@@ -130,12 +130,14 @@ async fn a_lagged_send_stream_catches_up_from_the_event_log() {
     assert_eq!(out.positions.first(), Some(&1));
 }
 
-/// A replay longer than `subscribe_replay_limit` would be cut short, so it is
-/// not used: the stream reports the lag where it fell behind, before any event
-/// of the replay. Here the task has finished and its queue is gone by the time
-/// the stream lags, so the whole log is all there is to read.
+/// A lag longer than `subscribe_replay_limit` is caught up a page at a time:
+/// each read of the log stops at the limit, and the stream asks again from
+/// the page's end before it goes back to the channel. Until 2026-10-15 such a
+/// stream ended with `streamLagged` where it fell behind, and this test said
+/// so. Here the task has finished and its queue is gone by the time the
+/// stream lags, so the whole log is all there is to read.
 #[tokio::test]
-async fn a_replay_over_the_limit_ends_with_stream_lagged() {
+async fn a_replay_over_the_limit_is_read_in_pages() {
     static RELEASE: tokio::sync::Notify = tokio::sync::Notify::const_new();
     struct Released;
     agent_executor!(Released, |ctx, q| async {
@@ -160,13 +162,22 @@ async fn a_replay_over_the_limit_ends_with_stream_lagged() {
     }
     assert_eq!(handler.active_queue_count().await, 0, "the queue is gone");
 
-    assert_eq!(artifacts_before_the_lag(&mut reader).await, 0);
+    let out = drain(&mut reader).await;
+    assert!(out.error.is_none(), "the stream reported {:?}", out.error);
+    assert_eq!(out.artifacts, EMITTED, "every artifact, six pages of ten");
+    assert!(out.completed, "the terminal status arrived");
+    assert!(
+        consecutive(&out.positions),
+        "positions are consecutive across pages: {:?}",
+        out.positions
+    );
 }
 
-/// The same while the agent is still running: the replay stops short of the
-/// writer's position, so it is not used either.
+/// The same while the agent is still running: the first page stops short of
+/// the writer's position, and the stream reads on from the log until it
+/// reaches it, rather than ending (until 2026-10-15) with `streamLagged`.
 #[tokio::test]
-async fn a_replay_over_the_limit_while_the_task_runs_ends_with_stream_lagged() {
+async fn a_replay_over_the_limit_while_the_task_runs_is_read_in_pages() {
     static RELEASE: tokio::sync::Notify = tokio::sync::Notify::const_new();
     struct Lingers;
     agent_executor!(Lingers, |ctx, q| async {
@@ -195,7 +206,25 @@ async fn a_replay_over_the_limit_while_the_task_runs_ends_with_stream_lagged() {
     }
     assert_eq!(handler.active_queue_count().await, 1, "the queue is live");
 
-    assert_eq!(artifacts_before_the_lag(&mut reader).await, 0);
+    // The task never finishes, so the stream stays open: read exactly what
+    // was emitted.
+    let mut positions = Vec::new();
+    let mut artifacts = 0;
+    while artifacts < EMITTED {
+        let frame = tokio::time::timeout(Duration::from_secs(5), reader.read())
+            .await
+            .expect("the stream must not stall")
+            .expect("the stream stays open while the task runs")
+            .expect("no streamLagged: the log covers the lag");
+        positions.extend(frame.seq);
+        if matches!(frame.event, StreamResponse::ArtifactUpdate(_)) {
+            artifacts += 1;
+        }
+    }
+    assert!(
+        consecutive(&positions),
+        "positions are consecutive across pages: {positions:?}"
+    );
 }
 
 fn over_limit(executor: impl AgentExecutor) -> RequestHandler {
@@ -221,30 +250,6 @@ async fn started(handler: &RequestHandler) -> (InMemoryQueueReader, TaskId) {
         panic!("the stream begins with the Task");
     };
     (reader, task.id)
-}
-
-/// Reads the stream up to its `streamLagged` error and counts the artifacts
-/// that came first. Every artifact was emitted after the stream's last read,
-/// so any of them before the error came from a replay it could not use in full.
-async fn artifacts_before_the_lag(reader: &mut InMemoryQueueReader) -> usize {
-    let mut artifacts = 0;
-    loop {
-        let next = tokio::time::timeout(Duration::from_secs(5), reader.read())
-            .await
-            .expect("the stream must not stall")
-            .expect("the stream ends with the lag, not before it");
-        match next {
-            Err(error) => {
-                assert!(error.is_stream_lagged(), "{error:?}");
-                return artifacts;
-            }
-            Ok(frame) => {
-                if matches!(frame.event, StreamResponse::ArtifactUpdate(_)) {
-                    artifacts += 1;
-                }
-            }
-        }
-    }
 }
 
 /// On a store that partitions by tenant, the catch-up reads the log in the

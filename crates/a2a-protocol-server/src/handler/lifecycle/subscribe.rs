@@ -306,7 +306,12 @@ impl RequestHandler {
             return;
         }
 
-        let Some(events) = self.read_log_with_catchup(task_id, after_seq).await else {
+        let Some(Replayed {
+            events,
+            capped,
+            complete,
+        }) = self.read_log_with_catchup(task_id, after_seq).await
+        else {
             return;
         };
         if !contiguous(after_seq, &events) {
@@ -354,9 +359,17 @@ impl RequestHandler {
             task_id = %task_id,
             after_seq = after_seq,
             replayed = events.len(),
+            more = capped,
             "resubscribe replaying missed events"
         );
-        reader.queue_replay(events);
+        reader.queue_resume_replay(
+            after_seq,
+            crate::streaming::event_queue::CatchUpPage {
+                events,
+                more: capped,
+                complete,
+            },
+        );
     }
 
     /// Reads the task's log from `after_seq` for a resubscribe; see
@@ -365,15 +378,8 @@ impl RequestHandler {
     /// behaviour, a snapshot then live events, and refusing to subscribe
     /// because the history could not be read would turn a storage hiccup into
     /// a dropped connection.
-    async fn read_log_with_catchup(
-        &self,
-        task_id: &TaskId,
-        after_seq: u64,
-    ) -> Option<Vec<crate::store::RecordedEvent>> {
-        self.log_replay()
-            .read(task_id, after_seq)
-            .await
-            .map(|replayed| replayed.events)
+    async fn read_log_with_catchup(&self, task_id: &TaskId, after_seq: u64) -> Option<Replayed> {
+        self.log_replay().read(task_id, after_seq).await
     }
 
     /// What reading the log needs, detached from the handler.
@@ -405,12 +411,19 @@ impl RequestHandler {
     /// `None` when the store keeps no log, which leaves such a stream ending
     /// with `streamLagged`.
     ///
-    /// The hook answers only with a complete replay: every event after the
-    /// stream's last position up to the writer's position, with the head of
-    /// the log still there. A partial one would hand the stream a gap it
-    /// cannot see, so the explicit `streamLagged` is the answer then. Like
-    /// the reattach hook it runs outside the request, so it re-enters the
-    /// request's tenant and caller.
+    /// The hook answers with a page of the events after the stream's last
+    /// position, with the head of the log still there and no position
+    /// missing: all of them up to the writer's position (`complete`), the
+    /// first `subscribe_replay_limit` of them (`more`: the stream asks again
+    /// from the page's end before it reads the channel; spec §3.5.2, and
+    /// until 2026-10-15 a lag longer than the limit ended with
+    /// `streamLagged`), or, when the log had not caught up within
+    /// `subscribe_replay_catchup`, what it held by then; the reader decides
+    /// what each is good for. A replay with a hole, or one the log no longer
+    /// covers, would hand the stream a gap it cannot see, so the explicit
+    /// `streamLagged` is the answer then. Like the reattach hook it
+    /// runs outside the request, so it re-enters the request's tenant and
+    /// caller.
     pub(crate) fn lag_catch_up_hook(&self, task_id: TaskId) -> Option<CatchUpFn> {
         if !self.task_store.supports_event_log() {
             return None;
@@ -421,7 +434,7 @@ impl RequestHandler {
             let (replay, task_id) = (replay.clone(), task_id.clone());
             Box::pin(partition.clone().scope(async move {
                 let replayed = replay.read(&task_id, after).await?;
-                if !replayed.complete
+                if !contiguous(after, &replayed.events)
                     || !replay
                         .store
                         .event_log_covers(&task_id, after)
@@ -431,11 +444,15 @@ impl RequestHandler {
                     trace_warn!(
                         task_id = %task_id,
                         after_seq = after,
-                        "a lagged stream could not be caught up in full from the event log"
+                        "a stream's replay has a gap the event log cannot fill"
                     );
                     return None;
                 }
-                Some(replayed.events)
+                Some(crate::streaming::event_queue::CatchUpPage {
+                    events: replayed.events,
+                    more: replayed.capped,
+                    complete: replayed.complete,
+                })
             }))
         }))
     }
@@ -577,6 +594,10 @@ struct Replayed {
     /// Whether they are all there is up to the writer's position when the
     /// read began: not capped by the limit, not cut short by the deadline.
     complete: bool,
+    /// Whether the read stopped at the limit with more to read: a full page,
+    /// without a hole, short of the writer's position. The next page starts
+    /// after its last event.
+    capped: bool,
 }
 
 impl LogReplay {
@@ -622,22 +643,27 @@ impl LogReplay {
             };
 
             let reached = found.last().map_or(after_seq, |e| e.seq);
-            // Caught up, or capped by `subscribe_replay_limit` — which is
-            // truncation, not lag, and is resumable by the client's own next
-            // `Last-Event-ID`, so there is nothing to wait for.
+            // Caught up, or a full page of `subscribe_replay_limit`: the
+            // stream reads the next page after this one, so there is nothing
+            // to wait for.
             if reached >= target || found.len() >= limit {
                 // With no live queue (`target` 0) the log is whole, and the
                 // read is all of it only if the limit did not cap it. A hole
                 // makes it incomplete wherever it ends.
-                let complete = contiguous(after_seq, &found)
+                let whole = contiguous(after_seq, &found);
+                let complete = whole
                     && if target == 0 {
                         found.len() < limit
                     } else {
                         reached >= target
                     };
+                // A full page is never empty, so a reader that asks again
+                // after it moves forward; a zero limit pages nothing.
+                let capped = whole && !complete && !found.is_empty() && found.len() >= limit;
                 return Some(Replayed {
                     events: found,
                     complete,
+                    capped,
                 });
             }
             if Instant::now() >= deadline {
@@ -655,6 +681,7 @@ impl LogReplay {
                 return Some(Replayed {
                     events: found,
                     complete: false,
+                    capped: false,
                 });
             }
             tokio::time::sleep(backoff).await;
@@ -670,6 +697,9 @@ impl LogReplay {
         }
     }
 }
+
+#[cfg(test)]
+mod log_replay_tests;
 
 #[cfg(test)]
 mod tests {

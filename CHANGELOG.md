@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A replay longer than `subscribe_replay_limit` is read in pages**
+  (server; spec §3.5.2 "each stream MUST receive the same events in the
+  same order"). The limit now bounds each read of the event log, not the
+  replay. A stream that lagged by more than the limit ended with
+  `streamLagged`; it now reads the log a page at a time, from where each
+  page ended, before it reads the live channel again. The same holds for a
+  turn a `SubscribeToTask` stream missed between polls, and for a
+  `Last-Event-ID` resume, which had a silent gap: the replay stopped at the
+  limit and the stream went on live, past the positions between the
+  replay's end and where its receiver attached, with no `streamLagged`
+  (`event_log_tests` pinned `[snapshot, 1, 2]` for a log of five); a
+  resume whose first read the log had not caught up with within
+  `subscribe_replay_catchup` skipped the same way, and now reads on while
+  the log moves forward (found by an independent review). A page the log
+  cannot supply is still reported as `streamLagged`, after what it did
+  supply, once, and the final state of a finished task follows the last
+  page. Memory stays bounded by the limit, but a client resuming with
+  `Last-Event-ID: 0` now receives the whole retained history on one
+  connection, read a page at a time as it is delivered, where it received
+  at most one page before.
 - **HTTP+JSON responds `application/a2a+json` when the request states no
   preference** (server; spec §11.1 "Content-Type: application/a2a+json SHOULD
   be used for requests and responses"). `RestDispatcher` and the axum router
@@ -89,6 +109,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`VersionQueryInterceptor` sends `A2A-Version` as a request parameter**
+  (client; spec §3.6.1 "Clients MAY provide the `A2A-Version` as a request
+  parameter instead of a header"). Opt-in, through `with_interceptor`: every
+  request on the JSON-RPC and HTTP+JSON transports carries
+  `?A2A-Version=1.0` beside the header, for a proxy or gateway that drops
+  headers it does not know. A parameter the request already names is kept.
 - **`CachingCardResolver::with_always_revalidate`** and
   **`CachingCardResolver::with_default_freshness`** (client; spec §8.6.2).
   `with_always_revalidate(true)` revalidates on every resolve however fresh
@@ -850,9 +876,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   follow it is reported as a lag. When the log cannot supply every missed event the
   stream ends with `streamLagged`, as before: a store without a log, a lag
   beyond what the log still holds (the in-memory stores keep the last 512
-  events of a task by default; the SQL stores keep the whole log), or more
-  missed events than one replay reads (`subscribe_replay_limit`, 1,000 by
-  default). A `read` dropped while the log is read, as the SSE and gRPC
+  events of a task by default; the SQL stores keep the whole log). More
+  missed events than one read of the log returns (`subscribe_replay_limit`)
+  are read a page at a time (see the next item). A `read` dropped while the log is read, as the SSE and gRPC
   bindings drop one whenever a keep-alive or a closed client wins the race,
   leaves the replay owed to the next `read`.
 - **A subscription across turns receives every turn's events** (server;

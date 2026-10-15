@@ -236,6 +236,8 @@ are rustdoc's job.
 | `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
+| `version_query` | Sending `A2A-Version` as a request parameter (§3.6.1) |
+| `VersionQueryInterceptor` | Adds `A2A-Version` to every request's query parameters, beside the header |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |
 

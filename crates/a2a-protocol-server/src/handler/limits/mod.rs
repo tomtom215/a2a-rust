@@ -195,19 +195,22 @@ pub struct HandlerLimits {
     /// reconnection an expected flow). Until 0.15.0 the default was 5
     /// minutes.
     pub subscribe_max_idle: Option<Duration>,
-    /// How many logged events a resuming `SubscribeToTask` replays at most.
-    /// Default: 1,000.
+    /// How many logged events one read of the task's event log returns at
+    /// most. Default: 1,000.
     ///
-    /// A client reconnecting with `Last-Event-ID` is sent what it missed,
-    /// read from the task's event log. The bound matters because the offset
-    /// is client-supplied: `Last-Event-ID: 0` on a long-running task asks for
-    /// the whole history, and without a cap that is an unbounded read and an
-    /// unbounded burst of frames on one connection.
+    /// A stream reads the log to replay what it missed: a client
+    /// reconnecting with `Last-Event-ID`, a stream that fell behind the
+    /// broadcast channel, a subscription that missed part of a turn. The
+    /// bound matters because the offset can be client-supplied:
+    /// `Last-Event-ID: 0` on a long-running task asks for the whole history,
+    /// and without a cap that is an unbounded read held in memory at once.
     ///
-    /// Truncation is not silent data loss. Every replayed frame carries its
-    /// own `id:`, so a client that receives the cap's worth reconnects at the
-    /// last one and continues — the replay is resumable by the same mechanism
-    /// that started it.
+    /// A longer replay is read a page of this size at a time, each page
+    /// delivered before the next is read, and the stream goes back to the
+    /// live channel only once the last page is in (§3.5.2). Until 0.15.0 the
+    /// replay stopped at the limit: a lag past it ended with `streamLagged`,
+    /// and a resume past it skipped, without saying so, the positions between
+    /// the replay's end and the live stream.
     pub subscribe_replay_limit: usize,
     /// How long a `SubscribeToTask` waits for the task's store to catch up with
     /// what has already been broadcast: a resuming one for the event log, and
@@ -320,7 +323,8 @@ impl HandlerLimits {
         self
     }
 
-    /// Sets how many logged events a resuming `SubscribeToTask` replays.
+    /// Sets how many logged events one read of the event log returns; see
+    /// [`subscribe_replay_limit`](Self::subscribe_replay_limit).
     #[must_use]
     pub const fn with_subscribe_replay_limit(mut self, limit: usize) -> Self {
         self.subscribe_replay_limit = limit;

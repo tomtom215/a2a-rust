@@ -406,8 +406,10 @@ missed from the task's event log and goes on (spec §3.5.2), on every store that
 keeps a log, which is every built-in one. A test that provokes `streamLagged`
 with a small `with_event_queue_capacity` no longer sees it there; also bound
 the log below what the stream misses
-(`TaskStoreConfig::with_max_events_per_task`), or lower
-`HandlerLimits::subscribe_replay_limit`.
+(`TaskStoreConfig::with_max_events_per_task`). Lowering
+`HandlerLimits::subscribe_replay_limit` no longer provokes it either: since
+0.15.0 the limit is the size of each read of the log, and a longer replay is
+read in pages.
 
 ### ListTasks takes a `pageSize` from 1 to 100
 
