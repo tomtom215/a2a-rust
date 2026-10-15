@@ -34,7 +34,7 @@ release text; the ledger's own numbering).
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
-| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 4 of 6 done (ADR 0016) |
+| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 4 of 6 and half of phase 5 done (ADR 0016) |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
@@ -320,6 +320,11 @@ with their reasons.
 types, with no API change (202 pass). Counts and lengths the proto types
 `int32` stay `u32`, and the two push types keep their hand `Debug`, which
 redacts their secrets.
+**Phase 5, first half (2026-10-15):** the 12 security-scheme and OAuth-flow
+messages, with no API change (202 pass). `ApiKeySecurityScheme.location`
+stays the `ApiKeyLocation` enum, two deprecated flows keep a required URL
+the proto leaves optional, and `StringList` keeps its hand `Deserialize`
+(a2a-go's bare array). The five `oneof` types remain.
 
 ## R50 — the REST client sends `application/json`
 

@@ -54,9 +54,12 @@ pub fn short_first_paragraph(text: &str) -> String {
     if first.chars().count() <= FIRST_PARAGRAPH_MAX {
         return text.to_owned();
     }
+    // A sentence ends at a period followed by a space or, in a proto comment
+    // wrapped at its line length, by a line break.
     let sentence = first
-        .match_indices(". ")
+        .match_indices(['.'])
         .map(|(i, _)| i)
+        .filter(|&i| matches!(first.as_bytes().get(i + 1), Some(b' ' | b'\n')))
         .find(|&i| !first[..i].ends_with("e.g") && !first[..i].ends_with("i.e"));
     let Some(i) = sentence else {
         return text.to_owned();
@@ -200,6 +203,11 @@ mod tests {
             )
         );
         assert_eq!(short_first_paragraph("Short. Text."), "Short. Text.");
+        let wrapped = format!("Ends at a break (RFC 8628).\nThen {}.", "y".repeat(200));
+        assert_eq!(
+            short_first_paragraph(&wrapped),
+            format!("Ends at a break (RFC 8628).\n\nThen {}.", "y".repeat(200))
+        );
     }
 
     #[test]

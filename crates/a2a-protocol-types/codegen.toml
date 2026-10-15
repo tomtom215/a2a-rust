@@ -61,23 +61,11 @@ TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
 
 # Proto types still hand-written, each to be moved here in its ADR 0016 phase.
 [pending]
-APIKeySecurityScheme = "phase 5, security schemes"
-AuthorizationCodeOAuthFlow = "phase 5, security schemes"
-ClientCredentialsOAuthFlow = "phase 5, security schemes"
-DeviceCodeOAuthFlow = "phase 5, security schemes"
-HTTPAuthSecurityScheme = "phase 5, security schemes"
-ImplicitOAuthFlow = "phase 5, security schemes"
-MutualTlsSecurityScheme = "phase 5, security schemes"
-OAuth2SecurityScheme = "phase 5, security schemes"
 OAuthFlows = "phase 5, a oneof"
-OpenIdConnectSecurityScheme = "phase 5, security schemes"
 Part = "phase 5, a oneof"
-PasswordOAuthFlow = "phase 5, security schemes"
-SecurityRequirement = "phase 5, security schemes"
 SecurityScheme = "phase 5, a oneof"
 SendMessageResponse = "phase 5, a oneof"
 StreamResponse = "phase 5, a oneof"
-StringList = "phase 5, security schemes"
 
 # ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -558,3 +546,177 @@ Optional in the canonical protocol schema: a config nested in
 exist yet), and servers assign it from context. A standalone
 `CreateTaskPushNotificationConfig` call does require it — the server
 rejects a missing task ID there with an invalid-params error."""
+
+# ── Security schemes ─────────────────────────────────────────────────────────
+
+[messages.StringList]
+derives = ["Debug", "Clone", "Serialize"]
+doc_append = """
+# Wire format
+
+The spec's JSON is the ProtoJSON of that message, `{"list": ["read"]}`,
+and that is the only form emitted: `a2a.proto` is the normative
+definition of the data objects, the spec's own agent-card example writes
+`"schemes": {"google": {"list": ["openid", …]}}`, and the official Python
+SDK (`MessageToDict`) emits the same.
+
+Three further forms are **accepted**, because real peers send them:
+
+| Received | Read as | Who sends it |
+|---|---|---|
+| `{}` | empty | ProtoJSON printers omit an empty repeated field |
+| `["read"]` | `["read"]` | a2a-go v2.5.0 (`a2a/auth.go`: `Schemes map[…]SecuritySchemeScopes`) |
+| `null` | empty | a2a-go v2.5.0, for a nil scope slice |
+
+Accepting the bare array is what lets this SDK read a Go agent's card at
+all. The other direction, a2a-go reading the spec form this SDK emits,
+needs a fix in a2a-go. `Deserialize` is written by hand, beside this type,
+to accept them."""
+
+[messages.StringList.fields.list]
+type = "Vec<String>"
+why = "absent and empty both mean no values, so the field is a plain list"
+doc_append = """
+`ProtoJSON` printers omit empty repeated fields: an empty `StringList`
+arrives as `{}`, so absence means empty (a scheme requiring no scopes
+is common and valid)."""
+
+[messages.SecurityRequirement]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.SecurityRequirement.fields.schemes]
+type = "std::collections::HashMap<String, crate::security::StringList>"
+serde = ["default"]
+why = "a map of scheme name to its scopes; absent reads as empty"
+doc_append = "`ProtoJSON` printers omit empty maps, so absence means empty."
+
+[messages.APIKeySecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.APIKeySecurityScheme.fields.location]
+type = "crate::security::ApiKeyLocation"
+aliases = ["in"]
+why = "the proto's three locations as an enum, so an unknown one is refused at parse time"
+doc_append = """
+Emitted as `"location"`, the field name in `a2a.proto`. v0.3 called
+this `"in"` (the OpenAPI spelling) and that spelling is still accepted,
+so a card from an older peer still parses."""
+
+[messages.HTTPAuthSecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.HTTPAuthSecurityScheme.fields.bearer_format]
+aliases = ["bearer_format"]
+
+[messages.OAuth2SecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.OAuth2SecurityScheme.fields.oauth2_metadata_url]
+aliases = ["oauth2_metadata_url"]
+
+[messages.OpenIdConnectSecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.OpenIdConnectSecurityScheme.fields.open_id_connect_url]
+aliases = ["open_id_connect_url"]
+
+[messages.MutualTlsSecurityScheme]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AuthorizationCodeOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.authorization_url]
+aliases = ["authorization_url"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.token_url]
+aliases = ["token_url"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.pkce_required]
+aliases = ["pkce_required"]
+
+[messages.AuthorizationCodeOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.ClientCredentialsOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ClientCredentialsOAuthFlow.fields.token_url]
+aliases = ["token_url"]
+
+[messages.ClientCredentialsOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.ClientCredentialsOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.DeviceCodeOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.DeviceCodeOAuthFlow.fields.device_authorization_url]
+aliases = ["device_authorization_url"]
+
+[messages.DeviceCodeOAuthFlow.fields.token_url]
+aliases = ["token_url"]
+
+[messages.DeviceCodeOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.DeviceCodeOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.ImplicitOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ImplicitOAuthFlow.fields.authorization_url]
+type = "String"
+aliases = ["authorization_url"]
+why = "required since this type was written, and the flow cannot be used without it; optional would break the API"
+
+[messages.ImplicitOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.ImplicitOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
+
+[messages.PasswordOAuthFlow]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.PasswordOAuthFlow.fields.token_url]
+type = "String"
+aliases = ["token_url"]
+why = "required since this type was written, and the flow cannot be used without it; optional would break the API"
+
+[messages.PasswordOAuthFlow.fields.refresh_url]
+aliases = ["refresh_url"]
+
+[messages.PasswordOAuthFlow.fields.scopes]
+type = "std::collections::HashMap<String, String>"
+serde = ["default"]
+why = "a map of scope name to description; absent reads as empty"
+doc_append = """
+ProtoJSON omits an empty map, so a peer's card with no scopes arrives
+without the key; absence means empty, as for `StringList::list`."""
