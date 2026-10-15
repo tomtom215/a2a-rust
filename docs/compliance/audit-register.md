@@ -34,7 +34,7 @@ release text; the ledger's own numbering).
 | R33 | first frame of a send stream | keep, documented | — | approved |
 | R36(b) | task snapshot moving back to `Submitted` | refuse at the queue, as a status update is | an executor that writes one | done |
 | R41 | `x-forwarded-for` over SLIMRPC | strip forwarding headers in the binding | none known | headers done; peer key with R13 |
-| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 3 of 6 done (ADR 0016) |
+| R49 | types not generated from the proto | generate them from the proto (option b) | the public types' API | in progress: phases 1 to 4 of 6 done (ADR 0016) |
 | R50 | REST client `Content-Type` | send `application/a2a+json` | a2a-java ≤ 1.3 servers | done |
 | R66 | multicast member lag | typed `streamLagged`, still terminal | code matching the old text | done |
 | R67 | API key in the query string | carry query parameters on the HTTP transports | a `ClientRequest` struct literal; the 0.15.0 bump | done |
@@ -316,6 +316,10 @@ field, configured as an `extra` entry with its reason.
 and the two update events, with no API change (`cargo semver-checks
 --baseline-rev HEAD`: 202 pass). The ID newtypes stay, as configured types
 with their reasons.
+**Phase 4 done (2026-10-15):** the 14 request, parameter and response
+types, with no API change (202 pass). Counts and lengths the proto types
+`int32` stay `u32`, and the two push types keep their hand `Debug`, which
+redacts their secrets.
 
 ## R50 — the REST client sends `application/json`
 

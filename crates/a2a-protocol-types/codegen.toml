@@ -62,21 +62,11 @@ TaskStatusUpdateEvent = "events::TaskStatusUpdateEvent"
 # Proto types still hand-written, each to be moved here in its ADR 0016 phase.
 [pending]
 APIKeySecurityScheme = "phase 5, security schemes"
-AuthenticationInfo = "phase 4, requests and responses"
 AuthorizationCodeOAuthFlow = "phase 5, security schemes"
-CancelTaskRequest = "phase 4, requests and responses"
 ClientCredentialsOAuthFlow = "phase 5, security schemes"
-DeleteTaskPushNotificationConfigRequest = "phase 4, requests and responses"
 DeviceCodeOAuthFlow = "phase 5, security schemes"
-GetExtendedAgentCardRequest = "phase 4, requests and responses"
-GetTaskPushNotificationConfigRequest = "phase 4, requests and responses"
-GetTaskRequest = "phase 4, requests and responses"
 HTTPAuthSecurityScheme = "phase 5, security schemes"
 ImplicitOAuthFlow = "phase 5, security schemes"
-ListTaskPushNotificationConfigsRequest = "phase 4, requests and responses"
-ListTaskPushNotificationConfigsResponse = "phase 4, requests and responses"
-ListTasksRequest = "phase 4, requests and responses"
-ListTasksResponse = "phase 4, requests and responses"
 MutualTlsSecurityScheme = "phase 5, security schemes"
 OAuth2SecurityScheme = "phase 5, security schemes"
 OAuthFlows = "phase 5, a oneof"
@@ -85,13 +75,9 @@ Part = "phase 5, a oneof"
 PasswordOAuthFlow = "phase 5, security schemes"
 SecurityRequirement = "phase 5, security schemes"
 SecurityScheme = "phase 5, a oneof"
-SendMessageConfiguration = "phase 4, requests and responses"
-SendMessageRequest = "phase 4, requests and responses"
 SendMessageResponse = "phase 5, a oneof"
 StreamResponse = "phase 5, a oneof"
 StringList = "phase 5, security schemes"
-SubscribeToTaskRequest = "phase 4, requests and responses"
-TaskPushNotificationConfig = "phase 4, requests and responses"
 
 # ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -405,3 +391,170 @@ why = "the context id newtype"
 
 [messages.TaskArtifactUpdateEvent.fields.last_chunk]
 aliases = ["last_chunk"]
+
+# ── Requests and responses ───────────────────────────────────────────────────
+
+[messages.SendMessageConfiguration]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.SendMessageConfiguration.fields.accepted_output_modes]
+type = "Vec<String>"
+aliases = ["accepted_output_modes"]
+serde = ["default"]
+why = "absent and empty both mean no preference, so the field is a plain list"
+doc_append = """
+`ProtoJSON` printers (all official SDKs) omit empty repeated fields, so
+absent on the wire means empty — "no preference". Requiring the key
+rejected real official-SDK requests at parse time."""
+
+[messages.SendMessageConfiguration.fields.task_push_notification_config]
+aliases = ["task_push_notification_config"]
+
+[messages.SendMessageConfiguration.fields.history_length]
+type = "Option<u32>"
+aliases = ["history_length"]
+why = "a history length counts messages; u32 refuses a negative one at parse time"
+
+[messages.SendMessageConfiguration.fields.return_immediately]
+aliases = ["return_immediately"]
+
+[messages.SendMessageRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+doc_append = "Context is given by `message.context_id`, as the proto defines it."
+
+[messages.GetTaskRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.GetTaskRequest.fields.history_length]
+type = "Option<u32>"
+aliases = ["history_length"]
+why = "a history length counts messages; u32 refuses a negative one at parse time"
+
+[messages.SubscribeToTaskRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.CancelTaskRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTasksRequest]
+derives = ["Debug", "Clone", "Default", "Serialize", "Deserialize"]
+doc_append = """
+All fields are optional filters; omitting them returns all tasks visible to
+the caller (subject to the server's default page size)."""
+
+[messages.ListTasksRequest.fields.context_id]
+aliases = ["context_id"]
+
+[messages.ListTasksRequest.fields.page_size]
+type = "Option<u32>"
+aliases = ["page_size"]
+why = "a page size counts items; u32 refuses a negative one at parse time"
+doc_append = """
+Clamped by the server to `max_page_size` (default 1000): a client may ask
+for any `u32`, and the server caps it."""
+
+[messages.ListTasksRequest.fields.page_token]
+aliases = ["page_token"]
+
+[messages.ListTasksRequest.fields.history_length]
+type = "Option<u32>"
+aliases = ["history_length"]
+why = "a history length counts messages; u32 refuses a negative one at parse time"
+
+[messages.ListTasksRequest.fields.status_timestamp_after]
+aliases = ["status_timestamp_after"]
+
+[messages.ListTasksRequest.fields.include_artifacts]
+aliases = ["include_artifacts"]
+
+[messages.GetTaskPushNotificationConfigRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.GetTaskPushNotificationConfigRequest.fields.task_id]
+aliases = ["task_id"]
+
+[messages.DeleteTaskPushNotificationConfigRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.DeleteTaskPushNotificationConfigRequest.fields.task_id]
+aliases = ["task_id"]
+
+[messages.ListTaskPushNotificationConfigsRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTaskPushNotificationConfigsRequest.fields.task_id]
+aliases = ["task_id"]
+
+[messages.ListTaskPushNotificationConfigsRequest.fields.page_size]
+type = "Option<u32>"
+aliases = ["page_size"]
+why = "a page size counts items; u32 refuses a negative one at parse time"
+
+[messages.ListTaskPushNotificationConfigsRequest.fields.page_token]
+aliases = ["page_token"]
+
+[messages.GetExtendedAgentCardRequest]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTasksResponse]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTasksResponse.fields.tasks]
+serde = ["default"]
+doc_append = """
+`ProtoJSON` printers omit empty repeated fields, so an official-SDK
+server with zero matching tasks legitimately sends no `tasks` key."""
+
+[messages.ListTasksResponse.fields.next_page_token]
+aliases = ["next_page_token"]
+serde = ["default"]
+doc_append = "Empty on the last page; `ProtoJSON` omits an empty string, so absent reads as empty."
+
+[messages.ListTasksResponse.fields.page_size]
+type = "u32"
+aliases = ["page_size"]
+serde = ["default"]
+why = "a page size counts items; u32 refuses a negative one at parse time"
+
+[messages.ListTasksResponse.fields.total_size]
+type = "u32"
+aliases = ["total_size"]
+serde = ["default"]
+why = "a count of tasks; u32 refuses a negative one at parse time"
+
+[messages.ListTaskPushNotificationConfigsResponse]
+derives = ["Debug", "Clone", "Serialize", "Deserialize"]
+
+[messages.ListTaskPushNotificationConfigsResponse.fields.configs]
+type = "Vec<crate::push::TaskPushNotificationConfig>"
+serde = ["default"]
+why = "absent and empty both mean no configs, so the field is a plain list"
+doc_append = "`ProtoJSON` printers omit empty repeated fields, so absence means empty."
+
+[messages.ListTaskPushNotificationConfigsResponse.fields.next_page_token]
+aliases = ["next_page_token"]
+
+[messages.AuthenticationInfo]
+derives = ["Clone", "Serialize", "Deserialize"]
+doc_append = """
+`credentials` is a secret and is **redacted** in the [`Debug`]
+representation (its presence is shown, its value is not) so it cannot leak
+into logs via `{:?}`. Serialization is unaffected — the real value is still
+sent on the wire."""
+
+[messages.TaskPushNotificationConfig]
+derives = ["Clone", "Serialize", "Deserialize"]
+doc_append = """
+`token` is a secret and is **redacted** in the [`Debug`] representation
+(presence shown, value hidden), as is any `credentials` inside
+`authentication`, so a `{:?}` of a config tree cannot leak the shared
+secret into logs. Serialization is unaffected."""
+
+[messages.TaskPushNotificationConfig.fields.task_id]
+aliases = ["task_id"]
+doc_append = """
+Optional in the canonical protocol schema: a config nested in
+`SendMessageConfiguration` legitimately omits it (the task does not
+exist yet), and servers assign it from context. A standalone
+`CreateTaskPushNotificationConfig` call does require it — the server
+rejects a missing task ID there with an invalid-params error."""

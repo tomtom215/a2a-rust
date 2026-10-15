@@ -71,13 +71,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `crates/a2a-protocol-types/codegen.toml`. The generator refuses a
   configuration entry for a type, field or value the proto does not have,
   and a proto type the configuration does not mention. CI's static checks
-  regenerate in memory and fail on any difference. Phases 1 to 3 of 6:
+  regenerate in memory and fail on any difference. Phases 1 to 4 of 6:
   `TaskState`, `MessageRole`, `AgentInterface`, `AgentProvider`,
   `AgentExtension`, then the agent card family (`AgentCard`,
   `AgentCapabilities`, `AgentSkill`, `AgentCardSignature`), then `Task`,
   `TaskStatus`, `Message`, `Artifact`, `TaskStatusUpdateEvent` and
-  `TaskArtifactUpdateEvent` are generated, at their existing paths; the
-  other 31 proto types are listed as pending. Docs now come from the
+  `TaskArtifactUpdateEvent`, then the 14 request, parameter and response
+  types (`MessageSendParams`, `ListTasksParams`, `TaskListResponse`,
+  `TaskPushNotificationConfig` and the rest) are generated, at their
+  existing paths; the other 17 proto types are listed as pending. Docs now come from the
   proto's comments, with the Rust-specific notes kept. Fields follow the
   proto's order, so `AgentProvider` serializes `url` before
   `organization`, `AgentCard` writes `provider` and `version` after

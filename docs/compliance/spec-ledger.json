@@ -42,7 +42,7 @@
     "tools/a2a-codegen/src/config.rs validate",
     "crates/a2a-protocol-types/codegen.toml",
     "crates/a2a-protocol-types/src/generated/task.rs:69",
-    "crates/a2a-protocol-types/src/responses.rs:54",
+    "crates/a2a-protocol-types/src/generated/responses.rs:13",
     "crates/a2a-protocol-types/src/security.rs:424"
    ],
    "test_evidence": [
@@ -51,7 +51,7 @@
     "crates/a2a-protocol-types/tests/generated_enums.rs every_task_state_has_its_proto_number",
     "tools/a2a-codegen/src/config.rs an_entry_for_something_the_proto_lacks_is_refused"
    ],
-   "notes": "Since 2026-10-15 the public serde types are being moved to code generated from a2a.proto (ADR 0016, register R49): tools/a2a-codegen (protox, no protoc) writes crates/a2a-protocol-types/src/generated/ from the proto and codegen.toml, and CI's static checks fail when the checked-in output differs. Phases 1 to 3 of 6 generate TaskState, MessageRole, AgentInterface, AgentProvider and AgentExtension, then AgentCard, AgentCapabilities, AgentSkill and AgentCardSignature, then Task, TaskStatus, Message, Artifact and the two update events; the other 31 proto types are still hand-written and listed as pending in codegen.toml, which is why this stays PARTIAL. The prost message types (feature `proto`, build.rs) were generated already.",
+   "notes": "Since 2026-10-15 the public serde types are being moved to code generated from a2a.proto (ADR 0016, register R49): tools/a2a-codegen (protox, no protoc) writes crates/a2a-protocol-types/src/generated/ from the proto and codegen.toml, and CI's static checks fail when the checked-in output differs. Phases 1 to 4 of 6 generate TaskState, MessageRole, AgentInterface, AgentProvider and AgentExtension, then AgentCard, AgentCapabilities, AgentSkill and AgentCardSignature, then Task, TaskStatus, Message, Artifact and the two update events, then the 14 request, parameter and response types; the other 17 proto types are still hand-written and listed as pending in codegen.toml, which is why this stays PARTIAL. The prost message types (feature `proto`, build.rs) were generated already.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-15)"
@@ -591,10 +591,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:63"
+    "crates/a2a-protocol-types/src/generated/responses.rs:24"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/coverage_gap_tests.rs:582 (nextPageToken presence)"
    ],
    "notes": "Field is a plain String with no skip_serializing_if; gRPC follows proto3 default semantics.",
@@ -7426,13 +7426,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:43",
-    "crates/a2a-protocol-types/src/push.rs:104",
+    "crates/a2a-protocol-types/src/push.rs:22",
+    "crates/a2a-protocol-types/src/push.rs:40",
     "crates/a2a-protocol-server/src/push/webhook.rs:78",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:207"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:353 debug_redacts_secrets_but_keeps_presence",
+    "crates/a2a-protocol-types/src/push.rs:289 debug_redacts_secrets_but_keeps_presence",
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/log_redaction.rs:63 a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret"
    ],
@@ -7921,12 +7921,12 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:76",
     "crates/a2a-protocol-server/src/auth/mod.rs:222",
-    "crates/a2a-protocol-types/src/push.rs:43",
+    "crates/a2a-protocol-types/src/push.rs:22",
     "crates/a2a-protocol-client/src/redact.rs:18",
     "crates/a2a-protocol-client/src/interceptor.rs:114"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:353 debug_redacts_secrets_but_keeps_presence",
+    "crates/a2a-protocol-types/src/push.rs:289 debug_redacts_secrets_but_keeps_presence",
     "crates/a2a-protocol-server/src/auth/identity_tests.rs:69 a_rejected_key_names_nobody",
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
     "crates/a2a-protocol-client/tests/debug_redaction.rs:56 a_client_request_prints_header_names_and_param_keys_only",
@@ -8101,7 +8101,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/webhook.rs:78",
     "crates/a2a-protocol-server/src/rpc_span/agent.rs:69",
-    "crates/a2a-protocol-types/src/push.rs:43"
+    "crates/a2a-protocol-types/src/push.rs:22"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
@@ -8929,7 +8929,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:497",
     "crates/a2a-protocol-server/src/push/sender.rs:862",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:25",
-    "crates/a2a-protocol-types/src/push.rs:31"
+    "crates/a2a-protocol-types/src/generated/push.rs:22"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1132 set_push_config_refuses_an_auth_scheme_it_cannot_send"
@@ -10054,7 +10054,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/params/mod.rs:86",
+    "crates/a2a-protocol-types/src/generated/params.rs:55",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:109",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
@@ -10106,7 +10106,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:46",
-    "crates/a2a-protocol-types/src/params/mod.rs:108",
+    "crates/a2a-protocol-types/src/generated/params.rs:73",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
@@ -10208,11 +10208,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:54",
+    "crates/a2a-protocol-types/src/generated/responses.rs:19",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10228,11 +10228,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:54",
+    "crates/a2a-protocol-types/src/generated/responses.rs:24",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10248,11 +10248,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:54",
+    "crates/a2a-protocol-types/src/generated/responses.rs:27",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10268,11 +10268,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:54",
+    "crates/a2a-protocol-types/src/generated/responses.rs:30",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:250 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden",
     "crates/a2a-protocol-server/tests/support/list_proto.rs list_follows_the_proto (run by store_tests, sqlite_store_tests, tenant_sqlite_store_tests, postgres_store_tests)"
    ],
@@ -10315,7 +10315,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53",
-    "crates/a2a-protocol-types/src/params/mod.rs:108",
+    "crates/a2a-protocol-types/src/generated/params.rs:138",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
@@ -10363,7 +10363,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:223",
     "crates/a2a-protocol-server/src/handler/push_config.rs:263",
-    "crates/a2a-protocol-types/src/params/mod.rs:212",
+    "crates/a2a-protocol-types/src/generated/params.rs:154",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:303"
    ],
    "test_evidence": [
@@ -10388,7 +10388,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:183",
     "crates/a2a-protocol-server/src/handler/push_config.rs:263",
-    "crates/a2a-protocol-types/src/params/mod.rs:215"
+    "crates/a2a-protocol-types/src/generated/params.rs:156"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1176 empty_required_ids_are_invalid_params",
@@ -10499,7 +10499,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:381",
-    "crates/a2a-protocol-types/src/params/mod.rs:108",
+    "crates/a2a-protocol-types/src/generated/params.rs:183",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
