@@ -22,17 +22,17 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Open:** pull request #171, branch `claude/funny-heisenberg-e6tl83`, based on
-  #170's merge `2a888a4c`. `main` has since gained only the benchmark bot's
-  `179fd50d`.
+- **Merged:** pull request #171 (`claude/funny-heisenberg-e6tl83`) merged as
+  `c9035931` on 2026-10-15. Work continues on `claude/lucid-edison-4hn5kb`,
+  started from that merge; no pull request is open for it yet.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
   authority on the counts. The PARTIAL entries at MUST level are §3.1.6 (the
   idle bound, approved as recorded), §3.5.2 (explicit `streamLagged` cases
   only, since R69), §5.7 (the spec contradicts itself; upstream draft below)
   and §12.4 (agntcy-slim-rpc carries no error details).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
-  no other trailers (see *Waiting on the maintainer* for the conflict with
-  `CONTRIBUTING.md`).
+  no other trailers. `CONTRIBUTING.md` and `PROVENANCE.md` §3.2 say the same
+  since 2026-10-15.
 
 ## Next, in order
 
@@ -62,29 +62,26 @@ that code could close and R69.
 3. **Steps 5 and 6 — a release-readiness audit for 0.15.0, then debt.** The
    release itself follows `RELEASING.md` and needs the signing key below.
    Debt is *Open engineering* below, by the maintainer's priority.
-4. **After #171 merges:** add `tools/a2a-codegen/Cargo.lock` to the
-   `rust-pr` job in `osv.yml` (the push and scheduled `rust` job already
-   scans it; the PR scan also scans the base, which lacks it until then).
+4. **The 2026-10-15 decisions** (*Decisions the maintainer made*): the idle
+   bound off by default (§3.1.6), lag catch-up paging (§3.5.2),
+   `application/a2a+json` when a request states no preference (§11.1), card
+   freshness from `max-age` (§8.6, §8.6.2), and three metric changes. None is
+   built yet.
 
 ## Waiting on the maintainer
 
-- **The lag catch-up paging change**: reading a replay longer than
-  `subscribe_replay_limit` in pages instead of ending with `streamLagged`. It
-  changes an approved behaviour, so it is the maintainer's call.
 - **A release signing key.** `.github/release-signers/allowed_signers` and
   `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
   tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
   each with its status): among them the SLIMRPC error-mapping disagreement
   (§12 / §5.4) and §5.7's non-empty required arrays against an empty
-  `ListTasksResponse.tasks`. The a2a-go draft for R19 is deliberately not
-  committed: it was never checked against a2a-go's source.
+  `ListTasksResponse.tasks`. On 2026-10-15 the maintainer asked for those two
+  to be re-verified and held, not filed. The a2a-go draft for R19 is
+  deliberately not committed: it was never checked against a2a-go's source.
 - **A private advisory to a2a-python** (GHSA, filed by the maintainer; see
   `handoff-history.md`, `claude/nifty-fermat-roj04f`). Do not file a public
   issue while it is open.
-- **`CONTRIBUTING.md` asks contributors to add `Co-Authored-By: Claude
-  <noreply@anthropic.com>`**, while the maintainer's commits carry only
-  `Signed-off-by`. One of the two should change.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
 - **Publishing:** the SLIMRPC binding has never been published (0.7.0;
@@ -127,12 +124,10 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   one socket without a hand-written accept loop; `find_task_by_context`
   clones full history and `RequestContext::stored_task` is `pub` (an API
   decision, `handler/helpers.rs`).
-- **Observability:** the metric names' breaking changes — UCUM units, an
-  outcome counter, `init_otlp_pipeline`'s `service_name` — undecided;
-  removing the deprecated `a2a.server.latency` is allowed from 0.15.0 and
-  belongs in `ROADMAP.md`; ADR 0013 still says "Proposed" though its
-  decision (`otel::Telemetry`) has shipped; mTLS to the collector and
-  `http/json` OTLP are unsupported.
+- **Observability:** the metric changes decided on 2026-10-15 are not built;
+  the single outcome counter was declined. ADR 0013 still says "Proposed"
+  though its decision (`otel::Telemetry`) has shipped; mTLS to the collector
+  and `http/json` OTLP are unsupported.
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`,
   suggested by a two-round run and not yet measured with the pinned-core
@@ -184,7 +179,18 @@ it.
   release; R67 option (b) with 0.15.0 as the next release; OpenTelemetry as
   in Step 4; R68, follow the text.
 - **2026-10-15:** R69 option (a), the store reports the log position a saved
-  task reflects.
+  task reflects. Later the same day, for the next session's plan:
+  `subscribe_max_idle` off by default, kept as an opt-in (§3.1.6); lag
+  catch-up paging, so `streamLagged` remains only where the log no longer
+  holds the events (§3.5.2); `application/a2a+json` for a request that states
+  no preference, gated on `scripts/go_sdk_interop.sh` (§11.1); the card
+  resolver honours `max-age` with an always-revalidate option and an opt-in
+  default lifetime (§8.6, §8.6.2); the §5.7 and SLIMRPC error-mapping drafts
+  re-verified and held; for 0.15.0, UCUM units, `a2a.server.latency` renamed
+  `a2a.server.request.duration` with the old name removed, and
+  `init_otlp_pipeline` taking an optional service name — not the single
+  outcome counter; commits carry `Signed-off-by` only, and
+  `CONTRIBUTING.md` follows.
 - **Earlier, still standing:** tool calling stays in the examples, not the
   crates (`examples/rig-agent`); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
@@ -216,9 +222,9 @@ it.
 
 ## Branches
 
-Only two kinds matter: the open branch (#171, above) and the storage branches
-(`claude/adk-rust-0.12-patch`, `claude/a2a-rig-held`), both built against
-0.12. Every other `claude/*` branch is merged or a pre-0.12 session branch;
+Only two kinds matter: the working branch (`claude/lucid-edison-4hn5kb`,
+above) and the storage branches (`claude/adk-rust-0.12-patch`,
+`claude/a2a-rig-held`), both built against 0.12. Every other `claude/*` branch is merged or a pre-0.12 session branch;
 deleting them is the maintainer's call. To check one:
 
 ```sh

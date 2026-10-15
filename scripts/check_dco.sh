@@ -94,7 +94,7 @@ while IFS=$'\t' read -r sha author_email author_name; do
     if printf '%s' "$author_email" | grep -Eqi "$NON_HUMAN"; then
         echo "::error::${sha:0:8} (\"$subject\") is authored by a non-human identity <$author_email>."
         echo "         A DCO sign-off is an assertion by a person. Re-author this commit"
-        echo "         as yourself and credit the assistant with a Co-Authored-By trailer."
+        echo "         as yourself, signed off; say in the pull request that an assistant helped."
         echo "         See PROVENANCE.md section 3.2."
         failed=1
         continue

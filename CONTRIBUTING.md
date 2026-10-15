@@ -54,12 +54,18 @@ Two rules apply:
 
 1. **You are the author.** Commit as yourself, not as the assistant. A DCO
    sign-off is an assertion by a person; a commit whose git author is a tool
-   identity cannot carry a meaningful one. Credit the assistant in a trailer:
+   identity cannot carry a meaningful one. The commit carries your sign-off
+   and no other trailer:
 
    ```
    Signed-off-by: Your Name <your.email@example.com>
-   Co-Authored-By: Claude <noreply@anthropic.com>
    ```
+
+   Say in the pull request description that an assistant helped; the
+   project-level disclosure is [`PROVENANCE.md`](PROVENANCE.md). (Until
+   2026-10-15 this section also asked for a `Co-Authored-By` trailer naming
+   the assistant; the maintainer's commits never carried one, and the rule
+   was changed to match them.)
 
 2. **You are responsible for it.** Signing off means you have reviewed the
    code, you understand what it does, and you have the right to submit it —
