@@ -9,7 +9,7 @@ the response is returned as an A2A artifact.
 
 ## Supported LLM providers
 
-| Provider | Model example | Env var |
+| Provider | Model name example (check the provider for current names) | Env var |
 |----------|--------------|---------|
 | OpenAI | `gpt-4o`, `gpt-4o-mini` | `OPENAI_API_KEY` |
 | Anthropic | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
@@ -24,10 +24,13 @@ llama.cpp's `llama-server` speaks.
 
 ## Running
 
+`GENAI_MODEL` picks the model and, through its name, the provider. It
+defaults to `qwen3.5:0.8b`, a local model.
+
 ```bash
 # Hosted provider:
 export OPENAI_API_KEY=sk-...
-cargo run -p genai-a2a-agent             # defaults to gpt-4o-mini
+GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 
 # Fully local, no API key — verified with llama.cpp's llama-server:
 curl -L -o model.gguf \
@@ -56,9 +59,20 @@ server, which is the point of both being OpenAI-compatible.
 (Ollama works too: `ollama pull qwen3.5:0.8b`, then
 `GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent`.)
 
-Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
-This "server mode" is the deployment shape, and its webhook SSRF guard is **on
-by default**: a push-notification URL that resolves to a loopback, private, or
+### Two modes
+
+**The default run checks itself and exits.** It serves all four bindings on
+random loopback ports, says whether a model answered (`LLM leg: EXERCISED` or
+`LLM leg: NOT EXERCISED`), drives every A2A method over every binding, prints
+the coverage matrix, and exits `0` when all 44 cells ran, `1` when a call
+failed, or `2` when a cell never ran. With no model reachable, each task
+completes with a labelled mechanical answer, so the protocol surface is
+measured either way.
+
+**Server mode** starts when `A2A_BIND_ADDR` is set, and serves until Ctrl+C.
+It is the deployment shape. An unreachable model fails the task
+(`TASK_STATE_FAILED`) unless `A2A_ALLOW_FALLBACK=1`, and the webhook SSRF guard
+is **on by default**: a push-notification URL that resolves to a loopback, private, or
 link-local address is rejected. For local testing where the webhook itself
 lives on localhost, set `A2A_ALLOW_PRIVATE_WEBHOOKS=1` to permit them; the
 active posture is printed at startup.
@@ -66,7 +80,24 @@ active posture is printed at startup.
 Server mode serves JSON-RPC on `A2A_BIND_ADDR`; to expose the other bindings on
 the same handler, set `A2A_GRPC_ADDR` and/or `A2A_WS_ADDR` (e.g.
 `A2A_GRPC_ADDR=127.0.0.1:8081 A2A_WS_ADDR=127.0.0.1:8082`). Each is printed at
-startup when set.
+startup when set. `echo-agent` names the same two variables
+`A2A_GRPC_BIND_ADDR` and `A2A_WS_BIND_ADDR`.
+
+### Server-mode environment
+
+| Variable | Effect |
+|---|---|
+| `A2A_BIND_ADDR` | Serve JSON-RPC here, until Ctrl+C |
+| `A2A_GRPC_ADDR`, `A2A_WS_ADDR` | Also serve gRPC, WebSocket |
+| `A2A_ALLOW_PRIVATE_WEBHOOKS=1` | Permit push-notification URLs on loopback, private or link-local addresses |
+| `A2A_ALLOW_FALLBACK=1` | Complete a task with a labelled mechanical answer when no model is reachable, instead of failing it |
+| `A2A_MAX_CONCURRENT_TASKS` | Cap on tasks a tenant runs at once; a request past it is refused with `Overloaded` |
+| `A2A_BEARER_TOKEN` | Require `Authorization: Bearer <token>` |
+| `A2A_API_KEY` | Require `x-api-key: <key>` |
+| `A2A_JWT_HS256_SECRET` | Require an HS256 JWT; the secret must be at least 32 bytes. `A2A_JWT_ISS` and `A2A_JWT_AUD` add issuer and audience checks |
+
+Set one authentication scheme: each adds an interceptor, and they compose with
+AND. The plain agent card stays public.
 
 ## How it works
 
@@ -80,11 +111,14 @@ A2A Client ──→ A2A Server (JSON-RPC)
               2. Transition to Working
               3. Call genai::Client for LLM completion
               4. Success → artifact "llm-response" + TASK_STATE_COMPLETED
-                 LLM error → TASK_STATE_FAILED
+                 LLM error → TASK_STATE_FAILED (server mode)
+                           → a labelled fallback answer (default run, or
+                             A2A_ALLOW_FALLBACK=1)
 ```
 
-Errors surface through the task state, never disguised as successful
-artifacts — clients can trust `status.state`.
+In server mode without `A2A_ALLOW_FALLBACK`, errors surface through the task
+state, never disguised as successful artifacts, so clients can trust
+`status.state`.
 
 ## Key integration point
 
@@ -106,12 +140,14 @@ impl AgentExecutor for GenaiAgentExecutor {
 
 ## Testing
 
+In server mode, with `A2A_BIND_ADDR=127.0.0.1:8080`:
+
 ```bash
 # Agent discovery
-curl http://127.0.0.1:<port>/.well-known/agent-card.json
+curl http://127.0.0.1:8080/.well-known/agent-card.json
 
 # Send a message
-curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' -d '{
+curl -X POST http://127.0.0.1:8080 -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' -d '{
   "jsonrpc": "2.0", "id": 1, "method": "SendMessage",
   "params": {"message": {"messageId": "m1", "role": "ROLE_USER",
              "parts": [{"text": "What is 2+2?"}]}}
@@ -119,7 +155,7 @@ curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A
 
 # Full conformance suite — 21/21 graded, 1 N/A on this binding, gated by
 # tck.yml's tck-example-agents job. The command below reproduces it locally.
-cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
+cargo run -p a2a-tck -- --url http://127.0.0.1:8080 --binding jsonrpc
 ```
 
 ## Prerequisites

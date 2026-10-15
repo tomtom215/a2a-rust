@@ -1,21 +1,25 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# Echo Agent — A2A Rust SDK Example
+# Echo Agent — every A2A method over every binding
 
-A minimal end-to-end example of the [A2A protocol](https://github.com/a2aproject/a2a-spec) using the [a2a-rust](https://github.com/tomtom215/a2a-rust) SDK. The agent echoes incoming messages back as artifacts, demonstrating the complete request lifecycle.
+An agent that echoes each message back as an artifact, built with the
+[a2a-rust](https://github.com/tomtom215/a2a-rust) SDK and used to measure the
+SDK's protocol surface against the [A2A protocol](https://github.com/a2aproject/A2A).
+It serves all four bindings behind one handler, drives each of the eleven A2A
+methods over each binding, prints the coverage matrix, then runs counter-tests
+against a second agent that declares no optional capabilities.
 
 ## What it demonstrates
 
 | Feature | How |
 |---------|-----|
-| **AgentExecutor** | Implements the `AgentExecutor` trait with Working → Artifact → Completed lifecycle |
-| **JSON-RPC transport** | Server via `JsonRpcDispatcher`, client via `ClientBuilder` (default binding) |
-| **REST transport** | Server via `RestDispatcher`, client via `ClientBuilder::with_protocol_binding("HTTP+JSON")` |
-| **Streaming (SSE)** | `stream_message()` consumes `StatusUpdate` and `ArtifactUpdate` events |
+| **One handler, four bindings** | JSON-RPC (§9), HTTP+JSON (§11), gRPC (§10) and WebSocket (a custom binding, §12) dispatchers over one `RequestHandler` |
+| **Every method** | Send, streaming send, get, list, cancel, subscribe, the four push-config methods and the extended card, over each binding |
+| **Push notifications** | The card declares them, and a webhook sink is started so the configs point at a real URL |
+| **Refusals the spec requires** | Five counter-tests against an agent with no push, no streaming and no extended card |
 | **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent-card.json` at runtime |
-| **Task retrieval** | `get_task()` retrieves a completed task by ID |
-| **Pre-bind pattern** | Listeners are bound before the handler is built so agent card URLs are correct |
+| **Pre-bind pattern** | Listeners are bound before the handler is built, so the card's URLs are the real ones |
 
 ## Running
 
@@ -27,87 +31,97 @@ cargo run -p echo-agent
 RUST_LOG=debug cargo run -p echo-agent --features tracing
 ```
 
+Exit codes: `0` every cell ran and every counter-test was refused, `1` a call
+or counter-test failed, `2` a matrix cell was never exercised. The matrix rows
+come from the ratified `a2a.proto` (see `a2a_protocol_types::method`), not
+from this example.
+
 ## Expected output
 
-```
-=== A2A Echo Agent Example ===
+From `cargo run -p echo-agent` on 2026-10-15, with the ports and ids as the
+run assigned them, and the HTTP+JSON, gRPC and WebSocket blocks, which have
+the same eleven lines as the JSON-RPC one, left out:
 
-JSON-RPC server listening on http://127.0.0.1:<port>
-REST server listening on http://127.0.0.1:<port>
+```text
+=== A2A Echo Agent — full-surface demo ===
 
---- Demo 1: Synchronous SendMessage (JSON-RPC) ---
-  Task ID:    <uuid>
-  Status:     Completed
-  Artifact:   echo-artifact
-  Content:    Echo: Hello from JSON-RPC client!
+JSON-RPC  http://127.0.0.1:38669
+HTTP+JSON http://127.0.0.1:41789
+gRPC      127.0.0.1:38293
+WebSocket ws://127.0.0.1:35907
+webhook   http://127.0.0.1:36525/webhook
 
---- Demo 2: Streaming SendMessage (JSON-RPC) ---
-  Status update: Working
-  Artifact update: echo-artifact
-  Content:    Echo: Hello from streaming client!
-  Status update: Completed
+Discovered 'Echo Agent' v1.0.0 — 4 interface(s), streaming=Some(true) push=Some(true) extended=Some(true)
 
---- Demo 3: Synchronous SendMessage (REST) ---
-  Task ID:    <uuid>
-  Status:     Completed
-  Content:    Echo: Hello from REST client!
+--- JSONRPC ---
+  [ok]   SendMessage                        task c0f6fe8c-183f-4512-b902-a6f901fb90f0
+  [ok]   SendStreamingMessage               4 event(s), 0 lag signal(s)
+  [ok]   GetTask                            state Completed
+  [ok]   ListTasks                          2 task(s)
+  [ok]   CancelTask                         refused as expected: protocol error: [-32002] Task cannot be canceled: f29ccb61-bf1a-4358-949e-d4b02a5c2252
+  [ok]   SubscribeToTask                    3 event(s)
+  [ok]   CreateTaskPushNotificationConfig   config Some("8242a563-d272-45c9-af05-cdc721bf2010")
+  [ok]   ListTaskPushNotificationConfigs    1 config(s)
+  [ok]   GetTaskPushNotificationConfig      url http://127.0.0.1:36525/webhook
+  [ok]   DeleteTaskPushNotificationConfig   deleted
+  [ok]   GetExtendedAgentCard               card 'Echo Agent'
 
---- Demo 4: Streaming SendMessage (REST) ---
-  Status update: Working
-  Content:    Echo: Hello from REST streaming!
-  Status update: Completed
+--- counter-tests (calls that must be refused) ---
+  [ok]   GetTask on an unknown id                     refused: TaskNotFound
+  [ok]   CancelTask on an unknown id                  refused: TaskNotFound
+  [ok]   push config against a card without pushNotifications refused: PushNotificationNotSupported
+  [ok]   extended card against a card without extendedAgentCard refused: UnsupportedOperation
+  [ok]   streaming against a card without streaming   refused: protocol error: [-32004] agent does not support streaming (AgentCard.capabilities.streaming is not true)
 
---- Demo 5: Agent Card Discovery ---
-  Agent:      Echo Agent
-  Version:    1.0.0
-  Skills:     ["Echo"]
-  Streaming:  true
-  Interfaces: 2
+=== Coverage: every A2A method over every binding ===
 
---- Demo 6: GetTask ---
-  Fetched task: <uuid> (Completed)
+METHOD                             JSONRPC    HTTP+JSON     GRPC      WEBSOCKET
+SendMessage                          ok          ok          ok          ok
+SendStreamingMessage                 ok          ok          ok          ok
+GetTask                              ok          ok          ok          ok
+ListTasks                            ok          ok          ok          ok
+CancelTask                           ok          ok          ok          ok
+SubscribeToTask                      ok          ok          ok          ok
+CreateTaskPushNotificationConfig     ok          ok          ok          ok
+GetTaskPushNotificationConfig        ok          ok          ok          ok
+ListTaskPushNotificationConfigs      ok          ok          ok          ok
+DeleteTaskPushNotificationConfig     ok          ok          ok          ok
+GetExtendedAgentCard                 ok          ok          ok          ok
 
-=== All demos completed successfully! ===
-```
+44 exercised, 0 not applicable, 0 missing, of 44 cells
+Rows: the 11 methods `service A2AService` declares in the ratified proto (see a2a_protocol_types::method).
+Columns: 3 spec-named bindings (§9 §10 §11) plus WEBSOCKET, a §12 custom binding this SDK adds.
 
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│                  main()                 │
-│                                         │
-│  1. Pre-bind TCP listeners              │
-│  2. Build AgentCard with real URLs      │
-│  3. Build RequestHandler                │
-│  4. Start JSON-RPC + REST servers       │
-│  5. Run client demos 1-6                │
-└─────────┬──────────────┬────────────────┘
-          │              │
-    ┌─────▼─────┐  ┌─────▼─────┐
-    │ JSON-RPC  │  │   REST    │
-    │ Dispatcher│  │ Dispatcher│
-    └─────┬─────┘  └─────┬─────┘
-          │              │
-          └──────┬───────┘
-                 │
-         ┌───────▼───────┐
-         │RequestHandler │
-         │               │
-         │ EchoExecutor  │
-         │ TaskStore     │
-         │ EventQueue    │
-         └───────────────┘
+Every A2A method was exercised over every binding, and every
+counter-test was refused as the specification requires.
 ```
 
-## Server-only mode (TCK / CI)
+`CancelTask` is refused because the echo task has already completed when the
+cancel arrives; the refusal is the answer §3.1.5 requires for a task in a
+terminal state, and the example counts it as exercised.
 
-Set `A2A_BIND_ADDR` to run as a standalone server without the client demos:
+## Server-only mode (in-repo TCK and CI)
+
+Set `A2A_BIND_ADDR` to run as a standalone server instead, until it is
+killed:
 
 ```bash
 A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p echo-agent
 ```
 
-This mode serves both JSON-RPC and REST on a single address and is used by the A2A [Test Compatibility Kit](https://github.com/a2aproject/a2a-tck).
+It serves JSON-RPC and HTTP+JSON on that one address, the shape this
+repository's TCK (`tck/`, `cargo run -p a2a-tck`) drives. Optional:
+
+| Variable | Effect |
+|---|---|
+| `A2A_GRPC_BIND_ADDR` | Also serve gRPC there, and advertise it on the card |
+| `A2A_WS_BIND_ADDR` | Also serve WebSocket there, and advertise it on the card |
+| `A2A_INTEROP_CARD=1` | Advertise (not enforce) API-key security requirements on the card, for `scripts/go_sdk_interop.sh` |
+
+The card names only the bindings actually listening. This mode permits push
+webhooks on loopback and private addresses, so it is a test server, not a
+deployment template. `genai-agent` names the gRPC and WebSocket variables
+`A2A_GRPC_ADDR` and `A2A_WS_ADDR`.
 
 ## Prerequisites
 

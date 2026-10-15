@@ -17,7 +17,7 @@ like in Rust has one to run.
 ```
         ┌─────────────────────────┐
         │   Rust Coordinator      │  ← accepts user requests via A2A
-        │   (a2a-protocol-sdk)    │
+        │ (client + server crates)│
         └──┬────┬────┬────┬────┬──┘
            │    │    │    │    │
            ▼    ▼    ▼    ▼    ▼
@@ -40,10 +40,10 @@ Each worker is a standalone A2A agent in its respective language:
 
 ```bash
 # Python worker (port 9100):
-cd itk/agents/python && python agent.py &
+cd itk/agents/python && pip install -r requirements.txt && python agent.py &
 
 # JavaScript worker (port 9101):
-cd itk/agents/js-agent && node index.js &
+cd itk/agents/js-agent && npm ci && node index.js &
 
 # Go worker (port 9102):
 cd itk/agents/go-agent && go run . &
@@ -67,7 +67,10 @@ cargo run -p multi-lang-team
 
 The coordinator starts on ephemeral ports (one per binding), sends a demo
 request that fans out to every reachable worker, then drives every A2A method
-over every binding against itself and prints the coverage matrix.
+over every binding against itself, prints the coverage matrix, and exits
+(`0` complete, `1` a call failed, `2` a matrix cell never ran). Set
+`A2A_BIND_ADDR=127.0.0.1:8080` instead to keep it serving on JSON-RPC until
+Ctrl+C.
 
 ## Expected output
 
@@ -136,5 +139,3 @@ says the delegation was **not** exercised.
 
 Apache-2.0
 
-After the demo round-trip the coordinator **keeps serving** (probe it with
-the TCK or any A2A client) until you press Ctrl+C.

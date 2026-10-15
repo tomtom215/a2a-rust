@@ -17,6 +17,7 @@ on first start; `TELEMETRY_ENABLED=false` turns off Langfuse's own usage
 reporting:
 
 ```bash
+git clone --depth 1 https://github.com/langfuse/langfuse && cd langfuse
 cat > langfuse.env <<'ENV'
 TELEMETRY_ENABLED=false
 LANGFUSE_INIT_ORG_ID=local

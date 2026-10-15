@@ -5,7 +5,7 @@
 
 The smallest A2A agent you can actually ship.
 
-[`hello-agent`](../hello-agent) is the smallest thing that answers A2A — 23
+[`hello-agent`](../hello-agent) is the smallest thing that answers A2A — 32
 lines, no configuration, bound to `127.0.0.1:3000`. It is the right first
 example and the wrong thing to deploy. This is the same agent with the four
 things a container platform requires, and nothing else.
@@ -65,10 +65,23 @@ and graceful shutdown silently stops working.
 kubectl apply -f examples/deploy-agent/deployment.yaml
 ```
 
+Two edits first:
+
+- **The image.** The manifest names `deploy-agent:latest` and sets no
+  `imagePullPolicy`, and Kubernetes pulls a `:latest` image by default, so a
+  locally built image is not used. Push it to a registry the cluster can reach
+  and set `image:` to it, or on kind run `kind load docker-image deploy-agent`
+  and set `imagePullPolicy: IfNotPresent`.
+- **`AGENT_URL`.** The manifest sets the in-cluster Service URL. Set it to the
+  URL callers will use (see the trap below).
+
 `deployment.yaml` wires the probes to the endpoints above and sets
-`terminationGracePeriodSeconds: 30`. That number must exceed your longest
-in-flight stream: if `SIGKILL` lands before the drain finishes, the graceful
-shutdown in `main.rs` is decorative.
+`terminationGracePeriodSeconds: 30`. That number must exceed the shutdown
+budget in `main.rs`: up to 5 s for tasks to end on their own, then
+cancellation and up to 10 s for the executors to act on it, then the HTTP
+drain, then up to 5 s for the executor's cleanup hook. A task still running
+after 5 s is cancelled, however long its stream would have been. If `SIGKILL`
+lands before that finishes, the graceful shutdown is decorative.
 
 ## The trap this example exists to prevent
 

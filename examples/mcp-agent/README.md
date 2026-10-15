@@ -38,7 +38,9 @@ is why the loop is worth getting right once.
 
 Nothing in this crate knows what the tools are. Point `MCP_SERVER_BIN` at a
 different MCP server — someone else's, in any language — and the agent works
-with that server's tools instead, with no code change.
+with that server's tools instead, with no code change. The variable names one
+executable, run with no arguments; wrap a server started as `npx …`, `uvx …`
+or `python server.py` in a script.
 
 ## The two failures that must not be confused
 
@@ -71,9 +73,15 @@ llama-server -m Qwen3-1.7B-Q4_K_M.gguf --port 11434 --alias qwen3:1.7b --jinja &
 export OPENAI_API_KEY=local                     # any non-empty value
 export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
 
-cargo run -p mcp-a2a-agent                      # self-driving demo
-A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent    # serve
+cargo build -p mcp-a2a-agent                    # both binaries; see below
+cargo run -p mcp-a2a-agent --bin mcp-a2a-agent                                # self-driving demo
+A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent --bin mcp-a2a-agent   # serve
 ```
+
+The package has two binaries, so `cargo run` needs `--bin`. And the agent
+spawns `mcp-tool-server` from its own directory, which `cargo run --bin
+mcp-a2a-agent` does not build: without the `cargo build` first it stops with
+"could not spawn …/mcp-tool-server" (both checked 2026-10-15).
 
 With no `A2A_BIND_ADDR` the example binds an ephemeral port, drives itself
 over a real `a2a-protocol-client`, prints what came back, exits non-zero if
@@ -96,7 +104,7 @@ printf '%s\n%s\n%s\n' \
 
 ## A verified run
 
-Verbatim from `cargo run -p mcp-a2a-agent` on 2026-09-19 — a debug build,
+Verbatim from a run of the demo on 2026-09-19 (now started as above) — a debug build,
 Qwen3-1.7B-Q4_K_M under llama.cpp `b23701f`, four CPU cores. The prose varies
 between runs, as any model's does; so, as it turns out, does the number of
 tool calls.

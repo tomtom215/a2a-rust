@@ -14,7 +14,7 @@ A wrapped prompt answers once and forgets. An agent holds a **task**:
 | Pause and ask the caller for missing input, then **resume the same task** | Act 1 → Act 2: a vague alert parks in `TASK_STATE_INPUT_REQUIRED`; the operator's answer (same `taskId` + `contextId`) resumes it |
 | Gather evidence with **tools** | The triage agent queries a deterministic log-search agent — no LLM, exact semantics |
 | **Delegate to other agents** over the same protocol it serves | Triage → logs agent and runbook agent are real A2A client calls; swap any of them for an agent in another language or from another vendor |
-| **Stream progress** while it works | `message/stream` delivers `Working` status updates ("querying log agent", "synthesizing incident report") the moment they happen |
+| **Stream progress** while it works | `SendStreamingMessage` delivers `Working` status updates ("querying log agent", "synthesizing incident report") the moment they happen |
 | Produce **artifacts**, not just chat | The final `incident-report` artifact contains the assessment, the log evidence, and the runbook guidance |
 | Be **cancelled** | Act 3: the operator calls off a parked task → `TASK_STATE_CANCELED`. Cancellation is cooperative — see `TriageExecutor::cancel` |
 | End in an **honest terminal state** | LLM/provider failures and textless messages end in `TASK_STATE_FAILED`, never a fake success |
@@ -26,7 +26,7 @@ SDK serve the whole protocol?* and *can I deploy it?*
 |---|---|
 | Every A2A method over every binding | Act 4 drives all 11 spec methods across JSON-RPC, HTTP+JSON, gRPC and WebSocket and **exits non-zero if any cell never ran**. The method list is derived from the ratified `a2a.proto`, not from a list this repository maintains |
 | Calls that must be *refused* | Act 4's counter-tests: push notifications, streaming and the extended card against an agent advertising none of them |
-| Multi-tenancy, five kinds of auth and limits, three task stores, signing, telemetry, retries, HTTPS push and shutdown | Act 5's **16 checks** — see [Act 5](#act-5--production-hardening) |
+| Multi-tenancy, four authentication mechanisms, rate and handler limits, three task stores, signing, telemetry, retries, HTTPS push and shutdown | Act 5's **16 checks** — see [Act 5](#act-5--production-hardening) |
 
 ## The team
 
@@ -55,7 +55,13 @@ cargo run -p incident-response -- harden   # Act 5 on its own
 
 Exit codes: `1` a surface call failed, `2` a method × binding cell never ran,
 `3` a hardening check failed, `4` a capability went unexercised while
-`INCIDENT_REQUIRE_ALL` was set.
+`INCIDENT_REQUIRE_ALL` was set. A successful demo does not exit: the three
+agents keep serving until Ctrl+C. Set `INCIDENT_EXIT_WHEN_DONE=1` to exit `0`
+instead, as CI does.
+
+Each agent also serves gRPC on its port + 10 and WebSocket on its port + 20,
+so the demo binds nine fixed ports, 9200–9202, 9210–9212 and 9220–9222, and
+does not start if any of them is taken.
 
 The demo works with **no model at all** (agents label their output as
 mechanical/verbatim fallbacks so the protocol mechanics stay visible), and
