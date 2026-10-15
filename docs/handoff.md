@@ -67,10 +67,11 @@ that code could close and R69.
    release itself follows `RELEASING.md` and needs the signing key below.
    Debt is *Open engineering* below, by the maintainer's priority.
 4. **The 2026-10-15 decisions** (*Decisions the maintainer made*): the idle
-   bound, lag paging, `application/a2a+json`, card freshness and R13 are
-   built (this branch's commits); the three metric changes go with Step 4,
-   and the part-level at-rest cipher (approved the same day for GDPR-25-1
-   and GDPR-32-1a) with the EU AI Act work, next.
+   bound, lag paging, `application/a2a+json`, card freshness, R13 and the
+   part-level at-rest cipher (`EncryptedTaskStore`, `encryption` feature)
+   are built (this branch's commits); the three metric changes go with
+   Step 4. GDPR-25-1 and GDPR-32-1a stay `partial` with the cipher: what
+   is left of each is in *Open engineering* under **Privacy**.
 
 ## Waiting on the maintainer
 
@@ -128,6 +129,19 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   one socket without a hand-written accept loop; `find_task_by_context`
   clones full history and `RequestContext::stored_task` is `pub` (an API
   decision, `handler/helpers.rs`).
+- **Privacy:** audit records name the caller's subject in clear, hold an
+  unsalted digest of each event's plaintext, and the audit store is not
+  encrypted (GDPR-25-1, GDPR-32-1a); pseudonymising the subject or keying
+  the digest touches the ADR 0015 record schema. `EncryptedTaskStore`
+  (independently reviewed 2026-10-15; its module docs list what it does not
+  protect) leaves ids, states, timestamps, `metadata` and the order of
+  messages and artifacts unprotected; it re-seals every part on every
+  write, which costs about `n²/2` seals for an artifact streamed in `n`
+  chunks against a 2^32 per-key budget and has not been timed; two
+  concurrent writers can leave a PostgreSQL record unreadable until its
+  next full write, because `postgres_store/artifact_delta.rs` appends
+  without checking the stored length. No erasure by data subject
+  (GDPR-5-1e).
 - **Observability:** the metric changes decided on 2026-10-15 are not built;
   the single outcome counter was declined. ADR 0013 still says "Proposed"
   though its decision (`otel::Telemetry`) has shipped; mTLS to the collector

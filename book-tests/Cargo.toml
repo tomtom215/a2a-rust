@@ -21,6 +21,8 @@ doctest = true
 # that compiles only under `websocket` is still a block a reader will copy.
 a2a-protocol-sdk = { path = "../crates/a2a-protocol-sdk", features = [
     "axum",
+    # The security page's data-at-rest section: `store::encrypted`.
+    "encryption",
     "grpc",
     "grpc-tls",
     "signing",

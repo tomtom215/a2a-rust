@@ -223,6 +223,7 @@ and the `with_*` setters.
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
+| `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Off | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
 
 ### `a2a-protocol-client`
@@ -261,6 +262,7 @@ and the `with_*` setters.
 | `otel` | Off | Enables `otel` in the server and the client |
 | `axum` | Off | Enables `axum` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
+| `encryption` | Off | Enables `encryption` in the server |
 | `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |
 
 ## Environment Variables

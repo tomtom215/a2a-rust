@@ -601,6 +601,14 @@ jobs:
           cargo test -p a2a-protocol-server --features postgres \
             --test multi_replica -- --ignored --test-threads=1
 
+      # EncryptedTaskStore over both PostgreSQL stores: no plaintext part in
+      # what they hold, and every part read back. The other stores run in the
+      # matrix above; this one needs the live database.
+      - name: Test (encrypted task store, live database)
+        run: |
+          cargo test -p a2a-protocol-server --features postgres,encryption \
+            --test encrypted_store -- --ignored
+
       # The shared rate-limit counter's sweep cadence: no sweep on a counter's
       # first count, a sweep on count SWEEP_INTERVAL that clears past windows
       # only. These are lib tests, not a `--test` binary, so the module is

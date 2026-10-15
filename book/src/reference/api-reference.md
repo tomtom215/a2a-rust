@@ -365,6 +365,7 @@ are rustdoc's job.
 | `AgentExecutor` | Agent logic entry point |
 | `TaskStore` | Task persistence backend |
 | `PushConfigCipher` | Seals push configs at rest in the SQL push-config stores (`with_cipher`; `sqlite` / `postgres` features) |
+| `ContentCipher` | Seals part content for `EncryptedTaskStore`; implement it to put a key-management service behind the store (`encryption` feature) |
 | `PushConfigStore` | Push config persistence |
 | `PushSender` | Webhook delivery |
 | `ServerInterceptor` | Server-side middleware |
@@ -410,6 +411,8 @@ are rustdoc's job.
 | Type | Description |
 |------|-------------|
 | `InMemoryTaskStore` | In-memory task store with TTL |
+| `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
+| `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
 | `HttpPushSender` | HTTP webhook delivery with SSRF protection |
 | `SqliteTaskStore` | SQLite task store (`sqlite` feature) |

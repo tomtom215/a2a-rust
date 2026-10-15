@@ -39,18 +39,18 @@ wrong is spelled out.
 
 ## Transport
 
-**The server does not terminate inbound TLS.** Put it behind a reverse proxy.
-This is a deliberate scope decision, not an omission: certificate lifecycle,
-SNI, ALPN and renewal are solved better by nginx, Caddy or a load balancer than
-by a protocol library.
+The server terminates TLS on its own listener with `tls-rustls`:
+`Server::with_tls_pem` takes a certificate chain and key, and `Server::with_tls`
+takes a `rustls::ServerConfig` as built, so a configuration that requires
+client certificates gives mutual TLS on the HTTP bindings as it does on gRPC
+(`GrpcDispatcher::with_tls`). The dispatchers do not see the client
+certificate; authenticate the caller with an interceptor as well. See
+[Production](./production.md) for the setup. A reverse proxy in front remains
+a fine choice when it already manages your certificates.
 
-```text
-Client ──HTTPS──→ [nginx / Caddy / LB] ──HTTP──→ [a2a-rust agent]
-```
-
-Outbound is different. The client and the push sender do speak TLS, via
-`tls-rustls` — on by default in `a2a-protocol-sdk` and `a2a-protocol-client`,
-off in a direct dependency on `a2a-protocol-server`.
+The client and the push sender speak TLS via `tls-rustls`, which is on by
+default in `a2a-protocol-sdk` and `a2a-protocol-client` and off in a direct
+dependency on `a2a-protocol-server`.
 
 ## Outbound requests are the dangerous ones
 
@@ -85,6 +85,63 @@ above was added after an [adversarial run](./security-testing.md) found the
 registration check accepting an integer-encoded metadata URL that delivery still
 blocked. The gap is closed and regression-tested in both the unit suite and the
 over-the-wire probe.
+
+## Data at rest
+
+With the `encryption` feature, `store::encrypted::EncryptedTaskStore` wraps
+any `TaskStore` and seals every part of a task (its history, its status
+message, its artifacts) and of every event in its log before the wrapped
+store sees it. Each part is sealed whole (content, metadata, filename and
+media type) and bound to where it is stored: the tenant partition, the task,
+the record or the position in the log, the message or artifact id, and its
+index there. A part that is altered, moved to any other such place, sealed
+under a key the cipher does not hold, or stored unsealed fails the read.
+
+```rust,no_run
+use a2a_protocol_sdk::server::store::InMemoryTaskStore;
+use a2a_protocol_sdk::server::store::encrypted::{Aes256GcmCipher, EncryptedTaskStore};
+
+# fn key_from_your_kms(_: &str) -> [u8; 32] { [0; 32] }
+let ring = Aes256GcmCipher::new("2026-10", key_from_your_kms("2026-10"))?
+    .with_key("2026-09", key_from_your_kms("2026-09"))?; // still opens older values
+let store = EncryptedTaskStore::new(InMemoryTaskStore::new(), ring.into_arc());
+# Ok::<(), a2a_protocol_sdk::types::error::A2aError>(())
+```
+
+`Aes256GcmCipher` is AES-256-GCM through `ring`, with a fresh random 96-bit
+nonce per value; one key seals and every key in the ring opens. NIST SP
+800-38D §8.3 bounds a key used with random nonces to 2^32 seals, counted
+across every process holding the key and every push config sealed with the
+ring. Every write seals every part of the task, so an artifact streamed in
+`n` chunks costs about `n²/2` seals. `seal_count()` reports this process's
+count; rotate the active key well before the total nears the bound. To keep
+keys in a key-management service instead, implement `ContentCipher`. The
+same ring is a `PushConfigCipher`, so the SQL push-config stores can share
+it.
+
+What it does not protect:
+
+* **The structure the stores query**: task, context, message and artifact
+  ids, roles, states, timestamps, artifact names and descriptions, message
+  `extensions` and `referenceTaskIds`, the `metadata` of tasks, messages,
+  artifacts and events, and the number and size of parts. Keep personal data
+  out of those fields.
+* **The shape of a record**: messages or artifacts reordered or removed,
+  parts removed from the end of one, parts exchanged between two messages
+  with the same id, and a store rolled back to an earlier record all still
+  open.
+* **The audit trail**, which keeps an unsalted SHA-256 digest of each event
+  as written: a reader of the audit store can confirm a guess of a short
+  event's content.
+
+A part that does not open fails the whole read, a `list` page and a log
+replay included, so keep every key that sealed a stored value in the ring
+for as long as the value is stored. A store holding data from before the
+wrapper was installed is refused until `accept_unsealed_parts()` is set;
+while it is, an unsealed part planted in the store is read as genuine, so
+remove it once every record has been rewritten. Sealing every part on every
+write costs time in proportion to the task's size; this has not been
+measured.
 
 ## Input handling
 

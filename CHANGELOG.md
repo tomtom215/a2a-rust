@@ -121,6 +121,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Encryption at rest for task content** (server, `encryption` feature;
+  GDPR Art. 25(1) and 32(1)(a)). `store::encrypted::EncryptedTaskStore`
+  wraps any `TaskStore` and seals every part of a task's history, status
+  message and artifacts, and of every event in its log, before the wrapped
+  store sees it. Each part is sealed whole, under a context naming the
+  tenant partition, the task, the record or log position, the message or
+  artifact holding it and its index, so a part altered, moved to another
+  such place, sealed under an unknown key or stored unsealed fails the read
+  (`accept_unsealed_parts` reads unsealed parts, for migrating a store in
+  place). `Aes256GcmCipher` is AES-256-GCM (`ring`) over a key ring for
+  rotation, counts its seals against the SP 800-38D nonce budget, and is
+  also a `PushConfigCipher`; `ContentCipher` takes a cipher of your own.
+  Ids, states, timestamps, names, `metadata` and the order of messages and
+  artifacts are not protected; the security page lists what is not. Tested
+  over the in-memory, SQLite and PostgreSQL stores (the last in CI's live
+  database job) and a running handler.
 - **A final `Task` snapshot before a stream closes, opt-in** (server; spec
   §11.7 "MAY optionally resend a final `Task` snapshot before closing").
   With `HandlerLimits::with_final_task_snapshot(true)` a send stream and a
