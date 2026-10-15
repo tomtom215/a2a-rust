@@ -117,7 +117,7 @@ gap is not in instructions executed. It is in kernel time (63 vs 57
 leading suspect. Removing it (the executor run inside the collecting task)
 was measured on 2026-10-03 and did not close the gap: 180.0 vs 185.6
 µs/request with overlapping ranges, against a2a-rs's 153.0 on the same runs
-(`docs/handoff.md` has the details, and why it was not landed). The cause is
+(`docs/handoff-history.md` has the details, and why it was not landed). The cause is
 still unattributed at that point.
 
 **Attributed, 2026-10-03, second pass.** The earlier passes measured with
@@ -271,7 +271,7 @@ is carried on the send, the child's executor timeout is capped at
 `min(own, inherited)`, and the existing `BudgetExhausted` failure class
 reports it. It also composes with G1-B, since a lease is a renewable
 deadline. Token or cost budgets need agreement on units, which the A2A
-specification does not supply. Attenuable grants (`docs/handoff.md`, B1)
+specification does not supply. Attenuable grants (`docs/handoff-history.md`, B1)
 stay speculative until a deadline exists to attenuate.
 
 ### G6 — Shared-channel limits (already measured)
@@ -283,7 +283,7 @@ those findings.
 
 ## Where this work goes, and where it does not
 
-`docs/handoff.md` ("What not to chase") records a decision not to turn the
+`docs/handoff-history.md` ("What not to chase") records a decision not to turn the
 SDK into a runtime: no registries, schedulers, orchestration DSLs or mesh.
 The plan above respects that. G1-A and G2 are a client-side handle on
 existing methods. G1-B and G5 are extensions in the established style, like

@@ -80,7 +80,7 @@ Commit references are on `claude/peaceful-ptolemy-noka5b`.
   hit; `docs/rust-sdk-assessment.md`; the body of
   `docs/official-tck-findings.md`.
 - The README's test count (3,601 on 2026-09-20): no stored artifact backs
-  it; it is re-measured in the handoff's verification of record.
+  it; it is re-measured in the verification of record in `docs/handoff-history.md`.
 - `agent-team`'s "87 with `--no-default-features`", which no CI job runs.
 - The ~3,600 req/s figure in `docs/lf-readiness-review.md`, from a one-off
   run.

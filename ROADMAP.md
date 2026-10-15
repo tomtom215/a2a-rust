@@ -884,7 +884,7 @@ This is the category most worth clearing before any external review.
 
 * **The last complete gate sweep is 2026-09-19: `55 proven, 10 unproven, 0 not
   selected (of 65 gates)`.** That is `scripts/prove_gates_fail.sh` run to
-  completion in a detached worktree; `docs/handoff.md` records the run and why
+  completion in a detached worktree; `docs/handoff-history.md` records the run and why
   the ten are not stale needles (seven were already red on the clean tree —
   five wanting a PostgreSQL server, one the SLIMRPC SPIFFE suite, one a
   missing `cargo-hack`).
@@ -1111,7 +1111,7 @@ Work committed to and not yet built:
   extension can (`docs/swarm-orchestration.md`).
 * ~~**The in-diff mutation sweep over this work.**~~ **Done 2026-10-09:**
   every mutant in the B–F diff has run. Every miss now has a test, or is a
-  Kani harness that only Kani compiles. The handoff has the counts.
+  Kani harness that only Kani compiles. `docs/handoff-history.md` has the counts.
 * **Listing on the ITK dashboard.** This waits on upstream changes, drafted
   in `docs/upstream/a2a-itk-dashboard-enrolment-draft.md`.
 

@@ -265,7 +265,7 @@ those cells in.
 ### The 2026-09-24 re-measurement at `a2a-tck@263b9cf`
 
 The two 2026-09-24 rows are taken from committed records, not from a run log
-on this page: `docs/handoff.md` ("Verification of record, at `e5ee1518`")
+on this page: `docs/handoff-history.md` ("Verification of record, at `e5ee1518`")
 gives full profile 88 MUST graded with 4 failing — exactly the baseline —
 minimal 66 graded, and the extension profile's `CORE-CAP-004` passing, at
 `a2a-tck@263b9cf` (upstream `main`, unchanged since 2026-09-01);

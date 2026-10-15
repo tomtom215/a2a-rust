@@ -47,7 +47,7 @@ jobs:
   # Renamed from `fmt` / "Format" on 2026-09-20. Exactly one of this job's
   # verdict-bearing steps runs `cargo fmt`; the other twenty are source, prose
   # and gate-inventory audits that have nothing to do with formatting. The old
-  # name cost real time — docs/handoff.md records a commit whose PR went red on
+  # name cost real time — docs/handoff-history.md records a commit whose PR went red on
   # a check named `Format` while `cargo fmt --check` passed, and the 0.13.0
   # diff then added two more steps to the same job without renaming it. A check
   # name that misdirects the person reading it is a failure of the gate as

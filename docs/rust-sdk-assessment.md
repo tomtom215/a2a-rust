@@ -939,7 +939,7 @@ traces over OTLP" against the `otel` feature, and
 identifiers on spans let a single incident "be followed across the
 delegation chain when agents call agents". Neither is true without
 distributed tracing, and the second is the one most likely to have cost
-somebody an afternoon. `docs/handoff.md` records the finding in full,
+somebody an afternoon. `docs/handoff-history.md` records the finding in full,
 including that the hooks for fixing it — inbound headers on `CallContext`,
 mutable outbound headers on `CallInterceptor` — already exist.
 
