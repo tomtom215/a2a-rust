@@ -56,6 +56,11 @@ explicitly with `--ws-url ws://host:port` or `--grpc-url host:port`. Passing
 either on a binding that will not dial it is a configuration error rather than
 a silently ignored flag.
 
+| Flag | Purpose |
+|---|---|
+| `--skip <tests>` | Comma-separated test names to skip; repeatable. For documented deviations of the target implementation only: a skipped test is reported, not silent. A name that matches no test is a configuration error. Not accepted with `--equivalence`. |
+| `--auth-token <t>` | Bearer token presented in `BIND-EQUIV-004`'s enforcement probe. Accepted only with `--equivalence`; without it that check grades the rejection half only. |
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -65,9 +70,11 @@ a silently ignored flag.
 | 2 | Configuration error, an undiscoverable endpoint, or a run that graded nothing |
 
 A run that grades zero checks exits 2. Every check being skipped or ruled not
-applicable is not a pass — it is a run that verified nothing, and reporting it
-green is the failure mode `--min-graded` exists to catch in
-`tck/scripts/check_conformance.py`.
+applicable is not a pass — it is a run that verified nothing. This runner has
+no flag for it; it refuses such a run itself. (The same failure mode in the
+*official* a2a-tck's reports is what `--min-graded` catches in
+`tck/scripts/check_conformance.py`, the gate `official-tck.yml` applies to
+those reports.)
 
 ## What It Tests
 
@@ -118,8 +125,9 @@ each binding *enforces* those schemes identically needs a target configured to
 require credentials.
 
 Requirement texts are quoted from `a2aproject/a2a-tck@5996b79` (2026-06-29),
-`tck/requirements/interop.py`. Note that upstream's backlog ticket `task-28`
-summarises `BIND-EQUIV-004` as "Streaming equivalence" while `interop.py` — the
+`tck/requirements/interop.py`. `official-tck.yml` runs the official suite at
+`main`, so upstream's wording may have changed since. Note that upstream's
+backlog ticket `task-28` summarises `BIND-EQUIV-004` as "Streaming equivalence" while `interop.py` — the
 file the suite loads — defines it as the authentication requirement above; this
 runner follows `interop.py`.
 

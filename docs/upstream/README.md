@@ -10,8 +10,9 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | File | Target | Status |
 |---|---|---|
 | `a2a-tck-sse-001-report.md` | `a2aproject/a2a-tck` | Filed and fixed upstream |
-| `a2a-tck-231-spec-pin-report.md` | `a2aproject/a2a-tck` | See file |
-| `a2a-2200-patch-versioning-report.md` | `a2aproject/A2A` | See file |
+| `repro_tck_sse_bug.py` | `a2aproject/a2a-tck` | The minimal reproduction attached to the report above |
+| `a2a-tck-231-spec-pin-report.md` | `a2aproject/a2a-tck` | Filed 2026-09-01 as a2a-tck#231 |
+| `a2a-2200-patch-versioning-report.md` | `a2aproject/A2A` | Filed 2026-09-01 as A2A#2200 |
 | `semconv-genai-195-rust-implementation-notes.md` | `open-telemetry/semantic-conventions-genai` #195 | Draft, not sent |
 | `opentelemetry-rust-2008-tls-roots-comment.md` | `open-telemetry/opentelemetry-rust` #2008 | Draft, not sent |
 | `opentelemetry-rust-shutdown-result-report.md` | `open-telemetry/opentelemetry-rust` | Draft, not sent |
@@ -19,3 +20,5 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `langfuse-docs-a2a-rust-page.md` | `langfuse/langfuse-docs` | Draft, not sent |
 | `a2a-oversight-provenance-extensions-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent |
 | `a2a-itk-dashboard-enrolment-draft.md` | `a2aproject/a2a-itk` | Draft, not sent |
+| `a2a-required-empty-array-report.md` | `a2aproject/A2A` | Draft, not sent |
+| `slimrpc-a2a-error-mapping-report.md` | the SLIMRPC specification's owners, or `a2aproject/A2A` | Draft, not sent |

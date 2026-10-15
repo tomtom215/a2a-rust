@@ -117,9 +117,15 @@ since the last survey, changes `examples/` only and no spec file.
 |---|---|---|
 | `feat/slimrpc-channel-moderator` | `spec/v1/slimrpc-channel-moderator.md` | not implemented by this binding or by the official crate. |
 
-Three further branches (`feat/slimrpc-multicast-spec`, `feat/spec-versioning`,
-`fix/slimrpc-spec-myorg-to-mydomain`) carry only the pre-versioning `spec/`
-layout that `spec/v1/` on `main` superseded.
+Two further branches carry only the pre-versioning `spec/` layout that
+`spec/v1/` on `main` superseded, and `KNOWN_BRANCH_SPECS` in
+`scripts/check_slimrpc_spec.sh` triages them as such:
+`feat/slimrpc-multicast-spec` (`spec/slimrpc.md`, `spec/slimrpc-multicast.md`)
+and `fix/slimrpc-spec-myorg-to-mydomain` (`spec/slimrpc.md`). This paragraph
+used to name a third, `feat/spec-versioning`, which the script has never had an
+entry for. The script fails on any branch spec file outside `main`'s paths
+that it has no entry for, so a passing run means that branch is gone or carries
+no such file; which of the two holds has not been re-checked against upstream.
 
 Collaborative channels are **not** what this binding's multicast support does,
 and the two are not substitutes. `slimrpc-multicast.md`, which is on `main` and
@@ -134,7 +140,8 @@ specification. So the two implementations diverge in both directions.
 
 ```sh
 ./scripts/check_slimrpc_spec.sh --update
-sha256sum spec/slimrpc_v1/*.md      # update the table above
+# every vendored copy, README.md excluded, printed as in the table above
+(cd spec/slimrpc_v1 && ls *.md | grep -vx README.md | xargs sha256sum)
 ```
 
 These files are **verbatim upstream copies**. Do not edit them — anything this

@@ -35,9 +35,10 @@ next two sections and the method inventory say why.
 There are two Rust implementations of this binding. This one, and
 [`a2a-slimrpc`](https://crates.io/crates/a2a-slimrpc) in
 [`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs) — the A2A project's
-own. Both implement all eleven A2A methods, and both pin the same four SLIM
-crates. **Neither is a superset of the other**, which is the part worth knowing
-before you choose:
+own. Both implement all eleven A2A methods, and both are built on
+`agntcy-slim-rpc` (this crate depends directly on six SLIM crates; see its
+`Cargo.toml`). **Neither is a superset of the other**, which is the part
+worth knowing before you choose:
 
 | | this crate | official `a2a-slimrpc` |
 |---|---|---|
@@ -269,9 +270,11 @@ for (agent, why) in outcome.failed() { /* … */ }
 ```
 
 `MulticastOutcome` carries **exactly one outcome per invited agent**, always.
-That is the spec's requirement — *"Clients must wait for outcomes from every
-invited agent"* — and dropping a silent agent from the result would make a
-partial broadcast look like a complete one.
+That is the spec's requirement (`slimrpc-multicast.md` §7.1) — *"Clients
+**MUST** wait for an outcome (a response, an error, or a timeout) for every
+invited agent before considering the multicast interaction complete."* — and
+dropping a silent agent from the result would make a partial broadcast look
+like a complete one.
 
 Two failure kinds are kept distinct, because they call for different responses:
 
@@ -313,7 +316,8 @@ anything ever reads the frame.
 ### (a) A unicast stream whose consumer stops reading
 
 **Mechanism.** `SlimRpcTransport` spawns one bridge task per streaming call
-(`src/client/mod.rs:465`, `src/client/bridge.rs:80`) that pulls frames from
+(`SlimRpcTransport::streaming` in `src/client/mod.rs`; the task is
+`bridge::run`, `src/client/bridge.rs:80`) that pulls frames from
 `Channel::unary_stream` and pushes them into a 64-slot channel with
 `send().await` (`bridge.rs:90`). When the consumer stops reading, the bridge
 parks on the 65th frame and is no longer polling the SLIM stream, so every
@@ -322,14 +326,14 @@ channel `agntcy-slim-rpc` registered for the call (`channel.rs:550`), which is
 unbounded (`:89`).
 
 **Bound.** `slow_consumer_timeout` —
-`SlimRpcTransportBuilder::with_slow_consumer_timeout` (`src/client/mod.rs:158`),
+`SlimRpcTransportBuilder::with_slow_consumer_timeout` (`src/client/mod.rs`),
 default 30 s (`bridge.rs:68`, the figure `ClientConfig` already allows a server
 to produce a first event). The bridge's `send` runs under that timeout
 (`bridge.rs:90`). When it expires the bridge drops the SLIM stream (`:99`):
 the stream's `DispatcherGuard` (`channel.rs:132`) unregisters the call, and
 every frame that still arrives for it is discarded by the dispatcher on
 arrival (`channel.rs:150`) instead of kept. The bridge then offers the
-consumer one `ClientError::Timeout` naming the setting (`:101`), which
+consumer one `ClientError::Timeout` naming the setting (`bridge.rs:101`), which
 waits behind the buffered events and is followed by the end of the stream.
 What a stalled consumer can hold is therefore 64 events in the bridge channel,
 64 in the `EventStream`'s own re-framing hop
@@ -378,7 +382,7 @@ after the window because nothing else was ever going to.
 
 ### (b) A server streaming to a peer that stops acking
 
-**Mechanism.** `event_stream` (`src/server/methods/mod.rs:407`) pulls domain
+**Mechanism.** `event_stream` (`src/server/methods/mod.rs`) pulls domain
 events from the handler's queue as `agntcy-slim-rpc`'s `send_response_stream`
 (`rpc_session.rs:219`) asks for them. That function publishes each frame with
 `publish().await` and does not wait for its acknowledgement: it keeps one
@@ -397,10 +401,10 @@ frames of channel depth, 512 retained frames, and per-frame timer state that
 lives at most `interval × retries` = 10 s. If the datapath stops draining — a
 stalled node link — `publish().await` blocks, `event_stream` stops pulling, the
 handler's broadcast queue overruns at `DEFAULT_QUEUE_CAPACITY` = 256
-(`crates/a2a-protocol-server/src/streaming/event_queue/mod.rs:47`), and the
-reader is handed a lag error (`in_memory.rs:643`) that `event_stream` turns into
-an `InternalError` ending the stream. If the datapath drains but the peer never
-acks — it has gone away — each frame's timer expires after ten retries;
+(`crates/a2a-protocol-server/src/streaming/event_queue/mod.rs`), and the
+reader is handed a lag error (`lag_error` in `event_queue/in_memory.rs`)
+that `event_stream` turns into an `InternalError` ending the stream. If the
+datapath drains but the peer never acks — it has gone away — each frame's timer expires after ten retries;
 `on_timer_failure` → `on_failure` (`session_sender.rs:485`, `:454`) clears the
 state, the participant marks the peer offline and removes it as an endpoint
 (`session_participant.rs:292`), and the frame's `CompletionHandle` resolves
@@ -420,18 +424,19 @@ killing the datapath both ends share.
 
 ### (c) A multicast request (`send_message`)
 
-**Mechanism.** `multicast_unary` (`src/multicast/mod.rs:193`) is the same
-response stream as unicast, over a group session, and its frames arrive through
-the same unbounded per-call channel (`channel.rs:89`). The consumer is
-`send_message`'s own loop, which polls continuously — there is no application
-consumer in between — and files one decoded response per source into a map
-keyed by member (`:208`, `:227`), a later response from a member replacing its
-earlier one.
+**Mechanism.** `multicast_unary` (called by `SlimRpcMulticast::send_message`,
+`src/multicast/mod.rs:198`) is the same response stream as unicast, over a
+group session, and its frames arrive through the same unbounded per-call
+channel (`channel.rs:89`). The consumer is `send_message`'s own loop, which
+polls continuously — there is no application consumer in between — and files
+one decoded response per source into a map keyed by member
+(`src/multicast/mod.rs:213`, `:232`), a later response from a member replacing
+its earlier one.
 
 **Bound.** One map entry per responding member. The loop ends when every
-member has sent EOS, on `DeadlineExceeded` (`:250`) — `with_timeout`, otherwise
-10 h — or on an interaction-level error, and `collect_outcomes` (`:308`) then
-emits exactly one outcome per invited member. The per-call channel holds only
+member has sent EOS, on `DeadlineExceeded` (`src/multicast/mod.rs:255`) —
+`with_timeout`, otherwise 10 h — or on an interaction-level error, and
+`collect_outcomes` then emits exactly one outcome per invited member. The per-call channel holds only
 what arrives between two polls of a loop that does nothing else.
 
 **Consequence.** Bounded by member count and by time. The knob that matters is
@@ -442,8 +447,8 @@ what arrives between two polls of a loop that does nothing else.
 ### Not covered here
 
 Admission. Each new `rpc-id` on a session spawns a handler task
-(`agntcy-slim-rpc` `server.rs:337`) with no concurrency cap in SLIMRPC itself;
-the `RequestHandler`'s own `HandlerLimits` apply per call. That is request-rate
+(`agntcy-slim-rpc` `server.rs`, `spawn_handler_task`) with no concurrency cap
+in SLIMRPC itself; the `RequestHandler`'s own `HandlerLimits` apply per call. That is request-rate
 control rather than stream backpressure, and this section does not examine it.
 
 ## Identity

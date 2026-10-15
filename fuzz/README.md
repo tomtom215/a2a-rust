@@ -3,11 +3,11 @@
 
 # Fuzzing
 
-Fuzzing harnesses for the a2a-rust protocol types, powered by `cargo-fuzz` and `libFuzzer`.
+Fuzzing harnesses for the a2a-rust protocol types and the server's and client's parsers of peer input, powered by `cargo-fuzz` and `libFuzzer`.
 
 ## Overview
 
-Fuzz testing validates that the A2A type system handles arbitrary and malformed input gracefully — no panics, no undefined behavior, no memory safety issues.
+Fuzz testing validates that every parser of peer input handles arbitrary and malformed input gracefully — no panics, no undefined behavior, no memory safety issues.
 
 ## Targets
 
@@ -25,10 +25,12 @@ Fuzz testing validates that the A2A type system handles arbitrary and malformed 
 | `forwarded_for` | The rate limiter's caller key from `x-forwarded-for` behind 0–7 trusted hops |
 | `webhook_url` | The push-webhook SSRF check (`validate_webhook_url`): URI syntax, bracketed IPv6, C-style numeric IPv4 hosts |
 | `page_token` | The in-memory store's `ListTasks` page token and the `A2A-Extensions` header |
+| `client_peer_input` | What the client parses from a remote agent besides SSE framing and the protocol types: an AIP-193 error body, an error frame met mid-stream, `Retry-After` (asserts it never asks for more than the one-hour ceiling), and the id a WebSocket frame is routed by |
 
 The server's private parsers are reached through `a2a_protocol_server::fuzzing`,
-a module compiled only under `cfg(fuzzing)` (set by `cargo fuzz`) and
-`cfg(test)`, which forwards to each parser unchanged.
+and the client's through `a2a_protocol_client::fuzzing`: modules compiled only
+under `cfg(fuzzing)` (set by `cargo fuzz`) and `cfg(test)`, which forward to
+each parser unchanged.
 
 ### Every parser of peer input, and what fuzzes it
 
@@ -52,10 +54,12 @@ kept. Add a row, and a target, with every new one.
 | identity provider → server | JWKS document | `Jwks::from_json` | `jwks_parse` |
 | server → client | SSE stream | `SseParser` | `sse_parser` |
 | server → client | JSON bodies and events | `serde_json` into the protocol types | `json_deser` |
+| server → client | REST error bodies (AIP-193) | `parse_aip193_error` | `client_peer_input` |
+| server → client | an error frame mid-stream | `decode_stream_error_frame` | `client_peer_input` |
+| server → client | `Retry-After` | `parse_retry_after` | `client_peer_input` |
+| server → client | WebSocket frame id | `extract_jsonrpc_id` (`websocket` feature) | `client_peer_input` |
 
-Not yet covered, each a small wrapper away: the client's REST error bodies
-(`parse_aip193_error`, `decode_stream_error_frame`) and its `Retry-After`
-parser (`parse_retry_after`). The SQL stores' page tokens are split by
+Not covered: the SQL stores' page tokens are split by
 `store::cursor::decode`, one `split_once` whose halves are bound as query
 parameters; a target for it would measure `split_once`.
 
@@ -64,14 +68,15 @@ Every target named in `.github/workflows/fuzz.yml`'s `matrix.target` runs as a
 nightly sweep also persists each target's corpus between runs via GitHub
 Actions cache, so it builds on previously discovered inputs instead of starting
 from empty every night. A target registered here but missing from that matrix
-is built by nobody and run by nobody, so adding one is two edits, not one:
-`fuzz/Cargo.toml` **and** that matrix.
+is built by nobody and run by nobody, so the target file, its `[[bin]]` in
+`fuzz/Cargo.toml` and that matrix must all agree; `scripts/check_fuzz_matrix.py`
+fails until they do.
 
 ## Running
 
 ```bash
-# Install cargo-fuzz (requires nightly)
-cargo install cargo-fuzz
+# Install cargo-fuzz (running it needs nightly; CI pins the same line)
+cargo install cargo-fuzz --version '^0.12' --locked
 
 # Run any target by name
 cargo +nightly fuzz run json_deser
@@ -86,12 +91,13 @@ cargo +nightly fuzz run rest_route
 cargo +nightly fuzz run forwarded_for
 cargo +nightly fuzz run webhook_url
 cargo +nightly fuzz run page_token
+cargo +nightly fuzz run client_peer_input
 
 # Run with a time limit (e.g., 5 minutes)
 cargo +nightly fuzz run json_deser -- -max_total_time=300
 
-# Run with a corpus
-cargo +nightly fuzz run json_deser corpus/json_deser/
+# The corpus defaults to fuzz/corpus/<target>/; name another directory to use it
+cargo +nightly fuzz run json_deser path/to/corpus/
 ```
 
 ## Prerequisites

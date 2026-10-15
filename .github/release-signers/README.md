@@ -3,9 +3,11 @@
 
 # Release signers
 
-The keys trusted to sign release tags. `release.yml` runs
-`scripts/verify_tag_signature.sh` on every pushed `v*` tag and refuses the
-release unless the tag's signature verifies against a key listed here.
+The keys trusted to sign release tags. `release.yml` runs on every pushed
+release tag (`vX.Y.Z` or `vX.Y.Z-*`); its `Validate release tag` job runs
+`scripts/verify_tag_signature.sh` and refuses the release unless the tag's
+signature verifies against a key listed here, as this directory stands on
+`main`.
 
 | File | Holds |
 |---|---|
@@ -41,12 +43,38 @@ gpg --with-colons --fingerprint <KEYID> | awk -F: '$1=="fpr"{print $10; exit}' \
   >> .github/release-signers/gpg-fingerprints.txt
 ```
 
+## Signing a release tag
+
+With git set up to sign with one of the keys above (for OpenPGP, `user.signingkey` set to it):
+
+```sh
+git tag -s vX.Y.Z -m "Release vX.Y.Z"    # -s signs, and implies -a
+scripts/verify_tag_signature.sh vX.Y.Z   # the check release.yml will run
+```
+
+The rest of the release procedure is in `RELEASING.md`.
+
 ## Verifying a release yourself
 
 ```sh
-git fetch origin tag v0.15.0
-scripts/verify_tag_signature.sh v0.15.0
+git fetch origin tag vX.Y.Z
+scripts/verify_tag_signature.sh vX.Y.Z
 ```
+
+By default the script checks against `.github/release-signers/` in your
+working tree. To check against the keys `release.yml` trusts, the ones on
+`main`, extract that copy and point `SIGNERS_DIR` at it:
+
+```sh
+git fetch origin main
+signers=$(mktemp -d)
+git archive origin/main .github/release-signers | tar -x -C "$signers"
+SIGNERS_DIR="$signers/.github/release-signers" scripts/verify_tag_signature.sh vX.Y.Z
+```
+
+Only tags cut after the signing gate (2026-10-08) can pass. Every earlier
+tag, v0.14.1 and before, is lightweight or annotated but unsigned, and the
+script refuses it.
 
 ## What this does not protect against
 
@@ -56,7 +84,8 @@ workflow runs from the tagged commit, so someone who can push a `v*` tag onto
 an unreviewed commit can also edit the workflow that would have refused it.
 Close that in the repository settings, not here: a tag ruleset on `v*` that
 restricts creation, update and deletion to the maintainer, and, for
-publishing, the required reviewer on the crates.io environment.
+publishing, a required reviewer on the `crates-io` environment that
+`release.yml`'s `publish` job runs in.
 
 Changing this directory changes who can release. It goes through a pull
 request like anything else, and a reviewer should check the key against one

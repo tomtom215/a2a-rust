@@ -10,8 +10,13 @@ gRPC service definitions for the A2A protocol v1.0.
 `a2a_v1/a2a.proto` is the **canonical A2A v1.0 protobuf schema**
 (`package lf.a2a.v1`, `service A2AService`): fully-typed messages for all
 11 A2A methods, exactly as published by the specification. This is the
-binding the client speaks and the server serves — it is wire-compatible
-with the official A2A SDKs (Python, JS, Go, Java).
+binding the client speaks and the server serves. Its wire compatibility
+with the official SDKs is checked on every pull request against Python
+(the golden fixtures below) and Go (the `go-sdk-interop` job in `ci.yml`
+runs the a2a-go client against this server, gRPC included, and this
+client against an a2a-go server). The upstream ITK nightly
+(`itk-nightly.yml`, not a merge gate) also pairs this SDK with the JS and
+Java SDKs over gRPC.
 
 Rules for this file:
 
@@ -42,12 +47,12 @@ Rules for this file:
 See ADR 0009 (`docs/adr/0009-protobuf-native-grpc.md`) for the design
 record.
 
-## Legacy tunnel — `a2a.proto` (deprecated)
+## Legacy JSON tunnel (removed in 0.8)
 
-`a2a.proto` (`package a2a.v1`, `service A2aService`) is the pre-0.7
-JSON-in-`bytes` tunnel: every RPC takes and returns a `JsonPayload`
-wrapper around UTF-8 JSON. It is **not** the A2A gRPC binding and cannot
-interoperate with the official SDKs.
+The legacy `a2a.proto` (`package a2a.v1`, `service A2aService`), no longer
+in the repository, was the pre-0.7 JSON-in-`bytes` tunnel: every RPC took and
+returned a `JsonPayload` wrapper around UTF-8 JSON. It was **not** the A2A
+gRPC binding and could not interoperate with the official SDKs.
 
 It was retained only so 0.6 clients could be rolling-upgraded, served
 *alongside* the canonical service via the off-by-default `grpc-legacy-json`
@@ -57,10 +62,22 @@ workspace compiles or serves it any more.
 
 ## Usage
 
-These protos are compiled by the `grpc`-feature build scripts of
-`a2a-protocol-types` (messages), `a2a-protocol-server` (server stubs), and
-`a2a-protocol-client` (client stubs) using a vendored `protoc` — no manual
-compilation or system protobuf install is needed.
+Nothing compiles this directory: it is the repository-level reference
+copy. A published crate can only ship files inside its own directory, so
+each build script compiles its own copy (`<crate>/proto/a2a_v1/a2a.proto`,
+resolved from `CARGO_MANIFEST_DIR`), and `scripts/check_proto_copies.sh`
+holds every copy, this one included, byte-identical:
+
+| Build script | Feature | Generates |
+|---|---|---|
+| `crates/a2a-protocol-types/build.rs` | `proto` | messages |
+| `crates/a2a-protocol-server/build.rs` | `grpc` (enables `a2a-protocol-types/proto`) | server stubs |
+| `crates/a2a-protocol-client/build.rs` | `grpc` (enables `a2a-protocol-types/proto`) | client stubs |
+| `tck/build.rs` | always | the TCK's own messages and client stubs |
+
+Each uses a vendored `protoc` (`protoc-bin-vendored`) unless `PROTOC` is
+already set — no manual compilation or system protobuf install is
+needed.
 
 ## License
 

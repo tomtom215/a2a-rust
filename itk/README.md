@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # A2A Integration Test Kit (ITK)
 
 Cross-language interoperability testing for the A2A protocol.
@@ -14,8 +17,11 @@ Two agent tiers exist per language:
    that a *minimal independent implementation* of the spec interoperates.
 2. **Official-SDK agents** (`python-sdk/`, `js-sdk/`, `go-sdk/`,
    `java-sdk/`) — the same echo contract built on the official reference
-   SDKs (`a2a-sdk` 1.x, `@a2a-js/sdk` 1.x, `a2a-go/v2`, `a2a-java`
+   SDKs (`a2a-sdk`, `@a2a-js/sdk` ^1.3.0, `a2a-go/v2` v2.6.0, `a2a-java`
    1.4.0.Final). These are the runs that prove real cross-SDK interop.
+   The `a2a-sdk` version is not pinned: the TCK's `python-sdk` leg in
+   [`tck.yml`](../.github/workflows/tck.yml) installs whatever release is
+   current.
 
 The reverse direction is covered too: `interop/python_client_vs_rust.py`
 drives our `echo-agent` with the official Python SDK **client** over both
@@ -23,9 +29,18 @@ HTTP bindings (send, streaming, get, list, cancel semantics, push-config
 CRUD, terminal-subscribe rejection).
 
 Each echo agent:
-1. Accepts a `SendMessage` request
-2. Returns a completed task with the echoed message as an artifact
-3. Supports all A2A v1.0 methods via both JSON-RPC and REST bindings
+1. Serves its agent card at `/.well-known/agent-card.json`
+2. Accepts a `SendMessage` request
+3. Returns a completed task with the echoed message as an artifact
+
+The official-SDK agents hand every request to their SDK's own request
+handler, so they serve what that SDK serves. The stub agents implement nine
+methods, on both JSON-RPC and REST: `SendMessage`, `SendStreamingMessage`
+(answered with a single JSON response, not an SSE stream), `GetTask`,
+`ListTasks`, `CancelTask`, and `Create`/`Get`/`List`/`Delete` for push
+notification configs. They do not implement `SubscribeToTask` or
+`GetExtendedAgentCard`; the Go and Java stubs answer the REST path
+`GET /tasks/{id}:subscribe` with an empty JSON object.
 
 ### Known reference-SDK divergences (TCK `--skip` targets)
 
@@ -78,23 +93,49 @@ nearly reported upstream against a release nobody runs.
 ```
 itk/
 ├── agents/
-│   ├── python/          # Python agent (Starlette + uvicorn)
-│   ├── js-agent/        # Node.js agent (Express)
-│   ├── go-agent/        # Go agent (net/http stdlib)
-│   └── java-agent/      # Java agent (com.sun.net.httpserver)
+│   ├── python/          # Stub: Python (Starlette + uvicorn), port 9100
+│   ├── js-agent/        # Stub: Node.js (Express), port 9101
+│   ├── go-agent/        # Stub: Go (net/http stdlib), port 9102
+│   ├── java-agent/      # Stub: Java (com.sun.net.httpserver), port 9103
+│   ├── python-sdk/      # Official a2a-sdk, port 9110
+│   ├── js-sdk/          # Official @a2a-js/sdk, port 9111
+│   ├── go-sdk/          # Official a2a-go/v2, port 9112
+│   └── java-sdk/        # Official a2a-java (Quarkus), port 9113
+├── interop/
+│   ├── python_client_vs_rust.py   # Official Python SDK client vs our echo-agent
+│   ├── card_signature_interop.py  # Agent Card signatures vs a2a-sdk, both ways
+│   ├── inspector_card_check.py    # a2a-inspector's card rules, headless
+│   ├── itk_traversal_selftest.py  # In-repo self-test of the current agent
+│   └── go-sdk-client/             # Official a2a-go client vs our server
+├── Cargo.toml, Cargo.lock,  # The a2a-itk "current" agent (itk-current-agent);
+│   build.rs, src/, protos/  # see README-current-agent.md
+├── run_itk.sh             # Shim over a2a-itk's shared driver
 ├── Dockerfile.rust-agent  # Builds the Rust echo agent image
 ├── Dockerfile.tck         # Builds the TCK runner image
-├── docker-compose.yml     # Runs all agents + tests
-└── README.md
+├── docker-compose.yml     # Stub agents + Rust echo agent + TCK runner
+├── README.md
+└── README-current-agent.md
 ```
+
+`interop/go-sdk-client/` is driven by `scripts/go_sdk_interop.sh` (the
+`go-sdk-interop` job in [`ci.yml`](../.github/workflows/ci.yml)); the
+three Python scripts other than the self-test run in `tck.yml`.
 
 ## Running
 
-### Docker Compose (recommended)
+### Docker Compose
 
 ```bash
 docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
 ```
+
+This builds and starts the four stub agents and the Rust `echo-agent`
+(port 9104). Each service's healthcheck fetches its
+`/.well-known/agent-card.json`; once all five are healthy, the `tck-runner`
+service runs the TCK over JSON-RPC and then REST against each agent in
+turn, stopping at the first failure. The official-SDK agents are not part
+of the Compose file, and no CI workflow runs it: CI uses the manual method
+below (the `tck-cross-language` job in `tck.yml`).
 
 ### Manual
 
@@ -103,6 +144,10 @@ docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
    - Node.js: `cd itk/agents/js-agent && npm install && node index.js` (port 9101)
    - Go: `cd itk/agents/go-agent && go run .` (port 9102)
    - Java: `cd itk/agents/java-agent && mvn compile exec:java` (port 9103)
+
+   The official-SDK agents listen on ports 9110-9113; the setup commands
+   for each are the `python-sdk`, `js-sdk`, `go-sdk` and `java-sdk` legs of
+   `tck-cross-language` in `tck.yml`.
 
 2. Run the Rust TCK against each:
    ```bash
@@ -148,11 +193,17 @@ A2A_ITK_REVISION=main ITK_NIGHTLY_RUN=true bash itk/run_itk.sh
 ```
 
 [`itk-nightly.yml`](../.github/workflows/itk-nightly.yml) runs the nightly
-set at 02:00 UTC, uploads both result files as a run artifact, and — from
-`main` only — publishes `itk_rust.json` to the rolling `nightly-metrics`
-prerelease, the same asset name and mechanism the other SDK repositories
-use, so the current pass rate is readable without a checkout. It also
-diffs the vendored `protos/instruction.proto` against the upstream copy
+set at 02:00 UTC, followed by the A2A conformance suite (ACTS) on every
+binding in its nightly form (see `README-current-agent.md`). It uploads
+`raw_results.json`, `itk_rust.json`, `acts_rust.json`, the
+`acts-report-*.json` files and `logs/` as a run artifact, and — from
+`main` only — publishes `itk_rust.json` and `acts_rust.json` to the rolling
+`nightly-metrics` prerelease, the same mechanism the other SDK repositories
+use, so the current pass rate is readable without a checkout. The workflow
+also runs on manual dispatch and on pull requests that change it,
+`run_itk.sh`, or the current agent (`Cargo.toml`, `Cargo.lock`,
+`build.rs`, `src/`, `protos/`); a run anywhere but `main` produces only
+the artifact. It also diffs the vendored `protos/instruction.proto` against the upstream copy
 (everything from the `syntax` line on must be byte-identical) so the agent
 cannot drift from the schema it is graded against. A red night is a bug
 report to read, not a merge blocker: the workflow is deliberately not a PR
