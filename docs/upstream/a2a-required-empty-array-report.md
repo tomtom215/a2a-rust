@@ -3,7 +3,7 @@
 
 # Issue draft for `a2aproject/A2A` — §5.7's non-empty required arrays and an empty `ListTasksResponse.tasks`
 
-**Status: DRAFT, not sent.** Written 2026-10-15 against A2A v1.0.1 and its `a2a.proto`. Audit register, the §5.7 row.
+**Status: DRAFT, held — not filed.** Written and re-verified 2026-10-15 against A2A v1.0.1 (`docs/specification.md` line 1263; `specification/a2a.proto` line 705) and against `main` at 5eced49, where both texts are unchanged. No existing upstream issue or PR reports this; the closest, #2318/#2319, applied §5.7 to an Agent Card example and does not touch `ListTasksResponse`. Audit register, the §5.7 row.
 
 ---
 
@@ -22,7 +22,11 @@ a2a.proto (v1.0.1), `ListTasksResponse`:
 A `ListTasks` call whose filters match no task has no task to return. Read
 together, the two texts make the only correct answer to such a call an
 invalid message. An implementation must either break §5.7 (return an empty
-`tasks`) or invent an error for "no matches", which §3.1.4 does not define.
+`tasks`) or invent an error for "no matches", which §3.1.4 does not define:
+it lists "None specific to this operation beyond standard protocol errors".
+#2318/#2319 recently applied §5.7 literally to `AgentCard.skills` (an empty
+REQUIRED array makes the card invalid), so the rule is meant to be read as
+written.
 
 a2a-rust returns an empty `tasks` and records the conflict. Could the
 specification state that a required repeated field may be empty where the
