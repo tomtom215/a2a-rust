@@ -1749,6 +1749,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployer can meet (13(1)-(3)(e), 14(1)-(3) and (4)(b)-(c), 15(1)-(3)), and
   for Arts. 4 (as replaced), 9, 10, 11 with Annex IV, 17, 26, 27 and
   50(3)-(4). 37 controls in all.
+- **The control map follows Regulation (EU) 2026/1744, the Digital Omnibus on
+  AI**, read in its Official Journal edition, and the AI Act's own Articles 5,
+  6, 16, 43 and 47-49, read in theirs. New integrator rows for Art. 4a (bias
+  detection with special-category data), the Art. 5 prohibitions (the
+  original eight, and the two 2026/1744 added, from 2 December 2026), Art. 6
+  (classification, the Annex III exception, safety components as redefined),
+  Art. 16, Art. 25(2) and (4) (now fineable under Art. 99(4)(da); the SDK is
+  under the open-source exemption), and Arts. 43 and 47-49 (conformity
+  assessment, declaration, CE marking, registration). Rows 9-10-17, 11,
+  15(5), 26-27, 50(2), 72(2) and 73 carry the amended text: among it the
+  2 December 2026 deadline for Art. 50(2) where a generative system was on
+  the market before 2 August 2026 (Art. 111(4)), and Art. 42(3), under which
+  meeting the Cyber Resilience Act's Art. 12(1) conditions satisfies Art.
+  15's cybersecurity requirements. The source note gives the amended
+  application dates and Annex XIV's notified-body code for agentic AI.
+  44 controls, 28 of them AI Act rows.
 - **The regulatory control map cites the code behind each EU AI Act
   control**, as `code = ["path.rs::Symbol"]`, and `check_compliance_map.py`
   fails when a cited symbol is not declared in its file or when a supported

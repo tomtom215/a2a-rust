@@ -15,7 +15,7 @@
 #               what the SDK offers the integrator who must
 
 [meta]
-as_of = "2026-10-14"
+as_of = "2026-10-15"
 preamble = """
 This is a map from regulatory and standards provisions to what a2a-rust, a
 protocol library, provides toward them. It is not a claim that the SDK is
@@ -39,10 +39,21 @@ title = "EU AI Act — Regulation (EU) 2024/1689, as amended by Regulation (EU) 
 url = "https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng"
 verification = "primary"
 note = """
-Article text read on EUR-Lex on 2026-10-08. Application dates per the
-Commission's page and the amending regulation: Article 50 from 2 August 2026;
-Annex III high-risk obligations from 2 December 2027; Annex I high-risk
-obligations from 2 August 2028.
+Article text of Regulation (EU) 2024/1689 read on EUR-Lex on 2026-10-08;
+the amending Regulation (EU) 2026/1744 read in its Official Journal edition
+(OJ L, 2026/1744, 24.7.2026; in force 27 July 2026) on 2026-10-15, every page
+rendered. Application dates, Article 113 as amended: Chapters I and II from
+2 February 2025, except the Article 5 prohibitions 2026/1744 added, from
+2 December 2026; Article 50 from 2 August 2026, with until 2 December 2026 for
+Article 50(2) where a generative system was on the market before 2 August
+2026 (Article 111(4)); Annex III high-risk obligations from 2 December 2027;
+Annex I high-risk obligations from 2 August 2028. Annex XIV, added by
+2026/1744, lists the types of AI system a notified body is designated to
+assess, and its code AIH 0401 names "Agentic AI": a high-risk system built
+from A2A agents has a category for its third-party conformity assessment.
+Articles 5, 6, 16, 43 and 47-49 of Regulation (EU) 2024/1689 read in its
+Official Journal edition (OJ L, 2024/1689, 12.7.2024), fetched from the
+Publications Office on 2026-10-15, those pages rendered.
 """
 
 [[sources]]
@@ -97,10 +108,46 @@ status = "integrator"
 gap = "Literacy measures are an organisation's duty toward its own people; a library has no staff to train."
 
 [[control]]
+id = "AIA-4a"
+source = "ai-act"
+provision = "Art. 4a (inserted by Regulation (EU) 2026/1744)"
+requirement = "Providers of high-risk AI systems may exceptionally process special categories of personal data to the extent strictly necessary for bias detection and correction, under all of paragraph 1's conditions: other data will not do, technical limits on re-use with state-of-the-art security and pseudonymisation, controlled and documented access, no transmission to other parties, deletion once the bias is corrected or the retention period ends, and records of processing that say why. Providers and deployers of other AI systems and models, and deployers of high-risk systems, may do the same under the same conditions; this creates no obligation to detect bias. Article 10(5), which held the provider's basis before, is deleted."
+sdk = "The SDK processes no data set and detects no bias. What passes through it is the integrator's data: audit records hold content only as SHA-256 digests (GDPR-25-1), and the task store keeps message content as the integrator sends it."
+status = "integrator"
+gap = "Whether to process special categories for bias detection, and every safeguard paragraph 1 requires, belong to the provider or deployer that holds the data. The task store has no hook to pseudonymise content before it is written (GDPR-25-1), so special-category data should not be routed through tasks."
+
+[[control]]
+id = "AIA-5-1"
+source = "ai-act"
+provision = "Art. 5(1)(a)–(h), 5(2)–(8) (from 2 February 2025)"
+requirement = "Prohibited: AI systems that deploy subliminal, purposefully manipulative or deceptive techniques materially distorting behaviour and causing or likely to cause significant harm (a); that exploit vulnerabilities due to age, disability or a specific social or economic situation to the same effect (b); social scoring leading to detrimental treatment in unrelated contexts or out of proportion (c); risk assessment of a person committing a criminal offence based solely on profiling or personality traits (d); facial recognition databases built by untargeted scraping of facial images from the internet or CCTV footage (e); inferring emotions in the workplace and education institutions, except for medical or safety reasons (f); biometric categorisation inferring race, political opinions, trade union membership, religious or philosophical beliefs, sex life or sexual orientation (g); and real-time remote biometric identification in publicly accessible spaces for law enforcement, except as strictly necessary for the objectives of point (h), under the authorisation, assessment and registration conditions of paragraphs 2–7."
+sdk = "The SDK carries messages between agents and performs none of these practices; it has no biometric, scoring or emotion-inference capability. Server interceptors are the hook through which a provider can refuse requests or inspect what passes through an agent; the SDK ships no policy that classifies purposes (AIA-15-5)."
+status = "integrator"
+gap = "Each prohibition turns on the practice an AI system performs and the purpose it is placed on the market, put into service or used for, which are the provider's and deployer's; a transport cannot tell one purpose from another. The prohibitions 2026/1744 added are row AIA-5-1-ba-bb."
+
+[[control]]
+id = "AIA-5-1-ba-bb"
+source = "ai-act"
+provision = "Art. 5(1)(ba), (bb), 5(1a), (1b) (inserted by Regulation (EU) 2026/1744; from 2 December 2026)"
+requirement = "Prohibited: placing on the market, putting into service or using an AI system that generates or manipulates realistic images, video, audio or similar material of an identifiable person's intimate parts, or of an identifiable person in sexually explicit activity, without that person's freely given, specific, informed, unambiguous and explicit consent (ba); or child sexual abuse material within Article 2(c) and (e) of Directive 2011/93/EU, except where a 'without right' defence applies under national law (bb). Placing on the market or putting into service is prohibited only where that generation is the system's intended purpose, or a reasonably foreseeable and reproducible outcome that the system lacks reasonable and adequate safeguards to prevent and correct (1a(a)); use is prohibited only where the deployer uses the system for that purpose (1a(b))."
+sdk = "The SDK generates and manipulates no content: it carries messages and artifacts between agents. Server interceptors are the hook through which a provider can inspect what passes through an agent; the SDK ships no content filter (AIA-15-5)."
+status = "integrator"
+gap = "Whether a system can generate such material, and the safeguards recital 12 lists (data cleaning, refusal training, output controls, prompt guardrails, content classification and filtering, abuse detection, notice and action), belong to the provider of the generating system and to the deployer who uses it. Recital 12 counts a system's release and distribution strategy, open-source releases included, when judging whether its safeguards are reasonable. The original Article 5 prohibitions are row AIA-5-1."
+
+[[control]]
+id = "AIA-6"
+source = "ai-act"
+provision = "Art. 6(1)–(4); Art. 3(14) as replaced and Art. 6(1a)–(1c) inserted by Regulation (EU) 2026/1744"
+requirement = "An AI system is high-risk where it is intended to be used as a safety component of a product, or is itself a product, covered by the Union harmonisation legislation of Annex I, and that product must undergo a third-party conformity assessment under it (6(1)); and where it is listed in Annex III (6(2)), unless it poses no significant risk of harm to health, safety or fundamental rights because it performs a narrow procedural task, improves the result of a completed human activity, detects decision-making patterns without replacing human assessment, or performs a preparatory task — but never where it profiles natural persons (6(3)). A provider that considers an Annex III system not high-risk documents that assessment before placing it on the market, registers under Art. 49(2), and gives the documentation to national competent authorities on request (6(4)). A safety component fulfils a safety function, its intended purpose being to prevent or mitigate risks to the health and safety of persons or property (Art. 3(14)). AI systems used solely for non-safety aspects of user assistance, performance optimisation, service efficiency, automation, convenience or quality control are not safety components (6(1a)), unless their failure or malfunction would endanger health and safety (6(1b)); a product needing third-party assessment only for risks other than health and safety does not meet Art. 6(1)(b) (6(1c))."
+sdk = "Nothing toward the classification. The SDK's own purpose is to carry A2A traffic; it is not an AI system (Art. 3(1)) and has no intended purpose in a product of its own."
+status = "integrator"
+gap = "Whether a system built with the SDK is high-risk, under Art. 6(1) or Annex III, and any Art. 6(3) assessment that it is not, turn on the intended purpose its provider determines and are the provider's to document."
+
+[[control]]
 id = "AIA-9-10-17"
 source = "ai-act"
-provision = "Art. 9, 10, 17"
-requirement = "Providers of high-risk AI systems establish and maintain a risk management system (Art. 9), develop systems that train on data with data sets meeting the quality criteria (Art. 10), and put a documented quality management system in place (Art. 17)."
+provision = "Art. 9, 10, 17 (10(1), 10(6) and 17(2) as replaced by Regulation (EU) 2026/1744)"
+requirement = "Providers of high-risk AI systems establish and maintain a risk management system (Art. 9), develop systems that train on data with data sets meeting the quality criteria of Art. 10(2)–(4) and Art. 4a(1) (Art. 10; its paragraph 5 is deleted, its content now in Art. 4a), and put a documented quality management system in place (Art. 17), implemented in proportion to the size of the provider's organisation, SMEs and small mid-caps included (17(2)), with a simplified manner for SMEs without partner or linked enterprises (Art. 63(1))."
 sdk = "Nothing beyond its own engineering process, which is not the provider's QMS: the SDK trains nothing and holds no data set."
 status = "integrator"
 gap = "All three are the provider's, about the AI system as a whole."
@@ -108,18 +155,47 @@ gap = "All three are the provider's, about the AI system as a whole."
 [[control]]
 id = "AIA-11"
 source = "ai-act"
-provision = "Art. 11(1), Annex IV"
-requirement = "The technical documentation of a high-risk AI system is drawn up before it is placed on the market and kept up to date."
+provision = "Art. 11(1) (second subparagraph as replaced by Regulation (EU) 2026/1744), Annex IV"
+requirement = "The technical documentation of a high-risk AI system is drawn up before it is placed on the market and kept up to date, contains at least the elements of Annex IV, and is written so that national competent authorities and notified bodies can assess compliance. SMEs, start-ups included, and small mid-caps may provide the Annex IV elements in a simplified manner, on the form the Commission establishes, which notified bodies accept."
 sdk = "Material a provider can cite for the component it takes from this repository: a CycloneDX SBOM per crate attached to each release, the provenance manifest, the ADRs, and the spec ledger, which records the protocol behaviour requirement by requirement."
 status = "integrator"
 evidence = ["docs/adr/0015-audit-trail.md", "docs/compliance/spec-ledger.md", "PROVENANCE.md"]
 gap = "The documentation describes the AI system, which is the provider's to write; the SDK's material describes one component of it."
 
 [[control]]
+id = "AIA-25-2-4"
+source = "ai-act"
+provision = "Art. 25(2), 25(4) (as replaced by Regulation (EU) 2026/1744), 99(4)(da)"
+requirement = "Where another operator becomes the provider of a high-risk system (Art. 25(1)), the initial provider is no longer its provider, and cooperates with the new one: technical documentation sufficient to assess compliance with Art. 16, known limitations and failure modes, and targeted technical access including for testing and validation — unless it clearly specified that its system is not to be changed into a high-risk one (25(2)). The provider of a high-risk system and a third party supplying an AI system, model, tools, services, components or processes used or integrated in it specify, by written agreement, the information, capabilities, technical access and other assistance the provider needs; this does not apply to third parties making tools, services, processes or components, other than general-purpose AI models, accessible to the public under a free and open-source licence (25(4)). Breaches of 25(2) and (4) are subject to the fines of Art. 99(4) (point (da))."
+sdk = "The SDK is published under Apache-2.0, a free and open-source licence, and is not a general-purpose AI model, so 25(4)'s written agreement does not apply to it, and it is not an AI system whose provider 25(2) binds. It publishes, without an agreement, much of what one would ask for: the technical material of AIA-11 (SBOMs, provenance manifest, ADRs, spec ledger) and, in each row here, its known limitations."
+status = "integrator"
+evidence = ["LICENSE", "PROVENANCE.md", "docs/compliance/spec-ledger.md"]
+gap = "A provider that integrates the SDK and needs assistance beyond what is published has no written agreement to rely on; one taking components from a supplier that is not exempt must conclude one. The exemption is from 25(4) only."
+
+[[control]]
+id = "AIA-16"
+source = "ai-act"
+provision = "Art. 16"
+requirement = "Providers of high-risk AI systems ensure compliance with Chapter III, Section 2 (a); indicate their name, registered trade name or mark and contact address on the system, its packaging or documentation (b); have a quality management system under Art. 17 (c); keep the documentation of Art. 18 (d); keep the logs of Art. 19 when under their control (e); have the system undergo the Art. 43 conformity assessment before placing it on the market (f); draw up the EU declaration of conformity of Art. 47 (g); affix the CE marking of Art. 48 (h); register under Art. 49(1) (i); take corrective action and inform under Art. 20 (j); demonstrate conformity to a national competent authority on reasoned request (k); and meet the accessibility requirements of Directives (EU) 2016/2102 and 2019/882 (l)."
+sdk = "Toward (e): the audit trail of AIA-12-1 and its retention under AIA-19-26-6 are logs a provider can keep. Toward (d), (k) and Art. 25(2): the technical material of AIA-11. Nothing toward the rest, which are the provider's acts about the system as a whole."
+status = "integrator"
+gap = "Every point is the obligation of the provider of the high-risk system; the SDK is a component of it, not its provider."
+
+[[control]]
+id = "AIA-43-47-49"
+source = "ai-act"
+provision = "Art. 43 (43(3) as replaced by Regulation (EU) 2026/1744), 47, 48, 49; Annex XIV"
+requirement = "Before placing a high-risk system on the market, its provider follows the conformity assessment procedure of Art. 43: for Annex III point 1, internal control (Annex VI) or a notified body (Annex VII), the latter where harmonised standards or common specifications are not applied in full; for Annex III points 2–8, internal control; for Annex I Section A systems, the procedure of that legislation, with Section 2's requirements and the Art. 17 quality management system assessed as part of it (43(3)); and a new assessment after a substantial modification (43(4)). The provider draws up a machine-readable, physical or electronically signed EU declaration of conformity with the content of Annex V, kept for 10 years (Art. 47); affixes the CE marking, digitally for systems provided digitally (Art. 48); and, for Annex III systems other than point 2, registers itself and the system in the EU database before placing it on the market, as must a provider that concluded under Art. 6(3) that an Annex III system is not high-risk (Art. 49(1)–(2)); public-authority deployers register their use (49(3)). Notified bodies are designated by the codes of Annex XIV, whose AIH 0401 names Agentic AI."
+sdk = "Material a provider can put to the assessment: the technical documentation of AIA-11, the spec ledger recording the protocol's behaviour requirement by requirement, and the CycloneDX SBOMs and build-provenance attestations of CRA-13-5."
+status = "integrator"
+evidence = ["docs/compliance/spec-ledger.md", "PROVENANCE.md"]
+gap = "The assessment, the declaration, the CE marking and the registration are the provider's acts about the high-risk system; none can be done for a component."
+
+[[control]]
 id = "AIA-26-27"
 source = "ai-act"
-provision = "Art. 26(1)–(2), (5); Art. 27"
-requirement = "Deployers use high-risk systems according to the instructions for use, assign human oversight to competent persons, monitor operation, and (for the deployers Art. 27 names) assess the impact on fundamental rights before deploying."
+provision = "Art. 26(1)–(2), (5); Art. 27 (27(4)–(5) as replaced by Regulation (EU) 2026/1744)"
+requirement = "Deployers use high-risk systems according to the instructions for use, assign human oversight to competent persons, monitor operation, and (for the deployers Art. 27 names) assess the impact on fundamental rights before deploying; that assessment may cross-refer to, or include parts of, a data protection impact assessment under Art. 35 GDPR or Art. 27 of Directive (EU) 2016/680 (27(4)), and the AI Office develops a questionnaire template, including an automated tool, to help (27(5))."
 sdk = "The monitoring signals of AIA-12-2 and AIA-14-4a, and the logs of AIA-19-26-6."
 status = "integrator"
 gap = "Each of these is an organisational duty of the deployer."
@@ -300,7 +376,7 @@ gap = "Resilience of the model itself (errors in outputs, feedback loops in a sy
 id = "AIA-15-5"
 source = "ai-act"
 provision = "Art. 15(5)"
-requirement = "High-risk AI systems shall be resilient against attempts by unauthorised third parties to alter their use, outputs or performance by exploiting system vulnerabilities."
+requirement = "High-risk AI systems shall be resilient against attempts by unauthorised third parties to alter their use, outputs or performance by exploiting system vulnerabilities. A high-risk system within the scope of the Cyber Resilience Act that meets the conditions of its Art. 12(1) is deemed to comply with Art. 15's cybersecurity requirements (Art. 42(3), added by Regulation (EU) 2026/1744); the CRA rows below are what the SDK carries toward that."
 sdk = "Authentication (API key in constant time, bearer, JWT with a fixed algorithm list and HS256 secrets of at least 32 bytes, wiped from memory on drop), signed agent cards (ES256 or EdDSA, verified against a JWK Set), signed messages and artifacts, an SSRF guard on push delivery, body and rate limits, refusal of tenants the stores cannot isolate, 13 fuzz targets."
 status = "partial"
 code = [
@@ -351,8 +427,8 @@ gap = "The person interacts with the integrator's interface, which this SDK neve
 [[control]]
 id = "AIA-50-2"
 source = "ai-act"
-provision = "Art. 50(2)"
-requirement = "Synthetic audio, image, video or text outputs are marked in a machine-readable format and detectable as artificially generated."
+provision = "Art. 50(2), 50(7) (as replaced by Regulation (EU) 2026/1744), 111(4)"
+requirement = "Synthetic audio, image, video or text outputs are marked in a machine-readable format and detectable as artificially generated. Providers of systems, general-purpose AI systems included, that were placed on the market before 2 August 2026 comply by 2 December 2026 (Art. 111(4)). The Commission facilitates codes of practice on detecting, marking and labelling generated content and assesses whether adhering to them is adequate, and may otherwise adopt an implementing act with common rules (Art. 50(7))."
 sdk = "The provenance extension: `mark_ai_generated` marks a message or artifact as AI-generated, naming the generator, in metadata under a declared extension URI; `sign_content` signs the whole content with ES256 or EdDSA, marker included, so the marker cannot be stripped without breaking the signature; `verify_content` checks it against a JWK Set. Signed content survives a round trip through a server, and file bytes (a C2PA manifest inside them included) pass through unchanged."
 status = "partial"
 code = [
@@ -370,8 +446,8 @@ gap = "The agent must call the marker; the SDK cannot tell generated content fro
 [[control]]
 id = "AIA-72-2"
 source = "ai-act"
-provision = "Art. 72(2)"
-requirement = "The post-market monitoring system shall include an analysis of the interaction with other AI systems, where relevant."
+provision = "Art. 72(2), 72(3) (as replaced by Regulation (EU) 2026/1744)"
+requirement = "The post-market monitoring system shall include an analysis of the interaction with other AI systems, where relevant. It is based on a post-market monitoring plan that is part of the Annex IV technical documentation; the Commission adopts guidance, including a template, on the plan by 2 September 2027 (72(3))."
 sdk = "W3C trace context end to end: the client sends a `traceparent` naming its own span and the server continues it, and every audit record keeps the trace and span id, so one request's records can be joined across every audited agent it reached, long after the trace backend has expired the spans."
 status = "supported"
 code = [
@@ -386,8 +462,8 @@ tests = [
 [[control]]
 id = "AIA-73"
 source = "ai-act"
-provision = "Art. 73"
-requirement = "Providers report serious incidents to market surveillance authorities."
+provision = "Art. 73, 75(1a) (inserted by Regulation (EU) 2026/1744)"
+requirement = "Providers report serious incidents to market surveillance authorities; providers of high-risk systems under the AI Office's exclusive competence (Art. 75(1): systems built on a general-purpose AI model by the model's provider or its undertaking, with exceptions, and systems that are or are integrated into a very large online platform or search engine) report them to the AI Office instead, with Art. 73(2)–(9) applying mutatis mutandis."
 sdk = "Typed failures, error metrics and spans give a provider the signals to detect one."
 status = "integrator"
 gap = "Deciding that an incident is serious, and reporting it, is the provider's act."

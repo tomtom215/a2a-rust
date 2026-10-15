@@ -1151,7 +1151,7 @@ follow the text. The register's status column tracks what is done.
     subparagraph and kept it (both read in the Official Journal text,
     fetched from the Publications Office's CELLAR service; EUR-Lex itself
     answered 202 with an empty body). The rest of Step 2 (the articles the
-    map does not cover yet) is open.
+    map did not cover) was left open here; item 36 closes it.
 
 12. `fix(server):` a2a.proto `Artifact.parts` — an appended chunk with no
     parts is refused at the event queue and dropped by both processors
@@ -1448,6 +1448,24 @@ follows is a new pull request.
     `rust-pr` job: it is in `rust` only, since the base-branch scan fails
     on a lockfile main does not have (phase 1 put it in both, and
     `Rust lockfiles (new findings)` failed on `21cb5989`).
+36. `docs(compliance):` the control map follows Regulation (EU) 2026/1744
+    and covers the AI Act articles it lacked (Step 2). Both read in their
+    Official Journal PDFs with every relevant page rendered and read as an
+    image: 2026/1744 in full (41 pages, SHA-256 `0bea4d80…`, supplied by the
+    maintainer), and 2024/1689's pages 51-55, 62-63 and 78-82 (Arts. 5, 6,
+    16, 43, 47-49; 144 pages, SHA-256 `bba63044…`, from the Publications
+    Office's CELLAR service:
+    `curl -H 'Accept: application/pdf' -H 'Accept-Language: eng'
+    http://publications.europa.eu/resource/celex/32024R1689`; EUR-Lex itself
+    still answers 202 with an empty body). Twelve passages were also matched
+    in the text layer. New integrator rows: AIA-4a, AIA-5-1, AIA-5-1-ba-bb,
+    AIA-6, AIA-16, AIA-25-2-4, AIA-43-47-49; rows 9-10-17, 11, 15-5, 26-27,
+    50-2, 72-2 and 73 carry the amended text; the source note has Art. 113's
+    amended dates, Art. 111(4) and Annex XIV's AIH 0401 ("Agentic AI").
+    `check_compliance_map.py`: 44 controls, 72 tests, 33 implementations,
+    all present. Not mapped, as before: Arts. 51-56 (general-purpose AI
+    models) and the authorities' and procedural chapters (sandboxes, the AI
+    Office's powers, Arts. 75a-75d, penalties beyond 99(4)(da)).
 
 **Lessons, new this session.**
 - Tests and semver-checks passing do not show a serde change is
