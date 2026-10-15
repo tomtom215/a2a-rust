@@ -11,7 +11,8 @@
 
 // ── AgentExtension ────────────────────────────────────────────────────────────
 
-pub use crate::generated::extensions::AgentExtension;
+// The proto-generated types of this module (ADR 0016), `AgentExtension` first.
+include!("generated/extensions.rs");
 
 impl AgentExtension {
     /// Creates a minimal [`AgentExtension`] with only a URI.
@@ -28,7 +29,7 @@ impl AgentExtension {
 
 // ── AgentCardSignature ────────────────────────────────────────────────────────
 
-pub use crate::generated::extensions::AgentCardSignature;
+// `AgentCardSignature` is generated: see the `include!` above.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -22,7 +22,8 @@
 
 // ── SendMessageConfiguration ──────────────────────────────────────────────────
 
-pub use crate::generated::params::SendMessageConfiguration;
+// The proto-generated types of this module (ADR 0016), `SendMessageConfiguration` first.
+include!("../generated/params.rs");
 
 impl Default for SendMessageConfiguration {
     fn default() -> Self {
@@ -37,39 +38,39 @@ impl Default for SendMessageConfiguration {
 
 // ── MessageSendParams ─────────────────────────────────────────────────────────
 
-pub use crate::generated::params::MessageSendParams;
+// `MessageSendParams` is generated: see the `include!` above.
 
 // ── TaskQueryParams ───────────────────────────────────────────────────────────
 
-pub use crate::generated::params::TaskQueryParams;
+// `TaskQueryParams` is generated: see the `include!` above.
 
 // ── TaskIdParams ──────────────────────────────────────────────────────────────
 
-pub use crate::generated::params::TaskIdParams;
+// `TaskIdParams` is generated: see the `include!` above.
 
 // ── CancelTaskParams ────────────────────────────────────────────────────────
 
-pub use crate::generated::params::CancelTaskParams;
+// `CancelTaskParams` is generated: see the `include!` above.
 
 // ── ListTasksParams ───────────────────────────────────────────────────────────
 
-pub use crate::generated::params::ListTasksParams;
+// `ListTasksParams` is generated: see the `include!` above.
 
 // ── GetPushConfigParams ───────────────────────────────────────────────────────
 
-pub use crate::generated::params::GetPushConfigParams;
+// `GetPushConfigParams` is generated: see the `include!` above.
 
 // ── DeletePushConfigParams ────────────────────────────────────────────────────
 
-pub use crate::generated::params::DeletePushConfigParams;
+// `DeletePushConfigParams` is generated: see the `include!` above.
 
 // ── ListPushConfigsParams ────────────────────────────────────────────────────
 
-pub use crate::generated::params::ListPushConfigsParams;
+// `ListPushConfigsParams` is generated: see the `include!` above.
 
 // ── GetExtendedAgentCardParams ──────────────────────────────────────────────
 
-pub use crate::generated::params::GetExtendedAgentCardParams;
+// `GetExtendedAgentCardParams` is generated: see the `include!` above.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

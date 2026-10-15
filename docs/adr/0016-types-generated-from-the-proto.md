@@ -98,10 +98,20 @@ The default translation, which most fields need nothing beyond:
 `crates/a2a-protocol-types/src/generated/`, one file per Rust module, each
 opening with a `@generated` header that names the generator and the proto's
 SHA-256. The generator runs `rustfmt` on what it writes, so the repository's
-`cargo fmt --check` and its own check agree. The hand-written modules
-re-export the generated items, so every public path stays where it is
-(`a2a_protocol_types::task::Task`), and keep their `impl` blocks and the
-Rust-only types (the ID newtypes, helpers).
+`cargo fmt --check` and its own check agree. Each hand-written module
+includes its file (`include!("generated/task.rs")`), so every type is
+defined where it was (`a2a_protocol_types::task::Task`), beside its `impl`
+blocks and the Rust-only types (the ID newtypes, helpers).
+
+The first phases re-exported the items from a private `generated` module
+instead. Defined in a module of its own, `Message` serialized 50% to 89%
+slower (`protocol/payload_scaling`, `to_vec` and `ser_buffer`, 1 KiB to
+1 MiB) in a release build with 16 codegen units and no LTO, which is
+cargo's default and CI's benchmark profile; with one codegen unit the
+difference was gone. Rustc places code in codegen units by the module that
+defines it, so `Message` no longer shared one with `Part`. Included in
+`message.rs`, it is back to its hand-written speed (2026-10-15, on a 4-core
+Xeon VM).
 
 ### The check
 
@@ -172,3 +182,5 @@ types "regenerated from the proto", which is what §1.4 asks.
 - Contributors change a type by changing the proto or the configuration
   and regenerating, never by editing `src/generated/`. CONTRIBUTING says so,
   and the check enforces it.
+- Where a type is defined changes how fast it runs (see The output), so a
+  move between modules is a benchmark question, not only an API one.

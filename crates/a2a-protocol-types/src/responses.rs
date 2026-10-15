@@ -44,7 +44,8 @@ crate::oneof::oneof_deserialize!(
 
 // ── TaskListResponse ──────────────────────────────────────────────────────────
 
-pub use crate::generated::responses::TaskListResponse;
+// The proto-generated types of this module (ADR 0016), `TaskListResponse` first.
+include!("generated/responses.rs");
 
 impl TaskListResponse {
     /// Creates a single-page response.
@@ -66,7 +67,7 @@ impl TaskListResponse {
 
 // ── ListPushConfigsResponse ────────────────────────────────────────────────────
 
-pub use crate::generated::responses::ListPushConfigsResponse;
+// `ListPushConfigsResponse` is generated: see the `include!` above.
 
 // ── AuthenticatedExtendedCardResponse ─────────────────────────────────────────
 

@@ -19,11 +19,12 @@
 
 // ── AgentInterface ────────────────────────────────────────────────────────────
 
-pub use crate::generated::agent_card::AgentInterface;
+// The proto-generated types of this module (ADR 0016), `AgentInterface` first.
+include!("../generated/agent_card.rs");
 
 // ── AgentCapabilities ─────────────────────────────────────────────────────────
 
-pub use crate::generated::agent_card::AgentCapabilities;
+// `AgentCapabilities` is generated: see the `include!` above.
 
 impl AgentCapabilities {
     /// Creates an [`AgentCapabilities`] with all flags unset.
@@ -67,15 +68,15 @@ impl Default for AgentCapabilities {
 
 // ── AgentProvider ─────────────────────────────────────────────────────────────
 
-pub use crate::generated::agent_card::AgentProvider;
+// `AgentProvider` is generated: see the `include!` above.
 
 // ── AgentSkill ────────────────────────────────────────────────────────────────
 
-pub use crate::generated::agent_card::AgentSkill;
+// `AgentSkill` is generated: see the `include!` above.
 
 // ── AgentCard ─────────────────────────────────────────────────────────────────
 
-pub use crate::generated::agent_card::AgentCard;
+// `AgentCard` is generated: see the `include!` above.
 
 impl AgentCard {
     /// The card's own REQUIRED strings, `name`, `description` and

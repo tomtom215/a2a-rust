@@ -1445,6 +1445,12 @@ follows is a new pull request.
     `Rust lockfiles (new findings)` failed on `21cb5989`).
 
 **Lessons, new this session.**
+- Where a type is defined changes its speed. Phase 3 moved `Message` into
+  a private `generated` module and its serialization ran 50% to 89% slower
+  at 16 codegen units without LTO (CI's Benchmarks job caught it on
+  `758d1f6e`; one codegen unit made it vanish). The generated files are now
+  `include!`d by their modules. A semver-clean move can still be a
+  regression; the benchmark gate is the check for it.
 - Map the ledger's `path:line` citations through a diff once. A second
   pass over the same diff reads the already-moved numbers as old ones and
   moves them again; restore the ledger from `HEAD` and map once.

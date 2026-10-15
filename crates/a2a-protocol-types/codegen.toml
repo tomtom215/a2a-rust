@@ -377,7 +377,7 @@ why = "the context id newtype"
 derives = ["Debug", "Clone", "Serialize", "Deserialize"]
 doc_append = """
 The wire `kind` field (`"artifact-update"`) is injected by the enclosing
-[`StreamResponse`](crate::events::StreamResponse) discriminated union."""
+[`StreamResponse`] discriminated union."""
 
 [messages.TaskArtifactUpdateEvent.fields.task_id]
 type = "crate::task::TaskId"

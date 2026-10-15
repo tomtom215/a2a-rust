@@ -41,8 +41,8 @@
     "tools/a2a-codegen/src/emit.rs emit",
     "tools/a2a-codegen/src/config.rs validate",
     "crates/a2a-protocol-types/codegen.toml",
-    "crates/a2a-protocol-types/src/generated/task.rs:69",
-    "crates/a2a-protocol-types/src/generated/responses.rs:13",
+    "crates/a2a-protocol-types/src/generated/task.rs:67",
+    "crates/a2a-protocol-types/src/generated/responses.rs:11",
     "crates/a2a-protocol-types/src/security.rs:424"
    ],
    "test_evidence": [
@@ -571,7 +571,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:82",
-    "crates/a2a-protocol-types/src/generated/task.rs:85"
+    "crates/a2a-protocol-types/src/generated/task.rs:83"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/list_tasks_artifacts.rs artifacts_are_omitted_unless_asked_for",
@@ -591,10 +591,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/responses.rs:24"
+    "crates/a2a-protocol-types/src/generated/responses.rs:22"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:208 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/coverage_gap_tests.rs:582 (nextPageToken presence)"
    ],
    "notes": "Field is a plain String with no skip_serializing_if; gRPC follows proto3 default semantics.",
@@ -1396,7 +1396,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:55",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:73",
-    "crates/a2a-protocol-types/src/generated/task.rs:88"
+    "crates/a2a-protocol-types/src/generated/task.rs:86"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:402 truncate_history_zero_omits_rather_than_emptying",
@@ -2264,7 +2264,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:80"
+    "crates/a2a-protocol-types/src/generated/task.rs:78"
    ],
    "test_evidence": [],
    "notes": "ContextId is an opaque string newtype; the client SDK never parses it.",
@@ -3406,7 +3406,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:596",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:105"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:106"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:287 validate_empty_supported_interfaces_returns_error"
@@ -3735,8 +3735,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:68",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:92"
+    "crates/a2a-protocol-types/src/generated/task.rs:66",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:90"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:334 tck_task_camel_case_fields",
@@ -3755,8 +3755,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:25",
-    "crates/a2a-protocol-types/src/generated/message.rs:18"
+    "crates/a2a-protocol-types/src/generated/task.rs:23",
+    "crates/a2a-protocol-types/src/generated/message.rs:16"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:60 tck_task_state_proto_json_encoding",
@@ -3811,10 +3811,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:211"
+    "crates/a2a-protocol-types/src/lib.rs:210"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:497 utc_now_has_millisecond_precision_and_z_suffix"
+    "crates/a2a-protocol-types/src/lib.rs:496 utc_now_has_millisecond_precision_and_z_suffix"
    ],
    "notes": "utc_now_iso8601 formats YYYY-MM-DDTHH:mm:ss.sssZ.",
    "auditor": "C",
@@ -3829,19 +3829,19 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:247",
+    "crates/a2a-protocol-types/src/lib.rs:246",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:151",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:168",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:68"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:511 utc_now_roundtrips_through_parser",
-    "crates/a2a-protocol-types/src/lib.rs:526 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:510 utc_now_roundtrips_through_parser",
+    "crates/a2a-protocol-types/src/lib.rs:525 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:514 timestamp_parses_offset_and_normalizes_to_utc",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:534 timestamp_rejects_invalid_string",
     "crates/a2a-protocol-types/tests/timestamp_parity.rs:32 the_json_parser_reads_what_the_grpc_conversion_reads",
-    "crates/a2a-protocol-types/src/lib.rs:634 parse_refuses_what_rfc_3339_does_not_allow",
-    "crates/a2a-protocol-types/src/lib.rs:605 parse_accepts_pre_epoch_dates_back_to_year_0",
+    "crates/a2a-protocol-types/src/lib.rs:633 parse_refuses_what_rfc_3339_does_not_allow",
+    "crates/a2a-protocol-types/src/lib.rs:604 parse_accepts_pre_epoch_dates_back_to_year_0",
     "crates/a2a-protocol-server/tests/pre_epoch_timestamps.rs:85 list_tasks_accepts_a_pre_epoch_filter"
    ],
    "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed). Until 2026-10-13 the parser was lenient (whitespace, unpadded or signed fields, an offset without minutes, 02-30 rolled into March) and refused every pre-1970 instant, so the JSON and gRPC bindings disagreed on such values and a 1969 statusTimestampAfter was InvalidParams. It now reads exactly what the time crate's RFC 3339 parser reads, checked over 1,655,808 strings, and the formatter writes pre-1970 instants as themselves.",
@@ -3858,10 +3858,10 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:247"
+    "crates/a2a-protocol-types/src/lib.rs:246"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:526 parse_epoch_and_known_instants"
+    "crates/a2a-protocol-types/src/lib.rs:525 parse_epoch_and_known_instants"
    ],
    "notes": "Parser accepts with and without fractional seconds.",
    "auditor": "C",
@@ -3912,7 +3912,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:72",
+    "crates/a2a-protocol-types/src/generated/task.rs:70",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50"
    ],
    "test_evidence": [
@@ -3978,7 +3978,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:65",
+    "crates/a2a-protocol-types/src/generated/task.rs:63",
     "crates/a2a-protocol-types/src/oneof.rs:26-112"
    ],
    "test_evidence": [
@@ -4203,7 +4203,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:92"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:90"
    ],
    "test_evidence": [],
    "notes": "",
@@ -4369,9 +4369,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:25",
-    "crates/a2a-protocol-types/src/generated/message.rs:18",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:155",
+    "crates/a2a-protocol-types/src/generated/task.rs:23",
+    "crates/a2a-protocol-types/src/generated/message.rs:16",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:153",
     "crates/a2a-protocol-client/src/legacy_card.rs:44 upgrade"
    ],
    "test_evidence": [
@@ -4394,8 +4394,8 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:25",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:154"
+    "crates/a2a-protocol-types/src/generated/task.rs:23",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:152"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:532 tck_agent_card_no_legacy_fields"
@@ -4588,7 +4588,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/task.rs:236",
+    "crates/a2a-protocol-types/src/task.rs:237",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:110"
    ],
    "test_evidence": [
@@ -4993,10 +4993,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:74",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:40",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:33",
-    "crates/a2a-protocol-types/src/generated/extensions.rs:17",
-    "crates/a2a-protocol-types/src/generated/extensions.rs:20"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:38",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:31",
+    "crates/a2a-protocol-types/src/generated/extensions.rs:15",
+    "crates/a2a-protocol-types/src/generated/extensions.rs:18"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/presence/tests.rs schema_matches_the_vendored_proto",
@@ -5016,9 +5016,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:40",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:179",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:137"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:38",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:177",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:135"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/presence/tests.rs optional_fields_keep_a_set_default_and_drop_null"
@@ -5037,8 +5037,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:179",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:182",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:177",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:180",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:462",
     "crates/a2a-protocol-types/src/proto/convert/card.rs:513"
    ],
@@ -5060,11 +5060,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:81",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:85",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:93",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:132",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:213"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:79",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:83",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:91",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:130",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:211"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/presence/tests.rs the_specification_example_canonicalizes_as_published"
@@ -5085,11 +5085,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:74",
     "crates/a2a-protocol-types/src/signing.rs:99",
-    "crates/a2a-protocol-types/src/generated/extensions.rs:20",
-    "crates/a2a-protocol-types/src/generated/extensions.rs:17",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:41",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:186",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:107"
+    "crates/a2a-protocol-types/src/generated/extensions.rs:18",
+    "crates/a2a-protocol-types/src/generated/extensions.rs:15",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:39",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:184",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:105"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/presence/tests.rs implicit_defaults_are_dropped_at_every_depth",
@@ -5109,7 +5109,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:33",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:31",
     "crates/a2a-protocol-types/src/signing.rs:74"
    ],
    "test_evidence": [
@@ -6287,7 +6287,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:222-233",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65-74",
-    "crates/a2a-protocol-types/src/generated/task.rs:25-52",
+    "crates/a2a-protocol-types/src/generated/task.rs:23-50",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:43-53",
     "crates/a2a-protocol-client/src/transport/rest/query.rs:19-29"
    ],
@@ -7426,13 +7426,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:22",
-    "crates/a2a-protocol-types/src/push.rs:40",
+    "crates/a2a-protocol-types/src/push.rs:23",
+    "crates/a2a-protocol-types/src/push.rs:41",
     "crates/a2a-protocol-server/src/push/webhook.rs:78",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:207"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:289 debug_redacts_secrets_but_keeps_presence",
+    "crates/a2a-protocol-types/src/push.rs:290 debug_redacts_secrets_but_keeps_presence",
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/log_redaction.rs:63 a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret"
    ],
@@ -7921,12 +7921,12 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:76",
     "crates/a2a-protocol-server/src/auth/mod.rs:222",
-    "crates/a2a-protocol-types/src/push.rs:22",
+    "crates/a2a-protocol-types/src/push.rs:23",
     "crates/a2a-protocol-client/src/redact.rs:18",
     "crates/a2a-protocol-client/src/interceptor.rs:114"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/push.rs:289 debug_redacts_secrets_but_keeps_presence",
+    "crates/a2a-protocol-types/src/push.rs:290 debug_redacts_secrets_but_keeps_presence",
     "crates/a2a-protocol-server/src/auth/identity_tests.rs:69 a_rejected_key_names_nobody",
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
     "crates/a2a-protocol-client/tests/debug_redaction.rs:56 a_client_request_prints_header_names_and_param_keys_only",
@@ -8101,7 +8101,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/webhook.rs:78",
     "crates/a2a-protocol-server/src/rpc_span/agent.rs:69",
-    "crates/a2a-protocol-types/src/push.rs:22"
+    "crates/a2a-protocol-types/src/push.rs:23"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_log_redaction.rs:93 delivery_and_failure_logs_carry_the_origin_not_the_secret",
@@ -8422,7 +8422,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:72",
+    "crates/a2a-protocol-types/src/generated/task.rs:70",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:265",
     "crates/a2a-protocol-client/src/methods/tasks.rs:47"
    ],
@@ -8443,8 +8443,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:270",
-    "crates/a2a-protocol-types/src/generated/task.rs:80",
-    "crates/a2a-protocol-types/src/generated/task.rs:79"
+    "crates/a2a-protocol-types/src/generated/task.rs:78",
+    "crates/a2a-protocol-types/src/generated/task.rs:77"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:239 a_task_needs_id_and_status_but_not_context_id"
@@ -8462,7 +8462,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:82",
+    "crates/a2a-protocol-types/src/generated/task.rs:80",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:271"
    ],
    "test_evidence": [
@@ -8482,7 +8482,7 @@
    "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/task.rs:264"
+    "crates/a2a-protocol-types/src/task.rs:265"
    ],
    "test_evidence": [],
    "notes": "Executor may emit Rejected from any non-terminal state; can_transition_to allows it. Descriptive, not a server obligation.",
@@ -8512,8 +8512,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:99",
-    "crates/a2a-protocol-types/src/task.rs:276",
+    "crates/a2a-protocol-types/src/generated/task.rs:97",
+    "crates/a2a-protocol-types/src/task.rs:277",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:238",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:375",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:59"
@@ -8537,8 +8537,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/message.rs:465",
-    "crates/a2a-protocol-types/src/message.rs:482",
+    "crates/a2a-protocol-types/src/message.rs:466",
+    "crates/a2a-protocol-types/src/message.rs:483",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:96",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
@@ -8552,7 +8552,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:273 tck_part_requires_content_field",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:612 part_without_content_is_rejected",
-    "crates/a2a-protocol-types/src/message.rs:1004 part_deserialize_rejects_multiple_content_members",
+    "crates/a2a-protocol-types/src/message.rs:1005 part_deserialize_rejects_multiple_content_members",
     "crates/a2a-protocol-server/tests/portable_content.rs:82 a_raw_part_that_is_not_base64_is_refused",
     "crates/a2a-protocol-server/tests/portable_content.rs:92 a_raw_part_is_kept_in_standard_base64",
     "crates/a2a-protocol-server/tests/executor_event_portability.rs:139 an_executor_event_grpc_cannot_carry_is_refused"
@@ -8588,7 +8588,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/message.rs:40",
+    "crates/a2a-protocol-types/src/generated/message.rs:38",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:50",
     "crates/a2a-protocol-server/src/handler/helpers.rs:21",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:153",
@@ -8617,8 +8617,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/message.rs:49",
-    "crates/a2a-protocol-types/src/generated/message.rs:18",
+    "crates/a2a-protocol-types/src/generated/message.rs:47",
+    "crates/a2a-protocol-types/src/generated/message.rs:16",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:66",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:155",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:29",
@@ -8642,7 +8642,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/message.rs:59",
+    "crates/a2a-protocol-types/src/generated/message.rs:57",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:63",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:71"
    ],
@@ -8688,7 +8688,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/artifact.rs:15",
+    "crates/a2a-protocol-types/src/generated/artifact.rs:13",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:204",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:90"
@@ -8715,7 +8715,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:40",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:209",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:414",
-    "crates/a2a-protocol-types/src/artifact.rs:116"
+    "crates/a2a-protocol-types/src/artifact.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
@@ -8739,7 +8739,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/artifact.rs:32"
+    "crates/a2a-protocol-types/src/generated/artifact.rs:30"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format"
@@ -8761,8 +8761,8 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:378",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:263",
-    "crates/a2a-protocol-types/src/generated/events.rs:19",
-    "crates/a2a-protocol-types/src/generated/events.rs:22",
+    "crates/a2a-protocol-types/src/generated/events.rs:17",
+    "crates/a2a-protocol-types/src/generated/events.rs:20",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
@@ -8787,8 +8787,8 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:378",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:263",
-    "crates/a2a-protocol-types/src/generated/events.rs:19",
-    "crates/a2a-protocol-types/src/generated/events.rs:22",
+    "crates/a2a-protocol-types/src/generated/events.rs:17",
+    "crates/a2a-protocol-types/src/generated/events.rs:20",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
@@ -8810,7 +8810,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:37",
-    "crates/a2a-protocol-types/src/generated/events.rs:24",
+    "crates/a2a-protocol-types/src/generated/events.rs:22",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:337",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:339"
    ],
@@ -8836,8 +8836,8 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:378",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:263",
-    "crates/a2a-protocol-types/src/generated/events.rs:39",
-    "crates/a2a-protocol-types/src/generated/events.rs:42",
+    "crates/a2a-protocol-types/src/generated/events.rs:37",
+    "crates/a2a-protocol-types/src/generated/events.rs:40",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
@@ -8862,8 +8862,8 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:339",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:378",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:263",
-    "crates/a2a-protocol-types/src/generated/events.rs:39",
-    "crates/a2a-protocol-types/src/generated/events.rs:42",
+    "crates/a2a-protocol-types/src/generated/events.rs:37",
+    "crates/a2a-protocol-types/src/generated/events.rs:40",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:335"
    ],
    "test_evidence": [
@@ -8884,7 +8884,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/events.rs:44",
+    "crates/a2a-protocol-types/src/generated/events.rs:42",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:366",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:368"
    ],
@@ -8929,7 +8929,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:497",
     "crates/a2a-protocol-server/src/push/sender.rs:862",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:25",
-    "crates/a2a-protocol-types/src/generated/push.rs:22"
+    "crates/a2a-protocol-types/src/generated/push.rs:20"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1132 set_push_config_refuses_an_auth_scheme_it_cannot_send"
@@ -8948,7 +8948,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:594",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:21"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:19"
    ],
    "test_evidence": [],
    "notes": "Builder checks only that supported_interfaces is non-empty; interface URLs are not validated as absolute/HTTPS. Author responsibility; no SDK guard.",
@@ -8967,8 +8967,8 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:615",
     "crates/a2a-protocol-server/src/builder.rs:594",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:21"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:19"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -8990,8 +8990,8 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:615",
     "crates/a2a-protocol-server/src/builder.rs:594",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:33"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:31"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9041,8 +9041,8 @@
     "crates/a2a-protocol-client/src/builder/selection.rs:51",
     "crates/a2a-protocol-client/src/discovery.rs:615",
     "crates/a2a-protocol-server/src/builder.rs:594",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:48"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:46"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9061,8 +9061,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:81",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:85",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:79",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:86",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
@@ -9084,8 +9084,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:85",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:88",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:83",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:89",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
@@ -9111,7 +9111,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:594",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:92",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:90",
     "crates/a2a-protocol-client/src/builder/selection.rs:79"
    ],
    "test_evidence": [
@@ -9131,8 +9131,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:99",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:91",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:97",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:92",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
@@ -9157,7 +9157,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:104",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:102",
     "crates/a2a-protocol-client/src/discovery.rs:615"
    ],
    "test_evidence": [
@@ -9176,8 +9176,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:119",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:124",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:117",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:125",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
@@ -9198,8 +9198,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:124",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:127",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:122",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:128",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
@@ -9220,8 +9220,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:132",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:130",
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:130",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:131",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
@@ -9244,8 +9244,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:164",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:162",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9264,8 +9264,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:167",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:165",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9304,8 +9304,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:202",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:200",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9324,8 +9324,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:204",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:202",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9344,8 +9344,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:206",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:204",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9364,8 +9364,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:213",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:211",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
@@ -9397,8 +9397,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116",
-    "crates/a2a-protocol-types/src/generated/extensions.rs:34"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117",
+    "crates/a2a-protocol-types/src/generated/extensions.rs:32"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9431,8 +9431,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:116",
-    "crates/a2a-protocol-types/src/generated/extensions.rs:36"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117",
+    "crates/a2a-protocol-types/src/generated/extensions.rs:34"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
@@ -9556,7 +9556,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9601,7 +9601,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9664,7 +9664,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9692,7 +9692,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9720,7 +9720,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9800,7 +9800,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9958,7 +9958,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -9986,7 +9986,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:208",
     "crates/a2a-protocol-types/src/security.rs:468",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:185",
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
@@ -10054,7 +10054,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/params.rs:55",
+    "crates/a2a-protocol-types/src/generated/params.rs:53",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:109",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:56",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:68",
@@ -10106,7 +10106,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:46",
-    "crates/a2a-protocol-types/src/generated/params.rs:73",
+    "crates/a2a-protocol-types/src/generated/params.rs:71",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
@@ -10208,11 +10208,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/responses.rs:19",
+    "crates/a2a-protocol-types/src/generated/responses.rs:17",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:208 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10228,11 +10228,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/responses.rs:24",
+    "crates/a2a-protocol-types/src/generated/responses.rs:22",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:208 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10248,11 +10248,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/responses.rs:27",
+    "crates/a2a-protocol-types/src/generated/responses.rs:25",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:208 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden"
    ],
    "notes": "All four are non-optional and always serialized (nextPageToken as \"\" on the last page); client tolerates absence via serde(default).",
@@ -10268,11 +10268,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/responses.rs:30",
+    "crates/a2a-protocol-types/src/generated/responses.rs:28",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:270"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/responses.rs:207 task_list_response_empty_always_includes_required_fields",
+    "crates/a2a-protocol-types/src/responses.rs:208 task_list_response_empty_always_includes_required_fields",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1231 tck_task_list_response_golden",
     "crates/a2a-protocol-server/tests/support/list_proto.rs list_follows_the_proto (run by store_tests, sqlite_store_tests, tenant_sqlite_store_tests, postgres_store_tests)"
    ],
@@ -10315,7 +10315,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53",
-    "crates/a2a-protocol-types/src/generated/params.rs:138",
+    "crates/a2a-protocol-types/src/generated/params.rs:136",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],
@@ -10363,7 +10363,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:223",
     "crates/a2a-protocol-server/src/handler/push_config.rs:263",
-    "crates/a2a-protocol-types/src/generated/params.rs:154",
+    "crates/a2a-protocol-types/src/generated/params.rs:152",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:303"
    ],
    "test_evidence": [
@@ -10388,7 +10388,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:183",
     "crates/a2a-protocol-server/src/handler/push_config.rs:263",
-    "crates/a2a-protocol-types/src/generated/params.rs:156"
+    "crates/a2a-protocol-types/src/generated/params.rs:154"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs:1176 empty_required_ids_are_invalid_params",
@@ -10499,7 +10499,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:331",
     "crates/a2a-protocol-server/src/handler/helpers.rs:34",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:381",
-    "crates/a2a-protocol-types/src/generated/params.rs:183",
+    "crates/a2a-protocol-types/src/generated/params.rs:181",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:140",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:168"
    ],

@@ -12,7 +12,8 @@
 
 // ── AuthenticationInfo ──────────────────────────────────────────────────────
 
-pub use crate::generated::push::AuthenticationInfo;
+// The proto-generated types of this module (ADR 0016), `AuthenticationInfo` first.
+include!("generated/push.rs");
 
 impl core::fmt::Debug for AuthenticationInfo {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -28,7 +29,7 @@ impl core::fmt::Debug for AuthenticationInfo {
 
 // ── TaskPushNotificationConfig ──────────────────────────────────────────────
 
-pub use crate::generated::push::TaskPushNotificationConfig;
+// `TaskPushNotificationConfig` is generated: see the `include!` above.
 
 impl core::fmt::Debug for TaskPushNotificationConfig {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

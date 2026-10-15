@@ -205,7 +205,9 @@ The public types that mirror `a2a.proto` (`Task`, `AgentCard`, `TaskState`
 and the rest; ADR 0016 lists which are done) are generated, because spec §1.4
 says derived forms **MUST** be regenerated from the proto rather than edited
 by hand. Their definitions live in `crates/a2a-protocol-types/src/generated/`,
-and every file there says so in its first lines.
+and every file there says so in its first lines; each file is included
+(`include!`) by the module that documents its types, not compiled as a module
+of its own (ADR 0016 measures why).
 
 - To follow a proto change, update every vendored copy
   (`check_proto_copies.sh` names them), then regenerate.

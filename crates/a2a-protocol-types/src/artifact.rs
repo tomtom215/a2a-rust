@@ -56,7 +56,8 @@ impl AsRef<str> for ArtifactId {
 
 // ── Artifact ──────────────────────────────────────────────────────────────────
 
-pub use crate::generated::artifact::Artifact;
+// The proto-generated types of this module (ADR 0016), `Artifact` first.
+include!("generated/artifact.rs");
 
 impl Artifact {
     /// Creates a minimal [`Artifact`] with an ID and parts.

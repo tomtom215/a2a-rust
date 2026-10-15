@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 mod config;
 mod emit;
 mod proto;
+mod text;
 
 /// The repository root: this crate is `tools/a2a-codegen`.
 fn repo_root() -> PathBuf {

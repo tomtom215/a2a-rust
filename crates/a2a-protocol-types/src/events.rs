@@ -26,11 +26,12 @@ use crate::task::Task;
 
 // ── TaskStatusUpdateEvent ─────────────────────────────────────────────────────
 
-pub use crate::generated::events::TaskStatusUpdateEvent;
+// The proto-generated types of this module (ADR 0016), `TaskStatusUpdateEvent` first.
+include!("generated/events.rs");
 
 // ── TaskArtifactUpdateEvent ───────────────────────────────────────────────────
 
-pub use crate::generated::events::TaskArtifactUpdateEvent;
+// `TaskArtifactUpdateEvent` is generated: see the `include!` above.
 
 // ── StreamResponse ────────────────────────────────────────────────────────────
 

@@ -65,7 +65,8 @@ impl AsRef<str> for MessageId {
 
 // ── MessageRole ───────────────────────────────────────────────────────────────
 
-pub use crate::generated::message::MessageRole;
+// The proto-generated types of this module (ADR 0016), `MessageRole` first.
+include!("generated/message.rs");
 
 impl std::fmt::Display for MessageRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -80,7 +81,7 @@ impl std::fmt::Display for MessageRole {
 
 // ── Message ───────────────────────────────────────────────────────────────────
 
-pub use crate::generated::message::Message;
+// `Message` is generated: see the `include!` above.
 
 impl Message {
     /// Creates a message with the given id, role and parts.

@@ -187,7 +187,8 @@ impl From<u64> for TaskVersion {
 
 // ── TaskState ─────────────────────────────────────────────────────────────────
 
-pub use crate::generated::task::TaskState;
+// The proto-generated types of this module (ADR 0016), `TaskState` first.
+include!("generated/task.rs");
 
 impl TaskState {
     /// Every variant, in declaration order.
@@ -301,7 +302,7 @@ impl std::fmt::Display for TaskState {
 
 // ── TaskStatus ────────────────────────────────────────────────────────────────
 
-pub use crate::generated::task::TaskStatus;
+// `TaskStatus` is generated: see the `include!` above.
 
 impl TaskStatus {
     /// Creates a [`TaskStatus`] with just a state and no timestamp.
@@ -349,7 +350,7 @@ pub(crate) const fn empty_context_id() -> ContextId {
     ContextId(String::new())
 }
 
-pub use crate::generated::task::Task;
+// `Task` is generated: see the `include!` above.
 
 impl Task {
     /// A task in `status`, with no history, artifacts or metadata — what a
