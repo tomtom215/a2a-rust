@@ -16,7 +16,7 @@
 #
 # # Two scopes, two verdicts
 #
-# * **Rust lockfiles — blocking.** The eight Cargo.lock files. A finding here
+# * **Rust lockfiles — blocking.** The nine Cargo.lock files. A finding here
 #   is ours to fix, or to waive in the `osv-scanner.toml` beside the lockfile
 #   with a reason and an `ignoreUntil` date, as `deny.toml` does.
 # * **Conformance peers — reported, not blocking.** The Go, Java, JavaScript
@@ -44,6 +44,7 @@
 # lockfile goes in `rust` first and joins `rust-pr` in a later pull request,
 # once it is on main. `verification/loom-halt/Cargo.lock` went through that
 # sequence: `rust` from #163, `rust-pr` once #163 had merged.
+# `tools/a2a-codegen/Cargo.lock` is in `rust` only, until #171 merges.
 
 name: OSV-Scanner
 
@@ -84,7 +85,6 @@ jobs:
         --lockfile=benches/sdk-comparison/harness/agent-a2a-rust/Cargo.lock
         --lockfile=benches/sdk-comparison/harness/loadgen/Cargo.lock
         --lockfile=verification/loom-halt/Cargo.lock
-        --lockfile=tools/a2a-codegen/Cargo.lock
 
   # Inline rather than through the reusable workflow, step for step what that
   # workflow runs (osv-scanner-reusable.yml at v2.6.0), so this workflow has
