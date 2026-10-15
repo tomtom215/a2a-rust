@@ -177,13 +177,24 @@ pub struct HandlerLimits {
     /// events immediately.
     pub subscribe_reattach_interval: Duration,
     /// How long a `SubscribeToTask` stream waits for a parked task to make
-    /// progress before ending. Default: 5 minutes.
+    /// progress before ending, if at all. Default: `None`, no bound.
     ///
-    /// Without a bound, a task left in `input_required` forever would pin a
-    /// connection forever. Ending the stream is safe: §3.5.2 makes
-    /// reconnection an expected flow, and the client gets a fresh snapshot
-    /// when it resubscribes.
-    pub subscribe_max_idle: Duration,
+    /// Spec §3.1.6 says the stream MUST terminate when the task reaches a
+    /// terminal state, so by default it ends only there, or when the client
+    /// goes. Every binding notices a client that has gone while the stream
+    /// is idle: SSE writes a keep-alive every 30 seconds and a failed write
+    /// ends it, WebSocket cancels a connection's requests when its read loop
+    /// ends (and `WebSocketDispatcher::with_idle_timeout` bounds a silent
+    /// peer), gRPC stops when the response channel closes, and SLIMRPC aborts
+    /// a session's handlers when the session closes.
+    ///
+    /// Setting a bound trades that conformance for reclaiming subscriptions
+    /// whose clients are still connected but have stopped caring: a stream
+    /// to a task left in `input_required` ends after `max_idle` without a
+    /// terminal state, and the client resubscribes (§3.5.2 makes
+    /// reconnection an expected flow). Until 0.15.0 the default was 5
+    /// minutes.
+    pub subscribe_max_idle: Option<Duration>,
     /// How many logged events a resuming `SubscribeToTask` replays at most.
     /// Default: 1,000.
     ///
@@ -237,7 +248,7 @@ impl Default for HandlerLimits {
             max_parts_per_artifact: 10_000,
             max_total_push_configs: 100_000,
             subscribe_reattach_interval: Duration::from_millis(250),
-            subscribe_max_idle: Duration::from_secs(300),
+            subscribe_max_idle: None,
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),
         }
@@ -300,10 +311,12 @@ impl HandlerLimits {
         self
     }
 
-    /// Sets how long a `SubscribeToTask` stream waits on a parked task.
+    /// Sets how long a `SubscribeToTask` stream waits on a parked task before
+    /// ending without a terminal state. See
+    /// [`subscribe_max_idle`](Self::subscribe_max_idle) for what that costs.
     #[must_use]
     pub const fn with_subscribe_max_idle(mut self, max_idle: Duration) -> Self {
-        self.subscribe_max_idle = max_idle;
+        self.subscribe_max_idle = Some(max_idle);
         self
     }
 

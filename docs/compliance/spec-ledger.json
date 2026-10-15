@@ -836,26 +836,29 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "The stream MUST terminate when the task reaches a terminal state",
-   "status": "PARTIAL",
-   "severity": "low",
+   "status": "TESTED",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:116",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:77",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:232",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:890",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:966",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:110",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:150",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:251",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1088",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1096",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:734 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:888 resubscribe_gives_up_after_the_idle_bound",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:744 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:101 by_default_a_parked_subscription_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:109 a_bound_too_large_for_the_clock_is_no_bound",
+    "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:119 an_operator_s_bound_still_ends_a_parked_subscription",
+    "crates/a2a-protocol-server/tests/subscribe_store_failure_warns_once.rs:92 a_failing_store_is_reported_once_per_run_of_failures",
     "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status",
     "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:125 a_cancel_the_hook_does_not_write_ends_a_subscription"
    ],
-   "notes": "SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still non-terminal the reattach hook ends the stream early; the client resubscribes. A cancel whose executor hook writes nothing now reaches the queue as Canceled too (2026-10-13, see the 210 entry); a SubscribeToTask stream already recovered it through the reattach hook's store read (the subscription test passes without the change), a send stream did not.",
+   "notes": "Every stream ends at the terminal event (in_memory.rs:1088-1097), and SubscribeToTask stays open across turns until one (STREAM-SUB-002, 2026-10-12). Since 2026-10-15 (maintainer decision) HandlerLimits::subscribe_max_idle is Option<Duration>, None by default, so a stream to a parked task no longer ends early at 300 s: it ends at the terminal state, when the task is deleted, or when the client goes, which every binding detects without the bound (SSE keep-alive write, WebSocket read loop and idle_timeout, gRPC tx.closed(), SLIMRPC session close; read 2026-10-15). An operator may still set a bound (with_subscribe_max_idle), which ends such a stream without a terminal state; that is a documented opt-out from this MUST, not the default. A store failure while waiting no longer ends the stream at the bound: it keeps polling and warns once per run of failures. A cancel whose executor hook writes nothing reaches the queue as Canceled (2026-10-13, see the 210 entry).",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 311,

@@ -28,7 +28,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | §1 | 3 |  |  |  | 4 |  | 7 |
 | §2 | 1 |  | 1 |  | 1 |  | 3 |
-| §3 | 90 | 20 | 21 | 1 | 3 | 2 | 137 |
+| §3 | 91 | 20 | 21 | 1 | 3 | 1 | 137 |
 | §4 | 7 | 5 | 2 |  | 1 |  | 15 |
 | §5 | 26 | 2 | 2 |  | 3 | 2 | 35 |
 | §7 | 5 | 12 | 2 |  |  |  | 19 |
@@ -41,13 +41,12 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 7 | 5 | 3 |  |  |  | 15 |
 | §A |  |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 81 | 11 | 6 |  | 8 |  | 106 |
-| **All** | **329** | **87** | **59** | **4** | **22** | **8** | **509** |
+| **All** | **330** | **87** | **59** | **4** | **22** | **7** | **509** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| low | PARTIAL | §3.1.6 (line 309) | The stream MUST terminate when the task reaches a terminal state | SubscribeToTask streams through the same reader, so it now ends at the terminal event (2026-10-12), and stays open across turns until one (STREAM-SUB-002). Remaining, by design and pinned by a test: after subscribe_max_idle (default 300 s) with the task still… |
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
 | low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |

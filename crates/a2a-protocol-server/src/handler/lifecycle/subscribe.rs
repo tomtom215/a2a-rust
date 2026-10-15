@@ -89,7 +89,14 @@ impl RequestHandler {
             let (queues, store, task_id) = (queues.clone(), store.clone(), task_id.clone());
             Box::pin(partition.clone().scope(async move {
                 let logged = store.supports_event_log();
-                let deadline = tokio::time::Instant::now() + max_idle;
+                // No bound by default (§3.1.6). A bound too large to add to
+                // the clock is no bound, rather than a panic.
+                let deadline =
+                    max_idle.and_then(|idle| tokio::time::Instant::now().checked_add(idle));
+                // Warned once per run of failures, not once per poll: with no
+                // idle bound a broken store would otherwise log four times a
+                // second for as long as the client stays.
+                let mut store_failing = false;
                 loop {
                     match store.get(&task_id).await {
                         // The task finished between queues, so the client
@@ -105,15 +112,19 @@ impl RequestHandler {
                         }
                         // Deleted out from under us: nothing left to stream.
                         Ok(None) => return Reattached::End,
-                        Ok(Some(_)) => {}
+                        Ok(Some(_)) => store_failing = false,
                         // A store read failure is not evidence the task
-                        // finished, but retrying forever on a broken store is
-                        // worse than closing; fall through to the idle bound.
+                        // finished, so the stream keeps waiting: the store may
+                        // recover, and the client can leave at any time. An
+                        // idle bound, when one is set, still ends it.
                         Err(_e) => {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "subscribe reattach: task store read failed"
-                            );
+                            if !store_failing {
+                                trace_warn!(
+                                    task_id = %task_id,
+                                    "subscribe reattach: task store read failed"
+                                );
+                            }
+                            store_failing = true;
                         }
                     }
 
@@ -133,11 +144,10 @@ impl RequestHandler {
                         return Reattached::Logged { through };
                     }
 
-                    // Bound the wait so a task parked forever does not pin a
-                    // connection and a queue slot indefinitely. The client can
-                    // resubscribe; §3.5.2 is explicit that reconnection is a
-                    // supported flow.
-                    if tokio::time::Instant::now() >= deadline {
+                    // An operator's bound, when set, ends the wait on a task
+                    // parked too long. The client can resubscribe; §3.5.2 is
+                    // explicit that reconnection is a supported flow.
+                    if deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
                         trace_warn!(
                             task_id = %task_id,
                             "subscribe reattach: task still non-terminal after the idle bound; \
@@ -930,9 +940,9 @@ mod tests {
     /// which is what the SSE writer does at every keep-alive: it races
     /// `read()` against the keep-alive timer in a `select!` and drops the
     /// losing future. The bound used to live in the future the reattach
-    /// hook returns, so each keep-alive started it again, and with the
-    /// defaults — a 30 s keep-alive, a 300 s bound — a subscription to a
-    /// parked task never ended.
+    /// hook returns, so each keep-alive started it again, and with what
+    /// were then the defaults — a 30 s keep-alive, a 300 s bound — a
+    /// subscription to a parked task never ended.
     #[tokio::test]
     async fn the_idle_bound_survives_a_read_cancelled_by_a_keep_alive() {
         use crate::streaming::event_queue::EventQueueReader as _;
@@ -975,7 +985,7 @@ mod tests {
 
         let started = tokio::time::Instant::now();
         let ended = loop {
-            // The keep-alive tick: shorter than the bound, as the defaults are.
+            // The keep-alive tick: shorter than the bound.
             if let Ok(event) = tokio::time::timeout(keep_alive, reader.read()).await {
                 break event;
             }

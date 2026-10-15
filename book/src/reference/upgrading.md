@@ -140,6 +140,18 @@ These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
 
+### A parked subscription stays open until its task finishes
+
+`HandlerLimits::subscribe_max_idle` is an `Option<Duration>` and `None` by
+default: a `SubscribeToTask` stream to a task parked in `input-required` or
+`auth-required` runs until the task reaches a terminal state or the client
+goes, as §3.1.6 requires. It used to end after five minutes with no terminal
+state, and the client resubscribed. `with_subscribe_max_idle(d)` still sets a
+bound and takes a `Duration` as before; code that read the field compares
+against `Some(d)` now. A bound trades conformance for reclaiming subscriptions
+whose clients are connected but no longer reading; a client that has gone is
+noticed without one (the field's rustdoc says how, per binding).
+
 ### `TaskState` numbers its variants as the proto does
 
 `TaskState` is now generated from `a2a.proto` (spec §1.4, ADR 0016), and each

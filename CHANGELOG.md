@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A `SubscribeToTask` stream has no idle bound by default** (server;
+  spec §3.1.6 "The stream MUST terminate when the task reaches a terminal
+  state"). `HandlerLimits::subscribe_max_idle` is `Option<Duration>`,
+  `None` by default; it was a `Duration` of five minutes, after which a
+  stream to a task still parked in `input-required` ended with no terminal
+  state. `with_subscribe_max_idle` sets `Some` and keeps its signature.
+  Every binding already ends a stream whose client has gone (SSE keep-alive,
+  the WebSocket read loop, gRPC's closed channel, SLIMRPC's session close),
+  so the bound is needed only to reclaim subscriptions whose clients are
+  still connected. A bound too large to add to the clock (`Duration::MAX`)
+  panicked inside the stream's poll; it is now no bound. A store that keeps
+  failing while a stream waits is warned about once per run of failures,
+  not at every poll (see the upgrading guide).
 - **`TaskState`'s discriminants are its proto numbers** (types; spec §1.4,
   ADR 0016). `TaskState` is generated from `a2a.proto` now, and
   `TaskState::Completed as i32` is 3, as `TASK_STATE_COMPLETED` is in the

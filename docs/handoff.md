@@ -26,8 +26,7 @@ only: when something here is done, delete it rather than annotating it.
   `c9035931` on 2026-10-15. Work continues on `claude/lucid-edison-4hn5kb`,
   started from that merge; no pull request is open for it yet.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. The PARTIAL entries at MUST level are §3.1.6 (the
-  idle bound, approved as recorded), §3.5.2 (explicit `streamLagged` cases
+  authority on the counts. The PARTIAL entries at MUST level are §3.5.2 (explicit `streamLagged` cases
   only, since R69), §5.7 (the spec contradicts itself; upstream draft below)
   and §12.4 (agntcy-slim-rpc carries no error details).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
