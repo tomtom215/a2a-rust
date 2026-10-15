@@ -34,6 +34,7 @@ use slim_session::notification::Notification;
 use crate::SlimName;
 
 mod methods;
+pub mod peer;
 
 use methods::{Served, register_a2a_methods};
 

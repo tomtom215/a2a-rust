@@ -16,9 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use a2a_protocol_server::streaming::EventQueueReader as _;
-use a2a_protocol_server::{
-    RequestHandler, SendMessageResult, ServerError, validate_version_metadata,
-};
+use a2a_protocol_server::{RequestHandler, SendMessageResult};
 use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
 use slim_rpc::{Context, RpcError, Server};
@@ -27,40 +25,11 @@ use crate::binding::A2A_SERVICE_NAME;
 use crate::codec::{Empty, Pb};
 use crate::error::server_error_to_rpc_error;
 use crate::method;
+use crate::server::peer::VerifiedPeer;
 
-/// Whether a metadata key is SLIMRPC's own plumbing rather than an A2A header.
-///
-/// `ctx.metadata()` returns one flat map holding both the A2A service
-/// parameters the caller sent *and* the keys SLIMRPC uses to route and time the
-/// call. Only the first kind is a header. Handing the transport's own keys to
-/// [`RequestHandler`] would put them in front of the auth and tenant resolvers,
-/// where a `HeaderTenantResolver` configured on a colliding name — `service` is
-/// an ordinary-looking word — would read routing plumbing as a tenant
-/// identifier.
-///
-/// `DEADLINE_KEY` and `STATUS_CODE_KEY` come from `slim_rpc` so they cannot
-/// drift from what it actually sets. The other three are the official
-/// `a2a-slimrpc` crate's list, matched here so both implementations hide the
-/// same keys from handlers rather than each exposing a different set.
-fn is_transport_key(key: &str) -> bool {
-    [
-        slim_rpc::DEADLINE_KEY,
-        slim_rpc::STATUS_CODE_KEY,
-        "rpc-id",
-        "service",
-        "method",
-    ]
-    .iter()
-    .any(|reserved| key.eq_ignore_ascii_case(reserved))
-}
+mod headers;
 
-/// Headers through which an HTTP proxy chain reports the client's address.
-/// Only a proxy can vouch for them, and a SLIM session has none.
-fn is_forwarding_key(key: &str) -> bool {
-    ["x-forwarded-for", "x-real-ip", "forwarded"]
-        .iter()
-        .any(|forwarding| key.eq_ignore_ascii_case(forwarding))
-}
+use headers::a2a_headers;
 
 /// What every method closure holds: the handler, and whether a call that
 /// declares no `A2A-Version` is refused.
@@ -80,67 +49,18 @@ impl Served {
     /// in headers. SLIMRPC's equivalent is session metadata, so the binding
     /// maps one onto the other rather than inventing a second mechanism, and
     /// the `RequestHandler`'s existing auth and tenant resolvers work
-    /// unchanged.
+    /// unchanged. The peer SLIM verified for the call, when it has one, is
+    /// recorded beside them (see [`crate::server::peer`]).
     fn headers(
         &self,
         ctx: &Context,
     ) -> Result<std::collections::HashMap<String, String>, RpcError> {
-        a2a_headers(ctx.metadata(), self.require_version.load(Ordering::Relaxed))
+        a2a_headers(
+            ctx.metadata(),
+            VerifiedPeer::of(ctx).as_ref(),
+            self.require_version.load(Ordering::Relaxed),
+        )
     }
-}
-
-/// The body of [`Served::headers`], separated from the `Context` it reads.
-///
-/// `Context` is `slim_rpc`'s, with no public constructor, so a test cannot
-/// build one carrying chosen metadata. Keeping the decisions — which keys to
-/// drop, which versions to refuse — in a function over a plain map is what
-/// makes them assertable at all; the alternative is a live fabric per case.
-///
-/// §3.6.2 reads an absent or empty version as 0.3, which this server does not
-/// serve, so with `require_version` such a call is refused, as the HTTP and
-/// gRPC bindings refuse it by default. Until 2026-10-13 it was served as 1.0,
-/// because the official `a2a-slimrpc` crate sent no version when checked at
-/// 0.2.4; its `A2AClient` sends one now (`a2a-client-lf` 0.2.8).
-fn a2a_headers(
-    metadata: std::collections::HashMap<String, String>,
-    require_version: bool,
-) -> Result<std::collections::HashMap<String, String>, RpcError> {
-    // Keys are case-insensitive (SLIMRPC spec §3) and the handler looks
-    // headers up by their lowercase names, as HTTP and gRPC deliver them, so
-    // they are lowercased here. Until 2026-10-10 they were not, and a peer
-    // sending `Authorization` or `A2A-Version` had it ignored. Two keys that
-    // differ only in case are joined with a comma, as HTTP combines a
-    // repeated field (RFC 9110 §5.3); sorting first makes the order fixed.
-    // A `:` key names what the binding records (`:peer-addr`, `:path`), and
-    // this one records neither: from a caller it would be a claim read as
-    // fact, so it is dropped. Until 2026-10-13 it was passed through.
-    // Forwarding headers are dropped too: no proxy appends to them on a SLIM
-    // session, so with `trusted_proxy_hops > 0` the rate limiter and the
-    // auth-failure throttle took the caller's own claim as its address and
-    // let it pick its bucket (audit register R41; passed through until
-    // 2026-10-14).
-    let mut pairs: Vec<(String, String)> = metadata
-        .into_iter()
-        .filter(|(key, _)| {
-            !is_transport_key(key) && !key.starts_with(':') && !is_forwarding_key(key)
-        })
-        .collect();
-    pairs.sort_unstable();
-    let mut headers = std::collections::HashMap::<String, String>::new();
-    for (key, value) in pairs {
-        headers
-            .entry(key.to_ascii_lowercase())
-            .and_modify(|v| {
-                v.push_str(", ");
-                v.push_str(&value);
-            })
-            .or_insert(value);
-    }
-
-    validate_version_metadata(&headers, require_version)
-        .map_err(|e| server_error_to_rpc_error(&ServerError::Protocol(e)))?;
-
-    Ok(headers)
 }
 
 /// Registers every A2A method in the SLIMRPC inventory.

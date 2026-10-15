@@ -58,6 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   panicked inside the stream's poll; it is now no bound. A store that keeps
   failing while a stream waits is warned about once per run of failures,
   not at every poll (see the upgrading guide).
+- **SLIMRPC: the binding is built on `agntcy-slim-rpc` 3.4.1**
+  (`a2a-protocol-slimrpc`; audit register R13). Its six SLIM requirements
+  move to the line 3.x requires: `agntcy-slim-rpc` 2.3 → 3.4,
+  `agntcy-slim-auth` 0.15 → 0.17, `agntcy-slim-datapath` 0.18 → 0.19,
+  `agntcy-slim-service` 0.12 → 0.13, `agntcy-slim-config` 0.16 → 0.17,
+  `agntcy-slim-session` 0.7 (locked 0.7.10 → 0.7.21). They are public
+  dependencies: `SlimRpcServer::from_app`, `SlimRpcTransport::from_app`,
+  `SlimRpcMulticast::from_app` and the builders' `with_identity` take SLIM
+  types, so a caller passes types from the same SLIM versions. The binding's
+  own code compiled unchanged. Over the wire, SLIM 3.x sessions are MLS and
+  verify the peer's identity token on the request that sets one up; a peer
+  on the 2.x line was not tried against it.
 - **`TaskState`'s discriminants are its proto numbers** (types; spec §1.4,
   ADR 0016). `TaskState` is generated from `a2a.proto` now, and
   `TaskState::Completed as i32` is 3, as `TASK_STATE_COMPLETED` is in the
@@ -127,6 +139,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and uncached and points to the resolver. The client crate now depends on
   `httpdate` directly, to read `Date` and `Expires`; it was already in the
   graph through `hyper`.
+- **SLIMRPC: the caller SLIM verified, and an interceptor that
+  authenticates by it** (`a2a-protocol-slimrpc`; spec §13.1, §12.6; audit
+  register R13). On a session with MLS — every session the SLIM 3.x client
+  opens — the server records the caller's verified token subject and issuer
+  under `:slim-peer-subject` and `:slim-peer-issuer`, keys a caller cannot
+  set: the server drops a caller's own `:`-prefixed keys, and now SLIM's
+  `slim-peer-subject` too. `SlimPeerAuthInterceptor::new()` records the
+  caller as `slim:<issuer>:<subject>` (built by `server::peer::caller_id`,
+  in the form of `jwt:<issuer>:<subject>`) with the auth scheme `slim`, and lets a
+  call with no verified peer through for another interceptor;
+  `SlimPeerAuthInterceptor::required()` refuses that call as unauthenticated
+  and counts as authenticating for the extended card. Before, the binding
+  recorded no caller, and a SLIMRPC caller was identified only by a
+  credential in its metadata. Tests: `tests/peer_identity.rs` end to end,
+  over a real in-process MLS session, with a caller sending forged keys;
+  unit tests in `server::methods` and `server::peer`, among them the rate
+  limiter and the throttle keying two verified peers apart.
 
 - **`TaskStore::get_with_position` and `store::AppliedPosition`** (server;
   audit register R69). `get_with_position` returns a task with the event-log
@@ -602,6 +631,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored under the original's credential, and now, with freshness, would
   have done so without a request. It starts with nothing stored and no
   extended card.
+- **SLIMRPC: `AuthFailureThrottle` counts a verified caller's failures
+  against that caller** (`a2a-protocol-slimrpc`; audit register R41). The
+  server sets `:peer-addr` for a call with a verified peer to an address
+  standing for it: in `100::/64`, the IPv6 discard-only block (RFC 6666),
+  the low 64 bits a hash of the peer's identity keyed per process, port 0.
+  `CallContext::peer_addr` therefore returns that address for such a call.
+  Before, SLIMRPC set no `:peer-addr` and the throttle never throttled a
+  SLIMRPC caller. A call without a verified peer is unchanged: no
+  `:peer-addr`, not throttled, and in the rate limiter's anonymous bucket
+  unless an interceptor identifies it.
 
 - **A credential refused over WebSocket says so in the body** (server and
   client; A2A §12.6 "Handle Challenges", §3.3.2). The `-32600` the
@@ -1744,6 +1783,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-10-02 SDK comparison (`docs/sdk-comparison-2026-10-02.md`).
 
 ### Security
+
+- **SLIMRPC: the binding has no advisory waivers** (`a2a-protocol-slimrpc`).
+  With `agntcy-slim-auth` 0.17.5 the lock takes `mls-rs-crypto-awslc`
+  0.25.1, which pins `aws-lc-rs =1.18.1`, so `rustls` resolves to 0.23.46
+  (from 0.23.43) and RUSTSEC-2026-0285, -0346, -0348 and -0349 no longer
+  apply; `agntcy-slim-config` 0.17.5 and `regorus` 0.12.0 replace
+  `serde_yaml`, so `unsafe-libyaml` (RUSTSEC-2024-0449) is gone. The five
+  waivers are removed from the binding's `deny.toml` and the six entries
+  from its `osv-scanner.toml`; cargo-deny 0.20.2 and osv-scanner 2.6.0 report
+  nothing without them. `deny.toml` allows `CDLA-Permissive-2.0` again, as
+  the root does, for `webpki-root-certs`, which the SLIM 3.x tree brings.
 
 - **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
   four rustls advisories on 2026-10-14, all patched in 0.23.46

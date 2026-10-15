@@ -6823,10 +6823,10 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_lagged_stream_reports_server_error_code",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_invalid_params_name_the_field"
    ],
-   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. A SLIMRPC multicast member that falls behind is handed the typed streamLagged error since 2026-10-14 (audit register R66); it was a Transport error carrying only text. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details. Its spec lists optional details (§6.2) without an encoding, and agntcy-slim-rpc sends an error's code and message only: its error send (send_error_for_rpc in 2.3.0, which the binding pins; send_error_to in 3.4.1, the latest) drops details, and the receiver builds the error with none (both read 2026-10-15).",
+   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. A SLIMRPC multicast member that falls behind is handed the typed streamLagged error since 2026-10-14 (audit register R66); it was a Transport error carrying only text. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details. Its spec lists optional details (§6.2) without an encoding, and agntcy-slim-rpc sends an error's code and message only: its error send (send_error_to in 3.4.1, which the binding uses since R13 and is the latest release, rpc_session.rs:152-174; send_error_for_rpc in 2.3.0 before it) drops details, and the receiver builds the error with none (channel.rs:704-714; both read 2026-10-15). Upstream report: docs/upstream/slimrpc-a2a-error-mapping-report.md (held).",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
+   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
   },
   {
    "spec_line": 3017,

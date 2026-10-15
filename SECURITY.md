@@ -82,19 +82,14 @@ This policy covers **every crate published from this repository**:
   workspace" therefore did not reach it, which is why this section now names
   it. Two things a reporter should know about it: it has **never been
   published to crates.io** (see `RELEASING.md`), so no released artifact is
-  affected today; and it carries a **live advisory waiver** —
-  `RUSTSEC-2026-0285`, ignored in `bindings/a2a-protocol-slimrpc/deny.toml`
-  because `slim-auth 0.15.4` pins `aws-lc-rs =1.16.2` while `rustls 0.23.45`
-  needs `^1.18`, with no upstream release resolving it as of 2026-10-14
-  (the newer slim-auth 0.16 and 0.17 lines pin `aws-lc-rs =1.16.3` the same
-  way). For the same reason it waives, in its `osv-scanner.toml` and its
-  `deny.toml`, the three rustls advisories of 2026-10-14 that reach its
-  rustls 0.23.43 (RUSTSEC-2026-0346, -0348 and -0349, alias
-  GHSA-c8m5-c952-6cm4, GHSA-h2v8-394m-p7vv and GHSA-w44r-93j7-qv28; the
-  published crates require 0.23.46), and RUSTSEC-2024-0449, an unmaintained
-  YAML parser under the SLIM configuration crates. A report about any of
-  those is not new information; a report about anything else in the binding
-  is in scope and welcome.
+  affected today; and it carries **no advisory waiver** since 2026-10-15.
+  Its move to `agntcy-slim-rpc` 3.4.1 took `rustls` to 0.23.46 (the
+  `aws-lc-rs` pin under `slim-auth` that held it at 0.23.43 is `=1.18.1`
+  in `mls-rs-crypto-awslc` 0.25.1) and removed `unsafe-libyaml`, so the
+  five waivers it carried until then (RUSTSEC-2026-0285, -0346, -0348,
+  -0349 and RUSTSEC-2024-0449) are gone from its `deny.toml` and
+  `osv-scanner.toml`; their notes there say how each was cleared. A report
+  about anything in the binding is in scope and welcome.
 
 ## Reporting a Vulnerability
 

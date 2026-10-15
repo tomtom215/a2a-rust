@@ -26,8 +26,9 @@ only: when something here is done, delete it rather than annotating it.
   `c9035931` on 2026-10-15. Work continues on `claude/lucid-edison-4hn5kb`,
   started from that merge; no pull request is open for it yet.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. The PARTIAL entries at MUST level are §3.5.2 (explicit `streamLagged` cases
-  only, since R69), §5.7 (the spec contradicts itself; upstream draft below)
+  authority on the counts. The PARTIAL entries at MUST level are §3.5.2 (an explicit
+  `streamLagged` only where the log no longer holds the events, since
+  paging), §5.7 (the spec contradicts itself; upstream draft below)
   and §12.4 (agntcy-slim-rpc carries no error details).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers. `CONTRIBUTING.md` and `PROVENANCE.md` §3.2 say the same
@@ -41,10 +42,6 @@ audit-register items, the EU AI Act control map), as are the PARTIAL MUSTs
 that code could close and R69.
 
 1. **Step 3 — the unfinished items.**
-   - **R13, SLIMRPC on agntcy-slim-rpc 3.x** (register: approved). It
-     records the verified peer, carries the second half of R41 (the
-     rate-limit peer key) and removes the binding's RUSTSEC-2024-0449 waiver
-     (`bindings/a2a-protocol-slimrpc/deny.toml` names the condition).
    - **Split the incremental mutation job by crate.** Its slowest shard had
      about ten minutes of headroom when measured on 2026-10-14
      (`handoff-history.md`, tender-cray item 107).
@@ -62,10 +59,11 @@ that code could close and R69.
    release itself follows `RELEASING.md` and needs the signing key below.
    Debt is *Open engineering* below, by the maintainer's priority.
 4. **The 2026-10-15 decisions** (*Decisions the maintainer made*): the idle
-   bound off by default (§3.1.6), lag catch-up paging (§3.5.2),
-   `application/a2a+json` when a request states no preference (§11.1), card
-   freshness from `max-age` (§8.6, §8.6.2), and three metric changes. None is
-   built yet.
+   bound, lag paging, `application/a2a+json` and card freshness are built
+   (this branch's commits); the three metric changes go with Step 4, and
+   the part-level at-rest cipher (approved the same day for GDPR-25-1 and
+   GDPR-32-1a) with the EU AI Act work. The remaining spec MAYs: §11.5
+   repeated query parameters and §11.7 a final `Task` snapshot.
 
 ## Waiting on the maintainer
 
@@ -139,8 +137,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   nothing (low); the Windows stress-test connect failure, cause unknown
   (`tests/stress_tests.rs`'s accept loop breaks on the first error); the
   benchmark comparison harness still pins `=0.14.1`.
-- **Housekeeping:** the root `deny.toml` ignores RUSTSEC-2024-0436 (`paste`)
-  until genai drops it. Found by the 2026-10-15 README review and not fixed:
+- **Housekeeping:** found by the 2026-10-15 README review and not fixed:
   `benches/sdk-comparison/scripts/run_itk.sh`'s usage header names
   `run_acts.sh`, and both advertise a third argument neither reads;
   `benches/scripts/run_benchmarks.sh` writes `"version": "0.5.0"` into its
@@ -153,13 +150,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 ## Waivers and their removal tests
 
-`bindings/a2a-protocol-slimrpc/deny.toml` holds the binding's: RUSTSEC-2026-0285,
--0346, -0348 and -0349 (rustls below 0.23.46 in the binding's lock, held by
-`mls-rs-crypto-awslc`'s exact `aws-lc-rs` pin) and RUSTSEC-2024-0449 (goes
-with R13). The probe is `cargo update -p rustls --precise 0.23.46` in the
-binding; the `osv-scanner.toml` beside it waives the GHSA aliases until
-2027-01-08. deny.toml's own comments carry the full chain and are the
-authority.
+The SLIMRPC binding carries none since 2026-10-15: its move to
+agntcy-slim-rpc 3.4.1 (R13) took rustls to 0.23.46 and removed
+`unsafe-libyaml`, and its `deny.toml` and `osv-scanner.toml` notes say how
+each of the five was cleared. The root `deny.toml` ignores
+RUSTSEC-2024-0436 (`paste`, unmaintained) until genai drops it; its own
+comment is the authority.
 
 ## Decisions the maintainer made
 
@@ -189,7 +185,12 @@ it.
   `a2a.server.request.duration` with the old name removed, and
   `init_otlp_pipeline` taking an optional service name — not the single
   outcome counter; commits carry `Signed-off-by` only, and
-  `CONTRIBUTING.md` follows.
+  `CONTRIBUTING.md` follows. After the a2a-go check failed (its streaming
+  calls name no JSON type and it reads only `application/json` errors), the
+  narrowed §11.1 rule: a request asking only for an event stream keeps
+  `application/json` errors. A part-level at-rest cipher hook (AES-256-GCM
+  on message and artifact part payloads, structure left plaintext) for
+  GDPR-25-1 and GDPR-32-1a.
 - **Earlier, still standing:** tool calling stays in the examples, not the
   crates (`examples/rig-agent`); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed

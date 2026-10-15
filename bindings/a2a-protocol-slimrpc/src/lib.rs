@@ -135,6 +135,17 @@
 //! Mutual TLS between apps and the node is verified too, including that a
 //! client with no certificate, or one from an untrusted CA, is refused.
 //!
+//! ## Who the caller is
+//!
+//! A session with MLS — every session this crate's client opens — gives the
+//! server the caller's verified identity, the subject and issuer of its
+//! token. The server records it in the request's headers under keys a caller
+//! cannot set, and [`SlimPeerAuthInterceptor`] authenticates the caller from
+//! them as `slim:<issuer>:<subject>`, the identity task partitions, the rate
+//! limiter and the audit log then key on. A session without MLS has no
+//! verified caller; a credential in the call's metadata (`authorization`)
+//! still reaches the handler's other interceptors. See [`server::peer`].
+//!
 //! So are the two properties a long-lived, multi-organisation deployment
 //! depends on: a trust domain really is a boundary — an unfederated domain's
 //! SVID is refused, and a federated one's is accepted, including a full A2A
@@ -184,6 +195,7 @@ pub use binding::{
 pub use client::{SlimRpcTransport, SlimRpcTransportBuilder};
 pub use codec::Pb;
 pub use multicast::{MemberOutcome, MulticastOutcome, SlimRpcMulticast};
+pub use server::peer::SlimPeerAuthInterceptor;
 pub use server::{SlimRpcServer, SlimRpcServerBuilder};
 
 // ── Public dependencies, re-exported ─────────────────────────────────────────

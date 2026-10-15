@@ -116,14 +116,15 @@ vendored and matching, and 4 branch-only specifications, all triaged.
 | `a2a-protocol-server` (default) | 55 |
 | `a2a-protocol-sdk` (default) | 69 |
 | `a2a-protocol-server` (all features) | 206 |
-| **`agntcy-slim-rpc` alone** | **359** |
+| **`agntcy-slim-rpc` alone** | **385** |
 
 Measured 2026-09-25 with `cargo tree -p <crate> [--all-features] -e normal
 --prefix none --offline`, counting distinct `name version` pairs and excluding
 the crate itself — normal dependencies only, no build or dev dependencies. The
 workspace rows are resolved against the workspace `Cargo.lock`;
-`agntcy-slim-rpc` (2.3.0) against this crate's own. The default rows include
-`tracing`, which the client, server and SDK enable by default.
+`agntcy-slim-rpc` against this crate's own: 359 at 2.3.0, and 385 at 3.4.1,
+re-measured the same way on 2026-10-15. The default rows include `tracing`,
+which the client, server and SDK enable by default.
 
 So this crate sits outside the workspace with its own `Cargo.lock`. None of that
 graph reaches the lockfile, `deny.toml` allow-list, or audit surface of the four
@@ -292,9 +293,11 @@ affect another's.
 The SLIMRPC specification says nothing about it. What follows is what the code
 does, examined 2026-09-10 by reading `agntcy-slim-rpc` 2.3.0,
 `agntcy-slim-session` 0.7.10, `agntcy-slim-datapath` 0.18.7 and
-`agntcy-slim-service` 0.12.10 — the versions in `Cargo.lock`; line numbers are
-theirs — and measured in-process where a test can reach it
-(`tests/unicast_backpressure.rs`, `tests/multicast_backpressure.rs`).
+`agntcy-slim-service` 0.12.10 — the versions in `Cargo.lock` then; line numbers
+are theirs — and measured in-process where a test can reach it
+(`tests/unicast_backpressure.rs`, `tests/multicast_backpressure.rs`). The lock
+has the 3.x line since 2026-10-15 (`agntcy-slim-rpc` 3.4.1); both suites pass
+on it, but the reading below, and its line numbers, were not redone for it.
 
 ### The receive path
 
@@ -491,6 +494,57 @@ Two things about SPIFFE that cost time to discover and are easy to get wrong:
   cannot complete an MLS handshake. A process hosting several apps registers
   several entries and selects between them with `with_target_spiffe_id`.
 
+## Caller identity
+
+A session with MLS verifies the identity token of the peer that set it up,
+and attributes each decrypted request to its MLS sender. `agntcy-slim-rpc`
+3.x creates every session with MLS, so every call this crate's client makes
+arrives with a verified caller. The server records it in the request's
+headers, after dropping every `:`-prefixed key the caller sent:
+
+| Key | Value |
+|---|---|
+| `:slim-peer-subject` | the token's `sub`: a SPIFFE ID, a `did:key`, a shared-secret id |
+| `:slim-peer-issuer` | the token's `iss`, when it has one |
+| `:peer-addr` | an address standing for the peer, for `AuthFailureThrottle` |
+
+`SlimPeerAuthInterceptor` authenticates the caller from them, as
+`slim:<issuer>:<subject>` — the form of the SDK's `jwt:<issuer>:<subject>`,
+with the issuer's `%` and `:` percent-encoded — and the auth scheme `slim`.
+Task partitions, the rate limiter, the audit log and the approval gate key on
+that identity as on any other. `server::peer::caller_id` builds it, for an
+approver allowlist or a caller-key migration map.
+
+```rust,no_run
+use a2a_protocol_slimrpc::SlimPeerAuthInterceptor;
+
+// Interceptors run in the order they are added.
+let handler = RequestHandlerBuilder::new(executor)
+    .with_interceptor(AuthFailureThrottle::new(throttle_config)?) // before the authenticators
+    .with_interceptor(SlimPeerAuthInterceptor::new())
+    .with_interceptor(RateLimitInterceptor::new(rate_config)?) // after it, to see the identity
+    .build()?;
+```
+
+- `SlimPeerAuthInterceptor::new()` names each verified caller and refuses
+  none: a call with no verified peer (a session without MLS, or another
+  binding when one handler serves several) passes on, and an interceptor
+  after it can still authenticate an `authorization` credential. It does not
+  count as authenticating for the extended agent card.
+- `SlimPeerAuthInterceptor::required()` also refuses a call with no verified
+  peer as unauthenticated (`UNAUTHENTICATED`, challenge `SLIM-MLS`), and does
+  count.
+- An identity an earlier interceptor recorded stands, with its scheme.
+
+`:peer-addr` is an address in `100::/64`, the IPv6 discard-only block
+(RFC 6666), whose low 64 bits are a hash of the peer's identity keyed per
+process, with port 0. It cannot be a real host's address or match an
+allowlist entry for one; it gives `AuthFailureThrottle`, which counts failed
+authentications by address, one key per verified peer. Without a verified
+peer none of the three keys is set: such a call is not throttled, and if no
+interceptor identifies it, the rate limiter puts it in the shared anonymous
+bucket — the rate limiter never reads `:peer-addr`, on any binding.
+
 ## Security posture
 
 What is proven by a test here, and what is merely available. The distinction is
@@ -507,6 +561,7 @@ is evidence.
 | Credential rotation mid-session | **verified** — agent keeps answering, old SVID stops verifying | `spiffe_rotation.rs` |
 | JWT identity | **verified** end-to-end | `e2e.rs` |
 | Shared-secret identity | **verified** end-to-end | every suite |
+| Caller identity from the MLS-verified peer | **verified** end-to-end, incl. the caller's own `:slim-peer-*`, `slim-peer-subject` and `:peer-addr` dropped; a SPIFFE caller named by its SPIFFE ID | `peer_identity.rs`, `spiffe.rs` |
 | A2A error identity across a node | **verified** | `remote_node.rs` |
 | Static-token identity | supported via `with_identity`, untested | — |
 | SPIFFE X.509 SVIDs for the *node* link | available in SLIM (`TlsSource::Spire`), unused here | — |
@@ -572,9 +627,9 @@ cargo test -- --test-threads=1                      # unit, integration and doc 
 SPIRE_BIN_DIR=... cargo test -- --ignored           # + the SPIRE-gated tests
 ```
 
-Unit tests in `src/`, and integration tests across ten topologies; nine
-integration tests — three in each SPIFFE suite — are `#[ignore]`d because
-they need SPIRE. None are mocked, and each topology exists because it can
+Unit tests in `src/`, and integration tests across ten topologies; ten
+integration tests — four in `spiffe.rs`, three in each other SPIFFE suite —
+are `#[ignore]`d because they need SPIRE. None are mocked, and each topology exists because it can
 fail in a way the ones above it cannot.
 
 | Suite | Topology | What only this can catch |
@@ -595,6 +650,9 @@ rather than a method: `unicast_backpressure.rs` holds a point-to-point stream
 unread and checks that the agent, the other calls on the channel, and every
 event survive it; `multicast_backpressure.rs` does the same in a group, where
 the answer is different. Both are explained under Backpressure above.
+`peer_identity.rs` reuses the in-process topology to check that the caller a
+handler sees is the one SLIM verified, not the one the caller's metadata
+claims.
 
 The three SPIFFE suites are `#[ignore]`d because they need `spire-server` and
 `spire-agent` on `PATH` or in `SPIRE_BIN_DIR`; CI installs them and runs

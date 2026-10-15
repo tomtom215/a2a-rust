@@ -63,11 +63,11 @@ a2a-protocol-server = { version = "0.15", path = "../../crates/a2a-protocol-serv
 
 # SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
 # types its constructors take.
-slim-rpc      = { package = "agntcy-slim-rpc",      version = "2.3" }
-slim-auth     = { package = "agntcy-slim-auth",     version = "0.15" }
-slim-datapath = { package = "agntcy-slim-datapath", version = "0.18" }
-slim-service  = { package = "agntcy-slim-service",  version = "0.12" }
-slim-config   = { package = "agntcy-slim-config",   version = "0.16" }
+slim-rpc      = { package = "agntcy-slim-rpc",      version = "3.4" }
+slim-auth     = { package = "agntcy-slim-auth",     version = "0.17" }
+slim-datapath = { package = "agntcy-slim-datapath", version = "0.19" }
+slim-service  = { package = "agntcy-slim-service",  version = "0.13" }
+slim-config   = { package = "agntcy-slim-config",   version = "0.17" }
 slim-session  = { package = "agntcy-slim-session",  version = "0.7" }
 
 prost       = "0.14"
