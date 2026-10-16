@@ -378,25 +378,21 @@ impl AuditStore for SqliteAuditStore {
             .fetch_optional(&mut *conn)
             .await
             .map_err(|e| db(&e))?;
-            // The deleted page's earlier images stay in the write-ahead log
-            // until a checkpoint copies it back and truncates it. Best
-            // effort: a reader holding an older snapshot makes it return
-            // busy, and the images stay until a later checkpoint.
-            // The row is gone either way, so neither outcome fails the call;
-            // both are logged, since the key's bytes may still be on disk.
-            match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-                .fetch_one(&mut *conn)
-                .await
-            {
-                Ok(done) if done.get::<i64, _>(0) != 0 => {
+            // The row is gone either way, so no outcome of the truncation
+            // fails the call; the two that leave the key's bytes on disk are
+            // logged.
+            match truncate_log(&mut conn).await {
+                Truncation::Done => {}
+                Truncation::KeptByReader => {
                     trace_warn!(
                         "audit: a subject key was deleted, but a reader kept the write-ahead \
                          log from being truncated; its bytes stay there until a later checkpoint"
                     );
                 }
-                Ok(_) => {}
-                Err(_e) => {
-                    trace_warn!(error = %_e, "audit: a subject key was deleted, but the checkpoint after it failed");
+                Truncation::Failed => {
+                    trace_warn!(
+                        "audit: a subject key was deleted, but the checkpoint after it failed"
+                    );
                 }
             }
             Ok(row.map(|r| r.get(0)))
@@ -428,5 +424,31 @@ impl SqliteAuditStore {
                 r.get::<String, _>(2),
             )
         }))
+    }
+}
+
+/// What the checkpoint after a subject key's deletion did.
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::audit) enum Truncation {
+    /// The write-ahead log was copied back and truncated: the deleted page's
+    /// earlier images are gone from it.
+    Done,
+    /// A reader holding an older snapshot kept the log from being truncated;
+    /// the images stay until a later checkpoint.
+    KeptByReader,
+    /// The checkpoint itself failed.
+    Failed,
+}
+
+/// Copies the write-ahead log back and truncates it. SQLite reports a reader
+/// in the way as a result row (`busy` = 1), not as an error.
+pub(in crate::audit) async fn truncate_log(conn: &mut sqlx::SqliteConnection) -> Truncation {
+    match sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .fetch_one(conn)
+        .await
+    {
+        Ok(done) if done.get::<i64, _>(0) != 0 => Truncation::KeptByReader,
+        Ok(_) => Truncation::Done,
+        Err(_) => Truncation::Failed,
     }
 }

@@ -131,6 +131,52 @@ async fn an_erased_key_leaves_no_bytes_in_the_sqlite_files() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The checkpoint after an erasure says when a reader kept the key's old
+/// page in the write-ahead log, rather than reporting it truncated.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn a_reader_keeping_the_log_is_reported_not_hidden() {
+    use crate::audit::sqlite::{Truncation, truncate_log};
+    let dir = std::env::temp_dir().join(format!(
+        "a2a-audit-truncate-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let url = format!("sqlite://{}?mode=rwc", dir.join("audit.db").display());
+    let pool = crate::sqlite_pool::sqlite_pool(&url).await.unwrap();
+    let store = crate::audit::SqliteAuditStore::from_pool(pool.clone())
+        .await
+        .unwrap();
+    let key = SubjectKey::new("h1:aa", "sid-1", "wrapped");
+    store.put_subject_key("c", &key).await.unwrap();
+
+    let mut writer = pool.acquire().await.unwrap();
+    assert_eq!(truncate_log(&mut writer).await, Truncation::Done);
+
+    // A reader holding a snapshot taken before the next write.
+    let mut reader = pool.acquire().await.unwrap();
+    sqlx::query("BEGIN").execute(&mut *reader).await.unwrap();
+    sqlx::query("SELECT count(*) FROM a2a_audit_subject_keys")
+        .fetch_one(&mut *reader)
+        .await
+        .unwrap();
+    store
+        .put_subject_key("c", &SubjectKey::new("h1:bb", "sid-2", "w"))
+        .await
+        .unwrap();
+    assert_eq!(truncate_log(&mut writer).await, Truncation::KeptByReader);
+
+    sqlx::query("COMMIT").execute(&mut *reader).await.unwrap();
+    assert_eq!(truncate_log(&mut writer).await, Truncation::Done);
+    drop((reader, writer, store));
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// On a scratch database of its own: the audit suite's other Postgres test
 /// clears and counts the shared one's tables.
 #[cfg(feature = "postgres")]

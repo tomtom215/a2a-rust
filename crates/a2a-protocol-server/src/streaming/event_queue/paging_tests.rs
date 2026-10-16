@@ -330,3 +330,18 @@ async fn a_paged_resume_goes_on_with_the_live_channel() {
     assert_eq!(read_all(&mut reader).await, positions(1..=12));
     assert_eq!(log.asked(), [4, 8]);
 }
+
+/// A page that moved forward short of the limit is asked again, since the
+/// log may hold the rest by the next read; one that moved nowhere is not,
+/// unless it stopped at the limit.
+#[test]
+fn a_page_that_moved_is_asked_again_even_short_of_the_limit() {
+    let page = |seqs: &[u64], more: bool| CatchUpPage {
+        events: seqs.iter().copied().map(recorded).collect(),
+        more,
+        complete: false,
+    };
+    assert!(page(&[4, 5], false).goes_on(3), "moved, not at the limit");
+    assert!(page(&[4, 5], true).goes_on(3), "moved, at the limit");
+    assert!(!page(&[], false).goes_on(3), "moved nowhere");
+}

@@ -923,7 +923,7 @@ impl CatchUpPage {
     /// never catches up ends the replay rather than looping. (A complete page
     /// reaches the writer's position, past anything a caller still needs, so
     /// no caller asks this of one.)
-    fn goes_on(&self, after: u64) -> bool {
+    pub(super) fn goes_on(&self, after: u64) -> bool {
         self.more || self.reached(after) > after
     }
 }
