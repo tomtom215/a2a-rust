@@ -105,7 +105,10 @@ async fn an_erased_key_leaves_no_bytes_in_the_sqlite_files() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("audit.db");
     let url = format!("sqlite://{}?mode=rwc", path.display());
-    let store = crate::audit::SqliteAuditStore::new(&url).await.unwrap();
+    let pool = crate::sqlite_pool::sqlite_pool(&url).await.unwrap();
+    let store = crate::audit::SqliteAuditStore::from_pool(pool.clone())
+        .await
+        .unwrap();
     let key = SubjectKey::new("h1:aa", "sid-1", "WRAPPED-KEY-MATERIAL-0123456789");
     assert!(store.put_subject_key("c", &key).await.unwrap());
     let holds = |needle: &[u8]| {
@@ -121,8 +124,11 @@ async fn an_erased_key_leaves_no_bytes_in_the_sqlite_files() {
         "the key is on disk after erasure"
     );
     assert!(!holds(b"h1:aa"), "the lookup is on disk after erasure");
+    // Closed before removal: Windows will not delete a file an open
+    // connection holds, and dropping the store does not close its pool.
     drop(store);
-    std::fs::remove_dir_all(&dir).unwrap();
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// On a scratch database of its own: the audit suite's other Postgres test
