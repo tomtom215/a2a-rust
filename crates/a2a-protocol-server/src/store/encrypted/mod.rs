@@ -76,6 +76,8 @@ mod seal;
 #[cfg(test)]
 mod binding_tests;
 #[cfg(test)]
+mod cipher_tests;
+#[cfg(test)]
 mod tests;
 
 use std::future::Future;
