@@ -52,6 +52,13 @@ async fn every_refusal_reads_the_same() {
     assert_eq!(refused(not_utf8, b"aad").await, wrong);
     assert_eq!(refused(good[..14].to_vec(), b"aad").await, wrong);
     assert_eq!(refused(Vec::new(), b"aad").await, wrong);
+    // Under a ring whose id is one byte, a value one byte too short for its
+    // nonce: refused before the nonce is sliced, not read past the end.
+    let one = cipher("k", 1);
+    let mut short = vec![1, b'k'];
+    short.extend_from_slice(&[0; 11]);
+    let err = ContentCipher::open(&one, short, b"aad").await.unwrap_err();
+    assert_eq!(err.to_string(), wrong);
 }
 
 #[test]
