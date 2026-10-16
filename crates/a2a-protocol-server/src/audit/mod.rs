@@ -40,6 +40,8 @@
 
 mod interceptor;
 mod log;
+#[cfg(feature = "encryption")]
+mod privacy;
 mod retention;
 mod store;
 mod task_store;
@@ -54,8 +56,12 @@ mod tests;
 
 pub use a2a_protocol_types::audit as record;
 pub use log::AuditLog;
+#[cfg(feature = "encryption")]
+pub use privacy::{
+    AuditPrivacy, Erasure, HMAC_KEY_LEN, KEYED_DIGEST_PREFIX, Revealed, SEALED_PREFIX,
+};
 pub use retention::{AuditRetention, PurgeReport, SIX_MONTHS};
-pub use store::{Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold};
+pub use store::{Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, SubjectKey};
 
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresAuditStore;

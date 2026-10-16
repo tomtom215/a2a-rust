@@ -36,9 +36,10 @@
 //! - **Push-notification configs**, which live in their own store; with the
 //!   `sqlite` or `postgres` feature, [`Aes256GcmCipher`] is also a
 //!   `PushConfigCipher` for the SQL push-config stores' `with_cipher`.
-//! - **The audit trail** (`with_audit`), which records an unsalted SHA-256
-//!   digest of each event as written, before sealing: a reader of the audit
-//!   store can confirm a guess of a short event's content.
+//! - **The audit trail** (`with_audit`), which records a digest of each
+//!   event as written, before sealing: a reader of the audit store can
+//!   confirm a guess of a short event's content, unless the audit log
+//!   protects its records too (`AuditLog::with_privacy`, `audit` feature).
 //!
 //! # Failures
 //!

@@ -130,9 +130,10 @@ What it does not protect:
   parts removed from the end of one, parts exchanged between two messages
   with the same id, and a store rolled back to an earlier record all still
   open.
-* **The audit trail**, which keeps an unsalted SHA-256 digest of each event
-  as written: a reader of the audit store can confirm a guess of a short
-  event's content.
+* **The audit trail**, which keeps a digest of each event as written: a
+  reader of the audit store can confirm a guess of a short event's content
+  unless the audit log protects its records too (`AuditLog::with_privacy`;
+  see [Audit Trail](./audit.md)).
 
 A part that does not open fails the whole read, a `list` page and a log
 replay included, so keep every key that sealed a stored value in the ring

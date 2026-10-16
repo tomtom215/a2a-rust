@@ -307,7 +307,7 @@ are rustdoc's job.
 |--------|----------|
 | `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
 | `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest; `VerifiedApproval` is what the executor sees |
-| `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature) |
+| `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature); `AuditPrivacy`, `AuditLog::with_privacy`, `reveal`, `digest_matches` and `erase_subject` protect who and what records name and erase a person (`audit` and `encryption`) |
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
 | `call_context` | Call context for server-side interceptors |

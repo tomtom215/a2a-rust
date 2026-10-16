@@ -15,7 +15,7 @@
 #               what the SDK offers the integrator who must
 
 [meta]
-as_of = "2026-10-15"
+as_of = "2026-10-16"
 preamble = """
 This is a map from regulatory and standards provisions to what a2a-rust, a
 protocol library, provides toward them. It is not a claim that the SDK is
@@ -112,9 +112,9 @@ id = "AIA-4a"
 source = "ai-act"
 provision = "Art. 4a (inserted by Regulation (EU) 2026/1744)"
 requirement = "Providers of high-risk AI systems may exceptionally process special categories of personal data to the extent strictly necessary for bias detection and correction, under all of paragraph 1's conditions: other data will not do, technical limits on re-use with state-of-the-art security and pseudonymisation, controlled and documented access, no transmission to other parties, deletion once the bias is corrected or the retention period ends, and records of processing that say why. Providers and deployers of other AI systems and models, and deployers of high-risk systems, may do the same under the same conditions; this creates no obligation to detect bias. Article 10(5), which held the provider's basis before, is deleted."
-sdk = "The SDK processes no data set and detects no bias. What passes through it is the integrator's data: audit records hold content only as SHA-256 digests (GDPR-25-1), and the task store keeps message content as the integrator sends it."
+sdk = "The SDK processes no data set and detects no bias. What passes through it is the integrator's data: audit records hold content only as digests, and with the `encryption` feature both the audit trail and the task store protect what they hold (GDPR-25-1)."
 status = "integrator"
-gap = "Whether to process special categories for bias detection, and every safeguard paragraph 1 requires, belong to the provider or deployer that holds the data. The task store has no hook to pseudonymise content before it is written (GDPR-25-1), so special-category data should not be routed through tasks."
+gap = "Whether to process special categories for bias detection, and every safeguard paragraph 1 requires, belong to the provider or deployer that holds the data. `EncryptedTaskStore` encrypts task content but leaves ids, `metadata` and the like readable (GDPR-25-1), so special-category data belongs in parts, if it is routed through tasks at all."
 
 [[control]]
 id = "AIA-5-1"
@@ -522,23 +522,24 @@ id = "GDPR-25-1"
 source = "gdpr"
 provision = "Art. 25(1), 5(1)(c)"
 requirement = "Data protection by design: measures such as pseudonymisation, implementing data minimisation."
-sdk = "Audit records hold content only as SHA-256 digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output. With the `encryption` feature, `EncryptedTaskStore` seals every part of a task and of its event log before any store holds it, and the SQL push-config stores seal each config with a `PushConfigCipher`."
-status = "partial"
+sdk = "Minimisation: audit records hold content only as digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output. Pseudonymisation, with the `encryption` feature: `AuditLog::with_privacy` seals each person an audit record names under a key of their own, records carry only a random handle, and each digest is an HMAC bound to its record that confirms no guess without the key (ADR 0015, amended 2026-10-16); `EncryptedTaskStore` seals every part of a task and of its event log; the SQL push-config stores seal each config. What the stores query (ids, states, timestamps, `metadata`) stays readable to them, so personal data belongs out of those fields; and the measures are the operator's to switch on."
+status = "supported"
 tests = [
   "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
   "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
   "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
   "crates/a2a-protocol-server/tests/encrypted_store.rs::a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole",
   "crates/a2a-protocol-server/src/push/cipher_tests.rs::with_a_cipher_no_secret_is_stored_and_the_config_reads_back",
+  "crates/a2a-protocol-server/tests/audit_privacy.rs::a_served_call_is_recorded_naming_no_one_and_erasable",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::one_content_in_two_records_carries_two_tags",
 ]
-gap = "Sealing is not pseudonymisation: the store holds no plaintext part, but ids, states, timestamps and the `metadata` of tasks, messages and artifacts stay readable to it. Audit records name the caller's subject in clear, which is personal data in most deployments; nothing pseudonymises it."
 [[control]]
 id = "GDPR-32-1a"
 source = "gdpr"
 provision = "Art. 32(1)(a)"
 requirement = "Security of processing, including pseudonymisation and encryption of personal data."
-sdk = "In transit: the client speaks TLS through rustls with certificate validation, and the HTTP listener (`Server::with_tls`) and the gRPC listener terminate TLS, mutual TLS included. At rest, with the `encryption` feature: `EncryptedTaskStore` seals every part of a task and its event log with AES-256-GCM (or a cipher of the operator's), each bound to its tenant partition, task, record or log position, container and index, so an altered, moved or unsealed part fails the read; the SQL push-config stores seal each config, token and credentials included."
-status = "partial"
+sdk = "In transit: the client speaks TLS through rustls with certificate validation, and the HTTP listener (`Server::with_tls`) and the gRPC listener terminate TLS, mutual TLS included. At rest, with the `encryption` feature: `EncryptedTaskStore` seals every part of a task and its event log with AES-256-GCM (or a cipher of the operator's), each bound to its tenant partition, task, record or log position, container and index, so an altered, moved or unsealed part fails the read; the SQL push-config stores seal each config, token and credentials included; `AuditLog::with_privacy` seals who each audit record names and keys its digests, the chain still verifying without a key. What the stores query (ids, states, timestamps, `metadata`, the order of messages and artifacts) stays unencrypted, and encryption at rest is the operator's to switch on."
+status = "supported"
 tests = [
   "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
   "crates/a2a-protocol-client/tests/grpc_tls_apply_tests.rs::https_endpoint_completes_a_tls_handshake_with_the_pinned_ca",
@@ -547,15 +548,16 @@ tests = [
   "crates/a2a-protocol-server/tests/encrypted_store.rs::the_postgres_stores_hold_only_sealed_parts",
   "crates/a2a-protocol-server/src/store/encrypted/tests.rs::a_value_moved_within_its_task_is_refused",
   "crates/a2a-protocol-server/tests/encrypted_store.rs::the_same_ring_seals_push_configs",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_protected_record_names_no_one_and_still_verifies",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_sealed_value_altered_or_moved_does_not_open",
 ]
-gap = "What the stores query stays unencrypted: ids, states, timestamps, artifact names and the `metadata` of tasks, messages, artifacts and events; the order and number of messages and artifacts are not protected. The audit store is not encrypted: its records name the caller's subject and hold an unsalted digest of each event's plaintext, which confirms a guessed short event. Encryption at rest is opt-in."
 
 [[control]]
 id = "GDPR-5-1e"
 source = "gdpr"
 provision = "Art. 5(1)(e), 17"
 requirement = "Storage limitation, and erasure on request."
-sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's."
+sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's. With `AuditLog::with_privacy`, `erase_subject` erases one person from a tenant's audit chain by destroying their key, refused under a legal hold (Art. 17(3)(e)), and the chain still verifies; retention drops the keys no remaining record names."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else",
@@ -563,8 +565,10 @@ tests = [
   "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::deleting_a_task_removes_its_log",
   "crates/a2a-protocol-server/src/store/sqlite_store/artifact_delta_tests.rs::deleting_a_task_discards_its_journalled_parts",
   "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs::deleting_a_task_removes_its_log_and_leaves_other_tenants_alone",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_destroys_one_persons_key_and_leaves_the_chain_whole",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::retention_drops_the_keys_no_record_names_any_longer",
 ]
-gap = "No erasure by data subject: a task can be erased by id, but no store knows which tasks concern one person, and nothing erases across tasks on request. Deleting one record from the middle of an audit chain would break it by design; whether the Art. 17(3)(b) exception covers the retained log is the controller's analysis."
+gap = "The task store has no notion of a data subject: a task can be erased by id, but nothing knows which tasks concern one person. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them); copies of a key in backups or logs survive until they expire."
 # ── OWASP agentic Top 10 ─────────────────────────────────────────────────────
 
 [[control]]

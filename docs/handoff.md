@@ -70,8 +70,10 @@ that code could close and R69.
    bound, lag paging, `application/a2a+json`, card freshness, R13 and the
    part-level at-rest cipher (`EncryptedTaskStore`, `encryption` feature)
    are built (this branch's commits); the three metric changes go with
-   Step 4. GDPR-25-1 and GDPR-32-1a stay `partial` with the cipher: what
-   is left of each is in *Open engineering* under **Privacy**.
+   Step 4. On 2026-10-16 the maintainer approved audit-record protection
+   with crypto-shredding (`AuditLog::with_privacy`, ADR 0015 amended); with
+   it GDPR-25-1 and GDPR-32-1a are `supported` and GDPR-5-1e stays
+   `partial`. What is left is in *Open engineering* under **Privacy**.
 
 ## Waiting on the maintainer
 
@@ -129,10 +131,11 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   one socket without a hand-written accept loop; `find_task_by_context`
   clones full history and `RequestContext::stored_task` is `pub` (an API
   decision, `handler/helpers.rs`).
-- **Privacy:** audit records name the caller's subject in clear, hold an
-  unsalted digest of each event's plaintext, and the audit store is not
-  encrypted (GDPR-25-1, GDPR-32-1a); pseudonymising the subject or keying
-  the digest touches the ADR 0015 record schema. `EncryptedTaskStore`
+- **Privacy:** audit protection (`AuditLog::with_privacy`, ADR 0015 amended
+  2026-10-16, independently reviewed the same day) leaves what its module
+  docs list: an erased person's records stay linkable, keys survive in
+  backups and logs, erasure is not serialised across replicas.
+  `EncryptedTaskStore`
   (independently reviewed 2026-10-15; its module docs list what it does not
   protect) leaves ids, states, timestamps, `metadata` and the order of
   messages and artifacts unprotected; it re-seals every part on every
@@ -140,8 +143,8 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   chunks against a 2^32 per-key budget and has not been timed; two
   concurrent writers can leave a PostgreSQL record unreadable until its
   next full write, because `postgres_store/artifact_delta.rs` appends
-  without checking the stored length. No erasure by data subject
-  (GDPR-5-1e).
+  without checking the stored length. The task store has no notion of a
+  data subject (GDPR-5-1e).
 - **Observability:** the metric changes decided on 2026-10-15 are not built;
   the single outcome counter was declined. ADR 0013 still says "Proposed"
   though its decision (`otel::Telemetry`) has shipped; mTLS to the collector
@@ -212,6 +215,9 @@ it.
   `application/json` errors. A part-level at-rest cipher hook (AES-256-GCM
   on message and artifact part payloads, structure left plaintext) for
   GDPR-25-1 and GDPR-32-1a.
+- **2026-10-16:** the audit trail protects who and what its records name,
+  with per-person keys that can be destroyed (crypto-shredding), amending
+  ADR 0015 — chosen over keyed digests alone and over deferring it.
 - **Earlier, still standing:** tool calling stays in the examples, not the
   crates (`examples/rig-agent`); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed

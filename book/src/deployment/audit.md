@@ -220,6 +220,70 @@ personal data be kept no longer than necessary, and the caller's subject is
 personal data in most deployments. Choose the floor for your system; the SDK
 only refuses to choose a shorter one by accident.
 
+## Protecting who and what, and erasing a person
+
+The records above name each caller, and a digest of a short message can be
+confirmed by anyone who reads the store and guesses. With the `encryption`
+feature, `AuditLog::with_privacy` protects both before each record is
+hashed into its chain:
+
+- each person named (the caller, an approval's requester) is sealed under a
+  key of their own, kept by the audit store, wrapped by your key-encryption
+  key, and named in records only by a random handle;
+- each digest becomes an HMAC under your key, bound to its record, so it
+  confirms no guess without the key.
+
+The chain still verifies with no key. Whoever holds the keys reveals a
+record and checks content against it. Erasing a person destroys their key:
+their name stops opening in every record, and the chain still verifies.
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_server::audit::{AuditLog, AuditPrivacy, HMAC_KEY_LEN, InMemoryAuditStore};
+use a2a_protocol_server::store::encrypted::{AES_256_KEY_LEN, Aes256GcmCipher};
+
+# fn kms_key(_: &str) -> [u8; 32] { [0; 32] }
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
+let kek = Arc::new(Aes256GcmCipher::new("kek-2026-10", kms_key("kek"))?);
+let privacy = AuditPrivacy::new(kek, "hmac-2026-10", kms_key("hmac"))?;
+let log = AuditLog::new(Arc::new(InMemoryAuditStore::new())).with_privacy(privacy)?;
+
+// An auditor reads a record back, with the keys.
+let records = log.export("acme").await?;
+if let Some(first) = records.first() {
+    let shown = log.reveal(first).await?;
+    println!("{:?} by {:?}", shown.record.kind, shown.record.actor);
+}
+
+// A person asks to be erased (GDPR Art. 17), outside any legal hold.
+let done = log.erase_subject("acme", "bearer:alice@example.test", "operator:dpo").await?;
+if !done.in_clear.is_empty() {
+    // Records from before protection was on still name them; report these.
+    println!("still named in records {:?}", done.in_clear);
+}
+# let _ = (AES_256_KEY_LEN, HMAC_KEY_LEN);
+# Ok(())
+# }
+```
+
+What erasure does not do, stated in full in ADR 0015's amendment:
+
+- **Unlink.** The person's records keep one common handle, so they stay
+  linkable to each other; times and ids in them may identify the person
+  together with other data. Pseudonymised, not anonymised.
+- **Reach copies.** Backups, replicas, a database's write-ahead log, and
+  PostgreSQL's dead tuples until `VACUUM a2a_audit_subject_keys` keep the
+  key until they are overwritten; your key-encryption key unwraps such a
+  copy.
+- **Reach records from before protection.** `erase_subject` reports them in
+  `in_clear`; they cannot be changed without breaking the chain.
+- **Work with an HMAC key you dropped.** Keep each old HMAC key in the ring
+  (`with_hmac_key`) for as long as people's keys made under it may exist.
+
+It also costs: an append took 17.6 µs plain and 47.2 µs protected on the
+in-memory store, 296 µs and 521 µs on a SQLite file (ADR 0015 gives the
+method). Retention drops the keys of people no remaining record names.
+
 ## Required mode
 
 By default a record that cannot be written is logged, counted in

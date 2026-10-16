@@ -45,6 +45,9 @@ pub mod kind {
     /// Every task of a tenant, or of the server, was ordered to stop, or
     /// allowed to resume.
     pub const HALT: &str = "halt";
+    /// A person's audit key was destroyed, erasing them from every record
+    /// sealed under it; names only the records' random handle (`sid`).
+    pub const SUBJECT_ERASED: &str = "subject.erased";
 }
 
 /// Who a call was made by, as authentication established it.

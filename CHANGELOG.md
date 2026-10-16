@@ -121,6 +121,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Audit records protect who and what they name, and a person can be
+  erased** (server, `audit` and `encryption`; GDPR Art. 25(1), 32(1)(a),
+  17; ADR 0015 amended 2026-10-16). With `AuditLog::with_privacy`, each
+  record's caller and requester are sealed under a key of each person's own
+  (AES-256-GCM, a key derived per value), and each content digest becomes
+  an HMAC bound to its record, so it confirms no guess without the key; the
+  chain still verifies with no key. `AuditLog::reveal` and `digest_matches`
+  serve whoever holds the keys. `AuditLog::erase_subject` destroys one
+  person's key (refused under a legal hold, recorded first as
+  `subject.erased`), reports records from before protection that still name
+  them, and leaves the chain verifying; retention drops keys no record
+  names. `AuditStore` gains subject-key methods with refusing defaults; the
+  SQLite and PostgreSQL stores add the table `a2a_audit_subject_keys`. The
+  record schema stays `a2a-audit/1`. An erased person's records remain
+  linkable to each other, and copies of a key in backups or logs survive;
+  the book's audit page and the ADR list what erasure does not do. An
+  append costs about 2.7x on the in-memory store and 1.8x on SQLite
+  (measured; the ADR gives the numbers).
 - **Encryption at rest for task content** (server, `encryption` feature;
   GDPR Art. 25(1) and 32(1)(a)). `store::encrypted::EncryptedTaskStore`
   wraps any `TaskStore` and seals every part of a task's history, status
