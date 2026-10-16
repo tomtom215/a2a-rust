@@ -47,10 +47,11 @@ const PERSON_FIELDS: [&str; 1] = ["requestedBy"];
 /// The detail fields that are free text, sealed under the actor's key.
 const TEXT_FIELDS: [&str; 1] = ["reason"];
 
-/// The keys an [`AuditLog`](super::AuditLog) protects its records with: who
-/// and what a record names, protected at rest, and a person erased from the
-/// records without breaking the chain (GDPR Art. 25(1),
-/// 32(1)(a), 17; ADR 0015, amended 2026-10-16).
+/// The keys an [`AuditLog`](super::AuditLog) protects its records with.
+///
+/// Who and what a record names, protected at rest, and a person erased from
+/// the records without breaking the chain (GDPR Art. 25(1), 32(1)(a), 17;
+/// ADR 0015, amended 2026-10-16).
 ///
 /// With [`AuditLog::with_privacy`](super::AuditLog::with_privacy), every
 /// record is changed as follows before it is hashed into its chain, so the
