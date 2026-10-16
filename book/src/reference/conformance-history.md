@@ -213,7 +213,8 @@ directly comparable and no upstream drift has occurred since 2026-08-09.
 > current.** They were true at `a2a-tck@5996b79` and are left standing because
 > a dated measurement that gets quietly edited stops being a measurement. The
 > pin has since moved, and upstream drift *has* occurred since: see the next
-> section. The state to quote is **87 of 114 passing and 5 failing**,
+> section. The state to quote was **87 of 114 passing and 5 failing** (since
+2026-10-16, 85 and 7: §23 of `docs/official-tck-findings.md`),
 > measured 2026-09-26 on the 0.14.0 release PR (see "The 2026-09-26
 > measurement" below) and recorded in `tck/conformance-baseline.json` (five
 > `known_failures`), in `README.md`'s Project Status section and in
@@ -587,6 +588,8 @@ Ranked by what is within this project's control.
    baselined (§20 and §21 of `docs/official-tck-findings.md`). Since
    2026-09-26 a fifth, `CORE-SEND-003`, is baselined as a defect in the suite
    (§22); quote "87 of 114 passing and 5 failing", as the section above says.
+   Since 2026-10-16 two more are baselined, §11.1's media type graded against
+   the same stale copy (§23); quote "85 of 114 passing and 7 failing".
    Corrected 2026-09-24 and 2026-09-26.
 2. **W6's REST half (in this project's control only to remove, not to fix).**
    An upstream `a2a-java` defect. The runner fails if it starts passing, so it
