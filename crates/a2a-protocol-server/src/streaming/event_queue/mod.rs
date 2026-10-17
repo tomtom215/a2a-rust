@@ -16,14 +16,21 @@
 
 pub(crate) mod applied;
 mod content;
+#[cfg(test)]
+mod final_snapshot_tests;
 mod in_memory;
 mod manager;
+#[cfg(test)]
+mod paging_tests;
 #[cfg(test)]
 mod reattach_tests;
 mod status_stamp;
 pub(crate) mod terminal_gate;
 
-pub(crate) use in_memory::{CatchUpFn, ReattachFn, Reattached, carries_terminal_state};
+pub(crate) use in_memory::{
+    CatchUpFn, CatchUpPage, FinalSnapshotFn, FinalSnapshotFuture, ReattachFn, Reattached,
+    carries_terminal_state,
+};
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
 pub use manager::EventQueueManager;
 pub(crate) use manager::{QueueConsumer, QueueLease};

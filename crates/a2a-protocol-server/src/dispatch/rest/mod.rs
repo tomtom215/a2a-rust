@@ -88,8 +88,9 @@ impl RestDispatcher {
     /// Dispatches an HTTP request to the appropriate handler method.
     ///
     /// The response's media type is negotiated (§11.1):
-    /// `application/a2a+json` for a client whose `Accept` prefers it, or
-    /// whose request body is labelled with it; `application/json` otherwise.
+    /// `application/a2a+json` unless the request's `Accept` prefers
+    /// `application/json`, or asks for an event stream with no JSON type and
+    /// no `application/a2a+json` body (`media_type` has the rule and why).
     /// The agent card and the health probes are always `application/json`.
     pub async fn dispatch(
         &self,

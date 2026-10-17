@@ -22,17 +22,25 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Open:** pull request #171, branch `claude/funny-heisenberg-e6tl83`, based on
-  #170's merge `2a888a4c`. `main` has since gained only the benchmark bot's
-  `179fd50d`.
+- **Merged:** pull request #171 (`claude/funny-heisenberg-e6tl83`) merged as
+  `c9035931` on 2026-10-15. Work continues on `claude/lucid-edison-4hn5kb`,
+  started from that merge; no pull request is open for it yet.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. The PARTIAL entries at MUST level are §3.1.6 (the
-  idle bound, approved as recorded), §3.5.2 (explicit `streamLagged` cases
-  only, since R69), §5.7 (the spec contradicts itself; upstream draft below)
-  and §12.4 (agntcy-slim-rpc carries no error details).
+  authority on the counts. No entry is NOT_SUPPORTED since 2026-10-15. The
+  five PARTIAL entries each wait on something outside this repository:
+  §3.5.2 MUST (an explicit `streamLagged` only where the log no longer
+  holds the events), §5.7 MUST (the spec contradicts itself), §12.4 MUST
+  and §5.4 SHOULD (agntcy-slim-rpc carries no error details; the SLIMRPC
+  table lacks three rows), §11.1 SHOULD (a2a-go reads only
+  `application/json` errors). The reports are in `docs/upstream/`, held.
+- **Ledger citations drift:** the checker verifies test names, not line
+  text, so any edit above a cited line moves its citation silently. After
+  editing a cited file, re-derive test lines by name and map
+  `impl_evidence` lines through a line diff from the last commit (this
+  branch's commits did both; 52, then 63 citations had drifted).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
-  no other trailers (see *Waiting on the maintainer* for the conflict with
-  `CONTRIBUTING.md`).
+  no other trailers. `CONTRIBUTING.md` and `PROVENANCE.md` §3.2 say the same
+  since 2026-10-15.
 
 ## Next, in order
 
@@ -42,10 +50,6 @@ audit-register items, the EU AI Act control map), as are the PARTIAL MUSTs
 that code could close and R69.
 
 1. **Step 3 — the unfinished items.**
-   - **R13, SLIMRPC on agntcy-slim-rpc 3.x** (register: approved). It
-     records the verified peer, carries the second half of R41 (the
-     rate-limit peer key) and removes the binding's RUSTSEC-2024-0449 waiver
-     (`bindings/a2a-protocol-slimrpc/deny.toml` names the condition).
    - **Split the incremental mutation job by crate.** Its slowest shard had
      about ten minutes of headroom when measured on 2026-10-14
      (`handoff-history.md`, tender-cray item 107).
@@ -62,29 +66,29 @@ that code could close and R69.
 3. **Steps 5 and 6 — a release-readiness audit for 0.15.0, then debt.** The
    release itself follows `RELEASING.md` and needs the signing key below.
    Debt is *Open engineering* below, by the maintainer's priority.
-4. **After #171 merges:** add `tools/a2a-codegen/Cargo.lock` to the
-   `rust-pr` job in `osv.yml` (the push and scheduled `rust` job already
-   scans it; the PR scan also scans the base, which lacks it until then).
+4. **The 2026-10-15 decisions** (*Decisions the maintainer made*): the idle
+   bound, lag paging, `application/a2a+json`, card freshness, R13 and the
+   part-level at-rest cipher (`EncryptedTaskStore`, `encryption` feature)
+   are built (this branch's commits); the three metric changes go with
+   Step 4. On 2026-10-16 the maintainer approved audit-record protection
+   with crypto-shredding (`AuditLog::with_privacy`, ADR 0015 amended); with
+   it GDPR-25-1 and GDPR-32-1a are `supported` and GDPR-5-1e stays
+   `partial`. What is left is in *Open engineering* under **Privacy**.
 
 ## Waiting on the maintainer
 
-- **The lag catch-up paging change**: reading a replay longer than
-  `subscribe_replay_limit` in pages instead of ending with `streamLagged`. It
-  changes an approved behaviour, so it is the maintainer's call.
 - **A release signing key.** `.github/release-signers/allowed_signers` and
   `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
   tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
   each with its status): among them the SLIMRPC error-mapping disagreement
   (§12 / §5.4) and §5.7's non-empty required arrays against an empty
-  `ListTasksResponse.tasks`. The a2a-go draft for R19 is deliberately not
-  committed: it was never checked against a2a-go's source.
+  `ListTasksResponse.tasks`. On 2026-10-15 the maintainer asked for those two
+  to be re-verified and held, not filed. The a2a-go draft for R19 is
+  deliberately not committed: it was never checked against a2a-go's source.
 - **A private advisory to a2a-python** (GHSA, filed by the maintainer; see
   `handoff-history.md`, `claude/nifty-fermat-roj04f`). Do not file a public
   issue while it is open.
-- **`CONTRIBUTING.md` asks contributors to add `Co-Authored-By: Claude
-  <noreply@anthropic.com>`**, while the maintainer's commits carry only
-  `Signed-off-by`. One of the two should change.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
 - **Publishing:** the SLIMRPC binding has never been published (0.7.0;
@@ -127,12 +131,24 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   one socket without a hand-written accept loop; `find_task_by_context`
   clones full history and `RequestContext::stored_task` is `pub` (an API
   decision, `handler/helpers.rs`).
-- **Observability:** the metric names' breaking changes — UCUM units, an
-  outcome counter, `init_otlp_pipeline`'s `service_name` — undecided;
-  removing the deprecated `a2a.server.latency` is allowed from 0.15.0 and
-  belongs in `ROADMAP.md`; ADR 0013 still says "Proposed" though its
-  decision (`otel::Telemetry`) has shipped; mTLS to the collector and
-  `http/json` OTLP are unsupported.
+- **Privacy:** audit protection (`AuditLog::with_privacy`, ADR 0015 amended
+  2026-10-16, independently reviewed the same day) leaves what its module
+  docs list: an erased person's records stay linkable, keys survive in
+  backups and logs, erasure is not serialised across replicas.
+  `EncryptedTaskStore`
+  (independently reviewed 2026-10-15; its module docs list what it does not
+  protect) leaves ids, states, timestamps, `metadata` and the order of
+  messages and artifacts unprotected; it re-seals every part on every
+  write, which costs about `n²/2` seals for an artifact streamed in `n`
+  chunks against a 2^32 per-key budget and has not been timed; two
+  concurrent writers can leave a PostgreSQL record unreadable until its
+  next full write, because `postgres_store/artifact_delta.rs` appends
+  without checking the stored length. The task store has no notion of a
+  data subject (GDPR-5-1e).
+- **Observability:** the metric changes decided on 2026-10-15 are not built;
+  the single outcome counter was declined. ADR 0013 still says "Proposed"
+  though its decision (`otel::Telemetry`) has shipped; mTLS to the collector
+  and `http/json` OTLP are unsupported.
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`,
   suggested by a two-round run and not yet measured with the pinned-core
@@ -145,8 +161,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   nothing (low); the Windows stress-test connect failure, cause unknown
   (`tests/stress_tests.rs`'s accept loop breaks on the first error); the
   benchmark comparison harness still pins `=0.14.1`.
-- **Housekeeping:** the root `deny.toml` ignores RUSTSEC-2024-0436 (`paste`)
-  until genai drops it. Found by the 2026-10-15 README review and not fixed:
+- **Housekeeping:** found by the 2026-10-15 README review and not fixed:
   `benches/sdk-comparison/scripts/run_itk.sh`'s usage header names
   `run_acts.sh`, and both advertise a third argument neither reads;
   `benches/scripts/run_benchmarks.sh` writes `"version": "0.5.0"` into its
@@ -159,13 +174,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 ## Waivers and their removal tests
 
-`bindings/a2a-protocol-slimrpc/deny.toml` holds the binding's: RUSTSEC-2026-0285,
--0346, -0348 and -0349 (rustls below 0.23.46 in the binding's lock, held by
-`mls-rs-crypto-awslc`'s exact `aws-lc-rs` pin) and RUSTSEC-2024-0449 (goes
-with R13). The probe is `cargo update -p rustls --precise 0.23.46` in the
-binding; the `osv-scanner.toml` beside it waives the GHSA aliases until
-2027-01-08. deny.toml's own comments carry the full chain and are the
-authority.
+The SLIMRPC binding carries none since 2026-10-15: its move to
+agntcy-slim-rpc 3.4.1 (R13) took rustls to 0.23.46 and removed
+`unsafe-libyaml`, and its `deny.toml` and `osv-scanner.toml` notes say how
+each of the five was cleared. The root `deny.toml` ignores
+RUSTSEC-2024-0436 (`paste`, unmaintained) until genai drops it; its own
+comment is the authority.
 
 ## Decisions the maintainer made
 
@@ -184,7 +198,26 @@ it.
   release; R67 option (b) with 0.15.0 as the next release; OpenTelemetry as
   in Step 4; R68, follow the text.
 - **2026-10-15:** R69 option (a), the store reports the log position a saved
-  task reflects.
+  task reflects. Later the same day, for the next session's plan:
+  `subscribe_max_idle` off by default, kept as an opt-in (§3.1.6); lag
+  catch-up paging, so `streamLagged` remains only where the log no longer
+  holds the events (§3.5.2); `application/a2a+json` for a request that states
+  no preference, gated on `scripts/go_sdk_interop.sh` (§11.1); the card
+  resolver honours `max-age` with an always-revalidate option and an opt-in
+  default lifetime (§8.6, §8.6.2); the §5.7 and SLIMRPC error-mapping drafts
+  re-verified and held; for 0.15.0, UCUM units, `a2a.server.latency` renamed
+  `a2a.server.request.duration` with the old name removed, and
+  `init_otlp_pipeline` taking an optional service name — not the single
+  outcome counter; commits carry `Signed-off-by` only, and
+  `CONTRIBUTING.md` follows. After the a2a-go check failed (its streaming
+  calls name no JSON type and it reads only `application/json` errors), the
+  narrowed §11.1 rule: a request asking only for an event stream keeps
+  `application/json` errors. A part-level at-rest cipher hook (AES-256-GCM
+  on message and artifact part payloads, structure left plaintext) for
+  GDPR-25-1 and GDPR-32-1a.
+- **2026-10-16:** the audit trail protects who and what its records name,
+  with per-person keys that can be destroyed (crypto-shredding), amending
+  ADR 0015 — chosen over keyed digests alone and over deferring it.
 - **Earlier, still standing:** tool calling stays in the examples, not the
   crates (`examples/rig-agent`); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
@@ -216,9 +249,9 @@ it.
 
 ## Branches
 
-Only two kinds matter: the open branch (#171, above) and the storage branches
-(`claude/adk-rust-0.12-patch`, `claude/a2a-rig-held`), both built against
-0.12. Every other `claude/*` branch is merged or a pre-0.12 session branch;
+Only two kinds matter: the working branch (`claude/lucid-edison-4hn5kb`,
+above) and the storage branches (`claude/adk-rust-0.12-patch`,
+`claude/a2a-rig-held`), both built against 0.12. Every other `claude/*` branch is merged or a pre-0.12 session branch;
 deleting them is the maintainer's call. To check one:
 
 ```sh

@@ -424,7 +424,7 @@ mod tests {
         // No header at all → nothing activated.
         assert_eq!(
             handler.activated_extensions(&std::collections::HashMap::new()),
-            [] as [std::string::String; 0]
+            Vec::<String>::new()
         );
     }
 

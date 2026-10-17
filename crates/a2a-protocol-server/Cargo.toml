@@ -82,6 +82,10 @@ axum = ["dep:axum"]
 ## JWKS with OIDC discovery) via `ring`. The header/token interceptors
 ## (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature.
 auth-jwt = ["dep:ring", "dep:zeroize"]
+## Encryption at rest for what a task carries: `store::encrypted`, a
+## `TaskStore` wrapper sealing every part with AES-256-GCM (`ring`) or a
+## cipher of your own, such as a key-management service.
+encryption = ["dep:ring", "dep:zeroize"]
 ## A tamper-evident audit trail (ADR 0015): every call, run start, task event
 ## and cancel request recorded in a SHA-256 hash chain per tenant, with
 ## ES256/Ed25519-signed checkpoints, legal holds and a six-month retention

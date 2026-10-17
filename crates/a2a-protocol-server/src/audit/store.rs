@@ -26,6 +26,46 @@ pub enum Appended {
     Conflict,
 }
 
+/// One person's audit key, as `AuditPrivacy` (with the `encryption`
+/// feature) keeps it.
+///
+/// It is found by `lookup`, a keyed hash of the person; named in records by
+/// `sid`, a random handle; and holds the key itself, `wrapped` (sealed by the
+/// operator's key-encryption key, base64). Deleting it is what erases the
+/// person from every record sealed under it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SubjectKey {
+    /// `"<kid>:<hex>"`: HMAC-SHA-256 of the person under the HMAC key `kid`.
+    pub lookup: String,
+    /// The random handle records carry instead of the person.
+    pub sid: String,
+    /// The person's key, sealed by the key-encryption key, base64.
+    pub wrapped: String,
+}
+
+impl SubjectKey {
+    /// A subject key from its three parts.
+    #[must_use]
+    pub fn new(
+        lookup: impl Into<String>,
+        sid: impl Into<String>,
+        wrapped: impl Into<String>,
+    ) -> Self {
+        Self {
+            lookup: lookup.into(),
+            sid: sid.into(),
+            wrapped: wrapped.into(),
+        }
+    }
+}
+
+fn no_subject_keys<T>() -> A2aResult<T> {
+    Err(a2a_protocol_types::error::A2aError::unsupported_operation(
+        "this audit store keeps no subject keys",
+    ))
+}
+
 /// A legal hold: while one is placed on a chain, retention deletes nothing
 /// from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +136,88 @@ pub trait AuditStore: Send + Sync + 'static {
 
     /// Every hold in place.
     fn holds(&self) -> BoxFuture<'_, A2aResult<Vec<LegalHold>>>;
+
+    // ── Subject keys, for `AuditPrivacy` ────────────────────────────────
+    //
+    // Defaulted to "unsupported", as the task store's event log is: a store
+    // that has not implemented them makes `AuditLog::with_privacy` refuse it,
+    // rather than seal records under keys it then loses.
+
+    /// Whether this store keeps subject keys. `AuditLog::with_privacy`
+    /// refuses a store that answers `false`.
+    fn supports_subject_keys(&self) -> bool {
+        false
+    }
+
+    /// The key of `chain` whose lookup is `lookup`.
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        let _ = (chain, lookup);
+        Box::pin(async { no_subject_keys() })
+    }
+
+    /// The key of `chain` whose handle is `sid`.
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn subject_key_by_sid<'a>(
+        &'a self,
+        chain: &'a str,
+        sid: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        let _ = (chain, sid);
+        Box::pin(async { no_subject_keys() })
+    }
+
+    /// Every subject key of `chain`, for dropping those no record names.
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn subject_keys<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Vec<SubjectKey>>> {
+        let _ = chain;
+        Box::pin(async { no_subject_keys() })
+    }
+
+    /// Stores `key` for `chain` unless a key with its lookup is there;
+    /// `false` when one was, and nothing was stored. Atomic: of two writers
+    /// racing on one lookup, exactly one stores.
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn put_subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        key: &'a SubjectKey,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        let _ = (chain, key);
+        Box::pin(async { no_subject_keys() })
+    }
+
+    /// Deletes the key of `chain` whose lookup is `lookup`, returning its
+    /// `sid`, or `None` when there was none. Must not leave a copy: what it
+    /// deletes is what erasure destroys.
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn delete_subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<String>>> {
+        let _ = (chain, lookup);
+        Box::pin(async { no_subject_keys() })
+    }
 }
 
 /// Parses a record's `time` into Unix milliseconds for retention.
@@ -116,6 +238,8 @@ struct Chain {
 pub struct InMemoryAuditStore {
     chains: RwLock<HashMap<String, Chain>>,
     holds: RwLock<HashMap<String, LegalHold>>,
+    /// Per chain, each subject key by its lookup.
+    subject_keys: RwLock<HashMap<String, HashMap<String, SubjectKey>>>,
 }
 
 impl InMemoryAuditStore {
@@ -258,6 +382,76 @@ impl AuditStore for InMemoryAuditStore {
             let mut out: Vec<LegalHold> = self.holds.read().await.values().cloned().collect();
             out.sort_by(|a, b| a.chain.cmp(&b.chain));
             Ok(out)
+        })
+    }
+
+    fn supports_subject_keys(&self) -> bool {
+        true
+    }
+
+    fn subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        Box::pin(async move {
+            let keys = self.subject_keys.read().await;
+            Ok(keys.get(chain).and_then(|k| k.get(lookup)).cloned())
+        })
+    }
+
+    fn subject_key_by_sid<'a>(
+        &'a self,
+        chain: &'a str,
+        sid: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        Box::pin(async move {
+            let keys = self.subject_keys.read().await;
+            Ok(keys
+                .get(chain)
+                .and_then(|k| k.values().find(|key| key.sid == sid))
+                .cloned())
+        })
+    }
+
+    fn subject_keys<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Vec<SubjectKey>>> {
+        Box::pin(async move {
+            let keys = self.subject_keys.read().await;
+            Ok(keys
+                .get(chain)
+                .map(|k| k.values().cloned().collect())
+                .unwrap_or_default())
+        })
+    }
+
+    fn put_subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        key: &'a SubjectKey,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        Box::pin(async move {
+            let mut keys = self.subject_keys.write().await;
+            let chain_keys = keys.entry(chain.to_owned()).or_default();
+            if chain_keys.contains_key(&key.lookup) {
+                return Ok(false);
+            }
+            chain_keys.insert(key.lookup.clone(), key.clone());
+            drop(keys);
+            Ok(true)
+        })
+    }
+
+    fn delete_subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<String>>> {
+        Box::pin(async move {
+            let mut keys = self.subject_keys.write().await;
+            Ok(keys
+                .get_mut(chain)
+                .and_then(|k| k.remove(lookup))
+                .map(|key| key.sid))
         })
     }
 }

@@ -89,7 +89,14 @@ impl RequestHandler {
             let (queues, store, task_id) = (queues.clone(), store.clone(), task_id.clone());
             Box::pin(partition.clone().scope(async move {
                 let logged = store.supports_event_log();
-                let deadline = tokio::time::Instant::now() + max_idle;
+                // No bound by default (§3.1.6). A bound too large to add to
+                // the clock is no bound, rather than a panic.
+                let deadline =
+                    max_idle.and_then(|idle| tokio::time::Instant::now().checked_add(idle));
+                // Warned once per run of failures, not once per poll: with no
+                // idle bound a broken store would otherwise log four times a
+                // second for as long as the client stays.
+                let mut store_failing = false;
                 loop {
                     match store.get(&task_id).await {
                         // The task finished between queues, so the client
@@ -105,15 +112,19 @@ impl RequestHandler {
                         }
                         // Deleted out from under us: nothing left to stream.
                         Ok(None) => return Reattached::End,
-                        Ok(Some(_)) => {}
+                        Ok(Some(_)) => store_failing = false,
                         // A store read failure is not evidence the task
-                        // finished, but retrying forever on a broken store is
-                        // worse than closing; fall through to the idle bound.
+                        // finished, so the stream keeps waiting: the store may
+                        // recover, and the client can leave at any time. An
+                        // idle bound, when one is set, still ends it.
                         Err(_e) => {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "subscribe reattach: task store read failed"
-                            );
+                            if !store_failing {
+                                trace_warn!(
+                                    task_id = %task_id,
+                                    "subscribe reattach: task store read failed"
+                                );
+                            }
+                            store_failing = true;
                         }
                     }
 
@@ -133,11 +144,10 @@ impl RequestHandler {
                         return Reattached::Logged { through };
                     }
 
-                    // Bound the wait so a task parked forever does not pin a
-                    // connection and a queue slot indefinitely. The client can
-                    // resubscribe; §3.5.2 is explicit that reconnection is a
-                    // supported flow.
-                    if tokio::time::Instant::now() >= deadline {
+                    // An operator's bound, when set, ends the wait on a task
+                    // parked too long. The client can resubscribe; §3.5.2 is
+                    // explicit that reconnection is a supported flow.
+                    if deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
                         trace_warn!(
                             task_id = %task_id,
                             "subscribe reattach: task still non-terminal after the idle bound; \
@@ -169,11 +179,15 @@ impl RequestHandler {
         &self,
         task_id: &TaskId,
         stored: a2a_protocol_types::task::Task,
-        shape: impl FnOnce(&mut a2a_protocol_types::task::Task),
+        shape: impl Fn(&mut a2a_protocol_types::task::Task) + Clone + Send + Sync + 'static,
         resume_after: Option<u64>,
     ) -> ServerResult<InMemoryQueueReader> {
-        let (reader, gap) = self.snapshot_and_live(task_id, stored, shape).await?;
-        let mut reader = self.with_stream_hooks(reader, task_id);
+        let (reader, gap) = self
+            .snapshot_and_live(task_id, stored, shape.clone())
+            .await?;
+        let mut reader = self
+            .with_stream_hooks(reader, task_id)
+            .with_final_snapshot(self.final_snapshot_hook(task_id.clone(), shape));
         if let Some(after_seq) = resume_after.or(gap) {
             self.replay_after(&mut reader, task_id, after_seq).await;
         }
@@ -296,7 +310,12 @@ impl RequestHandler {
             return;
         }
 
-        let Some(events) = self.read_log_with_catchup(task_id, after_seq).await else {
+        let Some(Replayed {
+            events,
+            capped,
+            complete,
+        }) = self.read_log_with_catchup(task_id, after_seq).await
+        else {
             return;
         };
         if !contiguous(after_seq, &events) {
@@ -344,9 +363,17 @@ impl RequestHandler {
             task_id = %task_id,
             after_seq = after_seq,
             replayed = events.len(),
+            more = capped,
             "resubscribe replaying missed events"
         );
-        reader.queue_replay(events);
+        reader.queue_resume_replay(
+            after_seq,
+            crate::streaming::event_queue::CatchUpPage {
+                events,
+                more: capped,
+                complete,
+            },
+        );
     }
 
     /// Reads the task's log from `after_seq` for a resubscribe; see
@@ -355,15 +382,8 @@ impl RequestHandler {
     /// behaviour, a snapshot then live events, and refusing to subscribe
     /// because the history could not be read would turn a storage hiccup into
     /// a dropped connection.
-    async fn read_log_with_catchup(
-        &self,
-        task_id: &TaskId,
-        after_seq: u64,
-    ) -> Option<Vec<crate::store::RecordedEvent>> {
-        self.log_replay()
-            .read(task_id, after_seq)
-            .await
-            .map(|replayed| replayed.events)
+    async fn read_log_with_catchup(&self, task_id: &TaskId, after_seq: u64) -> Option<Replayed> {
+        self.log_replay().read(task_id, after_seq).await
     }
 
     /// What reading the log needs, detached from the handler.
@@ -395,12 +415,19 @@ impl RequestHandler {
     /// `None` when the store keeps no log, which leaves such a stream ending
     /// with `streamLagged`.
     ///
-    /// The hook answers only with a complete replay: every event after the
-    /// stream's last position up to the writer's position, with the head of
-    /// the log still there. A partial one would hand the stream a gap it
-    /// cannot see, so the explicit `streamLagged` is the answer then. Like
-    /// the reattach hook it runs outside the request, so it re-enters the
-    /// request's tenant and caller.
+    /// The hook answers with a page of the events after the stream's last
+    /// position, with the head of the log still there and no position
+    /// missing: all of them up to the writer's position (`complete`), the
+    /// first `subscribe_replay_limit` of them (`more`: the stream asks again
+    /// from the page's end before it reads the channel; spec §3.5.2, and
+    /// until 2026-10-15 a lag longer than the limit ended with
+    /// `streamLagged`), or, when the log had not caught up within
+    /// `subscribe_replay_catchup`, what it held by then; the reader decides
+    /// what each is good for. A replay with a hole, or one the log no longer
+    /// covers, would hand the stream a gap it cannot see, so the explicit
+    /// `streamLagged` is the answer then. Like the reattach hook it
+    /// runs outside the request, so it re-enters the request's tenant and
+    /// caller.
     pub(crate) fn lag_catch_up_hook(&self, task_id: TaskId) -> Option<CatchUpFn> {
         if !self.task_store.supports_event_log() {
             return None;
@@ -411,7 +438,7 @@ impl RequestHandler {
             let (replay, task_id) = (replay.clone(), task_id.clone());
             Box::pin(partition.clone().scope(async move {
                 let replayed = replay.read(&task_id, after).await?;
-                if !replayed.complete
+                if !contiguous(after, &replayed.events)
                     || !replay
                         .store
                         .event_log_covers(&task_id, after)
@@ -421,12 +448,75 @@ impl RequestHandler {
                     trace_warn!(
                         task_id = %task_id,
                         after_seq = after,
-                        "a lagged stream could not be caught up in full from the event log"
+                        "a stream's replay has a gap the event log cannot fill"
                     );
                     return None;
                 }
-                Some(replayed.events)
+                Some(crate::streaming::event_queue::CatchUpPage {
+                    events: replayed.events,
+                    more: replayed.capped,
+                    complete: replayed.complete,
+                })
             }))
+        }))
+    }
+
+    /// Builds the hook that answers a stream's final `Task` snapshot (spec
+    /// §11.7), or `None` unless
+    /// [`HandlerLimits::final_task_snapshot`](crate::handler::HandlerLimits::final_task_snapshot)
+    /// is set.
+    ///
+    /// The snapshot must show the task the stream just finished, so it is
+    /// read once the queue's consumer has stored every event up to the last
+    /// position the stream delivered, waiting at most
+    /// `subscribe_replay_catchup`; a read that is not exact by then, or a
+    /// stored task that is not terminal, sends nothing rather than an older
+    /// state. With no live queue its consumer has finished, and the store is
+    /// read as it stands. It re-enters the request's tenant and caller, as
+    /// the other hooks do, and applies `shape`, the history trimming the
+    /// stream's first `Task` had.
+    pub(crate) fn final_snapshot_hook(
+        &self,
+        task_id: TaskId,
+        shape: impl Fn(&mut a2a_protocol_types::task::Task) + Send + Sync + 'static,
+    ) -> Option<crate::streaming::event_queue::FinalSnapshotFn> {
+        if !self.limits.final_task_snapshot {
+            return None;
+        }
+        let queues = self.event_queue_manager.clone();
+        let store = std::sync::Arc::clone(&self.task_store);
+        let wait = self.limits.subscribe_replay_catchup;
+        let partition = crate::store::tenant::TenantContext::capture();
+        let shape = std::sync::Arc::new(shape);
+        Some(std::sync::Arc::new(move |through| {
+            let (queues, store, task_id, shape) = (
+                queues.clone(),
+                std::sync::Arc::clone(&store),
+                task_id.clone(),
+                std::sync::Arc::clone(&shape),
+            );
+            Box::pin(partition.clone().scope(async move {
+                let read = match queues.applied_mark(&task_id).await {
+                    Some(mark) => {
+                        let read = mark
+                            .read_through(through, tokio::time::Instant::now() + wait, || {
+                                store.get(&task_id)
+                            })
+                            .await;
+                        if !read.exact {
+                            return None;
+                        }
+                        read.value
+                    }
+                    None => store.get(&task_id).await,
+                };
+                let mut task = read
+                    .ok()
+                    .flatten()
+                    .filter(|task| task.status.state.is_terminal())?;
+                shape(&mut task);
+                Some(a2a_protocol_types::events::StreamResponse::Task(task))
+            })) as crate::streaming::event_queue::FinalSnapshotFuture
         }))
     }
 
@@ -567,6 +657,10 @@ struct Replayed {
     /// Whether they are all there is up to the writer's position when the
     /// read began: not capped by the limit, not cut short by the deadline.
     complete: bool,
+    /// Whether the read stopped at the limit with more to read: a full page,
+    /// without a hole, short of the writer's position. The next page starts
+    /// after its last event.
+    capped: bool,
 }
 
 impl LogReplay {
@@ -612,22 +706,27 @@ impl LogReplay {
             };
 
             let reached = found.last().map_or(after_seq, |e| e.seq);
-            // Caught up, or capped by `subscribe_replay_limit` — which is
-            // truncation, not lag, and is resumable by the client's own next
-            // `Last-Event-ID`, so there is nothing to wait for.
+            // Caught up, or a full page of `subscribe_replay_limit`: the
+            // stream reads the next page after this one, so there is nothing
+            // to wait for.
             if reached >= target || found.len() >= limit {
                 // With no live queue (`target` 0) the log is whole, and the
                 // read is all of it only if the limit did not cap it. A hole
                 // makes it incomplete wherever it ends.
-                let complete = contiguous(after_seq, &found)
+                let whole = contiguous(after_seq, &found);
+                let complete = whole
                     && if target == 0 {
                         found.len() < limit
                     } else {
                         reached >= target
                     };
+                // A full page is never empty, so a reader that asks again
+                // after it moves forward; a zero limit pages nothing.
+                let capped = whole && !complete && !found.is_empty() && found.len() >= limit;
                 return Some(Replayed {
                     events: found,
                     complete,
+                    capped,
                 });
             }
             if Instant::now() >= deadline {
@@ -645,6 +744,7 @@ impl LogReplay {
                 return Some(Replayed {
                     events: found,
                     complete: false,
+                    capped: false,
                 });
             }
             tokio::time::sleep(backoff).await;
@@ -660,6 +760,9 @@ impl LogReplay {
         }
     }
 }
+
+#[cfg(test)]
+mod log_replay_tests;
 
 #[cfg(test)]
 mod tests {
@@ -930,9 +1033,9 @@ mod tests {
     /// which is what the SSE writer does at every keep-alive: it races
     /// `read()` against the keep-alive timer in a `select!` and drops the
     /// losing future. The bound used to live in the future the reattach
-    /// hook returns, so each keep-alive started it again, and with the
-    /// defaults — a 30 s keep-alive, a 300 s bound — a subscription to a
-    /// parked task never ended.
+    /// hook returns, so each keep-alive started it again, and with what
+    /// were then the defaults — a 30 s keep-alive, a 300 s bound — a
+    /// subscription to a parked task never ended.
     #[tokio::test]
     async fn the_idle_bound_survives_a_read_cancelled_by_a_keep_alive() {
         use crate::streaming::event_queue::EventQueueReader as _;
@@ -975,7 +1078,7 @@ mod tests {
 
         let started = tokio::time::Instant::now();
         let ended = loop {
-            // The keep-alive tick: shorter than the bound, as the defaults are.
+            // The keep-alive tick: shorter than the bound.
             if let Ok(event) = tokio::time::timeout(keep_alive, reader.read()).await {
                 break event;
             }

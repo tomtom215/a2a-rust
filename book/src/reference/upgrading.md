@@ -140,6 +140,30 @@ These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
 
+### HTTP+JSON answers `application/a2a+json` unless asked otherwise
+
+A response to a request that names no JSON type in `Accept` and sends no
+`application/a2a+json` body is labelled `application/a2a+json` (§11.1's
+SHOULD), on both `RestDispatcher` and the axum router; it was
+`application/json`. A client that reads only `application/json` keeps getting
+it by sending `Accept: application/json`. A request that asks only for
+`text/event-stream` still gets `application/json` errors, so that released
+a2a-go can read them. A JSON request body no longer decides the response
+type on its own: an `application/json` body with no `Accept` is answered as
+`application/a2a+json`.
+
+### A parked subscription stays open until its task finishes
+
+`HandlerLimits::subscribe_max_idle` is an `Option<Duration>` and `None` by
+default: a `SubscribeToTask` stream to a task parked in `input-required` or
+`auth-required` runs until the task reaches a terminal state or the client
+goes, as §3.1.6 requires. It used to end after five minutes with no terminal
+state, and the client resubscribed. `with_subscribe_max_idle(d)` still sets a
+bound and takes a `Duration` as before; code that read the field compares
+against `Some(d)` now. A bound trades conformance for reclaiming subscriptions
+whose clients are connected but no longer reading; a client that has gone is
+noticed without one (the field's rustdoc says how, per binding).
+
 ### `TaskState` numbers its variants as the proto does
 
 `TaskState` is now generated from `a2a.proto` (spec §1.4, ADR 0016), and each
@@ -329,6 +353,19 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 # }
 ```
 
+### `CachingCardResolver` trusts the card's `max-age`
+
+Spec §8.6.2: clients SHOULD honor RFC 9111 when fetching agent cards.
+`CachingCardResolver::resolve` used to send a request on every call; it now
+returns the stored card without one while the card is fresh, for its
+`Cache-Control: max-age` (or `Expires`). A card the agent changes is seen
+once the stored one goes stale, which against this SDK's servers is up to
+`agent_card_max_age` (default 3600 s) later. To see a change at once, as
+before, build the resolver with `.with_always_revalidate(true)`, or lower
+the server's `max-age`. `with_options` now also starts the resolver with an
+empty cache, so a clone given other options no longer shares its original's
+stored or extended card.
+
 ### Push webhook timeouts: 10 s per request, 30 s per delivery
 
 `HttpPushSender`'s request timeout goes from 30 s to 10 s and
@@ -369,8 +406,10 @@ missed from the task's event log and goes on (spec §3.5.2), on every store that
 keeps a log, which is every built-in one. A test that provokes `streamLagged`
 with a small `with_event_queue_capacity` no longer sees it there; also bound
 the log below what the stream misses
-(`TaskStoreConfig::with_max_events_per_task`), or lower
-`HandlerLimits::subscribe_replay_limit`.
+(`TaskStoreConfig::with_max_events_per_task`). Lowering
+`HandlerLimits::subscribe_replay_limit` no longer provokes it either: since
+0.15.0 the limit is the size of each read of the log, and a longer replay is
+read in pages.
 
 ### ListTasks takes a `pageSize` from 1 to 100
 

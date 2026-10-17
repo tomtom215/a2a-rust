@@ -17,11 +17,15 @@ pub mod spire;
 pub mod tls;
 
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use a2a_protocol_server::streaming::EventQueueWriter;
-use a2a_protocol_server::{AgentExecutor, RequestContext, RequestHandler, RequestHandlerBuilder};
+use a2a_protocol_server::{
+    AgentExecutor, CallContext, RequestContext, RequestHandler, RequestHandlerBuilder,
+    ServerInterceptor,
+};
 use a2a_protocol_slimrpc::SlimName;
+use a2a_protocol_slimrpc::server::peer::{PEER_ISSUER_KEY, PEER_SUBJECT_KEY};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentSkill};
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
@@ -224,4 +228,43 @@ pub fn signature_of(task: &serde_json::Value) -> Option<String> {
         .get("text")?
         .as_str()
         .map(str::to_string)
+}
+
+/// What one call's context said about its caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seen {
+    pub identity: Option<String>,
+    pub scheme: Option<String>,
+    pub subject: Option<String>,
+    pub issuer: Option<String>,
+    pub peer_addr: Option<std::net::SocketAddr>,
+}
+
+/// Records [`Seen`] for every call it is shown.
+#[derive(Default)]
+pub struct Recorder(pub Arc<Mutex<Vec<Seen>>>);
+
+impl ServerInterceptor for Recorder {
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
+        let header = |key: &str| ctx.http_headers().get(key).cloned();
+        let seen = Seen {
+            identity: ctx.caller_identity().map(str::to_owned),
+            scheme: ctx.auth_scheme().map(str::to_owned),
+            subject: header(PEER_SUBJECT_KEY),
+            issuer: header(PEER_ISSUER_KEY),
+            peer_addr: ctx.peer_addr(),
+        };
+        self.0.lock().expect("not poisoned").push(seen);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
 }

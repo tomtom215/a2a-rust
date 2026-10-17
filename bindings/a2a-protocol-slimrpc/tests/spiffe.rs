@@ -143,6 +143,87 @@ async fn a_spiffe_identity_carries_an_a2a_call() {
     let _ = service.shutdown().await;
 }
 
+/// The caller a handler sees is the SPIFFE ID SPIRE issued to the calling
+/// workload: SLIM verifies the JWT-SVID on the request that sets up the MLS
+/// session, and `SlimPeerAuthInterceptor` names the caller by it (audit
+/// register R13).
+#[tokio::test]
+#[ignore = "needs spire-server and spire-agent; see the module docs"]
+async fn the_handler_sees_the_callers_spiffe_id() {
+    use a2a_protocol_slimrpc::SlimPeerAuthInterceptor;
+    use a2a_protocol_slimrpc::server::peer::caller_id;
+
+    let testbed = SpireTestbed::start("spiffe-peer", &["a2a/echo_agent", "a2a/caller"]);
+    let service = common::service("spiffe-peer");
+    let agent = SlimName::new("org", "spiffe", "echo_agent");
+    let caller = SlimName::new("org", "spiffe", "caller");
+
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let handler = Arc::new(
+        a2a_protocol_server::RequestHandlerBuilder::new(common::SigningExecutor::new("echo_agent"))
+            .with_agent_card(common::agent_card(&agent))
+            .with_extended_agent_card(common::agent_card(&agent))
+            .with_interceptor(SlimPeerAuthInterceptor::required())
+            .with_interceptor(common::Recorder(Arc::clone(&seen)))
+            .build()
+            .expect("build handler"),
+    );
+
+    let (agent_provider, agent_verifier) =
+        spiffe_identity(&testbed, &testbed.spiffe_ids[0], &["slim"]).await;
+    let (agent_app, notifications) = service
+        .create_app(&agent.to_proto_name(), agent_provider, agent_verifier)
+        .expect("create the agent app with a SPIFFE identity");
+    let server = Arc::new(SlimRpcServer::from_app(
+        (Arc::new(agent_app), notifications),
+        handler,
+        agent.clone(),
+    ));
+
+    let (caller_provider, caller_verifier) =
+        spiffe_identity(&testbed, &testbed.spiffe_ids[1], &["slim"]).await;
+    let (caller_app, _) = service
+        .create_app(&caller.to_proto_name(), caller_provider, caller_verifier)
+        .expect("create the caller app with a SPIFFE identity");
+    let transport = SlimRpcTransport::from_app(Arc::new(caller_app), agent)
+        .expect("open a channel")
+        .with_timeout(Duration::from_secs(20));
+
+    let serving = Arc::clone(&server);
+    tokio::spawn(async move {
+        let _ = serving.serve().await;
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    transport
+        .send_request(
+            method::SEND_MESSAGE,
+            common::send_params_json("who am I over SPIFFE?"),
+            &Default::default(),
+        )
+        .await
+        .expect("a SPIFFE-authenticated send must succeed");
+
+    let seen = seen.lock().expect("not poisoned").clone();
+    let [call] = seen.as_slice() else {
+        panic!("one call, got {seen:?}");
+    };
+    assert_eq!(
+        call.subject.as_deref(),
+        Some(testbed.spiffe_ids[1].as_str())
+    );
+    // Whether the JWT-SVID names an issuer depends on the SPIRE server's
+    // configuration (in this testbed it named none, 2026-10-15), so the
+    // identity is checked against whatever issuer was recorded.
+    assert_eq!(
+        call.identity.as_deref(),
+        Some(caller_id(call.issuer.as_deref(), &testbed.spiffe_ids[1]).as_str())
+    );
+
+    server.shutdown().await;
+    let _ = service.shutdown().await;
+}
+
 /// The identity SPIRE issued really is the one under test.
 ///
 /// Pins the SPIFFE ID the workload was registered as, so the suite above cannot

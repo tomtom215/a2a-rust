@@ -750,6 +750,7 @@ deserialize_macro = true
 
 [messages.OAuthFlows.oneofs.flow.variants.implicit]
 deprecated = "deprecated in A2A 1.0; use Authorization Code + PKCE"
+deprecated_since = "0.15.0"
 doc_append = """
 Kept so cards that still declare it parse (spec §1.4: deprecated
 definitions stay until the next major version), and marked
@@ -764,6 +765,7 @@ fn implicit(f: &a2a_protocol_types::security::OAuthFlows) -> bool {
 
 [messages.OAuthFlows.oneofs.flow.variants.password]
 deprecated = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code"
+deprecated_since = "0.15.0"
 doc_append = """
 Kept and marked as [`Implicit`](Self::Implicit) is:
 

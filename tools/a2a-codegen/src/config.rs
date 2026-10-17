@@ -114,6 +114,9 @@ pub struct VariantConfig {
     /// The `#[deprecated]` note; set exactly when the proto marks the member
     /// deprecated.
     pub deprecated: Option<String>,
+    /// The crate version that first deprecated the member, the attribute's
+    /// `since`; set exactly when `deprecated` is.
+    pub deprecated_since: Option<String>,
     pub why: Option<String>,
 }
 
@@ -298,6 +301,11 @@ fn oneof_problems(
                     if f.deprecated { "does" } else { "does not" }
                 ));
             }
+            if vc.deprecated_since.is_some() != vc.deprecated.is_some() {
+                problems.push(format!(
+                    "{name}.{oneof}.{member}: `deprecated_since` is set exactly when `deprecated` is"
+                ));
+            }
         }
         for member in members {
             let deprecated = message
@@ -384,7 +392,8 @@ mod tests {
     fn a_deprecated_member_needs_a_note_and_only_it() {
         let base = "[paths]\nPick = \"m::Pick\"\n[messages.Pick]\nderives = []\n\
                     [messages.Pick.oneofs.choice]\n";
-        let note = "[messages.Pick.oneofs.choice.variants.right]\ndeprecated = \"old\"\n";
+        let bare = "[messages.Pick.oneofs.choice.variants.right]\ndeprecated = \"old\"\n";
+        let note = &format!("{bare}deprecated_since = \"0.1.0\"\n");
         let check = |toml: &str, deprecated| {
             Config::parse(toml)
                 .unwrap()
@@ -397,6 +406,8 @@ mod tests {
             missing.contains("Pick.choice.right is deprecated in the proto"),
             "{missing}"
         );
+        let no_since = check(&format!("{base}{bare}"), true).unwrap_err();
+        assert!(no_since.contains("`deprecated_since` is set exactly"), "{no_since}");
         let extra = check(&format!("{base}{note}"), false).unwrap_err();
         assert!(extra.contains("and the proto does not"), "{extra}");
         let unconfigured =

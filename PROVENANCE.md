@@ -279,14 +279,19 @@ It obscured the responsible human behind a tool identity and made per-commit
 sign-off impossible, since a sign-off is an assertion by a person.
 
 AI-assisted commits are now authored by the human who directed and reviewed
-the work, with the assistant credited in a trailer:
+the work, and carry that person's sign-off and no other trailer:
 
 ```
 Some change that an assistant helped write
 
 Signed-off-by: Tom F. <tomf@tomtomtech.net>
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
+
+This document is the disclosure that the work is AI-assisted; a contributor's
+pull request description says so for theirs. Until 2026-10-15 this section
+also asked for a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer.
+The maintainer's commits never carried it, and on 2026-10-15 the maintainer
+decided the rule should follow the practice rather than the reverse.
 
 Configure the local repository once:
 

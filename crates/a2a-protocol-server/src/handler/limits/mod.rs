@@ -177,26 +177,40 @@ pub struct HandlerLimits {
     /// events immediately.
     pub subscribe_reattach_interval: Duration,
     /// How long a `SubscribeToTask` stream waits for a parked task to make
-    /// progress before ending. Default: 5 minutes.
+    /// progress before ending, if at all. Default: `None`, no bound.
     ///
-    /// Without a bound, a task left in `input_required` forever would pin a
-    /// connection forever. Ending the stream is safe: §3.5.2 makes
-    /// reconnection an expected flow, and the client gets a fresh snapshot
-    /// when it resubscribes.
-    pub subscribe_max_idle: Duration,
-    /// How many logged events a resuming `SubscribeToTask` replays at most.
-    /// Default: 1,000.
+    /// Spec §3.1.6 says the stream MUST terminate when the task reaches a
+    /// terminal state, so by default it ends only there, or when the client
+    /// goes. Every binding notices a client that has gone while the stream
+    /// is idle: SSE writes a keep-alive every 30 seconds and a failed write
+    /// ends it, WebSocket cancels a connection's requests when its read loop
+    /// ends (and `WebSocketDispatcher::with_idle_timeout` bounds a silent
+    /// peer), gRPC stops when the response channel closes, and SLIMRPC aborts
+    /// a session's handlers when the session closes.
     ///
-    /// A client reconnecting with `Last-Event-ID` is sent what it missed,
-    /// read from the task's event log. The bound matters because the offset
-    /// is client-supplied: `Last-Event-ID: 0` on a long-running task asks for
-    /// the whole history, and without a cap that is an unbounded read and an
-    /// unbounded burst of frames on one connection.
+    /// Setting a bound trades that conformance for reclaiming subscriptions
+    /// whose clients are still connected but have stopped caring: a stream
+    /// to a task left in `input_required` ends after `max_idle` without a
+    /// terminal state, and the client resubscribes (§3.5.2 makes
+    /// reconnection an expected flow). Until 0.15.0 the default was 5
+    /// minutes.
+    pub subscribe_max_idle: Option<Duration>,
+    /// How many logged events one read of the task's event log returns at
+    /// most. Default: 1,000.
     ///
-    /// Truncation is not silent data loss. Every replayed frame carries its
-    /// own `id:`, so a client that receives the cap's worth reconnects at the
-    /// last one and continues — the replay is resumable by the same mechanism
-    /// that started it.
+    /// A stream reads the log to replay what it missed: a client
+    /// reconnecting with `Last-Event-ID`, a stream that fell behind the
+    /// broadcast channel, a subscription that missed part of a turn. The
+    /// bound matters because the offset can be client-supplied:
+    /// `Last-Event-ID: 0` on a long-running task asks for the whole history,
+    /// and without a cap that is an unbounded read held in memory at once.
+    ///
+    /// A longer replay is read a page of this size at a time, each page
+    /// delivered before the next is read, and the stream goes back to the
+    /// live channel only once the last page is in (§3.5.2). Until 0.15.0 the
+    /// replay stopped at the limit: a lag past it ended with `streamLagged`,
+    /// and a resume past it skipped, without saying so, the positions between
+    /// the replay's end and the live stream.
     pub subscribe_replay_limit: usize,
     /// How long a `SubscribeToTask` waits for the task's store to catch up with
     /// what has already been broadcast: a resuming one for the event log, and
@@ -219,6 +233,18 @@ pub struct HandlerLimits {
     ///
     /// Zero disables the wait.
     pub subscribe_replay_catchup: Duration,
+    /// Whether a stream sends the task once more, as a final `Task`
+    /// snapshot, after its terminal state and before it closes. Default:
+    /// `false`.
+    ///
+    /// Spec §11.7: an implementation "MAY optionally resend a final `Task`
+    /// snapshot before closing". The snapshot is read once the store holds
+    /// the terminal event, waiting at most
+    /// [`subscribe_replay_catchup`](Self::subscribe_replay_catchup) for it;
+    /// when the store cannot show the finished task by then, no snapshot is
+    /// sent rather than an older one. A send stream's snapshot carries the
+    /// history its request asked for, as the stream's first `Task` does.
+    pub final_task_snapshot: bool,
 }
 
 impl Default for HandlerLimits {
@@ -237,9 +263,10 @@ impl Default for HandlerLimits {
             max_parts_per_artifact: 10_000,
             max_total_push_configs: 100_000,
             subscribe_reattach_interval: Duration::from_millis(250),
-            subscribe_max_idle: Duration::from_secs(300),
+            subscribe_max_idle: None,
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),
+            final_task_snapshot: false,
         }
     }
 }
@@ -300,14 +327,17 @@ impl HandlerLimits {
         self
     }
 
-    /// Sets how long a `SubscribeToTask` stream waits on a parked task.
+    /// Sets how long a `SubscribeToTask` stream waits on a parked task before
+    /// ending without a terminal state. See
+    /// [`subscribe_max_idle`](Self::subscribe_max_idle) for what that costs.
     #[must_use]
     pub const fn with_subscribe_max_idle(mut self, max_idle: Duration) -> Self {
-        self.subscribe_max_idle = max_idle;
+        self.subscribe_max_idle = Some(max_idle);
         self
     }
 
-    /// Sets how many logged events a resuming `SubscribeToTask` replays.
+    /// Sets how many logged events one read of the event log returns; see
+    /// [`subscribe_replay_limit`](Self::subscribe_replay_limit).
     #[must_use]
     pub const fn with_subscribe_replay_limit(mut self, limit: usize) -> Self {
         self.subscribe_replay_limit = limit;
@@ -319,6 +349,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_subscribe_replay_catchup(mut self, catchup: Duration) -> Self {
         self.subscribe_replay_catchup = catchup;
+        self
+    }
+
+    /// Sets whether a stream ends with a final `Task` snapshot; see
+    /// [`final_task_snapshot`](Self::final_task_snapshot).
+    #[must_use]
+    pub const fn with_final_task_snapshot(mut self, on: bool) -> Self {
+        self.final_task_snapshot = on;
         self
     }
 

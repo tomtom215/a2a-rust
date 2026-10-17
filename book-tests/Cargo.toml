@@ -21,6 +21,8 @@ doctest = true
 # that compiles only under `websocket` is still a block a reader will copy.
 a2a-protocol-sdk = { path = "../crates/a2a-protocol-sdk", features = [
     "axum",
+    # The security page's data-at-rest section: `store::encrypted`.
+    "encryption",
     "grpc",
     "grpc-tls",
     "signing",
@@ -40,6 +42,8 @@ a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     # The audit-trail page: `AuditLog`, the stores and `with_audit` exist only
     # under this feature.
     "audit",
+    # The audit-trail page's privacy section: `AuditPrivacy` needs both.
+    "encryption",
     "axum",
     # Added with the testing page's conformance section, for the same reason
     # as `otel` and `postgres` below: without it that block could only be

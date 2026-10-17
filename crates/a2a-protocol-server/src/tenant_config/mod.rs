@@ -277,6 +277,7 @@ impl TenantLimitsBuilder {
     /// [`TenantLimits::max_stored_tasks`].
     #[must_use]
     #[deprecated(
+        since = "0.10.0",
         note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
                 to give a tenant its own TaskStoreConfig::max_capacity"
     )]

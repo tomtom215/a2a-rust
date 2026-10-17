@@ -80,6 +80,9 @@ pub struct PurgeReport {
     pub purged: Vec<(String, u64, u64)>,
     /// Chains left alone because a legal hold is placed on them.
     pub held: Vec<String>,
+    /// Subject keys deleted because no record left in their chain names
+    /// them (with `AuditLog::with_privacy`).
+    pub keys_deleted: u64,
 }
 
 impl AuditLog {
@@ -90,6 +93,10 @@ impl AuditLog {
     ///
     /// Returns an error when the store fails.
     pub async fn place_hold(&self, chain: &str, reason: &str) -> A2aResult<()> {
+        // Under the chain's lock, so an erasure in this process sees the
+        // hold or finishes before it.
+        let lock = self.chain_lock(chain);
+        let _guard = lock.lock().await;
         self.store()
             .place_hold(&LegalHold {
                 chain: chain.to_owned(),
@@ -170,6 +177,14 @@ impl AuditLog {
             self.sign_checkpoint("anchor", &chain, seq, &hash).await?;
             let deleted = self.store().delete_through(&chain, seq).await?;
             report.purged.push((chain, deleted, seq));
+        }
+        #[cfg(feature = "encryption")]
+        if self.privacy.is_some() {
+            for chain in self.store().chains().await? {
+                if !holds.contains(&chain) {
+                    report.keys_deleted += self.drop_unreferenced_keys(&chain).await?;
+                }
+            }
         }
         Ok(report)
     }

@@ -10,9 +10,9 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use sqlx::Row;
 use sqlx::postgres::PgPool;
 
-use super::store::{Appended, AuditStore, BoxFuture, LegalHold, record_millis};
+use super::store::{Appended, AuditStore, BoxFuture, LegalHold, SubjectKey, record_millis};
 
-const SCHEMA: [&str; 4] = [
+const SCHEMA: [&str; 5] = [
     "CREATE TABLE IF NOT EXISTS a2a_audit_records (
         chain   TEXT    NOT NULL,
         seq     BIGINT  NOT NULL CHECK (seq > 0),
@@ -34,6 +34,16 @@ const SCHEMA: [&str; 4] = [
         placed_at TEXT NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS idx_a2a_audit_records_time ON a2a_audit_records(chain, time_ms)",
+    // One row per person per chain, for AuditPrivacy; deleting a row is
+    // what erases that person from the records sealed under its key.
+    "CREATE TABLE IF NOT EXISTS a2a_audit_subject_keys (
+        chain   TEXT NOT NULL,
+        lookup  TEXT NOT NULL,
+        sid     TEXT NOT NULL,
+        wrapped TEXT NOT NULL,
+        PRIMARY KEY (chain, lookup),
+        UNIQUE (chain, sid)
+    )",
 ];
 
 fn db(e: &sqlx::Error) -> A2aError {
@@ -59,7 +69,8 @@ const fn u64_of(seq: i64) -> u64 {
 }
 
 /// An [`AuditStore`] in `PostgreSQL` tables `a2a_audit_records`,
-/// `a2a_audit_checkpoints` and `a2a_audit_holds`, created if absent.
+/// `a2a_audit_checkpoints`, `a2a_audit_holds` and `a2a_audit_subject_keys`,
+/// created if absent.
 ///
 /// Replicas may share it: the `(chain, seq)` primary key is what lets two
 /// of them append to one chain without forking it. It can share a database
@@ -283,5 +294,113 @@ impl AuditStore for PostgresAuditStore {
                 })
                 .collect())
         })
+    }
+
+    fn supports_subject_keys(&self) -> bool {
+        true
+    }
+
+    fn subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        Box::pin(async move { self.subject_key_where("lookup", chain, lookup).await })
+    }
+
+    fn subject_key_by_sid<'a>(
+        &'a self,
+        chain: &'a str,
+        sid: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        Box::pin(async move { self.subject_key_where("sid", chain, sid).await })
+    }
+
+    fn subject_keys<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Vec<SubjectKey>>> {
+        Box::pin(async move {
+            let rows = sqlx::query(
+                "SELECT lookup, sid, wrapped FROM a2a_audit_subject_keys WHERE chain = $1 ORDER BY sid",
+            )
+            .bind(chain)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| db(&e))?;
+            Ok(rows
+                .iter()
+                .map(|r| {
+                    SubjectKey::new(
+                        r.get::<String, _>(0),
+                        r.get::<String, _>(1),
+                        r.get::<String, _>(2),
+                    )
+                })
+                .collect())
+        })
+    }
+
+    fn put_subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        key: &'a SubjectKey,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        Box::pin(async move {
+            let done = sqlx::query(
+                "INSERT INTO a2a_audit_subject_keys (chain, lookup, sid, wrapped) VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (chain, lookup) DO NOTHING",
+            )
+            .bind(chain)
+            .bind(&key.lookup)
+            .bind(&key.sid)
+            .bind(&key.wrapped)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| db(&e))?;
+            Ok(done.rows_affected() == 1)
+        })
+    }
+
+    fn delete_subject_key<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+    ) -> BoxFuture<'a, A2aResult<Option<String>>> {
+        Box::pin(async move {
+            let row = sqlx::query(
+                "DELETE FROM a2a_audit_subject_keys WHERE chain = $1 AND lookup = $2 RETURNING sid",
+            )
+            .bind(chain)
+            .bind(lookup)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| db(&e))?;
+            Ok(row.map(|r| r.get(0)))
+        })
+    }
+}
+
+impl PostgresAuditStore {
+    /// The subject key of `chain` whose `column` (`lookup` or `sid`) is `value`.
+    async fn subject_key_where(
+        &self,
+        column: &'static str,
+        chain: &str,
+        value: &str,
+    ) -> A2aResult<Option<SubjectKey>> {
+        let sql = format!(
+            "SELECT lookup, sid, wrapped FROM a2a_audit_subject_keys WHERE chain = $1 AND {column} = $2"
+        );
+        let row = sqlx::query(&sql)
+            .bind(chain)
+            .bind(value)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| db(&e))?;
+        Ok(row.map(|r| {
+            SubjectKey::new(
+                r.get::<String, _>(0),
+                r.get::<String, _>(1),
+                r.get::<String, _>(2),
+            )
+        }))
     }
 }

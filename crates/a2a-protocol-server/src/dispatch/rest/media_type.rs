@@ -10,19 +10,29 @@
 //! an error body only when its `Content-Type` starts with `application/json`,
 //! so labelling every response `application/a2a+json` costs a Go client the
 //! identity of every HTTP+JSON error (measured 2026-09-25, `dfc69ed2`, reverted
-//! in `cf2a7e96`). Negotiating satisfies both: a client that asks for the A2A
-//! media type gets it, and one that asks for `application/json` — a2a-go sends
-//! `Accept: application/json` — keeps getting that.
+//! in `cf2a7e96`). Negotiating satisfies both: a client that asks for a JSON
+//! type gets the one it asks for, and a request that asks for neither gets the
+//! A2A type, except where a2a-go would lose its errors.
 //!
 //! The rule, in order:
 //!
 //! 1. An `Accept` header that names `application/a2a+json` or
 //!    `application/json` explicitly decides it. The A2A type wins when its
-//!    `q` is positive and not lower than `application/json`'s.
-//! 2. Otherwise — no `Accept`, or only wildcards such as `*/*` — the response
-//!    mirrors the request's `Content-Type`: a client that wrote
-//!    `application/a2a+json` reads it back.
-//! 3. Otherwise `application/json`.
+//!    `q` is positive and not lower than `application/json`'s. a2a-go's unary
+//!    calls send `Accept: application/json` (`a2aclient/rest.go:117`).
+//! 2. Otherwise, a request body labelled `application/a2a+json` is answered
+//!    in kind.
+//! 3. Otherwise, a request whose `Accept` asks for `text/event-stream` gets
+//!    `application/json`. Only an error response is JSON on a streaming
+//!    route, and a2a-go's `SendStreamingMessage` and `SubscribeToTask` send
+//!    `Accept: text/event-stream` and nothing else (`a2aclient/rest.go:115`),
+//!    so this is what keeps a refused Go stream's error readable. Decided
+//!    with the maintainer on 2026-10-15; the report asking a2a-go to read
+//!    `application/a2a+json` errors is `docs/upstream/a2a-go-a2a-json-errors-report.md`.
+//! 4. Otherwise — no `Accept`, only wildcards such as `*/*`, or a type that
+//!    is neither — `application/a2a+json`, as §11.1 recommends. Until
+//!    2026-10-15 this was `application/json`, and a body labelled
+//!    `application/json` was mirrored too.
 
 use a2a_protocol_types::{A2A_CONTENT_TYPE, JSON_CONTENT_TYPE};
 
@@ -41,10 +51,16 @@ impl ResponseMediaType {
         if let Some(choice) = accept.and_then(from_accept) {
             return choice;
         }
-        match content_type.map(essence) {
-            Some(ct) if ct.eq_ignore_ascii_case(A2A_CONTENT_TYPE) => Self::A2aJson,
-            _ => Self::Json,
+        if content_type
+            .map(essence)
+            .is_some_and(|ct| ct.eq_ignore_ascii_case(A2A_CONTENT_TYPE))
+        {
+            return Self::A2aJson;
         }
+        if accept.is_some_and(asks_for_event_stream) {
+            return Self::Json;
+        }
+        Self::A2aJson
     }
 
     /// Negotiates from a request's headers, every `Accept` line of them
@@ -133,6 +149,27 @@ fn from_accept(accept: &str) -> Option<ResponseMediaType> {
     }
 }
 
+/// Whether an `Accept` header asks for `text/event-stream` with a positive
+/// weight. A range whose `q` is zero or malformed does not ask for it.
+fn asks_for_event_stream(accept: &str) -> bool {
+    accept.split(',').any(|range| {
+        let mut parts = range.split(';');
+        let ty = parts.next().unwrap_or("").trim();
+        if !ty.eq_ignore_ascii_case("text/event-stream") {
+            return false;
+        }
+        let q = parts
+            .find_map(|p| {
+                let (k, v) = p.split_once('=')?;
+                k.trim()
+                    .eq_ignore_ascii_case("q")
+                    .then(|| parse_q(v.trim()))
+            })
+            .unwrap_or(Some(1000));
+        q.is_some_and(|q| q > 0)
+    })
+}
+
 /// Parses an RFC 9110 §12.4.2 `qvalue` into thousandths (`0`–`1000`).
 fn parse_q(v: &str) -> Option<u16> {
     let (int, frac) = v.split_once('.').unwrap_or((v, ""));
@@ -156,8 +193,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_headers_is_json() {
-        assert_eq!(ResponseMediaType::negotiate(None, None), Json);
+    fn no_preference_is_the_a2a_type() {
+        // §11.1: a request that states no preference gets the A2A type.
+        assert_eq!(ResponseMediaType::negotiate(None, None), A2aJson);
+        assert_eq!(ResponseMediaType::negotiate(Some("*/*"), None), A2aJson);
+        assert_eq!(
+            ResponseMediaType::negotiate(Some("text/html"), None),
+            A2aJson
+        );
     }
 
     #[test]
@@ -173,11 +216,57 @@ mod tests {
     }
 
     #[test]
-    fn a_json_request_body_gets_json() {
+    fn a_json_request_body_alone_is_no_preference() {
+        // Until 2026-10-15 an `application/json` body was mirrored.
         assert_eq!(
             ResponseMediaType::negotiate(None, Some("application/json")),
+            A2aJson
+        );
+        assert_eq!(
+            ResponseMediaType::negotiate(Some("*/*"), Some("application/json")),
+            A2aJson
+        );
+    }
+
+    #[test]
+    fn go_sdk_streaming_headers_keep_json() {
+        // a2a-go v2.6.0 `a2aclient/rest.go:115`: `SendStreamingMessage` with
+        // its JSON body, and `SubscribeToTask` with none. Only an error is
+        // answered as JSON here, and a2a-go reads only `application/json`.
+        let sse = Some("text/event-stream");
+        assert_eq!(
+            ResponseMediaType::negotiate(sse, Some("application/json")),
             Json
         );
+        assert_eq!(ResponseMediaType::negotiate(sse, None), Json);
+        assert_eq!(
+            ResponseMediaType::negotiate(Some("Text/Event-Stream; q=0.5"), None),
+            Json
+        );
+    }
+
+    #[test]
+    fn a_stream_request_that_states_a_json_type_gets_it() {
+        // Rule 1 and rule 2 come before the event-stream rule.
+        assert_eq!(
+            ResponseMediaType::negotiate(Some("text/event-stream, application/a2a+json"), None),
+            A2aJson
+        );
+        assert_eq!(
+            ResponseMediaType::negotiate(Some("text/event-stream"), Some(A2A_CONTENT_TYPE)),
+            A2aJson
+        );
+    }
+
+    #[test]
+    fn an_event_stream_refused_or_malformed_is_not_asked_for() {
+        let n = |a| ResponseMediaType::negotiate(Some(a), None);
+        assert_eq!(n("text/event-stream;q=0"), A2aJson);
+        assert_eq!(n("text/event-stream;q=0.000"), A2aJson);
+        assert_eq!(n("text/event-stream;q=2"), A2aJson);
+        assert_eq!(n("text/event-stream;q=0.001"), Json);
+        assert_eq!(n("text/plain, text/event-stream"), Json);
+        assert_eq!(n("text/event-streams"), A2aJson);
     }
 
     #[test]
@@ -218,10 +307,14 @@ mod tests {
     fn a_malformed_q_drops_only_its_own_range() {
         let n = |a| ResponseMediaType::negotiate(Some(a), None);
         assert_eq!(n("application/a2a+json;q=2, application/json"), Json);
-        assert_eq!(n("application/a2a+json;q=0.1234"), Json);
-        // Every range malformed: Accept names nothing usable, so the request
-        // body decides, and there is none.
-        assert_eq!(n("application/a2a+json;q=x"), Json);
+        // Dropped, not read as some weight that would beat the JSON range.
+        assert_eq!(
+            n("application/json;q=0.5, application/a2a+json;q=0.1234"),
+            Json
+        );
+        // Every range malformed: Accept names nothing usable and there is no
+        // request body, so no preference was stated.
+        assert_eq!(n("application/a2a+json;q=x"), A2aJson);
     }
 
     #[test]

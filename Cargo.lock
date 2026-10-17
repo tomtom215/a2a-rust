@@ -96,6 +96,7 @@ dependencies = [
  "criterion",
  "futures-util",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-rustls",
  "hyper-util",

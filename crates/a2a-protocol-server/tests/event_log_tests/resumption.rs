@@ -6,9 +6,7 @@
 //! Resumption: `id:` on every logged frame, and `Last-Event-ID` on the way
 //! back in.
 
-use super::{
-    NoLog, Shared, ThreeSteps, drain_positions, handler_with, header, parked_task_with_log,
-};
+use super::{NoLog, ThreeSteps, drain_positions, handler_with, header, parked_task_with_log};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
 use a2a_protocol_types::events::StreamResponse;
@@ -126,40 +124,6 @@ async fn an_unparseable_last_event_id_is_ignored_rather_than_refused() {
             "an unusable offset must fall back to the snapshot, not replay ({bad:?})"
         );
     }
-}
-
-/// The offset is client-supplied, so the replay is bounded. Truncation is not
-/// loss: every replayed frame carries its own position, so a client that
-/// receives the cap's worth reconnects at the last one and continues.
-#[tokio::test]
-async fn the_replay_is_bounded_by_the_configured_limit() {
-    let store = Arc::new(InMemoryTaskStore::new());
-    let handler = RequestHandlerBuilder::new(ThreeSteps)
-        .without_agent_card()
-        .with_task_store(Shared(Arc::clone(&store)))
-        .with_handler_limits(
-            a2a_protocol_server::handler::HandlerLimits::default().with_subscribe_replay_limit(2),
-        )
-        .build()
-        .expect("handler");
-    let task_id = parked_task_with_log(&store, 5).await;
-
-    let reader = handler
-        .on_resubscribe(
-            TaskIdParams {
-                id: task_id.0.clone(),
-                tenant: None,
-            },
-            Some(&header("last-event-id", "0")),
-        )
-        .await
-        .expect("resubscribe");
-
-    assert_eq!(
-        drain_positions(reader).await,
-        vec![None, Some(1), Some(2)],
-        "the cap stops the replay; the client resumes from position 2"
-    );
 }
 
 /// A store with no log cannot replay, and says so by subscribing normally

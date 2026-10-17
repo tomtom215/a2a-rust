@@ -43,23 +43,23 @@ Proto line numbers are in `proto/a2a_v1/a2a.proto`.
 
 | Item | What remains | Waiting on |
 |---|---|---|
-| R13 | upgrade the six SLIM crates to the line agntcy-slim-rpc 3.x requires, record the verified peer, ship an interceptor that authenticates from it | work (approved) |
-| R41, second half | key an unidentified SLIMRPC caller by its verified peer | R13 |
-| §3.5.2 catch-up paging | a lagged stream's catch-up stops after one `subscribe_replay_limit` read (1,000 events) and ends with `streamLagged`, where it could page through the log; a consumer slower than its producer would then read the store indefinitely | the maintainer's call (a change to an approved disposition) |
-| §12.4 (line 3016), SLIMRPC error details | `agntcy-slim-rpc` sends an error's code and message only, in 2.3.0 (pinned) and 3.4.1 (latest) | upstream |
+| §12.4 (line 3016), SLIMRPC error details | `agntcy-slim-rpc` sends an error's code and message only, in 3.4.1 (what the binding uses since R13, the latest release) as in 2.3.0 | upstream |
 | §5.4 SHOULD (line 1194) | the SLIMRPC specification's mapping table has no row for -32007, -32008 or -32009 | upstream: `docs/upstream/slimrpc-a2a-error-mapping-report.md` |
-| Reports to file | §12 / §5.4: `docs/upstream/slimrpc-a2a-error-mapping-report.md`; §5.7: `docs/upstream/a2a-required-empty-array-report.md`; R19 to a2a-go: not in the repository, because it cites a2a-go's code as an earlier session described it and was not checked against a2a-go's source | the maintainer, to check and send |
+| Reports to file | §12 / §5.4: `docs/upstream/slimrpc-a2a-error-mapping-report.md`; §5.7: `docs/upstream/a2a-required-empty-array-report.md` (both re-verified 2026-10-15 and held at the maintainer's request); §11.1 to a2a-go: `docs/upstream/a2a-go-a2a-json-errors-report.md` (held); R19 to a2a-go: not in the repository, because it cites a2a-go's code as an earlier session described it and was not checked against a2a-go's source | the maintainer, to check and send |
 
 ## Done
 
 | Id | Area | What changed | Commit |
 |---|---|---|---|
+| §3.5.2 catch-up paging | a replay longer than `subscribe_replay_limit` | read a page at a time for a lag, a missed turn and a resume; a resume's silent gap past the limit, or past a slow log, closed | `4264e04` |
 | R12 | JWT caller identity | a caller is `bearer:<label>`, `api-key:<label>` or `jwt:<issuer>:<sub>`; a JWT with no `sub` is refused under caller isolation; `migrate_caller_keys` per store | `67c30964` |
 | R19 | `Struct` error details | written as ProtoJSON's `Any` (`{"@type", "value"}`), both shapes read | `5cd159c3` |
 | R21 | JSON-RPC notifications | executed, never answered | `d57cec90` |
 | R33 | first frame of a send stream | kept, with the reasoning recorded in the ledger's §3.1.2 entry | this file and the ledger |
 | R36(b) | task snapshot moving back to `Submitted` | held to the state-transition rules at the queue | `14bd2d5f` |
+| R13 | SLIMRPC caller identity | the binding on agntcy-slim-rpc 3.4.1; the MLS-verified peer recorded under `:slim-peer-subject` / `:slim-peer-issuer`; `SlimPeerAuthInterceptor`; the binding's five advisory waivers gone | the commit that adds this row |
 | R41, first half | `x-forwarded-for` over SLIMRPC | forwarding headers dropped from caller metadata | `8e5cf1a7` |
+| R41, second half | SLIMRPC throttle and rate-limit keys | a verified peer is its own throttle key (`:peer-addr` in `100::/64`) and, through its identity, its own rate-limit bucket | with R13 |
 | R49 | types not generated from the proto | generated from `a2a.proto` by `tools/a2a-codegen` (ADR 0016); the ledger's §1.4 entry is TESTED | `21cb5989` to `f0a2b40c` |
 | R50 | REST client `Content-Type` | `application/a2a+json` with a body, none without | `8e5cf1a7` |
 | R66 | multicast member lag | the typed `streamLagged`, still terminal | `8e5cf1a7` |
@@ -172,6 +172,23 @@ described: `Context::peer_subject` and `peer_issuer`, through
 `SessionContext::peer_identity`, `None` on a session without MLS
 (`src/context.rs` in agntcy-slim-rpc 3.3.1, read 2026-10-15; 3.4.1, the
 latest 3.x, has both at lines 78 and 86).
+
+**Done (2026-10-15), option (b).** The binding is on agntcy-slim-rpc
+3.4.1 (auth 0.17.5, datapath 0.19.9, service 0.13.9, config 0.17.5,
+session 0.7.21); its own code compiled unchanged. For a call with a
+verified peer the server records `:slim-peer-subject` and, when the token
+has an `iss`, `:slim-peer-issuer` (`bindings/a2a-protocol-slimrpc/src/server/methods/headers.rs`),
+after dropping a caller's own `:` keys and SLIM's `slim-peer-subject`.
+`SlimPeerAuthInterceptor` (`src/server/peer/mod.rs`) records the caller as
+`slim:<issuer>:<subject>` with the auth scheme `slim`; `required()` refuses
+a call with no verified peer. Tests: `tests/peer_identity.rs`, end to end
+over a real in-process MLS session with a caller sending forged keys, and
+the unit tests in `server::methods` and `server::peer`; 17 hand mutants,
+all killed. Not tried: a peer on the 2.x line; a token with a non-empty
+`iss` end to end (the issuer path is unit-tested). What the recommendation
+below says about the rustls advisories turned out wrong: agntcy-slim-auth
+0.17.5 takes mls-rs-crypto-awslc 0.25.1, which pins `aws-lc-rs =1.18.1`,
+so rustls resolves to 0.23.46 and the binding carries no advisory waiver.
 
 **Recommendation: (b).** It also removes RUSTSEC-2024-0449:
 agntcy-slim-config 0.17.3, which agntcy-slim-rpc 3.3.1 requires, replaces
@@ -310,6 +327,16 @@ by its peer waits for R13: the 3.x upgrade brings the verified peer, and a
 source name read from 2.3.0's session is not known to be verified. Until
 then every unidentified SLIMRPC caller shares the anonymous bucket and is
 not throttled, as before with `trusted_proxy_hops = 0`.
+
+**Done with R13 (2026-10-15).** For a call with a verified peer the server
+sets `:peer-addr` to an address standing for that peer: in `100::/64`, the
+IPv6 discard-only block (RFC 6666), the low 64 bits a per-process keyed
+hash of its identity, port 0. `AuthFailureThrottle` therefore counts each
+verified peer's failures apart, and `RateLimitInterceptor`, which keys a
+call by its caller identity, does so once `SlimPeerAuthInterceptor` names
+it. A call with no verified peer is unchanged. `RateLimitInterceptor`
+never keys an unidentified caller by `:peer-addr`, on any binding; that is
+recorded under *Decisions never asked* in `docs/handoff.md`.
 
 ## R49 / §1.4 — the types are not generated from the proto
 
@@ -590,6 +617,6 @@ behind, so a subscriber can receive events twice (not lose them).
 | §14 (line 3342): implementations SHOULD support HTTPS | only gRPC terminates TLS | **Done** for `serve::Server` (`Server::with_tls`, `with_tls_pem`, under `tls-rustls`): the handshake runs per connection within the header read timeout, ALPN offers `h2` and `http/1.1`, and a failed handshake counts as a failed connection. 8 hand mutants, all killed. `serve`, `serve_with_addr` and the WebSocket listener stay plaintext, behind a proxy. |
 | §14 (line 3344): clients SHOULD verify signatures when present | opt-in, per fetch; `CachingCardResolver` and `ClientBuilder::from_card` take no keys | **Done**: `CachingCardResolver::with_options(CardFetchOptions)`, and `ClientBuilder::from_signed_card(json, keys)`, which verifies the JSON as given (a typed `AgentCard` drops fields the signer covered). 3 hand mutants, all killed. |
 | §3.3.2 (line 544): use `BadRequest` where applicable | the handler's own validation names the field in the message only | **Done** as a new `ServerError::InvalidField { field, message }`: at 0.14.1, when this was done, changing `InvalidParams`' payload would have failed the semver gate; the new variant answers exactly as `InvalidParams` does, plus the detail. |
-| §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016) | dispositions recorded in each entry's notes | **Approved as recorded (2026-10-14).** Since then: §3.5.2 had R69, now done, and the catch-up paging awaits a call (Open, above); §12.4 cannot close here (Open, above); §3.1.6's idle bound stands unless the maintainer reopens it. |
+| §3.1.6 (line 309), §3.5.2 (line 692), §8.6 / §8.6.2 (lines 2215, 2225), §11.1 server (line 2750), §12.4 (line 3016) | dispositions recorded in each entry's notes | **Approved as recorded (2026-10-14).** Since then: §3.5.2 had R69, now done, and the catch-up paging awaits a call (Open, above); §12.4 cannot close here (Open, above); §3.1.6's idle bound was reopened on 2026-10-15 and is off by default since, so that entry is TESTED. |
 | §12.6 (line 3033): custom bindings MUST define how authentication challenges are communicated | approved as recorded: the WebSocket binding answers a refused credential `-32600` with no `data`, so its challenge is dropped | **Done** (2026-10-15), beyond the approved disposition: the `-32600` carries an `ErrorInfo` from `a2a-rust.com`, `UNAUTHENTICATED` with the challenge as `www-authenticate` metadata or `PERMISSION_DENIED` (binding specification §6), and the client reports them as `401` and `403`. The entry is TESTED; 9 hand mutants, all killed, and a tenth, on the mid-stream error path no refusal reaches, survived, so that path was left unchanged. |
 | MAY, NOT_SUPPORTED: §3.1.9 pagination, §3.6.1, §8.4.2 `jku` in signers, §8.6.2 default cache lifetime, §11.5 repeated query fields, §11.7 final snapshot, §13.3 per-caller extended card | not implemented | **Done** for three, now SUPPORTED: §3.1.9 pagination (`RequestHandler::on_list_push_configs_page`, every binding; 10 hand mutants, all killed), §8.4.2 (`sign_card_es256_with_jku` and `sign_card_ed25519_with_jku`, https only; 5 killed) and §13.3 (`ExtendedCardProvider`, `RequestHandlerBuilder::with_extended_card_provider`; 10 killed). The other four stay NOT_SUPPORTED, with the reasons in their entries. |

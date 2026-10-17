@@ -1013,10 +1013,12 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite on 2026-10-10 (CI run
-38035262257 on `main` at `f824b03`, and locally on this branch, against
-`a2a-tck@263b9cf`): **83 of 114 MUST requirements passing, 5 failing, 5
-skipped, 21 with no upstream test**; 88 graded. (This line said 87 passing
+Measured against the official `a2a-tck` suite on 2026-10-16 (CI and locally
+at `d05a7fc`, against `a2a-tck@263b9cf`): **81 of 114 MUST requirements
+passing, 7 failing, 5 skipped, 21 with no upstream test**; 88 graded. The two
+failures added since 2026-10-10, `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001`,
+grade §11.1's media type against the suite's stale v1.0.0 copy
+(`docs/official-tck-findings.md` §23). (This line said 87 passing
 and 5 failing as of 2026-09-26, which does not add up to 114 with the skipped
 and untested counts; `docs/official-tck-findings.md` §1 has both.) One
 failure, `CORE-SEND-003`, is a defect in the suite: it

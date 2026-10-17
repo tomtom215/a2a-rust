@@ -143,6 +143,7 @@ pub mod tls;
 pub mod token_provider;
 pub mod trace_propagation;
 pub mod transport;
+pub mod version_query;
 
 #[cfg(feature = "testing")]
 pub mod testing;

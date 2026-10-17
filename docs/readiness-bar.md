@@ -46,7 +46,7 @@ means client and server in one host over 127.0.0.1.
 | R4 | Overload is refused, not queued into timeouts (L4) | every refusal is the binding's overload signal (HTTP 503 / gRPC `UNAVAILABLE` / JSON-RPC error), none is a client timeout |
 | R5 | A continuation sent the moment `input-required` arrives is admitted (L5) | 0 refusals |
 | R6 | Graceful shutdown with streams open | every open stream receives a terminal event or a clean close within `completion_grace` + 1 s |
-| R7 | A peer that disconnects mid-stream releases server resources | queue, token and connection gone within the idle bound |
+| R7 | A peer that disconnects mid-stream releases server resources | queue, token and connection gone once the binding sees the peer gone: within one SSE keep-alive (30 s), at the end of the WebSocket read loop or its `idle_timeout`, when the gRPC response channel closes |
 
 ## Resource ceilings
 
@@ -56,7 +56,7 @@ means client and server in one host over 127.0.0.1.
 | C2 | File descriptors after L1–L3 end | back to the pre-load count ± 8 within 10 s |
 | C3 | Tokio tasks after L1–L3 end | back to the pre-load count within 10 s |
 | C4 | Tasks left non-terminal after L1 | 0 |
-| C5 | Event queues and cancellation tokens after L3 | 0 left for tasks whose clients are gone, after the idle bound |
+| C5 | Event queues and cancellation tokens after L3 | 0 left for tasks whose clients are gone, once the binding sees them gone (R7) |
 
 ## Failure modes that must be handled
 

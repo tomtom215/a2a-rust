@@ -17,6 +17,7 @@ mod failed_append;
 mod live_resubscribe;
 mod log;
 mod log_holes;
+mod paged_resumption;
 mod resumption;
 mod truncation;
 

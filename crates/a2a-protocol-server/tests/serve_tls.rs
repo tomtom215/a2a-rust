@@ -41,6 +41,9 @@ struct Certs {
     key_der: Vec<u8>,
     cert_pem: String,
     key_pem: String,
+    /// A client certificate the same CA issued, for mutual TLS.
+    client_der: rustls_pki_types::CertificateDer<'static>,
+    client_key_der: Vec<u8>,
 }
 
 fn certs() -> Certs {
@@ -52,12 +55,17 @@ fn certs() -> Certs {
     let params = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = params.signed_by(&key, &issuer).unwrap();
+    let client_params = rcgen::CertificateParams::new(vec!["client".into()]).unwrap();
+    let client_key = rcgen::KeyPair::generate().unwrap();
+    let client = client_params.signed_by(&client_key, &issuer).unwrap();
     Certs {
         ca: ca.der().clone(),
         cert_der: cert.der().clone(),
         key_der: key.serialize_der(),
         cert_pem: cert.pem(),
         key_pem: key.serialize_pem(),
+        client_der: client.der().clone(),
+        client_key_der: client_key.serialize_der(),
     }
 }
 
@@ -86,15 +94,28 @@ async fn start(server: Server, metrics: Arc<Closed>) -> std::net::SocketAddr {
     addr
 }
 
-/// Trusts the test CA only. ALPN is the connector's: `h2` or `http/1.1`.
-fn client_config(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::ClientConfig {
+fn roots(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::RootCertStore {
     let mut roots = rustls::RootCertStore::empty();
     roots.add(ca.clone()).unwrap();
-    rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+    roots
+}
+
+fn provider() -> Arc<rustls::crypto::CryptoProvider> {
+    Arc::new(rustls::crypto::ring::default_provider())
+}
+
+fn client_builder(
+    ca: &rustls_pki_types::CertificateDer<'static>,
+) -> rustls::ConfigBuilder<rustls::ClientConfig, rustls::client::WantsClientCert> {
+    rustls::ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
         .unwrap()
-        .with_root_certificates(roots)
-        .with_no_client_auth()
+        .with_root_certificates(roots(ca))
+}
+
+/// Trusts the test CA only. ALPN is the connector's: `h2` or `http/1.1`.
+fn client_config(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::ClientConfig {
+    client_builder(ca).with_no_client_auth()
 }
 
 /// GETs the agent card over HTTPS, as HTTP/2 when `h2`.
@@ -103,8 +124,17 @@ async fn fetch_card(
     ca: &rustls_pki_types::CertificateDer<'static>,
     h2: bool,
 ) -> Result<(hyper::Version, serde_json::Value), String> {
+    fetch_card_with(addr, client_config(ca), h2).await
+}
+
+/// [`fetch_card`] with the client's own TLS configuration.
+async fn fetch_card_with(
+    addr: std::net::SocketAddr,
+    config: rustls::ClientConfig,
+    h2: bool,
+) -> Result<(hyper::Version, serde_json::Value), String> {
     let builder = hyper_rustls::HttpsConnectorBuilder::new()
-        .with_tls_config(client_config(ca))
+        .with_tls_config(config)
         .https_only();
     let connector = if h2 {
         builder.enable_http2().build()
@@ -294,5 +324,49 @@ async fn with_tls_pem_refuses_what_it_cannot_use() {
         if case == "no certificate" {
             assert!(err.to_string().contains("holds no certificate"), "{err}");
         }
+    }
+}
+
+/// Mutual TLS on the HTTP listener: `with_tls` uses the configuration as
+/// built, so one requiring client certificates refuses a client without one
+/// at the handshake, and serves a client the CA issued a certificate to.
+#[tokio::test]
+async fn a_listener_requiring_client_certificates_serves_only_clients_with_one() {
+    use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+
+    let certs = certs();
+    let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+        Arc::new(roots(&certs.ca)),
+        provider(),
+    )
+    .build()
+    .unwrap();
+    let config = rustls::ServerConfig::builder_with_provider(provider())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(
+            vec![certs.cert_der.clone()],
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(certs.key_der.clone())),
+        )
+        .unwrap();
+    let server = Server::bind("127.0.0.1:0").await.unwrap().with_tls(config);
+    let addr = start(server, Arc::default()).await;
+
+    for h2 in [false, true] {
+        let anonymous = fetch_card(addr, &certs.ca, h2).await;
+        assert!(
+            anonymous.is_err(),
+            "h2={h2}: served without a client certificate: {anonymous:?}"
+        );
+
+        let with_cert = client_builder(&certs.ca)
+            .with_client_auth_cert(
+                vec![certs.client_der.clone()],
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(certs.client_key_der.clone())),
+            )
+            .unwrap();
+        let (_, card) = fetch_card_with(addr, with_cert, h2).await.unwrap();
+        assert_eq!(card["name"].as_str(), Some("tls-agent"), "h2={h2}");
     }
 }
