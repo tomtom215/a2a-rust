@@ -983,6 +983,20 @@ impl TaskStore for InMemoryTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.try_save_status_delta(task).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_status_delta`](Self::save_status_delta):
+    /// reads only `task.status`.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
                 if let Some(conflict) = store.refusal(task) {
@@ -995,7 +1009,7 @@ impl TaskStore for InMemoryTaskStore {
                 applied.then(|| self.should_evict(len))
             };
             let Some(passes) = outcome else {
-                return self.save(task).await;
+                return Ok(false);
             };
             trace_debug!(task_id = %task.id, "applied status delta in place");
             // `should_evict` is called for its side effect as much as its
@@ -1008,7 +1022,7 @@ impl TaskStore for InMemoryTaskStore {
             if passes.any() {
                 self.maybe_evict(passes).await;
             }
-            Ok(())
+            Ok(true)
         })
     }
 
@@ -1029,6 +1043,23 @@ impl TaskStore for InMemoryTaskStore {
         task: &'a Task,
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !self.try_save_artifact_delta(task, delta).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_artifact_delta`](Self::save_artifact_delta).
+    /// Reads from `task` only the appended parts or pushed artifact, the
+    /// artifact's id and metadata, and the task's status and metadata (see
+    /// `apply_delta`).
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
@@ -1054,7 +1085,7 @@ impl TaskStore for InMemoryTaskStore {
             };
 
             let Some(passes) = outcome else {
-                return self.save(task).await;
+                return Ok(false);
             };
             trace_debug!(task_id = %task.id, "applied artifact delta in place");
             // `should_evict` is called for its side effect as much as its
@@ -1078,7 +1109,7 @@ impl TaskStore for InMemoryTaskStore {
             if passes.any() {
                 self.maybe_evict(passes).await;
             }
-            Ok(())
+            Ok(true)
         })
     }
 

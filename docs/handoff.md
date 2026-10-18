@@ -127,16 +127,14 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   `RequestContext::stored_task` is `pub`; JSON-RPC parses a request's params
   before the interceptor chain authenticates it (a malformed body is
   refused `-32602` before `401`).
-- **Release audit (2026-10-18), not yet fixed:** F7 `EncryptedTaskStore`
-  re-seal cost and budget.
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive
   in backups and logs, erasure is not serialised across replicas.
   `erase_caller` (2026-10-18) removes a caller's partitions but not what a
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
-  ids, states, timestamps, `metadata` and order unprotected, re-seals every
-  part on every write (about `n²/2` seals for an artifact streamed in `n`
-  chunks, untimed). Two concurrent writers no longer leave a record
+  ids, states, timestamps, `metadata` and order unprotected, and its seal
+  limit is per process while the true budget is per key across processes
+  (F7 made deltas seal only what they store). Two concurrent writers no longer leave a record
   unreadable: the SQL appends are compare-and-append (F5, 2026-10-18).
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet

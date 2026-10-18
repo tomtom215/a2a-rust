@@ -207,33 +207,38 @@ impl TaskStore for PostgresTaskStore {
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let Some(artifacts) = task.artifacts.as_ref() else {
-                return self.save(task).await;
-            };
-
-            let affected = match delta {
-                ArtifactDelta::AppendedParts { index, count } => {
-                    match self.append_parts(task, artifacts, index, count).await? {
-                        Some(rows) => rows,
-                        None => return self.save(task).await,
-                    }
-                }
-                ArtifactDelta::Pushed { index } => {
-                    match self.push_artifact(task, artifacts, index).await? {
-                        Some(rows) => rows,
-                        None => return self.save(task).await,
-                    }
-                }
-            };
-
-            // Nothing matched: the row is absent, or its document is not the
-            // shape this delta describes. Either way `save` is what makes the
-            // store hold the task it was given.
-            if affected == 0 {
+            if !self.try_save_artifact_delta(task, delta).await? {
                 return self.save(task).await;
             }
-
             Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_artifact_delta`](Self::save_artifact_delta):
+    /// reads only the appended parts or the pushed artifact, the artifact's
+    /// id, and the status state its terminal guard compares.
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            let Some(artifacts) = task.artifacts.as_ref() else {
+                return Ok(false);
+            };
+            let affected = match delta {
+                ArtifactDelta::AppendedParts { index, count } => {
+                    self.append_parts(task, artifacts, index, count).await?
+                }
+                ArtifactDelta::Pushed { index } => {
+                    self.push_artifact(task, artifacts, index).await?
+                }
+            };
+            // `None`: the delta does not describe this task. Zero rows: the
+            // row is absent, or its document is not the shape this delta
+            // describes. Either way the caller's `save` is what makes the store
+            // hold the task it was given.
+            Ok(affected.is_some_and(|rows| rows > 0))
         })
     }
 
@@ -256,6 +261,20 @@ impl TaskStore for PostgresTaskStore {
         &'a self,
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !self.try_save_status_delta(task).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_status_delta`](Self::save_status_delta):
+    /// reads only `task.status`.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let status = serde_json::to_value(&task.status)
                 .map_err(|e| A2aError::internal(format!("failed to serialize status: {e}")))?;
@@ -286,11 +305,7 @@ impl TaskStore for PostgresTaskStore {
             .map_err(to_a2a_error)?
             .rows_affected();
 
-            if affected == 0 {
-                return self.save(task).await;
-            }
-
-            Ok(())
+            Ok(affected > 0)
         })
     }
 

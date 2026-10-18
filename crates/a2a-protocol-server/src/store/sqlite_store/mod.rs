@@ -226,7 +226,9 @@ impl SqliteTaskStore {
     /// is inserted — the guard refused, or every row was a replayed position —
     /// `save` decides: it refuses with the conflict, or rewrites a record that
     /// the replay already describes.
-    async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<()> {
+    /// Journals an append's rows; `false` when nothing was written and the
+    /// caller must write the task whole.
+    async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<bool> {
         // Every row of one append is for one artifact, and the stored
         // document must hold *that* artifact at its index: another replica
         // may have replaced it with a different one since this writer's
@@ -241,7 +243,7 @@ impl SqliteTaskStore {
             Some((*index, artifact.id.0.clone()))
         });
         let Some((artifact_index, artifact_id)) = target else {
-            return self.save(task).await;
+            return Ok(false);
         };
         let mut query_builder = sqlx::QueryBuilder::new(
             "INSERT INTO task_artifact_appends (task_id, artifact, seq, part, applied_seq) \
@@ -273,10 +275,13 @@ impl SqliteTaskStore {
         // append twice names the same slot with the same bytes.
         query_builder.push(" ON CONFLICT(task_id, artifact, seq) DO NOTHING");
 
-        match query_builder.build().execute(&self.pool).await {
-            Ok(done) if done.rows_affected() > 0 => Ok(()),
-            _ => self.save(task).await,
-        }
+        // A failure is answered as "not applied", so the caller's whole
+        // write decides: it inserts a task not yet stored, reports a terminal
+        // refusal, and surfaces an error the database repeats.
+        Ok(matches!(
+            query_builder.build().execute(&self.pool).await,
+            Ok(done) if done.rows_affected() > 0
+        ))
     }
 
     /// Deletes terminal tasks that have outlived `policy`.
@@ -730,19 +735,35 @@ impl TaskStore for SqliteTaskStore {
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.try_save_artifact_delta(task, delta).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_artifact_delta`](Self::save_artifact_delta):
+    /// reads only the appended parts or the pushed artifact, and the status
+    /// state its terminal guard compares.
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
             // The append path, and the reason this method is worth having:
             // rows whose cost does not grow with the stream. `Pushed` keeps the
             // `json_set` path below — it happens once per artifact rather than
             // once per event, so it is not what the measurement was about.
             if let ArtifactDelta::AppendedParts { index, count } = delta {
                 let Some(rows) = journal::rows_for_append(task, index, count)? else {
-                    return self.save(task).await;
+                    return Ok(false);
                 };
                 return self.journal_append(task, rows).await;
             }
 
             let Some(stmt) = artifact_delta_sql(task, delta)? else {
-                return self.save(task).await;
+                return Ok(false);
             };
 
             let mut query = sqlx::query(stmt.sql.as_ref())
@@ -766,13 +787,9 @@ impl TaskStore for SqliteTaskStore {
                 .rows_affected();
 
             // No row matched: the task is not stored yet and the append had
-            // nothing to append to, or the terminal guard refused it. `save`
-            // makes it exist, or reports the refusal.
-            if affected == 0 {
-                return self.save(task).await;
-            }
-
-            Ok(())
+            // nothing to append to, or the terminal guard refused it. The
+            // caller's `save` makes it exist, or reports the refusal.
+            Ok(affected > 0)
         })
     }
 
@@ -803,6 +820,20 @@ impl TaskStore for SqliteTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.try_save_status_delta(task).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_status_delta`](Self::save_status_delta):
+    /// reads only `task.status`.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
             let status = serde_json::to_string(&task.status)
                 .map_err(|e| A2aError::internal(format!("failed to serialize status: {e}")))?;
             let state = task.status.state.to_string();
@@ -831,11 +862,7 @@ impl TaskStore for SqliteTaskStore {
             .map_err(to_a2a_error)?
             .rows_affected();
 
-            if affected == 0 {
-                return self.save(task).await;
-            }
-
-            Ok(())
+            Ok(affected > 0)
         })
     }
 

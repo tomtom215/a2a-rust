@@ -452,6 +452,52 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         })
     }
 
+    // The deltas go to the partition's store, which applies them in place.
+    // Until 2026-10-18 they took the trait's default, a whole-record `save`,
+    // on every artifact and status event (CONTRIBUTING.md, "A default is not
+    // free").
+    fn save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: crate::store::ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.get_store().await?;
+            store.save_artifact_delta(task, delta).await
+        })
+    }
+
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: crate::store::ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.get_store().await?;
+            store.try_save_artifact_delta(task, delta).await
+        })
+    }
+
+    fn save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.get_store().await?;
+            store.save_status_delta(task).await
+        })
+    }
+
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.get_store().await?;
+            store.try_save_status_delta(task).await
+        })
+    }
+
     fn get<'a>(
         &'a self,
         id: &'a TaskId,

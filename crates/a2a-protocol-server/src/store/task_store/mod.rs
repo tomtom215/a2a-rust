@@ -464,6 +464,66 @@ pub trait TaskStore: Send + Sync + 'static {
         self.save(task)
     }
 
+    /// Applies an artifact delta in place if this store can, and writes
+    /// nothing if it cannot: `Ok(true)` when applied, `Ok(false)` when the
+    /// caller must write the task whole.
+    ///
+    /// [`save_artifact_delta`](TaskStore::save_artifact_delta) is this
+    /// followed by `save` on `false`. The split exists for a wrapper that
+    /// transforms parts before storing them —
+    /// [`EncryptedTaskStore`](crate::store::encrypted::EncryptedTaskStore)
+    /// seals each one — so that it can transform only what an in-place write
+    /// stores, and everything only when the write is whole.
+    ///
+    /// # What an implementation may read from `task`
+    ///
+    /// Only what the delta writes: the appended parts (the last `count` of
+    /// `artifacts[index]`) or the pushed artifact, that artifact's id and
+    /// metadata, and the task's `status` and `metadata`. Every other part may
+    /// be a placeholder that cannot be opened. An implementation that reads
+    /// more must return `false` instead.
+    ///
+    /// # What not overriding it costs
+    ///
+    /// The default writes nothing and returns `false`, which is always
+    /// correct: the caller writes the task whole. Behind
+    /// `EncryptedTaskStore` that means sealing every part of the task on
+    /// every artifact event, so a stream of `n` chunks costs about `n²/2`
+    /// seals instead of `n` (release audit F7). Override it with exactly the
+    /// in-place path of `save_artifact_delta`.
+    ///
+    /// # Errors
+    ///
+    /// The store's error, and the terminal-state refusal `save` would report.
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        let _ = (task, delta);
+        Box::pin(async { Ok(false) })
+    }
+
+    /// [`try_save_artifact_delta`](TaskStore::try_save_artifact_delta) for
+    /// [`save_status_delta`](TaskStore::save_status_delta): writes the status
+    /// in place and returns `true`, or writes nothing and returns `false`.
+    ///
+    /// An implementation may read only `task.status` (and the id). Not
+    /// overriding it costs what the artifact one does, per status event: behind
+    /// `EncryptedTaskStore`, every part of the task is sealed on every
+    /// status transition.
+    ///
+    /// # Errors
+    ///
+    /// The store's error, and the terminal-state refusal `save` would report.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        let _ = task;
+        Box::pin(async { Ok(false) })
+    }
+
     /// Persists a task whose history grew by `messages`, without the caller
     /// shipping the history it has already stored.
     ///

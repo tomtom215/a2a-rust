@@ -1609,6 +1609,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`EncryptedTaskStore` seals what a write stores, and the seal budget is
+  enforced** (server; release audit F7). Every write sealed every part of
+  the task, so an artifact streamed in 100 chunks cost 5,250 seals
+  (measured), against a per-key budget of 2^32 random-nonce seals that was
+  counted and never enforced. An artifact or status delta now goes first to
+  the wrapped store's new `try_save_artifact_delta` or
+  `try_save_status_delta`. Only the parts that write stores are sealed:
+  the appended tail or pushed artifact, and the status message. Every other
+  part is a placeholder that never opens, so a store that wrote it anyway
+  fails the read rather than returning anything. Only when the store cannot
+  apply the delta in place is the whole task sealed. The same 100 chunks now
+  cost 100 seals on the in-memory, tenant-aware, SQLite and PostgreSQL
+  stores. `Aes256GcmCipher::with_seal_limit` (default `DEFAULT_SEAL_LIMIT`,
+  2^32) refuses a seal past the limit, failing the write, and warns at half
+  and at nine tenths. The design notes' alternative, reusing ciphertext
+  keyed by a digest of each part, was rejected on measurement: HMAC-SHA256
+  ran at 0.20–0.37 GB/s here against 1.6–3.3 GB/s for AES-256-GCM, so it
+  would have cost more than re-sealing. The tenant-aware in-memory store now
+  forwards both delta writes to its partition, where it used to fall back to
+  a whole-record `save`. `scripts/check_store_delta_forwarding.py`, a new CI
+  gate, fails when a store overrides a delta write without its `try_` half.
+
 - **The SQL stores' artifact appends are compare-and-append** (server;
   release audit F5). A replica whose snapshot predated another's write
   appended after parts or artifacts it had not seen. Under

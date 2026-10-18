@@ -46,6 +46,7 @@ use a2a_protocol_types::message::{Message, Part, PartContent};
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::cipher::ContentCipher;
+use crate::store::ArtifactDelta;
 
 /// The media type of a sealed part.
 pub const SEALED_MEDIA_TYPE: &str = "application/vnd.a2a-rust.sealed-part+json";
@@ -155,9 +156,17 @@ impl Sealer<'_> {
         serde_json::from_slice(&plaintext).map_err(|_| refused())
     }
 
-    async fn parts(&self, parts: &mut [Part], place: Place<'_>, op: Op) -> A2aResult<()> {
-        for (index, part) in parts.iter_mut().enumerate() {
-            let context = place.context(index);
+    /// Seals or opens `parts`, the first of which is at `first` in its
+    /// message or artifact.
+    async fn parts(
+        &self,
+        parts: &mut [Part],
+        first: usize,
+        place: Place<'_>,
+        op: Op,
+    ) -> A2aResult<()> {
+        for (offset, part) in parts.iter_mut().enumerate() {
+            let context = place.context(first + offset);
             let taken = std::mem::replace(part, Part::text(""));
             *part = match op {
                 Op::Seal => self.seal_part(&taken, &context).await?,
@@ -182,7 +191,7 @@ impl Sealer<'_> {
             kind: "message",
             id: &id,
         };
-        self.parts(&mut message.parts, place, op).await
+        self.parts(&mut message.parts, 0, place, op).await
     }
 
     async fn artifact(
@@ -190,6 +199,18 @@ impl Sealer<'_> {
         task: &TaskId,
         at: Where,
         artifact: &mut Artifact,
+        op: Op,
+    ) -> A2aResult<()> {
+        self.artifact_from(task, at, artifact, 0, op).await
+    }
+
+    /// [`artifact`](Self::artifact) for the parts from `first` on.
+    async fn artifact_from(
+        &self,
+        task: &TaskId,
+        at: Where,
+        artifact: &mut Artifact,
+        first: usize,
         op: Op,
     ) -> A2aResult<()> {
         let id = artifact.id.0.clone();
@@ -200,7 +221,8 @@ impl Sealer<'_> {
             kind: "artifact",
             id: &id,
         };
-        self.parts(&mut artifact.parts, place, op).await
+        let parts = artifact.parts.get_mut(first..).unwrap_or_default();
+        self.parts(parts, first, place, op).await
     }
 
     /// Every part of `task`, bound to `task_id` at `at`.
@@ -251,6 +273,61 @@ impl Sealer<'_> {
         Ok(sealed)
     }
 
+    /// `task` for an in-place [`ArtifactDelta`] write: the parts the delta
+    /// stores — the appended tail, or the pushed artifact — and the status
+    /// message sealed, every other part a [`placeholder`]. What a store may
+    /// read for such a write is stated on `TaskStore::try_save_artifact_delta`;
+    /// a store that wrote the rest anyway would store parts that fail every
+    /// read, never plaintext (release audit F7).
+    pub(super) async fn seal_for_artifact_delta(
+        &self,
+        task: &Task,
+        delta: ArtifactDelta,
+    ) -> A2aResult<Task> {
+        let mut partial = shell(task);
+        self.status_message(task, &mut partial).await?;
+        if let Some(artifacts) = partial.artifacts.as_mut() {
+            let (index, first) = match delta {
+                ArtifactDelta::AppendedParts { index, count } => (
+                    index,
+                    artifacts
+                        .get(index)
+                        .map_or(0, |a| a.parts.len().saturating_sub(count)),
+                ),
+                ArtifactDelta::Pushed { index } => (index, 0),
+            };
+            if let (Some(shelled), Some(original)) = (
+                artifacts.get_mut(index),
+                task.artifacts.as_ref().and_then(|a| a.get(index)),
+            ) {
+                for (slot, part) in shelled.parts.iter_mut().zip(&original.parts).skip(first) {
+                    slot.clone_from(part);
+                }
+                self.artifact_from(&task.id, Where::Record, shelled, first, Op::Seal)
+                    .await?;
+            }
+        }
+        Ok(partial)
+    }
+
+    /// `task` for an in-place status write: the status message sealed,
+    /// every other part a [`placeholder`].
+    pub(super) async fn seal_for_status_delta(&self, task: &Task) -> A2aResult<Task> {
+        let mut partial = shell(task);
+        self.status_message(task, &mut partial).await?;
+        Ok(partial)
+    }
+
+    /// Puts `task`'s status message, sealed, into `partial`.
+    async fn status_message(&self, task: &Task, partial: &mut Task) -> A2aResult<()> {
+        partial.status.message.clone_from(&task.status.message);
+        if let Some(message) = partial.status.message.as_mut() {
+            self.message(&task.id, Where::Record, message, Op::Seal)
+                .await?;
+        }
+        Ok(())
+    }
+
     /// `task`, read from its record, with every part opened.
     pub(super) async fn open_task(&self, mut task: Task) -> A2aResult<Task> {
         let id = task.id.clone();
@@ -294,5 +371,67 @@ impl Sealer<'_> {
     ) -> A2aResult<StreamResponse> {
         self.event(task_id, seq, &mut event, Op::Open).await?;
         Ok(event)
+    }
+}
+
+/// A part that never opens: the sealed form with an empty value. Stands in
+/// for a part an in-place write does not store, so that a store which stored
+/// it anyway fails the read rather than returning it — under
+/// `accept_unsealed_parts` too, since it is labelled sealed.
+fn placeholder() -> Part {
+    Part {
+        content: PartContent::Data(serde_json::json!({
+            SEALED_KEY: { "v": VERSION, "c": "" }
+        })),
+        metadata: None,
+        filename: None,
+        media_type: Some(SEALED_MEDIA_TYPE.to_owned()),
+    }
+}
+
+/// `parts` as as many placeholders, so every count a store compares holds.
+fn placeholders(parts: &[Part]) -> Vec<Part> {
+    vec![placeholder(); parts.len()]
+}
+
+/// `task` with every part a placeholder and the status message dropped:
+/// everything around the parts as it is, without copying a part's content.
+fn shell(task: &Task) -> Task {
+    let shell_message = |m: &Message| Message {
+        id: m.id.clone(),
+        context_id: m.context_id.clone(),
+        task_id: m.task_id.clone(),
+        role: m.role,
+        parts: placeholders(&m.parts),
+        metadata: m.metadata.clone(),
+        extensions: m.extensions.clone(),
+        reference_task_ids: m.reference_task_ids.clone(),
+    };
+    Task {
+        id: task.id.clone(),
+        context_id: task.context_id.clone(),
+        status: a2a_protocol_types::task::TaskStatus {
+            state: task.status.state,
+            message: None,
+            timestamp: task.status.timestamp.clone(),
+        },
+        history: task
+            .history
+            .as_ref()
+            .map(|h| h.iter().map(shell_message).collect()),
+        artifacts: task.artifacts.as_ref().map(|artifacts| {
+            artifacts
+                .iter()
+                .map(|a| Artifact {
+                    id: a.id.clone(),
+                    name: a.name.clone(),
+                    description: a.description.clone(),
+                    parts: placeholders(&a.parts),
+                    metadata: a.metadata.clone(),
+                    extensions: a.extensions.clone(),
+                })
+                .collect()
+        }),
+        metadata: task.metadata.clone(),
     }
 }

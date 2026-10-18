@@ -207,6 +207,12 @@ jobs:
       - name: OTel exporter covers every Metrics callback
         run: python3 scripts/check_otel_metrics_coverage.py
 
+      # The same rule for `TaskStore`: a store that writes a delta in place
+      # must also say so through `try_save_*_delta`, or `EncryptedTaskStore`
+      # seals every part of the task on every event (release audit F7).
+      - name: TaskStore delta writes are visible to wrappers
+        run: python3 -I scripts/check_store_delta_forwarding.py
+
       # The packaging `--exclude` list is duplicated across this file,
       # release.yml and RELEASING.md, with nothing tying it to the workspace.
       # A new `publish = false` example therefore breaks `cargo package

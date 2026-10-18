@@ -151,6 +151,18 @@ impl TaskStore for AuditedTaskStore {
         self.inner.save_status_delta(task)
     }
 
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Fut<'a, bool> {
+        self.inner.try_save_artifact_delta(task, delta)
+    }
+
+    fn try_save_status_delta<'a>(&'a self, task: &'a Task) -> Fut<'a, bool> {
+        self.inner.try_save_status_delta(task)
+    }
+
     fn save_appending_history<'a>(
         &'a self,
         task: &'a Task,

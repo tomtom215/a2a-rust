@@ -48,19 +48,29 @@
 //! sealed a stored value in the ring for as long as the value is stored.
 //!
 //! Two replicas writing one task at once (which `tests/multi_replica.rs`
-//! shows can happen) can leave the PostgreSQL store holding an artifact part
-//! at a position other than the one it was sealed for, since its artifact
-//! delta appends without checking what is stored. Unwrapped, that record is
-//! wrong; wrapped, it fails to read until the next full write.
+//! shows can happen) used to leave the PostgreSQL store holding an artifact
+//! part at a position other than the one it was sealed for, and the record
+//! failed to read. The SQL stores' appends are compare-and-append since
+//! 2026-10-18 (release audit F5), so a stale append is rewritten whole
+//! instead (`tests/artifact_compare_and_append.rs`).
 //!
 //! # Cost
 //!
-//! Every write seals every part of the task it writes, the delta writes
-//! included: a store may answer a delta by rewriting the whole record, so
-//! every part it might write has to be sealed already. A long task therefore
-//! pays per write in proportion to its size, which the delta methods exist to
-//! avoid, and an artifact streamed in `n` chunks costs about `n²/2` seals.
-//! This has not been measured.
+//! A write seals what it stores. An artifact or status delta first goes to
+//! the wrapped store's `try_save_artifact_delta` or `try_save_status_delta`
+//! with only the parts that write stores sealed — the appended tail or the
+//! pushed artifact, and the status message — and every other part replaced
+//! by a placeholder that never opens; only if the store cannot write the
+//! delta in place is the whole task sealed and written. So an artifact
+//! streamed in `n` chunks costs `n` seals on the shipped stores (measured:
+//! 100 chunks, 100 seals; 5,250 before this, when every write sealed every
+//! part — release audit F7), and a store that does not override the `try_`
+//! methods costs what every store did before. `save` and
+//! `save_appending_history` still seal the whole task.
+//!
+//! [`Aes256GcmCipher`] refuses to seal past its limit (2^32 by default; see
+//! its nonce budget), so a write past it fails rather than risks a repeated
+//! nonce.
 //!
 //! # Turning it on over existing data
 //!
@@ -92,7 +102,9 @@ use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
-pub use cipher::{AES_256_KEY_LEN, Aes256GcmCipher, ContentCipher, MAX_KEY_ID_LEN};
+pub use cipher::{
+    AES_256_KEY_LEN, Aes256GcmCipher, ContentCipher, DEFAULT_SEAL_LIMIT, MAX_KEY_ID_LEN,
+};
 pub use seal::SEALED_MEDIA_TYPE;
 
 use seal::Sealer;
@@ -242,20 +254,47 @@ impl TaskStore for EncryptedTaskStore {
         self.inner.release_idempotency_key(key)
     }
 
-    // The delta's indexes name positions, not content, so they hold for the
-    // sealed task as they do for the plain one; and a store may answer a
-    // delta by writing the whole task, so all of it is sealed.
+    // A delta seals only what the inner store writes in place: the delta's
+    // parts and the status message (release audit F7). The rest of the task
+    // goes down as placeholders that never open, and only when the inner
+    // store cannot apply the delta in place is the whole task sealed and
+    // written. The delta's indexes name positions, not content, so they hold
+    // for the sealed task as they do for the plain one.
     fn save_artifact_delta<'a>(&'a self, task: &'a Task, delta: ArtifactDelta) -> Fut<'a, ()> {
         Box::pin(async move {
+            if self.try_save_artifact_delta(task, delta).await? {
+                return Ok(());
+            }
             let sealed = self.sealer().seal_task(task).await?;
-            self.inner.save_artifact_delta(&sealed, delta).await
+            self.inner.save(&sealed).await
+        })
+    }
+
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Fut<'a, bool> {
+        Box::pin(async move {
+            let partial = self.sealer().seal_for_artifact_delta(task, delta).await?;
+            self.inner.try_save_artifact_delta(&partial, delta).await
         })
     }
 
     fn save_status_delta<'a>(&'a self, task: &'a Task) -> Fut<'a, ()> {
         Box::pin(async move {
+            if self.try_save_status_delta(task).await? {
+                return Ok(());
+            }
             let sealed = self.sealer().seal_task(task).await?;
-            self.inner.save_status_delta(&sealed).await
+            self.inner.save(&sealed).await
+        })
+    }
+
+    fn try_save_status_delta<'a>(&'a self, task: &'a Task) -> Fut<'a, bool> {
+        Box::pin(async move {
+            let partial = self.sealer().seal_for_status_delta(task).await?;
+            self.inner.try_save_status_delta(&partial).await
         })
     }
 

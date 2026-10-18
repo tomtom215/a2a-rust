@@ -76,6 +76,12 @@ impl TaskStore for AppendsAfterRead {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         self.inner.save_status_delta(task)
     }
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        self.inner.try_save_status_delta(task)
+    }
     fn get<'a>(
         &'a self,
         id: &'a TaskId,

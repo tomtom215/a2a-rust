@@ -369,6 +369,10 @@ injection_for() {
             echo "doc_versions" ;;
         *"check_feature_tables.py"*)
             echo "feature_tables" ;;
+        *"check_sql_driver_isolation.sh"*)
+            echo "sql_drivers" ;;
+        *"check_store_delta_forwarding.py"*)
+            echo "store_delta_forwarding" ;;
         *"check_readme_doctests.py"*)
             echo "readme_doctests" ;;
         *"check_panic_paths.py"*)
@@ -521,6 +525,8 @@ expected_marker() {
         # line, so the marker does not need editing at every minor bump.
         doc_versions)     echo "prose names a version" ;;
         feature_tables)   echo "\`auth-jwt\` is a feature of a2a-protocol-server and is missing from the table" ;;
+        sql_drivers)      echo "--features postgres links libsqlite3-sys" ;;
+        store_delta_forwarding) echo "overrides \`save_status_delta\` but not \`try_save_status_delta\`" ;;
         readme_doctests)  echo "crates/a2a-protocol-client/src/lib.rs: README.md is not included" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
         # The probe step's own name, so a run that failed on some *other*
@@ -733,6 +739,20 @@ if hits != 1:
 
 README.write_text(text, encoding="utf-8")
 PY
+            ;;
+        sql_drivers)
+            # Put SQLite back in the workspace's sqlx entry: the state before
+            # release audit F25, when `postgres` alone linked it.
+            note_touched "Cargo.toml"
+            sed -i 's/^features = \["runtime-tokio"\]$/features = ["runtime-tokio", "sqlite"]/' Cargo.toml
+            ;;
+        store_delta_forwarding)
+            # A wrapper that forwards the status delta but not its in-place
+            # half: the shape that leaves EncryptedTaskStore sealing the whole
+            # task on every status event (release audit F7).
+            note_touched "crates/a2a-protocol-server/src/audit/task_store.rs"
+            sed -i 's/fn try_save_status_delta</fn try_save_status_delta_removed</' \
+                crates/a2a-protocol-server/src/audit/task_store.rs
             ;;
         feature_tables)
             # Drop one feature from the server's README table — the state it
