@@ -105,6 +105,12 @@ ignore    = [
 #     return their input unchanged. Present so three proved-equivalent mutants
 #     can be marked `#[mutants::skip]` in source (ADR 0006). It introduces no
 #     duplicate version and no new license.
+#   * `ring` 0.17 in `a2a-protocol-client`, optional under the `webhook`
+#     feature (2026-10-18), for SHA-256 in the webhook receiver. Not a new
+#     crate: the default `tls-rustls` build already links ring 0.17.14
+#     through rustls and hyper-rustls (`cargo tree -p a2a-protocol-client
+#     -i ring`, same day). License `Apache-2.0 AND ISC`, both on the allow
+#     list. No new duplicate version.
 multiple-versions = "deny"
 wildcards         = "warn"
 

@@ -3119,15 +3119,21 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "Clients MUST respond with HTTP 2xx status codes to acknowledge successful receipt",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/webhook.rs:55"
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223",
+    "crates/a2a-protocol-client/src/webhook/outcome.rs:47"
    ],
-   "test_evidence": [],
-   "notes": "Binds the webhook receiver (client-side app). SDK ships no webhook receiver; only `push::webhook::notification_token` header helper. Sender side treats any 2xx as success (sender.rs:925).",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs accepted_event_is_200_and_returned",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs replayed_body_is_duplicate_200",
+    "crates/a2a-protocol-sdk/tests/webhook_receiver_e2e.rs a_retry_after_a_lost_ack_is_recognised_as_a_duplicate"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. WebhookOutcome::status() is 200 for Accepted and for Duplicate (a retry the agent sent after a lost acknowledgement is acknowledged, not re-processed), and 4xx only for a refusal; the end-to-end test drives the server's HttpPushSender against it.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 878,
@@ -3135,15 +3141,21 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD process notifications idempotently, as duplicate deliveries may occur",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/webhook.rs:55"
+    "crates/a2a-protocol-client/src/webhook/state.rs",
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223"
    ],
-   "test_evidence": [],
-   "notes": "Webhook receiver concern; no SDK receiver/dedup hook provided.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs replayed_body_is_duplicate_200",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs dedup_is_bounded_and_optional",
+    "crates/a2a-protocol-sdk/tests/webhook_receiver_e2e.rs a_retry_after_a_lost_ack_is_recognised_as_a_duplicate"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. Duplicate detection is on by default: a bounded cache (10,000 entries, 1 h) keyed on SHA-256 of (task id, config id, body). It matches bytes, which is what the SDK's sender re-sends on a retry (it serializes once); the same event serialized differently by another agent is not recognised. without_dedup() turns it off.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 879,
@@ -3151,15 +3163,18 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "Clients MUST validate the task ID matches an expected task",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/webhook.rs:55"
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223"
    ],
-   "test_evidence": [],
-   "notes": "Webhook receiver concern; SDK provides no receiver or task-id validation helper (only token header extraction).",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs foreign_task_id_is_403"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. An event about any task other than the one the config was registered for (a status or artifact update, a Task, a Message with another or no task id) is refused 403 TaskMismatch.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 880,
@@ -3167,16 +3182,21 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD implement appropriate security measures to verify the notification source",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/webhook.rs:29",
-    "crates/a2a-protocol-server/src/push/webhook.rs:55"
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223",
+    "crates/a2a-protocol-client/src/webhook/token.rs:37"
    ],
-   "test_evidence": [],
-   "notes": "SDK hook: sender emits the config token under both X-A2A-Notification-Token and A2A-Notification-Token; receiver can read it with webhook::notification_token. Verification itself is the app's.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs missing_or_wrong_token_is_401",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs wrong_authorization_is_401",
+    "crates/a2a-protocol-sdk/tests/webhook_receiver_e2e.rs refusals_are_final_for_the_sender"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. receive() verifies the source by the config's notification token (either header spelling, looked up by SHA-256, compared in constant time) and its Authorization scheme and credentials; any mismatch is 401.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 884,
@@ -4191,7 +4211,7 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "File references within A2A messages MUST be validated to prevent SSRF",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/url_guard.rs:41",
@@ -4204,7 +4224,7 @@
     "crates/a2a-protocol-server/tests/file_url_ssrf.rs refuse_private_file_urls_refuses_a_message_pointing_inward",
     "crates/a2a-protocol-server/tests/file_url_ssrf.rs by_default_file_references_are_not_checked"
    ],
-   "notes": "Re-examined 2026-10-18: the SDK never dereferences a Part's URL, so the fetch is the agent's; what it needs is now public. url_guard::check_public_url refuses private, loopback, link-local, CGNAT, ULA and IPv4-mapped addresses, numeric IPv4 spellings and internal names (the push sender's checks, moved here); url_guard::resolve_public_url also resolves the host under a timeout and refuses it if any address is private, returning the address to connect to. RequestHandlerBuilder::refuse_private_file_urls() refuses such a message before the executor runs (form only, no DNS). SUPPORTED, not TESTED: the check is opt-in, because an SDK that never fetches has no reference to protect by default; an executor that fetches must call resolve_public_url.",
+   "notes": "Re-examined 2026-10-18: the SDK never dereferences a Part's URL, so the fetch is the agent's; what it needs is now public. url_guard::check_public_url refuses private, loopback, link-local, CGNAT, ULA and IPv4-mapped addresses, numeric IPv4 spellings and internal names (the push sender's checks, moved here); url_guard::resolve_public_url also resolves the host under a timeout and refuses it if any address is private, returning the address to connect to. RequestHandlerBuilder::refuse_private_file_urls() refuses such a message before the executor runs (form only, no DNS). The check is opt-in, because an SDK that never fetches has no reference to protect by default; an executor that fetches must call resolve_public_url.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -7516,17 +7536,21 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "Clients MUST validate webhook authenticity using the provided authentication credentials",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/webhook.rs:55"
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223",
+    "crates/a2a-protocol-client/src/webhook/token.rs:100"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/webhook.rs:126 two_different_tokens_fail_closed"
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs wrong_authorization_is_401",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs missing_or_wrong_token_is_401",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs register_refuses_configs_it_cannot_check"
    ],
-   "notes": "No webhook receiver exists in the client crate (no 'webhook' in a2a-protocol-client/src). The server crate offers only push::webhook::notification_token() to extract the token; the receiver must validate it (and Authorization) itself.",
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. The config's authentication credentials are checked against the request's one Authorization header (scheme case-insensitive, credentials in constant time); register() refuses a config that names authentication but carries no credentials, so the check cannot be silently skipped.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3121,
@@ -7534,13 +7558,18 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD verify the task ID in the payload matches an expected task they created",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "No receiver-side helper; application duty.",
+   "impl_evidence": [
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs foreign_task_id_is_403"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. See §4.3.3 879: a foreign or missing task id is 403.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3122,
@@ -7548,17 +7577,20 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "Clients MUST respond with HTTP 2xx status codes to acknowledge successful receipt",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:970"
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223",
+    "crates/a2a-protocol-client/src/webhook/outcome.rs:47"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:172 successful_delivery_on_first_attempt"
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs accepted_event_is_200_and_returned",
+    "crates/a2a-protocol-sdk/tests/webhook_receiver_e2e.rs a_retry_after_a_lost_ack_is_recognised_as_a_duplicate"
    ],
-   "notes": "Receiver duty; the SDK sender side treats any 2xx (`resp.status().is_success()`) as delivered, consistent with this.",
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. See §4.3.3 877.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3123,
@@ -7566,13 +7598,20 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD process notifications idempotently, as duplicate deliveries may occur",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Receiver duty; no SDK receiver.",
+   "impl_evidence": [
+    "crates/a2a-protocol-client/src/webhook/state.rs",
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:223"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs replayed_body_is_duplicate_200",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs dedup_is_bounded_and_optional"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. See §4.3.3 878.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3124,
@@ -7580,13 +7619,20 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD implement rate limiting to prevent webhook flooding",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Receiver duty; no SDK receiver.",
+   "impl_evidence": [
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:123"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs over_the_rate_limit_is_429",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs a_zero_burst_still_admits_one_request",
+    "crates/a2a-protocol-sdk/tests/webhook_receiver_e2e.rs a_rate_limited_delivery_is_retried_by_the_sender"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. with_rate_limit(per_sec, burst) gives each registered config a token bucket, checked after authentication so a request without the config's secrets cannot spend its allowance; past it, 429, which the SDK's sender retries. Off by default: a rate is the deployment's to choose.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3125,
@@ -7594,16 +7640,21 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD use HTTPS endpoints for webhook URLs to ensure confidentiality",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:505"
+    "crates/a2a-protocol-client/src/methods/push_config.rs:42",
+    "crates/a2a-protocol-client/src/builder/mod.rs"
    ],
-   "test_evidence": [],
-   "notes": "Client picks the URL; the A2A client does not warn on http:// push URLs and the server accepts both http and https, unless its push sender is set to https_only (since 2026-10-12).",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_https_tests.rs require_https_refuses_plaintext_to_a_remote_host_before_sending",
+    "crates/a2a-protocol-client/tests/webhook_https_tests.rs require_https_lets_loopback_http_and_https_through",
+    "crates/a2a-protocol-client/tests/webhook_https_tests.rs without_require_https_plaintext_is_sent"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. The client checks the webhook URL of set_push_config and of a send carrying an inline push config: an http:// URL to a non-loopback host is logged at WARN by default and, with ClientBuilder::require_https_webhooks(), refused before sending (ClientError::InsecureWebhook, carrying only the origin).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3129,
@@ -7685,13 +7736,20 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients SHOULD use unique, single-purpose tokens for each push notification configuration",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Client application choice; SDK neither generates nor checks token uniqueness.",
+   "impl_evidence": [
+    "crates/a2a-protocol-client/src/webhook/token.rs:64",
+    "crates/a2a-protocol-client/src/webhook/receiver.rs:150"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs new_notification_token_is_distinct_and_long",
+    "crates/a2a-protocol-client/tests/webhook_receiver.rs a_second_config_reusing_a_token_is_refused"
+   ],
+   "notes": "Re-examined 2026-10-18: the client crate now ships a2a_protocol_client::webhook::WebhookReceiver (feature webhook, on by default in the client and the SDK). A receiving application that hands each request's headers and body to receive() gets this check; one that writes its own receiver keeps the duty. webhook::new_notification_token() returns 244 random bits as 43 base64url characters, one per config; WebhookReceiver::register() refuses a token another registered config already uses (TokenInUse).",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3142,

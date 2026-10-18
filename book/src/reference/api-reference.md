@@ -223,6 +223,7 @@ are rustdoc's job.
 | `tls` | TLS connector via rustls (`tls-rustls` feature) |
 | `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
 | `transport` | Transport abstraction for A2A client requests |
+| `webhook` | The receiving side of push notifications: `WebhookReceiver`, `new_notification_token` (`webhook` feature, default on) |
 
 ### Core Types
 
@@ -286,6 +287,14 @@ are rustdoc's job.
 | `StaticTokenProvider` | A `TokenProvider` that always returns the same fixed token |
 | `OAuth2ClientCredentials` | A `TokenProvider` implementing the OAuth 2.0 client credentials grant (RFC 6749 §4.4) with caching and proactive refresh |
 | `BearerAuthInterceptor` | A `CallInterceptor` that injects a bearer token from a `TokenProvider` before every request |
+
+### Webhook Receiver
+
+| Type | Description |
+|------|-------------|
+| `WebhookReceiver` | Checks a push notification's token, `Authorization`, body and task; suppresses duplicates; optional per-config rate limit |
+| `WebhookOutcome` | `Accepted`, `Duplicate` or `Rejected`, with the HTTP status to answer |
+| `WebhookRejection` | Why a notification was refused: 401, 400, 403 or 429 |
 
 ### Transport
 

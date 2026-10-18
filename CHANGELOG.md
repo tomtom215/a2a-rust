@@ -167,6 +167,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`webhook::WebhookReceiver`: the receiving side of push notifications**
+  (client, feature `webhook`, on by default in the client and the SDK; spec
+  §4.3.3, §13.2). Register the config `set_push_config` returned, then hand
+  each webhook request's headers and body to `receive()`; the outcome's
+  `status()` is the HTTP status to answer. It checks the notification token
+  (either header spelling, looked up by SHA-256 and compared in constant
+  time), the config's `Authorization` scheme and credentials (401), the body
+  as a `StreamResponse` (400) and its task against the registered task
+  (403); it answers a byte-identical replay as `Duplicate` with 200 (a
+  bounded cache, on by default) and, with `with_rate_limit`, more than the
+  config's allowance with 429. `new_notification_token()` makes a 244-bit
+  token, and `register` refuses a token another config already uses. The
+  feature adds `ring`, which the default `tls-rustls` build already links.
+  Tests: `webhook_receiver`, and the SDK's `webhook_receiver_e2e`, in which
+  the server's `HttpPushSender` retries after a lost acknowledgement.
+- **`ClientBuilder::require_https_webhooks()`** (client; spec §13.2 "Clients
+  SHOULD use HTTPS endpoints for webhook URLs"). `set_push_config`, and a
+  send carrying an inline push config, warn on an `http://` webhook to a
+  non-loopback host; with this option they refuse it before sending, with
+  the new `ClientError::InsecureWebhook` (the URL's origin only). Tests:
+  `webhook_https_tests`.
 - **`url_guard::check_public_url` and `url_guard::resolve_public_url`**
   (server; spec §14 "File references within A2A messages MUST be validated
   to prevent SSRF"). The checks the push sender has applied to webhook URLs,

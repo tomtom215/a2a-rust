@@ -85,7 +85,8 @@ than reimplementing the list above.
 The same applies to file references in messages (spec §14: they "MUST be
 validated to prevent SSRF"). The SDK never fetches a `Part`'s URL, so this
 falls to an executor that does: call `resolve_public_url` before fetching and
-connect to the address it returns. To refuse such messages before the
+connect to the address it returns (`None` means the URL already names an
+address, which it has checked), so a second lookup cannot answer differently. To refuse such messages before the
 executor runs, call `RequestHandlerBuilder::refuse_private_file_urls()`; it
 checks the URL's form only, without DNS, so an executor that fetches still
 has to resolve.
