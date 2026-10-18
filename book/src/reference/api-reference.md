@@ -395,6 +395,7 @@ are rustdoc's job.
 |------|-------------|
 | `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher (implements `Dispatcher`) |
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
+| `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`) |
 | `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
 | `GrpcDispatcher` | gRPC dispatcher (`grpc` feature) |
 | `A2aRouter` | Axum framework adapter (`axum` feature) |

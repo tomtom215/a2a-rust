@@ -120,8 +120,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   replicas and G1-B (`ROADMAP.md`); a stale unscoped write from another
   replica keeps a stored position whose effect it overwrote
   (`store/applied.rs`).
-- **Server:** JSON-RPC and
-  REST on one socket without a hand-written accept loop; JSON-RPC parses a request's params
+- **Server:** JSON-RPC parses a request's params
   before the interceptor chain authenticates it (a malformed body is
   refused `-32602` before `401`).
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its

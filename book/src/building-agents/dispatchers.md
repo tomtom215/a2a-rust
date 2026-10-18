@@ -1,6 +1,6 @@
 # Dispatchers (JSON-RPC, REST, Axum & gRPC)
 
-Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides five built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `A2aRouter` (`axum` feature), `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature).
+Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides five built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `A2aRouter` (`axum` feature), `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature). `CombinedDispatcher` puts the first two on one listener ([below](#json-rpc-and-rest-on-one-port)).
 
 ## JsonRpcDispatcher
 
@@ -621,6 +621,42 @@ let rest_addr = serve_with_addr("127.0.0.1:3001", RestDispatcher::new(handler)).
 # Ok(())
 # }
 ```
+
+### JSON-RPC and REST on one port
+
+`CombinedDispatcher` serves both bindings on one listener. A `POST` to the
+JSON-RPC path (`/` unless `with_jsonrpc_path` names another single segment,
+such as `/a2a`), and its CORS preflight, go to JSON-RPC. Every other request
+goes to REST, including the agent card, the health probes and every
+tenant-prefixed route. Declare both interfaces on the card at that one URL:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use std::sync::Arc;
+# struct MyExecutor;
+# agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::dispatch::CombinedDispatcher;
+use a2a_protocol_server::serve::serve_with_addr;
+
+let card = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000/a2a"))
+    .with_interface(AgentInterface::rest("http://localhost:3000"))
+    .with_description("An example agent")
+    .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]));
+let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).with_agent_card(card).build()?);
+
+let dispatcher = CombinedDispatcher::new(handler).with_jsonrpc_path("/a2a")?;
+serve_with_addr("127.0.0.1:3000", dispatcher).await?;
+# Ok(())
+# }
+```
+
+Like the single-binding dispatchers it works with `Server`, so TLS,
+connection limits and a graceful shutdown apply to it too. A JSON-RPC path
+with a `/` inside it, a `:`, or one of the REST binding's own first segments
+(`/tasks`, `/extendedAgentCard`, `/.well-known`, `/health`, `/ready`) is
+refused, because REST routes it or could.
 
 ## CORS Configuration
 

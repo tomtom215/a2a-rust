@@ -214,6 +214,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CombinedDispatcher`: JSON-RPC and HTTP+JSON on one listener**
+  (server). Serving both bindings on one port took a hand-written hyper
+  accept loop; four examples each carried one, outside `Server`'s timeouts,
+  connection limit and graceful shutdown. `CombinedDispatcher` is a
+  `Dispatcher` like the others. A `POST` to the JSON-RPC path (default `/`,
+  or one segment set with `with_jsonrpc_path`), and its preflight, go to
+  JSON-RPC; everything else goes to REST. `echo-agent`, `genai-agent`,
+  `rig-agent` and `multi-lang-team` now use it.
 - **A server span and `rpc.server.call.duration` on every binding,
   SLIMRPC included** (server, client, `a2a-protocol-slimrpc`; ADR 0013,
   decision 2). `BindingSpan` and `CustomBinding` let a binding outside

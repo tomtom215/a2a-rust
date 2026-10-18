@@ -62,7 +62,7 @@
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
 //! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
-//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
+//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], [`CombinedDispatcher`] (both on one listener), `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature) |
 //! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
@@ -198,8 +198,8 @@ pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]
 pub use dispatch::axum_adapter::A2aRouter;
 pub use dispatch::{
-    A2A_VERSION_METADATA_KEY, CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher,
-    validate_version_metadata,
+    A2A_VERSION_METADATA_KEY, CombinedDispatcher, CorsConfig, DispatchConfig, JsonRpcDispatcher,
+    RestDispatcher, validate_version_metadata,
 };
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
