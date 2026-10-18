@@ -65,10 +65,13 @@ only: when something here is done, delete it rather than annotating it.
    this branch changed the blocking-send path (`collect_then_follow`) and
    the push-config, card and auth paths.
 4. **Step 4 — OpenTelemetry on by default**, with the exporter staying in
-   `a2a-protocol-sdk` only (decided 2026-10-18): UCUM units,
-   `a2a.server.latency` renamed `a2a.server.request.duration`,
-   `init_otlp_pipeline(Option<&str>)`, ADR 0013's status, mTLS and
-   `http/json` OTLP, spans and metrics on every binding. Not started.
+   `a2a-protocol-sdk` only (decided 2026-10-18). Done 2026-10-18: UCUM
+   units, `a2a.server.latency` removed for `a2a.server.request.duration`,
+   `init_otlp_pipeline(Option<&str>)` with the environment first, ADR 0013
+   Accepted. Left: splitting the server's `otel` feature into
+   instrumentation (default-on everywhere) and the OTLP exporter (default-on
+   in the SDK only), mTLS and `http/json` OTLP, and spans and metrics on
+   every binding.
 5. **Freshness:** record the first 24-shard weekly mutation sweep in
    `book/src/reference/mutation-history.md` after it runs (Monday
    2026-10-19); after the next release, check the versioned docs deploy.
@@ -135,7 +138,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   chunks, untimed), and two concurrent PostgreSQL writers can leave a
   record unreadable until its next full write
   (`postgres_store/artifact_delta.rs`).
-- **Observability:** Step 4 above; ADR 0013 still says "Proposed".
+- **Observability:** what is left of Step 4 above.
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
   measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at

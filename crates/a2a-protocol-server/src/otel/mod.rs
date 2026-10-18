@@ -29,7 +29,7 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // 1. Initialise the OTLP export pipeline (sets the global MeterProvider).
-//! let provider = init_otlp_pipeline("my-a2a-agent")?;
+//! let provider = init_otlp_pipeline(Some("my-a2a-agent"))?;
 //!
 //! // 2. Build the metrics instance.
 //! let metrics = OtelMetricsBuilder::new()
@@ -68,17 +68,17 @@ pub use telemetry::{
 /// | Instrument | Kind | Unit | Description |
 /// |---|---|---|---|
 /// | `rpc.server.call.duration` | Histogram | `s` | Every inbound call, per the semantic conventions |
-/// | `a2a.server.requests` | Counter | `request` | Total inbound requests |
-/// | `a2a.server.responses` | Counter | `response` | Total outbound responses |
-/// | `a2a.server.errors` | Counter | `error` | Total errors |
-/// | `a2a.server.latency` | Histogram | `s` | Request latency in seconds |
-/// | `a2a.server.queue_depth` | Gauge | `queue` | Number of active event queues |
-/// | `a2a.server.persistence_errors` | Counter | `error` | Task writes that failed |
-/// | `a2a.server.push_deliveries` | Counter | `delivery` | Push attempts, by `outcome` |
-/// | `a2a.server.pool.active` | Gauge | `connection` | Active (in-use) connections |
-/// | `a2a.server.pool.idle` | Gauge | `connection` | Idle connections |
-/// | `a2a.server.pool.created` | Counter | `connection` | Total connections created |
-/// | `a2a.server.pool.closed` | Counter | `connection` | Connections closed |
+/// | `a2a.server.requests` | Counter | `{request}` | Total inbound requests |
+/// | `a2a.server.responses` | Counter | `{response}` | Total outbound responses |
+/// | `a2a.server.errors` | Counter | `{error}` | Total errors |
+/// | `a2a.server.request.duration` | Histogram | `s` | Request duration in seconds (named `a2a.server.latency` before 0.15) |
+/// | `a2a.server.queue_depth` | Gauge | `{queue}` | Number of active event queues |
+/// | `a2a.server.persistence_errors` | Counter | `{error}` | Task writes that failed |
+/// | `a2a.server.push_deliveries` | Counter | `{delivery}` | Push attempts, by `outcome` |
+/// | `a2a.server.pool.active` | Gauge | `{connection}` | Active (in-use) connections |
+/// | `a2a.server.pool.idle` | Gauge | `{connection}` | Idle connections |
+/// | `a2a.server.pool.created` | Counter | `{connection}` | Total connections created |
+/// | `a2a.server.pool.closed` | Counter | `{connection}` | Connections closed |
 ///
 /// `rpc.server.call.duration` carries `rpc.system.name`, `rpc.method`,
 /// `rpc.status_code` and, on failure, `error.type` (see [`RpcCall`]). The
@@ -119,19 +119,19 @@ impl OtelMetrics {
         let request_counter = meter
             .u64_counter("a2a.server.requests")
             .with_description("Total number of inbound A2A requests")
-            .with_unit("request")
+            .with_unit("{request}")
             .build();
 
         let response_counter = meter
             .u64_counter("a2a.server.responses")
             .with_description("Total number of outbound A2A responses")
-            .with_unit("response")
+            .with_unit("{response}")
             .build();
 
         let error_counter = meter
             .u64_counter("a2a.server.errors")
             .with_description("Total number of A2A request errors")
-            .with_unit("error")
+            .with_unit("{error}")
             .build();
 
         let (rpc_call_histogram, latency_histogram) = Self::duration_instruments(meter);
@@ -139,31 +139,31 @@ impl OtelMetrics {
         let queue_depth_gauge = meter
             .u64_gauge("a2a.server.queue_depth")
             .with_description("Number of active event queues")
-            .with_unit("queue")
+            .with_unit("{queue}")
             .build();
 
         let pool_active_gauge = meter
             .u64_gauge("a2a.server.pool.active")
             .with_description("Number of active (in-use) HTTP connections")
-            .with_unit("connection")
+            .with_unit("{connection}")
             .build();
 
         let pool_idle_gauge = meter
             .u64_gauge("a2a.server.pool.idle")
             .with_description("Number of idle HTTP connections")
-            .with_unit("connection")
+            .with_unit("{connection}")
             .build();
 
         let pool_created_counter = meter
             .u64_counter("a2a.server.pool.created")
             .with_description("Total HTTP connections created since process start")
-            .with_unit("connection")
+            .with_unit("{connection}")
             .build();
 
         let pool_closed_counter = meter
             .u64_counter("a2a.server.pool.closed")
             .with_description("HTTP connections closed due to errors or timeouts")
-            .with_unit("connection")
+            .with_unit("{connection}")
             .build();
 
         let (persistence_error_counter, push_delivery_counter) = Self::failure_instruments(meter);
@@ -199,8 +199,8 @@ impl OtelMetrics {
         // milliseconds — so a histogram in seconds put every call under 5 s in
         // one bucket (audit O5).
         let latency_histogram = meter
-            .f64_histogram("a2a.server.latency")
-            .with_description("A2A request latency")
+            .f64_histogram("a2a.server.request.duration")
+            .with_description("Duration of an inbound A2A request")
             .with_unit("s")
             .with_boundaries(RPC_DURATION_BUCKETS.to_vec())
             .build();
@@ -223,7 +223,7 @@ impl OtelMetrics {
                  Non-zero means data loss: the streaming client already \
                  received the event.",
             )
-            .with_unit("error")
+            .with_unit("{error}")
             .build();
 
         let push_delivery_counter = meter
@@ -232,7 +232,7 @@ impl OtelMetrics {
                 "Push notification delivery attempts, by outcome \
                  (delivered / failed / timeout)",
             )
-            .with_unit("delivery")
+            .with_unit("{delivery}")
             .build();
 
         (persistence_error_counter, push_delivery_counter)

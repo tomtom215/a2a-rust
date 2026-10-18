@@ -4,7 +4,9 @@
 # ADR 0013: Spans, metrics and one telemetry entry point
 
 **Date:** 2026-09-23
-**Status:** Proposed
+**Status:** Accepted — implemented as `otel::Telemetry` (2026-10-06); recorded
+2026-10-18, when the metric catalogue moved to UCUM units and
+`a2a.server.request.duration`
 **Author:** Tom F.
 
 ---

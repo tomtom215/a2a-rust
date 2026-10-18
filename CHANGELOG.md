@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **The metric catalogue follows the OpenTelemetry conventions** (server,
+  `otel`; decided 2026-10-15). `a2a.server.latency`, deprecated in 0.14.0, is
+  removed: read `a2a.server.request.duration` (Prometheus
+  `a2a_server_request_duration_seconds`), the same histogram under the
+  conventions' name, or `rpc.server.call.duration`. Units are UCUM: a count
+  is brace-annotated (`{request}`, `{connection}`, `{error}`, `{queue}`,
+  `{delivery}`, `{response}`). Rendered through `opentelemetry-prometheus`
+  0.33.1 the other metric names are unchanged (measured 2026-10-18).
+- **`init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` take
+  `service_name: Option<&str>`** (server, `otel`). The environment now wins:
+  `OTEL_SERVICE_NAME`, or `service.name` in `OTEL_RESOURCE_ATTRIBUTES`, names
+  the service, and the argument only when they do not; `None` leaves it to
+  the environment and the SDK's `unknown_service` default. The `&str`
+  overwrote the environment, against the OpenTelemetry environment-variable
+  specification. Migration: wrap the name in `Some`. Tests:
+  `otel::pipeline::tests`.
 - **`ConvertError` and `SseParseError` are `#[non_exhaustive]`** (types,
   client; release audit F26). A match on `SseParseError` needs a wildcard
   arm, and a `ConvertError` is built with the now-public

@@ -160,8 +160,10 @@ Things it gets right that hand-wiring tends not to, each covered by a test in
 **gRPC only** (`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect on them), must be
 called from inside a Tokio runtime — outside one they panic with `there is no
 reactor running`, which release builds' `panic = "abort"` turns into a process
-abort — and their `service_name` argument overwrites `OTEL_SERVICE_NAME`,
-the opposite of what the environment specification prescribes. Calling one
+abort — and their `service_name` argument, an `Option<&str>` since 0.15, names
+the service only when `OTEL_SERVICE_NAME` (or `service.name` in
+`OTEL_RESOURCE_ATTRIBUTES`) does not, as the environment specification
+prescribes; before 0.15 it overwrote them. Calling one
 twice replaces the first provider and silently orphans it. New code should use
 `Telemetry`.
 
@@ -176,17 +178,17 @@ treat them as the contract.
 | Metric | Type | Unit | Meaning |
 |---|---|---|---|
 | `rpc.server.call.duration` | histogram | s | Every inbound call, on every binding, by method and outcome |
-| `a2a.server.requests` | counter | request | Inbound A2A requests |
-| `a2a.server.responses` | counter | response | Outbound A2A responses |
-| `a2a.server.errors` | counter | error | Request errors |
-| `a2a.server.latency` | histogram | s | Request latency |
-| `a2a.server.queue_depth` | gauge | queue | Active event queues |
-| `a2a.server.persistence_errors` | counter | error | Store writes that failed |
-| `a2a.server.push_deliveries` | counter | delivery | Push attempts, by `outcome` |
-| `a2a.server.pool.active` | gauge | connection | In-use HTTP connections |
-| `a2a.server.pool.idle` | gauge | connection | Idle HTTP connections |
-| `a2a.server.pool.created` | counter | connection | Connections created since start |
-| `a2a.server.pool.closed` | counter | connection | Connections closed on error or timeout |
+| `a2a.server.requests` | counter | `{request}` | Inbound A2A requests |
+| `a2a.server.responses` | counter | `{response}` | Outbound A2A responses |
+| `a2a.server.errors` | counter | `{error}` | Request errors |
+| `a2a.server.request.duration` | histogram | s | Request duration (named `a2a.server.latency` before 0.15) |
+| `a2a.server.queue_depth` | gauge | `{queue}` | Active event queues |
+| `a2a.server.persistence_errors` | counter | `{error}` | Store writes that failed |
+| `a2a.server.push_deliveries` | counter | `{delivery}` | Push attempts, by `outcome` |
+| `a2a.server.pool.active` | gauge | `{connection}` | In-use HTTP connections |
+| `a2a.server.pool.idle` | gauge | `{connection}` | Idle HTTP connections |
+| `a2a.server.pool.created` | counter | `{connection}` | Connections created since start |
+| `a2a.server.pool.closed` | counter | `{connection}` | Connections closed on error or timeout |
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
 instrument, with their advisory buckets (5 ms to 10 s) and attributes:
@@ -204,10 +206,10 @@ method. For a streaming method it times the call up to the stream being
 established, not the stream.
 The same values reach a custom `Metrics` as `on_rpc_call`.
 
-`a2a.server.latency` is deprecated in its favour and stays until at least the
-next minor release, per `STABILITY.md` §3. It now uses the same buckets; it
-used the SDK's defaults, sized for milliseconds, which put every call under
-5 s in one bucket.
+`a2a.server.request.duration` times the same calls by A2A method, with the
+same buckets. Before 0.15 it was `a2a.server.latency`, deprecated in 0.14.0
+and removed in 0.15.0 per `STABILITY.md` §3; OpenTelemetry names a duration
+histogram `.duration`, so a dashboard built for the conventions finds it.
 
 The `pool` instruments are reported by the servers this crate runs — `serve`,
 `serve_with_addr` and `Server::serve_with_shutdown`. A connection is *active*
@@ -228,7 +230,8 @@ The dots are correct: OpenTelemetry names metrics this way
 But you should not have to guess the translated name, so here it is,
 measured rather than derived — rendered through `opentelemetry-prometheus`
 0.33.1, the version matching this crate's `opentelemetry_sdk` (re-measured
-2026-10-12 after the move from 0.32.0; every name is unchanged):
+2026-10-18 after the 0.15 rename and the move to UCUM units: the duration
+histogram's name follows the rename, and every other name is unchanged):
 
 | Instrument | Prometheus name |
 |---|---|
@@ -236,7 +239,7 @@ measured rather than derived — rendered through `opentelemetry-prometheus`
 | `a2a.server.requests` | `a2a_server_requests_total` |
 | `a2a.server.responses` | `a2a_server_responses_total` |
 | `a2a.server.errors` | `a2a_server_errors_total` |
-| `a2a.server.latency` | `a2a_server_latency_seconds` |
+| `a2a.server.request.duration` | `a2a_server_request_duration_seconds` |
 | `a2a.server.queue_depth` | `a2a_server_queue_depth` |
 | `a2a.server.persistence_errors` | `a2a_server_persistence_errors_total` |
 | `a2a.server.push_deliveries` | `a2a_server_push_deliveries_total` |
@@ -249,27 +252,16 @@ Counters gain `_total`, the histograms gain `_seconds` from their `s` unit,
 and gauges gain nothing. Every series also carries
 `otel_scope_name="a2a.server"` — the default meter name, changeable with
 `OtelMetricsBuilder::meter_name`. Alongside them the exporter emits
-`target_info`, a gauge whose `service_name` label is the `service_name` you
-passed to `init_otlp_pipeline`; that is where it lands, and the section
-above is why the environment cannot set it.
+`target_info`, a gauge whose `service_name` label is the service name:
+`OTEL_SERVICE_NAME` when set, otherwise the name passed to
+`init_otlp_pipeline`.
 
-**One known deviation, and a measurement that bounds it.** The Unit column
-above is not UCUM: the specification brace-annotates dimensionless counts
-(`{request}`, not `request`). Re-rendering the whole catalogue with UCUM
-units produces a **byte-identical** exposition — same names, same metadata,
-same SHA-256 — because this exporter only suffixes units it can translate,
-and `{request}` and `request` both translate to nothing. So the deviation is
-a metadata-correctness issue, not a cause of wrong metric names here; other
-exporters may treat it differently.
-
-The deviation that was visible — a duration histogram not named for the
-conventions, so a dashboard template built for OpenTelemetry RPC metrics
-found nothing — is answered by adding `rpc.server.call.duration`, the name
-such a template looks for, rather than renaming `a2a.server.latency`: the
-catalogue is published as a contract (see the line under *The catalogue*
-above), so the old name is deprecated first and removed in a later release
-with its own upgrade note. The UCUM units are left as they are, for the same
-reason and because the measurement above shows they change nothing here.
+**Units are UCUM since 0.15.** A dimensionless count is brace-annotated
+(`{request}`, `{connection}`), as the specification asks; before 0.15 they
+were bare words (`request`). Rendering the catalogue both ways through this
+exporter produces the same metric names, because it suffixes only units it
+can translate and translates neither form; the change corrects the metadata
+other exporters and backends read.
 
 ## The four signals worth alerting on
 

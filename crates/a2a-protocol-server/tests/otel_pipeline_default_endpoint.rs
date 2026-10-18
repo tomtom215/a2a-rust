@@ -24,7 +24,8 @@ use a2a_protocol_server::otel::init_otlp_pipeline;
 
 #[tokio::test]
 async fn the_environment_entry_point_builds_a_real_pipeline_and_installs_it() {
-    let provider = init_otlp_pipeline("a2a-pipeline-default-endpoint").expect("pipeline builds");
+    let provider =
+        init_otlp_pipeline(Some("a2a-pipeline-default-endpoint")).expect("pipeline builds");
 
     // Through the *global* meter: the mutant never calls `set_meter_provider`,
     // so under it this recording lands in the no-op provider.
