@@ -15,7 +15,7 @@
 #               what the SDK offers the integrator who must
 
 [meta]
-as_of = "2026-10-16"
+as_of = "2026-10-18"
 preamble = """
 This is a map from regulatory and standards provisions to what a2a-rust, a
 protocol library, provides toward them. It is not a claim that the SDK is
@@ -557,7 +557,7 @@ id = "GDPR-5-1e"
 source = "gdpr"
 provision = "Art. 5(1)(e), 17"
 requirement = "Storage limitation, and erasure on request."
-sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's. With `AuditLog::with_privacy`, `erase_subject` erases one person from a tenant's audit chain by destroying their key, refused under a legal hold (Art. 17(3)(e)), and the chain still verifies; retention drops the keys no remaining record names."
+sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's. Under caller isolation, `erase_caller` on the tenant-aware task and push-config stores removes everything one authenticated caller's partitions hold, in every tenant: tasks, their events, idempotency keys and webhooks. With `AuditLog::with_privacy`, `erase_subject` erases one person from a tenant's audit chain by destroying their key, refused under a legal hold (Art. 17(3)(e)), and the chain still verifies; retention drops the keys no remaining record names."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else",
@@ -565,10 +565,12 @@ tests = [
   "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::deleting_a_task_removes_its_log",
   "crates/a2a-protocol-server/src/store/sqlite_store/artifact_delta_tests.rs::deleting_a_task_discards_its_journalled_parts",
   "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs::deleting_a_task_removes_its_log_and_leaves_other_tenants_alone",
+  "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_in_memory_stores",
+  "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_sqlite_stores",
   "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_destroys_one_persons_key_and_leaves_the_chain_whole",
   "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::retention_drops_the_keys_no_record_names_any_longer",
 ]
-gap = "The task store has no notion of a data subject: a task can be erased by id, but nothing knows which tasks concern one person. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them); copies of a key in backups or logs survive until they expire."
+gap = "The task store knows a task by the caller who made it, not by the people it concerns: `erase_caller` erases one caller's data, but a task about someone else is found only by id, and tasks in a tenant's shared partition (`share_tasks_across_callers`, or written before caller isolation) are attributed to no one. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them); copies of a key in backups or logs survive until they expire."
 # ── OWASP agentic Top 10 ─────────────────────────────────────────────────────
 
 [[control]]
@@ -590,17 +592,18 @@ id = "ASI04"
 source = "owasp-asi"
 provision = "ASI04 Agentic Supply Chain Vulnerabilities"
 requirement = "Agents, tools and schemas an agent imports are verified before they are trusted."
-sdk = "Agent cards can be signed (JWS over RFC 8785 canonical form, ES256 or EdDSA) and verified against a raw or SPKI key, or against a JWK Set by `kid`, trying every signature the card carries (key rotation). The client fetches a JWK Set from a URL the caller trusts, over HTTPS, bounded in size and time; removing a key from the set revokes it."
+sdk = "Agent cards can be signed (JWS over RFC 8785 canonical form, ES256 or EdDSA) and verified against a raw or SPKI key, or against a JWK Set by `kid`, trying every signature the card carries (key rotation). The client fetches a JWK Set from a URL the caller trusts, over HTTPS, bounded in size and time; removing a key from the set revokes it, and a key whose `exp` has passed is never used (spec §8.4.3)."
 status = "partial"
 tests = [
   "crates/a2a-protocol-types/src/signing.rs::sign_and_verify_agent_card",
   "crates/a2a-protocol-types/src/signing.rs::verify_rejects_tampered_card",
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::a_jwks_verifies_by_kid_and_alg",
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::removing_a_key_from_the_set_revokes_it",
+  "crates/a2a-protocol-types/src/signing/keys/tests.rs::an_expired_key_is_not_used",
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::the_rfc_8037_ed25519_example_verifies",
   "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs::a_card_verifies_under_a_fetched_set",
 ]
-gap = "Which key set to trust is the caller's decision: the SDK never follows a `jku` taken from the card itself, and has no X.509 chain or key-expiry check. Tools and schemas an agent imports outside A2A are out of scope."
+gap = "Which key set to trust is the caller's decision: the SDK never follows a `jku` taken from the card itself, and has no X.509 chain check. A key's expiry is honoured only when the set carries `exp`, which RFC 7517 does not define. Tools and schemas an agent imports outside A2A are out of scope."
 
 [[control]]
 id = "ASI07"
