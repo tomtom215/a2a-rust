@@ -86,7 +86,7 @@ file does not record whether each is meant to stay off it:
   `Card signatures vs the official Python SDK`,
   `gRPC wire compatibility (official Python SDK)`, `TCK example agent (<agent>)`
 - `ACTS conformance`: `ACTS (JSON-RPC, gRPC, HTTP+JSON)`
-- `Mutation Testing`: the `Mutants incremental (shard <n>)` jobs that
+- `Mutation Testing`: the `Mutants incremental (<crate> shard <k>/<n>)` jobs that
   `Mutation Testing (incremental)` aggregates
 - `Fuzz`: `fuzz <target> (smoke)`
 - `Soak`: `Sustained load`
