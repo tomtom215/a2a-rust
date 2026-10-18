@@ -126,6 +126,14 @@ pub enum ClientError {
     /// (spec §13.2). Holds the URL's origin only — webhook URLs often carry a
     /// secret in their path or query. Not retryable.
     InsecureWebhook(String),
+
+    /// The call was not sent: it carried a credential (the header or query
+    /// parameter named) to an `http://` or `ws://` endpoint on a host other
+    /// than loopback, and the client was built with
+    /// [`ClientBuilder::require_https_credentials`](crate::ClientBuilder::require_https_credentials)
+    /// (spec §13.4). Holds the name and the endpoint's origin, never the
+    /// credential. Not retryable.
+    InsecureTransport(String),
 }
 
 impl fmt::Display for ClientError {
@@ -167,6 +175,12 @@ impl fmt::Display for ClientError {
             Self::InvalidAuthScheme(msg) => {
                 write!(f, "cannot authenticate with this security scheme: {msg}")
             }
+            Self::InsecureTransport(what) => write!(
+                f,
+                "call not sent: it carries a credential ({what}) over a plaintext \
+                 connection to a non-loopback host, and this client requires an \
+                 encrypted one"
+            ),
             Self::InsecureWebhook(origin) => write!(
                 f,
                 "push config not sent: webhook {origin} is plaintext http:// to a \

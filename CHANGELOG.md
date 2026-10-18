@@ -167,6 +167,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`auth::CredentialSet`: rotating and revoking static credentials while
+  serving** (server; spec §13.4 "Credentials SHOULD be rotated periodically",
+  agents "SHOULD implement credential revocation mechanisms").
+  `BearerTokenAuthInterceptor::credentials()` and
+  `ApiKeyAuthInterceptor::credentials()` return a handle to the set the
+  interceptor checks; `add`, `add_labelled` and `revoke` apply from the next
+  request on. Until now the lists were fixed at construction. Test:
+  `credential_rotation`.
+- **`ClientBuilder::require_https_credentials()`** (client; spec §13.4
+  "Credentials SHOULD be transmitted only over encrypted connections"). A
+  call carrying a credential (`Authorization`, `Proxy-Authorization`,
+  `Cookie`, or where an `AuthInterceptor::api_key` puts its key) to an
+  `http://` or `ws://` endpoint on a non-loopback host is logged once by
+  default, and with this option refused before sending with the new
+  `ClientError::InsecureTransport`, which names the header and the origin
+  only. Tests: `credentials_plaintext`, `plaintext::tests`.
+- **A push config sending credentials to an `http://` webhook is logged**
+  (server; spec §13.4). It is stored and delivered as asked, as before;
+  `HttpPushSender::https_only()` still refuses it. The warning names the
+  webhook's origin, never its path, token or credentials. Test:
+  `push_plaintext_credentials`.
 - **`CallContext::task_id()`** (server; spec §13.1 "Servers MUST implement
   authorization checks on every A2A Protocol Operations request"). The task a
   request names (the `id` of `GetTask`, `CancelTask` and `SubscribeToTask`,

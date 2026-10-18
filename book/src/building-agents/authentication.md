@@ -65,6 +65,31 @@ tenant's records. To let identified callers share, call
 `RequestHandlerBuilder::share_tasks_across_callers()`; see
 [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant).
 
+**Rotating and revoking** (spec §13.4: credentials SHOULD be rotated
+periodically, and agents SHOULD have a way to revoke them). Both interceptors
+hand out a `CredentialSet` from `credentials()`, a handle you keep after
+giving the interceptor to the builder. What you add or revoke applies from the
+next request on, without a restart:
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::BearerTokenAuthInterceptor;
+
+let auth = BearerTokenAuthInterceptor::with_labelled_tokens([("token-2026-09", "billing")]);
+let tokens = auth.credentials(); // keep this; pass `auth` to `with_interceptor`
+
+// Rotation: accept the new token, move the caller over, retire the old one.
+tokens.add_labelled("token-2026-10", "billing");
+assert!(tokens.revoke("token-2026-09"));
+// Revocation of a leaked token is the same call; its next request gets 401.
+# Ok(())
+# }
+```
+
+A JWT is revoked by removing its signing key from the JWKS (a remote set is
+refetched on rotation) or by its `exp`; `JwtAuthInterceptor` keeps no list of
+revoked token ids.
+
 ### JWT (HS256 / RS256 / ES256)
 
 Enable the `auth-jwt` feature. `JwtAuthInterceptor` verifies the token's
@@ -364,6 +389,16 @@ interceptor calls
 still fails, but the next one fetches a new token instead of resending the
 refused one until it expires. A custom `TokenProvider` gets this only if it
 overrides `invalidate`; the default does nothing.
+
+**Plaintext.** Spec §13.4 says credentials SHOULD travel only over encrypted
+connections. A client whose endpoint is `http://` or `ws://` on a host other
+than loopback logs a warning, once, the first time a call carries a
+credential: an `Authorization`, `Proxy-Authorization` or `Cookie` header, or
+the header or query parameter an `AuthInterceptor::api_key` writes.
+`ClientBuilder::require_https_credentials()` refuses such a call instead,
+before sending it, with `ClientError::InsecureTransport` naming the header and
+the endpoint's origin. `http://localhost` and other loopback addresses are
+allowed either way.
 
 ### OAuth 2.0 client credentials
 

@@ -42,6 +42,37 @@ pub fn is_plaintext_to_remote(url: &str) -> bool {
         && !uri.host().is_some_and(is_loopback_host)
 }
 
+/// Whether an agent endpoint is plaintext (`http://` or `ws://`) to a host
+/// other than loopback, so a credential sent to it would cross a network in
+/// the clear (spec §13.4). Read as [`is_plaintext_to_remote`] reads a
+/// webhook URL.
+pub fn is_plaintext_endpoint(url: &str) -> bool {
+    let Ok(uri) = url.parse::<hyper::Uri>() else {
+        return ["http://", "ws://"].iter().any(|p| {
+            url.get(..p.len())
+                .is_some_and(|scheme| scheme.eq_ignore_ascii_case(p))
+        });
+    };
+    uri.scheme_str()
+        .is_some_and(|s| s.eq_ignore_ascii_case("http") || s.eq_ignore_ascii_case("ws"))
+        && !uri.host().is_some_and(is_loopback_host)
+}
+
+/// `scheme://host[:port]` of `url`, for a log line or an error: a URL's path
+/// and query may carry a secret.
+pub fn origin(url: &str) -> String {
+    let Ok(uri) = url.parse::<hyper::Uri>() else {
+        return "<unparseable url>".to_owned();
+    };
+    match (uri.scheme_str(), uri.host()) {
+        (Some(scheme), Some(host)) => uri.port_u16().map_or_else(
+            || format!("{scheme}://{host}"),
+            |port| format!("{scheme}://{host}:{port}"),
+        ),
+        _ => "<url without scheme or host>".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +115,34 @@ mod tests {
         ] {
             assert!(!is_plaintext_to_remote(url), "{url} is not");
         }
+    }
+
+    #[test]
+    fn a_plaintext_endpoint_is_http_or_ws_off_this_machine() {
+        for url in [
+            "http://agent.example/a2a",
+            "ws://agent.example/a2a",
+            "WS://10.0.0.1:9000",
+            "http://127.0.0.1@evil.example/",
+            "ws://exa mple.com",
+        ] {
+            assert!(is_plaintext_endpoint(url), "{url} is plaintext to remote");
+        }
+        for url in [
+            "https://agent.example",
+            "wss://agent.example",
+            "http://localhost:8080",
+            "ws://127.0.0.1:9000",
+            "http://[::1]/",
+            "grpc://agent.example",
+            "not a url",
+        ] {
+            assert!(!is_plaintext_endpoint(url), "{url} is not");
+        }
+        assert_eq!(
+            origin("http://agent.example:8080/a2a?key=s"),
+            "http://agent.example:8080"
+        );
+        assert_eq!(origin("ws://h/x"), "ws://h");
     }
 }

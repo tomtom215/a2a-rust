@@ -8241,17 +8241,23 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Credentials SHOULD be rotated periodically",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
+    "crates/a2a-protocol-server/src/auth/mod.rs:249 ApiKeyAuthInterceptor::credentials",
+    "crates/a2a-protocol-server/src/auth/mod.rs:367 BearerTokenAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/jwt.rs:670"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/credential_rotation.rs a_bearer_token_is_rotated_and_revoked_while_serving",
+    "crates/a2a-protocol-server/tests/credential_rotation.rs an_api_key_is_rotated_and_revoked_while_serving",
     "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:87 a_refused_token_is_dropped_over_json_rpc"
    ],
-   "notes": "JWKS remote key sets support key rotation; client token providers refresh. Static allow-lists are fixed at construction.",
+   "notes": "Re-examined 2026-10-18: every credential the SDK checks can now be rotated while serving. The static bearer and API-key interceptors hand out a CredentialSet (credentials()) whose add/add_labelled/revoke apply from the next request (the test overlaps old and new, then retires the old); a remote JWKS is refetched on key rotation; the client's token providers refresh and drop a token answered 401. How often to rotate is the operator's schedule.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3188,
@@ -8259,16 +8265,25 @@
    "keyword": "SHOULD",
    "binds": "both",
    "requirement": "Credentials SHOULD be transmitted only over encrypted connections",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/token_provider.rs:307",
-    "crates/a2a-protocol-server/src/push/sender.rs:908"
+    "crates/a2a-protocol-client/src/plaintext.rs:94 Guard::check",
+    "crates/a2a-protocol-client/src/builder/mod.rs require_https_credentials",
+    "crates/a2a-protocol-server/src/handler/push_config.rs:497",
+    "crates/a2a-protocol-server/src/push/sender.rs https_only"
    ],
-   "test_evidence": [],
-   "notes": "Neither client auth interceptors nor the push sender refuse to send credentials over http://; deployment choice.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/credentials_plaintext.rs a_credential_to_a_plaintext_remote_agent_is_refused_before_sending",
+    "crates/a2a-protocol-client/tests/credentials_plaintext.rs the_call_goes_when_it_is_safe_or_not_refused",
+    "crates/a2a-protocol-client/src/plaintext_tests.rs without_refuse_the_call_goes_and_is_logged_once",
+    "crates/a2a-protocol-server/tests/push_plaintext_credentials.rs credentials_to_a_plaintext_webhook_are_stored_and_reported",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:379 https_webhook_enforces_ssrf_with_tls_feature"
+   ],
+   "notes": "Re-examined 2026-10-18: both directions in which the SDK sends a credential now act on plaintext. Client: a call carrying Authorization, Proxy-Authorization, Cookie or an AuthInterceptor::api_key header or query parameter to an http:// or ws:// endpoint on a non-loopback host is logged once, and refused before sending with ClientBuilder::require_https_credentials() (InsecureTransport, naming the header and origin only). Server: a push config whose token or credentials go to an http:// webhook is logged at creation (origin only), and refused with HttpPushSender::https_only(). Both refusals are opt-in, the SHOULD's latitude: loopback and lab deployments use plaintext. Residual: a gRPC endpoint given as a bare host:port carries no scheme and is not classified.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3189,
@@ -8276,16 +8291,20 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD implement credential revocation mechanisms",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:170",
+    "crates/a2a-protocol-server/src/auth/credentials.rs:57 CredentialSet::revoke",
     "crates/a2a-protocol-server/src/auth/jwt.rs:670"
    ],
-   "test_evidence": [],
-   "notes": "No revocation API (no jti/deny-list in jwt.rs; static key/token lists immutable after construction); revocation via JWKS key removal/expiry or a custom interceptor.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/credential_rotation.rs a_bearer_token_is_rotated_and_revoked_while_serving",
+    "crates/a2a-protocol-server/tests/credential_rotation.rs an_api_key_is_rotated_and_revoked_while_serving"
+   ],
+   "notes": "Re-examined 2026-10-18: CredentialSet::revoke removes a static bearer token or API key while the server runs, and its next request is refused 401 (the test revokes and re-checks over JSON-RPC). JWTs are revoked by removing the signing key from the JWKS (refetched on rotation) or by exp; JwtAuthInterceptor keeps no list of revoked token ids (jti), so revoking one JWT before its exp, without rotating its key, takes a custom interceptor.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3190,

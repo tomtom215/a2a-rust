@@ -124,6 +124,7 @@ mod declared;
 mod extensions;
 mod legacy_card;
 mod loopback;
+mod plaintext;
 mod redact;
 
 pub mod auth;

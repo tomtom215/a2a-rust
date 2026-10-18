@@ -462,6 +462,24 @@ impl RequestHandler {
     }
 }
 
+/// Spec §13.4: credentials SHOULD travel only over encrypted connections.
+/// Without `https_only` a config sending its token or credentials to an
+/// `http://` webhook is kept and delivered as asked, so the operator is
+/// told, once per config, naming the origin only.
+fn warn_if_plaintext_credentials(config: &TaskPushNotificationConfig) {
+    if !crate::push::sender::is_https_url(&config.url)
+        && (config.authentication.is_some()
+            || config.token.as_deref().is_some_and(|t| !t.is_empty()))
+    {
+        trace_warn!(
+            webhook = %crate::push::webhook::origin_for_log(&config.url),
+            "push config sends its token or credentials to a plaintext http:// webhook; \
+             spec §13.4 says credentials SHOULD travel only over encrypted connections \
+             (HttpPushSender::https_only refuses such configs)"
+        );
+    }
+}
+
 /// Refuses, at creation, a push config `sender` could not deliver: a URL the
 /// SSRF check, the HTTPS requirement or the host allowlist would refuse, a
 /// config the proto does not allow, or credentials the sender cannot write.
@@ -494,6 +512,7 @@ fn refuse_an_unservable_config(
                 .into(),
         });
     }
+    warn_if_plaintext_credentials(config);
     if !sender.allows_webhook_url(&config.url) {
         return Err(ServerError::InvalidField {
             field: "url".into(),

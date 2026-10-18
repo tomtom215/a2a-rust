@@ -59,11 +59,13 @@ use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
 pub mod caller_id;
+mod credentials;
 pub(crate) mod declared;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 pub mod throttle;
 
+pub use credentials::CredentialSet;
 #[cfg(feature = "auth-jwt")]
 pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
 pub use throttle::{AuthFailureThrottle, AuthFailureThrottleConfig};
@@ -169,7 +171,7 @@ fn labelled_constant_time_match<'a>(
 /// [`with_header`](Self::with_header).
 pub struct ApiKeyAuthInterceptor {
     header_name: String,
-    allowed: Vec<LabelledCredential>,
+    allowed: CredentialSet,
 }
 
 impl ApiKeyAuthInterceptor {
@@ -183,10 +185,11 @@ impl ApiKeyAuthInterceptor {
     {
         Self {
             header_name: "x-api-key".to_owned(),
-            allowed: keys
-                .into_iter()
-                .map(|k| (k.into().into_bytes(), None))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                keys.into_iter()
+                    .map(|k| (k.into().into_bytes(), None))
+                    .collect(),
+            ),
         }
     }
 
@@ -224,10 +227,12 @@ impl ApiKeyAuthInterceptor {
     {
         Self {
             header_name: "x-api-key".to_owned(),
-            allowed: entries
-                .into_iter()
-                .map(|(k, label)| (k.into().into_bytes(), Some(label.into())))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                entries
+                    .into_iter()
+                    .map(|(k, label)| (k.into().into_bytes(), Some(label.into())))
+                    .collect(),
+            ),
         }
     }
 
@@ -236,6 +241,13 @@ impl ApiKeyAuthInterceptor {
     pub fn with_header(mut self, header_name: impl Into<String>) -> Self {
         self.header_name = header_name.into().to_ascii_lowercase();
         self
+    }
+
+    /// A handle to the keys this interceptor accepts, to add or revoke one
+    /// while it runs (spec §13.4: rotation and revocation).
+    #[must_use]
+    pub fn credentials(&self) -> CredentialSet {
+        self.allowed.clone()
     }
 }
 
@@ -261,7 +273,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                 .http_headers()
                 .get(&self.header_name)
                 .ok_or_else(|| auth_rejected(&challenge))?;
-            match labelled_constant_time_match(key.as_bytes(), &self.allowed) {
+            self.allowed.matching(key.as_bytes(), |found| match found {
                 CredentialMatch::NoMatch => Err(auth_rejected(&challenge)),
                 CredentialMatch::Unnamed => {
                     ctx.set_auth_scheme("api-key");
@@ -272,7 +284,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                     ctx.set_auth_scheme("api-key");
                     Ok(())
                 }
-            }
+            })
         })
     }
 
@@ -307,7 +319,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
 /// For tokens that are *validated* rather than *enumerated* (signed JWTs), use
 /// `JwtAuthInterceptor` (the `auth-jwt` feature).
 pub struct BearerTokenAuthInterceptor {
-    allowed: Vec<LabelledCredential>,
+    allowed: CredentialSet,
 }
 
 impl BearerTokenAuthInterceptor {
@@ -319,10 +331,12 @@ impl BearerTokenAuthInterceptor {
         S: Into<String>,
     {
         Self {
-            allowed: tokens
-                .into_iter()
-                .map(|t| (t.into().into_bytes(), None))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                tokens
+                    .into_iter()
+                    .map(|t| (t.into().into_bytes(), None))
+                    .collect(),
+            ),
         }
     }
 
@@ -338,11 +352,20 @@ impl BearerTokenAuthInterceptor {
         L: Into<String>,
     {
         Self {
-            allowed: entries
-                .into_iter()
-                .map(|(t, label)| (t.into().into_bytes(), Some(label.into())))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                entries
+                    .into_iter()
+                    .map(|(t, label)| (t.into().into_bytes(), Some(label.into())))
+                    .collect(),
+            ),
         }
+    }
+
+    /// A handle to the tokens this interceptor accepts, to add or revoke one
+    /// while it runs (spec §13.4: rotation and revocation).
+    #[must_use]
+    pub fn credentials(&self) -> CredentialSet {
+        self.allowed.clone()
     }
 }
 
@@ -380,18 +403,19 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
                 .get("authorization")
                 .ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
             let token = extract_bearer(header).ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
-            match labelled_constant_time_match(token.as_bytes(), &self.allowed) {
-                CredentialMatch::NoMatch => Err(auth_rejected(BEARER_CHALLENGE)),
-                CredentialMatch::Unnamed => {
-                    ctx.set_auth_scheme("bearer");
-                    Ok(())
-                }
-                CredentialMatch::Named(label) => {
-                    ctx.set_caller_identity(caller_id::bearer(label));
-                    ctx.set_auth_scheme("bearer");
-                    Ok(())
-                }
-            }
+            self.allowed
+                .matching(token.as_bytes(), |found| match found {
+                    CredentialMatch::NoMatch => Err(auth_rejected(BEARER_CHALLENGE)),
+                    CredentialMatch::Unnamed => {
+                        ctx.set_auth_scheme("bearer");
+                        Ok(())
+                    }
+                    CredentialMatch::Named(label) => {
+                        ctx.set_caller_identity(caller_id::bearer(label));
+                        ctx.set_auth_scheme("bearer");
+                        Ok(())
+                    }
+                })
         })
     }
 

@@ -517,6 +517,23 @@ impl ClientBuilder {
         self
     }
 
+    /// Refuses a call that carries a credential to an `http://` or `ws://`
+    /// endpoint on a host other than loopback, before sending it (spec
+    /// §13.4: "Credentials SHOULD be transmitted only over encrypted
+    /// connections").
+    ///
+    /// A credential is an `Authorization`, `Proxy-Authorization` or `Cookie`
+    /// header, whichever interceptor wrote it, or the header or query
+    /// parameter an [`AuthInterceptor::api_key`](crate::auth::AuthInterceptor::api_key)
+    /// writes. Without this such a call is sent and a warning logged, once
+    /// per client. Loopback (`localhost`, `127.0.0.0/8`, `::1`) is allowed
+    /// either way.
+    #[must_use]
+    pub const fn require_https_credentials(mut self) -> Self {
+        self.interceptors.refuse_plaintext_credentials();
+        self
+    }
+
     /// Sends every call, whatever the agent card declares.
     ///
     /// A client built from a card refuses, before sending anything, a call

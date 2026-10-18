@@ -299,6 +299,18 @@ impl AuthInterceptor {
     }
 }
 
+impl AuthInterceptor {
+    /// Tells the plaintext check where this interceptor writes its
+    /// credential, when that is not a header it already knows.
+    pub(crate) fn record_placement(&self, guard: &mut crate::plaintext::Guard) {
+        match &self.placement {
+            Placement::Header(name) => guard.add_header(name),
+            Placement::Query(name) => guard.add_param(name),
+            Placement::Authorization | Placement::Cookie(_) => {}
+        }
+    }
+}
+
 #[allow(clippy::missing_fields_in_debug)]
 impl fmt::Debug for AuthInterceptor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

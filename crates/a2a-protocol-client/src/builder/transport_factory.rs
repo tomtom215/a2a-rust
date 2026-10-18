@@ -88,6 +88,8 @@ impl ClientBuilder {
                 self.agent.clone(),
             )
         };
+        // Spec §13.4, against the endpoint calls go to (after any fallback).
+        self.interceptors.arm_plaintext_check(&self.endpoint);
         Ok(A2aClient::new(transport, self.interceptors, self.config)
             .with_peer(peer)
             .with_declared(self.declared))
@@ -234,6 +236,8 @@ impl ClientBuilder {
             transport
         };
 
+        // Spec §13.4, against the endpoint calls go to (after any fallback).
+        self.interceptors.arm_plaintext_check(&self.endpoint);
         Ok(A2aClient::new(transport, self.interceptors, self.config)
             .with_peer(peer)
             .with_declared(self.declared))

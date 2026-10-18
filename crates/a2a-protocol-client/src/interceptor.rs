@@ -273,6 +273,9 @@ impl CallInterceptorBoxed for Box<dyn CallInterceptorBoxed> {
 #[derive(Default)]
 pub struct InterceptorChain {
     interceptors: Vec<Arc<dyn CallInterceptorBoxed>>,
+    /// Spec §13.4: what counts as a credential, and whether the endpoint
+    /// is plaintext; checked after the `before` hooks.
+    plaintext: crate::plaintext::Guard,
 }
 
 impl InterceptorChain {
@@ -284,7 +287,26 @@ impl InterceptorChain {
 
     /// Adds an interceptor to the end of the chain.
     pub fn push<I: CallInterceptor>(&mut self, interceptor: I) {
+        // An `AuthInterceptor` for an API key writes it to a header or query
+        // parameter of the agent's choosing; record which, so the
+        // plaintext check knows it for a credential.
+        if let Some(auth) =
+            (&interceptor as &dyn std::any::Any).downcast_ref::<crate::auth::AuthInterceptor>()
+        {
+            auth.record_placement(&mut self.plaintext);
+        }
         self.interceptors.push(Arc::new(interceptor));
+    }
+
+    /// Arms the spec §13.4 check for `endpoint`; see
+    /// [`require_https_credentials`](crate::ClientBuilder::require_https_credentials).
+    pub(crate) fn arm_plaintext_check(&mut self, endpoint: &str) {
+        self.plaintext.arm(endpoint);
+    }
+
+    /// Makes the spec §13.4 check refuse rather than warn.
+    pub(crate) const fn refuse_plaintext_credentials(&mut self) {
+        self.plaintext.refuse();
     }
 
     /// Returns `true` if no interceptors have been registered.
@@ -297,12 +319,14 @@ impl InterceptorChain {
     ///
     /// # Errors
     ///
-    /// Returns the first error returned by any interceptor in the chain.
+    /// Returns the first error returned by any interceptor in the chain, or
+    /// [`ClientError::InsecureTransport`] for a credential the client would
+    /// send in plaintext and was built to refuse.
     pub async fn run_before(&self, req: &mut ClientRequest) -> ClientResult<()> {
         for interceptor in &self.interceptors {
             interceptor.before_boxed(req).await?;
         }
-        Ok(())
+        self.plaintext.check(req)
     }
 
     /// Runs all `after` hooks in reverse registration order.
@@ -329,6 +353,7 @@ impl std::fmt::Debug for InterceptorChain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InterceptorChain")
             .field("count", &self.interceptors.len())
+            .field("plaintext", &self.plaintext)
             .finish()
     }
 }
