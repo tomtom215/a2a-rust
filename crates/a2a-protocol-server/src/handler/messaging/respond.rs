@@ -81,7 +81,7 @@ impl RequestHandler {
             self.subscription(
                 &task_id,
                 snapshot,
-                |task| shape_response_history(task, response_history_length),
+                move |task| shape_response_history(task, response_history_length),
                 None,
             )
             .await?
@@ -136,7 +136,11 @@ impl RequestHandler {
             // and a message-only stream MUST be exactly one Message. Which one
             // this is, the executor's first event decides.
             // §3.5.2: a stream that falls behind catches up from the log.
-            let mut reader = reader.with_catch_up(self.lag_catch_up_hook(snapshot.id.clone()));
+            let mut reader = reader
+                .with_catch_up(self.lag_catch_up_hook(snapshot.id.clone()))
+                .with_final_snapshot(self.final_snapshot_hook(snapshot.id.clone(), move |task| {
+                    shape_response_history(task, response_history_length);
+                }));
             reader.set_provisional_task(StreamResponse::Task(snapshot));
             SendMessageResult::Stream(reader)
         } else {

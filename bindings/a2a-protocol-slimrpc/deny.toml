@@ -26,10 +26,10 @@
 #
 # Everything that bears on security is set as strict here as at the root:
 # advisories deny, yanked crates deny, unknown registries and git sources
-# deny, and the license allowlist is the root's. There are two documented
-# advisory exceptions, added 2026-09-16 and 2026-10-12 — see
-# `[advisories].ignore` below. They exist because the SLIM tree forecloses the
-# fix, not because the policy is looser here.
+# deny, and the license allowlist is the root's. There are no advisory
+# exceptions: the five there were are recorded, with how each was removed,
+# under `[advisories]` below. They existed because the SLIM tree foreclosed
+# the fix, not because the policy is looser here.
 #
 # The one deliberate relaxation is `multiple-versions`, and the reason is that
 # the root's justification for "deny" does not transfer. There, a reviewed skip
@@ -61,14 +61,13 @@ all-features        = false
 no-default-features = false
 
 # ---------------------------------------------------------------------------
-# License policy — the root allowlist, plus one, less one
+# License policy — the root allowlist, plus one
 # ---------------------------------------------------------------------------
 [licenses]
 confidence-threshold = 0.8
 # As in the root policy: an allowance nothing in this tree uses fails the
-# check. `CDLA-Permissive-2.0`, which the root tree needs for
-# `webpki-roots` and `webpki-root-certs`, matched nothing here and is left
-# out (audit N17).
+# check. `CDLA-Permissive-2.0` matched nothing here until 2026-10-15 and was
+# left out (audit N17); the SLIM 3.x tree needs it, below.
 unused-allowed-license = "deny"
 
 allow = [
@@ -85,6 +84,12 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     "CC0-1.0",
+    # The root allows it for the same crate. `webpki-root-certs` 1.0.9 (the
+    # Mozilla root certificates, as data) arrives through
+    # rustls-platform-verifier 0.7.1 under reqwest 0.13.5, which
+    # agntcy-slim-auth 0.17.5 depends on; added 2026-10-15 with the SLIM 3.x
+    # upgrade, when cargo-deny rejected it.
+    "CDLA-Permissive-2.0",
 ]
 
 # ---------------------------------------------------------------------------
@@ -94,105 +99,35 @@ allow = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
-# Two active ignores, added 2026-09-16 and 2026-10-12. The graph was clean
-# when this file was written; each entry is a real exception with a real date
-# rather than something inherited.
+# No active ignores. Five were removed on 2026-10-15, when the binding moved
+# from agntcy-slim-rpc 2.3.0 to 3.4.1 (audit register R13), each because its
+# own removal condition was met:
 #
-# RUSTSEC-2026-0285 (rustls < 0.23.45) — why this binding cannot take the fix
-# while the root workspace already has:
+# RUSTSEC-2026-0285 (rustls < 0.23.45), added 2026-09-16, and
+# RUSTSEC-2026-0346, -0348 and -0349 (rustls < 0.23.46), added 2026-10-14.
+#   rustls could not move past 0.23.43 because mls-rs-crypto-awslc, under
+#   agntcy-slim-auth, pinned aws-lc-rs below the ^1.18 rustls 0.23.45 needs
+#   (0.23.0 `=1.16.2`, 0.25.0 `=1.16.3`). The condition to remove them was
+#   that `cargo update -p rustls --precise 0.23.46` succeed here. Under
+#   agntcy-slim-auth 0.17.5 the lock takes mls-rs-crypto-awslc 0.25.1, which
+#   pins aws-lc-rs `=1.18.1` (its Cargo.toml, read 2026-10-15), and that
+#   command succeeded on 2026-10-15: rustls 0.23.43 -> 0.23.46, rustls-webpki
+#   0.103.13 -> 0.103.15. The lockfile carries it.
 #
-#   The root workspace resolved to rustls 0.23.45 on the same day with a
-#   one-line lockfile change, because its crates ask for rustls with
-#   `default-features = false, features = ["std", "tls12", "ring"]` — the
-#   ring backend, no aws-lc-rs. This binding gets rustls transitively with
-#   default features, so aws-lc-rs is in its graph, and two upstream
-#   requirements are then irreconcilable:
+# RUSTSEC-2024-0449 (unsafe-libyaml unmaintained), added 2026-10-12.
+#   It arrived as serde_yaml 0.9.34+deprecated under agntcy-slim-config
+#   0.16.1 and regorus 0.11.0. The condition was a slim-config release
+#   without serde_yaml and the binding's move to it: agntcy-slim-config
+#   0.17.5 takes yaml_serde (on libyaml-rs) and agntcy-slim-auth 0.17.5 takes
+#   regorus 0.12.0. On 2026-10-15 `cargo tree -i unsafe-libyaml` and
+#   `cargo tree -i serde_yaml` both match no package in this lock.
 #
-#     rustls 0.23.45          requires  aws-lc-rs ^1.18   (1.18.0, 1.18.1)
-#     mls-rs-crypto-awslc 0.23.0  requires  aws-lc-rs =1.16.2
-#
-#   reached as slim-auth ^0.15 (locked 0.15.4) -> mls-rs-crypto-awslc ^0.23,
-#   and slim-config ^0.16 (locked 0.16.1) -> rustls ^0.23.31.
-#
-#   Checked against the crates.io index on 2026-09-16, not assumed:
-#     * rustls        — 0.23.45 is the newest 0.23.x; there is no later
-#                       release to move to, and it is the fixed version.
-#     * agntcy-slim-auth — 0.15.4 is the newest release; already in use.
-#     * mls-rs-crypto-awslc — 0.23.0 is the ONLY release in the ^0.23 range
-#                       that slim-auth admits, and it carries the `=1.16.2`
-#                       pin. There is no 0.24.x at all; 0.25.0 exists but is
-#                       out of slim-auth's range.
-#
-#   So no lockfile change, and no dependency bump available to this
-#   repository, removes the advisory. `cargo update -p rustls --precise
-#   0.23.45` in this directory fails with the aws-lc-rs conflict above.
-#
-# Severity as the advisory itself states it: rustls accepted TLS 1.3
-# handshake messages sent at the wrong encryption level when they followed a
-# key-changing message in the same record, contrary to RFC 8446 §5.1. "The
-# handshake transcript is still authenticated, so a network-position attacker
-# cannot use this to alter or complete a handshake; the practical effect is
-# that a peer could send handshake messages that should be encrypted in
-# plaintext without rustls rejecting the connection." It is a conformance
-# failure, not a handshake-forgery or confidentiality break.
-#
-# Remove this entry when either of these becomes true — re-check at the next
-# binding release, whichever comes first:
-#   * agntcy-slim-auth publishes a release depending on an mls-rs-crypto-awslc
-#     that allows aws-lc-rs >= 1.18, or
-#   * mls-rs-crypto-awslc publishes a 0.23.x that relaxes `=1.16.2`.
-# Verify with `cargo update -p rustls --precise 0.23.45` from this directory:
-# when it succeeds, delete this entry and commit the lockfile instead.
-#
-# Re-checked 2026-09-21 by running exactly that command. It still fails, and
-# with the same conflict, against a freshly fetched index: `^1.18` resolves to
-# 1.18.1/1.18.0, mls-rs-crypto-awslc 0.23.0 still carries `=1.16.2`, and
-# slim-auth 0.15.4 still admits only that 0.23.x. Neither release condition
-# above has been met, so the entry stays.
-#
-# Re-checked 2026-10-08, same command, same conflict. Moving the binding to
-# the newer slim-auth line would not help: agntcy-slim-auth 0.16.3 depends on
-# mls-rs-crypto-awslc ^0.25, and 0.25.0 pins aws-lc-rs =1.16.3 (crates.io
-# dependency metadata, read the same day). osv-scanner reports the same
-# advisory, and osv-scanner.toml beside this file carries the matching waiver.
-#
-# RUSTSEC-2024-0449 (unsafe-libyaml unmaintained), added 2026-10-12, when it
-# first failed this check (PR #168). An "unmaintained" notice, not a
-# vulnerability: the crate's repository is archived and its last release is
-# 0.2.11. It reaches this graph only as serde_yaml 0.9.34+deprecated, under
-# agntcy-slim-config 0.16.1 and regorus 0.11.0 (via agntcy-slim-auth 0.15.4).
-# Checked against the crates.io index the same day: every agntcy-slim-config
-# release through 0.17.2 still requires serde_yaml ^0.9.34, and although
-# regorus 0.12.0 drops it, only agntcy-slim-auth >= 0.16.4 uses that, which
-# would still leave the slim-config path. Nothing this repository can bump
-# removes it. Remove this entry when agntcy-slim-config publishes a release
-# without serde_yaml and the binding moves to it.
-#
-# Re-checked 2026-10-14 against the crates.io index: agntcy-slim-config
-# 0.17.3 depends on yaml_serde ^0.10 (renamed to serde_yaml in its manifest;
-# yaml_serde uses libyaml-rs, not unsafe-libyaml), agntcy-slim-rpc 3.3.1
-# requires that 0.17.3, and agntcy-slim-auth 0.17.x takes regorus 0.12.0.
-# The release condition is met; what remains is the binding's move from
-# agntcy-slim-rpc 2.3.0 to 3.x, a major version. osv-scanner.toml beside
-# this file carries the matching waiver.
-#
-# RUSTSEC-2026-0346, -0348 and -0349 (rustls < 0.23.46), added 2026-10-14,
-# the day RustSec assigned them their ids (they were listed as
-# RUSTSEC-0000-0000 that morning, which cargo-deny cannot match, so this
-# check failed on PR #170 the moment they were). They reach the locked
-# rustls 0.23.43, and 0.23.46 is out of reach for the same aws-lc-rs reason
-# as RUSTSEC-2026-0285 above. osv-scanner.toml waives them by their GHSA ids
-# (0346 = GHSA-c8m5-c952-6cm4, 0348 = GHSA-h2v8-394m-p7vv, 0349 =
-# GHSA-w44r-93j7-qv28), with the reachability of each. The fourth rustls
-# advisory of that day lists 0.23.43 as unaffected and is not waived.
-# Remove them with RUSTSEC-2026-0285, when rustls 0.23.46 resolves here.
-ignore  = [
-    { id = "RUSTSEC-2026-0285", reason = "rustls 0.23.45 needs aws-lc-rs ^1.18; slim-auth 0.15.4 -> mls-rs-crypto-awslc 0.23.0 pins aws-lc-rs =1.16.2. No upstream release resolves this yet (checked 2026-09-16). See the note above." },
-    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml (unmaintained) via serde_yaml, required by every agntcy-slim-config release through 0.17.2. No upstream release resolves this yet (checked 2026-10-12). See the note above." },
-    { id = "RUSTSEC-2026-0346", reason = "rustls < 0.23.46: Debug of TLS client session values prints secrets; needs a custom ClientSessionStore that logs with Debug, which this binding does not have. 0.23.46 is out of reach (aws-lc-rs, as RUSTSEC-2026-0285). See the note above." },
-    { id = "RUSTSEC-2026-0348", reason = "rustls < 0.23.46: Brotli certificate decompression can allocate 1 GiB; only with rustls's non-default brotli feature, which this lock does not enable. 0.23.46 is out of reach (aws-lc-rs, as RUSTSEC-2026-0285). See the note above." },
-    { id = "RUSTSEC-2026-0349", reason = "rustls < 0.23.46: an unauthenticated ServerHello can downgrade later connections to classical key exchange. 0.23.46 is out of reach (aws-lc-rs, as RUSTSEC-2026-0285); the binding is unpublished. See the note above." },
-]
+# Measured 2026-10-15 with cargo-deny 0.20.2 against the new lock, before
+# removing them: all five reported as `advisory-not-detected` and advisories
+# ok. osv-scanner 2.6.0 with no waivers reports no issues in the new lock's
+# 534 packages, and the same five in the old one. osv-scanner.toml beside
+# this file drops its matching entries.
+ignore  = []
 
 # ---------------------------------------------------------------------------
 # Banned crates

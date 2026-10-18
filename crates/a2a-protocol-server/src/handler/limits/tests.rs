@@ -28,7 +28,8 @@ fn default_values() {
         limits.subscribe_reattach_interval,
         Duration::from_millis(250)
     );
-    assert_eq!(limits.subscribe_max_idle, Duration::from_secs(300));
+    assert_eq!(limits.subscribe_max_idle, None);
+    assert!(!limits.final_task_snapshot);
 }
 
 #[test]

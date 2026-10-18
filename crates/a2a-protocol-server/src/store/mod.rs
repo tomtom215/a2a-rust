@@ -6,6 +6,8 @@
 //! Task storage backend.
 
 pub mod applied;
+#[cfg(feature = "encryption")]
+pub mod encrypted;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;

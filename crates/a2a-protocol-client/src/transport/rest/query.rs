@@ -9,31 +9,49 @@
 ///
 /// Values are percent-encoded per RFC 3986 to avoid query-string
 /// injection (e.g., values containing `&`, `=`, or spaces).
+///
+/// An array is sent by repeating the parameter, one per element, as spec
+/// §11.5 allows for a repeated field ("Multiple values MAY be passed by
+/// repeating the parameter name (e.g., `?tag=value1&tag=value2`)"); until
+/// 2026-10-15 it was sent as one JSON-encoded value (`ids=%5B1%2C2%5D`),
+/// which neither form the specification names matches. No v1.0 GET or
+/// DELETE request has a repeated field today; this is what one would get.
 pub(super) fn build_query_string(params: &serde_json::Value) -> String {
     let Some(obj) = params.as_object() else {
         return String::new();
     };
     let mut parts = Vec::new();
     for (k, v) in obj {
-        // Null values are skipped; strings are used verbatim so we don't get
-        // extra surrounding quotes from JSON serialization. All other JSON
-        // types (number, bool, object, array) serialize through serde_json,
-        // which produces the canonical textual form — "42", "true", etc.
-        let raw = match v {
-            serde_json::Value::Null => continue,
-            serde_json::Value::String(s) => s.clone(),
-            _ => match serde_json::to_string(v) {
-                Ok(s) => s,
-                Err(_) => continue,
-            },
-        };
-        parts.push(format!(
-            "{}={}",
-            encode_query_value(k),
-            encode_query_value(&raw)
-        ));
+        match v {
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    push_pair(&mut parts, k, item);
+                }
+            }
+            _ => push_pair(&mut parts, k, v),
+        }
     }
     parts.join("&")
+}
+
+/// Appends `key=value` to `parts`, percent-encoded. Null values are skipped;
+/// strings are used verbatim so we don't get extra surrounding quotes from
+/// JSON serialization. All other JSON types serialize through `serde_json`,
+/// which produces the canonical textual form — "42", "true", etc.
+fn push_pair(parts: &mut Vec<String>, key: &str, value: &serde_json::Value) {
+    let raw = match value {
+        serde_json::Value::Null => return,
+        serde_json::Value::String(s) => s.clone(),
+        _ => match serde_json::to_string(value) {
+            Ok(s) => s,
+            Err(_) => return,
+        },
+    };
+    parts.push(format!(
+        "{}={}",
+        encode_query_value(key),
+        encode_query_value(&raw)
+    ));
 }
 
 /// Percent-encodes a string for safe use in a URL query parameter.
@@ -141,10 +159,14 @@ mod tests {
     }
 
     #[test]
-    fn build_query_string_handles_array_value() {
+    fn build_query_string_repeats_an_array_parameter() {
+        // §11.5: a repeated field repeats its parameter, one per element.
         let params = serde_json::json!({"ids": [1, 2, 3]});
-        let qs = build_query_string(&params);
-        assert!(qs.starts_with("ids="), "should have ids key: {qs}");
+        assert_eq!(build_query_string(&params), "ids=1&ids=2&ids=3");
+        let params = serde_json::json!({"tag": ["a b", null, "c&d"]});
+        assert_eq!(build_query_string(&params), "tag=a%20b&tag=c%26d");
+        let params = serde_json::json!({"tag": []});
+        assert_eq!(build_query_string(&params), "");
     }
 
     #[test]

@@ -80,6 +80,11 @@ one client tells you the two disagree. It does not tell you which is wrong.
 > "Failed 26". The 2026-09-26 figure above, 87 passing and 5 failing, cannot be
 > reconciled with a 114-requirement total that also has 5 skipped and 21 not
 > tested (that would be 118); it is left as recorded and should not be quoted.
+>
+> **2026-10-16.** On PR #172 at `d05a7fc`, in CI and locally against
+> `a2a-tck@263b9cf`: **81 MUST passing, 7 failing (all baselined), 5
+> `SKIPPED`, 21 `NOT TESTED`**, 88 graded. The two new failures are §11.1's
+> media type, graded against the suite's stale v1.0.0 copy (§23).
 
 | Run | Passed | Failed | Skipped |
 |---|---|---|---|
@@ -2052,3 +2057,50 @@ decision; the defect is recorded here and in the baseline's `_comment`.
 **Effect on the quoted tally.** The full profile still grades 88 MUSTs, now
 83 `PASS` and 5 `FAIL`. Across the three profiles the figure to quote is
 **87 of 114 passing and 5 failing**: the four §20/§21 entries plus this one.
+
+## 23. `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001`: §11.1's media type, from the same stale copy
+
+The Official TCK run on PR #172 (2026-10-16, job
+[117211963851](https://github.com/tomtom215/a2a-rust/actions/runs/38971882435/job/117211963851),
+`a2a-tck@main`, which was `263b9cf`) failed both requirements on HTTP+JSON,
+under the full and the minimal profile. A local run of the same commit
+(`d05a7fc`) against `a2a-tck@263b9cf` reproduced it exactly: the gate reported
+these two as its only regressions in both profiles, and every earlier baseline
+entry failed as recorded.
+
+**What changed here.** Since `b3260c1` (2026-10-15, the maintainer's
+decision), HTTP+JSON answers `application/a2a+json` when a request does not
+ask for `application/json` in `Accept` or send it as its body type. The suite
+sends neither, so it now gets the A2A type.
+
+**What the specification says.** A2A v1.0.1 §11.1: "**Content-Type:**
+application/a2a+json **SHOULD** be used for requests and responses". Its §11.6
+error example carries `Content-Type: application/a2a+json`.
+
+**What the suite grades against.** Its vendored copy is A2A v1.0.0
+(`specification/version.json`, as in §20), whose §11.1 reads
+"**Content-Type:** `application/json` for requests and responses". The
+requirements (`tck/requirements/binding_http_json.py`) turn that into MUSTs:
+`HTTP_JSON-SVC-001` "MUST use Content-Type application/json for requests and
+responses", and `HTTP_JSON-ERR-001` "MUST use the AIP-193 representation with
+Content-Type application/json". Both checks are the substring test
+`"application/json" in content_type`
+(`tests/compatibility/core_operations/test_transport_behavior.py` and
+`tests/compatibility/http_json/test_problem_details.py`), which
+`application/a2a+json` cannot pass. Read at `a2a-tck@263b9cf`.
+
+**What was not done.** Answering `application/json` by default again would
+pass both checks by returning to what v1.0.1 §11.1 replaced, and would reverse
+the maintainer's 2026-10-15 decision. A client that wants `application/json`
+still gets it by asking in `Accept`.
+
+**What was done.** Both are baselined on every transport (`*`), with a line in
+the baseline's `_comment`. The gate stays differential: when the suite
+refreshes its copy of the specification (a2aproject/a2a-tck#231), both become
+unexpected passes and the gate fails until the entries are removed.
+
+**Effect on the quoted tally.** The full profile still grades 88 MUSTs, now
+81 `PASS` and 7 `FAIL`; the minimal profile 60 `PASS` and 6 `FAIL` of 66.
+Across the three profiles the figure to quote is **85 of 114 passing and 7
+failing**: the four §20/§21 entries, §22's, and these two.
+

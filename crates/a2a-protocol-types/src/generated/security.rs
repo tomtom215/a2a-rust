@@ -187,7 +187,10 @@ pub enum OAuthFlows {
     ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Implicit(_))
     /// }
     /// ```
-    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE")]
+    #[deprecated(
+        since = "0.15.0",
+        note = "deprecated in A2A 1.0; use Authorization Code + PKCE"
+    )]
     Implicit(crate::security::ImplicitFlow),
     /// Deprecated: Use Authorization Code + PKCE or Device Code.
     ///
@@ -199,7 +202,10 @@ pub enum OAuthFlows {
     ///     matches!(f, a2a_protocol_types::security::OAuthFlows::Password(_))
     /// }
     /// ```
-    #[deprecated(note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code")]
+    #[deprecated(
+        since = "0.15.0",
+        note = "deprecated in A2A 1.0; use Authorization Code + PKCE or Device Code"
+    )]
     Password(crate::security::PasswordOAuthFlow),
     /// Configuration for the OAuth Device Code flow.
     DeviceCode(crate::security::DeviceCodeFlow),

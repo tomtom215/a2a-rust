@@ -15,7 +15,7 @@
 #               what the SDK offers the integrator who must
 
 [meta]
-as_of = "2026-10-15"
+as_of = "2026-10-16"
 preamble = """
 This is a map from regulatory and standards provisions to what a2a-rust, a
 protocol library, provides toward them. It is not a claim that the SDK is
@@ -112,9 +112,9 @@ id = "AIA-4a"
 source = "ai-act"
 provision = "Art. 4a (inserted by Regulation (EU) 2026/1744)"
 requirement = "Providers of high-risk AI systems may exceptionally process special categories of personal data to the extent strictly necessary for bias detection and correction, under all of paragraph 1's conditions: other data will not do, technical limits on re-use with state-of-the-art security and pseudonymisation, controlled and documented access, no transmission to other parties, deletion once the bias is corrected or the retention period ends, and records of processing that say why. Providers and deployers of other AI systems and models, and deployers of high-risk systems, may do the same under the same conditions; this creates no obligation to detect bias. Article 10(5), which held the provider's basis before, is deleted."
-sdk = "The SDK processes no data set and detects no bias. What passes through it is the integrator's data: audit records hold content only as SHA-256 digests (GDPR-25-1), and the task store keeps message content as the integrator sends it."
+sdk = "The SDK processes no data set and detects no bias. What passes through it is the integrator's data: audit records hold content only as digests, and with the `encryption` feature both the audit trail and the task store protect what they hold (GDPR-25-1)."
 status = "integrator"
-gap = "Whether to process special categories for bias detection, and every safeguard paragraph 1 requires, belong to the provider or deployer that holds the data. The task store has no hook to pseudonymise content before it is written (GDPR-25-1), so special-category data should not be routed through tasks."
+gap = "Whether to process special categories for bias detection, and every safeguard paragraph 1 requires, belong to the provider or deployer that holds the data. `EncryptedTaskStore` encrypts task content but leaves ids, `metadata` and the like readable (GDPR-25-1), so special-category data belongs in parts, if it is routed through tasks at all."
 
 [[control]]
 id = "AIA-5-1"
@@ -345,9 +345,10 @@ tests = [
   "crates/a2a-protocol-server/tests/halt_e2e.rs::a_halted_server_refuses_sends_on_both_http_bindings",
   "crates/a2a-protocol-client/tests/delegation_tests.rs::the_parent_cancelling_cancels_the_child",
   "crates/a2a-protocol-client/tests/delegation_tests.rs::aborting_the_parent_task_cancels_the_child",
+  "crates/a2a-protocol-server/tests/cross_replica_cancel/main.rs::in_memory_streaming_cancel_on_the_other_replica_sticks",
 ]
 evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md"]
-gap = "A halt holds in one process and is not persisted: each replica is halted separately, and a restart starts unhalted. An executor that ignores its token keeps running. A parent that crashes leaves its delegated children running (G1-B in swarm-orchestration.md)."
+gap = "A halt holds in one process and is not persisted: each replica is halted separately, and a restart starts unhalted. A cancel on one replica makes the task's state final in a shared store, but an executor on another replica is not signalled: it stops only when its next write is refused. An executor that ignores its token keeps running. A parent that crashes leaves its delegated children running (G1-B in swarm-orchestration.md)."
 
 [[control]]
 id = "AIA-15-4"
@@ -369,21 +370,24 @@ tests = [
   "crates/a2a-protocol-server/tests/push_sender_tests.rs::non_retryable_client_error_fails_without_retry",
   "crates/a2a-protocol-server/tests/executor_event_fields.rs::an_executor_event_missing_a_required_field_is_refused",
   "crates/a2a-protocol-server/tests/multi_replica.rs::a_task_created_on_one_replica_is_readable_on_the_other",
+  "crates/a2a-protocol-server/tests/multi_replica.rs::the_single_writer_refusal_does_not_cross_replicas",
 ]
-gap = "Resilience of the model itself (errors in outputs, feedback loops in a system that keeps learning) and the redundancy plan of a deployment are the provider's. An in-memory store keeps no state across a restart, and a halt is per process."
+gap = "Resilience of the model itself (errors in outputs, feedback loops in a system that keeps learning) and the redundancy plan of a deployment are the provider's. An in-memory store keeps no state across a restart, and a halt is per process. Admission is per replica: two replicas behind one store both admit a continuation of the same task and both run it, their writes interleaving until the first terminal state, which is final (a test pins this; it needs a live database)."
 
 [[control]]
 id = "AIA-15-5"
 source = "ai-act"
 provision = "Art. 15(5)"
 requirement = "High-risk AI systems shall be resilient against attempts by unauthorised third parties to alter their use, outputs or performance by exploiting system vulnerabilities. A high-risk system within the scope of the Cyber Resilience Act that meets the conditions of its Art. 12(1) is deemed to comply with Art. 15's cybersecurity requirements (Art. 42(3), added by Regulation (EU) 2026/1744); the CRA rows below are what the SDK carries toward that."
-sdk = "Authentication (API key in constant time, bearer, JWT with a fixed algorithm list and HS256 secrets of at least 32 bytes, wiped from memory on drop), signed agent cards (ES256 or EdDSA, verified against a JWK Set), signed messages and artifacts, an SSRF guard on push delivery, body and rate limits, refusal of tenants the stores cannot isolate, 13 fuzz targets."
+sdk = "Authentication (API key in constant time, bearer, JWT with a fixed algorithm list and HS256 secrets of at least 32 bytes, wiped from memory on drop), signed agent cards (ES256 or EdDSA, verified against a JWK Set), signed messages and artifacts, an SSRF guard on push delivery, body and rate limits, refusal of tenants the stores cannot isolate, 13 fuzz targets. TLS on the server's own HTTP and gRPC listeners; with the `encryption` feature, a stored part that was altered, moved or planted unsealed fails the read (GDPR-32-1a)."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/auth/jwt.rs::JwtAuthInterceptor",
   "crates/a2a-protocol-types/src/signing.rs::verify_agent_card",
   "crates/a2a-protocol-server/src/push/sender.rs::validate_webhook_url",
   "crates/a2a-protocol-server/src/rate_limit/mod.rs::RateLimitInterceptor",
+  "crates/a2a-protocol-server/src/serve/graceful/tls.rs::Server::with_tls",
+  "crates/a2a-protocol-server/src/store/encrypted/mod.rs::EncryptedTaskStore",
 ]
 tests = [
   "crates/a2a-protocol-server/src/auth/jwt.rs::alg_none_is_rejected",
@@ -392,6 +396,8 @@ tests = [
   "crates/a2a-protocol-types/src/signing.rs::verify_rejects_tampered_card",
   "crates/a2a-protocol-server/src/push/sender.rs::rejects_loopback_ipv4",
   "crates/a2a-protocol-server/src/handler/tenant_isolation_tests.rs::the_default_store_refuses_a_client_named_tenant",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::a_plaintext_request_gets_no_http_answer",
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::an_altered_value_is_refused",
 ]
 ci = ["cargo +nightly fuzz run"]
 gap = "The model-level attacks the article names — data and model poisoning, adversarial examples — are the provider's to address; the SDK carries messages and offers interceptors as the hook for a content filter, but ships none."
@@ -427,7 +433,7 @@ gap = "The person interacts with the integrator's interface, which this SDK neve
 [[control]]
 id = "AIA-50-2"
 source = "ai-act"
-provision = "Art. 50(2), 50(7) (as replaced by Regulation (EU) 2026/1744), 111(4)"
+provision = "Art. 50(2); Art. 50(7) as replaced and Art. 111(4) as added by Regulation (EU) 2026/1744"
 requirement = "Synthetic audio, image, video or text outputs are marked in a machine-readable format and detectable as artificially generated. Providers of systems, general-purpose AI systems included, that were placed on the market before 2 August 2026 comply by 2 December 2026 (Art. 111(4)). The Commission facilitates codes of practice on detecting, marking and labelling generated content and assesses whether adhering to them is adequate, and may otherwise adopt an implementing act with common rules (Art. 50(7))."
 sdk = "The provenance extension: `mark_ai_generated` marks a message or artifact as AI-generated, naming the generator, in metadata under a declared extension URI; `sign_content` signs the whole content with ES256 or EdDSA, marker included, so the marker cannot be stripped without breaking the signature; `verify_content` checks it against a JWK Set. Signed content survives a round trip through a server, and file bytes (a C2PA manifest inside them included) pass through unchanged."
 status = "partial"
@@ -435,13 +441,15 @@ code = [
   "crates/a2a-protocol-types/src/provenance.rs::mark_ai_generated",
   "crates/a2a-protocol-types/src/provenance.rs::provenance_of",
   "crates/a2a-protocol-types/src/provenance.rs::Provenance",
+  "crates/a2a-protocol-types/src/provenance/sign.rs::sign_content",
+  "crates/a2a-protocol-types/src/provenance/sign.rs::verify_content",
 ]
 tests = [
   "crates/a2a-protocol-types/src/provenance/tests.rs::the_marker_is_machine_readable_in_the_declared_shape",
   "crates/a2a-protocol-types/src/provenance/sign/tests.rs::any_change_after_signing_breaks_it",
   "crates/a2a-protocol-server/tests/content_provenance_e2e.rs::bytes_pass_through_untouched_and_a_signed_artifact_still_verifies",
 ]
-gap = "The agent must call the marker; the SDK cannot tell generated content from any other. The marker is in A2A metadata, so it does not travel with a file once saved: marking inside the content itself (a watermark, a C2PA manifest) is the generator's."
+gap = "The agent must call the marker; the SDK cannot tell generated content from any other. The marker is in A2A metadata, so it does not travel with a file once saved: marking inside the content itself (a watermark, a C2PA manifest) is the generator's. It is an a2a-rust extension (`https://a2a-rust.com/extensions/provenance/v1`), not part of A2A v1.0: another implementation carries it as metadata without reading it, and content it extended with fields these types do not model does not verify after a round trip through them."
 
 [[control]]
 id = "AIA-72-2"
@@ -514,39 +522,53 @@ id = "GDPR-25-1"
 source = "gdpr"
 provision = "Art. 25(1), 5(1)(c)"
 requirement = "Data protection by design: measures such as pseudonymisation, implementing data minimisation."
-sdk = "Audit records hold content only as SHA-256 digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output."
-status = "partial"
+sdk = "Minimisation: audit records hold content only as digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output. Pseudonymisation, with the `encryption` feature: `AuditLog::with_privacy` seals each person an audit record names under a key of their own, records carry only a random handle, and each digest is an HMAC bound to its record that confirms no guess without the key (ADR 0015, amended 2026-10-16); `EncryptedTaskStore` seals every part of a task and of its event log; the SQL push-config stores seal each config. What the stores query (ids, states, timestamps, `metadata`) stays readable to them, so personal data belongs out of those fields; and the measures are the operator's to switch on."
+status = "supported"
 tests = [
   "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
   "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
   "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole",
+  "crates/a2a-protocol-server/src/push/cipher_tests.rs::with_a_cipher_no_secret_is_stored_and_the_config_reads_back",
+  "crates/a2a-protocol-server/tests/audit_privacy.rs::a_served_call_is_recorded_naming_no_one_and_erasable",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::one_content_in_two_records_carries_two_tags",
 ]
-gap = "The task store and event log keep full message content in plaintext, with no hook to pseudonymise it before it is written; audit records name the caller's subject, which is personal data in most deployments."
 [[control]]
 id = "GDPR-32-1a"
 source = "gdpr"
 provision = "Art. 32(1)(a)"
 requirement = "Security of processing, including pseudonymisation and encryption of personal data."
-sdk = "The client speaks TLS through rustls with certificate validation; the gRPC listener terminates TLS and mutual TLS."
-status = "partial"
+sdk = "In transit: the client speaks TLS through rustls with certificate validation, and the HTTP listener (`Server::with_tls`) and the gRPC listener terminate TLS, mutual TLS included. At rest, with the `encryption` feature: `EncryptedTaskStore` seals every part of a task and its event log with AES-256-GCM (or a cipher of the operator's), each bound to its tenant partition, task, record or log position, container and index, so an altered, moved or unsealed part fails the read; the SQL push-config stores seal each config, token and credentials included; `AuditLog::with_privacy` seals who each audit record names and keys its digests, the chain still verifying without a key. What the stores query (ids, states, timestamps, `metadata`, the order of messages and artifacts) stays unencrypted, and encryption at rest is the operator's to switch on."
+status = "supported"
 tests = [
   "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
   "crates/a2a-protocol-client/tests/grpc_tls_apply_tests.rs::https_endpoint_completes_a_tls_handshake_with_the_pinned_ca",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::the_agent_card_is_served_over_https_on_http1_and_http2",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::a_listener_requiring_client_certificates_serves_only_clients_with_one",
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::the_postgres_stores_hold_only_sealed_parts",
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::a_value_moved_within_its_task_is_refused",
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::the_same_ring_seals_push_configs",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_protected_record_names_no_one_and_still_verifies",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_sealed_value_altered_or_moved_does_not_open",
 ]
-gap = "The JSON-RPC and HTTP+JSON listeners do not terminate TLS (a reverse proxy does), and nothing encrypts stored task data at rest."
 
 [[control]]
 id = "GDPR-5-1e"
 source = "gdpr"
 provision = "Art. 5(1)(e), 17"
 requirement = "Storage limitation, and erasure on request."
-sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor."
+sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's. With `AuditLog::with_privacy`, `erase_subject` erases one person from a tenant's audit chain by destroying their key, refused under a legal hold (Art. 17(3)(e)), and the chain still verifies; retention drops the keys no remaining record names."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else",
   "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
+  "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::deleting_a_task_removes_its_log",
+  "crates/a2a-protocol-server/src/store/sqlite_store/artifact_delta_tests.rs::deleting_a_task_discards_its_journalled_parts",
+  "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs::deleting_a_task_removes_its_log_and_leaves_other_tenants_alone",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_destroys_one_persons_key_and_leaves_the_chain_whole",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::retention_drops_the_keys_no_record_names_any_longer",
 ]
-gap = "No erasure of one person's data on request; neither store has a notion of a data subject, and deleting one record from the middle of an audit chain would break it by design."
+gap = "The task store has no notion of a data subject: a task can be erased by id, but nothing knows which tasks concern one person. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them); copies of a key in backups or logs survive until they expire."
 # ── OWASP agentic Top 10 ─────────────────────────────────────────────────────
 
 [[control]]
@@ -559,8 +581,9 @@ status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/auth/identity_tests.rs::a_labelled_api_key_names_its_caller",
   "crates/a2a-protocol-server/tests/request_context_tests.rs::an_executor_sees_the_caller_identity_the_interceptor_established",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
 ]
-gap = "A delegated call carries the delegating agent's credential, not the originating principal, and nothing records the chain."
+gap = "A delegated call carries the delegating agent's credential, not the originating principal. Each hop's audit record names its immediate caller and carries the call's trace id, so the chain can be joined afterwards, but the originating principal travels with no call."
 
 [[control]]
 id = "ASI04"
@@ -584,13 +607,14 @@ id = "ASI07"
 source = "owasp-asi"
 provision = "ASI07 Insecure Inter-Agent Communication"
 requirement = "Messages between agents are authenticated and protected against interception and forgery."
-sdk = "TLS on every client transport, mutual TLS on gRPC, authenticated calls, signed agent cards, and signed messages and artifacts (the provenance extension) that a receiver can verify end to end, across intermediaries."
+sdk = "TLS on every client transport and on the server's HTTP and gRPC listeners, mutual TLS on both, authenticated calls, signed agent cards, and signed messages and artifacts (the provenance extension) that a receiver can verify end to end, across intermediaries."
 status = "partial"
 tests = [
   "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
   "crates/a2a-protocol-types/src/provenance/sign/tests.rs::a_signed_message_verifies_under_either_algorithm",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::a_listener_requiring_client_certificates_serves_only_clients_with_one",
 ]
-gap = "Signing messages and artifacts (the provenance extension) is opt-in, and verifying them is the receiver's call; unsigned content can still be altered by an intermediary that terminates TLS. Mutual TLS is gRPC-only."
+gap = "Signing messages and artifacts (the provenance extension) is opt-in, and verifying them is the receiver's call; unsigned content can still be altered by an intermediary that terminates TLS. The HTTP dispatchers do not see a client certificate, so on HTTP mutual TLS admits a connection but does not name the caller."
 
 [[control]]
 id = "ASI08"
@@ -632,7 +656,7 @@ tests = [
   "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
   "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_all_cancels_every_tenant",
 ]
-gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt holds in one process and does not survive a restart."
+gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt holds in one process and does not survive a restart. A cancel on one replica makes the task's state final in a shared store, but an executor on another replica is not signalled: it stops only when its next write is refused, and one that does not write runs on."
 
 [[control]]
 id = "ASI-MODEL"

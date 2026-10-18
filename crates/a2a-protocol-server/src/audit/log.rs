@@ -51,6 +51,9 @@ pub struct AuditLog {
     locks: StdMutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     runs: StdMutex<Runs>,
     failures: AtomicU64,
+    /// Protects what records say about people; see [`super::AuditPrivacy`].
+    #[cfg(feature = "encryption")]
+    pub(super) privacy: Option<Arc<super::AuditPrivacy>>,
 }
 
 #[derive(Default)]
@@ -82,6 +85,8 @@ impl AuditLog {
             locks: StdMutex::new(HashMap::new()),
             runs: StdMutex::new(Runs::default()),
             failures: AtomicU64::new(0),
+            #[cfg(feature = "encryption")]
+            privacy: None,
         }
     }
 
@@ -139,7 +144,7 @@ impl AuditLog {
         self.failures.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn chain_lock(&self, chain: &str) -> Arc<tokio::sync::Mutex<()>> {
+    pub(super) fn chain_lock(&self, chain: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self
             .locks
             .lock()
@@ -159,9 +164,15 @@ impl AuditLog {
     ///
     /// Returns an error when the store fails, or when the record lost the
     /// race for a position eight times in a row.
-    pub async fn append(&self, mut record: AuditRecord) -> A2aResult<AuditRecord> {
+    pub async fn append(&self, record: AuditRecord) -> A2aResult<AuditRecord> {
         let lock = self.chain_lock(&record.chain);
         let _guard = lock.lock().await;
+        self.append_locked(record).await
+    }
+
+    /// [`append`](Self::append), for a caller already holding the chain's
+    /// lock.
+    pub(super) async fn append_locked(&self, record: AuditRecord) -> A2aResult<AuditRecord> {
         for _ in 0..MAX_APPEND_ATTEMPTS {
             let head = self.store.head(&record.chain).await?;
             let (seq, prev) = match head {
@@ -171,6 +182,13 @@ impl AuditLog {
                     None => (1, None),
                 },
             };
+            // Each attempt starts from the record as given: protection binds
+            // its sealed values to `seq`, which a lost race changes.
+            let mut record = record.clone();
+            #[cfg(feature = "encryption")]
+            if let Some(privacy) = &self.privacy {
+                privacy.protect(&*self.store, &mut record, seq).await?;
+            }
             record.seal(seq, prev, a2a_protocol_types::utc_now_iso8601())?;
             if self.store.append(&record).await? == Appended::Stored {
                 if self.checkpoint_every > 0 && seq % self.checkpoint_every == 0 {

@@ -220,7 +220,8 @@ fn enum_body<'a>(
             1,
         )?);
         if let Some(note) = &vc.deprecated {
-            let _ = writeln!(out, "    #[deprecated(note = {note:?})]");
+            let since = vc.deprecated_since.as_deref().unwrap_or_default();
+            let _ = writeln!(out, "    #[deprecated(since = {since:?}, note = {note:?})]");
         }
         if serde && serde_camel(&variant) != f.json_name {
             let _ = writeln!(out, "    #[serde(rename = {:?})]", f.json_name);

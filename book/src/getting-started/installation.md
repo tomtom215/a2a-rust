@@ -88,6 +88,7 @@ and no logging.
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
+| `encryption` | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
 
 ### `a2a-protocol-sdk` (umbrella)
@@ -105,6 +106,7 @@ and no logging.
 | `otel` | Enables `otel` in the server and the client |
 | `axum` | Enables Axum integration in the server |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
+| `encryption` | Enables encryption at rest for task content in the server |
 | `audit` | Enables the audit trail in the server and its record types in `a2a-protocol-types` |
 
 Enable features in your `Cargo.toml`:

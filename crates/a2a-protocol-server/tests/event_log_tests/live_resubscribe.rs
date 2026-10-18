@@ -52,20 +52,25 @@ impl Metrics for RecordedErrors {
 /// running, returning the positions the resubscribe delivered.
 async fn positions_from_a_live_resubscribe(
     catchup: Duration,
-) -> (Vec<Option<u64>>, Arc<RecordedErrors>) {
-    let (frames, errors) = frames_from_a_live_resubscribe(catchup, Some("0"), true).await;
-    (frames.into_iter().map(|f| f.seq).collect(), errors)
+) -> (
+    Vec<Option<u64>>,
+    Option<a2a_protocol_types::error::A2aError>,
+    Arc<RecordedErrors>,
+) {
+    let (frames, lag, errors) = frames_from_a_live_resubscribe(catchup, Some("0"), true).await;
+    (frames.into_iter().map(|f| f.seq).collect(), lag, errors)
 }
 
 /// The same, resuming after `last_event_id` or, with `None`, subscribing
 /// afresh, beside a streaming or a blocking send, and returning every frame
-/// delivered.
+/// delivered, then the error that ended the stream, if one did.
 async fn frames_from_a_live_resubscribe(
     catchup: Duration,
     last_event_id: Option<&str>,
     streaming: bool,
 ) -> (
     Vec<a2a_protocol_server::streaming::StreamEvent>,
+    Option<a2a_protocol_types::error::A2aError>,
     Arc<RecordedErrors>,
 ) {
     use a2a_protocol_server::handler::{HandlerLimits, SendMessageResult};
@@ -133,14 +138,21 @@ async fn frames_from_a_live_resubscribe(
         .expect("resubscribe");
 
     let mut frames = Vec::new();
+    let mut lag = None;
     while let Ok(Some(frame)) =
         tokio::time::timeout(Duration::from_millis(1_500), reader.read()).await
     {
-        frames.push(frame.expect("frames must not be errors"));
+        match frame {
+            Ok(frame) => frames.push(frame),
+            Err(e) => {
+                lag = Some(e);
+                break;
+            }
+        }
     }
     release.notify_one();
     let _ = tokio::time::timeout(Duration::from_secs(5), send).await;
-    (frames, errors)
+    (frames, lag, errors)
 }
 
 /// The defect this guards: the log is written by the background processor, so
@@ -154,7 +166,8 @@ async fn frames_from_a_live_resubscribe(
 /// writer has already handed over, so all three emitted positions arrive.
 #[tokio::test]
 async fn a_live_resubscribe_waits_for_the_log_to_catch_up() {
-    let (positions, errors) = positions_from_a_live_resubscribe(Duration::from_secs(10)).await;
+    let (positions, lag, errors) = positions_from_a_live_resubscribe(Duration::from_secs(10)).await;
+    assert!(lag.is_none(), "{lag:?}");
     let logged: Vec<u64> = positions.into_iter().flatten().collect();
 
     assert_eq!(
@@ -176,24 +189,27 @@ async fn a_live_resubscribe_waits_for_the_log_to_catch_up() {
     );
 }
 
-/// The negative control, and the proof that the wait is what closes it:
-/// with the catch-up disabled the same race replays a short history.
+/// The negative control, and what the wait is for: with the catch-up
+/// disabled the first read of the same race is short. Until 2026-10-15 that
+/// short replay was served and the stream went on live, the missing
+/// positions reported only by a metric. Now the stream reads the log again
+/// while it moves forward, and says so with `streamLagged` when it does not:
+/// whichever happens, no position is skipped silently.
 #[tokio::test]
-async fn without_the_catchup_the_same_resubscribe_replays_short() {
-    let (positions, errors) = positions_from_a_live_resubscribe(Duration::ZERO).await;
+async fn without_the_catchup_a_short_replay_is_never_silent() {
+    let (positions, lag, errors) = positions_from_a_live_resubscribe(Duration::ZERO).await;
     let logged: Vec<u64> = positions.into_iter().flatten().collect();
 
+    match &lag {
+        Some(lag) => assert!(lag.is_stream_lagged(), "{lag:?}"),
+        None => assert_eq!(logged, [1, 2, 3], "every position, or the lag"),
+    }
     assert!(
-        logged.len() < 3,
-        "the log cannot have caught up with no wait; got {logged:?}"
+        logged.windows(2).all(|w| w[1] == w[0] + 1),
+        "what was delivered has no gap: {logged:?}"
     );
-    // And the short replay is reported. It is served rather than refused, so
-    // this metric is the only signal that a subscriber is missing events.
-    assert_eq!(
-        errors.catchup_timeouts(),
-        1,
-        "giving up must be counted, or a short replay is silent"
-    );
+    // The first read gave up at once, and is counted.
+    assert!(errors.catchup_timeouts() >= 1, "giving up must be counted");
 }
 
 /// A first subscribe, with no `Last-Event-ID`, misses nothing between its
@@ -218,7 +234,7 @@ async fn assert_a_first_subscribe_misses_nothing(streaming: bool) {
     use a2a_protocol_types::events::StreamResponse;
 
     let (frames, _) =
-        frames_from_a_live_resubscribe(Duration::from_secs(10), None, streaming).await;
+        frames_from_a_live_resubscribe_cleanly(Duration::from_secs(10), None, streaming).await;
     let mut artifacts = Vec::new();
     let mut working = false;
     for frame in &frames {
@@ -253,7 +269,8 @@ async fn a_first_subscribe_waits_for_the_store_rather_than_the_log() {
     use a2a_protocol_types::events::StreamResponse;
     use a2a_protocol_types::task::TaskState;
 
-    let (frames, _) = frames_from_a_live_resubscribe(Duration::from_secs(10), None, true).await;
+    let (frames, _) =
+        frames_from_a_live_resubscribe_cleanly(Duration::from_secs(10), None, true).await;
     let [first] = frames.as_slice() else {
         panic!("one frame, the Task, and nothing repeated after it: {frames:?}");
     };
@@ -339,4 +356,20 @@ async fn a_lag_while_the_log_trails_waits_for_the_log() {
         positions.windows(2).all(|w| w[1] == w[0] + 1),
         "no gap and no repeat: {positions:?}"
     );
+}
+
+/// [`frames_from_a_live_resubscribe`], for a stream that must not end in an
+/// error.
+async fn frames_from_a_live_resubscribe_cleanly(
+    catchup: Duration,
+    last_event_id: Option<&str>,
+    streaming: bool,
+) -> (
+    Vec<a2a_protocol_server::streaming::StreamEvent>,
+    Arc<RecordedErrors>,
+) {
+    let (frames, lag, errors) =
+        frames_from_a_live_resubscribe(catchup, last_event_id, streaming).await;
+    assert!(lag.is_none(), "frames must not be errors: {lag:?}");
+    (frames, errors)
 }

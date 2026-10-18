@@ -507,11 +507,12 @@ async fn rest_response_has_a2a_version_header() {
         resp.headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok()),
-        // Not what §11.1 recommends (`application/a2a+json`, a SHOULD): the
-        // official Go SDK's client cannot read errors labelled that way.
-        // See `build_json_response`.
-        Some("application/json"),
-        "responses emit application/json for a2a-go interop"
+        // §11.1: a request that names no response type gets the A2A type.
+        // A JSON body alone states no preference; a2a-go, which reads only
+        // `application/json`, asks for it in `Accept` (see
+        // `dispatch/rest/media_type.rs`).
+        Some("application/a2a+json"),
+        "a request with no Accept is answered as application/a2a+json"
     );
 }
 

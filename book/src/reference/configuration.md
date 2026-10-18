@@ -44,8 +44,9 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
 | `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
 | `subscribe_reattach_interval` | `Duration` | 250ms | How often a `SubscribeToTask` stream between turns checks the store: for the task finishing, the next turn's queue, or events logged meanwhile, which it replays |
-| `subscribe_max_idle` | `Duration` | 5 min | How long a `SubscribeToTask` stream waits on a parked task before ending; the client resubscribes |
-| `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events a `Last-Event-ID` resumption replays. The offset is client-supplied, so the cap bounds the read; every replayed frame carries its own `id:`, so a truncated replay is resumable |
+| `subscribe_max_idle` | `Option<Duration>` | none | If set, how long a `SubscribeToTask` stream waits on a parked task before ending without a terminal state; the client resubscribes. Unset, the stream ends at the terminal state or when the client goes (§3.1.6) |
+| `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events one read of the event log returns, for a lag's catch-up, a missed turn or a `Last-Event-ID` resumption. The offset is client-supplied, so the cap bounds each read; a longer replay is read a page at a time |
+| `final_task_snapshot` | `bool` | `false` | Whether a stream sends the finished task once more, as a final `Task`, after its terminal state (§11.7); sent only when the store shows the finished task within `subscribe_replay_catchup` |
 | `subscribe_replay_catchup` | `Duration` | 2s | How long a resuming stream waits for the event log to catch up with what was already broadcast. Zero disables the wait; on expiry the shortfall is logged and counted under `event_log_catchup` |
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
@@ -222,6 +223,7 @@ and the `with_*` setters.
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
+| `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Off | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
 
 ### `a2a-protocol-client`
@@ -260,6 +262,7 @@ and the `with_*` setters.
 | `otel` | Off | Enables `otel` in the server and the client |
 | `axum` | Off | Enables `axum` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
+| `encryption` | Off | Enables `encryption` in the server |
 | `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |
 
 ## Environment Variables

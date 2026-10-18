@@ -236,6 +236,8 @@ are rustdoc's job.
 | `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
+| `version_query` | Sending `A2A-Version` as a request parameter (§3.6.1) |
+| `VersionQueryInterceptor` | Adds `A2A-Version` to every request's query parameters, beside the header |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |
 
@@ -305,7 +307,7 @@ are rustdoc's job.
 |--------|----------|
 | `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
 | `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest; `VerifiedApproval` is what the executor sees |
-| `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature) |
+| `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature); `AuditPrivacy`, `AuditLog::with_privacy`, `reveal`, `digest_matches` and `erase_subject` protect who and what records name and erase a person (`audit` and `encryption`) |
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
 | `call_context` | Call context for server-side interceptors |
@@ -363,6 +365,7 @@ are rustdoc's job.
 | `AgentExecutor` | Agent logic entry point |
 | `TaskStore` | Task persistence backend |
 | `PushConfigCipher` | Seals push configs at rest in the SQL push-config stores (`with_cipher`; `sqlite` / `postgres` features) |
+| `ContentCipher` | Seals part content for `EncryptedTaskStore`; implement it to put a key-management service behind the store (`encryption` feature) |
 | `PushConfigStore` | Push config persistence |
 | `PushSender` | Webhook delivery |
 | `ServerInterceptor` | Server-side middleware |
@@ -408,6 +411,8 @@ are rustdoc's job.
 | Type | Description |
 |------|-------------|
 | `InMemoryTaskStore` | In-memory task store with TTL |
+| `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
+| `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
 | `HttpPushSender` | HTTP webhook delivery with SSRF protection |
 | `SqliteTaskStore` | SQLite task store (`sqlite` feature) |

@@ -37,6 +37,7 @@ fn transport_keys_never_reach_the_handler() {
             ("authorization", "Bearer token"),
             ("x-tenant-id", "acme"),
         ]),
+        None,
         false,
     )
     .expect("no version declared, and none required");
@@ -63,6 +64,7 @@ fn a_callers_pseudo_header_never_reaches_the_handler() {
             (":anything", "x"),
             ("authorization", "Bearer token"),
         ]),
+        None,
         false,
     )
     .expect("no version declared, and none required");
@@ -84,6 +86,7 @@ fn a_callers_forwarding_headers_never_reach_the_handler() {
             ("Forwarded", "for=203.0.113.9"),
             ("authorization", "Bearer token"),
         ]),
+        None,
         false,
     )
     .expect("no version declared, and none required");
@@ -103,6 +106,7 @@ fn transport_keys_are_filtered_regardless_of_case() {
             ("METHOD", "y"),
             ("x-tenant-id", "acme"),
         ]),
+        None,
         false,
     )
     .expect("must succeed");
@@ -114,7 +118,7 @@ fn transport_keys_are_filtered_regardless_of_case() {
 /// implement must be refused rather than treated as absent.
 #[test]
 fn an_unsupported_version_is_rejected() {
-    let err = a2a_headers(metadata(&[("a2a-version", "0.3")]), false)
+    let err = a2a_headers(metadata(&[("a2a-version", "0.3")]), None, false)
         .expect_err("0.3 is refused even when no version is required");
 
     assert!(
@@ -125,8 +129,8 @@ fn an_unsupported_version_is_rejected() {
 
 #[test]
 fn a_supported_version_passes_through_to_the_handler() {
-    let headers =
-        a2a_headers(metadata(&[("a2a-version", "1.0")]), true).expect("1.0 is what we implement");
+    let headers = a2a_headers(metadata(&[("a2a-version", "1.0")]), None, true)
+        .expect("1.0 is what we implement");
 
     assert_eq!(
         headers.get("a2a-version").map(String::as_str),
@@ -144,10 +148,10 @@ fn an_absent_version_is_refused_as_0_3_unless_none_is_required() {
         metadata(&[("authorization", "Bearer t")]),
         metadata(&[("a2a-version", " ")]),
     ] {
-        let err = a2a_headers(md.clone(), true).expect_err("no version is 0.3");
+        let err = a2a_headers(md.clone(), None, true).expect_err("no version is 0.3");
         assert!(format!("{err:?}").contains("'0.3'"), "{err:?}");
 
-        a2a_headers(md, false).expect("served as 1.0 when no version is required");
+        a2a_headers(md, None, false).expect("served as 1.0 when no version is required");
     }
 }
 
@@ -158,6 +162,7 @@ fn an_absent_version_is_refused_as_0_3_unless_none_is_required() {
 fn service_parameter_keys_are_case_insensitive() {
     let headers = a2a_headers(
         metadata(&[("Authorization", "Bearer t"), ("A2A-Extensions", "urn:x")]),
+        None,
         false,
     )
     .expect("no version declared, and none required");
@@ -166,7 +171,7 @@ fn service_parameter_keys_are_case_insensitive() {
         metadata(&[("authorization", "Bearer t"), ("a2a-extensions", "urn:x")])
     );
 
-    let err = a2a_headers(metadata(&[("A2A-Version", "0.3")]), false)
+    let err = a2a_headers(metadata(&[("A2A-Version", "0.3")]), None, false)
         .expect_err("a capitalised version key is still checked");
     assert!(format!("{err:?}").contains("0.3"), "{err:?}");
 }
@@ -177,6 +182,7 @@ fn service_parameter_keys_are_case_insensitive() {
 fn keys_differing_only_in_case_are_combined() {
     let headers = a2a_headers(
         metadata(&[("a2a-extensions", "urn:b"), ("A2A-Extensions", "urn:a")]),
+        None,
         false,
     )
     .expect("must succeed");
@@ -184,4 +190,81 @@ fn keys_differing_only_in_case_are_combined() {
         headers.get("a2a-extensions").map(String::as_str),
         Some("urn:a, urn:b")
     );
+}
+
+// ── The verified peer (audit register R13, R41) ─────────────────────────────
+
+use crate::server::peer::{PEER_ISSUER_KEY, PEER_SUBJECT_KEY, VerifiedPeer};
+use a2a_protocol_server::PEER_ADDR_KEY;
+
+fn peer(subject: &str, issuer: Option<&str>) -> VerifiedPeer {
+    VerifiedPeer::new(subject.to_owned(), issuer.map(str::to_owned)).expect("a non-empty subject")
+}
+
+/// The peer SLIM verified reaches the handler under the binding's own `:`
+/// keys, with an address standing for it in `:peer-addr`, beside the
+/// caller's headers.
+#[test]
+fn a_verified_peer_is_recorded_under_its_colon_keys() {
+    let alice = peer("spiffe://example.org/alice", Some("spiffe://example.org"));
+    let headers = a2a_headers(
+        metadata(&[("authorization", "Bearer token")]),
+        Some(&alice),
+        false,
+    )
+    .expect("no version declared, and none required");
+
+    assert_eq!(
+        headers,
+        metadata(&[
+            ("authorization", "Bearer token"),
+            (PEER_SUBJECT_KEY, "spiffe://example.org/alice"),
+            (PEER_ISSUER_KEY, "spiffe://example.org"),
+            (PEER_ADDR_KEY, &alice.throttle_addr().to_string()),
+        ])
+    );
+}
+
+/// A caller that sends the keys the binding records, in any case, or SLIM's
+/// own `slim-peer-subject`, does not get to name itself: with a verified peer
+/// the binding's values stand, and without one none of the keys is set.
+#[test]
+fn a_callers_own_peer_keys_never_reach_the_handler() {
+    let forged = || {
+        metadata(&[
+            (":slim-peer-subject", "mallory"),
+            (":slim-peer-issuer", "https://evil.example"),
+            (":SLIM-Peer-Subject", "mallory"),
+            (":peer-addr", "203.0.113.7:443"),
+            ("slim-peer-subject", "mallory"),
+            ("SLIM-Peer-Subject", "mallory"),
+        ])
+    };
+
+    let alice = peer("alice", None);
+    let headers = a2a_headers(forged(), Some(&alice), false).expect("must succeed");
+    assert_eq!(
+        headers,
+        metadata(&[
+            (PEER_SUBJECT_KEY, "alice"),
+            (PEER_ADDR_KEY, &alice.throttle_addr().to_string()),
+        ]),
+        "a peer with no issuer records no issuer key, and nothing forged survives"
+    );
+
+    let headers = a2a_headers(forged(), None, false).expect("must succeed");
+    assert_eq!(
+        headers,
+        HashMap::new(),
+        "no verified peer, nothing recorded"
+    );
+}
+
+/// The version check runs on the finished map, so a verified peer does not
+/// excuse a call from declaring one.
+#[test]
+fn a_verified_peer_does_not_skip_the_version_check() {
+    let err = a2a_headers(metadata(&[]), Some(&peer("alice", None)), true)
+        .expect_err("no version is 0.3, verified peer or not");
+    assert!(format!("{err:?}").contains("'0.3'"), "{err:?}");
 }

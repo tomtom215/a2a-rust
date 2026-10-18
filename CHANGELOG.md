@@ -12,6 +12,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A replay longer than `subscribe_replay_limit` is read in pages**
+  (server; spec §3.5.2 "each stream MUST receive the same events in the
+  same order"). The limit now bounds each read of the event log, not the
+  replay. A stream that lagged by more than the limit ended with
+  `streamLagged`; it now reads the log a page at a time, from where each
+  page ended, before it reads the live channel again. The same holds for a
+  turn a `SubscribeToTask` stream missed between polls, and for a
+  `Last-Event-ID` resume, which had a silent gap: the replay stopped at the
+  limit and the stream went on live, past the positions between the
+  replay's end and where its receiver attached, with no `streamLagged`
+  (`event_log_tests` pinned `[snapshot, 1, 2]` for a log of five); a
+  resume whose first read the log had not caught up with within
+  `subscribe_replay_catchup` skipped the same way, and now reads on while
+  the log moves forward (found by an independent review). A page the log
+  cannot supply is still reported as `streamLagged`, after what it did
+  supply, once, and the final state of a finished task follows the last
+  page. Memory stays bounded by the limit, but a client resuming with
+  `Last-Event-ID: 0` now receives the whole retained history on one
+  connection, read a page at a time as it is delivered, where it received
+  at most one page before.
+- **HTTP+JSON responds `application/a2a+json` when the request states no
+  preference** (server; spec §11.1 "Content-Type: application/a2a+json SHOULD
+  be used for requests and responses"). `RestDispatcher` and the axum router
+  answered `application/json` unless `Accept` preferred the A2A type or the
+  body was labelled with it. Now `Accept` still decides when it names either
+  JSON type, an `application/a2a+json` body is still answered in kind, a
+  request asking only for `text/event-stream` gets `application/json`
+  (released a2a-go v2.6.0 sends exactly that on its streaming calls and
+  decodes an error body only under `application/json`), and everything else,
+  including a request with no `Accept`, gets `application/a2a+json`.
+  `scripts/go_sdk_interop.sh` passes both directions on every binding. A
+  report asking a2a-go to read `application/a2a+json` errors is drafted,
+  held, in `docs/upstream/`.
+- **A `SubscribeToTask` stream has no idle bound by default** (server;
+  spec §3.1.6 "The stream MUST terminate when the task reaches a terminal
+  state"). `HandlerLimits::subscribe_max_idle` is `Option<Duration>`,
+  `None` by default; it was a `Duration` of five minutes, after which a
+  stream to a task still parked in `input-required` ended with no terminal
+  state. `with_subscribe_max_idle` sets `Some` and keeps its signature.
+  Every binding already ends a stream whose client has gone (SSE keep-alive,
+  the WebSocket read loop, gRPC's closed channel, SLIMRPC's session close),
+  so the bound is needed only to reclaim subscriptions whose clients are
+  still connected. A bound too large to add to the clock (`Duration::MAX`)
+  panicked inside the stream's poll; it is now no bound. A store that keeps
+  failing while a stream waits is warned about once per run of failures,
+  not at every poll (see the upgrading guide).
+- **SLIMRPC: the binding is built on `agntcy-slim-rpc` 3.4.1**
+  (`a2a-protocol-slimrpc`; audit register R13). Its six SLIM requirements
+  move to the line 3.x requires: `agntcy-slim-rpc` 2.3 → 3.4,
+  `agntcy-slim-auth` 0.15 → 0.17, `agntcy-slim-datapath` 0.18 → 0.19,
+  `agntcy-slim-service` 0.12 → 0.13, `agntcy-slim-config` 0.16 → 0.17,
+  `agntcy-slim-session` 0.7 (locked 0.7.10 → 0.7.21). They are public
+  dependencies: `SlimRpcServer::from_app`, `SlimRpcTransport::from_app`,
+  `SlimRpcMulticast::from_app` and the builders' `with_identity` take SLIM
+  types, so a caller passes types from the same SLIM versions. The binding's
+  own code compiled unchanged. Over the wire, SLIM 3.x sessions are MLS and
+  verify the peer's identity token on the request that sets one up; a peer
+  on the 2.x line was not tried against it.
 - **`TaskState`'s discriminants are its proto numbers** (types; spec §1.4,
   ADR 0016). `TaskState` is generated from `a2a.proto` now, and
   `TaskState::Completed as i32` is 3, as `TASK_STATE_COMPLETED` is in the
@@ -62,6 +120,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`share_tasks_across_callers`).
 
 ### Added
+
+- **Audit records protect who and what they name, and a person can be
+  erased** (server, `audit` and `encryption`; GDPR Art. 25(1), 32(1)(a),
+  17; ADR 0015 amended 2026-10-16). With `AuditLog::with_privacy`, each
+  record's caller and requester are sealed under a key of each person's own
+  (AES-256-GCM, a key derived per value), and each content digest becomes
+  an HMAC bound to its record, so it confirms no guess without the key; the
+  chain still verifies with no key. `AuditLog::reveal` and `digest_matches`
+  serve whoever holds the keys. `AuditLog::erase_subject` destroys one
+  person's key (refused under a legal hold, recorded first as
+  `subject.erased`), reports records from before protection that still name
+  them, and leaves the chain verifying; retention drops keys no record
+  names. `AuditStore` gains subject-key methods with refusing defaults; the
+  SQLite and PostgreSQL stores add the table `a2a_audit_subject_keys`. The
+  record schema stays `a2a-audit/1`. An erased person's records remain
+  linkable to each other, and copies of a key in backups or logs survive;
+  the book's audit page and the ADR list what erasure does not do. An
+  append costs about 2.7x on the in-memory store and 1.8x on SQLite
+  (measured; the ADR gives the numbers).
+- **Encryption at rest for task content** (server, `encryption` feature;
+  GDPR Art. 25(1) and 32(1)(a)). `store::encrypted::EncryptedTaskStore`
+  wraps any `TaskStore` and seals every part of a task's history, status
+  message and artifacts, and of every event in its log, before the wrapped
+  store sees it. Each part is sealed whole, under a context naming the
+  tenant partition, the task, the record or log position, the message or
+  artifact holding it and its index, so a part altered, moved to another
+  such place, sealed under an unknown key or stored unsealed fails the read
+  (`accept_unsealed_parts` reads unsealed parts, for migrating a store in
+  place). `Aes256GcmCipher` is AES-256-GCM (`ring`) over a key ring for
+  rotation, counts its seals against the SP 800-38D nonce budget, and is
+  also a `PushConfigCipher`; `ContentCipher` takes a cipher of your own.
+  Ids, states, timestamps, names, `metadata` and the order of messages and
+  artifacts are not protected; the security page lists what is not. Tested
+  over the in-memory, SQLite and PostgreSQL stores (the last in CI's live
+  database job) and a running handler.
+- **A final `Task` snapshot before a stream closes, opt-in** (server; spec
+  §11.7 "MAY optionally resend a final `Task` snapshot before closing").
+  With `HandlerLimits::with_final_task_snapshot(true)` a send stream and a
+  `SubscribeToTask` stream send the finished task once more, after the
+  terminal state, on every binding. It is read once the store holds the
+  terminal event, waiting at most `subscribe_replay_catchup`, and is not
+  sent when the store cannot show the finished task by then. A send
+  stream's snapshot carries the history its request asked for.
+- **`VersionQueryInterceptor` sends `A2A-Version` as a request parameter**
+  (client; spec §3.6.1 "Clients MAY provide the `A2A-Version` as a request
+  parameter instead of a header"). Opt-in, through `with_interceptor`: every
+  request on the JSON-RPC and HTTP+JSON transports carries
+  `?A2A-Version=1.0` beside the header, for a proxy or gateway that drops
+  headers it does not know. A parameter the request already names is kept.
+- **`CachingCardResolver::with_always_revalidate`** and
+  **`CachingCardResolver::with_default_freshness`** (client; spec §8.6.2).
+  `with_always_revalidate(true)` revalidates on every resolve however fresh
+  the card is, as the resolver did before this release, for an agent whose
+  card changes sooner than its `max-age` says. `with_default_freshness`
+  gives a card whose response has no `max-age` and no `Expires` a lifetime
+  (§8.6.2: clients MAY apply a default cache duration); without it, off by
+  default, such a card is revalidated on every resolve. The rustdoc of
+  `resolve_agent_card` and `fetch_card_from_url` now says they are one-shot
+  and uncached and points to the resolver. The client crate now depends on
+  `httpdate` directly, to read `Date` and `Expires`; it was already in the
+  graph through `hyper`.
+- **SLIMRPC: the caller SLIM verified, and an interceptor that
+  authenticates by it** (`a2a-protocol-slimrpc`; spec §13.1, §12.6; audit
+  register R13). On a session with MLS — every session the SLIM 3.x client
+  opens — the server records the caller's verified token subject and issuer
+  under `:slim-peer-subject` and `:slim-peer-issuer`, keys a caller cannot
+  set: the server drops a caller's own `:`-prefixed keys, and now SLIM's
+  `slim-peer-subject` too. `SlimPeerAuthInterceptor::new()` records the
+  caller as `slim:<issuer>:<subject>` (built by `server::peer::caller_id`,
+  in the form of `jwt:<issuer>:<subject>`) with the auth scheme `slim`, and lets a
+  call with no verified peer through for another interceptor;
+  `SlimPeerAuthInterceptor::required()` refuses that call as unauthenticated
+  and counts as authenticating for the extended card. Before, the binding
+  recorded no caller, and a SLIMRPC caller was identified only by a
+  credential in its metadata. Tests: `tests/peer_identity.rs` end to end,
+  over a real in-process MLS session, with a caller sending forged keys;
+  unit tests in `server::methods` and `server::peer`, among them the rate
+  limiter and the throttle keying two verified peers apart.
 
 - **`TaskStore::get_with_position` and `store::AppliedPosition`** (server;
   audit register R69). `get_with_position` returns a task with the event-log
@@ -515,6 +651,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **The HTTP+JSON client sends an array query parameter by repeating it**
+  (client; spec §11.5 "Multiple values MAY be passed by repeating the
+  parameter name"). `ids=1&ids=2` where it sent one JSON-encoded value,
+  `ids=%5B1%2C2%5D`. No v1.0 GET or DELETE request has a repeated field, so
+  nothing on the wire changes today.
+
+- **`CachingCardResolver` uses a fresh card without a request** (client;
+  spec §8.6 and §8.6.2: clients SHOULD honor RFC 9111 when fetching Agent
+  Cards). `resolve()` sent a request on every call, so a card's
+  `Cache-Control: max-age` never saved one. It now returns the stored card
+  while it is fresh (RFC 9111 §4.2): for its `max-age`, or else its
+  `Expires` minus its `Date`, less the age it arrived with (`Age`, and
+  `Date` against the local clock; §4.2.3). A stale card is revalidated as
+  before; a card marked `no-cache` or `Vary: *` is revalidated on every
+  resolve, and a `no-store` card is still not stored. A card with a
+  lifetime and no `ETag` or `Last-Modified` is now kept while fresh, where
+  it was not kept at all. After a `304`, the card is as fresh as the `304`
+  says. **A card the agent changes is seen only once the stored one goes
+  stale**: up to an hour behind this SDK's server defaults (`max-age=3600`).
+  `with_always_revalidate(true)` restores the request on every resolve (see
+  Added).
+
+- **`CachingCardResolver::with_options` starts a new cache** (client;
+  RFC 9111 §4.1). A clone shares its original's cache and installed
+  extended card, so `resolver.clone().with_options(other)` returned a card
+  stored under the original's credential, and now, with freshness, would
+  have done so without a request. It starts with nothing stored and no
+  extended card.
+- **SLIMRPC: `AuthFailureThrottle` counts a verified caller's failures
+  against that caller** (`a2a-protocol-slimrpc`; audit register R41). The
+  server sets `:peer-addr` for a call with a verified peer to an address
+  standing for it: in `100::/64`, the IPv6 discard-only block (RFC 6666),
+  the low 64 bits a hash of the peer's identity keyed per process, port 0.
+  `CallContext::peer_addr` therefore returns that address for such a call.
+  Before, SLIMRPC set no `:peer-addr` and the throttle never throttled a
+  SLIMRPC caller. A call without a verified peer is unchanged: no
+  `:peer-addr`, not throttled, and in the rate limiter's anonymous bucket
+  unless an interceptor identifies it.
+
 - **A credential refused over WebSocket says so in the body** (server and
   client; A2A §12.6 "Handle Challenges", §3.3.2). The `-32600` the
   WebSocket binding answers now carries a `google.rpc.ErrorInfo` from
@@ -788,9 +963,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   follow it is reported as a lag. When the log cannot supply every missed event the
   stream ends with `streamLagged`, as before: a store without a log, a lag
   beyond what the log still holds (the in-memory stores keep the last 512
-  events of a task by default; the SQL stores keep the whole log), or more
-  missed events than one replay reads (`subscribe_replay_limit`, 1,000 by
-  default). A `read` dropped while the log is read, as the SSE and gRPC
+  events of a task by default; the SQL stores keep the whole log). More
+  missed events than one read of the log returns (`subscribe_replay_limit`)
+  are read a page at a time (see the next item). A `read` dropped while the log is read, as the SSE and gRPC
   bindings drop one whenever a keep-alive or a closed client wins the race,
   leaves the replay owed to the next `read`.
 - **A subscription across turns receives every turn's events** (server;
@@ -1656,6 +1831,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-10-02 SDK comparison (`docs/sdk-comparison-2026-10-02.md`).
 
 ### Security
+
+- **SLIMRPC: the binding has no advisory waivers** (`a2a-protocol-slimrpc`).
+  With `agntcy-slim-auth` 0.17.5 the lock takes `mls-rs-crypto-awslc`
+  0.25.1, which pins `aws-lc-rs =1.18.1`, so `rustls` resolves to 0.23.46
+  (from 0.23.43) and RUSTSEC-2026-0285, -0346, -0348 and -0349 no longer
+  apply; `agntcy-slim-config` 0.17.5 and `regorus` 0.12.0 replace
+  `serde_yaml`, so `unsafe-libyaml` (RUSTSEC-2024-0449) is gone. The five
+  waivers are removed from the binding's `deny.toml` and the six entries
+  from its `osv-scanner.toml`; cargo-deny 0.20.2 and osv-scanner 2.6.0 report
+  nothing without them. `deny.toml` allows `CDLA-Permissive-2.0` again, as
+  the root does, for `webpki-root-certs`, which the SLIM 3.x tree brings.
 
 - **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
   four rustls advisories on 2026-10-14, all patched in 0.23.46

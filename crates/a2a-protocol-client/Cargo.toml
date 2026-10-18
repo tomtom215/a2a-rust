@@ -81,6 +81,9 @@ zeroize        = { version = ">=1.8, <2", default-features = false, features = [
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true }
+# Reads an agent card's `Date` and `Expires` (RFC 9111 freshness, spec
+# §8.6.2). Already in the graph through hyper; no new crate.
+httpdate       = ">=1.0.3, <2"
 tokio          = { workspace = true }
 uuid           = { workspace = true }
 tracing        = { workspace = true, optional = true }

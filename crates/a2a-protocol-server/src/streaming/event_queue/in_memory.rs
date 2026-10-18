@@ -738,6 +738,12 @@ pub struct InMemoryQueueReader {
     reattaching: std::sync::Mutex<Option<Pin<Box<dyn Future<Output = Reattached> + Send>>>>,
     /// Consulted when the reader lags; see [`Self::with_catch_up`].
     catch_up: Option<CatchUpFn>,
+    /// Consulted once, when the stream reaches its terminal state, just
+    /// before it closes; see [`Self::with_final_snapshot`].
+    final_snapshot: Option<FinalSnapshotFn>,
+    /// The final-snapshot hook's answer while it is awaited, kept here for
+    /// the same cancel-safety reason as `reattaching`.
+    snapshotting: std::sync::Mutex<Option<FinalSnapshotFuture>>,
     /// The hook's answer while it is still being awaited, kept here for the
     /// same cancel-safety reason as `reattaching`.
     catching_up: std::sync::Mutex<Option<CatchUpFuture>>,
@@ -801,6 +807,7 @@ impl std::fmt::Debug for InMemoryQueueReader {
             .field("pending", &self.pending.len())
             .field("reattach", &self.reattach.is_some())
             .field("catch_up", &self.catch_up.is_some())
+            .field("final_snapshot", &self.final_snapshot.is_some())
             .field("saw_terminal", &self.saw_terminal)
             .field("provisional", &self.provisional.is_some())
             .field("finished", &self.finished)
@@ -881,17 +888,74 @@ enum Owed {
         /// an `Owed` slot, and a task finishes once.
         last: Option<Box<StreamResponse>>,
     },
+    /// The log owes the positions after `after` through `through`, ahead of
+    /// the channel, whose receiver goes on after `through`: a resume replay
+    /// longer than a page (`subscribe_replay_limit`), read one page at a time.
+    From { after: u64, through: u64 },
 }
 
-/// What a catch-up hook answers: every event after the position it was
-/// given, up to the writer's position when it was called, or `None` when the
-/// log cannot supply all of them.
-pub type CatchUpFuture =
-    Pin<Box<dyn Future<Output = Option<Vec<crate::store::RecordedEvent>>> + Send>>;
+/// One page of a catch-up: the events after the position the hook was given,
+/// in order and without a gap.
+#[derive(Debug)]
+pub struct CatchUpPage {
+    /// The events, at most `subscribe_replay_limit` of them.
+    pub(crate) events: Vec<crate::store::RecordedEvent>,
+    /// The page stopped at the limit, and the log holds more after its last
+    /// event: the reader asks again from there before it goes on. Never set
+    /// on an empty page, so every page moves the reader forward.
+    pub(crate) more: bool,
+    /// The page reaches the writer's position as it was when the hook was
+    /// called. A page neither complete nor `more` is one the log had not
+    /// caught up with in time.
+    pub(crate) complete: bool,
+}
+
+impl CatchUpPage {
+    /// The position the page reaches, after a read from `after`.
+    fn reached(&self, after: u64) -> u64 {
+        self.events.last().map_or(after, |e| e.seq)
+    }
+
+    /// Whether to ask the log again after this page, read from `after`, when
+    /// the caller still needs positions past it: the page stopped at the
+    /// limit, or it moved forward, so the log may hold the rest by the next
+    /// read. A read that moved nowhere is not asked again, so a log that
+    /// never catches up ends the replay rather than looping. (A complete page
+    /// reaches the writer's position, past anything a caller still needs, so
+    /// no caller asks this of one.)
+    pub(super) fn goes_on(&self, after: u64) -> bool {
+        self.more || self.reached(after) > after
+    }
+}
+
+/// A whole replay in one page, as the tests' hooks build one.
+#[cfg(test)]
+impl FromIterator<crate::store::RecordedEvent> for CatchUpPage {
+    fn from_iter<I: IntoIterator<Item = crate::store::RecordedEvent>>(events: I) -> Self {
+        Self {
+            events: events.into_iter().collect(),
+            more: false,
+            complete: true,
+        }
+    }
+}
+
+/// What a catch-up hook answers: a page of the events after the position it
+/// was given, up to the writer's position when it was called, or `None` when
+/// the log cannot supply them without a gap.
+pub type CatchUpFuture = Pin<Box<dyn Future<Output = Option<CatchUpPage>> + Send>>;
 
 /// Called with the last position a lagging reader delivered, to read what it
 /// missed from the task's event log. See [`InMemoryQueueReader::with_catch_up`].
 pub type CatchUpFn = Arc<dyn Fn(u64) -> CatchUpFuture + Send + Sync>;
+
+/// What a final-snapshot hook answers: the task as it stands once the stream's
+/// terminal event is stored, or `None` to send no snapshot.
+pub type FinalSnapshotFuture = Pin<Box<dyn Future<Output = Option<StreamResponse>> + Send>>;
+
+/// Called once a stream has delivered its terminal state, with the last
+/// position it delivered. See [`InMemoryQueueReader::with_final_snapshot`].
+pub type FinalSnapshotFn = Arc<dyn Fn(u64) -> FinalSnapshotFuture + Send + Sync>;
 
 /// Whether a stream frame reports a terminal task state.
 pub const fn carries_terminal_state(event: &StreamResponse) -> bool {
@@ -941,6 +1005,36 @@ impl InMemoryQueueReader {
         self
     }
 
+    /// Attaches a hook whose answer the stream sends, once, after its
+    /// terminal state and before it closes (spec §11.7: an implementation
+    /// "MAY optionally resend a final `Task` snapshot before closing"). A
+    /// hook that answers `None` sends nothing. Without one, the default, the
+    /// stream closes right after the terminal state.
+    pub(crate) fn with_final_snapshot(mut self, hook: Option<FinalSnapshotFn>) -> Self {
+        self.final_snapshot = hook;
+        self
+    }
+
+    /// The final-snapshot hook's answer; `None` without a hook. Asked once:
+    /// the stream is finished as soon as it answers. Cancel-safe as
+    /// [`Self::catch_up`] is.
+    async fn final_snapshot(&mut self) -> Option<StreamResponse> {
+        let hook = self.final_snapshot.as_ref()?;
+        let through = self.replayed_through;
+        let answer = {
+            let slot = self
+                .snapshotting
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            slot.get_or_insert_with(|| hook(through)).await
+        };
+        *self
+            .snapshotting
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        answer
+    }
+
     /// Marks `position` as already accounted for: the writer's position when
     /// this reader attached, or the one its numbering resumes from. A lag
     /// catch-up starts after it, so it does not replay what came before the
@@ -958,6 +1052,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            final_snapshot: None,
+            snapshotting: std::sync::Mutex::new(None),
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1006,6 +1102,26 @@ impl InMemoryQueueReader {
         }
     }
 
+    /// Queues the first page of a resume replay, the events after `after`,
+    /// and when it ends short of where the live receiver goes on, owes the
+    /// rest from the log, a page at a time.
+    ///
+    /// Without the rest, the positions between the page's end and the
+    /// receiver's start were in neither: a client resuming more than a page
+    /// behind a running task, or one whose first read the log had not caught
+    /// up with in time, lost them with no `streamLagged` (until 2026-10-15).
+    pub(crate) fn queue_resume_replay(&mut self, after: u64, page: CatchUpPage) {
+        let reached = page.reached(after);
+        let through = self.replayed_through;
+        self.queue_replay(page.events);
+        if reached < through {
+            self.owed = Some(Owed::From {
+                after: reached,
+                through,
+            });
+        }
+    }
+
     /// Creates a reader with a snapshot event that will be yielded first.
     pub(crate) fn with_first_event(
         rx: broadcast::Receiver<super::Shared>,
@@ -1018,6 +1134,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            final_snapshot: None,
+            snapshotting: std::sync::Mutex::new(None),
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1045,6 +1163,8 @@ impl InMemoryQueueReader {
             reattaching: std::sync::Mutex::new(None),
             catch_up: None,
             catching_up: std::sync::Mutex::new(None),
+            final_snapshot: None,
+            snapshotting: std::sync::Mutex::new(None),
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
@@ -1094,8 +1214,9 @@ impl EventQueueReader for InMemoryQueueReader {
             // when the executor dropped its writer, so one still running
             // after its terminal status held the stream open.
             if self.saw_terminal {
+                let last = self.final_snapshot().await;
                 self.finished = true;
-                return None;
+                return last.map(|task| Ok(StreamEvent::unpositioned(task)));
             }
             if self.provisional.is_some() {
                 let mut first = self.next_live().await;
@@ -1133,9 +1254,8 @@ impl InMemoryQueueReader {
     /// Cancel-safe the way the reattach hook is: the pending answer lives in
     /// `catching_up`, so a `read` dropped while it waits leaves it for the
     /// next `read` instead of calling the hook again.
-    async fn catch_up(&mut self) -> Option<Vec<crate::store::RecordedEvent>> {
+    async fn catch_up(&mut self, after: u64) -> Option<CatchUpPage> {
         let hook = self.catch_up.as_ref()?;
-        let after = self.replayed_through;
         let answer = {
             let slot = self
                 .catching_up
@@ -1155,54 +1275,25 @@ impl InMemoryQueueReader {
     /// cannot supply them all, or, after a task that finished, its final
     /// state. `None` when the replay holds nothing new, so reading the
     /// channel goes on.
+    ///
+    /// A page that stopped at the limit leaves the debt in place, so the
+    /// next page is read once this one is delivered, before the channel.
     async fn settle(&mut self) -> Option<A2aResult<StreamEvent>> {
-        let replay = self.catch_up().await;
+        let after = match self.owed.as_ref()? {
+            Owed::From { after, .. } => *after,
+            Owed::Lag(_) | Owed::Through { .. } => self.replayed_through,
+        };
+        let replay = self.catch_up(after).await;
         // Only once the log has answered: a `read` dropped while it waits
         // leaves the debt for the next `read`.
         match self.owed.take()? {
             Owed::Lag(dropped) => {
-                let Some(missed) = replay else {
-                    trace_warn!(
-                        dropped_events = dropped,
-                        "event queue reader lagged, {dropped} events dropped"
-                    );
-                    return Some(Err(lag_error(dropped)));
-                };
-                trace_info!(
-                    dropped_events = dropped,
-                    replayed = missed.len(),
-                    "event queue reader lagged; caught up from the event log"
-                );
-                self.queue_replay(missed);
-            }
-            Owed::Through { through, last } => {
-                if let Some(missed) = replay {
-                    self.queue_replay(missed);
-                }
-                if self.replayed_through < through {
-                    // No log, or one that could not supply them: the stream
-                    // says so after what it did supply, rather than go on
-                    // without them. Raised so a consumer that reads on past
-                    // the error is not told twice.
-                    let dropped = through - self.replayed_through;
-                    self.replayed_through = through;
-                    trace_warn!(
-                        dropped_events = dropped,
-                        "a subscription could not replay a turn's events from the event log"
-                    );
-                    self.pending.push_back(Err(lag_error(dropped)));
-                }
-                if let Some(last) = last
-                    && !self
-                        .pending
-                        .iter()
-                        .any(|e| e.as_ref().is_ok_and(|e| carries_terminal_state(&e.event)))
-                {
-                    // Built from stored state, not emitted by the agent, so
-                    // it is not in the log and carries no position.
-                    self.pending.push_back(Ok(StreamEvent::unpositioned(*last)));
+                if let Err(lag) = self.settle_lag(dropped, replay) {
+                    return Some(Err(lag));
                 }
             }
+            Owed::From { after, through } => self.settle_from(after, through, replay),
+            Owed::Through { through, last } => self.settle_through(after, through, last, replay),
         }
         self.just_caught_up = true;
         let next = self.pending.pop_front()?;
@@ -1210,6 +1301,117 @@ impl InMemoryQueueReader {
             self.saw_terminal |= carries_terminal_state(&ev.event);
         }
         Some(next)
+    }
+
+    /// A lag's page: queued when it is complete or stopped at the limit (the
+    /// next page is owed then); otherwise the lag error. The live channel
+    /// goes on right after a lag, so a page the log had not caught up with
+    /// would leave a gap there.
+    fn settle_lag(
+        &mut self,
+        dropped: u64,
+        replay: Option<CatchUpPage>,
+    ) -> Result<(), a2a_protocol_types::error::A2aError> {
+        let Some(page) = replay.filter(|page| page.complete || page.more) else {
+            trace_warn!(
+                dropped_events = dropped,
+                "event queue reader lagged, {dropped} events dropped"
+            );
+            // Reported here; the next live event is not a second gap.
+            self.just_caught_up = false;
+            return Err(lag_error(dropped));
+        };
+        trace_info!(
+            dropped_events = dropped,
+            replayed = page.events.len(),
+            more = page.more,
+            "event queue reader lagged; caught up from the event log"
+        );
+        let more = page.more;
+        self.queue_replay(page.events);
+        if more {
+            self.owed = Some(Owed::Lag(dropped));
+        }
+        Ok(())
+    }
+
+    /// A resume's page: queued, and the rest owed while the log goes on;
+    /// what it cannot supply is reported after what it did.
+    fn settle_from(&mut self, after: u64, through: u64, replay: Option<CatchUpPage>) {
+        let (reached, goes_on) = match replay {
+            Some(page) => {
+                let (reached, goes_on) = (page.reached(after), page.goes_on(after));
+                self.queue_replay(page.events);
+                (reached, goes_on)
+            }
+            None => (after, false),
+        };
+        if reached >= through {
+            return;
+        }
+        if goes_on {
+            self.owed = Some(Owed::From {
+                after: reached,
+                through,
+            });
+        } else {
+            let dropped = through - reached;
+            trace_warn!(
+                dropped_events = dropped,
+                "a resume replay could not read the rest of the event log"
+            );
+            self.pending.push_back(Err(lag_error(dropped)));
+        }
+    }
+
+    /// A turn's page, read from `after`: queued, and the rest owed while the
+    /// log goes on; then what it could not supply is reported and the final
+    /// state, if any, follows the last page.
+    fn settle_through(
+        &mut self,
+        after: u64,
+        through: u64,
+        last: Option<Box<StreamResponse>>,
+        replay: Option<CatchUpPage>,
+    ) {
+        let goes_on = replay.as_ref().is_some_and(|page| page.goes_on(after));
+        if let Some(page) = replay {
+            self.queue_replay(page.events);
+        }
+        if goes_on && self.replayed_through < through {
+            self.owed = Some(Owed::Through { through, last });
+        } else {
+            self.close_through(through, last);
+        }
+    }
+
+    /// Ends a replay owed through `through`: reports what the log could not
+    /// supply, and queues the task's final state when it finished and the
+    /// replay does not carry one.
+    fn close_through(&mut self, through: u64, last: Option<Box<StreamResponse>>) {
+        if self.replayed_through < through {
+            // No log, or one that could not supply them: the stream says so
+            // after what it did supply, rather than go on without them.
+            // Raised so a consumer that reads on past the error is not told
+            // twice.
+            let dropped = through - self.replayed_through;
+            self.replayed_through = through;
+            trace_warn!(
+                dropped_events = dropped,
+                "a subscription could not replay a turn's events from the event log"
+            );
+            self.pending.push_back(Err(lag_error(dropped)));
+        }
+        if let Some(last) = last
+            && !self
+                .pending
+                .iter()
+                .any(|e| e.as_ref().is_ok_and(|e| carries_terminal_state(&e.event)))
+        {
+            // Built from stored state, not emitted by the agent, so it is not
+            // in the log and carries no position.
+            self.pending.push_back(Ok(StreamEvent::unpositioned(*last)));
+        }
     }
 
     /// Records that live position `seq` is being delivered. Right after a
@@ -2413,10 +2615,13 @@ mod tests {
         // The log's one event after position 2 is the terminal one.
         let hook: CatchUpFn = Arc::new(|after| {
             Box::pin(async move {
-                Some(vec![RecordedEvent {
-                    seq: after + 1,
-                    event: make_status_event("t-term", TaskState::Completed),
-                }])
+                Some(
+                    std::iter::once(RecordedEvent {
+                        seq: after + 1,
+                        event: make_status_event("t-term", TaskState::Completed),
+                    })
+                    .collect(),
+                )
             })
         });
         let mut reader = reader

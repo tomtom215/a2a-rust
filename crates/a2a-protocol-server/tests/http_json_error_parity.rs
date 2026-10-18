@@ -108,9 +108,9 @@ async fn rest_and_axum_answer_the_same_failures_identically() {
 }
 
 /// Both dispatchers answer an operation, success or error, with the same
-/// headers: `application/json` to a client that does not ask for
-/// `application/a2a+json` (see `dispatch::rest::media_type` for why the
-/// default is not §11.1's `application/a2a+json`) and `A2A-Version`. Before
+/// headers: `application/a2a+json` to a client that states no preference
+/// (§11.1; `dispatch::rest::media_type` has the whole rule) and
+/// `A2A-Version`. Before
 /// 2026-09-25 the axum adapter's successes went out through `axum::Json`,
 /// with no version.
 #[tokio::test]
@@ -149,7 +149,11 @@ async fn rest_and_axum_answer_operations_with_the_same_headers() {
         assert_eq!(r.0, status, "GET {path}");
         assert_eq!(
             r,
-            (status, Some("application/json".into()), Some("1.0".into())),
+            (
+                status,
+                Some("application/a2a+json".into()),
+                Some("1.0".into())
+            ),
             "GET {path}: RestDispatcher"
         );
         assert_eq!(
@@ -226,7 +230,7 @@ async fn rest_and_axum_negotiate_the_response_media_type() {
         u16,
         &'static str,
     );
-    let cases: [Case; 7] = [
+    let cases: [Case; 9] = [
         // ACTS REST-CT-001's request: an A2A body, a wildcard Accept.
         (
             "POST",
@@ -252,8 +256,29 @@ async fn rest_and_axum_negotiate_the_response_media_type() {
         ("GET", "/tasks/nope", "", None, Some(A2A), 404, A2A),
         // A body that is not JSON, sent as A2A: the 400 is A2A too.
         ("POST", "/message:send", "{", Some(A2A), None, 400, A2A),
-        // No preference stated anywhere: application/json.
-        ("GET", "/tasks", "", None, None, 200, JSON),
+        // No preference stated anywhere: §11.1's type (2026-10-15).
+        ("GET", "/tasks", "", None, None, 200, A2A),
+        // a2a-go v2.6.0's streaming requests ask for an event stream only, and
+        // read an error only under application/json: `SendStreamingMessage`
+        // with a JSON body, `SubscribeToTask` with none.
+        (
+            "POST",
+            "/message:stream",
+            "{",
+            Some(JSON),
+            Some("text/event-stream"),
+            400,
+            JSON,
+        ),
+        (
+            "POST",
+            "/tasks/nope:subscribe",
+            "",
+            None,
+            Some("text/event-stream"),
+            404,
+            JSON,
+        ),
         // The card is not an operation payload and is never relabelled.
         (
             "GET",

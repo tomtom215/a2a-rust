@@ -147,7 +147,8 @@ hold. Nothing runs on a timer, as with the task store's retention (ADR 0011).
   no actor; the `call` record that follows does.
 - **Personal data.** The actor's subject is personal data in most
   deployments, and a digest of short, guessable text can be reversed by
-  guessing. The records are pseudonymised, not anonymised.
+  guessing. The records are pseudonymised, not anonymised. The 2026-10-16
+  amendment below protects both, opt-in.
 
 ## Verification
 
@@ -167,3 +168,83 @@ hold. Nothing runs on a timer, as with the task store's retention (ADR 0011).
   event pointing at that run, the message text absent from the chain, the
   export verifying offline, a cancel naming who asked, required mode
   refusing when the store is down, and one chain per tenant.
+
+## Amendment, 2026-10-16: who and what, protected; a person erased
+
+**Why.** The decision above leaves two things readable to anyone who can
+read the audit store: who made each call (`actor.subject`, personal data in
+most deployments), and, by guessing, what a short message said (an unsalted
+SHA-256 digest confirms a guess). And it gives no way to erase one person:
+deleting a record from the middle of a chain breaks it. The control map
+recorded all three as gaps (GDPR-25-1, GDPR-32-1a, GDPR-5-1e). The
+maintainer approved closing them on 2026-10-16, crypto-shredding included.
+
+**Decision.** `AuditLog::with_privacy(AuditPrivacy)` (features `audit` and
+`encryption`) changes each record inside `append`, before it is hashed:
+
+- `actor.subject` and `detail.requestedBy` are sealed under the named
+  person's own key, and `detail.reason` under the actor's: the string
+  `a2a-sealed:v1:<sid>:<base64>`, AES-256-GCM under a key derived for that
+  value alone (HKDF-SHA-256 from the person's key), with
+  `["a2a-audit-sealed/v1", chain, sid, field, seq]` as HKDF `info` and as
+  associated data. A key per value means the SP 800-38D random-nonce budget
+  is never shared across a person's values.
+- Every digest becomes `hmac-sha256:<kid>:<hex>`, HMAC-SHA-256 under an
+  operator key over `["a2a-audit-digest/v1", chain, seq, name, sha256]`.
+  Bound to `seq`, so the same content in two records carries two tags: a
+  reader of the store cannot confirm a guess even by sending the guessed
+  content themselves and comparing.
+- A person's key is 32 random bytes, kept by the audit store wrapped by an
+  operator key-encryption key (bound to the key's row, lookup included),
+  found by an HMAC of the person, and named in records only by a random
+  `sid`.
+- `AuditLog::erase_subject(chain, subject, by)` deletes it. Under the
+  chain's lock, refused while a legal hold is on the chain (GDPR
+  Art. 17(3)(e)), it first writes `subject.erased` (naming the `sid`s and,
+  sealed, `by`), then deletes, so a failure part way is retried rather than
+  lost. It reports each record that names the person unsealed, written
+  before protection was on, which it cannot reach.
+- Retention deletes, under each chain's lock, the subject keys no remaining
+  record names.
+
+The chain's hashes are taken over the protected values, so `verify_chain`
+needs no key, before or after an erasure. `AuditLog::reveal` opens a record
+and `AuditLog::digest_matches` checks content against it, for whoever holds
+the keys.
+
+**The schema stays `a2a-audit/1`.** A protected value is a self-describing
+string in a field the schema already has. A new schema string would make
+every verifier built before this amendment refuse every protected record as
+an unknown schema; this way an export still verifies with any verifier of
+this ADR, which sees opaque strings.
+
+**Alternatives considered.** A keyed hash of the subject in place of
+encryption: an auditor could then only test a named candidate, not ask who
+acted, which is what the logs of Articles 12 and 26(6) are for. Deriving
+each person's key from one master key: no single person could be erased
+without destroying the master. Encrypting whole records: the chain could
+then be verified only with the key, and an auditor's offline check needs
+none.
+
+**Cost, measured.** Release build with LTO off (`CARGO_PROFILE_RELEASE_LTO=off`,
+16 codegen units; the disk could not hold the LTO build), 4-vCPU Intel Xeon
+@ 2.10 GHz, sequential appends to one chain over 50 people, medians of five
+runs (`audit::privacy::tests::cost`, ignored by default): in-memory store
+17.6 µs plain against 47.2 µs protected (ranges 17.5–23.3 and 39.7–51.7);
+SQLite file store 296 µs against 521 µs (ranges 276–339 and 477–571).
+Protection adds a key lookup and up to three seals per record.
+
+**What it does not do.** It does not unlink: an erased person's records keep
+their common `sid`, one pseudonymous activity whose times, methods and ids
+other data can tie back to them. It does not reach copies of a key outside
+the live table (a database's write-ahead log or free pages until
+overwritten, PostgreSQL's dead tuples until `VACUUM`, replicas, backups);
+the SQLite store overwrites the freed page and truncates its log unless a
+reader holds it, and warns when one does. The key-encryption key unwraps
+any such copy. It finds a person's key only under an HMAC key still in the
+ring. Across replicas, an erasure, a legal hold and an append are not
+serialised. Records keep trace ids, task and message ids, times and states
+in clear. An independent review on 2026-10-16 found the first version's
+digests deterministic, its erasure lost on a failure part way, its keys
+never purged, its key rows exchangeable and its claims of unlinking
+overstated; each is fixed above or stated here.
