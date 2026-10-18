@@ -29,8 +29,8 @@ mod config;
 mod records;
 
 pub use config::{
-    DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE,
-    TaskStoreConfig,
+    DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_IDEMPOTENCY_KEYS,
+    DEFAULT_MAX_PAGE_SIZE, TaskStoreConfig,
 };
 pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 

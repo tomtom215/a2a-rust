@@ -63,6 +63,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
 | `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound |
 | `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
+| `max_idempotency_keys` | `Option<usize>` | 100,000 | How many keys the index holds at once (per store, so per tenant partition); a send with a new key past it is refused with `503` / `RESOURCE_EXHAUSTED` and runs nothing, and no held key is evicted; `None` is no limit |
 
 ### InMemoryPushConfigStore
 

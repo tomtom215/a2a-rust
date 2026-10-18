@@ -1603,6 +1603,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The in-memory idempotency index is bounded by count, not only by age**
+  (server; release audit F8). Its 24-hour TTL let a client add one key per
+  send for a day. `TaskStoreConfig::max_idempotency_keys` (default 100,000,
+  about 230 MB at worst with the default id limit) caps it. A new key past
+  the cap first expires old keys, then is refused with `503` /
+  `RESOURCE_EXHAUSTED`, and the send runs nothing. A held key still replays,
+  and no key is ever evicted to make room. The end-to-end test found that
+  the send path rewrote any temporary store refusal at the claim to
+  `INTERNAL`, which tells a client not to retry. The claim is the send's
+  first side effect, so such a refusal is now `Overloaded`.
+
 - **docs.rs shows which feature each item needs** (all four crates; release
   audit F27). Each manifest asked docs.rs for `--cfg docsrs`, and nothing
   used it. Each `lib.rs` now enables `doc_cfg` under it, so every

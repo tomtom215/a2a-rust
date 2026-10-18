@@ -517,6 +517,15 @@ fn budget_exhausted() -> a2a_protocol_types::error::A2aError {
     )
 }
 
+/// The refusal of a new idempotency key when the index is at
+/// [`TaskStoreConfig::max_idempotency_keys`] after expiring what it could:
+/// temporary, so HTTP `503` and gRPC `UNAVAILABLE`, and nothing runs.
+fn idempotency_index_full() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::unavailable(
+        "idempotency index full: no new idempotency key can be accepted until held keys expire",
+    )
+}
+
 /// Current wall-clock time in Unix milliseconds — the order-key fallback for
 /// tasks whose status carries no parseable timestamp.
 #[allow(clippy::cast_possible_truncation)]
@@ -779,6 +788,9 @@ impl TaskStore for InMemoryTaskStore {
                     held_by: held_by.clone(),
                 },
                 None => {
+                    if !self.room_for_a_key(&mut data) {
+                        return Err(idempotency_index_full());
+                    }
                     // The claim time is the insert's, and a replay does not
                     // refresh it: the window a key guards runs from the send
                     // it was first presented with, so a client retrying on a
@@ -1464,6 +1476,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         });
         store
             .save(&make_task("expired", TaskState::Completed))
@@ -2162,6 +2175,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2201,6 +2215,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2237,6 +2252,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         });
 
         for i in 0..4 {
@@ -2267,6 +2283,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2314,6 +2331,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2356,6 +2374,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2781,6 +2800,7 @@ mod artifact_delta_tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         });
 
         let mut expired = task_with("expired", None);

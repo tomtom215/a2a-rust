@@ -32,6 +32,8 @@ mod expiry_tests;
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
+mod key_cap_tests;
+#[cfg(test)]
 mod key_expiry_tests;
 
 use std::time::{Duration, Instant};
@@ -254,6 +256,27 @@ impl InMemoryTaskStore {
     /// indistinguishable and left `replace < with <=` surviving the
     /// incremental mutation gate on this pull request (shard 7 of run
     /// 35523981742). The one caller passes `Instant::now()`.
+    /// Whether a new idempotency key fits under
+    /// [`TaskStoreConfig::max_idempotency_keys`](crate::store::TaskStoreConfig::max_idempotency_keys),
+    /// expiring keys past their TTL first when the index is full. Never
+    /// evicts a live key: that would let the send it guards run twice
+    /// (release audit F8).
+    pub(in crate::store::task_store::in_memory) fn room_for_a_key(
+        &self,
+        store: &mut StoreData,
+    ) -> bool {
+        let Some(max) = self.config.max_idempotency_keys else {
+            return true;
+        };
+        if store.idempotency_index.len() < max {
+            return true;
+        }
+        if let Some(ttl) = self.config.idempotency_key_ttl {
+            Self::expire_idempotency_keys(store, ttl, Instant::now());
+        }
+        store.idempotency_index.len() < max
+    }
+
     fn expire_idempotency_keys(store: &mut StoreData, ttl: Duration, now: Instant) {
         store
             .idempotency_index
