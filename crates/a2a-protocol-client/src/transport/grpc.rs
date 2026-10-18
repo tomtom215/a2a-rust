@@ -210,7 +210,7 @@ pub(crate) fn normalize_endpoint(
         GrpcBareAddressScheme::Http => "http",
         GrpcBareAddressScheme::Https => "https",
         GrpcBareAddressScheme::HttpsExceptLoopback => {
-            if is_loopback_host(authority.host()) {
+            if crate::loopback::is_loopback_host(authority.host()) {
                 "http"
             } else {
                 "https"
@@ -218,19 +218,6 @@ pub(crate) fn normalize_endpoint(
         }
     };
     Ok(format!("{scheme}://{authority}"))
-}
-
-/// `localhost`, any `127.0.0.0/8` address, or `::1` (bracketed or not).
-fn is_loopback_host(host: &str) -> bool {
-    if host.eq_ignore_ascii_case("localhost") {
-        return true;
-    }
-    let bare = host
-        .strip_prefix('[')
-        .and_then(|h| h.strip_suffix(']'))
-        .unwrap_or(host);
-    bare.parse::<std::net::IpAddr>()
-        .is_ok_and(|ip| ip.is_loopback())
 }
 
 // ── GrpcTransport ───────────────────────────────────────────────────────────

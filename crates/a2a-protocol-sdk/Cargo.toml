@@ -21,10 +21,12 @@ categories             = ["network-programming", "web-programming", "api-binding
 ## HTTPS is on by default: the A2A spec serves agents over HTTPS, so both the
 ## client (reaching agents) and the bundled push sender (delivering webhooks)
 ## must speak TLS out of the box. `tracing` is on by default too, so a default
-## build logs through the application's subscriber. Opt out of both with
+## build logs through the application's subscriber. `webhook` (the client's
+## push-notification receiver) costs nothing `tls-rustls` does not already
+## link. Opt out of all three with
 ## `default-features = false`: the three crates below are taken without their
 ## own defaults, so this list is the only one in force.
-default = ["tls-rustls", "tracing"]
+default = ["tls-rustls", "tracing", "webhook"]
 ## Make `a2a_protocol_types::signing` available across the three crates.
 ##
 ## Signing and verification are primitives you call, not behaviour the server or
@@ -36,6 +38,9 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 ## Enable HTTPS support via rustls, for both the client and the bundled
 ## server-side push notification sender.
 tls-rustls = ["a2a-protocol-client/tls-rustls", "a2a-protocol-server/tls-rustls"]
+## The client's webhook receiver (`client::webhook::WebhookReceiver`), for
+## an application that takes push notifications (on by default).
+webhook = ["a2a-protocol-client/webhook"]
 ## Enable gRPC transport via tonic.
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 ## gRPC over TLS on both sides: the client dials `https://` (see the client
@@ -86,6 +91,11 @@ tonic        = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }
 rcgen        = "0.14"
 rustls       = { version = ">=0.23.46, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
+# `webhook_receiver_e2e.rs`: the webhook the bundled push sender delivers
+# to. All three are already in the graph through the client and server.
+hyper          = { workspace = true }
+hyper-util     = { workspace = true, features = ["server"] }
+http-body-util = { workspace = true }
 # `observability_e2e.rs` (ADR 0013's gate): spans reach an in-memory exporter
 # through `tracing-opentelemetry` 0.34, the release built on the workspace's
 # opentelemetry 0.33 (crates.io index: `opentelemetry = "^0.33.0"`), and

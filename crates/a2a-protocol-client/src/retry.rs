@@ -178,7 +178,8 @@ impl ClientError {
             | Self::AuthRequired { .. }
             | Self::CapabilityNotDeclared { .. }
             | Self::ProtocolBindingMismatch(_)
-            | Self::InvalidAuthScheme(_) => false,
+            | Self::InvalidAuthScheme(_)
+            | Self::InsecureWebhook(_) => false,
         }
     }
 }

@@ -50,18 +50,20 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
 impl A2aClient {
     /// A send carrying an inline push-notification config needs the push
     /// capability as much as `CreateTaskPushNotificationConfig` does; a
-    /// conformant agent refuses it with the same error (spec §3.3.4).
+    /// conformant agent refuses it with the same error (spec §3.3.4). Its
+    /// webhook URL gets the same §13.2 check `set_push_config` applies.
     fn require_inline_push_declared(
         &self,
         params: &MessageSendParams,
         method: &str,
     ) -> ClientResult<()> {
-        if params
+        if let Some(push) = params
             .configuration
             .as_ref()
-            .is_some_and(|c| c.task_push_notification_config.is_some())
+            .and_then(|c| c.task_push_notification_config.as_ref())
         {
             self.require_declared(crate::declared::Capability::PushNotifications, method)?;
+            self.check_webhook_url(&push.url)?;
         }
         Ok(())
     }

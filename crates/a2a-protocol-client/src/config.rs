@@ -256,6 +256,17 @@ pub struct ClientConfig {
     /// writes — for a client calling agents that should not learn its trace
     /// ids.
     pub propagate_trace: bool,
+
+    /// Whether a push-notification config whose webhook URL is `http://` to
+    /// a host other than loopback is refused before it is sent (default: no).
+    ///
+    /// Spec §13.2: webhook URLs SHOULD use HTTPS, since the payload, the
+    /// notification token and any credentials travel with it. Off, such a
+    /// config is sent and a warning logged; on, `set_push_config`, and a send
+    /// carrying the config inline, fail with
+    /// [`ClientError::InsecureWebhook`](crate::ClientError::InsecureWebhook).
+    /// `http://` to `localhost`, `127.0.0.0/8` or `::1` is allowed either way.
+    pub require_https_webhooks: bool,
 }
 
 impl ClientConfig {
@@ -263,6 +274,13 @@ impl ClientConfig {
     #[must_use]
     pub const fn with_trace_propagation(mut self, on: bool) -> Self {
         self.propagate_trace = on;
+        self
+    }
+
+    /// Sets [`require_https_webhooks`](Self::require_https_webhooks).
+    #[must_use]
+    pub const fn with_require_https_webhooks(mut self, on: bool) -> Self {
+        self.require_https_webhooks = on;
         self
     }
 
@@ -287,6 +305,7 @@ impl ClientConfig {
             tls: TlsConfig::Disabled,
             tenant: None,
             propagate_trace: true,
+            require_https_webhooks: false,
         }
     }
 }
@@ -310,6 +329,7 @@ impl Default for ClientConfig {
             tls: TlsConfig::default(),
             tenant: None,
             propagate_trace: true,
+            require_https_webhooks: false,
         }
     }
 }

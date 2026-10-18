@@ -85,6 +85,7 @@ enable them:
 | `encryption` | server | Encryption at rest for task content (`EncryptedTaskStore`): every part sealed with AES-256-GCM via `ring`, or a cipher of your own |
 | `conformance` | server | Harness that grades an `AgentExecutor` against the protocol invariants that hold for any agent — terminal states, legal transitions, cooperative cancellation, parking. Intended as a dev-dependency; pulls in no extra dependencies |
 | `testing` | client | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents; not for production builds |
+| `webhook` | client | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2); on by default |
 
 ## Design Decisions
 

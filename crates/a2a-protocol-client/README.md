@@ -72,6 +72,7 @@ All 11 A2A v1.0 methods are methods of `A2aClient`:
 | `grpc` | No | gRPC transport via tonic (plaintext) |
 | `grpc-tls` | No | gRPC over TLS (implies `grpc`; independent of `tls-rustls`); bundled roots or a pinned `ClientTlsConfig`, re-exported from `transport::grpc` |
 | `testing` | No | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
+| `webhook` | Yes | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2) |
 
 ## Agent Discovery
 

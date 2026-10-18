@@ -238,6 +238,7 @@ and the `with_*` setters.
 | `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
 | `grpc-tls` | Off | gRPC over TLS: implies `grpc` (not `tls-rustls`), verifies against the bundled Mozilla roots or a supplied `ClientTlsConfig` (re-exported from `transport::grpc`) |
 | `testing` | Off | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
+| `webhook` | **On** | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2) |
 
 ### `a2a-protocol-types`
 
@@ -264,6 +265,7 @@ and the `with_*` setters.
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
 | `encryption` | Off | Enables `encryption` in the server |
 | `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |
+| `webhook` | **On** | Enables `webhook` in the client |
 
 ## Environment Variables
 

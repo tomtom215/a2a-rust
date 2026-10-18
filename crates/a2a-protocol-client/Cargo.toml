@@ -21,10 +21,11 @@ categories             = ["network-programming", "web-programming"]
 ## HTTPS is on by default: the A2A spec serves agents over HTTPS, so the client
 ## must reach them out of the box. `tracing` is on by default too: several
 ## failure paths — a trace header the WebSocket binding cannot carry, a refused
-## stream event — report only through it. Opt out of both with
+## stream event — report only through it. `webhook` adds only `ring`, which
+## `tls-rustls` already links. Opt out of all three with
 ## `default-features = false` for a plaintext-HTTP-only build with no rustls
-## dependency and no logging.
-default = ["tls-rustls", "tracing"]
+## or ring dependency and no logging.
+default = ["tls-rustls", "tracing", "webhook"]
 ## Enable HTTPS support via rustls (no OpenSSL system dependency), and
 ## `wss://` for the `websocket` transport. tokio-tungstenite's `__rustls-tls`
 ## is the feature that compiles its rustls connector in without a root store
@@ -61,6 +62,12 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## against the same bundled Mozilla roots (`webpki-roots`, via ring) the
 ## HTTP transports use, or a `ClientTlsConfig` you supply for a private CA.
 grpc-tls = ["grpc", "tonic?/tls-ring", "tonic?/tls-webpki-roots"]
+## `webhook::WebhookReceiver`: the receiving side of push notifications
+## (spec §4.3.3, §13.2) — token and `Authorization` checks, task-id check,
+## duplicate suppression and an optional rate limit, framework-agnostic over
+## `http::HeaderMap` and the body bytes. Needs `ring` for SHA-256, which the
+## default `tls-rustls` build already links; on by default.
+webhook = ["dep:ring"]
 ## `testing::ScriptedPeer`: a loopback A2A peer that stalls, cuts off,
 ## mis-frames or refuses every call on purpose, on each binding this build
 ## speaks, for testing code that calls agents. Adds no dependencies; not for
@@ -86,6 +93,9 @@ hyper-util     = { workspace = true }
 httpdate       = ">=1.0.3, <2"
 tokio          = { workspace = true }
 uuid           = { workspace = true }
+# SHA-256 for the webhook receiver's token index and duplicate cache. The same
+# `ring` rustls links in the default build; no new crate.
+ring           = { version = "0.17.12", optional = true }
 tracing        = { workspace = true, optional = true }
 opentelemetry  = { version = "0.33", optional = true, default-features = false, features = ["trace"] }
 tracing-opentelemetry = { version = ">=0.34, <0.35", optional = true, default-features = false }

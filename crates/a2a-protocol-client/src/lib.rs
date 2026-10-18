@@ -123,6 +123,7 @@ mod call_span;
 mod declared;
 mod extensions;
 mod legacy_card;
+mod loopback;
 mod redact;
 
 pub mod auth;
@@ -144,6 +145,8 @@ pub mod token_provider;
 pub mod trace_propagation;
 pub mod transport;
 pub mod version_query;
+#[cfg(feature = "webhook")]
+pub mod webhook;
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -172,3 +175,5 @@ pub use transport::GrpcTransport;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};
 #[cfg(feature = "websocket")]
 pub use transport::{WebSocketTransport, WebSocketTransportConfig};
+#[cfg(feature = "webhook")]
+pub use webhook::{WebhookOutcome, WebhookReceiver, WebhookRejection};

@@ -506,6 +506,17 @@ impl ClientBuilder {
         self
     }
 
+    /// Refuses a push-notification config whose webhook URL is `http://`
+    /// to a host other than loopback, before sending it (spec §13.2).
+    ///
+    /// Without this such a config is sent and a warning is logged. See
+    /// [`ClientConfig::require_https_webhooks`].
+    #[must_use]
+    pub const fn require_https_webhooks(mut self) -> Self {
+        self.config.require_https_webhooks = true;
+        self
+    }
+
     /// Sends every call, whatever the agent card declares.
     ///
     /// A client built from a card refuses, before sending anything, a call

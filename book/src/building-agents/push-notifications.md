@@ -95,6 +95,13 @@ println!("Config ID: {:?}", saved.id);
 # }
 ```
 
+Spec §13.2 says webhook URLs SHOULD use HTTPS: the payload, the token and any
+credentials travel with the request. `set_push_config` (and a send carrying a
+push config inline) logs a warning for an `http://` URL to a host other than
+loopback; build the client with `ClientBuilder::require_https_webhooks()` to
+refuse such a config with `ClientError::InsecureWebhook` before anything is
+sent. `http://localhost`, `127.0.0.0/8` and `[::1]` are allowed either way.
+
 ### Managing Push Configs
 
 ```rust,no_run
@@ -165,6 +172,57 @@ Accept `application/json` as well as `application/a2a+json`, because a2a-go
 and a2a-sdk agents send the former. Log lines from the sender name the webhook
 by `scheme://host[:port]` only, because webhook URLs often carry a secret in
 their path or query.
+
+### With `WebhookReceiver`
+
+The client crate's `webhook::WebhookReceiver` (feature `webhook`, on by
+default) does the receiving side's checks from spec §4.3.3 and §13.2. Give
+every config its own token from `new_notification_token()`, register the
+config the agent stored, and pass each request's headers and body to
+`receive`; answer with the outcome's `status()`.
+
+```rust
+use a2a_protocol_sdk::client::webhook::{new_notification_token, WebhookOutcome, WebhookReceiver};
+use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let receiver = WebhookReceiver::new() // duplicate detection on: 10 000 bodies, 1 hour
+    .with_rate_limit(10, 20);          // per config: 10/s, bursts of 20 (off by default)
+
+let mut config = TaskPushNotificationConfig::new("task-abc", "https://my-service.com/webhook");
+config.token = Some(new_notification_token());
+// ... `let config = client.set_push_config(config).await?;` ...
+receiver.register(&config)?;
+
+# fn handle(_: a2a_protocol_sdk::types::StreamResponse) {}
+# let (headers, body) = (hyper::HeaderMap::new(), Vec::<u8>::new());
+// In the webhook's HTTP handler:
+let outcome = receiver.receive(&headers, &body);
+let status = outcome.status(); // answer the agent with this
+if let WebhookOutcome::Accepted { event, .. } = outcome {
+    handle(*event); // a `Duplicate` is a retry already handled: just answer 200
+}
+# assert_eq!(status, 401);
+# Ok(())
+# }
+```
+
+| Check, in order | Refused with |
+|---|---|
+| The token (either header) belongs to a registered config — looked up by SHA-256, compared in constant time | 401 |
+| If the config has `authentication`, `Authorization` is its scheme (any case) and credentials (constant time) | 401 |
+| The config's rate limit, if one is set, is not spent | 429 |
+| The body parses as a `StreamResponse` | 400 |
+| The event's task is the config's task (a message with no task fails) | 403 |
+| The same body for the same config, already accepted, is `Duplicate` | — (200) |
+
+`register` refuses a config with no token, a token another config already
+uses (§13.2: unique, single-purpose tokens), no task ID, or `authentication`
+without `credentials`. A duplicate is the same *bytes* again: `HttpPushSender`
+re-sends the body it serialized once, so its retries are caught. An event is
+recorded as seen when `receive` returns `Accepted`; if your handler can fail
+after that and you want the agent to retry, build the receiver
+`without_dedup()` and deduplicate in your own store.
 
 ## Custom PushSender
 

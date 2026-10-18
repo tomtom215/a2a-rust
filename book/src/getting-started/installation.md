@@ -71,6 +71,7 @@ and no logging.
 | `grpc` | gRPC transport via `tonic` (plaintext) |
 | `grpc-tls` | gRPC over TLS — `grpc` + tonic's rustls connector (independent of `tls-rustls`); needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
 | `testing` | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
+| `webhook` | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2); on by default |
 
 ### `a2a-protocol-server`
 
@@ -108,6 +109,7 @@ and no logging.
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
 | `encryption` | Enables encryption at rest for task content in the server |
 | `audit` | Enables the audit trail in the server and its record types in `a2a-protocol-types` |
+| `webhook` | Enables the webhook receiver in the client (on by default) |
 
 Enable features in your `Cargo.toml`:
 

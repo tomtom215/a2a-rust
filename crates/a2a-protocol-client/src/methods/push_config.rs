@@ -17,7 +17,44 @@ use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::interceptor::{ClientRequest, ClientResponse};
 
+/// Names a webhook URL as `scheme://host[:port]`, for an error or a log
+/// line: webhook URLs often carry a secret in their path, query or userinfo.
+///
+/// Mirrors the server crate's `push::webhook::origin_for_log`, which is
+/// crate-private there.
+fn origin_for_log(url: &str) -> String {
+    let Ok(uri) = url.parse::<hyper::Uri>() else {
+        return "<unparseable webhook url>".to_owned();
+    };
+    match (uri.scheme_str(), uri.host()) {
+        (Some(scheme), Some(host)) => uri.port_u16().map_or_else(
+            || format!("{scheme}://{host}"),
+            |port| format!("{scheme}://{host}:{port}"),
+        ),
+        _ => "<webhook url without scheme or host>".to_owned(),
+    }
+}
+
 impl A2aClient {
+    /// Applies spec §13.2's "webhook URLs SHOULD use HTTPS" to a config about
+    /// to be sent: `http://` to a host other than loopback is refused when
+    /// the client requires https webhooks, and logged otherwise.
+    pub(crate) fn check_webhook_url(&self, url: &str) -> ClientResult<()> {
+        if !crate::loopback::is_plaintext_to_remote(url) {
+            return Ok(());
+        }
+        let origin = origin_for_log(url);
+        if self.config.require_https_webhooks {
+            return Err(ClientError::InsecureWebhook(origin));
+        }
+        trace_warn!(
+            webhook = %origin,
+            "push config webhook is plaintext http:// to a non-loopback host; \
+             spec §13.2 says webhook URLs SHOULD use https"
+        );
+        Ok(())
+    }
+
     /// Registers or replaces a push notification configuration for a task.
     ///
     /// Calls `CreateTaskPushNotificationConfig`. Returns the configuration as
@@ -27,13 +64,19 @@ impl A2aClient {
     ///
     /// Returns [`ClientError::Protocol`] with
     /// [`a2a_protocol_types::ErrorCode::PushNotificationNotSupported`] if the agent
-    /// does not support push notifications.
+    /// does not support push notifications, and
+    /// [`ClientError::InsecureWebhook`] — before sending anything — if the
+    /// webhook URL is `http://` to a non-loopback host and the client was
+    /// built with
+    /// [`require_https_webhooks`](crate::ClientBuilder::require_https_webhooks).
+    /// Without that, such a URL is sent and a warning logged (spec §13.2).
     pub async fn set_push_config(
         &self,
         mut config: TaskPushNotificationConfig,
     ) -> ClientResult<TaskPushNotificationConfig> {
         const METHOD: &str = "CreateTaskPushNotificationConfig";
         self.require_declared(crate::declared::Capability::PushNotifications, METHOD)?;
+        self.check_webhook_url(&config.url)?;
 
         config.tenant = self.tenant_or_default(config.tenant.take());
         let params_value = serde_json::to_value(&config).map_err(ClientError::Serialization)?;
