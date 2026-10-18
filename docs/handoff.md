@@ -70,8 +70,14 @@ only: when something here is done, delete it rather than annotating it.
    `init_otlp_pipeline(Option<&str>)` with the environment first, ADR 0013
    Accepted, and the split: `otel` (instrumentation, the API only) is a
    default feature of the server, client and SDK, and `otlp` (`Telemetry`,
-   the exporters) is default in the SDK only. Left: mTLS and `http/json`
-   OTLP, and spans and metrics on every binding.
+   the exporters) is default in the SDK only. Also done 2026-10-18: mTLS
+   to the collector and `http/json` (the opt-in `otlp-json` feature; see the
+   CHANGELOG for why it is not in `otlp`), and the server span and
+   `rpc.server.call.duration` on SLIMRPC through the new public
+   `BindingSpan` (ADR 0013, 2026-10-18 section), with
+   `Transport::rpc_system` naming custom transports on client spans. The
+   RPC semantic conventions were re-read on upstream `main` that day and
+   match every name used. Step 4 is complete.
 5. **Freshness:** record the first 24-shard weekly mutation sweep in
    `book/src/reference/mutation-history.md` after it runs (Monday
    2026-10-19); after the next release, check the versioned docs deploy.
@@ -138,7 +144,6 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   chunks, untimed), and two concurrent PostgreSQL writers can leave a
   record unreadable until its next full write
   (`postgres_store/artifact_delta.rs`).
-- **Observability:** what is left of Step 4 above.
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
   measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at

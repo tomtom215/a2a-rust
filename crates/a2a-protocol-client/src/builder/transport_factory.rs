@@ -54,7 +54,10 @@ impl ClientBuilder {
         }
         self.send_extensions()?;
 
-        let custom = self.transport_override.is_some();
+        let custom = self
+            .transport_override
+            .as_ref()
+            .map(|t| crate::call_span::Peer::custom(t.rpc_system(), self.agent.clone()));
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override.take() {
             t
         } else {
@@ -79,15 +82,13 @@ impl ClientBuilder {
         };
 
         // After selection: a fallback moves the endpoint and binding.
-        let peer = if custom {
-            crate::call_span::Peer::default()
-        } else {
+        let peer = custom.unwrap_or_else(|| {
             crate::call_span::Peer::new(
                 self.preferred_binding.as_deref().unwrap_or(BINDING_JSONRPC),
                 &self.endpoint,
                 self.agent.clone(),
             )
-        };
+        });
         // Spec §13.4, against the endpoint calls go to (after any fallback).
         self.interceptors.arm_plaintext_check(&self.endpoint);
         Ok(A2aClient::new(transport, self.interceptors, self.config)
@@ -194,8 +195,8 @@ impl ClientBuilder {
         }
         self.send_extensions()?;
 
-        let peer = if self.transport_override.is_some() {
-            crate::call_span::Peer::default()
+        let peer = if let Some(t) = &self.transport_override {
+            crate::call_span::Peer::custom(t.rpc_system(), self.agent.clone())
         } else {
             crate::call_span::Peer::new("GRPC", &self.endpoint, self.agent.clone())
         };

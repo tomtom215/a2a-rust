@@ -11,7 +11,7 @@ use a2a_protocol_types::error::A2aError;
 use crate::error::ServerError;
 
 /// The binding a call arrived on, as the semantic conventions' `rpc.system.name`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum RpcSystem {
     /// JSON-RPC over HTTP, and over WebSocket, which carries the same frames.
     JsonRpc,
@@ -21,6 +21,9 @@ pub enum RpcSystem {
     /// The gRPC binding.
     #[cfg_attr(not(feature = "grpc"), allow(dead_code))]
     Grpc,
+    /// A binding outside this crate, through
+    /// [`BindingSpan`](super::BindingSpan).
+    Custom(super::CustomBinding),
 }
 
 impl RpcSystem {
@@ -30,6 +33,7 @@ impl RpcSystem {
             Self::JsonRpc => "jsonrpc",
             Self::HttpJson => "a2a_http_json",
             Self::Grpc => "grpc",
+            Self::Custom(binding) => binding.name,
         }
     }
 }
@@ -51,6 +55,7 @@ impl WireStatus for ServerError {
             RpcSystem::Grpc => Cow::Borrowed(crate::dispatch::grpc::grpc_status_name(self)),
             #[cfg(not(feature = "grpc"))]
             RpcSystem::Grpc => Cow::Borrowed("INTERNAL"),
+            RpcSystem::Custom(binding) => (binding.error_status)(self),
         }
     }
 }

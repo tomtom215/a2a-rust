@@ -855,6 +855,11 @@ impl WebSocketTransport {
 }
 
 impl Transport for WebSocketTransport {
+    /// JSON-RPC frames over WebSocket: `jsonrpc`, as the server records them.
+    fn rpc_system(&self) -> Option<&'static str> {
+        Some("jsonrpc")
+    }
+
     fn send_request<'a>(
         &'a self,
         method: &'a str,

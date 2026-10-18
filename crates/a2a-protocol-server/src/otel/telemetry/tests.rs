@@ -163,8 +163,10 @@ fn process_env_reads_the_process_environment() {
     assert_eq!(config::process_env("A2A_TELEMETRY_TEST_SURELY_UNSET"), None);
 }
 
-/// `http/json` is a protocol the specification names, so it is refused for
-/// a reason of its own rather than as unknown.
+/// `http/json` is a protocol the specification names, so without the
+/// `otlp-json` feature it is refused for a reason of its own rather than as
+/// unknown. With the feature, `tests/telemetry_export/` exports with it.
+#[cfg(not(feature = "otlp-json"))]
 #[test]
 fn http_json_is_refused_as_not_compiled_in() {
     let err = with_env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")])
@@ -258,4 +260,72 @@ fn the_export_client_debugs_as_its_timeout() {
     let shown = format!("{client:?}");
     assert!(shown.starts_with("ExportHttpClient"), "{shown}");
     assert!(shown.contains("7s"), "{shown}");
+}
+
+/// The client certificate and key the environment names are read from their
+/// files and win over those given in code; a file that cannot be read fails
+/// the build naming its variable.
+#[test]
+fn client_identity_files_are_read_and_win_over_code() {
+    let dir = std::env::temp_dir().join(format!("a2a-otlp-identity-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (cert, key) = (dir.join("c.pem"), dir.join("k.pem"));
+    std::fs::write(&cert, "CERT FROM FILE").unwrap();
+    std::fs::write(&key, "KEY FROM FILE").unwrap();
+    let (cert, key) = (cert.to_str().unwrap(), key.to_str().unwrap());
+    let target = with_env(&[
+        ("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", cert),
+        ("OTEL_EXPORTER_OTLP_CLIENT_KEY", key),
+    ])
+    .with_client_certificate_pem("code cert", "code key")
+    .target(Signal::Metrics)
+    .unwrap();
+    let identity = target.client_identity.expect("an identity");
+    assert_eq!(identity.cert_pem, b"CERT FROM FILE");
+    assert_eq!(identity.key_pem, b"KEY FROM FILE");
+
+    let target = with_env(&[])
+        .with_client_certificate_pem("code cert", "code key")
+        .target(Signal::Logs)
+        .unwrap();
+    assert_eq!(
+        target.client_identity.expect("an identity").key_pem,
+        b"code key"
+    );
+
+    let missing = dir.join("absent.pem");
+    let err = with_env(&[
+        ("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", cert),
+        (
+            "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY",
+            missing.to_str().unwrap(),
+        ),
+    ])
+    .target(Signal::Traces)
+    .err()
+    .expect("unreadable key");
+    assert!(
+        err.to_string()
+            .contains("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A client certificate or key that is not PEM fails the build on either
+/// transport, rather than every handshake.
+#[test]
+fn a_client_identity_that_is_not_pem_fails_the_build() {
+    for protocol in [OtlpProtocol::Grpc, OtlpProtocol::HttpProtobuf] {
+        let err = with_env(&[])
+            .with_otlp_protocol(protocol)
+            .with_otlp_endpoint("https://localhost:1")
+            .with_client_certificate_pem("not a certificate", "not a key")
+            .build()
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("client certificate"),
+            "{protocol:?}: {err}"
+        );
+    }
 }

@@ -17,6 +17,7 @@ pub struct TelemetryBuilder {
     protocol: Option<OtlpProtocol>,
     headers: Vec<(String, String)>,
     ca_pem: Vec<u8>,
+    client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
     install_globally: bool,
     env: Arc<Env>,
@@ -49,6 +50,7 @@ impl TelemetryBuilder {
             protocol: None,
             headers: Vec::new(),
             ca_pem: Vec::new(),
+            client_identity: None,
             langfuse: None,
             install_globally: true,
             env,
@@ -136,6 +138,27 @@ impl TelemetryBuilder {
         self
     }
 
+    /// A client certificate chain (leaf first) and its private key, PEM,
+    /// presented to a collector that requires mutual TLS, over either
+    /// transport. `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and
+    /// `OTEL_EXPORTER_OTLP_CLIENT_KEY`, or their per-signal forms, name files
+    /// of them and win over this, as a variable wins over a header set in
+    /// code. Both are checked when the exporters are built: a certificate or
+    /// key that does not parse, or a key that is not the certificate's on
+    /// OTLP/HTTP, fails [`build`](Self::build).
+    #[must_use]
+    pub fn with_client_certificate_pem(
+        mut self,
+        cert_chain: impl AsRef<[u8]>,
+        key: impl AsRef<[u8]>,
+    ) -> Self {
+        self.client_identity = Some(ClientIdentity {
+            cert_pem: cert_chain.as_ref().to_vec(),
+            key_pem: key.as_ref().to_vec(),
+        });
+        self
+    }
+
     /// Sends traces to Langfuse; see [`Langfuse`] for exactly what it sets.
     #[must_use]
     pub fn with_langfuse(mut self, langfuse: Langfuse) -> Self {
@@ -179,10 +202,15 @@ impl TelemetryBuilder {
         let env = &*self.env;
         let mut ca_pem = self.ca_pem.clone();
         if let Some((var, path)) = config::certificate_file(env, signal) {
-            let pem = std::fs::read(&path)
-                .map_err(|e| TelemetryError::config(&var, &path, format!("cannot be read: {e}")))?;
-            ca_pem.extend_from_slice(&pem);
+            ca_pem.extend_from_slice(&read_file(&var, &path)?);
         }
+        let client_identity = match config::client_identity_files(env, signal)? {
+            Some([(cert_var, cert_path), (key_var, key_path)]) => Some(ClientIdentity {
+                cert_pem: read_file(&cert_var, &cert_path)?,
+                key_pem: read_file(&key_var, &key_path)?,
+            }),
+            None => self.client_identity.clone(),
+        };
         let timeout = config::timeout(env, signal)?;
         if let (Signal::Traces, Some(lf)) = (signal, &self.langfuse) {
             return Ok(Target {
@@ -192,6 +220,7 @@ impl TelemetryBuilder {
                 headers: lf.headers(),
                 timeout,
                 ca_pem,
+                client_identity,
             });
         }
         let protocol = config::protocol(env, signal, self.protocol)?;
@@ -205,6 +234,7 @@ impl TelemetryBuilder {
             headers: self.headers.clone(),
             timeout,
             ca_pem,
+            client_identity,
         })
     }
 
@@ -290,4 +320,10 @@ impl TelemetryBuilder {
         }
         Ok(telemetry)
     }
+}
+
+/// The contents of the file `path`, which variable `var` named.
+fn read_file(var: &str, path: &str) -> Result<Vec<u8>, TelemetryError> {
+    std::fs::read(path)
+        .map_err(|e| TelemetryError::config(var, path, format!("cannot be read: {e}")))
 }

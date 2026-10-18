@@ -262,3 +262,25 @@ the round's median taken.
 
 The client skips all of its attribute work when its span is disabled, and
 the executor span formats its name only when enabled.
+
+## 2026-10-18: bindings outside the server crate
+
+Decision 2 says "every binding", and `a2a-protocol-slimrpc` recorded neither
+the span nor `rpc.server.call.duration`: the span type and its per-binding
+status mapping are private to `a2a-protocol-server`. Three ways to close it:
+
+1. Make `ServerSpan`, `RpcSystem` and `WireStatus` public. That puts the
+   in-crate bindings' internals in the public API.
+2. Have SLIMRPC open its own span and record the metric itself. That copies
+   the trace policy, the remote parent and the agent attributes, which
+   would then drift.
+3. A narrow public `BindingSpan`, opened with a `CustomBinding` (the
+   binding's `rpc.system.name`, its status for each `ServerError`, and
+   optionally a success status), wrapping the private `ServerSpan`.
+
+**Chosen: 3.** SLIMRPC is `slimrpc`, with `server_error_to_rpc_error`'s
+code as its status and `OK` on success, as on gRPC, whose codes it uses. On
+the client, `Transport::rpc_system` (default `None`) lets a transport given to
+`with_custom_transport` name its system on the `CLIENT` span: `jsonrpc` for
+WebSocket, as the server records the same call, and `slimrpc`. The builder
+reads it before wrapping the transport in retries.

@@ -68,6 +68,11 @@ fn unknown_method(method_name: &str, streaming: bool) -> ClientError {
 }
 
 impl Transport for SlimRpcTransport {
+    /// This binding's own name, as the server's spans record it.
+    fn rpc_system(&self) -> Option<&'static str> {
+        Some("slimrpc")
+    }
+
     fn send_request<'a>(
         &'a self,
         method_name: &'a str,

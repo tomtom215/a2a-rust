@@ -80,6 +80,13 @@ otlp = [
     "dep:http",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
 ]
+## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`,
+## `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`), for a collector or proxy that
+## takes only JSON. Off by default, here and in `a2a-protocol-sdk`:
+## `opentelemetry-otlp`'s `http-json` feature also makes JSON the protocol
+## of any exporter in the process built without one, and Cargo would impose
+## that on an application's own exporters.
+otlp-json = ["otlp", "opentelemetry-otlp/http-json"]
 ## A harness that grades an `AgentExecutor` against the protocol invariants
 ## that hold for any agent — terminal states, legal transitions, cooperative
 ## cancellation, parking. Intended as a dev-dependency: the TCK grades
@@ -220,8 +227,9 @@ ring = "0.17.12"
 rustls = { version = ">=0.23.46, <0.24" }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 # Stand-in OTLP collectors for `tests/telemetry_export/`: decode what
-# `Telemetry` exports over HTTP, and serve the OTLP gRPC services.
-opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs"] }
+# `Telemetry` exports over HTTP, as protobuf or (`with-serde`) JSON, and
+# serve the OTLP gRPC services.
+opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs", "with-serde"] }
 prost = { workspace = true }
 tonic = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }

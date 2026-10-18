@@ -208,6 +208,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A server span and `rpc.server.call.duration` on every binding,
+  SLIMRPC included** (server, client, `a2a-protocol-slimrpc`; ADR 0013,
+  decision 2). `BindingSpan` and `CustomBinding` let a binding outside
+  `a2a-protocol-server` open the span and record the metric the in-crate
+  bindings do: same name, A2A attributes, trace policy and remote parent,
+  with its own `rpc.system.name` and status mapping. `a2a-protocol-slimrpc`
+  now records all eleven methods as `slimrpc`, with its gRPC-style status
+  codes and `OK`; before, its calls recorded neither. On the client,
+  `Transport::rpc_system` (defaulted to `None`) names a custom transport's
+  system on its calls' `CLIENT` spans: `jsonrpc` for `WebSocketTransport`,
+  `slimrpc` for `SlimRpcTransport`. A custom transport's spans now also keep
+  the agent's name, description and version from the card, which they
+  dropped before.
+- **Mutual TLS to the OTLP collector, and OTLP/HTTP with JSON bodies**
+  (server). `TelemetryBuilder::with_client_certificate_pem(chain, key)`, or
+  `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and `OTEL_EXPORTER_OTLP_CLIENT_KEY`
+  (and their per-signal forms; the files win over code), present a client
+  certificate on gRPC and OTLP/HTTP alike; half a pair, or a file that is not
+  PEM, fails `build`. `OtlpProtocol::HttpJson` and
+  `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` are a new `otlp-json` feature (server
+  and SDK), off by default: `opentelemetry-otlp`'s `http-json` feature makes
+  JSON the default of every exporter built without a protocol, which Cargo
+  would impose on an application's own. Without the feature `http/json` is
+  still refused, now naming the feature. Each is tested end to end against a
+  stand-in collector, with a counter-test that the collector refuses a client
+  without the certificate.
 - **`A2aClient::follow_task(id, poll_every)`** (client; spec §7.6.2: a
   client without an open stream "SHOULD perform one of the following:
   Subscribe to Task ... Register a webhook ... Begin polling the Task").

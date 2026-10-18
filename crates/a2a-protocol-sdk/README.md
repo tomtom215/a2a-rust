@@ -72,6 +72,7 @@ their own defaults, so `default-features = false` here removes all three.
 | `grpc-tls` | No | `a2a-protocol-client`, `a2a-protocol-server` (and turns on `grpc`, `tls-rustls`) |
 | `otel` | Yes | `a2a-protocol-server`, `a2a-protocol-client` |
 | `otlp` | Yes | `a2a-protocol-server` (implies `otel`) |
+| `otlp-json` | No | `a2a-protocol-server` (implies `otlp`) |
 | `websocket` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `sqlite` | No | `a2a-protocol-server` |
 | `postgres` | No | `a2a-protocol-server` |

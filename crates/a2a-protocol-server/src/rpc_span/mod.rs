@@ -31,7 +31,9 @@
 //!
 //! Attribute names and rules are the OpenTelemetry semantic conventions'
 //! `docs/rpc/{rpc-spans,rpc-metrics,grpc,json-rpc}.md`, read upstream on
-//! 2026-09-23.
+//! 2026-09-23; `rpc-spans.md` and `rpc-metrics.md` re-read on `main` on
+//! 2026-10-18, with every attribute name, the span-name rule and the
+//! duration buckets used here unchanged.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -42,6 +44,7 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "tracing")]
 mod a2a;
 mod agent;
+mod binding;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;
@@ -57,6 +60,7 @@ pub use a2a::{
 #[cfg(feature = "tracing")]
 pub use agent::OutputRecorder;
 pub use agent::{ExecutorSpan, SpanSettings};
+pub use binding::{BindingSpan, CustomBinding};
 #[cfg(feature = "tracing")]
 use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
@@ -286,6 +290,7 @@ impl ServerSpan {
         let status_code = match (failed_with, self.system) {
             (Some(code), _) => Some(code),
             (None, RpcSystem::Grpc) => Some("OK"),
+            (None, RpcSystem::Custom(binding)) => binding.ok_status,
             (None, _) => None,
         };
         #[cfg(feature = "tracing")]

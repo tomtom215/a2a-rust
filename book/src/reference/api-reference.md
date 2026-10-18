@@ -368,6 +368,8 @@ are rustdoc's job.
 | `HaltReport` | What a halt stopped: the ids of the tasks whose token it fired |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
+| `BindingSpan` | The per-call server span and `rpc.server.call.duration` for a binding outside this crate, as the in-crate bindings record theirs (ADR 0013) |
+| `CustomBinding` | How such a binding names itself: its `rpc.system.name`, its status for each `ServerError`, and optionally the status of a success |
 
 ### Traits
 

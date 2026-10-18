@@ -61,7 +61,7 @@ pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
 
 use config::{Env, Signal};
 use counting::Counting;
-use exporters::Target;
+use exporters::{ClientIdentity, Target};
 use runtime::ExportRuntime;
 
 /// The instrumentation scope this crate's spans are recorded under.

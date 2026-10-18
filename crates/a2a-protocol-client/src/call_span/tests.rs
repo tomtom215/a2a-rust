@@ -330,3 +330,88 @@ fn a_current_trace_is_the_parent_only_without_a_recorded_span() {
     assert_eq!(sent.trace_id(), outer.to_string());
     assert_ne!(sent.trace_id(), ambient.trace_id());
 }
+
+/// A transport given to `with_custom_transport` names its own
+/// `rpc.system.name`, with a retry policy too (the builder reads the name
+/// before wrapping the transport in retries), and the span keeps the agent
+/// from the card; one that names none records none.
+#[cfg(feature = "tracing")]
+#[test]
+fn a_custom_transport_names_its_system_and_keeps_the_agent() {
+    use crate::transport::Transport;
+    use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+
+    struct Named(Option<&'static str>);
+    impl Transport for Named {
+        fn send_request<'a>(
+            &'a self,
+            _method: &'a str,
+            _params: serde_json::Value,
+            _headers: &'a std::collections::HashMap<String, String>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = crate::error::ClientResult<serde_json::Value>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async {
+                Ok(serde_json::json!({"id": "t1", "contextId": "c1",
+                    "status": {"state": "TASK_STATE_COMPLETED"}}))
+            })
+        }
+        fn send_streaming_request<'a>(
+            &'a self,
+            _method: &'a str,
+            _params: serde_json::Value,
+            _headers: &'a std::collections::HashMap<String, String>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = crate::error::ClientResult<crate::streaming::EventStream>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(crate::error::ClientError::Transport("unused".into())) })
+        }
+        fn rpc_system(&self) -> Option<&'static str> {
+            self.0
+        }
+    }
+
+    let card = AgentCard::new(
+        "worker",
+        "1",
+        AgentInterface::jsonrpc("http://agent.example"),
+    )
+    .with_description("d")
+    .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
+    let call = |system: Option<&'static str>, retry: bool| {
+        let mut builder = crate::ClientBuilder::from_card(&card)
+            .unwrap()
+            .with_custom_transport(Named(system));
+        if retry {
+            builder = builder.with_retry_policy(crate::RetryPolicy::default());
+        }
+        let client = builder.build().unwrap();
+        recorded(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(client.get_task(a2a_protocol_types::TaskQueryParams {
+                    tenant: None,
+                    id: "t1".into(),
+                    history_length: None,
+                }))
+                .unwrap();
+        })
+    };
+    for retry in [false, true] {
+        let fields = call(Some("slimrpc"), retry);
+        let field = |k: &str| fields.get(k).map(String::as_str);
+        assert_eq!(field("rpc.system.name"), Some("slimrpc"), "retry: {retry}");
+        assert_eq!(field("gen_ai.agent.name"), Some("worker"), "retry: {retry}");
+    }
+    assert_eq!(call(None, false).get("rpc.system.name"), None);
+}

@@ -113,18 +113,29 @@ refuses a value it cannot act on rather than ignoring it:
 |---|---|
 | `OTEL_SDK_DISABLED=true` | Builds nothing; the layer records nothing |
 | `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` or `none` per signal; any other value (`console`, `prometheus`, …) is an error naming it |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc` or `http/protobuf`, the default; `http/json` is an error (not compiled in) |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc`, `http/protobuf` (the default) or, with the `otlp-json` feature, `http/json`; without it `http/json` is an error naming the feature |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` (and per signal) | The collector; OTLP/HTTP appends `/v1/traces`, `/v1/metrics` or `/v1/logs` to the general one |
 | `OTEL_EXPORTER_OTLP_HEADERS` (and per signal) | Sent with every export |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` (and per signal) | Milliseconds; 10 s when unset |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` (and per signal) | A PEM file of CA certificates trusted alongside the bundled Mozilla roots |
+| `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` (and per signal) | PEM files of the client certificate chain and its key, for a collector that requires mutual TLS; one without the other is an error |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name` |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*` | Read by the OpenTelemetry SDK itself |
 
 The builder's `with_otlp_endpoint`, `with_otlp_protocol`, `with_otlp_header`
 and `with_ca_certificate_pem` set the same things in code, and — as in the
-OpenTelemetry SDK — a value set in code wins over the variable. Client
-certificates (mutual TLS to the collector) are not supported yet.
+OpenTelemetry SDK — a value set in code wins over the variable.
+`with_client_certificate_pem` is the exception: client certificate files the
+environment names win over it, as a header variable wins over a header set in
+code. The certificate and key are parsed when the exporters are built, so a
+file that is not PEM, or (on OTLP/HTTP) a key that is not the certificate's,
+fails `build` rather than every export.
+
+JSON bodies (`http/json`) are the `otlp-json` feature, off by default even in
+`a2a-protocol-sdk`: `opentelemetry-otlp`'s `http-json` feature also makes JSON
+the protocol of every exporter in the process that is built without one, and
+Cargo's feature unification would impose that on an application's own
+exporters.
 
 Things it gets right that hand-wiring tends not to, each covered by a test in
 `crates/a2a-protocol-server/tests/telemetry_export/`:
@@ -197,13 +208,13 @@ treat them as the contract.
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
 instrument, with their advisory buckets (5 ms to 10 s) and attributes:
-`rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`, or
-`grpc`); `rpc.method`, the fully qualified method
+`rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`,
+`grpc`, or `slimrpc` for `a2a-protocol-slimrpc`); `rpc.method`, the fully qualified method
 (`lf.a2a.v1.A2AService/SendMessage`) or `_OTHER` for one the server does not
 serve; `rpc.status_code`; and, only when the call failed, `error.type`. Both
 are the status the binding answered with — the JSON-RPC error code (`-32001`),
-the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC also
-reports `OK`) — or `cancelled` for a call whose peer went away first. It
+the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC and
+SLIMRPC, which uses gRPC's status codes, also report `OK`) — or `cancelled` for a call whose peer went away first. It
 records calls the handler never sees: on JSON-RPC, a body that is not a
 request (no `rpc.method`), an unknown method, a batch over the limit; on
 HTTP+JSON, a request refused on its body or parameters, under the route's
@@ -363,6 +374,14 @@ names may still change:
 The draft asks HTTP server spans to be renamed `{a2a.method.name}`; this SDK
 keeps one name per call on every binding (ADR 0013), as its gRPC rule does.
 
+**A binding outside `a2a-protocol-server`** records the same span and metric
+through `BindingSpan`: it names itself with a `CustomBinding` — its own
+`rpc.system.name` and the function that turns a `ServerError` into the status
+it sends — and runs each `RequestHandler` call inside
+`BindingSpan::open(..).run(..)`. `a2a-protocol-slimrpc` does this for all
+eleven methods, as `slimrpc`. Its `tests/telemetry.rs` checks the span and
+the metric over a real in-process SLIM fabric.
+
 Work spawned for the call runs in `INTERNAL` children of that span:
 `a2a.process_events`, `a2a.deliver_push`, `a2a.sse`, and the executor's run.
 **The executor's span follows the OpenTelemetry GenAI agent conventions**
@@ -467,7 +486,10 @@ executor, under the executor's span; from anywhere else, under whatever span
 is current. `ClientBuilder::with_trace_propagation(false)` turns that off for
 a client calling agents that should not learn your trace ids. It applies to
 the transports the client builds for JSON-RPC, HTTP+JSON and gRPC, not to one
-supplied through `with_custom_transport`.
+supplied through `with_custom_transport`. Such a transport names the
+`rpc.system.name` its calls' spans carry through `Transport::rpc_system`
+(`jsonrpc` for `WebSocketTransport`, `slimrpc` for `SlimRpcTransport`); the
+span keeps the agent from the card either way.
 
 Without a recording layer, add `TracePropagationInterceptor` to the client and
 it writes the ambient `CurrentTrace` onto every request over JSON-RPC, REST or

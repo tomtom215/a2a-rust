@@ -221,6 +221,7 @@ and the `with_*` setters.
 | `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
 | `otel` | On | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`) |
 | `otlp` | Off | `Telemetry`: OTLP export of traces, metrics and logs (gRPC or HTTP/protobuf), the Langfuse preset, and `init_otlp_pipeline` (implies `otel`) |
+| `otlp-json` | Off | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -263,6 +264,7 @@ and the `with_*` setters.
 | `postgres` | Off | Enables `postgres` in the server |
 | `otel` | On | Enables `otel` in the server and the client |
 | `otlp` | On | Enables the server's `otlp` (implies `otel`) |
+| `otlp-json` | Off | Enables the server's `otlp-json` (implies `otlp`) |
 | `axum` | Off | Enables `axum` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
 | `encryption` | Off | Enables `encryption` in the server |

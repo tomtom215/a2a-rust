@@ -81,6 +81,7 @@ enable them:
 | `audit` | types, server | Tamper-evident audit trail: hash-chained, checkpoint-signed records of every call, run, task event and cancel request, per tenant (ADR 0015) |
 | `otel` | client, server | On by default. Server: `OtelMetrics` and the spans' OpenTelemetry bridge. Client: each call's `traceparent` names the call's own span. The OpenTelemetry API only |
 | `otlp` | server | `Telemetry`, OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, with a Langfuse preset; on by default in the SDK only |
+| `otlp-json` | server | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default everywhere (implies `otlp`) |
 | `axum` | server | Axum framework integration |
 | `auth-jwt` | server | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS with OIDC discovery) via `ring`; the header/token interceptors (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature |
 | `encryption` | server | Encryption at rest for task content (`EncryptedTaskStore`): every part sealed with AES-256-GCM via `ring`, or a cipher of your own |
