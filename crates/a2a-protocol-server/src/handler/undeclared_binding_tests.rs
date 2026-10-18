@@ -6,7 +6,7 @@
 // and verify. Security hardening and best practices are non-negotiable. — Tom F.
 
 //! Spec §5.2: "Agents MUST declare all supported protocols in their
-//! AgentCard". A listener serving a binding the card does not declare is
+//! `AgentCard`". A listener serving a binding the card does not declare is
 //! reported when it starts.
 
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};

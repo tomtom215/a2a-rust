@@ -106,7 +106,7 @@ pub trait Dispatcher: Send + Sync + 'static {
     /// [`Server`] uses it with [`request_handler`](Self::request_handler) to
     /// warn, when it starts, that the handler's agent card does not declare
     /// the binding this listener serves (spec §5.2: "Agents MUST declare all
-    /// supported protocols in their AgentCard"). The default, `None`, is not
+    /// supported protocols in their `AgentCard`"). The default, `None`, is not
     /// checked.
     fn protocol_binding(&self) -> Option<&'static str> {
         None

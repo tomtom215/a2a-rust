@@ -1412,21 +1412,23 @@ mod tests {
         assert_eq!(err.dropped_event_count(), Some(3));
     }
 
-    /// A RESOURCE_EXHAUSTED status's RetryInfo becomes the retry delay, as a
+    /// A `RESOURCE_EXHAUSTED` status's `RetryInfo` becomes the retry delay, as a
     /// 429's `Retry-After` does on the HTTP bindings; a delay past an hour is
     /// clamped, and a status without one carries none.
     #[test]
     fn resource_exhausted_keeps_the_servers_retry_delay() {
         use tonic_types::StatusExt as _;
         let delay = |d: Option<std::time::Duration>| {
-            let status = match d {
-                Some(d) => tonic::Status::with_error_details(
-                    tonic::Code::ResourceExhausted,
-                    "slow down",
-                    tonic_types::ErrorDetails::with_retry_info(Some(d)),
-                ),
-                None => tonic::Status::new(tonic::Code::ResourceExhausted, "slow down"),
-            };
+            let status = d.map_or_else(
+                || tonic::Status::new(tonic::Code::ResourceExhausted, "slow down"),
+                |d| {
+                    tonic::Status::with_error_details(
+                        tonic::Code::ResourceExhausted,
+                        "slow down",
+                        tonic_types::ErrorDetails::with_retry_info(Some(d)),
+                    )
+                },
+            );
             match GrpcTransport::status_to_error(&status) {
                 ClientError::UnexpectedStatus {
                     status: 429,

@@ -12,7 +12,7 @@ use super::RequestHandler;
 
 impl RequestHandler {
     /// Why a listener serving `binding` would break spec §5.2 ("Agents MUST
-    /// declare all supported protocols in their AgentCard"), when this
+    /// declare all supported protocols in their `AgentCard`"), when this
     /// handler's static agent card declares no interface with that
     /// `protocolBinding`; `None` when it does, or when the card is produced
     /// elsewhere (a dynamic handler, no card).

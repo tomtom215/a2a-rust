@@ -633,20 +633,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "The operation MUST return only tasks visible to the authenticated client",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
-    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
-    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
+    "crates/a2a-protocol-server/src/builder.rs build"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
+    "crates/a2a-protocol-server/tests/caller_isolation_default.rs by_default_only_identified_callers_are_isolated"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Visibility is scoped only by tenant, and only when the deployer installs a TenantResolver bound to authentication plus TenantAware* stores; without a resolver the client-supplied tenant (or the shared default partition) is used (`client_tenant.unwrap_or_default()`), and there is no per-principal scoping within a tenant. Hooks: TenantResolver, ServerInterceptor.",
+   "notes": "Re-examined 2026-10-18: met by the SDK, not left to the application. With an authenticating interceptor that identifies callers, caller isolation is the default (since 0.15): each caller's tasks are in a partition of their own, and ListTasks returns only that partition (Bob lists none of Alice's tasks). Without identities, or with share_tasks_across_callers(), tasks are visible tenant-wide by the deployer's choice. The earlier notes describing a default with no scoping were stale.",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 254,
@@ -699,21 +699,19 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Implementations MUST implement appropriate authorization scoping to ensure clients can only access authorized tasks.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
-    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
-    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolation_holds_on_the_sqlite_stores"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: SDK supplies tenant-granular scoping (resolver + strict mode + TenantAware stores); per-user authorization within a tenant is left to the agent author's ServerInterceptor. Default build has no scoping at all.",
+   "notes": "Re-examined 2026-10-18: caller isolation scopes every operation to the caller's partition by default once callers are identified (in-memory, SQLite and PostgreSQL stores); a finer authorization model is the agent's, through ServerInterceptor (permission_denied).",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 262,
@@ -1033,7 +1031,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "The operation MUST fail if the configuration does not exist or the client lacks access.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
@@ -1041,12 +1039,12 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs another_callers_push_config_cannot_be_read_or_deleted"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Non-existence is enforced and tested; 'lacks access' is only tenant-granular (needs a TenantResolver + tenant-aware push store) and otherwise left to an interceptor; any caller in the same tenant can read any config by (taskId, id).",
+   "notes": "Re-examined 2026-10-18: a config that does not exist is PushConfigNotFound/TaskNotFound, and another caller's config is not found and cannot be deleted under caller isolation (the default with identified callers); the test added 2026-10-18 pins Get and Delete across callers, which no test covered.",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 376,
@@ -1718,7 +1716,7 @@
    "keyword": "MUST NOT",
    "binds": "agent-application",
    "requirement": "Servers MUST NOT reveal the existence of resources the client is not authorized to access",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
@@ -1726,12 +1724,13 @@
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
+    "crates/a2a-protocol-server/tests/caller_isolation.rs another_callers_push_config_cannot_be_read_or_deleted"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Cross-tenant lookups miss and return TaskNotFound (indistinguishable). Within one tenant there is no per-principal ownership: any caller passing the interceptors can Get/Cancel/Subscribe any task id; per-user scoping (spec's 'task created by another user' example) requires a custom TaskStore/tenant resolver.",
+   "notes": "Re-examined 2026-10-18: another caller's task answers exactly as an unknown id does (TaskNotFound, the test's control), from Get, Cancel, Subscribe and a continuing SendMessage, and their configs likewise; ACTS SEC-AUTH-003 and CORE-ERR-009 pass on three bindings. Since 2026-10-18 an unauthenticated push-config call is also refused for its credential before the capability check, so it learns nothing about the agent either.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 519,
@@ -2263,9 +2262,10 @@
     "crates/a2a-protocol-client/src/methods/send_message.rs:150"
    ],
    "test_evidence": [],
-   "notes": "The client SDK never fills context_id itself; the caller builds the Message.",
+   "notes": "The client SDK never fills context_id itself; the caller builds the Message. Re-examined 2026-10-18, kept: whether to send a contextId of its own is a decision about the client's conversation, which only the caller can make; the SDK never generates one.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 595,
@@ -2273,15 +2273,16 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Server-generated contextId values SHOULD be treated as opaque identifiers by clients",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/task.rs:78"
+    "crates/a2a-protocol-types/src/task.rs:97"
    ],
    "test_evidence": [],
-   "notes": "ContextId is an opaque string newtype; the client SDK never parses it.",
+   "notes": "Re-examined 2026-10-18: the client keeps a server's contextId as the opaque ContextId newtype and never parses or derives anything from it.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 600,
@@ -2298,9 +2299,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id"
    ],
-   "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's.",
+   "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's. Re-examined 2026-10-18, kept: the SDK keys storage, locks and continuation on contextId and gives the executor the context's latest task (RequestContext::stored_task); what a conversational session means is the agent's.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 601,
@@ -2348,9 +2350,10 @@
     "crates/a2a-protocol-server/src/store/retention"
    ],
    "test_evidence": [],
-   "notes": "Deployment-specific; SDK documents its own TTL/capacity knobs in rustdoc.",
+   "notes": "Deployment-specific; SDK documents its own TTL/capacity knobs in rustdoc. Re-examined 2026-10-18, kept: the SDK documents its own defaults (TaskStoreConfig: task_ttl, max_capacity; book deployment pages), but which policy a deployment runs, and where it tells its users, is the deployer's.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 611,
@@ -2400,9 +2403,10 @@
     "crates/a2a-protocol-client/src/methods/send_message.rs:150"
    ],
    "test_evidence": [],
-   "notes": "Client-side obligation; the server enforces it (line 614).",
+   "notes": "Client-side obligation; the server enforces it (line 614). Re-examined 2026-10-18, kept: which task a client means is the caller's knowledge; the server side of the same rule (TaskNotFound for an unknown taskId, §3.4.2 line 614) is TESTED.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 614,
@@ -2538,9 +2542,10 @@
     "crates/a2a-protocol-types/src/message.rs:1"
    ],
    "test_evidence": [],
-   "notes": "Field exposed on Message; client SDK never sets it.",
+   "notes": "Field exposed on Message; client SDK never sets it. Re-examined 2026-10-18, kept: which tasks are related is the caller's knowledge; Message::with_reference_task_ids (message.rs:223) sets the field, and the server resolves it since 2026-10-18 (RequestContext::referenced_tasks).",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 639,
@@ -2969,9 +2974,10 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:330"
    ],
    "test_evidence": [],
-   "notes": "Agent's choice; SDK provides TaskUpdater-style artifact() helper.",
+   "notes": "Agent's choice; SDK provides TaskUpdater-style artifact() helper. Re-examined 2026-10-18, kept: §3.1.1 allows a direct Message reply, so the SDK cannot tell output from communication; EventEmitter::artifact is the path it offers.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 758,
@@ -2987,9 +2993,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs:32 sync_mode_artifact_updates_appended"
    ],
-   "notes": "",
+   "notes": " Re-examined 2026-10-18, kept: as the SHOULD NOT on the same line; artifacts are what EventEmitter::artifact writes.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 762,
@@ -3015,9 +3022,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Design guidance for agent/client authors; not testable in the SDK.",
+   "notes": "Design guidance for agent/client authors; not testable in the SDK. Re-examined 2026-10-18, kept: a design rule for agent and client authors; the SDK's own critical signals (failure class, approval, provenance) ride in Task.status and task metadata, which GetTask returns, not in messages.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 764,
@@ -3046,9 +3054,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Client-author obligation.",
+   "notes": "Client-author obligation. Re-examined 2026-10-18, kept: an obligation on client authors; the SDK client reads task state from Task and status events, not from message history.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 768,
@@ -4171,9 +4180,10 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:173"
    ],
    "test_evidence": [],
-   "notes": "SDK guards header injection in push creds (validate_header_value) and path traversal in REST; sanitising message content for downstream use is the executor's job.",
+   "notes": "SDK guards header injection in push creds (validate_header_value) and path traversal in REST; sanitising message content for downstream use is the executor's job. Re-examined 2026-10-18, kept: injection depends on where content ends up, which only the agent knows. The SDK sanitizes what it uses itself: ids (handler/helpers.rs), REST path traversal (dispatch/rest), push header values (push/sender.rs).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3245,
@@ -4226,9 +4236,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Deployment/regulatory obligation.",
+   "notes": "Deployment/regulatory obligation. Re-examined 2026-10-18, kept: which regulation applies is the deployment's. The SDK's means: EncryptedTaskStore (feature encryption) for task content at rest, PushConfigCipher for push credentials, AuditLog::with_privacy, retention purges.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3297,
@@ -4721,9 +4732,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "No SDK mechanism; agent-specific.",
+   "notes": "No SDK mechanism; agent-specific. Re-examined 2026-10-18, kept: the out-of-band channel is specific to the credential (a device flow, a consent page); EventEmitter::auth_required explains it to the client, and the stream stays open while the executor waits for it (TESTED, §7.6.1 line 1931).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1931,
@@ -4831,9 +4843,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Not an SDK concern.",
+   "notes": "Not an SDK concern. Re-examined 2026-10-18, kept: the out-of-band channel is outside A2A and outside the SDK's listeners.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1961,
@@ -4845,9 +4858,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "No SDK support for credential binding in in-band exchange.",
+   "notes": "No SDK support for credential binding in in-band exchange. Re-examined 2026-10-18, kept: applies only to in-band exchange, which v1.0.1 leaves to extensions; the SDK defines none.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1962,
@@ -4859,9 +4873,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "No SDK support.",
+   "notes": "No SDK support. Re-examined 2026-10-18, kept: as 1961.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1970,
@@ -5466,21 +5481,20 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Clients **SHOULD** verify at least one signature before trusting an Agent Card",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:629 verify_card_signatures",
-    "crates/a2a-protocol-client/src/builder/mod.rs:150",
-    "crates/a2a-protocol-types/src/signing.rs:731 verify_card_json_with_jwks"
+    "crates/a2a-protocol-client/src/discovery.rs verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs with_require_signature"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:75 a_signed_card_is_verified_when_keys_are_supplied",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:151 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted"
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs a_signed_card_is_verified_when_keys_are_supplied",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied"
    ],
-   "notes": "Opt-in on the discovery path: with CardFetchOptions::with_signature_keys the fetch refuses a signed card none of whose signatures verifies, checking the card as received. Without keys, resolve_agent_card and ClientBuilder::from_card trust the card unverified; which keys to trust is the application's decision. The previous note said there was no opt-in on the discovery path, which with_signature_keys (2026-10-11) had already made untrue.",
+   "notes": "Re-examined 2026-10-18: card discovery verifies signatures once keys are supplied (with_signature_keys, with_require_signature, from_signed_card) and refuses a card whose signatures were stripped. Which keys to trust stays the application's.",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 2131,
@@ -7098,25 +7112,20 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Implementations MUST ensure appropriate scope limitation based on the authenticated caller's authorization boundaries. This applies to all operations that access or list tasks and other resources.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
-    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
-    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller",
-    "crates/a2a-protocol-server/src/auth/caller_id.rs jwt"
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
+    "crates/a2a-protocol-server/src/builder.rs build"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
-    "crates/a2a-protocol-server/tests/caller_isolation.rs background_work_stays_in_the_callers_partition",
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolation_holds_on_the_sqlite_stores",
-    "crates/a2a-protocol-server/tests/jwt_caller_identity.rs one_sub_from_two_issuers_is_two_callers",
-    "crates/a2a-protocol-server/tests/jwt_caller_identity.rs a_jwt_with_no_sub_is_refused_under_caller_isolation"
+    "crates/a2a-protocol-server/tests/caller_isolation_default.rs by_default_only_identified_callers_are_isolated"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's issuer and sub, CallContext::set_caller_identity); since 2026-10-14 the bundled interceptors qualify each by its scheme and a JWT's by its issuer (audit register R12, auth::caller_id), so one sub from two accepted issuers is two callers. Callers given no identity keep the tenant's shared records, except a JWT with no sub, which is refused under isolation. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: The only scoping the SDK performs is the tenant partition (TenantContext task-local + TenantAware* stores, resolver-derived tenant). Within a tenant (and in the default single-tenant deployment) there is no principal scoping and no hook to add one: TaskStore::get/list take only the id/params, CallContext carries no task id or params, and the authenticated caller_identity is not visible to the store; the only workaround is to make each principal a tenant via a credential-verifying TenantResolver.",
+   "notes": "Re-examined 2026-10-18: caller isolation is on by default with an authenticating interceptor (builder.rs build) and scopes every operation to the caller's partition. The earlier note cited a function name (in_caller_partition) that does not exist; it is enter_caller_partition.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3079,
@@ -7153,7 +7162,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Implementations MUST scope results to the caller's authorized access boundaries as defined by the agent's authorization model",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
@@ -7163,10 +7172,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Tenant-boundary models are supported (store partition chosen by TenantContext::scope); user/role/project models within a tenant are not: `self.task_store.list(&params)` receives no caller, and there is no post-filter hook between store and response.",
+   "notes": "Re-examined 2026-10-18: results are scoped to the caller's partition by default once callers are identified; see §13.1 3075.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3081,
@@ -7174,7 +7183,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Even when contextId or other filter parameters are not specified in requests, implementations MUST scope results to the caller's authorized access boundaries",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
@@ -7184,10 +7193,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: An unfiltered ListTasks (ListTasksParams::default()) is scoped to the tenant partition only; any authenticated caller in the same/default tenant gets every task in it.",
+   "notes": "Re-examined 2026-10-18: a ListTasks with no filter returns only the caller's partition (the test lists with default params).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3082,
@@ -7213,7 +7222,49 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "List Tasks: MUST only return tasks visible to the authenticated client according to the agent's authorization model",
-   "status": "APPLICATION",
+   "status": "TESTED",
+   "severity": null,
+   "impl_evidence": [
+    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
+    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
+   ],
+   "notes": "Re-examined 2026-10-18: met by caller isolation; Bob lists none of Alice's tasks.",
+   "auditor": "F",
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+  },
+  {
+   "spec_line": 3092,
+   "section": "§13.1",
+   "keyword": "MUST",
+   "binds": "server",
+   "requirement": "Get Task: MUST verify the authenticated client has access to the requested task according to the agent's authorization model",
+   "status": "TESTED",
+   "severity": null,
+   "impl_evidence": [
+    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
+    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
+   ],
+   "notes": "Re-examined 2026-10-18: GetTask for another caller's task is TaskNotFound, as for an unknown id.",
+   "auditor": "F",
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+  },
+  {
+   "spec_line": 3093,
+   "section": "§13.1",
+   "keyword": "MUST",
+   "binds": "server",
+   "requirement": "Task-related operations (Cancel, Subscribe, Push Notification Config): MUST verify the client has appropriate access rights according to the agent's authorization model",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
@@ -7222,54 +7273,12 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation",
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolation_holds_on_the_sqlite_stores"
+    "crates/a2a-protocol-server/tests/caller_isolation.rs another_callers_push_config_cannot_be_read_or_deleted"
    ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Tenant-scoped only (store-level tests, no handler/wire-level cross-tenant ListTasks test found). No way to restrict visibility per principal inside a tenant: two callers authenticated by BearerTokenAuthInterceptor::with_labelled_tokens in the default tenant see each other's tasks.",
+   "notes": "Re-examined 2026-10-18: Cancel, Subscribe and the push-config operations on another caller's task are refused as not found; a webhook Bob registers lands in his own partition.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
-  },
-  {
-   "spec_line": 3092,
-   "section": "§13.1",
-   "keyword": "MUST",
-   "binds": "server",
-   "requirement": "Get Task: MUST verify the authenticated client has access to the requested task according to the agent's authorization model",
-   "status": "APPLICATION",
-   "severity": null,
-   "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
-    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
-    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
-   ],
-   "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
-   ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: A task in another tenant partition is TaskNotFound (good, no existence leak). Within a partition, `self.task_store.get(&task_id)` is returned to any caller who passed the interceptor chain; the interceptor cannot see params.id (CallContext has method/headers/identity/tenant only), so a per-task access check has no SDK hook.",
-   "auditor": "F",
-   "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
-  },
-  {
-   "spec_line": 3093,
-   "section": "§13.1",
-   "keyword": "MUST",
-   "binds": "server",
-   "requirement": "Task-related operations (Cancel, Subscribe, Push Notification Config): MUST verify the client has appropriate access rights according to the agent's authorization model",
-   "status": "APPLICATION",
-   "severity": null,
-   "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
-    "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
-    "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
-   ],
-   "test_evidence": [
-    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
-   ],
-   "notes": "With RequestHandlerBuilder::isolate_tasks_by_caller the authenticated caller's identity selects the store partition (TenantContext::partition), so another caller's task is TaskNotFound like an unknown id and lists hold only the caller's own; the SDK enforces it, by default for every caller an authenticating interceptor identifies since 2026-10-12 (RequestHandlerBuilder::share_tasks_across_callers opts out; tests/caller_isolation_default.rs); the agent author supplies the identities (labelled credentials, a JWT's sub, CallContext::set_caller_identity), and callers given none keep the tenant's shared records. Shared-access models (roles, groups) map the group to a tenant with a TenantResolver. Before this branch: Same as GetTask: tenant partition enforced for cancel/subscribe/push-config CRUD; no per-principal ownership check (any caller in the partition can cancel, subscribe to, or register a webhook on another caller's task).",
-   "auditor": "F",
-   "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3098,
@@ -7305,9 +7314,10 @@
     "crates/a2a-protocol-server/src/tenant_resolver.rs:20"
    ],
    "test_evidence": [],
-   "notes": "Deployment documentation duty; the SDK documents its own (tenant-only) model in tenant_resolver.rs module docs and book/src/deployment/multi-tenancy.md.",
+   "notes": "Deployment documentation duty; the SDK documents its own (tenant-only) model in tenant_resolver.rs module docs and book/src/deployment/multi-tenancy.md. Re-examined 2026-10-18, kept: the spec leaves the authorization model to each agent. The SDK documents the model it enforces by default, caller isolation within a tenant (book/src/deployment/multi-tenancy.md); the earlier wording 'tenant-only' was stale.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3109,
@@ -7827,9 +7837,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Operator documentation duty.",
+   "notes": "Operator documentation duty. Re-examined 2026-10-18, kept: what each authentication level unlocks is the agent's policy; the SDK serves the machine-readable form (with_extended_agent_card, ExtendedCardProvider).",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3156,
@@ -7852,19 +7863,21 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Agents MUST validate that clients have appropriate permissions before returning privileged information in extended cards",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:42",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs on_get_extended_agent_card",
+    "crates/a2a-protocol-server/src/agent_card/per_caller.rs ExtendedCardProvider"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials"
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs each_caller_is_served_the_card_chosen_for_it",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs the_provider_can_refuse_a_caller",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs an_unauthenticated_request_is_refused_before_the_provider"
    ],
-   "notes": "Interceptor chain runs before the card is produced (method-level permission check possible via ctx.method()=='GetExtendedAgentCard'). Since 2026-10-14 with_extended_agent_card serves content distinct from the public card, and it is produced only after the chain and the authentication requirement (3142).",
+   "notes": "Re-examined 2026-10-18: the extended card is served only through the interceptor chain and only with an authenticating interceptor (unless allow_unauthenticated_extended_card); ExtendedCardProvider chooses, or refuses, each caller's card. Which permission unlocks what is the agent's policy, expressed in the provider.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3158,
@@ -8266,9 +8279,10 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:33"
    ],
    "test_evidence": [],
-   "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's.",
+   "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3196,
@@ -8381,9 +8395,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Legal/operational duty; not SDK-testable.",
+   "notes": "Legal/operational duty; not SDK-testable. Re-examined 2026-10-18, kept: legal compliance belongs to the deployment and cannot be established by a library; the SDK's means are EncryptedTaskStore, PushConfigCipher, AuditLog::with_privacy and the retention purges.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3208,
@@ -10003,9 +10018,10 @@
     "crates/a2a-protocol-client/src/token_provider.rs:133"
    ],
    "test_evidence": [],
-   "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider.",
+   "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider. Re-examined 2026-10-18, kept: the SDK runs no authorization-code flow (client credentials and static tokens only); an application that does plugs in a TokenProvider and owns PKCE.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 600,

@@ -145,10 +145,10 @@ fn is_loopback(url: &str) -> bool {
     };
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-    let host = match host.strip_prefix('[') {
-        Some(v6) => v6.split(']').next().unwrap_or_default(),
-        None => host.rsplit_once(':').map_or(host, |(h, _)| h),
-    };
+    let host = host.strip_prefix('[').map_or_else(
+        || host.rsplit_once(':').map_or(host, |(h, _)| h),
+        |v6| v6.split(']').next().unwrap_or_default(),
+    );
     host.eq_ignore_ascii_case("localhost")
         || host
             .parse::<std::net::IpAddr>()
