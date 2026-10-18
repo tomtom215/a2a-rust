@@ -683,6 +683,24 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      # docs.rs builds with nightly and `--cfg docsrs` (each manifest's
+      # `[package.metadata.docs.rs]`), which turns on `feature(doc_cfg)` in
+      # every lib.rs (release audit F27). Build the same way, and check that a
+      # feature-gated item carries its badge, so a docs.rs failure or a lost
+      # badge shows here rather than on the published crate.
+      - name: docs.rs build (nightly, --cfg docsrs)
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo doc --no-deps --all-features \
+            -p a2a-protocol-types -p a2a-protocol-client \
+            -p a2a-protocol-server -p a2a-protocol-sdk
+          grep -q 'Available on <strong>crate feature <code>otel</code>' \
+            target/doc/a2a_protocol_server/otel/struct.OtelMetrics.html \
+            || { echo "OtelMetrics lost its feature badge"; exit 1; }
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
+
   # ── Documentation ────────────────────────────────────────────────────────
   doc:
     name: Documentation

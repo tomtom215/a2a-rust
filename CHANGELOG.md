@@ -1603,6 +1603,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **docs.rs shows which feature each item needs** (all four crates; release
+  audit F27). Each manifest asked docs.rs for `--cfg docsrs`, and nothing
+  used it. Each `lib.rs` now enables `doc_cfg` under it, so every
+  feature-gated item carries an "Available on crate feature …" badge. The
+  book's `/api/` build moves to nightly, as docs.rs uses, since stable
+  refuses the attribute. The nightly CI job builds the same way and checks
+  that a badge renders.
+
 - **A PostgreSQL-only build no longer compiles SQLite** (server; release
   audit F25). The workspace's `sqlx` entry enabled its `sqlite` driver for
   every crate, so `--features postgres` linked `libsqlite3-sys`; each store
