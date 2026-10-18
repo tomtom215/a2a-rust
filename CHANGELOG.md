@@ -12,6 +12,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A card whose OAuth or OpenID Connect URLs are not URLs is refused when
+  published** (types/server; a2a.proto: each OAuth flow URL "MUST be in the
+  form of a URL", and `oauth2_metadata_url` "TLS is required").
+  `validate_security_schemes`, which `build()` and every card handler run,
+  now refuses a flow URL, refresh URL or `openIdConnectUrl` that is not
+  `scheme://authority...`, and an `oauth2MetadataUrl` that is not `https`.
+  The deprecated implicit and password flows' URLs are checked only when
+  given. A client never applies this to a card it fetches. Tests:
+  `security::url_tests`.
+- **A client built from a card refuses to build when the card marks an
+  extension `required` that it does not ask for** (client; a2a.proto
+  `AgentExtension.required`: "the client must understand and comply").
+  `build()` returns `ExtensionSupportRequired` naming the extension; ask for
+  it with `with_extensions`, or call `skip_required_extension_check()` when
+  an interceptor sends the `A2A-Extensions` header. A client built for an
+  endpoint, not a card, is unaffected.
+- **`build()` refuses a card whose declared authentication the
+  interceptors do not enforce** (server; spec §3.3.2 "Servers MUST reject
+  requests with invalid or missing authentication credentials", §7.4 "MUST
+  authenticate every incoming request based on ... its declared
+  authentication requirements", §13.3 "MUST authenticate requests using one
+  of the schemes declared in the public AgentCard"). Two configurations that
+  built now fail with `ServerError::InvalidParams`, naming the fix: a card
+  (or a skill) with `securityRequirements` when no interceptor authenticates,
+  which served every request without the credential the card demanded; and
+  an authenticating interceptor that checks none of the card's declared
+  schemes. `RequestHandlerBuilder::authenticated_upstream()` accepts the
+  first when a gateway in front of the process authenticates. A requirement
+  list containing an empty requirement (`{}`, optional authentication) asks
+  for nothing. New provided trait method
+  `ServerInterceptor::checks_scheme(&SecurityScheme) -> Option<bool>`
+  (default `None`, not checked); the bundled authenticators answer it.
+  Tests: `auth::declared_tests`, and `tests/auth_every_method.rs`, which
+  calls every method in `Method::ALL` on both HTTP bindings without a
+  credential and with a wrong one and requires `401` each time.
 - **A replay longer than `subscribe_replay_limit` is read in pages**
   (server; spec §3.5.2 "each stream MUST receive the same events in the
   same order"). The limit now bounds each read of the event log, not the
@@ -121,6 +156,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`agent_card::card_warnings(&card)`, logged by `build()`** (server). The
+  problems a card likely has but the specification allows: an interface URL
+  that is not absolute, or not `https` off loopback (a2a.proto
+  `AgentInterface.url`, spec §7.1); a custom binding that is not a URI
+  (§5.8); an HTTP authentication scheme not in the IANA registry (read
+  2026-10-18); an extension URI with no version (§4.6.3).
+- **A listener warns when its binding is not on the card** (server; spec
+  §5.2 "Agents MUST declare all supported protocols in their AgentCard").
+  `Server`, the WebSocket listener and the gRPC listener check the handler's
+  static card when they start. New provided method
+  `Dispatcher::protocol_binding()` (default `None`); `JsonRpcDispatcher`
+  and `RestDispatcher` answer it.
+- **`EventEmitter::auth_required(explanation)` and
+  `relay_auth_required(&downstream_status)`** (server; spec §7.6.1 "MUST
+  transition the TaskState to `TASK_STATE_AUTH_REQUIRED`" and "MUST include
+  a TaskStatus message explaining the required authorization"; §7.6.2). The
+  first parks the task with the explanation as its status message; the
+  second passes a downstream agent's request on as this task's own. A
+  streamed task that parks at `AUTH_REQUIRED`, gets its credential out of
+  band and finishes stays on one stream (§7.6.1 SHOULD), now pinned by
+  `tests/auth_required_in_task.rs`.
+- **`RequestContext::referenced_tasks()`** (server; spec §3.4.3 "Agents
+  SHOULD use referenced tasks to understand the context and intent of
+  follow-up requests"). The handler resolves a message's `referenceTaskIds`
+  before the executor runs: in the caller's own partition, unknown ids
+  skipped, duplicates once, at most 16. `with_referenced_tasks` sets them
+  for a context built by hand. Tests: `tests/referenced_tasks.rs`.
 - **An opt-in total task cap across tenant partitions** (server; the
   maintainer's 2026-10-18 decision). The default tenant store's bound was
   `max_tenants × max_capacity` (ten million tasks at the defaults).
@@ -680,6 +742,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **An agent message on a task status, or in a snapshot's history, is
+  given the task's ids when it carries none** (server; a2a.proto `Message`:
+  "For server messages, `context_id` must be provided"). Only a direct
+  reply was stamped; a status message an executor wrote without ids went
+  out without them. Ids an executor set are kept, and user messages are
+  untouched. An `AUTH_REQUIRED` status with no message is now logged as a
+  warning (§7.6.1), not refused, since the details may have been negotiated
+  out of band.
 - **`RateLimitInterceptor` keys an unidentified caller by its peer address,
   and every key names its kind** (server; the maintainer's 2026-10-18
   decision; release audit F10, F11). A caller no interceptor identified
@@ -1349,6 +1419,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An unauthenticated push-config call is refused for its credential, not
+  told the agent lacks push** (server; spec §3.3.2). `Get`, `List` and
+  `DeleteTaskPushNotificationConfig` checked the card's push capability
+  before authenticating, so a caller with no credential got
+  `PushNotificationNotSupported` where `CreateTaskPushNotificationConfig`
+  gave `401`; a paged list also decoded its page token first. Found by
+  `tests/auth_every_method.rs`, which failed on it.
+- **The gRPC client keeps a rate-limit refusal's retry delay** (client).
+  `RESOURCE_EXHAUSTED` carrying `google.rpc.RetryInfo` (which this SDK's
+  server always attaches) became a 429 with no `retry_after`, so a gRPC
+  client retried on its own backoff while the HTTP ones waited as asked.
+  Clamped to the hour `Retry-After` is.
+- **The client refuses a message with an empty `messageId` or no parts
+  before sending it** (client; a2a.proto REQUIRED fields, spec §5.7), with
+  `InvalidParams`, instead of spending a round trip on the server's refusal.
+- **`with_connection_timeout`'s documentation said it covered DNS**
+  (client). It bounds the TCP connect only, after name resolution, divided
+  across the resolved addresses (hyper-util 0.1.21's `HttpConnector`). Its
+  behaviour is now tested (`tests/connection_timeout.rs`), where before only
+  its default and setter were.
 - **A tenant partition no longer reserves room for its whole capacity on
   creation** (server; release audit F4). Each partition of
   `TenantAwareInMemoryTaskStore` pre-allocated its map for `max_capacity`

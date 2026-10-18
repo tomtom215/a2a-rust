@@ -111,6 +111,16 @@ enum CardSetting {
     Without,
 }
 
+/// The authentication checks a builder was told to waive, each because
+/// something outside this handler covers it.
+#[derive(Debug, Clone, Copy)]
+struct AuthWaivers {
+    /// [`RequestHandlerBuilder::allow_unauthenticated_extended_card`].
+    extended_card: bool,
+    /// [`RequestHandlerBuilder::authenticated_upstream`].
+    upstream: bool,
+}
+
 /// Fluent builder for [`RequestHandler`].
 ///
 /// # Required
@@ -171,7 +181,7 @@ pub struct RequestHandlerBuilder {
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     span_settings: crate::rpc_span::SpanSettings,
-    allow_unauthenticated_extended_card: bool,
+    auth_waivers: AuthWaivers,
     allow_undeclared_input_modes: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
     #[cfg(feature = "audit")]
@@ -213,7 +223,10 @@ impl RequestHandlerBuilder {
                 agent: true,
                 content: false,
             },
-            allow_unauthenticated_extended_card: false,
+            auth_waivers: AuthWaivers {
+                extended_card: false,
+                upstream: false,
+            },
             allow_undeclared_input_modes: false,
             approval_gate: None,
             #[cfg(feature = "audit")]
@@ -692,7 +705,24 @@ impl RequestHandlerBuilder {
     /// service mesh, mTLS sidecar).
     #[must_use]
     pub const fn allow_unauthenticated_extended_card(mut self) -> Self {
-        self.allow_unauthenticated_extended_card = true;
+        self.auth_waivers.extended_card = true;
+        self
+    }
+
+    /// Builds a handler whose agent card requires authentication although no
+    /// interceptor here authenticates, because something in front of this
+    /// process does (an API gateway, a service mesh, an mTLS sidecar).
+    ///
+    /// By default [`build`](Self::build) refuses a card whose
+    /// `securityRequirements` (or a skill's) ask for a credential when no
+    /// registered interceptor
+    /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates):
+    /// every request would otherwise be served without the credential the
+    /// card demands (spec §3.3.2, §7.4). Call this only when that credential
+    /// is checked before a request reaches this handler. Since 2026-10-18.
+    #[must_use]
+    pub const fn authenticated_upstream(mut self) -> Self {
+        self.auth_waivers.upstream = true;
         self
     }
 
@@ -742,6 +772,11 @@ impl RequestHandlerBuilder {
     ///   have to edit to declare an extension;
     /// - no agent card, unless [`without_agent_card`](Self::without_agent_card)
     ///   (spec §8.1);
+    /// - an agent card whose `securityRequirements` ask for a credential when
+    ///   no interceptor authenticates, unless
+    ///   [`authenticated_upstream`](Self::authenticated_upstream); or an
+    ///   authenticating interceptor that checks none of the schemes the card
+    ///   declares (spec §3.3.2, §7.4, §13.3);
     /// - an agent card that declares `pushNotifications` with no
     ///   [`push sender`](Self::with_push_sender) (spec §3.3.4);
     /// - a zero executor timeout, `max_id_length`, `max_metadata_size` or
@@ -789,6 +824,21 @@ impl RequestHandlerBuilder {
                      PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
                      or declare pushNotifications false"
                 )));
+            }
+        }
+        // Spec §3.3.2, §7.4, §13.3: the authentication the cards declare is
+        // the authentication the chain enforces.
+        let cards: Vec<&AgentCard> = public_card
+            .into_iter()
+            .chain(extended_card)
+            .map(|(_, card)| card)
+            .collect();
+        crate::auth::declared::check(&cards, &self.interceptors, self.auth_waivers.upstream)
+            .map_err(crate::error::ServerError::InvalidParams)?;
+        // Legal, but likely wrong: reported, not refused (`agent_card::lint`).
+        for card in &cards {
+            for _warning in crate::agent_card::card_warnings(card) {
+                trace_warn!(warning = %_warning, "agent card");
             }
         }
         if self.extended_card_provider.is_some() && extended_card.is_none() {
@@ -1072,7 +1122,7 @@ impl RequestHandlerBuilder {
             caller_isolation,
             inbound_trace_policy: self.inbound_trace_policy,
             span_settings: self.span_settings,
-            allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
+            allow_unauthenticated_extended_card: self.auth_waivers.extended_card,
             accepted_input_modes,
             required_extensions,
             declared_extensions,
@@ -1157,10 +1207,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("caller_isolation", &self.caller_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)
             .field("span_settings", &self.span_settings)
-            .field(
-                "allow_unauthenticated_extended_card",
-                &self.allow_unauthenticated_extended_card,
-            )
+            .field("auth_waivers", &self.auth_waivers)
             .field(
                 "allow_undeclared_input_modes",
                 &self.allow_undeclared_input_modes,

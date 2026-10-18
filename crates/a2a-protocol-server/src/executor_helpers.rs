@@ -346,6 +346,75 @@ impl<'a> EventEmitter<'a> {
             .await
     }
 
+    /// Parks the task at `auth-required`, telling the client what it must
+    /// authenticate for and how (spec §7.6.1: the agent "MUST" move the task
+    /// to `TASK_STATE_AUTH_REQUIRED` and "SHOULD" include a status message
+    /// explaining the required authentication).
+    ///
+    /// The explanation is the status message's text. Credentials are then
+    /// obtained out of band, never through A2A (§7.6.1); return after
+    /// calling this, and the task continues when the client sends its next
+    /// message once it has them.
+    ///
+    /// ```rust,ignore
+    /// emit.auth_required("Sign in to the calendar service at https://cal.example/connect").await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event queue write fails.
+    pub async fn auth_required(&self, explanation: impl Into<String>) -> A2aResult<()> {
+        self.status_with_note(
+            TaskState::AuthRequired,
+            vec![Part::text(explanation.into())],
+        )
+        .await
+    }
+
+    /// Relays a downstream agent's `auth-required` to this task's own client
+    /// (spec §7.6.2: an agent that delegated work "MAY" pass the request on
+    /// as its own `auth-required`, since only its client can supply the
+    /// credential).
+    ///
+    /// The downstream status message's parts become this task's status
+    /// message, under a new message id and this task's ids; with no
+    /// downstream message, a generic explanation is sent instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event queue write fails.
+    pub async fn relay_auth_required(&self, downstream: &TaskStatus) -> A2aResult<()> {
+        let parts = downstream
+            .message
+            .as_ref()
+            .map(|m| m.parts.clone())
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| {
+                vec![Part::text(
+                    "an agent this task delegated to needs authentication",
+                )]
+            });
+        self.status_with_note(TaskState::AuthRequired, parts).await
+    }
+
+    /// Emits `state` with an agent status message of `parts`, carrying this
+    /// task's ids.
+    async fn status_with_note(&self, state: TaskState, parts: Vec<Part>) -> A2aResult<()> {
+        let mut note = Message::agent(uuid::Uuid::new_v4().to_string(), parts);
+        note.task_id = Some(self.ctx.task_id.clone());
+        note.context_id = Some(ContextId::new(self.ctx.context_id.clone()));
+        let mut status = TaskStatus::new(state);
+        status.message = Some(note);
+        self.queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: self.ctx.task_id.clone(),
+                context_id: ContextId::new(self.ctx.context_id.clone()),
+                status,
+                metadata: None,
+            }))
+            .await
+    }
+
     /// Returns `true` if the task has been cancelled.
     #[must_use]
     pub fn is_cancelled(&self) -> bool {
@@ -354,117 +423,5 @@ impl<'a> EventEmitter<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use a2a_protocol_types::message::{Message, MessageId, MessageRole};
-    use a2a_protocol_types::task::TaskId;
-
-    fn make_request_context() -> RequestContext {
-        let message = Message {
-            id: MessageId::new("test-msg"),
-            role: MessageRole::User,
-            parts: vec![],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        };
-        RequestContext::new(message, TaskId::new("test-task"), "test-ctx".into())
-    }
-
-    /// Dummy writer for testing `EventEmitter` without needing a real queue.
-    struct DummyWriter;
-
-    impl EventQueueWriter for DummyWriter {
-        fn write<'a>(
-            &'a self,
-            _event: a2a_protocol_types::events::StreamResponse,
-        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
-        {
-            Box::pin(async { Ok(()) })
-        }
-        fn close<'a>(
-            &'a self,
-        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
-        {
-            Box::pin(async { Ok(()) })
-        }
-    }
-
-    #[test]
-    fn is_cancelled_returns_false_initially() {
-        let ctx = make_request_context();
-        let emit = EventEmitter::new(&ctx, &DummyWriter);
-        assert!(!emit.is_cancelled());
-    }
-
-    #[test]
-    fn is_cancelled_returns_true_after_cancel() {
-        let ctx = make_request_context();
-        let emit = EventEmitter::new(&ctx, &DummyWriter);
-        ctx.cancellation_token.cancel();
-        assert!(emit.is_cancelled());
-    }
-
-    #[tokio::test]
-    async fn emit_status_writes_to_queue() {
-        let ctx = make_request_context();
-        let emit = EventEmitter::new(&ctx, &DummyWriter);
-        emit.status(TaskState::Working).await.unwrap();
-        emit.status(TaskState::Completed).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn emit_artifact_writes_to_queue() {
-        let ctx = make_request_context();
-        let emit = EventEmitter::new(&ctx, &DummyWriter);
-        emit.artifact("result-1", vec![Part::text("hello")], None, Some(true))
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn emit_artifact_with_append() {
-        let ctx = make_request_context();
-        let emit = EventEmitter::new(&ctx, &DummyWriter);
-        emit.artifact(
-            "chunk-1",
-            vec![Part::text("part1")],
-            Some(false),
-            Some(false),
-        )
-        .await
-        .unwrap();
-        emit.artifact("chunk-1", vec![Part::text("part2")], Some(true), Some(true))
-            .await
-            .unwrap();
-    }
-
-    #[test]
-    fn boxed_future_wraps_async_block() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
-        let result = rt.block_on(boxed_future(async { 42 }));
-        assert_eq!(result, 42);
-    }
-
-    // ── Test the macro with cancel form ──────────────────────────────────
-
-    struct CancelableTestExecutor;
-    agent_executor!(CancelableTestExecutor,
-        execute: |_ctx, _queue| async { Ok(()) },
-        cancel: |_ctx, _queue| async { Ok(()) }
-    );
-
-    #[tokio::test]
-    async fn macro_cancel_form_compiles_and_runs() {
-        use crate::executor::AgentExecutor;
-        let executor = CancelableTestExecutor;
-        let ctx = make_request_context();
-        let writer = DummyWriter;
-        executor.execute(&ctx, &writer).await.unwrap();
-        executor.cancel(&ctx, &writer).await.unwrap();
-    }
-}
+#[path = "executor_helpers_tests.rs"]
+mod tests;

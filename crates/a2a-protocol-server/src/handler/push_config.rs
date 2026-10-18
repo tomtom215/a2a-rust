@@ -257,8 +257,6 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                // SPEC §3.3.4: reject when the agent card does not advertise push support.
-                self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
                     "GetTaskPushNotificationConfig",
                     headers,
@@ -270,6 +268,11 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.3.4: reject when the agent card does not advertise
+                    // push support. After authentication, as for Create: an
+                    // unauthenticated caller is refused for its credential, not
+                    // told what the agent supports (spec §3.3.2).
+                    self.ensure_push_supported()?;
 
                     require_field("taskId", &params.task_id)?;
                     require_field("id", &params.id)?;
@@ -329,8 +332,6 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant_owned, async {
-                // SPEC §3.3.4: reject when the agent card does not advertise push support.
-                self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
                     "ListTaskPushNotificationConfigs",
                     headers,
@@ -342,6 +343,11 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.3.4: reject when the agent card does not advertise
+                    // push support. After authentication, as for Create: an
+                    // unauthenticated caller is refused for its credential, not
+                    // told what the agent supports (spec §3.3.2).
+                    self.ensure_push_supported()?;
                     // SPEC §3.1.9: TaskNotFoundError when "the task ID does not
                     // exist or is not accessible". An unknown task answered an
                     // empty list until 2026-10-10, which a peer cannot tell
@@ -400,8 +406,6 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                // SPEC §3.3.4: reject when the agent card does not advertise push support.
-                self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
                     "DeleteTaskPushNotificationConfig",
                     headers,
@@ -413,6 +417,11 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.3.4: reject when the agent card does not advertise
+                    // push support. After authentication, as for Create: an
+                    // unauthenticated caller is refused for its credential, not
+                    // told what the agent supports (spec §3.3.2).
+                    self.ensure_push_supported()?;
                     // SPEC §3.1.10: TaskNotFoundError when the task does not
                     // exist; deleting a config that is already gone still
                     // succeeds, since the operation MUST be idempotent.

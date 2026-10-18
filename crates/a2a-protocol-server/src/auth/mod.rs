@@ -59,6 +59,7 @@ use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
 pub mod caller_id;
+pub(crate) mod declared;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
 pub mod throttle;
@@ -193,9 +194,10 @@ impl ApiKeyAuthInterceptor {
     ///
     /// The label becomes [`CallContext::caller_identity`], which is what
     /// [`RateLimitInterceptor`](crate::RateLimitInterceptor) keys a budget on.
-    /// Without labels every holder of a valid key shares the `"anonymous"`
-    /// bucket, so one noisy client spends everyone's budget — per-caller rate
-    /// limiting that is not per-caller.
+    /// Without labels a holder of a valid key is keyed by its address
+    /// instead, so every client behind one proxy, or with no recorded
+    /// address, shares a budget: rate limiting by where a request came from,
+    /// not by whose key it carried.
     ///
     /// The label is deliberately *not* derived from the key. A caller key is
     /// written to a rate-limit table that may be shared across replicas, and
@@ -283,6 +285,17 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
 
     fn authenticates(&self) -> bool {
         true
+    }
+
+    /// An API key in the header this interceptor reads.
+    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
+        use a2a_protocol_types::security::{ApiKeyLocation, SecurityScheme};
+        Some(matches!(
+            scheme,
+            SecurityScheme::ApiKey(key)
+                if key.location == ApiKeyLocation::Header
+                    && key.name.eq_ignore_ascii_case(&self.header_name)
+        ))
     }
 }
 
@@ -392,6 +405,12 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
     fn authenticates(&self) -> bool {
         true
     }
+
+    /// A bearer token: the HTTP `bearer` scheme, or the access token of an
+    /// OAuth 2.0 or `OpenID` Connect scheme, which is presented the same way.
+    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
+        Some(declared::is_bearer(scheme))
+    }
 }
 
 // ── Shared plumbing for JWT (also used dep-free above) ─────────────────────────
@@ -415,6 +434,8 @@ pub type SharedPrincipal = Arc<AuthenticatedPrincipal>;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod declared_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]

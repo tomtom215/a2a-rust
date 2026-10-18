@@ -99,6 +99,18 @@ pub trait Dispatcher: Send + Sync + 'static {
     fn request_handler(&self) -> Option<&Arc<crate::RequestHandler>> {
         None
     }
+
+    /// The `protocolBinding` this dispatcher serves, as an agent card names
+    /// it (`"JSONRPC"`, `"HTTP+JSON"`), if it serves exactly one.
+    ///
+    /// [`Server`] uses it with [`request_handler`](Self::request_handler) to
+    /// warn, when it starts, that the handler's agent card does not declare
+    /// the binding this listener serves (spec §5.2: "Agents MUST declare all
+    /// supported protocols in their AgentCard"). The default, `None`, is not
+    /// checked.
+    fn protocol_binding(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 // ── serve ────────────────────────────────────────────────────────────────────

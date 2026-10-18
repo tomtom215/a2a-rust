@@ -39,10 +39,12 @@ impl RequestHandler {
         params: &ListPushConfigsParams,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<ListPushConfigsResponse> {
-        let after = params.page_token.as_deref().map(decode_token).transpose()?;
+        // Listed first: the listing authenticates the caller, and a page
+        // token is decoded only for one it admitted.
         let configs = self
             .on_list_push_configs(&params.task_id, params.tenant.as_deref(), headers)
             .await?;
+        let after = params.page_token.as_deref().map(decode_token).transpose()?;
         Ok(page(configs, params.page_size, after.as_deref()))
     }
 }

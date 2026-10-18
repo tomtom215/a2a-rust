@@ -34,6 +34,7 @@ mod messaging;
 mod push_config;
 mod push_config_page;
 mod shutdown;
+mod undeclared_binding;
 
 pub use halt::{HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
@@ -476,3 +477,5 @@ mod tenant_isolation_tests;
 mod tenant_limits_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod undeclared_binding_tests;

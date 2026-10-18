@@ -144,6 +144,9 @@ agent_executor!(MyAgent, |ctx, queue| async {
 |--------|-------------|
 | `status(TaskState)` | Emit a status update event |
 | `fail(FailureClass, reason)` | Emit the terminal `Failed` status, with the reason and a failure class a caller can branch on |
+| `auth_required(explanation)` | Park the task at `AUTH_REQUIRED` with the explanation as its status message (spec §7.6.1) |
+| `relay_auth_required(&status)` | Pass a downstream agent's `AUTH_REQUIRED` on as this task's own, with its explanation (§7.6.2) |
+| `request_approval(request, question)` | Park the task at `INPUT_REQUIRED` asking a person to approve an action |
 | `artifact(id, parts, append, last_chunk)` | Emit an artifact update event |
 | `is_cancelled()` | Check if the task was cancelled |
 
@@ -159,6 +162,36 @@ integer beyond ±2^53 in metadata or a `data` part, a `metadata` that is not
 a JSON object. The write returns `InvalidParams` naming the field, and `?`
 returns it from `execute`, which fails the task.
 
+An agent message the executor puts on a status, or in a snapshot's history,
+without a `contextId` or `taskId` is given the task's (a2a.proto: a server
+message's `context_id` "must be provided"); ids it set are kept.
+
+### Asking for authorization in the task
+
+When the agent needs a credential it does not have, spec §7.6.1 has it park
+the task at `AUTH_REQUIRED` with a message saying what to authorize, and
+take the credential out of band. `auth_required` does the first two. The
+executor can then return, and continue on the client's next message, or
+wait for the credential on the same run: the stream stays open across
+`AUTH_REQUIRED` until the task ends.
+
+```rust
+# use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_server::executor_helpers::EventEmitter;
+
+struct Calendar;
+
+agent_executor!(Calendar, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    if ctx.http_header("x-calendar-grant").is_none() {
+        return emit
+            .auth_required("Connect your calendar at https://cal.example/connect, then resend")
+            .await;
+    }
+    emit.status(TaskState::Completed).await
+});
+```
+
 ## RequestContext
 
 The `RequestContext` provides information about the incoming request:
@@ -169,6 +202,7 @@ The `RequestContext` provides information about the incoming request:
 | `context_id` | `String` | Conversation context ID |
 | `message` | `Message` | The incoming message with parts |
 | `stored_task` | `Option<Task>` | Previously stored task snapshot (for continuations) |
+| `referenced_tasks()` | `&[Task]` | The tasks the message's `referenceTaskIds` name, read in the caller's partition (at most 16; §3.4.3) |
 | `metadata` | `Option<Value>` | Arbitrary metadata from the request |
 | `cancellation_token` | `CancellationToken` | Token for cooperative cancellation |
 | `call_context` | `Option<CallContext>` | The call this execution belongs to (see below) |

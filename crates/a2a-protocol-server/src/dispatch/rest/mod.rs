@@ -821,6 +821,10 @@ impl crate::serve::Dispatcher for RestDispatcher {
     fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
         Some(&self.handler)
     }
+
+    fn protocol_binding(&self) -> Option<&'static str> {
+        Some("HTTP+JSON")
+    }
 }
 
 /// A path's segments for routing: one leading and one trailing `/` dropped,

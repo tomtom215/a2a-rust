@@ -489,4 +489,8 @@ impl Dispatcher for JsonRpcDispatcher {
     fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
         Some(&self.handler)
     }
+
+    fn protocol_binding(&self) -> Option<&'static str> {
+        Some("JSONRPC")
+    }
 }

@@ -372,6 +372,8 @@ impl RequestHandler {
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
             }
+            let referenced = self.resolve_references(&ctx.message).await?;
+            ctx = ctx.with_referenced_tasks(referenced);
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.

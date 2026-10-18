@@ -26,20 +26,43 @@
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::message::{Message, MessageRole};
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState};
 
 /// Gives the status of a status update or a task snapshot a UTC timestamp:
 /// now when the executor left it empty, the same instant in UTC when it
-/// carries another offset.
+/// carries another offset. Its status message, and an agent message in a
+/// snapshot's history, are given the task's ids when they carry none.
 ///
 /// # Errors
 ///
 /// An internal error when the executor set a timestamp that is not ISO 8601.
 pub(super) fn stamp_status(event: &mut StreamResponse) -> A2aResult<()> {
-    let status = match event {
-        StreamResponse::StatusUpdate(update) => &mut update.status,
-        StreamResponse::Task(task) => &mut task.status,
+    let (status, task_id, context_id) = match event {
+        StreamResponse::StatusUpdate(update) => {
+            (&mut update.status, &update.task_id, &update.context_id)
+        }
+        StreamResponse::Task(task) => {
+            for message in task.history.iter_mut().flatten() {
+                stamp_ids(message, &task.id, &task.context_id);
+            }
+            (&mut task.status, &task.id, &task.context_id)
+        }
         _ => return Ok(()),
     };
+    if let Some(message) = status.message.as_mut() {
+        stamp_ids(message, task_id, context_id);
+    } else if status.state == TaskState::AuthRequired {
+        // §7.6.1: the agent "MUST include a TaskStatus message explaining the
+        // required authorization, unless the details ... have been
+        // negotiated out-of-band or via an extension". Only the executor
+        // knows which, so this is a warning, not a refusal;
+        // `EventEmitter::auth_required` always includes one.
+        trace_warn!(
+            task_id = %task_id,
+            "AUTH_REQUIRED with no status message explaining the authorization (spec §7.6.1)"
+        );
+    }
     match status.timestamp.as_deref() {
         None => status.timestamp = Some(a2a_protocol_types::utc_now_iso8601()),
         Some(ts) => {
@@ -59,6 +82,24 @@ pub(super) fn stamp_status(event: &mut StreamResponse) -> A2aResult<()> {
         }
     }
     Ok(())
+}
+
+/// Gives an agent message the task's ids where it carries none. a2a.proto,
+/// `Message`: "For server messages, `context_id` must be provided, and
+/// `task_id` only if a task was created"; a message on a task's status or
+/// in its history belongs to a task that exists. Ids the executor set are
+/// kept as written. Until 2026-10-18 only a direct reply was stamped
+/// (`respond.rs`).
+fn stamp_ids(message: &mut Message, task_id: &TaskId, context_id: &ContextId) {
+    if message.role != MessageRole::Agent {
+        return;
+    }
+    if message.context_id.is_none() {
+        message.context_id = Some(context_id.clone());
+    }
+    if message.task_id.is_none() {
+        message.task_id = Some(task_id.clone());
+    }
 }
 
 #[cfg(test)]
@@ -167,5 +208,52 @@ mod tests {
             stamp_status(&mut event).expect(given);
             assert_eq!(timestamp(&event), Some(served), "{given}");
         }
+    }
+
+    /// a2a.proto `Message`: "For server messages, `context_id` must be
+    /// provided". An agent message on a status, or in a snapshot's history,
+    /// gets the task's ids where it has none; ids it has are kept, and a
+    /// user message is left as the client sent it.
+    #[test]
+    fn agent_messages_on_a_status_or_in_history_get_the_tasks_ids() {
+        use a2a_protocol_types::message::{Message, Part};
+
+        let mut status = TaskStatus::new(TaskState::InputRequired);
+        status.message = Some(Message::agent("m1", vec![Part::text("which date?")]));
+        let mut event = update(status);
+        stamp_status(&mut event).expect("stamp");
+        let StreamResponse::StatusUpdate(u) = &event else {
+            unreachable!()
+        };
+        let m = u.status.message.as_ref().expect("message");
+        assert_eq!(m.context_id, Some(ContextId::new("c")));
+        assert_eq!(m.task_id, Some(TaskId::new("t")));
+
+        let mut own = Message::agent("m2", vec![Part::text("x")]);
+        own.context_id = Some(ContextId::new("given"));
+        let user = Message::user_text("u1", "hi");
+        let mut event = StreamResponse::Task(Task {
+            id: TaskId::new("t"),
+            context_id: ContextId::new("c"),
+            status: TaskStatus::new(TaskState::Working),
+            history: Some(vec![user, own]),
+            artifacts: None,
+            metadata: None,
+        });
+        stamp_status(&mut event).expect("stamp");
+        let StreamResponse::Task(task) = &event else {
+            unreachable!()
+        };
+        let history = task.history.as_ref().expect("history");
+        assert_eq!(
+            history[0].context_id, None,
+            "a user message is the client's"
+        );
+        assert_eq!(
+            history[1].context_id,
+            Some(ContextId::new("given")),
+            "kept as written"
+        );
+        assert_eq!(history[1].task_id, Some(TaskId::new("t")));
     }
 }

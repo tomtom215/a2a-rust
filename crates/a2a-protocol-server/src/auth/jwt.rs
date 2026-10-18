@@ -781,6 +781,12 @@ impl ServerInterceptor for JwtAuthInterceptor {
     fn authenticates(&self) -> bool {
         true
     }
+
+    /// A bearer JWT: the HTTP `bearer` scheme, or an OAuth 2.0 or `OpenID`
+    /// Connect scheme, whose access tokens this validates.
+    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
+        Some(super::declared::is_bearer(scheme))
+    }
 }
 
 impl RemoteJwks {

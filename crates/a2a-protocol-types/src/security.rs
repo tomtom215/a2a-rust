@@ -129,6 +129,17 @@ impl SecurityScheme {
             Self::OpenIdConnect(s) if s.open_id_connect_url.is_empty() => {
                 Err("an openIdConnectSecurityScheme needs an openIdConnectUrl")
             }
+            Self::OpenIdConnect(s) if !is_url(&s.open_id_connect_url) => {
+                Err("an openIdConnectSecurityScheme's openIdConnectUrl is not a URL")
+            }
+            // a2a.proto: oauth2_metadata_url, "TLS is required".
+            Self::OAuth2(s)
+                if s.oauth2_metadata_url
+                    .as_deref()
+                    .is_some_and(|u| !u.is_empty() && !is_https_url(u)) =>
+            {
+                Err("an oauth2SecurityScheme's oauth2MetadataUrl must be an https URL")
+            }
             Self::OAuth2(s) => s.flows.validate(),
             Self::ApiKey(_) | Self::Http(_) | Self::OpenIdConnect(_) | Self::MutualTls(_) => Ok(()),
         }
@@ -276,10 +287,13 @@ pub enum ApiKeyLocation {
 // `OAuthFlows` is generated: see the `include!` above. Its `Deserialize` is generated with it.
 
 impl OAuthFlows {
-    /// [`SecurityScheme::validate`] for the flow. The proto marks no field
-    /// of the deprecated implicit and password flows REQUIRED.
+    /// [`SecurityScheme::validate`] for the flow: every REQUIRED URL
+    /// present, and every URL given in the form of a URL. The proto marks no
+    /// field of the deprecated implicit and password flows REQUIRED, but
+    /// says each of their URLs "MUST be in the form of a URL" (checked since
+    /// 2026-10-18, as the other flows' are).
     #[allow(deprecated)] // matching the deprecated flows is not using them
-    const fn validate(&self) -> Result<(), &'static str> {
+    fn validate(&self) -> Result<(), &'static str> {
         match self {
             Self::AuthorizationCode(f) if f.authorization_url.is_empty() => {
                 Err("an authorizationCode flow needs an authorizationUrl")
@@ -296,13 +310,54 @@ impl OAuthFlows {
             Self::DeviceCode(f) if f.token_url.is_empty() => {
                 Err("a deviceCode flow needs a tokenUrl")
             }
-            Self::AuthorizationCode(_)
-            | Self::ClientCredentials(_)
-            | Self::DeviceCode(_)
-            | Self::Implicit(_)
-            | Self::Password(_) => Ok(()),
+            Self::AuthorizationCode(f) => urls(
+                [&f.authorization_url, &f.token_url],
+                f.refresh_url.as_deref(),
+            ),
+            Self::ClientCredentials(f) => urls([&f.token_url], f.refresh_url.as_deref()),
+            Self::DeviceCode(f) => urls(
+                [&f.device_authorization_url, &f.token_url],
+                f.refresh_url.as_deref(),
+            ),
+            Self::Implicit(f) => urls([&f.authorization_url], f.refresh_url.as_deref()),
+            Self::Password(f) => urls([&f.token_url], f.refresh_url.as_deref()),
         }
     }
+}
+
+/// Every non-empty URL among `required` and `refresh` is in the form of a
+/// URL.
+fn urls<const N: usize>(required: [&String; N], refresh: Option<&str>) -> Result<(), &'static str> {
+    let all = required.into_iter().map(String::as_str).chain(refresh);
+    if all.filter(|u| !u.is_empty()).all(is_url) {
+        Ok(())
+    } else {
+        Err("an OAuth flow URL is not in the form of a URL (scheme://authority...)")
+    }
+}
+
+/// Whether `s` is in the form of an absolute URL with an authority:
+/// `scheme://authority...`, the scheme RFC 3986 §3.1's letters, digits,
+/// `+`, `-` and `.` after a letter, and no whitespace or control character.
+/// A shape check, deliberately: this crate parses no URLs, and the fields
+/// it guards are links a client follows, which need a scheme and a host.
+pub(crate) fn is_url(s: &str) -> bool {
+    let Some((scheme, rest)) = s.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        && !rest.is_empty()
+        && !rest.starts_with('/')
+        && !s.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// [`is_url`] with the `https` scheme, compared without regard to case.
+pub(crate) fn is_https_url(s: &str) -> bool {
+    is_url(s)
+        && s.get(..8)
+            .is_some_and(|p| p.eq_ignore_ascii_case("https://"))
 }
 
 // `AuthorizationCodeFlow` is generated: see the `include!` above.
@@ -324,6 +379,10 @@ impl OAuthFlows {
 // `MutualTlsSecurityScheme` is generated: see the `include!` above.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[path = "security_url_tests.rs"]
+mod url_tests;
 
 #[cfg(test)]
 mod tests {

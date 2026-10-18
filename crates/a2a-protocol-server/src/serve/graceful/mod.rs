@@ -270,6 +270,11 @@ impl Server {
             #[cfg(feature = "tls-rustls")]
             tls,
         } = self;
+        if let (Some(binding), Some(handler)) =
+            (dispatcher.protocol_binding(), dispatcher.request_handler())
+        {
+            handler.warn_if_undeclared(binding);
+        }
         let connections = connections::Connections::for_dispatcher(&dispatcher);
         let dispatcher = Arc::new(dispatcher);
         let graceful = hyper_util::server::graceful::GracefulShutdown::new();

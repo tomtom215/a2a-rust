@@ -92,7 +92,40 @@ pub(super) fn build_request_context(
     ctx
 }
 
+/// Most referenced tasks resolved for one message. `referenceTaskIds` is
+/// client input, so without a bound one message could make the handler read
+/// and hold any number of tasks.
+pub(super) const MAX_RESOLVED_REFERENCES: usize = 16;
+
 impl RequestHandler {
+    /// The tasks `message.referenceTaskIds` names, read in the caller's own
+    /// partition, so a task another caller or tenant holds is not found;
+    /// unknown ids are skipped, duplicates read once, and at most
+    /// [`MAX_RESOLVED_REFERENCES`] are read (spec §3.4.3: "Agents SHOULD use
+    /// referenced tasks to understand the context and intent of follow-up
+    /// requests").
+    ///
+    /// # Errors
+    ///
+    /// The store's error, converted.
+    pub(super) async fn resolve_references(&self, message: &Message) -> ServerResult<Vec<Task>> {
+        let mut seen: Vec<&TaskId> = Vec::new();
+        let mut found = Vec::new();
+        for id in message.reference_task_ids.iter().flatten() {
+            if seen.len() == MAX_RESOLVED_REFERENCES {
+                break;
+            }
+            if seen.contains(&id) {
+                continue;
+            }
+            seen.push(id);
+            if let Some(task) = self.task_store.get(id).await? {
+                found.push(task);
+            }
+        }
+        Ok(found)
+    }
+
     /// Persists the initial task. If the store refuses it, the queue and
     /// token admitted for it are released, so a store error leaks neither.
     ///

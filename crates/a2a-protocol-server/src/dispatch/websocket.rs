@@ -428,6 +428,8 @@ impl WebSocketDispatcher {
         stop: impl std::future::Future<Output = ()>,
         conns: &Connections,
     ) {
+        self.handler
+            .warn_if_undeclared(a2a_protocol_types::WEBSOCKET_BINDING_URI);
         let mut stop = std::pin::pin!(stop);
         // Taken before `accept()`, so excess load waits in the kernel's listen
         // backlog rather than as unbounded spawned tasks. `MAX_PERMITS` when no

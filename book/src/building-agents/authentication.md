@@ -138,6 +138,28 @@ let interceptor = JwtAuthInterceptor::new(
   produce the same error, so the response can't be used as an oracle.
 - **Constant-time comparison** for API keys and static bearer tokens.
 
+### The card and the interceptors must agree
+
+`RequestHandlerBuilder::build` compares the authentication the agent card
+declares with the interceptors that enforce it (since 0.15):
+
+- A card whose `securityRequirements` (or a skill's) ask for a credential is
+  refused when no registered interceptor authenticates, because every request
+  would be served without it (spec §3.3.2, §7.4). An empty requirement `{}`
+  makes authentication optional, as in OpenAPI, and asks for nothing. When a
+  gateway, mesh or sidecar in front of the process checks the credential,
+  say so with `authenticated_upstream()`.
+- An authenticating interceptor that checks none of the schemes the card
+  declares is refused: §13.3 requires requests to be authenticated "using one
+  of the schemes declared in the public `AgentCard`", and a client following
+  the card could never pass it. `BearerTokenAuthInterceptor` and
+  `JwtAuthInterceptor` check the HTTP `bearer` scheme and OAuth 2.0 or OpenID
+  Connect schemes (whose access tokens are bearer tokens);
+  `ApiKeyAuthInterceptor` checks an `apiKeySecurityScheme` in the header it
+  reads, compared without regard to case. A custom interceptor answers
+  through `ServerInterceptor::checks_scheme`; one that does not is not
+  checked.
+
 ### Throttling guessed credentials
 
 Spec §13.4 asks agents to rate-limit against brute force. `RateLimitInterceptor`

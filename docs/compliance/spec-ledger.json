@@ -1605,22 +1605,25 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Servers MUST reject requests with invalid or missing authentication credentials",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/auth/declared.rs check",
     "crates/a2a-protocol-server/src/auth/mod.rs:1",
     "crates/a2a-protocol-types/src/auth_rejection.rs:14",
     "crates/a2a-protocol-server/src/error/mod.rs:176"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_every_method.rs every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs a_card_requiring_credentials_needs_an_authenticator",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:156 json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:225 the_axum_adapter_answers_a_missing_bearer_token_401_with_its_challenge"
    ],
-   "notes": "SDK provides ApiKey/Bearer/JWT interceptors mapped to 401/UNAUTHENTICATED on all bindings, but nothing auto-enforces a card's securityRequirements: without an interceptor every operation except GetExtendedAgentCard (extended_card.rs:96) is served unauthenticated.",
+   "notes": "The bundled ApiKey/Bearer/JWT interceptors refuse a missing or invalid credential with 401/UNAUTHENTICATED on every binding. Since 2026-10-18 build() refuses a card whose securityRequirements (top-level or a skill's, with no empty {} requirement making it optional) ask for a credential when no interceptor authenticates, unless authenticated_upstream() says a gateway in front checks it; so a handler can no longer serve a secured card unauthenticated by omission. tests/auth_every_method.rs calls every method in Method::ALL on JSON-RPC and HTTP+JSON with no credential and a wrong one and requires 401 each time, with the valid token as the control (the official TCK has no test for this, findings §16 AUTH-SERVER-002).",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 506,
@@ -2545,15 +2548,19 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD use referenced tasks to understand the context and intent of follow-up requests",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/request_context.rs:40"
+    "crates/a2a-protocol-server/src/handler/messaging/create.rs resolve_references",
+    "crates/a2a-protocol-server/src/request_context.rs referenced_tasks"
    ],
-   "test_evidence": [],
-   "notes": "Executor receives message.reference_task_ids raw; unlike some SDKs the referenced Tasks are not resolved/loaded into RequestContext (fields at request_context.rs:40-70), so the agent must hold its own store handle to look them up.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/referenced_tasks.rs referenced_tasks_are_resolved_within_the_callers_partition"
+   ],
+   "notes": "Since 2026-10-18 the handler resolves message.referenceTaskIds into RequestContext::referenced_tasks before the executor runs: read in the caller's partition (another caller's task resolves to nothing, as GetTask does), unknown ids skipped, duplicates once, at most 16. Using them is the agent's: SUPPORTED.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 644,
@@ -2561,15 +2568,17 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD leverage the shared contextId to provide contextually relevant responses",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/request_context.rs:46"
+    "crates/a2a-protocol-server/src/handler/helpers.rs find_task_by_context",
+    "crates/a2a-protocol-server/src/request_context.rs stored_task"
    ],
    "test_evidence": [],
-   "notes": "",
+   "notes": "The handler gives the executor the latest task stored for the message's contextId as RequestContext::stored_task, with its history, on every send that names a context; using it for relevance is the agent's.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 683,
@@ -3255,13 +3264,22 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Extensions SHOULD include version information in their URI identifier.",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Extension authors choose URIs; SDK treats URIs as opaque strings.",
+   "impl_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings",
+    "crates/a2a-protocol-types/src/approval.rs:60",
+    "crates/a2a-protocol-types/src/failure.rs:61",
+    "crates/a2a-protocol-types/src/idempotency.rs:62",
+    "crates/a2a-protocol-types/src/provenance.rs:63"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_extension_uri_without_a_version_is_reported"
+   ],
+   "notes": "The four extensions the SDK authors carry /v1 in their URIs; since 2026-10-18 build() warns about a card extension URI with no version in it (no digit at all, a deliberately loose test).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1139,
@@ -3452,18 +3470,23 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Agents MUST declare all supported protocols in their AgentCard",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:596",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:106"
+    "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding",
+    "crates/a2a-protocol-server/src/serve/mod.rs protocol_binding",
+    "crates/a2a-protocol-server/src/serve/graceful/mod.rs serve_with_shutdown",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs accept_loop",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs build_router"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:287 validate_empty_supported_interfaces_returns_error"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs the_http_dispatchers_name_their_bindings"
    ],
-   "notes": "Card content is author-supplied; builder only rejects an empty supported_interfaces, it does not cross-check against the dispatchers actually served. The SDK's own axum quick-start (axum_adapter.rs module docs) declared a JSON-RPC interface while A2aRouter serves HTTP+JSON; it declares HTTP+JSON since 2026-10-13.",
+   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1157,
@@ -4066,15 +4089,19 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "The protocolBinding field in the Agent Card's supportedInterfaces entry SHOULD be a URI",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings",
     "crates/a2a-protocol-types/src/lib.rs:85"
    ],
-   "test_evidence": [],
-   "notes": "SDK provides WEBSOCKET_BINDING_URI constant for card authors; card content is author-supplied.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs a_custom_binding_should_be_a_uri"
+   ],
+   "notes": "The SDK's own custom bindings are URIs (WEBSOCKET_BINDING_URI; SLIMRPC's upstream URI), and since 2026-10-18 build() warns about a custom protocolBinding that is not a URI. The card's content stays the author's.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1297,
@@ -4173,17 +4200,21 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Authentication and authorization MUST be enforced as specified in Section 7",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/auth/declared.rs check",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:104"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_every_method.rs every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs a_card_requiring_credentials_needs_an_authenticator",
     "tck/src/equivalence.rs:870 bind_equiv_004_enforcement"
    ],
-   "notes": "SDK provides auth interceptors (Bearer/JWT); operator must register them. Detailed §7 audit is outside this range.",
+   "notes": "Section 7 enforcement as the SDK carries it: authentication interceptors on every method and binding, build() refusing a secured card nothing enforces (since 2026-10-18), the extended card gated on an authenticator, caller isolation by default with an authenticator (§13.1). Authorization policy beyond that is the agent's (§13.1 3099).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3247,
@@ -4539,21 +4570,24 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "**MUST** authenticate every incoming request based on the provided credentials and its declared authentication requirements.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/auth/declared.rs check",
     "crates/a2a-protocol-server/src/auth/mod.rs:6",
-    "crates/a2a-protocol-server/src/interceptor/mod.rs:147",
-    "crates/a2a-protocol-server/src/interceptor/mod.rs:211",
-    "crates/a2a-protocol-server/src/builder.rs:593"
+    "crates/a2a-protocol-server/src/interceptor/mod.rs:147"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
+    "crates/a2a-protocol-server/tests/auth_every_method.rs every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs a_card_requiring_credentials_needs_an_authenticator",
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs an_authenticator_checking_an_undeclared_scheme_is_refused",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs",
     "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:114 a_refused_token_is_dropped_over_grpc"
    ],
-   "notes": "SDK provides ApiKey/Bearer/JWT ServerInterceptors that run before every method on all bindings, but nothing links the card's securitySchemes/securityRequirements to the interceptor chain: grep for security_requirements/security_schemes in server src (non-test) finds nothing, and build() does not warn when a card declares security but no authenticating interceptor (has_authenticator is only consulted for the extended card). WebSocket per-message auth has no test.",
+   "notes": "Interceptors run before every method on every binding (WebSocket per message). Since 2026-10-18 the card's declared requirements are tied to the chain: build() refuses a card requiring credentials with no authenticating interceptor (opt-out authenticated_upstream() for a gateway), and an authenticating interceptor that checks none of the declared schemes (ServerInterceptor::checks_scheme, answered by the bundled authenticators). Every method is shown refused without a credential on both HTTP bindings (auth_every_method.rs). The note that WebSocket per-message auth had no test was stale: websocket_binding_spec.rs and sdk auth_rejection_e2e.rs cover it.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1896,
@@ -4624,15 +4658,19 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "MUST use a Task to track the operation it is performing",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/executor_helpers.rs:223"
+    "crates/a2a-protocol-server/src/handler/messaging/create.rs build_initial_task",
+    "crates/a2a-protocol-server/src/executor_helpers.rs auth_required"
    ],
-   "test_evidence": [],
-   "notes": "Executor decides; SDK provides task-tracking EventEmitter.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_required_in_task.rs auth_required_parks_the_task_with_its_explanation"
+   ],
+   "notes": "Every SendMessage gets a stored Task before the executor runs (create.rs build_initial_task, respond.rs), so an executor asking for authorization always has one; the test shows the answer to such a send is a Task in AUTH_REQUIRED.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1926,
@@ -4640,18 +4678,18 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "MUST transition the TaskState to `TASK_STATE_AUTH_REQUIRED`",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/task.rs:237",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:110"
+    "crates/a2a-protocol-server/src/executor_helpers.rs auth_required"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/state_validation_tests.rs:151 test_auth_required_transitions"
+    "crates/a2a-protocol-server/tests/auth_required_in_task.rs auth_required_parks_the_task_with_its_explanation"
    ],
-   "notes": "State and its transitions are supported; emitting it is the executor's job.",
+   "notes": "EventEmitter::auth_required(explanation) (since 2026-10-18) makes the transition; executors writing events by hand can still emit the state directly.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1927,
@@ -4659,15 +4697,19 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "MUST include a TaskStatus message explaining the required authorization, unless the details of the authorization have been negotiated out-of-band or via an extension",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/executor_helpers.rs:223"
+    "crates/a2a-protocol-server/src/executor_helpers.rs auth_required",
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs stamp_status"
    ],
-   "test_evidence": [],
-   "notes": "SDK hook exists (TaskStatus.message), but the convenience EventEmitter::status(state) writes `TaskStatus::new(state)` with no message and there is no auth_required(msg) helper or server-side check, so the easy path emits AUTH_REQUIRED without the required explanation.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_required_in_task.rs auth_required_parks_the_task_with_its_explanation"
+   ],
+   "notes": "EventEmitter::auth_required always writes the explanation as the status message, with the task's ids. An AUTH_REQUIRED written by hand with no message is logged as a warning at the queue (status_stamp.rs), not refused: the requirement exempts details negotiated out of band or by an extension, which only the executor knows.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1929,
@@ -4689,16 +4731,19 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "If the credential is received out-of-band, the agent SHOULD maintain any active response streams with the client after setting the TaskState to `TASK_STATE_AUTH_REQUIRED`.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:662",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:88"
    ],
-   "test_evidence": [],
-   "notes": "Server stream ends on terminal state or when the executor's queue closes, not on interrupted states, so an executor that keeps running after writing AUTH_REQUIRED keeps the stream open; no test exercises a stream held open across AUTH_REQUIRED.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_required_in_task.rs the_stream_stays_open_across_auth_required_until_the_task_ends"
+   ],
+   "notes": "The server stream ends on a terminal state or when the executor's queue closes, not on an interrupted state. The test streams a task that parks at AUTH_REQUIRED, receives its credential out of band (the client sends nothing) and finishes: the same stream carries it to Completed.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1931,
@@ -4706,15 +4751,18 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "The agent MAY immediately continue Task processing after receiving the credential, without a requirement that clients send a follow-up message.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:96"
    ],
-   "test_evidence": [],
-   "notes": "Executor may keep writing events after AUTH_REQUIRED.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_required_in_task.rs the_stream_stays_open_across_auth_required_until_the_task_ends"
+   ],
+   "notes": "An executor may keep writing events after AUTH_REQUIRED; the test continues on the same run after an out-of-band credential with no follow-up message.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1933,
@@ -4741,15 +4789,18 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "The client SHOULD follow all In-Task Authorization Agent Responsibilities.",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/delegation.rs:116"
+    "crates/a2a-protocol-server/src/executor_helpers.rs relay_auth_required"
    ],
-   "test_evidence": [],
-   "notes": "Client-that-is-agent behaviour; delegation helper classifies interrupted states.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/auth_required_in_task.rs a_downstream_auth_request_is_relayed_with_its_explanation"
+   ],
+   "notes": "Binds a client that is itself an agent. EventEmitter::relay_auth_required(&downstream_status) (since 2026-10-18) moves its own task to AUTH_REQUIRED with the downstream explanation as a message of its own, meeting §7.6.1's three duties; whether to relay is the agent's call.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1947,
@@ -4850,17 +4901,21 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "The AgentCard **MUST** properly declare supported protocols",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:595"
+    "crates/a2a-protocol-server/src/builder.rs build",
+    "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:1314 builder_empty_agent_card_interfaces_errors"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs interface_urls_must_be_absolute_and_https_off_loopback"
    ],
-   "notes": "Builder only rejects an empty supported_interfaces list; content is author-supplied.",
+   "notes": "build() refuses an interface with an empty url, binding or version (AgentCard::validate); since 2026-10-18 a served binding the card does not declare, and an interface URL that is not absolute, are warned about. Accuracy of the content stays the author's.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1988,
@@ -4868,15 +4923,18 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "The `supportedInterfaces` field **SHOULD** declare all supported protocol combinations in preference order",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:595"
+    "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding"
    ],
-   "test_evidence": [],
-   "notes": "No derivation or cross-check of the card's interfaces against the dispatchers actually mounted.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported"
+   ],
+   "notes": "A listener serving a binding the card omits is warned about (since 2026-10-18), which covers 'all'; the order is the agent's stated preference and the client honours it (from_card).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1990,
@@ -4884,17 +4942,21 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Each interface **MUST** accurately declare its transport protocol and URL",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/builders.rs:76",
-    "crates/a2a-protocol-types/src/agent_card/builders.rs:91",
-    "crates/a2a-protocol-types/src/agent_card/builders.rs:110"
+    "crates/a2a-protocol-types/src/agent_card/builders.rs AgentInterface::jsonrpc",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings",
+    "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding"
    ],
-   "test_evidence": [],
-   "notes": "AgentInterface::jsonrpc/grpc/rest emit the spec spellings JSONRPC/GRPC/HTTP+JSON; URL accuracy is the author's.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs interface_urls_must_be_absolute_and_https_off_loopback",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported"
+   ],
+   "notes": "AgentInterface::jsonrpc/grpc/rest emit the spec spellings; build() warns (since 2026-10-18) about a non-absolute or plaintext interface URL and a listener whose binding the card omits. Whether the URL is reachable behind proxies is the deployer's.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1991,
@@ -6971,16 +7033,20 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Custom bindings MUST be declared in the Agent Card (URI transport identifier + full endpoint URL) - WebSocket",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:55-85",
-    "crates/a2a-protocol-types/src/agent_card/builders.rs:36-62"
+    "crates/a2a-protocol-types/src/lib.rs:85",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs accept_loop",
+    "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding"
    ],
-   "test_evidence": [],
-   "notes": "The SDK provides the URI constant WEBSOCKET_BINDING_URI and AgentInterface::new(url, uri). WebSocketDispatcher never adds itself to the card, so the agent author must.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported"
+   ],
+   "notes": "WEBSOCKET_BINDING_URI and AgentInterface::new(url, uri) give the declaration; since 2026-10-18 the WebSocket listener warns when it starts if the static card does not declare it. The dispatcher never edits the card (a signed card cannot be edited).",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3042,
@@ -7631,16 +7697,23 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Agents MUST authenticate requests using one of the schemes declared in the public AgentCard.securitySchemes and AgentCard.security fields",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/auth/mod.rs:1",
-    "crates/a2a-protocol-server/src/builder.rs:533"
+    "crates/a2a-protocol-server/src/auth/declared.rs check",
+    "crates/a2a-protocol-server/src/interceptor/mod.rs checks_scheme",
+    "crates/a2a-protocol-server/src/auth/mod.rs checks_scheme",
+    "crates/a2a-protocol-server/src/auth/jwt.rs checks_scheme"
    ],
-   "test_evidence": [],
-   "notes": "No cross-check between the registered auth interceptor(s) and card.security_schemes/security_requirements (grep for security_schemes in server src finds nothing outside tests); keeping them consistent is on the operator.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs an_authenticator_checking_an_undeclared_scheme_is_refused",
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs a_bearer_interceptor_checks_oauth_and_oidc_schemes",
+    "crates/a2a-protocol-server/src/auth/declared_tests.rs a_card_requiring_credentials_needs_an_authenticator"
+   ],
+   "notes": "Since 2026-10-18 build() asks every authenticating interceptor, through ServerInterceptor::checks_scheme, whether it checks each scheme the public and extended cards declare, and refuses one that checks none of them: a client following the card could never pass it. Bearer and JWT check the HTTP bearer scheme and OAuth 2.0/OIDC (bearer access tokens); ApiKey checks an apiKey scheme in its header (case-insensitive). A custom interceptor that does not answer (None) is not checked; that residual is the integrator's. A card that declares no schemes is not refused (warned nowhere): nothing to compare against.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3144,
@@ -8458,7 +8531,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/accepted_output_modes.rs the_executor_sees_the_accepted_output_modes",
     "crates/a2a-protocol-server/tests/accepted_output_modes.rs no_configuration_means_no_preference",
-    "crates/a2a-protocol-client/src/methods/send_message.rs:279 apply_config_sets_accepted_output_modes_when_empty"
+    "crates/a2a-protocol-client/src/methods/send_message_tests.rs:113 apply_config_sets_accepted_output_modes_when_empty"
    ],
    "notes": "RequestContext::accepted_output_modes() now carries SendMessageConfiguration.acceptedOutputModes to the executor (empty = no preference); tailoring the output is the agent's job. Until 2026-10-10 the executor could not see the field at all. The client sends what its ClientConfig::accepted_output_modes names (default text/plain and application/json) on a request with no configuration of its own; until 2026-10-13 it sent [\"text/plain\"] there, SendMessageConfiguration::default()'s value, whatever the config said.",
    "auditor": "G",
@@ -8698,16 +8771,21 @@
    "keyword": "must",
    "binds": "agent-application",
    "requirement": "For server messages, `context_id` must be provided",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:215",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:491"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs stamp_ids",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:222",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1227"
    ],
-   "test_evidence": [],
-   "notes": "Agent Messages are returned/streamed exactly as the executor wrote them; the SDK neither stamps the task's contextId onto them nor checks it. Hook: executor has ctx.context_id (request_context.rs:46) to set it.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs agent_messages_on_a_status_or_in_history_get_the_tasks_ids",
+    "crates/a2a-protocol-server/tests/context_id_in_reply.rs"
+   ],
+   "notes": "A direct agent reply was stamped with the context id before (respond.rs, in_memory.rs; tests/context_id_in_reply.rs). Since 2026-10-18 the queue writer also gives an agent message on a task status, or in a snapshot's history, the task's context id (and task id) when it carries none; ids the executor set are kept, user messages untouched. The earlier note (the SDK neither stamps nor checks) was stale for direct replies.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 262,
@@ -9074,16 +9152,18 @@
    "keyword": "Must",
    "binds": "agent-application",
    "requirement": "Must be a valid absolute HTTPS URL in production.",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/builder.rs:594",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:19"
+    "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings"
    ],
-   "test_evidence": [],
-   "notes": "Builder checks only that supported_interfaces is non-empty; interface URLs are not validated as absolute/HTTPS. Author responsibility; no SDK guard.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs interface_urls_must_be_absolute_and_https_off_loopback"
+   ],
+   "notes": "Binds production deployments. build() warns (since 2026-10-18) when an interface URL is not absolute, or not https on a host other than loopback; not refused, because a bare gRPC host:port and local test cards are in use. The earlier note (builder only rejects an empty list) was stale: build() runs AgentCard::validate, which refuses an empty url, binding or version.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 339,
@@ -9411,19 +9491,21 @@
    "keyword": "must",
    "binds": "client",
    "requirement": "If true, the client must understand and comply with the extension's requirements.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:88"
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs send_extensions",
+    "crates/a2a-protocol-client/src/builder/mod.rs skip_required_extension_check"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/capability.rs:300 missing_required_extension_is_rejected",
-    "crates/a2a-protocol-server/src/handler/capability.rs:435 get_task_enforces_required_extension"
+    "crates/a2a-protocol-client/src/builder/required_extensions_tests.rs a_required_extension_the_client_does_not_ask_for_refuses_the_build",
+    "crates/a2a-protocol-client/src/builder/required_extensions_tests.rs asking_for_it_or_skipping_the_check_builds",
+    "crates/a2a-protocol-client/src/builder/required_extensions_tests.rs an_optional_extension_asks_for_nothing"
    ],
-   "notes": "Client SDK does not inspect `required` (grep finds no client code); the application must declare the extension, with ClientBuilder::with_extensions (the A2A-Extensions header). Server side rejects undeclared required extensions with ExtensionSupportRequired.",
+   "notes": "Since 2026-10-18 a client built from a card refuses at build, with ExtensionSupportRequired, when the card marks an extension required that with_extensions does not ask for; skip_required_extension_check() for an interceptor that sends the header itself. Complying with the extension's semantics stays the application's. The server already refuses a client that does not declare a required extension.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 437,
@@ -9710,15 +9792,18 @@
    "keyword": "should",
    "binds": "agent-application",
    "requirement": "This value should be registered in the IANA Authentication Scheme registry.",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/security.rs:123"
+    "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings"
    ],
-   "test_evidence": [],
-   "notes": "Free-form String supplied by the agent author; no SDK check.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_unregistered_http_auth_scheme_is_reported"
+   ],
+   "notes": "A lowercase should on the card author. Since 2026-10-18 build() warns, through agent_card::card_warnings, about an HTTP scheme not in the IANA registry as read on 2026-10-18 (registry updated 2025-02-18), compared without regard to case. A warning, not a refusal: a scheme registered later is legitimate.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 535,
@@ -9773,15 +9858,19 @@
    "keyword": "required",
    "binds": "agent-application",
    "requirement": "TLS is required.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/security.rs:142"
+    "crates/a2a-protocol-types/src/security.rs validate",
+    "crates/a2a-protocol-types/src/security.rs is_https_url"
    ],
-   "test_evidence": [],
-   "notes": "Field is carried but never fetched by the client SDK (grep oauth2_metadata_url: only types/convert/tests); HTTPS is not validated on publish. Author's responsibility.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/security_url_tests.rs the_oauth2_metadata_url_must_be_https"
+   ],
+   "notes": "Since 2026-10-18 SecurityScheme::validate, which the server runs on every card it publishes (build, static, dynamic, hot-reload and per-caller handlers), refuses an oauth2MetadataUrl that is not an https URL. The client still does not fetch the metadata.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 557,
@@ -9973,15 +10062,18 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "This MUST be in the form of a URL.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/security.rs:271"
+    "crates/a2a-protocol-types/src/security.rs OAuthFlows::validate"
    ],
-   "test_evidence": [],
-   "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/security_url_tests.rs every_flow_url_given_must_be_a_url"
+   ],
+   "notes": "Since 2026-10-18 every flow URL a published card gives (this one included; it is not REQUIRED, so an empty one is not checked) must be in the form scheme://authority (security.rs is_url, a shape check, not a parse).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 612,
@@ -9989,15 +10081,18 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "This MUST be in the form of a URL.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/security.rs:275"
+    "crates/a2a-protocol-types/src/security.rs OAuthFlows::validate"
    ],
-   "test_evidence": [],
-   "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/security_url_tests.rs every_flow_url_given_must_be_a_url"
+   ],
+   "notes": "As for authorization_url: checked for URL form when given, since 2026-10-18.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 616,
@@ -10024,15 +10119,18 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "This MUST be in the form of a URL.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/security.rs:292"
+    "crates/a2a-protocol-types/src/security.rs OAuthFlows::validate"
    ],
-   "test_evidence": [],
-   "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/security_url_tests.rs every_flow_url_given_must_be_a_url"
+   ],
+   "notes": "Checked for URL form when given, since 2026-10-18 (the deprecated flow's fields are not REQUIRED).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 625,
@@ -10040,15 +10138,18 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "This MUST be in the form of a URL.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/security.rs:296"
+    "crates/a2a-protocol-types/src/security.rs OAuthFlows::validate"
    ],
-   "test_evidence": [],
-   "notes": "Deprecated flows; values are author-supplied Strings and not validated as URLs by the SDK.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/security_url_tests.rs every_flow_url_given_must_be_a_url"
+   ],
+   "notes": "Checked for URL form when given, since 2026-10-18.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 629,

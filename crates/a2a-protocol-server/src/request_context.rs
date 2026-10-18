@@ -75,6 +75,9 @@ pub struct RequestContext {
 
     /// See [`accepted_output_modes`](Self::accepted_output_modes).
     accepted_output_modes: Vec<String>,
+
+    /// See [`referenced_tasks`](Self::referenced_tasks).
+    referenced_tasks: Vec<Task>,
 }
 
 impl RequestContext {
@@ -91,7 +94,30 @@ impl RequestContext {
             call_context: None,
             approval: None,
             accepted_output_modes: Vec::new(),
+            referenced_tasks: Vec::new(),
         }
+    }
+
+    /// The tasks the message's `referenceTaskIds` name, as the handler
+    /// resolved them before this execution (spec §3.4.3: "Agents SHOULD use
+    /// referenced tasks to understand the context and intent of follow-up
+    /// requests").
+    ///
+    /// Read in the caller's own partition, so a task another caller or
+    /// tenant holds is absent, as is one the store does not have; at most 16
+    /// are resolved, duplicates once, in the order the message lists them.
+    /// Empty when the message references none. Since 2026-10-18.
+    #[must_use]
+    pub fn referenced_tasks(&self) -> &[Task] {
+        &self.referenced_tasks
+    }
+
+    /// Sets the resolved referenced tasks; see
+    /// [`referenced_tasks`](Self::referenced_tasks).
+    #[must_use]
+    pub fn with_referenced_tasks(mut self, tasks: Vec<Task>) -> Self {
+        self.referenced_tasks = tasks;
+        self
     }
 
     /// Sets the stored task snapshot for continuation requests.
