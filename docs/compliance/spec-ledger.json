@@ -4474,19 +4474,24 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Production deployments **MUST** use encrypted communication (HTTPS for HTTP-based bindings, TLS for gRPC).",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:107",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:114",
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:32",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:195",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
     "crates/a2a-protocol-client/src/tls.rs:60"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs"
+    "crates/a2a-protocol-server/tests/serve_tls.rs the_agent_card_is_served_over_https_on_http1_and_http2",
+    "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_request_is_served_over_wss",
+    "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs tls_client_round_trips_through_the_tls_dispatcher",
+    "crates/a2a-protocol-client/tests/ws_tls_tests.rs a_wss_endpoint_is_reached_with_the_configured_roots"
    ],
-   "notes": "Deployment obligation. gRPC listener can serve TLS via GrpcDispatcher::with_tls (grpc-tls feature); the JSON-RPC/REST/WebSocket serve paths are plaintext hyper only, so HTTPS must come from a terminating proxy or the user's own axum/TLS stack. Client accepts both http:// and https:// endpoints (no production guard).",
+   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's: SUPPORTED, not TESTED, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1879,
@@ -7877,22 +7882,27 @@
    "keyword": "MUST",
    "binds": "both",
    "requirement": "Production deployments MUST use encrypted communication (HTTPS for HTTP-based bindings, TLS for gRPC)",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:32",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:195",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
-    "crates/a2a-protocol-server/src/serve/mod.rs:148",
     "crates/a2a-protocol-client/src/tls.rs:60",
     "crates/a2a-protocol-client/src/transport/websocket.rs:636"
    ],
    "test_evidence": [
+    "crates/a2a-protocol-server/tests/serve_tls.rs the_agent_card_is_served_over_https_on_http1_and_http2",
+    "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_request_is_served_over_wss",
+    "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_plaintext_client_is_refused",
+    "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs tls_client_round_trips_through_the_tls_dispatcher",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused"
    ],
-   "notes": "Client: rustls HTTPS on by default (tls-rustls), grpc-tls feature. Server: gRPC TLS via GrpcDispatcher::with_tls (grpc-tls); the built-in hyper serve()/WebSocket listeners are plaintext only, so HTTPS for JSON-RPC/REST/WS requires an external terminator or the axum adapter with the operator's own TLS. Deployment duty. The client's WebSocket transport reaches wss:// endpoints, verified against the same roots (2026-10-13); until then it was built without TLS and every wss:// connect failed.",
+   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty, so SUPPORTED. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3174,
@@ -7929,10 +7939,10 @@
     "crates/a2a-protocol-server/tests/hsts_wire.rs every_response_carries_the_header_on_both_http_bindings",
     "crates/a2a-protocol-server/tests/hsts_wire.rs without_the_wrapper_there_is_no_header"
    ],
-   "notes": "Opt-in dispatch::Hsts wraps any Dispatcher and sets Strict-Transport-Security on every response, errors included. The built-in listener is plaintext and browsers ignore HSTS over plain HTTP (RFC 6797 §8.1), so it takes effect behind a TLS terminator; axum users add it with their own middleware. Not on by default: a header claiming HTTPS on a plaintext deployment would be wrong.",
+   "notes": "Opt-in dispatch::Hsts wraps any Dispatcher and sets Strict-Transport-Security on every response, errors included. Browsers ignore HSTS over plain HTTP (RFC 6797 §8.1), so it takes effect on a TLS listener: Server::with_tls (since 2026-10-14) or a TLS terminator in front; axum users add it with their own middleware. Not on by default: a header claiming HTTPS on a plaintext deployment would be wrong. (Until 2026-10-18 this note said the built-in listener is plaintext, which Server::with_tls had made stale.)",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3176,
@@ -8371,10 +8381,14 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:24",
     "crates/a2a-protocol-types/src/lib.rs:85"
    ],
-   "test_evidence": [],
-   "notes": "WebSocket spec §7 addresses transport (ws:// only; TLS terminator), the unchecked Origin header and cross-site WebSocket hijacking where credentials are ambient, one identity per connection, and limits. SLIMRPC follows its upstream binding spec. Recorded for the maintainer: an opt-in Origin allowlist on the dispatcher.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_tls_origin.rs only_listed_origins_may_upgrade",
+    "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_request_is_served_over_wss"
+   ],
+   "notes": "WebSocket binding spec §7 addresses transport (wss:// from the listener itself with WebSocketDispatcher::with_tls since 2026-10-18, or a TLS terminator), the Origin header and cross-site WebSocket hijacking where credentials are ambient (an opt-in allowlist, with_allowed_origins / require_origin, decided by the maintainer and built 2026-10-18; default: any origin), one identity per connection, and limits. SLIMRPC follows its upstream binding spec.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3215,

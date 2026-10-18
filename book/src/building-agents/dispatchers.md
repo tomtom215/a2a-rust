@@ -275,6 +275,41 @@ An upgrade request with no `A2A-Version` header, or one naming an
 unsupported major version, is rejected during the handshake with HTTP 400
 (`accept_missing_version_header()` admits the former).
 
+### TLS and origins
+
+The listener is `ws://` by default. With the `tls-rustls` feature,
+`with_tls(rustls::ServerConfig)` or `with_tls_pem(cert_chain, key)` makes it
+`wss://` only, with the agent card served over the same TLS session.
+`with_allowed_origins([...])` refuses, with 403 at the handshake, a browser
+whose page is not on the list (cross-site WebSocket hijacking); an upgrade
+with no `Origin` is still accepted unless `require_origin()` is set. See the
+[binding's security considerations](../bindings/websocket.md#7-security-considerations-134).
+
+```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::new("wss://agent.example.com", a2a_protocol_types::WEBSOCKET_BINDING_URI))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+# }
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_server::WebSocketDispatcher;
+# use std::sync::Arc;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# async fn run() -> std::io::Result<()> {
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).with_agent_card(card()).build().expect("handler"));
+let dispatcher = Arc::new(
+    WebSocketDispatcher::new(handler)
+        .with_tls_pem(&std::fs::read("cert.pem")?, &std::fs::read("key.pem")?)?
+        .with_allowed_origins(["https://app.example.com"]),
+);
+dispatcher.serve("0.0.0.0:443").await?;
+# Ok(())
+# }
+# fn main() {}
+```
+
 ### Built-in Limits
 
 | Limit | Value | Description |

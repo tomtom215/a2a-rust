@@ -6,47 +6,9 @@
 //! HTTPS on [`Server`]'s listener (spec §14: "Implementations SHOULD support
 //! HTTPS to ensure authenticity and integrity of the Agent Card").
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use rustls_pki_types::pem::PemObject;
-use rustls_pki_types::{CertificateDer, PrivateKeyDer};
-use tokio::io::{AsyncRead, AsyncWrite};
+pub use crate::tls::Tls;
 
 use super::Server;
-
-/// The acceptor a [`Server`] runs each connection's handshake through.
-#[derive(Clone)]
-pub struct Tls(tokio_rustls::TlsAcceptor);
-
-impl std::fmt::Debug for Tls {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Tls(..)")
-    }
-}
-
-impl Tls {
-    /// Completes the handshake on `io`, within `within` when it is set.
-    pub async fn handshake<IO>(
-        &self,
-        io: IO,
-        within: Option<Duration>,
-    ) -> std::io::Result<tokio_rustls::server::TlsStream<IO>>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin,
-    {
-        let accept = self.0.accept(io);
-        match within {
-            Some(limit) => tokio::time::timeout(limit, accept).await.map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "the TLS handshake did not finish within the header read timeout",
-                )
-            })?,
-            None => accept.await,
-        }
-    }
-}
 
 impl Server {
     /// Serves HTTPS: every connection is a TLS handshake first, with
@@ -67,11 +29,8 @@ impl Server {
     /// key in PEM files, [`with_tls_pem`](Self::with_tls_pem) builds one.
     /// The dispatchers do not see a client certificate.
     #[must_use]
-    pub fn with_tls(mut self, mut config: rustls::ServerConfig) -> Self {
-        if config.alpn_protocols.is_empty() {
-            config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        }
-        self.tls = Some(Tls(tokio_rustls::TlsAcceptor::from(Arc::new(config))));
+    pub fn with_tls(mut self, config: rustls::ServerConfig) -> Self {
+        self.tls = Some(Tls::new(config, &[b"h2", b"http/1.1"]));
         self
     }
 
@@ -88,25 +47,6 @@ impl Server {
     /// certificate, either PEM does not parse, or the key is not the
     /// certificate's.
     pub fn with_tls_pem(self, cert_chain: &[u8], key: &[u8]) -> std::io::Result<Self> {
-        let invalid = |why: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, why);
-        let certs = CertificateDer::pem_slice_iter(cert_chain)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| invalid(format!("the certificate chain is not PEM: {e}")))?;
-        if certs.is_empty() {
-            return Err(invalid(
-                "the certificate chain holds no certificate".to_owned(),
-            ));
-        }
-        let key = PrivateKeyDer::from_pem_slice(key)
-            .map_err(|e| invalid(format!("the private key is not PEM: {e}")))?;
-        let config = rustls::ServerConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .map_err(|e| invalid(e.to_string()))?
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| invalid(format!("the certificate and key are not usable: {e}")))?;
-        Ok(self.with_tls(config))
+        Ok(self.with_tls(crate::tls::config_from_pem(cert_chain, key)?))
     }
 }

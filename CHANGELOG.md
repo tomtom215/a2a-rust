@@ -121,6 +121,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`wss://` from the WebSocket listener itself** (server, feature
+  `tls-rustls`; spec §7.1 "Production deployments MUST use encrypted
+  communication", §13.4). `WebSocketDispatcher::with_tls(rustls::ServerConfig)`
+  and `with_tls_pem(cert_chain, key)` make the listener TLS only, offering
+  ALPN `http/1.1`, with the TLS handshake bound by the handshake timeout. The
+  agent card (§8.1) is served over the same session: a TLS stream cannot be
+  peeked at, so the start of the first request is read and replayed to the
+  card responder or the WebSocket handshake. With `Server::with_tls` and
+  `GrpcDispatcher::with_tls`, every listener the SDK starts can now terminate
+  TLS; the acceptor and PEM handling `Server` had are shared, not copied.
+  Tests: `tests/websocket_tls_origin.rs` (a request over `wss://`, the card
+  over the same TLS listener, a plaintext client refused).
+- **An opt-in `Origin` allowlist on the WebSocket listener** (server; the
+  maintainer's 2026-10-18 decision; WebSocket binding §7, cross-site
+  WebSocket hijacking). `WebSocketDispatcher::with_allowed_origins([...])`
+  refuses an upgrade whose `Origin` is not listed with `403` and the
+  `PERMISSION_DENIED` error body, before the version check;
+  `require_origin()` also refuses an upgrade with no `Origin`. Origins are
+  compared whole, ignoring ASCII case. Default unchanged: any origin, and
+  none, is accepted.
 - **Audit records protect who and what they name, and a person can be
   erased** (server, `audit` and `encryption`; GDPR Art. 25(1), 32(1)(a),
   17; ADR 0015 amended 2026-10-16). With `AuditLog::with_privacy`, each

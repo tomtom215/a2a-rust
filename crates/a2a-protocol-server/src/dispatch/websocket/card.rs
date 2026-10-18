@@ -10,6 +10,8 @@
 //! request line is read without consuming it (`peek`), and a `GET` or `HEAD`
 //! of the card's path is answered as plain HTTP/1.1 on that connection;
 //! every other connection reaches the handshake with its bytes untouched.
+//! A TLS session cannot be peeked at, so under TLS the same bytes are read
+//! and then replayed ([`Replay`](super::io::Replay)).
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -50,6 +52,35 @@ pub(super) async fn asks_for_card(stream: &TcpStream, within: Duration) -> bool 
     }
 }
 
+/// [`asks_for_card`] for a stream that cannot be peeked at: reads the start
+/// of the first request, at most as many bytes as deciding takes, and
+/// returns them with the answer so they can be replayed.
+#[cfg(feature = "tls-rustls")]
+pub(super) async fn read_card_request<IO>(io: &mut IO, within: Duration) -> (bool, Vec<u8>)
+where
+    IO: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncReadExt;
+    let deadline = tokio::time::Instant::now() + within;
+    let longest = CARD_REQUESTS.iter().map(|r| r.len() + 1).max().unwrap_or(0);
+    let mut seen = Vec::with_capacity(longest);
+    let mut buf = [0u8; 40];
+    while seen.len() < longest {
+        let want = (longest - seen.len()).min(buf.len());
+        let Ok(Ok(n)) = tokio::time::timeout_at(deadline, io.read(&mut buf[..want])).await else {
+            return (false, seen);
+        };
+        if n == 0 {
+            return (false, seen);
+        }
+        seen.extend_from_slice(&buf[..n]);
+        if let Some(answer) = decide(&seen) {
+            return (answer, seen);
+        }
+    }
+    (false, seen)
+}
+
 /// Whether `seen`, the start of a request, asks for the card: `None` while
 /// it is a prefix of one of [`CARD_REQUESTS`] that cannot yet be told apart.
 fn decide(seen: &[u8]) -> Option<bool> {
@@ -67,7 +98,10 @@ fn decide(seen: &[u8]) -> Option<bool> {
 }
 
 /// Answers the connection's request over HTTP/1.1 and closes it.
-pub(super) async fn serve(stream: TcpStream, card: Option<Arc<StaticAgentCardHandler>>) {
+pub(super) async fn serve<IO>(stream: IO, card: Option<Arc<StaticAgentCardHandler>>)
+where
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let service = hyper::service::service_fn(move |req| {
         let card = card.clone();
         async move { Ok::<_, Infallible>(well_known::respond(card.as_deref(), &req)) }
@@ -110,6 +144,35 @@ mod tests {
             Some(false)
         );
         assert_eq!(decide(b"\x16\x03\x01"), Some(false), "a TLS ClientHello");
+    }
+
+    /// Under TLS the start of the request is read, not peeked: what was read
+    /// comes back with the answer, and no more than the longest card request
+    /// line needs is read.
+    #[cfg(feature = "tls-rustls")]
+    #[tokio::test]
+    async fn a_read_request_line_is_returned_for_replay() {
+        let wire: &[u8] = b"GET /.well-known/agent-card.json HTTP/1.1\r\nHost: x\r\n\r\n";
+        let mut io = wire;
+        let (card, seen) =
+            super::read_card_request(&mut io, std::time::Duration::from_secs(1)).await;
+        assert!(card);
+        assert!(wire.starts_with(&seen), "what was read is the wire's start");
+        assert!(
+            seen.len() < wire.len(),
+            "the rest is left for the responder"
+        );
+
+        let wire: &[u8] = b"GET /a2a HTTP/1.1\r\nUpgrade: websocket\r\n\r\n";
+        let mut io = wire;
+        let (card, seen) =
+            super::read_card_request(&mut io, std::time::Duration::from_secs(1)).await;
+        assert!(!card);
+        assert!(wire.starts_with(&seen), "what was read is the wire's start");
+        assert!(
+            seen.len() <= "HEAD /.well-known/agent-card.json".len() + 1,
+            "no more is read than the longest card request line takes to decide"
+        );
     }
 
     /// A request line still arriving is waited for, not guessed at.

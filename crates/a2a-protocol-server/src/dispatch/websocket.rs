@@ -57,7 +57,11 @@ use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::EventQueueReader;
 
 mod card;
+mod io;
+mod origin;
 mod shutdown;
+
+use io::WsIo;
 
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
 ///
@@ -118,6 +122,15 @@ pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 ///
 /// An upgrade request carrying an `A2A-Version` header with a major version
 /// other than `1` is rejected during the handshake with HTTP 400.
+///
+/// # TLS and origins
+///
+/// The listener is plaintext (`ws://`) unless
+/// [`with_tls`](Self::with_tls) is set, which makes it `wss://` only (spec
+/// §7.1 "Production deployments MUST use encrypted communication"). It
+/// accepts an upgrade from any `Origin` unless
+/// [`with_allowed_origins`](Self::with_allowed_origins) names the ones a
+/// browser may connect from.
 pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
     handshake_timeout: Duration,
@@ -127,6 +140,9 @@ pub struct WebSocketDispatcher {
     completion_grace: Duration,
     task_grace: Duration,
     drain_timeout: Duration,
+    origins: origin::Origins,
+    #[cfg(feature = "tls-rustls")]
+    tls: Option<crate::tls::Tls>,
 }
 
 /// What the accept loop shares with the connections it spawns, so a shutdown
@@ -154,7 +170,86 @@ impl WebSocketDispatcher {
             completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
             task_grace: crate::serve::DEFAULT_TASK_GRACE,
             drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
+            origins: origin::Origins::ANY,
+            #[cfg(feature = "tls-rustls")]
+            tls: None,
         }
+    }
+
+    /// Serves `wss://`: every connection is a TLS handshake first, with
+    /// `config`'s certificate. Default: plaintext `ws://`.
+    ///
+    /// The listener then speaks TLS only; a plaintext client fails the
+    /// handshake and is closed. When `config` names no ALPN protocols,
+    /// `http/1.1` is offered, the only one a WebSocket upgrade runs on here.
+    /// The handshake must finish within
+    /// [`with_handshake_timeout`](Self::with_handshake_timeout), and the
+    /// WebSocket upgrade then gets the same again. The agent card is served
+    /// over the same TLS session (spec §8.1).
+    ///
+    /// `config` is used as built, client authentication included. For a
+    /// certificate and key in PEM files, [`with_tls_pem`](Self::with_tls_pem)
+    /// builds one. Requires the `tls-rustls` feature.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls(mut self, config: rustls::ServerConfig) -> Self {
+        self.tls = Some(crate::tls::Tls::new(config, &[b"http/1.1"]));
+        self
+    }
+
+    /// [`with_tls`](Self::with_tls) with a server certificate chain (leaf
+    /// first) and its private key (PKCS#8, PKCS#1 or SEC1), both PEM, under
+    /// rustls' safe defaults on the `ring` provider, as
+    /// [`Server::with_tls_pem`](crate::serve::Server::with_tls_pem) builds
+    /// them.
+    ///
+    /// # Errors
+    ///
+    /// [`std::io::ErrorKind::InvalidInput`] when `cert_chain` holds no
+    /// certificate, either PEM does not parse, or the key is not the
+    /// certificate's.
+    #[cfg(feature = "tls-rustls")]
+    pub fn with_tls_pem(self, cert_chain: &[u8], key: &[u8]) -> std::io::Result<Self> {
+        Ok(self.with_tls(crate::tls::config_from_pem(cert_chain, key)?))
+    }
+
+    /// Accepts an upgrade whose `Origin` header is one of `origins`, and
+    /// refuses any other with HTTP 403 during the handshake. Default: every
+    /// origin is accepted.
+    ///
+    /// A browser sends `Origin` on every WebSocket upgrade and cannot forge
+    /// it, and the handshake carries the browser's cookies, so without this
+    /// any page a user visits can open a connection that carries the user's
+    /// credentials (cross-site WebSocket hijacking). It does nothing against
+    /// a client that is not a browser, which can send any `Origin` or none;
+    /// authenticate those with an interceptor.
+    ///
+    /// Origins are compared whole and without regard to ASCII case, as
+    /// serialised by the browser: scheme, host and a port only when it is
+    /// not the scheme's default, with no path or trailing slash
+    /// (`https://app.example.com`, `http://localhost:8080`). An upgrade
+    /// with no `Origin` is still accepted, as non-browser clients send none;
+    /// [`require_origin`](Self::require_origin) refuses those too.
+    #[must_use]
+    pub fn with_allowed_origins<I, S>(mut self, origins: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.origins = self.origins.allowing(origins);
+        self
+    }
+
+    /// Refuses an upgrade that carries no `Origin` header, with HTTP 403.
+    /// Default: accepted.
+    ///
+    /// For a listener only browsers should reach. Every browser sends
+    /// `Origin` on a WebSocket upgrade; most other clients, this SDK's
+    /// included, do not.
+    #[must_use]
+    pub fn require_origin(mut self) -> Self {
+        self.origins = self.origins.requiring();
+        self
     }
 
     /// Accepts upgrade requests without an `A2A-Version` header.
@@ -406,6 +501,24 @@ impl WebSocketDispatcher {
         // Match the HTTP serve path: avoid ~40ms delayed-ACK latency on the
         // small text frames JSON-RPC produces.
         let _ = stream.set_nodelay(true);
+        let peer = stream.peer_addr().ok();
+
+        #[cfg(feature = "tls-rustls")]
+        if let Some(tls) = &self.tls {
+            let mut session = tls
+                .handshake(stream, Some(self.handshake_timeout))
+                .await
+                .map_err(WsError::Tls)?;
+            // Spec §8.1 under TLS: the card request is read, not peeked, and
+            // the bytes are replayed to whichever side takes the connection.
+            let (card, seen) = card::read_card_request(&mut session, self.handshake_timeout).await;
+            let io = WsIo::Tls(Box::new(io::Replay::new(seen, session)));
+            if card {
+                card::serve(io, super::well_known::card_handler(&self.handler)).await;
+                return Ok(());
+            }
+            return self.upgrade(io, peer, closing).await;
+        }
 
         // Spec §8.1: the agent card, at its well-known path, on this listener
         // too. Anything else is the WebSocket handshake.
@@ -413,7 +526,17 @@ impl WebSocketDispatcher {
             card::serve(stream, super::well_known::card_handler(&self.handler)).await;
             return Ok(());
         }
+        self.upgrade(WsIo::Plain(stream), peer, closing).await
+    }
 
+    /// Runs the WebSocket handshake on `io`, then serves the connection.
+    #[allow(clippy::result_large_err)]
+    async fn upgrade(
+        &self,
+        io: WsIo,
+        peer: Option<SocketAddr>,
+        closing: &tokio_util::sync::CancellationToken,
+    ) -> Result<(), WsError> {
         // Cap message/frame sizes at the protocol level so oversized input is
         // rejected during the read, before it is buffered in memory.
         let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
@@ -425,8 +548,9 @@ impl WebSocketDispatcher {
         // do on the HTTP bindings. Also validates the A2A-Version header.
         let mut upgrade_headers: Option<HashMap<String, String>> = None;
         let require_version = self.require_version_header;
-        let peer = stream.peer_addr().ok();
+        let origins = &self.origins;
         let callback = |req: &WsUpgradeRequest, resp: WsUpgradeResponse| {
+            origins.check(req)?;
             check_a2a_version(req, require_version)?;
             let mut headers = extract_upgrade_headers(req);
             super::record_peer_addr(&mut headers, peer);
@@ -438,7 +562,7 @@ impl WebSocketDispatcher {
         // this task (and its fd) forever.
         let ws_stream = tokio::time::timeout(
             self.handshake_timeout,
-            tokio_tungstenite::accept_hdr_async_with_config(stream, callback, Some(ws_config)),
+            tokio_tungstenite::accept_hdr_async_with_config(io, callback, Some(ws_config)),
         )
         .await
         .map_err(|_| WsError::HandshakeTimeout)?
@@ -471,7 +595,7 @@ impl WebSocketDispatcher {
     /// Reads and dispatches frames until the connection ends.
     async fn read_loop(
         &self,
-        mut reader: futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
+        mut reader: futures_util::stream::SplitStream<WebSocketStream<WsIo>>,
         writer: &WsSink,
         headers: &Arc<HashMap<String, String>>,
         closing: &tokio_util::sync::CancellationToken,
@@ -587,7 +711,7 @@ impl WebSocketDispatcher {
     /// so a connection could be closed while actively streaming, or held open
     /// forever by a peer sending one byte just under the bound.
     async fn next_frame(
-        reader: &mut futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
+        reader: &mut futures_util::stream::SplitStream<WebSocketStream<WsIo>>,
         writer: &WsSink,
         idle_timeout: Option<Duration>,
     ) -> Option<Result<WsMessage, tokio_tungstenite::tungstenite::Error>> {
@@ -751,6 +875,8 @@ fn best_effort_request_id(text: &str) -> JsonRpcId {
 enum WsError {
     Handshake(tokio_tungstenite::tungstenite::Error),
     HandshakeTimeout,
+    #[cfg(feature = "tls-rustls")]
+    Tls(std::io::Error),
 }
 
 impl std::fmt::Display for WsError {
@@ -758,6 +884,8 @@ impl std::fmt::Display for WsError {
         match self {
             Self::Handshake(e) => write!(f, "WebSocket handshake failed: {e}"),
             Self::HandshakeTimeout => write!(f, "WebSocket handshake timed out"),
+            #[cfg(feature = "tls-rustls")]
+            Self::Tls(e) => write!(f, "TLS handshake failed: {e}"),
         }
     }
 }
@@ -772,7 +900,7 @@ impl std::fmt::Display for WsError {
 /// [`ServeConfig::idle_timeout`](crate::serve::ServeConfig) warns about for
 /// SSE.
 struct Connection {
-    sink: tokio::sync::Mutex<SplitSink<WebSocketStream<TcpStream>, WsMessage>>,
+    sink: tokio::sync::Mutex<SplitSink<WebSocketStream<WsIo>, WsMessage>>,
     activity: ActivityClock,
 }
 
@@ -1695,7 +1823,7 @@ mod tests {
                 .0
         });
         let (tcp, _) = listener.accept().await.expect("accept");
-        let server_ws = tokio_tungstenite::accept_async(tcp)
+        let server_ws = tokio_tungstenite::accept_async(io::WsIo::Plain(tcp))
             .await
             .expect("server handshake");
         let mut client_ws = client.await.expect("join client");

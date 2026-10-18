@@ -148,6 +148,8 @@ pub mod store;
 pub mod streaming;
 pub mod tenant_config;
 pub mod tenant_resolver;
+#[cfg(feature = "tls-rustls")]
+mod tls;
 
 #[cfg(feature = "conformance")]
 pub mod conformance;
