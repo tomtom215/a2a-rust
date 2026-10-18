@@ -4086,19 +4086,19 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/mod.rs AgentCard::validate",
     "crates/a2a-protocol-server/src/builder.rs build",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs valid_card",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs valid_card",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:30"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs validate_refuses_each_empty_required_array",
     "crates/a2a-protocol-server/src/handler/input_modes.rs nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs an_invalid_produced_card_is_not_served",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/tests.rs:54 an_invalid_produced_card_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs reload_from_json_refuses_an_invalid_card",
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs try_update_refuses_a_card_the_spec_does_not_allow"
    ],
-   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) closed 2026-10-14: HotReloadAgentCardHandler::try_update validates as reload_from_json does and update is deprecated; served through DynamicAgentCardHandler, a card from new or update that does not validate is answered 500 rather than served (dynamic_handler.rs an_invalid_produced_card_is_not_served). The contradiction in (1) is reported upstream by the maintainer (draft, not filed). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked. Since 2026-10-14 the queue writer also refuses an executor message (event, status message, snapshot history) with no parts and a snapshot artifact with no parts (R36). Re-examined 2026-10-18, kept PARTIAL/low: every required array the SDK controls is refused empty (tested), but ListTasksResponse.tasks is REQUIRED-repeated and must be empty for a listing with no matches; the specification contradicts itself, and no SDK behaviour satisfies both (draft report held).",
+   "notes": "Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid produced card, hot reload refuses one. Remaining, why PARTIAL/low: (1) ListTasksResponse.tasks is REQUIRED-repeated in the proto yet legitimately empty for a listing with no matches, a contradiction inside the specification; the SDK returns the empty list. (2) closed 2026-10-14: HotReloadAgentCardHandler::try_update validates as reload_from_json does and update is deprecated; served through DynamicAgentCardHandler, a card from new or update that does not validate is answered 500 rather than served (dynamic_handler/tests.rs an_invalid_produced_card_is_not_served). The contradiction in (1) is reported upstream by the maintainer (draft, not filed). Client-side parsing stays tolerant on purpose. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked. Since 2026-10-14 the queue writer also refuses an executor message (event, status message, snapshot history) with no parts and a snapshot artifact with no parts (R36). Re-examined 2026-10-18, kept PARTIAL/low: every required array the SDK controls is refused empty (tested), but ListTasksResponse.tasks is REQUIRED-repeated and must be empty for a listing with no matches; the specification contradicts itself, and no SDK behaviour satisfies both (draft report held).",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -5720,7 +5720,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/caching.rs:42",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:50",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:101",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:104",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:41",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:308",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:628",
@@ -5736,10 +5736,11 @@
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:185 the_extended_card_s_etag_is_the_same_for_the_same_card",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:440 an_if_none_match_on_a_second_line_counts",
     "crates/a2a-protocol-server/src/agent_card/caching.rs:452 conditions_apply_to_get_and_head_only",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:379 if_none_match_counts_every_line_on_get_and_head_only",
-    "crates/a2a-protocol-server/tests/card_head.rs:102 rest_answers_head_on_the_card_and_probes"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/tests.rs:197 if_none_match_counts_every_line_on_get_and_head_only",
+    "crates/a2a-protocol-server/tests/card_head.rs:102 rest_answers_head_on_the_card_and_probes",
+    "crates/a2a-protocol-server/tests/agent_card_methods.rs:128 every_other_method_is_405_with_allow_and_never_412"
    ],
-   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix. Since 2026-10-13 a 304 answers only a GET or HEAD, every If-None-Match line is read (RFC 9110 §13.1.2, §5.3), and HEAD on the card is served on JSON-RPC, HTTP+JSON and axum; before, any method got a 304, only the first line was read, and a HEAD was refused or not found.",
+   "notes": "Content-hash ETag (and Last-Modified) on all three HTTP card routes; If-None-Match answers 304. The axum route had neither until 2026-10-11. The hash is over the card with its maps' keys sorted (card_body_and_etag), since 2026-10-13. It was over the serialization, whose HashMap fields (securitySchemes, a requirement's schemes, OAuth scopes) come out in an order each map draws at random: the same card had another ETag on each replica, after each restart, and on each request of a dynamic handler building its card, so revalidation returned 200. Shown 8 ETags in 8 parses before the fix. Since 2026-10-13 a 304 answers only a GET or HEAD, every If-None-Match line is read (RFC 9110 §13.1.2, §5.3), and HEAD on the card is served on JSON-RPC, HTTP+JSON and axum; before, any method got a 304, only the first line was read, and a HEAD was refused or not found. Since 2026-10-18 every other method on the card's path is 405 with Allow: GET, HEAD (RFC 9110 §15.5.6) on all five listeners, never 412 (§13.2.1: preconditions are ignored when the unconditional answer is not 2xx); before, the handlers served the card to it, JSON-RPC parsed it as a call, REST and gRPC answered 404, and WebSocket closed the connection unanswered.",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
@@ -5755,7 +5756,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:54",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:94",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:103"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:106"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:143 static_handler_returns_etag_and_cache_headers",
@@ -9455,7 +9456,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:86",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:698"
    ],
    "test_evidence": [
@@ -9478,7 +9479,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:89",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:698"
    ],
    "test_evidence": [
@@ -9525,7 +9526,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:92",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56",
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:56",
     "crates/a2a-protocol-client/src/discovery.rs:698"
    ],
    "test_evidence": [
@@ -9570,7 +9571,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:125",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:56"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
@@ -9592,7 +9593,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:128",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:56"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
@@ -9614,7 +9615,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:131",
     "crates/a2a-protocol-server/src/builder.rs:774",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:128",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:56"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:56"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
@@ -9956,7 +9957,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10004,7 +10005,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10071,7 +10072,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10099,7 +10100,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10127,7 +10128,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10208,7 +10209,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10371,7 +10372,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10399,7 +10400,7 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186",
     "crates/a2a-protocol-server/src/builder.rs:775",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:129",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler.rs:53"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:53"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",

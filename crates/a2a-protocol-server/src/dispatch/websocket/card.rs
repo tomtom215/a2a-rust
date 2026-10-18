@@ -7,9 +7,13 @@
 //!
 //! The listener accepts raw TCP and hands each connection to the WebSocket
 //! handshake, which refuses a request that is not an upgrade. So the first
-//! request line is read without consuming it (`peek`), and a `GET` or `HEAD`
-//! of the card's path is answered as plain HTTP/1.1 on that connection;
-//! every other connection reaches the handshake with its bytes untouched.
+//! request line is read without consuming it (`peek`), and a request of the
+//! card's path, whatever its method, is answered as plain HTTP/1.1 on that
+//! connection (`405` for a method other than `GET` or `HEAD`); every other
+//! connection reaches the handshake with its bytes untouched. Until
+//! 2026-10-18 only a `GET` or `HEAD` was recognised, and any other method on
+//! the card's path reached the handshake, which closed the connection
+//! without a response.
 //! A TLS session cannot be peeked at, so under TLS the same bytes are read
 //! and then replayed ([`Replay`](super::io::Replay)).
 
@@ -22,11 +26,17 @@ use tokio::net::TcpStream;
 use crate::agent_card::StaticAgentCardHandler;
 use crate::dispatch::well_known;
 
-/// The request lines served here, up to the character after the path.
-const CARD_REQUESTS: [&[u8]; 2] = [
-    b"GET /.well-known/agent-card.json",
-    b"HEAD /.well-known/agent-card.json",
-];
+/// What follows the method in a request line served here, up to the
+/// character after the path.
+const TARGET: &[u8] = b" /.well-known/agent-card.json";
+
+/// The longest method recognised; a request line whose method is longer, or
+/// is not all upper-case letters, goes to the handshake.
+const MAX_METHOD: usize = 16;
+
+/// How many bytes deciding can take: the longest method, the target, and the
+/// character after the path.
+const DECIDING: usize = MAX_METHOD + TARGET.len() + 1;
 
 /// How long to wait between peeks while a request line is still arriving.
 const PEEK_RETRY: Duration = Duration::from_millis(5);
@@ -36,7 +46,7 @@ const PEEK_RETRY: Duration = Duration::from_millis(5);
 /// that stalls costs no more than the handshake timeout it already has.
 pub(super) async fn asks_for_card(stream: &TcpStream, within: Duration) -> bool {
     let deadline = tokio::time::Instant::now() + within;
-    let mut buf = [0u8; 40];
+    let mut buf = [0u8; DECIDING];
     loop {
         let Ok(Ok(n)) = tokio::time::timeout_at(deadline, stream.peek(&mut buf)).await else {
             return false;
@@ -62,11 +72,10 @@ where
 {
     use tokio::io::AsyncReadExt;
     let deadline = tokio::time::Instant::now() + within;
-    let longest = CARD_REQUESTS.iter().map(|r| r.len() + 1).max().unwrap_or(0);
-    let mut seen = Vec::with_capacity(longest);
-    let mut buf = [0u8; 40];
-    while seen.len() < longest {
-        let want = (longest - seen.len()).min(buf.len());
+    let mut seen = Vec::with_capacity(DECIDING);
+    let mut buf = [0u8; DECIDING];
+    while seen.len() < DECIDING {
+        let want = DECIDING - seen.len();
         let Ok(Ok(n)) = tokio::time::timeout_at(deadline, io.read(&mut buf[..want])).await else {
             return (false, seen);
         };
@@ -81,20 +90,24 @@ where
     (false, seen)
 }
 
-/// Whether `seen`, the start of a request, asks for the card: `None` while
-/// it is a prefix of one of [`CARD_REQUESTS`] that cannot yet be told apart.
+/// Whether `seen`, the start of a request, asks for the card: a method of
+/// upper-case letters, at most [`MAX_METHOD`] of them, then [`TARGET`], then
+/// a space or `?`. `None` while `seen` could still become one.
 fn decide(seen: &[u8]) -> Option<bool> {
-    let mut undecided = false;
-    for request in CARD_REQUESTS {
-        if seen.len() > request.len() {
-            if seen.starts_with(request) && matches!(seen[request.len()], b' ' | b'?') {
-                return Some(true);
-            }
-        } else if request.starts_with(seen) {
-            undecided = true;
-        }
+    let Some(method) = seen.iter().position(|b| !b.is_ascii_uppercase()) else {
+        return (seen.len() > MAX_METHOD).then_some(false);
+    };
+    if method == 0 || method > MAX_METHOD {
+        return Some(false);
     }
-    if undecided { None } else { Some(false) }
+    let rest = &seen[method..];
+    if rest.len() > TARGET.len() {
+        Some(rest.starts_with(TARGET) && matches!(rest[TARGET.len()], b' ' | b'?'))
+    } else if TARGET.starts_with(rest) {
+        None
+    } else {
+        Some(false)
+    }
 }
 
 /// Answers the connection's request over HTTP/1.1 and closes it.
@@ -139,11 +152,53 @@ mod tests {
             decide(b"GET /.well-known/agent-card.jsonx HTTP/1.1"),
             Some(false)
         );
+        assert_eq!(decide(b"\x16\x03\x01"), Some(false), "a TLS ClientHello");
         assert_eq!(
-            decide(b"POST /.well-known/agent-card.json HTTP/1.1"),
+            decide(b"get /.well-known/agent-card.json HTTP/1.1"),
+            Some(false),
+            "methods are case-sensitive (RFC 9110 §9.1)"
+        );
+        assert_eq!(
+            decide(b"ABCDEFGHIJKLMNOPQ /.well-known/agent-card.json HTTP/1.1"),
+            Some(false),
+            "a method longer than MAX_METHOD"
+        );
+        assert_eq!(
+            decide(b" /.well-known/agent-card.json HTTP/1.1"),
             Some(false)
         );
-        assert_eq!(decide(b"\x16\x03\x01"), Some(false), "a TLS ClientHello");
+    }
+
+    /// Every method on the card's path is the card's to answer, so the
+    /// handshake never sees one: a method it does not perform gets its `405`.
+    #[test]
+    fn any_method_on_the_card_path_is_the_cards() {
+        for method in ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"] {
+            assert_eq!(
+                decide(format!("{method} /.well-known/agent-card.json HTTP/1.1").as_bytes()),
+                Some(true),
+                "{method}"
+            );
+        }
+        let longest = format!(
+            "{} /.well-known/agent-card.json?",
+            "A".repeat(super::MAX_METHOD)
+        );
+        assert_eq!(longest.len(), super::DECIDING);
+        assert_eq!(decide(longest.as_bytes()), Some(true));
+        assert_eq!(decide(&longest.as_bytes()[..super::DECIDING - 1]), None);
+        // The bound itself, in letters rather than through the constant.
+        assert_eq!(
+            decide(b"ABCDEFGHIJKLMNOP /.well-known/agent-card.json HTTP/1.1"),
+            Some(true),
+            "a 16-letter method"
+        );
+        assert_eq!(
+            decide(b"ABCDEFGHIJKLMNOP"),
+            None,
+            "16 letters could be a method"
+        );
+        assert_eq!(decide(b"ABCDEFGHIJKLMNOPQ"), Some(false), "17 cannot");
     }
 
     /// Under TLS the start of the request is read, not peeked: what was read
@@ -170,7 +225,7 @@ mod tests {
         assert!(!card);
         assert!(wire.starts_with(&seen), "what was read is the wire's start");
         assert!(
-            seen.len() <= "HEAD /.well-known/agent-card.json".len() + 1,
+            seen.len() <= super::DECIDING,
             "no more is read than the longest card request line takes to decide"
         );
     }

@@ -1609,6 +1609,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The agent card's path answers every method other than `GET` and `HEAD`
+  with `405` and `Allow: GET, HEAD`, on every listener** (server). RFC 9110
+  §15.5.6 says a `405` MUST carry `Allow`. Measured before the fix, a
+  `POST`, `PUT`, `DELETE` or `PATCH` of `/.well-known/agent-card.json` got
+  the card (`200`) from the JSON-RPC dispatcher, `404` from REST and gRPC,
+  and no response at all from WebSocket, which handed it to the WebSocket
+  handshake. Only the axum router answered `405`, and only when the request
+  carried `A2A-Version`. `StaticAgentCardHandler::handle` and
+  `DynamicAgentCardHandler::handle` now answer `405` themselves, and the
+  dynamic handler no longer produces a card for such a request. A matching
+  `If-None-Match` does not turn the answer into `412`: RFC 9110 §13.2.1 has
+  a server ignore preconditions when the answer without them would not be
+  `2xx`. `tests/agent_card_methods.rs` probes all five listeners.
 - **`EncryptedTaskStore` seals what a write stores, and the seal budget is
   enforced** (server; release audit F7). Every write sealed every part of
   the task, so an artifact streamed in 100 chunks cost 5,250 seals

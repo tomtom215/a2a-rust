@@ -120,8 +120,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   replicas and G1-B (`ROADMAP.md`); a stale unscoped write from another
   replica keeps a stored position whose effect it overwrote
   (`store/applied.rs`).
-- **Server:** no `412` for a non-GET request
-  with a matching `If-None-Match` (`agent_card/caching.rs`); JSON-RPC and
+- **Server:** JSON-RPC and
   REST on one socket without a hand-written accept loop;
   `find_task_by_context` clones full history and
   `RequestContext::stored_task` is `pub`; JSON-RPC parses a request's params

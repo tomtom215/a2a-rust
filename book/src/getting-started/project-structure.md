@@ -147,7 +147,7 @@ a2a-rust/
 │   │       ├── agent_card/     # Static/Dynamic card handlers
 │   │       │   ├── mod.rs          # Re-exports
 │   │       │   ├── static_handler.rs  # StaticAgentCardHandler
-│   │       │   ├── dynamic_handler.rs # DynamicAgentCardHandler, AgentCardProducer
+│   │       │   ├── dynamic_handler/   # DynamicAgentCardHandler, AgentCardProducer
 │   │       │   ├── hot_reload.rs   # HotReloadAgentCardHandler
 │   │       │   └── caching.rs      # ETag/Last-Modified caching
 │   │       ├── otel/           # OpenTelemetry (feature-gated)
