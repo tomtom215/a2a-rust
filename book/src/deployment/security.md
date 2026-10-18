@@ -77,8 +77,29 @@ something stops it. The bundled `HttpPushSender` does:
   securely).
 
 If you replace the sender, you inherit all of that as your responsibility. The
-validation helpers are public and reusable — use them rather than reimplementing
-the list above.
+validation is public in `a2a_protocol_server::url_guard`: `check_public_url`
+applies the address checks above to a URL, and `resolve_public_url` also
+resolves its host and refuses it if any address is private. Use them rather
+than reimplementing the list above.
+
+The same applies to file references in messages (spec §14: they "MUST be
+validated to prevent SSRF"). The SDK never fetches a `Part`'s URL, so this
+falls to an executor that does: call `resolve_public_url` before fetching and
+connect to the address it returns. To refuse such messages before the
+executor runs, call `RequestHandlerBuilder::refuse_private_file_urls()`; it
+checks the URL's form only, without DNS, so an executor that fetches still
+has to resolve.
+
+## What a card discloses
+
+A card is served to whoever asks, so `build()` and every card handler refuse a
+card, public or extended, that carries a credential in one of its URLs: user
+information (`user:pass@host`) or a query parameter named like a secret
+(`token`, `api_key`, `signature` and similar). `agent_card::card_credentials`
+lists the offending fields. A URL naming an internal host (a private address,
+`.internal`, `.local`) is reported by `agent_card::card_warnings`, which
+`build()` logs, but not refused (spec §13.3 and §14: the card SHOULD NOT carry
+credentials or internal details).
 
 That "the two moments can disagree" is not hypothetical: the numeric-IPv4 line
 above was added after an [adversarial run](./security-testing.md) found the

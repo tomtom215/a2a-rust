@@ -53,11 +53,9 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
     /// produced card was served unchecked.
     async fn valid_card(&self) -> A2aResult<AgentCard> {
         let card = self.producer.produce().await?;
-        card.validate()
-            .and_then(|()| card.validate_security_schemes())
-            .map_err(|why| {
-                a2a_protocol_types::error::A2aError::internal(format!("invalid agent card: {why}"))
-            })?;
+        super::lint::publishable(&card).map_err(|why| {
+            a2a_protocol_types::error::A2aError::internal(format!("invalid agent card: {why}"))
+        })?;
         Ok(card)
     }
 

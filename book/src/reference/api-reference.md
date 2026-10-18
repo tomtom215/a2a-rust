@@ -329,6 +329,7 @@ are rustdoc's job.
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
+| `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url` |
 
 ### Constants
 

@@ -44,9 +44,7 @@ impl StaticAgentCardHandler {
     /// this handler directly was served unchecked. Another
     /// [`ServerError`](crate::error::ServerError) if serialization fails.
     pub fn new(card: &AgentCard) -> ServerResult<Self> {
-        card.validate()
-            .and_then(|()| card.validate_security_schemes())
-            .map_err(|why| crate::error::ServerError::InvalidParams(why.into()))?;
+        super::lint::publishable(card).map_err(crate::error::ServerError::InvalidParams)?;
         let (json, etag) = card_body_and_etag(card)?;
         Ok(Self {
             card_json: Bytes::from(json),

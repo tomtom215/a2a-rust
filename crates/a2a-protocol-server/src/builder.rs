@@ -183,6 +183,7 @@ pub struct RequestHandlerBuilder {
     span_settings: crate::rpc_span::SpanSettings,
     auth_waivers: AuthWaivers,
     allow_undeclared_input_modes: bool,
+    refuse_private_file_urls: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
@@ -228,6 +229,7 @@ impl RequestHandlerBuilder {
                 upstream: false,
             },
             allow_undeclared_input_modes: false,
+            refuse_private_file_urls: false,
             approval_gate: None,
             #[cfg(feature = "audit")]
             audit: None,
@@ -741,6 +743,25 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Refuses a message carrying a file reference (a part whose content is
+    /// a `url`) that points into a private, loopback, link-local or internal
+    /// network, with `InvalidParams` naming the part. Default: accepted.
+    ///
+    /// Spec §14: "File references within A2A messages MUST be validated to
+    /// prevent SSRF". The SDK never fetches a file reference; an agent that
+    /// does fetches whatever a caller names, from inside the deployment's
+    /// network. This applies [`url_guard::check_public_url`](crate::url_guard::check_public_url)
+    /// to every one on arrival, with no DNS lookup: an agent should still
+    /// connect through [`url_guard::resolve_public_url`](crate::url_guard::resolve_public_url),
+    /// since a public name can resolve inward. Off by default because an
+    /// agent on a private network may be meant to read internal files.
+    /// Since 2026-10-18.
+    #[must_use]
+    pub const fn refuse_private_file_urls(mut self) -> Self {
+        self.refuse_private_file_urls = true;
+        self
+    }
+
     /// Applies per-tenant resource limits.
     ///
     /// The handler enforces `max_concurrent_tasks`, `executor_timeout` and
@@ -835,6 +856,18 @@ impl RequestHandlerBuilder {
             .collect();
         crate::auth::declared::check(&cards, &self.interceptors, self.auth_waivers.upstream)
             .map_err(crate::error::ServerError::InvalidParams)?;
+        // Spec §14, §13.3: a credential in a published card is disclosed.
+        for (which, card) in public_card.into_iter().chain(extended_card) {
+            let leaked = crate::agent_card::card_credentials(card);
+            if !leaked.is_empty() {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the {which} carries a credential in a URL ({}): a card is served to \
+                     whoever asks, so it would be disclosed (spec §14: the card SHOULD NOT \
+                     include sensitive credentials); move it out of the card",
+                    leaked.join(", ")
+                )));
+            }
+        }
         // Legal, but likely wrong: reported, not refused (`agent_card::lint`).
         for card in &cards {
             for _warning in crate::agent_card::card_warnings(card) {
@@ -1116,6 +1149,11 @@ impl RequestHandlerBuilder {
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
             limits: self.handler_limits,
+            file_urls: if self.refuse_private_file_urls {
+                crate::handler::FileUrls::PublicOnly
+            } else {
+                crate::handler::FileUrls::Any
+            },
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
@@ -1212,6 +1250,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
                 "allow_undeclared_input_modes",
                 &self.allow_undeclared_input_modes,
             )
+            .field("refuse_private_file_urls", &self.refuse_private_file_urls)
             .field("approval_gate", &self.approval_gate);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some())

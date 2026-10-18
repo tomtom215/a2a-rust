@@ -38,6 +38,7 @@ mod undeclared_binding;
 
 pub use halt::{HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
+pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
 pub use shutdown::{InFlightReport, ShutdownReport};
 
@@ -95,6 +96,10 @@ pub struct RequestHandler {
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
+    /// Whether a message's file references must point outside private
+    /// networks; see
+    /// [`refuse_private_file_urls`](crate::builder::RequestHandlerBuilder::refuse_private_file_urls).
+    pub(crate) file_urls: crate::handler::FileUrls,
     pub(crate) tenant_resolver: Option<Arc<dyn TenantResolver>>,
     pub(crate) tenant_config: Option<PerTenantConfig>,
     /// When `true`, a configured resolver that returns `None` (no tenant could

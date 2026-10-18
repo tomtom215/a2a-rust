@@ -8,7 +8,7 @@
 use a2a_protocol_types::agent_card::AgentCard;
 use serde_json::{Value, json};
 
-use super::{card_warnings, is_loopback, is_uri};
+use super::{card_credentials, card_warnings, is_loopback, is_uri, publishable};
 
 fn card(extra: &Value) -> AgentCard {
     let mut c = json!({
@@ -91,4 +91,51 @@ fn shapes() {
     assert!(!is_uri("WEBSOCKET") && !is_uri(":x") && !is_uri("a b:c") && !is_uri("x:"));
     assert!(is_loopback("http://user@localhost:1/x") && is_loopback("http://[::1]/"));
     assert!(!is_loopback("http://example.com") && !is_loopback("nonsense"));
+}
+
+/// Spec §14: a card "SHOULD NOT include sensitive credentials", and §13.3
+/// an extended card no "unmasked credentials". A card is served to whoever
+/// asks, so one in a URL is refused.
+#[test]
+fn a_credential_in_any_card_url_is_found_and_refused() {
+    let c = card(&json!({
+        "documentationUrl": "https://docs.example/a?token=s3cret",
+        "iconUrl": "https://user:pw@cdn.example/icon.png",
+        "provider": {"organization": "o", "url": "https://o.example/?ref=card"},
+        "securitySchemes": {"oidc": {"openIdConnectSecurityScheme": {
+            "openIdConnectUrl": "https://idp.example/.well-known/openid-configuration?client_secret=x"}}}
+    }));
+    let found = card_credentials(&c);
+    assert_eq!(
+        found,
+        vec![
+            "documentationUrl".to_owned(),
+            "iconUrl".to_owned(),
+            "securitySchemes.oidc.openIdConnectSecurityScheme.openIdConnectUrl".to_owned(),
+        ],
+        "a harmless query parameter is not a credential"
+    );
+    let why = publishable(&c).expect_err("not publishable");
+    assert!(why.contains("credential") && why.contains("§14"), "{why}");
+    assert_eq!(publishable(&card(&json!({}))), Ok(()));
+}
+
+#[test]
+fn an_internal_host_is_reported() {
+    let w = card_warnings(&card(&json!({
+        "documentationUrl": "https://wiki.corp/agents/a",
+        "iconUrl": "http://10.1.2.3/icon.png",
+        "provider": {"organization": "o", "url": "https://o.example"}
+    })));
+    assert!(
+        w.iter()
+            .any(|m| m.starts_with("documentationUrl: wiki.corp looks internal")),
+        "{w:#?}"
+    );
+    assert!(
+        w.iter()
+            .any(|m| m.starts_with("iconUrl: 10.1.2.3 looks internal")),
+        "{w:#?}"
+    );
+    assert!(!w.iter().any(|m| m.contains("o.example")), "{w:#?}");
 }

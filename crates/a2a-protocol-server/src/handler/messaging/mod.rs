@@ -111,6 +111,17 @@ enum Committed {
     Replay(Box<Task>),
 }
 
+/// Which file references a message may carry; see
+/// [`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileUrls {
+    /// Any, unchecked: the default.
+    Any,
+    /// Only those [`check_public_url`](crate::url_guard::check_public_url)
+    /// accepts.
+    PublicOnly,
+}
+
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///

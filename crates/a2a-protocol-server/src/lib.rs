@@ -150,6 +150,7 @@ pub mod tenant_config;
 pub mod tenant_resolver;
 #[cfg(feature = "tls-rustls")]
 mod tls;
+pub mod url_guard;
 
 #[cfg(feature = "conformance")]
 pub mod conformance;

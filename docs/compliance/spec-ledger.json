@@ -4191,18 +4191,23 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "File references within A2A messages MUST be validated to prevent SSRF",
-   "status": "APPLICATION",
+   "status": "SUPPORTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:497",
-    "crates/a2a-protocol-server/src/push/sender.rs:599"
+    "crates/a2a-protocol-server/src/url_guard.rs:41",
+    "crates/a2a-protocol-server/src/url_guard.rs:56",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:31"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:379 https_webhook_enforces_ssrf_with_tls_feature"
+    "crates/a2a-protocol-server/tests/file_url_ssrf.rs private_and_internal_targets_are_refused",
+    "crates/a2a-protocol-server/tests/file_url_ssrf.rs a_literal_address_needs_no_lookup_and_a_private_one_is_refused_before_it",
+    "crates/a2a-protocol-server/tests/file_url_ssrf.rs refuse_private_file_urls_refuses_a_message_pointing_inward",
+    "crates/a2a-protocol-server/tests/file_url_ssrf.rs by_default_file_references_are_not_checked"
    ],
-   "notes": "SDK never dereferences Part URLs; SSRF validation exists only for push webhooks and is pub(crate), so no reusable hook is exposed to executors for file URIs.",
+   "notes": "Re-examined 2026-10-18: the SDK never dereferences a Part's URL, so the fetch is the agent's; what it needs is now public. url_guard::check_public_url refuses private, loopback, link-local, CGNAT, ULA and IPv4-mapped addresses, numeric IPv4 spellings and internal names (the push sender's checks, moved here); url_guard::resolve_public_url also resolves the host under a timeout and refuses it if any address is private, returning the address to connect to. RequestHandlerBuilder::refuse_private_file_urls() refuses such a message before the executor runs (form only, no DNS). SUPPORTED, not TESTED: the check is opt-in, because an SDK that never fetches has no reference to protect by default; an executor that fetches must call resolve_public_url.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3246,
@@ -4308,13 +4313,23 @@
    "keyword": "SHOULD NOT",
    "binds": "agent-application",
    "requirement": "[Agent Card] SHOULD NOT include sensitive credentials or internal implementation details",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Card content is author-supplied; no SDK lint.",
+   "impl_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:173",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:189",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:266",
+    "crates/a2a-protocol-server/src/builder.rs:859"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/file_url_ssrf.rs build_refuses_a_card_carrying_a_credential",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs a_credential_in_any_card_url_is_found_and_refused",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_internal_host_is_reported"
+   ],
+   "notes": "Re-examined 2026-10-18: a card carrying a credential in any URL (user information, or a query parameter named like a secret) is refused by build(), the static, dynamic and hot-reload handlers and per-caller extended cards; a URL naming an internal host (private address, .internal, .local, .lan, .corp, .intranet) is reported by card_warnings, which build() logs. Residual, the author's: a credential or internal detail in free text (a description, metadata) is not detected, since nothing distinguishes it from prose.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3342,
@@ -7848,14 +7863,20 @@
    "keyword": "SHOULD NOT",
    "binds": "agent-application",
    "requirement": "Extended cards SHOULD NOT include sensitive information that could be exploited if leaked (e.g., internal service URLs, unmasked credentials)",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Card content is operator-authored, the extended card's included; the SDK adds only the extension advertisements build() appends.",
+   "impl_evidence": [
+    "crates/a2a-protocol-server/src/builder.rs:859",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:189"
+   ],
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs a_credential_in_any_card_url_is_found_and_refused",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_internal_host_is_reported"
+   ],
+   "notes": "Re-examined 2026-10-18: the extended card goes through the same checks as the public one (see §14 3341): an unmasked credential in a URL is refused at build() and by per-caller extended cards, and an internal service URL is reported by card_warnings. Residual, the author's: free text is not inspected.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3157,

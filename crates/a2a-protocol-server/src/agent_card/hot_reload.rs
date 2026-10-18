@@ -125,9 +125,7 @@ impl HotReloadAgentCardHandler {
     /// [`ServerError::InvalidParams`] naming what is wrong; the current card
     /// stays in place.
     pub fn try_update(&self, card: AgentCard) -> ServerResult<()> {
-        card.validate()
-            .and_then(|()| card.validate_security_schemes())
-            .map_err(|why| ServerError::InvalidParams(why.into()))?;
+        super::lint::publishable(&card).map_err(ServerError::InvalidParams)?;
         self.replace(card);
         Ok(())
     }

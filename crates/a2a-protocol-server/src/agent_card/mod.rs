@@ -14,7 +14,7 @@ pub mod static_handler;
 
 pub use dynamic_handler::{AgentCardProducer, DynamicAgentCardHandler};
 pub use hot_reload::HotReloadAgentCardHandler;
-pub use lint::card_warnings;
+pub use lint::{card_credentials, card_warnings};
 pub use per_caller::ExtendedCardProvider;
 pub(crate) use per_caller::for_caller;
 pub use static_handler::StaticAgentCardHandler;

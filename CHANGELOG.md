@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A card carrying a credential in a URL is refused when published**
+  (server; spec §14 "The Agent Card SHOULD NOT include sensitive
+  credentials", §13.3 an extended card no "unmasked credentials"). `build()`,
+  the static, dynamic and hot-reload card handlers and per-caller extended
+  cards refuse a card any of whose URLs carries user information
+  (`user:pass@host`) or a query parameter named like a secret (`token`,
+  `access_token`, `api_key`, `apikey`, `auth`, `client_secret`, `key`,
+  `password`, `secret`, `sig`, `signature`; case-insensitive), naming the field. New
+  public `agent_card::card_credentials(&card)` lists them. Tests:
+  `file_url_ssrf::build_refuses_a_card_carrying_a_credential`,
+  `agent_card::lint::tests::a_credential_in_any_card_url_is_found_and_refused`.
 - **A card whose OAuth or OpenID Connect URLs are not URLs is refused when
   published** (types/server; a2a.proto: each OAuth flow URL "MUST be in the
   form of a URL", and `oauth2_metadata_url` "TLS is required").
@@ -156,12 +167,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`url_guard::check_public_url` and `url_guard::resolve_public_url`**
+  (server; spec §14 "File references within A2A messages MUST be validated
+  to prevent SSRF"). The checks the push sender has applied to webhook URLs,
+  now public so an executor that fetches a `Part`'s URL can apply them:
+  loopback, private, link-local, CGNAT, ULA and IPv4-mapped addresses,
+  numeric IPv4 spellings (`0x7f.1`, `2130706433`) and internal names are
+  refused; `resolve_public_url` also resolves the host (bounded by a
+  timeout) and refuses it if any address it resolves to is private.
+- **`RequestHandlerBuilder::refuse_private_file_urls()`** (server; spec §14).
+  Off by default, since the SDK never fetches a `Part`'s URL itself; when
+  set, a message whose file part points at a private or internal address is
+  refused with `InvalidField` (`InvalidParams` on the wire) naming the
+  part, before the executor sees it. Tests:
+  `file_url_ssrf`.
 - **`agent_card::card_warnings(&card)`, logged by `build()`** (server). The
   problems a card likely has but the specification allows: an interface URL
   that is not absolute, or not `https` off loopback (a2a.proto
   `AgentInterface.url`, spec §7.1); a custom binding that is not a URI
   (§5.8); an HTTP authentication scheme not in the IANA registry (read
-  2026-10-18); an extension URI with no version (§4.6.3).
+  2026-10-18); an extension URI with no version (§4.6.3); a URL naming an
+  internal host (a private, link-local or CGNAT address, or a name under
+  `.internal`, `.local`, `.lan`, `.corp` or `.intranet`; loopback is a
+  local test and is not reported), which spec §13.3 and §14 say a card
+  should not disclose.
 - **A listener warns when its binding is not on the card** (server; spec
   §5.2 "Agents MUST declare all supported protocols in their AgentCard").
   `Server`, the WebSocket listener and the gRPC listener check the handler's

@@ -78,9 +78,7 @@ fn checked(
             "the extended agent card chosen for this caller is not one this server may serve: {why}"
         ))
     };
-    card.validate()
-        .and_then(|()| card.validate_security_schemes())
-        .map_err(|why| refused(why.to_string()))?;
+    super::lint::publishable(&card).map_err(refused)?;
     if card.capabilities.push_notifications == Some(true) && !has_push_sender {
         return Err(refused(
             "it declares capabilities.pushNotifications, and no push sender is wired".to_owned(),

@@ -96,6 +96,15 @@ pub fn card_warnings(card: &AgentCard) -> Vec<String> {
             ));
         }
     }
+    for (field, url) in card_urls(card) {
+        if let Some(host) = internal_host(&url) {
+            out.push(format!(
+                "{field}: {host} looks internal; a card SHOULD NOT include internal \
+                 implementation details, nor an extended card internal service URLs (spec §14, \
+                 §13.3)"
+            ));
+        }
+    }
     for ext in card.capabilities.extensions.iter().flatten() {
         if !ext.uri.chars().any(|c| c.is_ascii_digit()) {
             out.push(format!(
@@ -135,6 +144,141 @@ fn is_https_url(s: &str) -> bool {
     is_url(s)
         && s.get(..8)
             .is_some_and(|p| p.eq_ignore_ascii_case("https://"))
+}
+
+/// Query parameter names that carry a secret.
+const SECRET_PARAMS: &[&str] = &[
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth",
+    "client_secret",
+    "key",
+    "password",
+    "secret",
+    "sig",
+    "signature",
+    "token",
+];
+
+/// The fields of `card` that carry a credential in a URL.
+///
+/// That is user information (`user:pass@host`) or a query parameter named
+/// like a secret (`?token=`).
+/// [`RequestHandlerBuilder::build`](crate::RequestHandlerBuilder::build)
+/// refuses a card with any (spec §14: the card "SHOULD NOT include sensitive
+/// credentials"; §13.3, an extended card no "unmasked credentials"): a card
+/// is published to whoever asks, so a credential in it is disclosed.
+#[must_use]
+pub fn card_credentials(card: &AgentCard) -> Vec<String> {
+    card_urls(card)
+        .into_iter()
+        .filter(|(_, url)| carries_credential(url))
+        .map(|(field, _)| field)
+        .collect()
+}
+
+/// Whether a server may publish `card`: what the specification requires of
+/// it ([`AgentCard::validate`], [`AgentCard::validate_security_schemes`])
+/// and no credential in it ([`card_credentials`]). Every path that serves a
+/// card checks this: the builder, the static, dynamic and hot-reload
+/// handlers, and per-caller extended cards.
+///
+/// [`AgentCard::validate`]: a2a_protocol_types::agent_card::AgentCard::validate
+/// [`AgentCard::validate_security_schemes`]: a2a_protocol_types::agent_card::AgentCard::validate_security_schemes
+pub(crate) fn publishable(card: &AgentCard) -> Result<(), String> {
+    card.validate()
+        .and_then(|()| card.validate_security_schemes())
+        .map_err(str::to_owned)?;
+    let leaked = card_credentials(card);
+    if leaked.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "it carries a credential in a URL ({}), which serving it would disclose \
+             (spec §14: the card SHOULD NOT include sensitive credentials)",
+            leaked.join(", ")
+        ))
+    }
+}
+
+/// Every string in `card` held by a key ending in `url` or `uri` (any case),
+/// with the JSON path to it: the interfaces, provider, documentation and
+/// icon URLs, every security scheme's URLs and the extensions' URIs, and
+/// whatever a later field adds.
+fn card_urls(card: &AgentCard) -> Vec<(String, String)> {
+    fn walk(v: &serde_json::Value, path: &str, out: &mut Vec<(String, String)>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, v) in map {
+                    let here = if path.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{path}.{k}")
+                    };
+                    let lower = k.to_ascii_lowercase();
+                    match v {
+                        serde_json::Value::String(s)
+                            if lower.ends_with("url") || lower.ends_with("uri") =>
+                        {
+                            out.push((here, s.clone()));
+                        }
+                        _ => walk(v, &here, out),
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for (i, v) in items.iter().enumerate() {
+                    walk(v, &format!("{path}[{i}]"), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Ok(v) = serde_json::to_value(card) {
+        walk(&v, "", &mut out);
+    }
+    out
+}
+
+/// Whether `url` carries user information or a secret-named query parameter.
+fn carries_credential(url: &str) -> bool {
+    let Some((_, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return true;
+    }
+    let query = url.split_once('?').map_or("", |(_, q)| q);
+    let query = query.split('#').next().unwrap_or_default();
+    query.split('&').any(|pair| {
+        let name = pair.split('=').next().unwrap_or_default();
+        SECRET_PARAMS.iter().any(|s| s.eq_ignore_ascii_case(name))
+    })
+}
+
+/// `url`'s host when it looks internal: a private, link-local or CGNAT
+/// address, or a name under `.internal`, `.local`, `.lan`, `.corp` or
+/// `.intranet`. Loopback is left to [`is_loopback`], whose cards are local
+/// tests.
+fn internal_host(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = host.strip_prefix('[').map_or_else(
+        || host.rsplit_once(':').map_or(host, |(h, _)| h),
+        |v6| v6.split(']').next().unwrap_or_default(),
+    );
+    let lower = host.to_ascii_lowercase();
+    let internal_name = [".internal", ".local", ".lan", ".corp", ".intranet"]
+        .iter()
+        .any(|suffix| lower.ends_with(suffix));
+    let private_ip = host
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| !ip.is_loopback() && crate::url_guard::is_private_ip(ip));
+    (internal_name || private_ip).then(|| host.to_owned())
 }
 
 /// Whether `url`'s host is `localhost` or a loopback address: a card for a
