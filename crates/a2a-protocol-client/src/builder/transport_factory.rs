@@ -96,6 +96,27 @@ impl ClientBuilder {
     /// Checks what [`ClientBuilder::with_extensions`] asks for and adds the
     /// interceptor that sends it, after the caller's.
     fn send_extensions(&mut self) -> ClientResult<()> {
+        if let Some(required) = &self.required_extensions {
+            let missing: Vec<&str> = required
+                .iter()
+                .filter(|uri| !self.extensions.contains(uri))
+                .map(String::as_str)
+                .collect();
+            if !missing.is_empty() {
+                return Err(ClientError::Protocol(
+                    a2a_protocol_types::error::A2aError::new(
+                        a2a_protocol_types::error::ErrorCode::ExtensionSupportRequired,
+                        format!(
+                            "the agent card marks {} required (a2a.proto \
+                             AgentExtension.required: the client must understand and comply); \
+                             ask for it with with_extensions, or call \
+                             skip_required_extension_check if an interceptor sends it",
+                            missing.join(", ")
+                        ),
+                    ),
+                ));
+            }
+        }
         if let Some(value) = crate::extensions::header_value(&self.extensions)? {
             self.interceptors
                 .push(crate::extensions::ExtensionsHeader(value));

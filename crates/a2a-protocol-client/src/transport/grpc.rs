@@ -532,11 +532,23 @@ impl GrpcTransport {
             // over quota): a transient, retryable condition. Mapping it through
             // the wildcard would make it a non-retryable `Protocol(InvalidParams)`,
             // the opposite of how the HTTP transports treat 429.
-            tonic::Code::ResourceExhausted => ClientError::UnexpectedStatus {
-                status: 429,
-                body: status.message().to_owned(),
-                retry_after: None,
-            },
+            //
+            // A google.rpc.RetryInfo detail is this binding's `Retry-After`:
+            // this SDK's server attaches one to every rate-limit refusal
+            // (dispatch/grpc/helpers.rs), and it was dropped here, so a gRPC
+            // client retried on its own backoff while the HTTP ones waited as
+            // asked. Clamped to the hour `parse_retry_after` allows.
+            tonic::Code::ResourceExhausted => {
+                use tonic_types::StatusExt as _;
+                ClientError::UnexpectedStatus {
+                    status: 429,
+                    body: status.message().to_owned(),
+                    retry_after: status
+                        .get_details_retry_info()
+                        .and_then(|info| info.retry_delay)
+                        .map(|d| d.min(std::time::Duration::from_secs(3600))),
+                }
+            }
             // `Cancelled` lands here too, as a non-retryable `Protocol` error.
             // It used to be a retryable `Timeout`, so a call the peer had
             // abandoned was sent again. A cancellation the caller makes
@@ -1398,6 +1410,36 @@ mod tests {
         };
         assert!(err.is_stream_lagged(), "{err:?}");
         assert_eq!(err.dropped_event_count(), Some(3));
+    }
+
+    /// A RESOURCE_EXHAUSTED status's RetryInfo becomes the retry delay, as a
+    /// 429's `Retry-After` does on the HTTP bindings; a delay past an hour is
+    /// clamped, and a status without one carries none.
+    #[test]
+    fn resource_exhausted_keeps_the_servers_retry_delay() {
+        use tonic_types::StatusExt as _;
+        let delay = |d: Option<std::time::Duration>| {
+            let status = match d {
+                Some(d) => tonic::Status::with_error_details(
+                    tonic::Code::ResourceExhausted,
+                    "slow down",
+                    tonic_types::ErrorDetails::with_retry_info(Some(d)),
+                ),
+                None => tonic::Status::new(tonic::Code::ResourceExhausted, "slow down"),
+            };
+            match GrpcTransport::status_to_error(&status) {
+                ClientError::UnexpectedStatus {
+                    status: 429,
+                    retry_after,
+                    ..
+                } => retry_after,
+                other => panic!("a 429, got {other:?}"),
+            }
+        };
+        let secs = std::time::Duration::from_secs;
+        assert_eq!(delay(Some(secs(7))), Some(secs(7)));
+        assert_eq!(delay(Some(secs(86_400))), Some(secs(3600)));
+        assert_eq!(delay(None), None);
     }
 
     #[test]
