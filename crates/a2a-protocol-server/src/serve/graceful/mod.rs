@@ -19,11 +19,13 @@
 //! whole subject is shipping — had to reach for the Axum adapter to get
 //! `with_graceful_shutdown`, because the SDK's own entry point could not drain.
 //!
-//! [`Server`] closes that. It also bounds four things `serve` leaves unbounded,
-//! all of which are only visible once a real deployment is behind it:
+//! [`Server`] closes that. It also bounds four things `serve`'s own accept
+//! loop left unbounded until 2026-10-18, when `serve` and `serve_with_addr`
+//! became wrappers over [`Server`] under [`ServeConfig::default()`]; all four
+//! are only visible once a real deployment is behind it:
 //!
-//! * **Concurrent connections.** `serve` spawns a task per accepted socket with
-//!   no ceiling. [`ServeConfig::max_connections`] holds the permit *before*
+//! * **Concurrent connections.** That loop spawned a task per accepted socket
+//!   with no ceiling, as the default here still does. [`ServeConfig::max_connections`] holds the permit *before*
 //!   accepting, so excess load waits in the kernel's backlog — where it belongs
 //!   — rather than as unbounded tasks.
 //! * **Time to send headers.** A peer dribbling request headers a byte at a
@@ -41,7 +43,7 @@
 //!   [`ServeConfig::idle_timeout`] answers it at the socket, counting traffic
 //!   in *either* direction so a streaming SSE response is not mistaken for a
 //!   dead one.
-//! * **Connection outcomes.** `serve` discards the result of
+//! * **Connection outcomes.** That loop discarded the result of
 //!   `serve_connection` entirely (`let _ = …`), so a connection that failed to
 //!   negotiate and one that served a thousand requests are indistinguishable.
 //!   Here the error is traced.

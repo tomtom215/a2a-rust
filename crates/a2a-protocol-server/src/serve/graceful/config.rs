@@ -27,7 +27,7 @@ pub const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(15);
 /// What changes here is that it now *applies*. Hyper honours the setting only
 /// when a [`Timer`](hyper::rt::Timer) is installed on the connection builder,
 /// and neither this server nor [`serve`](crate::serve::serve) installed one — so the
-/// default was inert. Hyper says so at warn level when it drops it, in a log
+/// default was inert. Both install one now; `serve` runs on this server. Hyper says so at warn level when it drops it, in a log
 /// line nobody was reading.
 pub const DEFAULT_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -74,9 +74,9 @@ pub const DEFAULT_TASK_GRACE: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ServeConfig {
-    /// Ceiling on connections being served at once. `None` is unbounded, which
-    /// is [`serve`](crate::serve::serve)'s behaviour and is kept as an explicit choice
-    /// rather than a default.
+    /// Ceiling on connections being served at once. `None`, the default, is
+    /// unbounded, which is what [`serve`](crate::serve::serve) gets; a
+    /// ceiling is kept as an explicit choice rather than a default.
     ///
     /// The permit is taken before `accept()`, so the ceiling is on *accepted*
     /// sockets. Load past it queues in the listen backlog and is refused by the

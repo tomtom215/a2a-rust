@@ -105,18 +105,24 @@ pub trait Dispatcher: Send + Sync + 'static {
 
 /// Starts an HTTP server that dispatches requests using the given dispatcher.
 ///
-/// Binds a TCP listener on `addr`, accepts connections, and serves each one
-/// using a hyper auto-connection builder. This eliminates the ~25 lines of
-/// boilerplate that every A2A agent otherwise needs.
+/// Binds a TCP listener on `addr` and serves it with a [`Server`] under
+/// [`ServeConfig::default()`]: the header-read and idle timeouts are on
+/// ([`DEFAULT_HEADER_READ_TIMEOUT`], [`DEFAULT_IDLE_TIMEOUT`]) and the
+/// connection count is unbounded. This eliminates the ~25 lines of
+/// boilerplate that every A2A agent otherwise needs. For TLS, a connection
+/// ceiling or a graceful shutdown, use [`Server`] directly.
 ///
-/// Each connection is served in a separate Tokio task.
+/// Until 2026-10-18 this ran its own accept loop, which installed no hyper
+/// timer and wrapped no socket in an idle timer, so a peer that sent its
+/// headers a byte at a time, or nothing at all, held a task for as long as
+/// it liked. [`Server`] already closed that; this now runs on it.
 ///
 /// Once the listener is bound this function does not return. `accept()`
 /// failures are transient by nature (a per-connection abort, or a momentarily
 /// full descriptor table), so the loop logs them and retries — backing off
 /// briefly on descriptor exhaustion — rather than tearing the server down.
 /// Callers wanting shutdown should race this future against their own signal
-/// (`tokio::select!`) instead of waiting for it to resolve.
+/// (`tokio::select!`), or use [`Server::serve_with_shutdown`], which drains.
 ///
 /// # Errors
 ///
@@ -161,49 +167,11 @@ pub async fn serve(
     addr: impl tokio::net::ToSocketAddrs,
     dispatcher: impl Dispatcher,
 ) -> std::io::Result<()> {
-    let connections = connections::Connections::for_dispatcher(&dispatcher);
-    let dispatcher = Arc::new(dispatcher);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    trace_info!(
-        addr = %listener.local_addr().unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0))),
-        "A2A server listening"
-    );
-
-    loop {
-        let (stream, peer) = match listener.accept().await {
-            Ok(pair) => pair,
-            Err(e) => {
-                // A transient accept() error (per-connection abort, or fd-table
-                // exhaustion) must not tear down the whole server. Log, back off
-                // if the fd table is full so we don't busy-spin, and keep going.
-                trace_warn!(error = %e, "accept() failed; retrying");
-                pause_after_accept_error(&e).await;
-                continue;
-            }
-        };
-        // Disable Nagle's algorithm to avoid ~40ms delayed-ACK latency on
-        // small SSE frames and JSON-RPC responses.
-        let _ = stream.set_nodelay(true);
-        let io = hyper_util::rt::TokioIo::new(stream);
-        let dispatcher = Arc::clone(&dispatcher);
-        let connection = connections.as_ref().map(connections::Connections::opened);
-
-        tokio::spawn(async move {
-            let service = service(
-                dispatcher,
-                connection.as_ref().map(connections::Connection::requests),
-                peer,
-            );
-            let result =
-                hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .serve_connection(io, service)
-                    .await;
-            if let Some(connection) = connection {
-                connection.close(result.is_err());
-            }
-        });
-    }
+    let server = Server::bind(addr).await?;
+    server
+        .serve_with_shutdown(dispatcher, std::future::pending())
+        .await;
+    Ok(())
 }
 
 /// The per-connection service: dispatches each request with its connection's
@@ -233,8 +201,10 @@ fn service<D: Dispatcher>(
 
 /// Starts an HTTP server and returns the bound [`SocketAddr`].
 ///
-/// Like [`serve`], but binds before entering the accept loop and returns the
-/// actual address (useful when binding to port `0` for tests).
+/// Like [`serve`], but binds before entering the accept loop, spawns it, and
+/// returns the actual address (useful when binding to port `0` for tests).
+/// It runs on a [`Server`] under [`ServeConfig::default()`], as [`serve`]
+/// does.
 ///
 /// # Errors
 ///
@@ -243,47 +213,9 @@ pub async fn serve_with_addr(
     addr: impl tokio::net::ToSocketAddrs,
     dispatcher: impl Dispatcher,
 ) -> std::io::Result<SocketAddr> {
-    let connections = connections::Connections::for_dispatcher(&dispatcher);
-    let dispatcher = Arc::new(dispatcher);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    let local_addr = listener.local_addr()?;
-
-    trace_info!(%local_addr, "A2A server listening");
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, peer) = match listener.accept().await {
-                Ok(pair) => pair,
-                Err(e) => {
-                    // Never let a transient accept() error kill the loop.
-                    trace_warn!(error = %e, "accept() failed; retrying");
-                    pause_after_accept_error(&e).await;
-                    continue;
-                }
-            };
-            let _ = stream.set_nodelay(true);
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            let connection = connections.as_ref().map(connections::Connections::opened);
-
-            tokio::spawn(async move {
-                let service = service(
-                    dispatcher,
-                    connection.as_ref().map(connections::Connection::requests),
-                    peer,
-                );
-                let result = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-                if let Some(connection) = connection {
-                    connection.close(result.is_err());
-                }
-            });
-        }
-    });
-
+    let server = Server::bind(addr).await?;
+    let local_addr = server.local_addr()?;
+    tokio::spawn(server.serve_with_shutdown(dispatcher, std::future::pending()));
     Ok(local_addr)
 }
 
@@ -440,6 +372,43 @@ mod tests {
             start.elapsed(),
             Duration::ZERO,
             "a transient per-connection error must retry at once"
+        );
+    }
+
+    /// A peer that never finishes its headers is cut off by the default
+    /// header-read timeout on `serve_with_addr`, which until 2026-10-18 ran
+    /// an accept loop with no hyper timer and so no header timeout at all.
+    ///
+    /// On a paused clock, so the 30-second default costs nothing: the runtime
+    /// advances virtual time whenever every task is waiting. The assertions
+    /// are on that virtual time, which is what the timeout reads.
+    #[tokio::test(start_paused = true)]
+    async fn serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let addr = serve_with_addr("127.0.0.1:0", MockDispatcher)
+            .await
+            .expect("server should bind");
+        let mut sock = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        sock.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
+            .await
+            .expect("partial headers");
+
+        let started = tokio::time::Instant::now();
+        let mut sink = Vec::new();
+        let closed =
+            tokio::time::timeout(DEFAULT_HEADER_READ_TIMEOUT * 4, sock.read_to_end(&mut sink))
+                .await;
+        assert!(
+            closed.is_ok(),
+            "a half-sent request was held open for four header timeouts; \
+             serve_with_addr is not applying the default header-read timeout"
+        );
+        assert!(
+            started.elapsed() >= DEFAULT_HEADER_READ_TIMEOUT,
+            "closed after {:?}, before the {DEFAULT_HEADER_READ_TIMEOUT:?} \
+             header timeout: something dropped it rather than timing it out",
+            started.elapsed()
         );
     }
 

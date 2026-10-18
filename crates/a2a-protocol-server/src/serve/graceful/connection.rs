@@ -99,15 +99,16 @@ where
     // Installing the timer is what makes `header_read_timeout` real. Hyper
     // defaults it to 30s but silently drops it without one — `Time::check`
     // logs "has default, but no timer set" and returns `None` — so every
-    // server built this way, including `serve`, has been running with no
-    // header timeout at all while appearing to have hyper's.
+    // server built this way, including `serve` until it moved onto
+    // `Server` (2026-10-18), ran with no header timeout at all while
+    // appearing to have hyper's.
     builder
         .http1()
         .timer(hyper_util::rt::TokioTimer::new())
         .header_read_timeout(header_read_timeout);
     builder.http2().timer(hyper_util::rt::TokioTimer::new());
     let conn = builder.serve_connection(io, service);
-    // Unlike `serve`, the outcome is not discarded: a connection that died
+    // Unlike `serve`'s old accept loop, the outcome is not discarded: a connection that died
     // before serving anything is a fact an operator can act on, and
     // dropping it makes the two cases indistinguishable.
     // `_e` because `trace_warn!` compiles to nothing without the `tracing`

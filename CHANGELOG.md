@@ -651,6 +651,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **`serve` and `serve_with_addr` run on `Server`, so their connections
+  get its default timeouts** (server). Both ran their own accept loop, which
+  installed no hyper timer and wrapped no socket in an idle timer, so a peer
+  that sent its request headers a byte at a time, or nothing, held a task
+  indefinitely (release audit F1). They now bind a `Server` under
+  `ServeConfig::default()`: a 30-second header-read timeout and a 75-second
+  idle timeout (counting traffic in either direction, so an SSE stream with
+  its 30-second keep-alive stays open), with connections still unbounded.
+  Their signatures are unchanged; for a ceiling, TLS or a graceful drain,
+  use `Server` directly. Regression test:
+  `serve::tests::serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers`,
+  which fails against the old loop.
 - **The HTTP+JSON client sends an array query parameter by repeating it**
   (client; spec §11.5 "Multiple values MAY be passed by repeating the
   parameter name"). `ids=1&ids=2` where it sent one JSON-encoded value,
