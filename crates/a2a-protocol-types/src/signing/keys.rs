@@ -133,6 +133,12 @@ pub struct Jwk {
     /// Intended use; a key marked other than `sig` is never used to verify.
     #[serde(default, rename = "use", skip_serializing_if = "Option::is_none")]
     pub key_use: Option<String>,
+    /// When the key expires, in seconds since the Unix epoch (the JWT
+    /// `NumericDate` of RFC 7519 §2). RFC 7517 defines no expiry; some key
+    /// sets carry this member, and a key past it is never used to verify
+    /// (spec §8.4.3: "Expired or revoked keys MUST NOT be used").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exp: Option<u64>,
 }
 
 impl Jwk {
@@ -204,7 +210,16 @@ impl Jwk {
             kid: kid.map(str::to_owned),
             alg: Some(key.alg().to_owned()),
             key_use: Some("sig".to_owned()),
+            exp: None,
         }
+    }
+
+    /// This key, published to expire at `exp` (seconds since the Unix
+    /// epoch); see [`exp`](Self::exp).
+    #[must_use]
+    pub const fn with_expiry(mut self, exp: u64) -> Self {
+        self.exp = Some(exp);
+        self
     }
 }
 
@@ -225,12 +240,33 @@ impl Jwks {
 
     /// The usable keys a signature with this `kid` and `alg` may have been
     /// made with: those whose `kid` matches (every key, when the signature
-    /// names none) and whose type is for `alg`. Keys that do not parse are
-    /// skipped, so one malformed entry does not disable the set.
+    /// names none), whose type is for `alg`, and that have not expired
+    /// ([`Jwk::exp`]). Keys that do not parse are skipped, so one malformed
+    /// entry does not disable the set.
+    ///
+    /// A revoked key is one the set no longer lists (spec §8.4.3). Nothing
+    /// here caches a set: fetch it again ([`fetch_jwks`] in the client) to
+    /// see a revocation.
+    ///
+    /// [`fetch_jwks`]: https://docs.rs/a2a-protocol-client/latest/a2a_protocol_client/jwks/fn.fetch_jwks.html
     #[must_use]
     pub fn candidates(&self, kid: Option<&str>, alg: &str) -> Vec<VerifyingKey> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(u64::MAX, |d| d.as_secs());
+        self.candidates_at(kid, alg, now)
+    }
+
+    /// [`candidates`](Self::candidates) at `now`, seconds since the epoch.
+    pub(crate) fn candidates_at(
+        &self,
+        kid: Option<&str>,
+        alg: &str,
+        now: u64,
+    ) -> Vec<VerifyingKey> {
         self.keys
             .iter()
+            .filter(|k| k.exp.is_none_or(|exp| now < exp))
             .filter(|k| kid.is_none() || k.kid.as_deref() == kid)
             .filter_map(|k| k.verifying_key().ok())
             .filter(|k| k.alg() == alg)

@@ -57,7 +57,11 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
 - **Algorithms:** ES256 (P-256) and EdDSA (Ed25519). A key is only ever
   tried under the algorithm its type is for.
 - **Revoking a key:** remove it from the set. A verifier that re-fetches the
-  set stops accepting signatures made with it.
+  set stops accepting signatures made with it; nothing in the SDK caches a
+  set.
+- **Expiring a key:** publish it with an `exp` member (seconds since the
+  epoch; `Jwk::with_expiry`). RFC 7517 defines none, but some key sets carry
+  it, and a key at or past it is never used to verify (spec §8.4.3).
 - **A single key:** `verify_agent_card` takes the raw key (the 65-byte P-256
   point, or the 32-byte Ed25519 key) or its `SubjectPublicKeyInfo` DER, as
   `openssl pkey -pubout -outform DER` writes it.

@@ -128,6 +128,26 @@ fn an_authenticator_checking_an_undeclared_scheme_is_refused() {
     );
 }
 
+/// The converse of the test above: a bearer interceptor in front of a card
+/// that declares only an API key checks a credential no client following
+/// the card would send. A bearer interceptor that answered "don't know"
+/// (`None`) or "yes" for an API-key scheme would let this build.
+#[test]
+fn a_bearer_interceptor_with_an_api_key_card_is_refused() {
+    let key_card = card(&json!({
+        "securitySchemes": {"key": {"apiKeySecurityScheme": {"location": "header", "name": "X-API-Key"}}},
+        "securityRequirements": [{"schemes": {"key": {}}}]
+    }));
+    let why = build(
+        RequestHandlerBuilder::new(Idle)
+            .with_agent_card(key_card)
+            .with_interceptor(BearerTokenAuthInterceptor::new(["t"]))
+            .share_tasks_across_callers(),
+    )
+    .expect_err("the card declares an API key only");
+    assert!(why.contains("§13.3") && why.contains("key"), "{why}");
+}
+
 /// OAuth 2.0 and `OpenID` Connect access tokens are bearer tokens.
 #[test]
 fn a_bearer_interceptor_checks_oauth_and_oidc_schemes() {

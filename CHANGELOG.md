@@ -167,6 +167,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A card-signing key past its `exp` is not used** (types; spec §8.4.3
+  "Expired or revoked keys MUST NOT be used for verification"). `Jwk` gains
+  an `exp` member (seconds since the epoch, the JWT `NumericDate`), which
+  some key sets publish though RFC 7517 defines none, and
+  `Jwk::with_expiry` to publish it; `Jwks::candidates` skips a key at or
+  past it. A revoked key is one the set no longer lists, and nothing in the
+  SDK caches a set. Test: `signing::keys::tests::an_expired_key_is_not_used`.
 - **`auth::CredentialSet`: rotating and revoking static credentials while
   serving** (server; spec §13.4 "Credentials SHOULD be rotated periodically",
   agents "SHOULD implement credential revocation mechanisms").

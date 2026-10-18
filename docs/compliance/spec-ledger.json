@@ -5585,17 +5585,21 @@
    "keyword": "MUST NOT",
    "binds": "client",
    "requirement": "Expired or revoked keys **MUST NOT** be used for verification",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:518"
+    "crates/a2a-protocol-types/src/signing/keys.rs Jwks::candidates",
+    "crates/a2a-protocol-types/src/signing/keys.rs Jwk::exp",
+    "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:155 removing_a_key_from_the_set_revokes_it"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs an_expired_key_is_not_used",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs removing_a_key_from_the_set_revokes_it"
    ],
-   "notes": "Documented as the caller's obligation; no expiry/revocation check in the SDK (revocation only by removal from the JWKS).",
+   "notes": "Re-examined 2026-10-18: verification uses only the keys a set lists now. A revoked key is one the set no longer lists, and is not a candidate (test); nothing in the SDK caches a set, and fetch_jwks fetches on each call. An expired key: RFC 7517 defines no expiry, but a JWK carrying an exp member (the JWT NumericDate some key sets publish) is skipped at or after it (test, including a signature that verifies only with the expired key). Residual, the caller's: keys pinned with CardFetchOptions::with_signature_keys are as current as the caller keeps them, and expiry carried only in an x5c certificate chain is not read.",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 2134,
