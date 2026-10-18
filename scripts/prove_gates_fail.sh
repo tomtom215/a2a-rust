@@ -284,6 +284,7 @@ SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
 SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
 MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
 RATE_LIMIT_SHARED=crates/a2a-protocol-server/src/rate_limit/shared.rs
+ENCRYPTED_STORE=crates/a2a-protocol-server/tests/encrypted_store.rs
 
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
@@ -391,6 +392,8 @@ injection_for() {
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
             echo "ignored_suite:$MULTI_REPLICA:the multi-replica suite" ;;
+        *"--test encrypted_store"*)
+            echo "ignored_suite:$ENCRYPTED_STORE:the encrypted-store PostgreSQL suite" ;;
         # The Postgres rate-limit counter's tests are inline in the module,
         # so the probe is appended to the module file and the step's filter
         # is the module path, which selects the probe too.
