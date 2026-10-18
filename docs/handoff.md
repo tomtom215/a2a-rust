@@ -151,6 +151,13 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 - **Interop:** `itk/interop/card_signature_interop.py` checks Python only;
   the Go interop script has not been re-run since this branch's grpc and
   dependency updates.
+- **Control map (2026-10-18 review):** of the 13 `partial` rows, four
+  have gaps engineering could close: ASI07, the HTTP dispatchers naming a
+  caller from a mutual-TLS client certificate (needs an X.509 parser, a
+  new dependency); AIA-14-4e and ASI10, a halt that persists and crosses
+  replicas; ASI08, G1-B's lease; ASI03, the originating principal carried
+  on delegated calls. The rest, and all 19 `integrator` rows, are split
+  by nature (reviewed, unchanged).
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness still pins `=0.14.1`.
@@ -254,7 +261,10 @@ into this file: the commit that records it changes it.
 
 - **Disk** is a fixed allowance: `CARGO_INCREMENTAL=0`, and delete
   `target/semver-checks` and the incremental directories when space runs
-  low. A linker "bus error" (signal 7) means the disk is full.
+  low. A linker "bus error" (signal 7), or `linking with cc failed`,
+  means the disk is full. `bindings/a2a-protocol-slimrpc/target` reaches
+  12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
+  and delete it afterwards.
 - **PostgreSQL 16** is installed: `pg_ctlcluster 16 main start`, then
   `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`
   (password `postgres`).
