@@ -227,6 +227,22 @@ impl SqliteTaskStore {
     /// `save` decides: it refuses with the conflict, or rewrites a record that
     /// the replay already describes.
     async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<()> {
+        // Every row of one append is for one artifact, and the stored
+        // document must hold *that* artifact at its index: another replica
+        // may have replaced it with a different one since this writer's
+        // snapshot (release audit F5). The journal's positions already make a
+        // stale append of the same artifact harmless; only its id tells a
+        // replaced one apart.
+        let target = rows.first().and_then(|(index, ..)| {
+            let artifact = task
+                .artifacts
+                .as_ref()?
+                .get(usize::try_from(*index).ok()?)?;
+            Some((*index, artifact.id.0.clone()))
+        });
+        let Some((artifact_index, artifact_id)) = target else {
+            return self.save(task).await;
+        };
         let mut query_builder = sqlx::QueryBuilder::new(
             "INSERT INTO task_artifact_appends (task_id, artifact, seq, part, applied_seq) \
              SELECT * FROM (",
@@ -247,7 +263,11 @@ impl SqliteTaskStore {
         query_builder.push(" AND ");
         query_builder.push(crate::store::terminal::SQL_STATE_NOT_TERMINAL_OR_EQUALS);
         query_builder.push_bind(task.status.state.to_string());
-        query_builder.push("))");
+        query_builder.push(") AND json_extract(data, '$.artifacts[' || ");
+        query_builder.push_bind(artifact_index);
+        query_builder.push(" || '].artifactId') = ");
+        query_builder.push_bind(artifact_id);
+        query_builder.push(")");
         // Replay of an already-journalled append is a no-op rather than a
         // duplicate-key failure, because `seq` is the part's position: the same
         // append twice names the same slot with the same bytes.
@@ -403,10 +423,12 @@ fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<Del
             };
             let payload = serde_json::to_string(std::slice::from_ref(artifact))
                 .map_err(|e| A2aError::internal(format!("failed to serialize artifact: {e}")))?;
+            // Bound as the length the stored array must have: the push is
+            // compare-and-append (release audit F5).
             Ok(Some(DeltaStatement {
                 sql: PUSH_ARTIFACT_SQL,
                 payload,
-                index: None,
+                index: Some(index),
             }))
         }
     }
@@ -445,12 +467,19 @@ const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "?4"
 ));
 
-/// Append a whole artifact at the end of the array.
+/// Append a whole artifact at the end of the array, if the array holds
+/// exactly the artifacts before it (`?3`, the push's index).
+///
+/// Compare-and-append (release audit F5): a writer whose snapshot predates
+/// another replica's push appended after an artifact it had not seen, so the
+/// stored array held artifacts neither writer's snapshot did. Zero rows sends
+/// the caller to `save`, a lost update at worst.
 const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')), \
-     applied_seq = COALESCE(?4, applied_seq) WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
+     applied_seq = COALESCE(?5, applied_seq) WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' \
+     AND json_array_length(data, '$.artifacts') = ?3 AND ",
     "state",
-    "?3"
+    "?4"
 ));
 
 /// The terminal guard for the several-parts append, whose statement text is

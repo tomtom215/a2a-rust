@@ -1609,6 +1609,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SQL stores' artifact appends are compare-and-append** (server;
+  release audit F5). A replica whose snapshot predated another's write
+  appended after parts or artifacts it had not seen. Under
+  `EncryptedTaskStore`, whose parts are sealed to their positions, the
+  record then failed to decrypt ("a stored value could not be opened",
+  reproduced on PostgreSQL before this fix). PostgreSQL's part append now
+  matches only when the stored artifact at that index has the expected id
+  and part count, and its push only when the array has the expected length.
+  SQLite's push gets the same length check. SQLite's journalled part append
+  was already safe for a stale append of the same artifact, because its
+  journal records positions, but it appended to whatever artifact had
+  replaced it at that index. It now checks the artifact id. A mismatch
+  falls back to a whole-record `save`: a lost update at worst, never a
+  misplaced part. `tests/artifact_compare_and_append.rs` runs each case on
+  PostgreSQL, SQLite and the in-memory store, which needed no change.
+
 - **`CancelTask` no longer erases what another replica wrote meanwhile**
   (server; release audit F6). Cancel re-read the task, set `Canceled` and
   wrote the whole snapshot back with `save`, so a history message or artifact
