@@ -79,7 +79,7 @@ impl TenantAwareSqliteTaskStore {
 impl TenantAwareSqliteTaskStore {
     /// Removes every partition of `caller`, in every tenant, with its tasks,
     /// their logged events and its idempotency keys, in one transaction; see
-    /// [`CallerErasure`](crate::store::caller_keys::CallerErasure).
+    /// [`CallerErasure`].
     ///
     /// # Errors
     ///

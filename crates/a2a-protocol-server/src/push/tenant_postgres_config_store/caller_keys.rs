@@ -81,7 +81,7 @@ impl TenantAwarePostgresPushConfigStore {
 impl TenantAwarePostgresPushConfigStore {
     /// Removes every config of `caller`, in every tenant, in one
     /// transaction; see
-    /// [`CallerErasure`](crate::store::caller_keys::CallerErasure).
+    /// [`CallerErasure`].
     ///
     /// # Errors
     ///

@@ -75,6 +75,56 @@ async fn call(ws: &mut Ws, frame: Value) -> Value {
     next_json(ws).await
 }
 
+/// §3 "Data types" (spec §12.2): field names lowerCamelCase, enumerations
+/// as their proto names, timestamps RFC 3339 in UTC, `bytes` as base64,
+/// `Struct` as a JSON object, each as the client sent it; a binary frame is
+/// answered `-32700` with a null id.
+#[tokio::test]
+async fn the_data_types_are_the_json_rpc_bindings_proto_json() {
+    let addr = server().await;
+    let mut ws = connect(&format!("ws://{addr}"), true).await.unwrap();
+    let sent = call(
+        &mut ws,
+        json!({"jsonrpc": "2.0", "id": "1", "method": "SendMessage", "params": {
+            "message": {"messageId": "m1", "role": "ROLE_USER", "parts": [
+                {"text": "hi"},
+                {"raw": "AAEC/w==", "mediaType": "application/octet-stream"},
+                {"data": {"k": [1, "two"]}}
+            ], "metadata": {"trace": {"n": 1}}}
+        }}),
+    )
+    .await;
+    let task = &sent["result"]["task"];
+    let id = task["id"].as_str().expect("a task id").to_owned();
+    assert!(task["contextId"].is_string(), "lowerCamelCase: {task}");
+    assert_eq!(task["status"]["state"], "TASK_STATE_COMPLETED");
+    let at = task["status"]["timestamp"].as_str().expect("a timestamp");
+    assert!(
+        at.ends_with('Z') && at.as_bytes().get(10) == Some(&b'T'),
+        "RFC 3339 in UTC: {at}"
+    );
+
+    let got = call(
+        &mut ws,
+        json!({"jsonrpc": "2.0", "id": "2", "method": "GetTask",
+               "params": {"id": id, "historyLength": 10}}),
+    )
+    .await;
+    let message = &got["result"]["history"][0];
+    assert_eq!(message["role"], "ROLE_USER", "{got}");
+    assert_eq!(message["messageId"], "m1");
+    assert_eq!(message["parts"][1]["raw"], "AAEC/w==", "bytes as base64");
+    assert_eq!(message["parts"][2]["data"], json!({"k": [1, "two"]}));
+    assert_eq!(message["metadata"], json!({"trace": {"n": 1}}));
+
+    ws.send(WsMessage::Binary(vec![1, 2, 3].into()))
+        .await
+        .unwrap();
+    let refused = next_json(&mut ws).await;
+    assert_eq!(refused["error"]["code"], -32700, "{refused}");
+    assert_eq!(refused["id"], Value::Null);
+}
+
 /// §1 and §2: no version is a 400 with the HTTP+JSON error body; the
 /// `A2A-Version` query parameter stands in for the header.
 #[tokio::test]

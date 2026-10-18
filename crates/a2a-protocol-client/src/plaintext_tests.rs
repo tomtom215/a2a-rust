@@ -98,3 +98,34 @@ fn without_refuse_the_call_goes_and_is_logged_once() {
     assert!(unarmed.check(&req).is_ok(), "no endpoint, no check");
     assert!(unarmed.peer.is_none());
 }
+
+/// The warning is logged, and only once: each call after the first goes
+/// silently, however many credentials it carries.
+#[cfg(feature = "tracing")]
+#[test]
+fn the_warning_is_logged_once_per_client() {
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+
+    #[derive(Clone, Default)]
+    struct Count(Arc<Mutex<usize>>);
+    impl<S: tracing::Subscriber> Layer<S> for Count {
+        fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+            if *event.metadata().level() == tracing::Level::WARN {
+                *self.0.lock().unwrap() += 1;
+            }
+        }
+    }
+
+    let count = Count::default();
+    let subscriber = tracing_subscriber::registry().with(count.clone());
+    tracing::subscriber::with_default(subscriber, || {
+        let mut guard = Guard::default();
+        guard.arm("http://agent.example");
+        let req = request(&["authorization"], &[]);
+        for _ in 0..3 {
+            assert!(guard.check(&req).is_ok());
+        }
+    });
+    assert_eq!(*count.0.lock().unwrap(), 1);
+}

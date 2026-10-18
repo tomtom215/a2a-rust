@@ -306,6 +306,17 @@ def main() -> int:
                 problems.append(f"{source}:{n} is {status} but carries severity {severity!r}")
         else:
             problems.append(f"{source}:{n} has unknown status {status!r}")
+        # SUPPORTED / NOT_SUPPORTED say whether an optional feature is
+        # offered, so they answer only a MAY or OPTIONAL. 23 entries had
+        # used SUPPORTED for a MUST or SHOULD the SDK leaves to the
+        # application or meets with a test (corrected 2026-10-18).
+        if status in {"SUPPORTED", "NOT_SUPPORTED"}:
+            first = (e.get("keyword") or "").split()[:1]
+            if not first or first[0].upper() not in {"MAY", "OPTIONAL"}:
+                problems.append(
+                    f"{source}:{n} is {status}, which answers only a MAY or OPTIONAL, "
+                    f"but its keyword is {e.get('keyword')!r}: use TESTED or APPLICATION"
+                )
         # 3. Evidence exists.
         check_evidence(e, problems)
 

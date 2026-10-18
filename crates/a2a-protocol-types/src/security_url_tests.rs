@@ -54,7 +54,7 @@ fn every_flow_url_given_must_be_a_url() {
         serde_json::json!({"deviceCode": {"deviceAuthorizationUrl": "d", "tokenUrl": "https://a.example", "scopes": {}}}),
     ];
     for flow in flows {
-        let s = scheme(serde_json::json!({"oauth2SecurityScheme": {"flows": flow.clone()}}));
+        let s = scheme(serde_json::json!({"oauth2SecurityScheme": {"flows": &flow}}));
         assert!(s.validate().is_err(), "{flow}");
     }
     let good = scheme(

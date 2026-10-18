@@ -1420,7 +1420,7 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom protocol bindings MUST specify how service parameters are transmitted in their binding specification.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md",
@@ -1433,9 +1433,10 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2508 ws_upgrade_headers_drive_tenant_resolution",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:81 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
-   "notes": "WebSocket: the binding specification (book/src/bindings/websocket.md §2) states the mechanism (upgrade headers, once per connection), the A2A-Version query fallback, value constraints, the reserved :path key, and that parameters cannot vary per request. SLIMRPC: slimrpc.md §3. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
+   "notes": "WebSocket: the binding specification (book/src/bindings/websocket.md §2) states the mechanism (upgrade headers, once per connection), the A2A-Version query fallback, value constraints, the reserved :path key, and that parameters cannot vary per request. SLIMRPC: slimrpc.md §3. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK authors the WebSocket binding, so the obligation is its own, met in its binding specification and pinned by the tests cited.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 485,
@@ -2284,13 +2285,15 @@
    "keyword": "SHOULD",
    "binds": "client",
    "requirement": "Server-generated contextId values SHOULD be treated as opaque identifiers by clients",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/task.rs:97"
    ],
-   "test_evidence": [],
-   "notes": "Re-examined 2026-10-18: the client keeps a server's contextId as the opaque ContextId newtype and never parses or derives anything from it.",
+   "test_evidence": [
+    "crates/a2a-protocol-client/tests/client_method_tests.rs a_context_id_reaches_the_caller_unaltered"
+   ],
+   "notes": "Re-examined 2026-10-18: the client keeps a server's contextId as the opaque ContextId newtype and never parses or derives anything from it. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's client is a client: it keeps the server's contextId as an opaque newtype, and the test added the same day shows a value with separators, escapes, non-ASCII and padding reaching the caller byte for byte.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -2564,7 +2567,7 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD use referenced tasks to understand the context and intent of follow-up requests",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/create.rs resolve_references",
@@ -2573,7 +2576,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/referenced_tasks.rs referenced_tasks_are_resolved_within_the_callers_partition"
    ],
-   "notes": "Since 2026-10-18 the handler resolves message.referenceTaskIds into RequestContext::referenced_tasks before the executor runs: read in the caller's partition (another caller's task resolves to nothing, as GetTask does), unknown ids skipped, duplicates once, at most 16. Using them is the agent's: SUPPORTED.",
+   "notes": "Since 2026-10-18 the handler resolves message.referenceTaskIds into RequestContext::referenced_tasks before the executor runs: read in the caller's partition (another caller's task resolves to nothing, as GetTask does), unknown ids skipped, duplicates once, at most 16. Using them is the agent's: SUPPORTED. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The requirement binds the agent's reasoning; the SDK's hook (RequestContext::referenced_tasks, resolved in the caller's partition) is tested.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -2584,14 +2587,14 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD leverage the shared contextId to provide contextually relevant responses",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs find_task_by_context",
     "crates/a2a-protocol-server/src/request_context.rs stored_task"
    ],
    "test_evidence": [],
-   "notes": "The handler gives the executor the latest task stored for the message's contextId as RequestContext::stored_task, with its history, on every send that names a context; using it for relevance is the agent's.",
+   "notes": "The handler gives the executor the latest task stored for the message's contextId as RequestContext::stored_task, with its history, on every send that names a context; using it for relevance is the agent's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The requirement binds the agent's reasoning; the SDK's hook is RequestContext::stored_task for the message's contextId.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -3304,7 +3307,7 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Extensions SHOULD include version information in their URI identifier.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings",
@@ -3316,7 +3319,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_extension_uri_without_a_version_is_reported"
    ],
-   "notes": "The four extensions the SDK authors carry /v1 in their URIs; since 2026-10-18 build() warns about a card extension URI with no version in it (no digit at all, a deliberately loose test).",
+   "notes": "The four extensions the SDK authors carry /v1 in their URIs; since 2026-10-18 build() warns about a card extension URI with no version in it (no digit at all, a deliberately loose test). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's own extensions carry /v1, and build() reports any card extension URI without a version (tested).",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -3510,7 +3513,7 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Agents MUST declare all supported protocols in their AgentCard",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding",
@@ -3523,7 +3526,7 @@
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported",
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs the_http_dispatchers_name_their_bindings"
    ],
-   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see.",
+   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The card is the author's; the SDK's hook is the startup warning for a served binding the card omits (tested), deliberately not a refusal.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -4129,7 +4132,7 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "The protocolBinding field in the Agent Card's supportedInterfaces entry SHOULD be a URI",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings",
@@ -4138,7 +4141,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs a_custom_binding_should_be_a_uri"
    ],
-   "notes": "The SDK's own custom bindings are URIs (WEBSOCKET_BINDING_URI; SLIMRPC's upstream URI), and since 2026-10-18 build() warns about a custom protocolBinding that is not a URI. The card's content stays the author's.",
+   "notes": "The SDK's own custom bindings are URIs (WEBSOCKET_BINDING_URI; SLIMRPC's upstream URI), and since 2026-10-18 build() warns about a custom protocolBinding that is not a URI. The card's content stays the author's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's own custom binding identifiers are URIs (WEBSOCKET_BINDING_URI; SLIMRPC's upstream URI), and build() reports one that is not (tested; the test passes the WebSocket URI and sees no warning).",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -4562,7 +4565,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Production deployments **MUST** use encrypted communication (HTTPS for HTTP-based bindings, TLS for gRPC).",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:32",
@@ -4576,7 +4579,7 @@
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs tls_client_round_trips_through_the_tls_dispatcher",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs a_wss_endpoint_is_reached_with_the_configured_roots"
    ],
-   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's: SUPPORTED, not TESTED, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket.",
+   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's: SUPPORTED, not TESTED, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on.",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -4969,7 +4972,7 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "The AgentCard **MUST** properly declare supported protocols",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs build",
@@ -4980,7 +4983,7 @@
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported",
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs interface_urls_must_be_absolute_and_https_off_loopback"
    ],
-   "notes": "build() refuses an interface with an empty url, binding or version (AgentCard::validate); since 2026-10-18 a served binding the card does not declare, and an interface URL that is not absolute, are warned about. Accuracy of the content stays the author's.",
+   "notes": "build() refuses an interface with an empty url, binding or version (AgentCard::validate); since 2026-10-18 a served binding the card does not declare, and an interface URL that is not absolute, are warned about. Accuracy of the content stays the author's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Card content is the author's; the SDK refuses an incomplete interface and warns about undeclared bindings and non-absolute URLs (tested).",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -4991,7 +4994,7 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "The `supportedInterfaces` field **SHOULD** declare all supported protocol combinations in preference order",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding"
@@ -4999,7 +5002,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported"
    ],
-   "notes": "A listener serving a binding the card omits is warned about (since 2026-10-18), which covers 'all'; the order is the agent's stated preference and the client honours it (from_card).",
+   "notes": "A listener serving a binding the card omits is warned about (since 2026-10-18), which covers 'all'; the order is the agent's stated preference and the client honours it (from_card). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1984: the order and completeness of supportedInterfaces are the author's; the SDK warns about an omitted binding (tested).",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -5010,7 +5013,7 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Each interface **MUST** accurately declare its transport protocol and URL",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/builders.rs AgentInterface::jsonrpc",
@@ -5021,7 +5024,7 @@
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs interface_urls_must_be_absolute_and_https_off_loopback",
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported"
    ],
-   "notes": "AgentInterface::jsonrpc/grpc/rest emit the spec spellings; build() warns (since 2026-10-18) about a non-absolute or plaintext interface URL and a listener whose binding the card omits. Whether the URL is reachable behind proxies is the deployer's.",
+   "notes": "AgentInterface::jsonrpc/grpc/rest emit the spec spellings; build() warns (since 2026-10-18) about a non-absolute or plaintext interface URL and a listener whose binding the card omits. Whether the URL is reachable behind proxies is the deployer's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1984.",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -6858,7 +6861,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "4. Document Completely: Provide comprehensive documentation of the binding specification",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:148-202",
@@ -6871,9 +6874,10 @@
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:142 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes"
    ],
-   "notes": "WebSocket now has a binding specification (book/src/bindings/websocket.md): connection, service parameters, messages, data types, streaming, errors, authentication, security, differences from JSON-RPC over HTTP. SLIMRPC follows the vendored upstream spec. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
+   "notes": "WebSocket now has a binding specification (book/src/bindings/websocket.md): connection, service parameters, messages, data types, streaming, errors, authentication, security, differences from JSON-RPC over HTTP. SLIMRPC follows the vendored upstream spec. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's WebSocket binding specification is its own document; its wire claims are pinned by websocket_binding_spec.rs.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 2990,
@@ -6881,7 +6885,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Custom bindings MUST provide clear mappings for: Protocol Buffer Types, Timestamps, Binary Data, Enumerations",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:178-184",
@@ -6889,10 +6893,13 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:6-24",
     "spec/slimrpc_v1/slimrpc.md:1-60"
    ],
-   "test_evidence": [],
-   "notes": "WebSocket spec §3 'Data types' states the ProtoJSON mappings: lowerCamelCase names, enum names as strings, RFC 3339 UTC timestamps, base64 bytes, Struct as JSON object; binary frames refused. SLIMRPC is protobuf on the wire.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs the_data_types_are_the_json_rpc_bindings_proto_json"
+   ],
+   "notes": "WebSocket spec §3 'Data types' states the ProtoJSON mappings: lowerCamelCase names, enum names as strings, RFC 3339 UTC timestamps, base64 bytes, Struct as JSON object; binary frames refused. SLIMRPC is protobuf on the wire. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK authors the WebSocket binding; the data-type table is pinned on the wire by the test added the same day.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 2999,
@@ -6900,7 +6907,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "custom protocol bindings MUST document how service parameters are transmitted ... MUST address: Transmission Mechanism, Value Constraints, Reserved Names, Fallback Strategy",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:30-54",
@@ -6912,9 +6919,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:81 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
-   "notes": "WebSocket spec §2 covers transmission, value constraints, reserved names (:path) and fallback (A2A-Version query parameter only). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
+   "notes": "WebSocket spec §2 covers transmission, value constraints, reserved names (:path) and fallback (A2A-Version query parameter only). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 2986.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3001,
@@ -7007,7 +7015,7 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "4. Document Error Format: Specify the structure of error responses",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:186-202",
@@ -7017,9 +7025,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes"
    ],
-   "notes": "WebSocket spec §1 and §5 document the handshake error body and the JSON-RPC error object with its typed data array, with a code table for every A2A error. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written.",
+   "notes": "WebSocket spec §1 and §5 document the handshake error body and the JSON-RPC error object with its typed data array, with a code table for every A2A error. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 2986.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3022,
@@ -7027,7 +7036,7 @@
    "keyword": "MUST (implied by §12.1.4 for streaming bindings)",
    "binds": "server",
    "requirement": "Define Stream Mechanism; Event Ordering; Reconnection; Stream Termination",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md",
@@ -7042,10 +7051,10 @@
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:142 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:426 ws_upgrade_last_event_id_does_not_replay_the_log"
    ],
-   "notes": "WebSocket spec §4: mechanism (frames carrying the request id), ordering (per stream in production order; streams on one connection interleave), reconnection (none; resubscribe, first event is the snapshot), termination (stream_complete marker, or an error frame). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Reconnection held only without a Last-Event-ID on the upgrade request: the upgrade's headers reach every call on the connection, so until 2026-10-14 one made every SubscribeToTask replay the event log from it. The header is now dropped at the handshake.",
+   "notes": "WebSocket spec §4: mechanism (frames carrying the request id), ordering (per stream in production order; streams on one connection interleave), reconnection (none; resubscribe, first event is the snapshot), termination (stream_complete marker, or an error frame). The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Reconnection held only without a Last-Event-ID on the upgrade request: the upgrade's headers reach every call on the connection, so until 2026-10-14 one made every SubscribeToTask replay the event log from it. The header is now dropped at the handshake. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 2986.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3029,
@@ -7104,7 +7113,7 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Custom bindings MUST be declared in the Agent Card (URI transport identifier + full endpoint URL) - WebSocket",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/lib.rs:85",
@@ -7114,7 +7123,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported"
    ],
-   "notes": "WEBSOCKET_BINDING_URI and AgentInterface::new(url, uri) give the declaration; since 2026-10-18 the WebSocket listener warns when it starts if the static card does not declare it. The dispatcher never edits the card (a signed card cannot be edited).",
+   "notes": "WEBSOCKET_BINDING_URI and AgentInterface::new(url, uri) give the declaration; since 2026-10-18 the WebSocket listener warns when it starts if the static card does not declare it. The dispatcher never edits the card (a signed card cannot be edited). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Declaring the binding is the card author's; the SDK provides WEBSOCKET_BINDING_URI and warns when the WebSocket listener's binding is undeclared (tested).",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -7145,7 +7154,7 @@
    "keyword": "SHOULD",
    "binds": "server",
    "requirement": "Custom binding implementers SHOULD: Test Against Reference; Document Differences; Provide Examples; Test Edge Cases",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:17-31",
@@ -7159,9 +7168,10 @@
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:100 refusals_carry_the_documented_codes",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:332 ws_json_without_a_method_returns_invalid_request"
    ],
-   "notes": "WebSocket: examples and a differences table are in the binding spec (§3, §5, §8); TCK --equivalence compares it with the spec bindings; edge cases are tested in websocket.rs and websocket_*.rs. SLIMRPC is checked against upstream's spec and the official crate.",
+   "notes": "WebSocket: examples and a differences table are in the binding spec (§3, §5, §8); TCK --equivalence compares it with the spec bindings; edge cases are tested in websocket.rs and websocket_*.rs. SLIMRPC is checked against upstream's spec and the official crate. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 2986.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3075,
@@ -8065,7 +8075,7 @@
    "keyword": "MUST",
    "binds": "both",
    "requirement": "Production deployments MUST use encrypted communication (HTTPS for HTTP-based bindings, TLS for gRPC)",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:32",
@@ -8082,7 +8092,7 @@
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused"
    ],
-   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty, so SUPPORTED. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..).",
+   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty, so SUPPORTED. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -8587,7 +8597,7 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom protocol bindings MUST address security considerations in their specification",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md",
@@ -8599,7 +8609,7 @@
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs only_listed_origins_may_upgrade",
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_request_is_served_over_wss"
    ],
-   "notes": "WebSocket binding spec §7 addresses transport (wss:// from the listener itself with WebSocketDispatcher::with_tls since 2026-10-18, or a TLS terminator), the Origin header and cross-site WebSocket hijacking where credentials are ambient (an opt-in allowlist, with_allowed_origins / require_origin, decided by the maintainer and built 2026-10-18; default: any origin), one identity per connection, and limits. SLIMRPC follows its upstream binding spec.",
+   "notes": "WebSocket binding spec §7 addresses transport (wss:// from the listener itself with WebSocketDispatcher::with_tls since 2026-10-18, or a TLS terminator), the Origin header and cross-site WebSocket hijacking where credentials are ambient (an opt-in allowlist, with_allowed_origins / require_origin, decided by the maintainer and built 2026-10-18; default: any origin), one identity per connection, and limits. SLIMRPC follows its upstream binding spec. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 2986.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -8629,7 +8639,7 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "Custom bindings MUST document authentication integration and credential transmission",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "book/src/concepts/transport-layers.md:194 (WebSocket: credentials at connect as upgrade headers)",
@@ -8637,11 +8647,14 @@
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs metadata_from",
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs a2a_headers"
    ],
-   "test_evidence": [],
-   "notes": "Documentation requirement. WebSocket: credentials ride the upgrade request's headers. SLIMRPC: since 2026-10-11 the book says per-call headers (authorization included) become session metadata of the same name, lowercased by the server and read as request headers, as the code does (client metadata_from, server a2a_headers, read 2026-10-11). No test checks documentation. No standalone document at the WebSocket binding URI.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs a_refused_credential_carries_the_refusal_detail",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs a_refused_permission_carries_no_challenge"
+   ],
+   "notes": "Documentation requirement. WebSocket: credentials ride the upgrade request's headers. SLIMRPC: since 2026-10-11 the book says per-call headers (authorization included) become session metadata of the same name, lowercased by the server and read as request headers, as the code does (client metadata_from, server a2a_headers, read 2026-10-11). No test checks documentation. No standalone document at the WebSocket binding URI. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. WebSocket authentication over the documented upgrade headers is pinned by websocket_binding_spec.rs a_refused_credential_carries_the_refusal_detail.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-11)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 85,
@@ -9293,7 +9306,7 @@
    "keyword": "Must",
    "binds": "agent-application",
    "requirement": "Must be a valid absolute HTTPS URL in production.",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings"
@@ -9301,7 +9314,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs interface_urls_must_be_absolute_and_https_off_loopback"
    ],
-   "notes": "Binds production deployments. build() warns (since 2026-10-18) when an interface URL is not absolute, or not https on a host other than loopback; not refused, because a bare gRPC host:port and local test cards are in use. The earlier note (builder only rejects an empty list) was stale: build() runs AgentCard::validate, which refuses an empty url, binding or version.",
+   "notes": "Binds production deployments. build() warns (since 2026-10-18) when an interface URL is not absolute, or not https on a host other than loopback; not refused, because a bare gRPC host:port and local test cards are in use. The earlier note (builder only rejects an empty list) was stale: build() runs AgentCard::validate, which refuses an empty url, binding or version. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds the card author in production; build() warns about a non-absolute or plaintext non-loopback interface URL (tested).",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -9933,7 +9946,7 @@
    "keyword": "should",
    "binds": "agent-application",
    "requirement": "This value should be registered in the IANA Authentication Scheme registry.",
-   "status": "SUPPORTED",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings"
@@ -9941,7 +9954,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_unregistered_http_auth_scheme_is_reported"
    ],
-   "notes": "A lowercase should on the card author. Since 2026-10-18 build() warns, through agent_card::card_warnings, about an HTTP scheme not in the IANA registry as read on 2026-10-18 (registry updated 2025-02-18), compared without regard to case. A warning, not a refusal: a scheme registered later is legitimate.",
+   "notes": "A lowercase should on the card author. Since 2026-10-18 build() warns, through agent_card::card_warnings, about an HTTP scheme not in the IANA registry as read on 2026-10-18 (registry updated 2025-02-18), compared without regard to case. A warning, not a refusal: a scheme registered later is legitimate. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds the card author; build() warns about an HTTP scheme outside the IANA registry (tested).",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"

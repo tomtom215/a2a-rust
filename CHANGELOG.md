@@ -2259,6 +2259,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The spec ledger's `SUPPORTED` answers only a MAY.**
+  `check_spec_ledger.py` now refuses `SUPPORTED` or `NOT_SUPPORTED` on an
+  entry whose keyword is not MAY or OPTIONAL, as the ledger's own status key
+  says. 23 entries broke it: 12 are now `TESTED` (two with tests added for
+  them: the WebSocket binding's data types on the wire, and a client passing
+  an opaque `contextId` through unaltered) and 11 `APPLICATION`, each naming
+  the hook the SDK gives. The check fails on a seeded violation.
 - **`check_advisory_floors.py` retries a transient fetch.** One connection
   reset from crates.io failed the gate on a pull request that touched none
   of its inputs. A reset, a timeout, a 429 or a 5xx is now retried up to

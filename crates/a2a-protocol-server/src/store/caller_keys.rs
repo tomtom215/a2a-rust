@@ -82,6 +82,8 @@ fn unmigrated(name: &str) -> bool {
 
 /// The key `partition` moves to under `map`, if it moves: a caller
 /// partition whose caller the map renames to a different, non-empty name.
+// Only the SQL stores keep partitions across a restart, so only they migrate.
+#[cfg_attr(not(any(feature = "sqlite", feature = "postgres")), allow(dead_code))]
 pub(crate) fn moved_partition(
     partition: &str,
     map: &(impl Fn(&str) -> Option<String> + ?Sized),

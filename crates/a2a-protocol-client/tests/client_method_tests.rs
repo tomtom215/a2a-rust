@@ -230,6 +230,27 @@ async fn get_task_returns_task() {
     assert_eq!(task.status.state, TaskState::Working);
 }
 
+/// Spec §3.4.1: server-generated `contextId` values SHOULD be treated as
+/// opaque by clients. A value no client would build itself, with
+/// separators, escapes, a non-ASCII character and padding, reaches the
+/// caller byte for byte, neither trimmed, decoded nor normalized.
+#[tokio::test]
+async fn a_context_id_reaches_the_caller_unaltered() {
+    let opaque = " ctx/1?a=%2F#é\u{1f}.. ";
+    let mut resp = raw_task_json("task-42", "TASK_STATE_WORKING");
+    resp["contextId"] = serde_json::Value::String(opaque.to_owned());
+    let client = make_client(MockTransport::new(resp));
+    let task = client
+        .get_task(TaskQueryParams {
+            tenant: None,
+            id: "task-42".into(),
+            history_length: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(task.context_id.0, opaque);
+}
+
 #[tokio::test]
 async fn get_task_calls_correct_method() {
     let transport = MockTransport::new(raw_task_json("t", "TASK_STATE_WORKING"));
