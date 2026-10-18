@@ -533,7 +533,7 @@ async fn two_replicas_survive_sustained_load() {
         peak_rl >= i64::try_from(WORKERS).unwrap_or(i64::MAX),
         "the table held {peak_rl} rows for {WORKERS} distinct callers — fewer \
          keys than callers means they are sharing a bucket, which is what \
-         happens when the caller key falls back to \"anonymous\""
+         happens when the caller key falls back to the shared \"anon\" bucket"
     );
     assert!(
         peak_rl <= ceiling,

@@ -130,12 +130,9 @@ mod tests {
     fn forwards_the_forwarded_for_header() {
         assert_eq!(
             caller_key_from_forwarded_for("198.51.100.1, ::ffff:203.0.113.7", 1),
-            "203.0.113.7"
+            "ip:203.0.113.7"
         );
-        assert_eq!(
-            caller_key_from_forwarded_for("198.51.100.1", 2),
-            "anonymous"
-        );
+        assert_eq!(caller_key_from_forwarded_for("198.51.100.1", 2), "anon");
     }
 
     #[cfg(feature = "auth-jwt")]

@@ -38,7 +38,8 @@ pub struct RateLimitConfig {
     /// the *right* of the header; anything further left is client-supplied
     /// and remains untrusted. If the header has fewer than `n` entries, the
     /// request did not traverse the expected proxy chain and the caller falls
-    /// back to the shared `"anonymous"` key.
+    /// back to the shared `anon` key. With `0`, a caller no interceptor
+    /// identified is keyed by the connection's peer address instead.
     pub trusted_proxy_hops: usize,
 
     /// Maximum number of caller buckets tracked at once.

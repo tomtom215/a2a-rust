@@ -671,6 +671,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **`RateLimitInterceptor` keys an unidentified caller by its peer address,
+  and every key names its kind** (server; the maintainer's 2026-10-18
+  decision; release audit F10, F11). A caller no interceptor identified
+  shared one `"anonymous"` bucket, so one client could spend every other's
+  budget. With `trusted_proxy_hops == 0` it is now keyed by the connection's
+  peer address, which every built-in listener records; an IPv6 address
+  spends its `/64`'s budget, since one host is routinely given a whole
+  `/64`. Behind trusted proxies a short forwarded chain still falls back to
+  the shared bucket, since the peer there is the proxy. Keys now carry a
+  prefix (`id:<identity>`, `ip:<address>`, `tenant:<id>`, `anon`): an
+  identity was the bare key, so one spelled `anonymous` or `tenant:acme`
+  spent that bucket. A `RateLimitCounter` table sees the new key spellings;
+  rows keyed the old way age out with their window. Size `max_buckets` for
+  the distinct client addresses one window sees. Tests:
+  `rate_limit::keying_tests`.
 - **`serve` and `serve_with_addr` run on `Server`, so their connections
   get its default timeouts** (server). Both ran their own accept loop, which
   installed no hyper timer and wrapped no socket in an idle timer, so a peer

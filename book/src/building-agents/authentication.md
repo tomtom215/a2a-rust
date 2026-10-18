@@ -47,8 +47,9 @@ let handler = RequestHandlerBuilder::new(my_executor)
 `ApiKeyAuthInterceptor::new([...])` reads `x-api-key` by default; change the
 header with `.with_header("X-Company-Key")`.
 
-`new` authenticates without naming the caller, so every valid caller shares
-the rate limiter's `"anonymous"` bucket. To give each credential an identity
+`new` authenticates without naming the caller, so the rate limiter keys
+every valid caller by its address (or, behind trusted proxies, the forwarded
+client address), not by who it is. To give each credential an identity
 (`CallContext::caller_identity`), build the interceptor with
 `BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
 `ApiKeyAuthInterceptor::with_labelled_keys(…)`; the label, not the secret, is
