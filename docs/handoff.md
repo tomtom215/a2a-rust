@@ -129,7 +129,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   refused `-32602` before `401`).
 - **Release audit (2026-10-18), not yet fixed:** F5
   PostgreSQL artifact append without a length check (also under
-  *Privacy*); F6 cancel through the status delta; F7 `EncryptedTaskStore`
+  *Privacy*); F7 `EncryptedTaskStore`
   re-seal cost and budget.
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive

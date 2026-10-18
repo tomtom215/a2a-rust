@@ -1609,6 +1609,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`CancelTask` no longer erases what another replica wrote meanwhile**
+  (server; release audit F6). Cancel re-read the task, set `Canceled` and
+  wrote the whole snapshot back with `save`, so a history message or artifact
+  part appended between its read and its write was lost. It now writes the
+  status alone with `save_status_delta`. Every shipped store applies that in
+  place and still refuses to move a terminal task, so a task that finished
+  meanwhile is still reported not cancelable. A new test forces the
+  interleaving on the in-memory, SQLite and PostgreSQL stores; before the
+  fix it fails on all three.
+
 - **A send dropped mid-commit leaves no task behind** (server; release audit
   F9). A new task's row is saved before its inline push config is
   registered, and a client that went away during that registration left the

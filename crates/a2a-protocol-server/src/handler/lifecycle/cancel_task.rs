@@ -140,7 +140,13 @@ impl RequestHandler {
                     // that finished between the re-read and this write — on this
                     // replica or another — keeps its state, and the caller is told
                     // the truth: it was not cancelable.
-                    if let Err(e) = self.task_store.save(&updated).await {
+                    //
+                    // The status alone, not the snapshot (release audit F6): the
+                    // snapshot is as old as the re-read, and writing it back with
+                    // `save` erased whatever another replica appended meanwhile —
+                    // a history message, an artifact part. Every shipped store's
+                    // delta keeps the terminal-state refusal.
+                    if let Err(e) = self.task_store.save_status_delta(&updated).await {
                         return Err(match crate::store::TerminalStateConflict::from_error(&e) {
                             Some(_) => ServerError::TaskNotCancelable(task_id),
                             None => e.into(),
