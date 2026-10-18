@@ -1603,6 +1603,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A PostgreSQL-only build no longer compiles SQLite** (server; release
+  audit F25). The workspace's `sqlx` entry enabled its `sqlite` driver for
+  every crate, so `--features postgres` linked `libsqlite3-sys`; each store
+  feature now adds its own driver. `scripts/check_sql_driver_isolation.sh`,
+  a new CI step, checks both directions against a control.
+
 - **Push delivery with `max_attempts` set to 0** (server; release audit
   F19). The field is public, and the backoff guard computed
   `max_attempts - 1`: a panic in a debug build, and in release a backoff

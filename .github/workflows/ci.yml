@@ -234,6 +234,11 @@ jobs:
       - name: Feature tables agree with the manifests
         run: python3 scripts/check_feature_tables.py
 
+      # Each SQL store feature compiles only its own driver (release audit
+      # F25): `postgres` alone linked SQLite until 2026-10-18.
+      - name: SQL store features link only their own driver
+        run: scripts/check_sql_driver_isolation.sh
+
       # Each crate's README is compiled as a doctest by `cargo test`; this is
       # the guard that the include doing it is still there.
       - name: Crate READMEs are compiled as doctests

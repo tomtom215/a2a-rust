@@ -42,7 +42,7 @@ tracing = ["dep:tracing"]
 ## (`Server::with_tls`, `Server::with_tls_pem`; spec §14).
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
-sqlite = ["dep:sqlx"]
+sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
 postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
@@ -207,7 +207,7 @@ bytes = "1.11.1"
 serde_json = { workspace = true }
 a2a-protocol-types = { version = "0.15.0", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
-sqlx      = { workspace = true }
+sqlx      = { workspace = true, features = ["sqlite"] }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }
 # For the live-TLS end-to-end push-sender test (gated on `tls-rustls`): generate
 # a throwaway CA + server cert and run a real rustls HTTPS server on loopback.
