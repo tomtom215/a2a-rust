@@ -72,7 +72,7 @@ jobs:
       actions: read
       contents: read
       security-events: write
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
       results-file-name: osv-rust.sarif
       fail-on-vuln: true
@@ -106,7 +106,7 @@ jobs:
           persist-credentials: false
       - name: Run scanner
         id: scan
-        uses: google/osv-scanner-action/osv-scanner-action@7f58dd6750d78fc29a900ba64b1a0f946f62fba4 # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@0a65f82af05cd58cf587827b0bb0489548c18346 # v2.7.0
         env:
           GOTOOLCHAIN: auto
         with:
@@ -131,7 +131,7 @@ jobs:
             exit 1
           fi
       - name: Report
-        uses: google/osv-scanner-action/osv-reporter-action@7f58dd6750d78fc29a900ba64b1a0f946f62fba4 # v2.6.0
+        uses: google/osv-scanner-action/osv-reporter-action@0a65f82af05cd58cf587827b0bb0489548c18346 # v2.7.0
         with:
           scan-args: |-
             --output=osv-rust.sarif
@@ -147,7 +147,7 @@ jobs:
           retention-days: 5
       - name: Upload to code scanning
         if: ${{ !cancelled() }}
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: osv-rust.sarif
 
@@ -157,7 +157,7 @@ jobs:
       actions: read
       contents: read
       security-events: write
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
       results-file-name: osv-peers.sarif
       fail-on-vuln: false
