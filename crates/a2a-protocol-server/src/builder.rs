@@ -185,6 +185,8 @@ pub struct RequestHandlerBuilder {
     allow_undeclared_input_modes: bool,
     refuse_private_file_urls: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
+    halt_store: Option<Arc<dyn crate::store::HaltStore>>,
+    halt_poll_interval: std::time::Duration,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
     /// The profile applied, if any; `build()` checks what it needs.
@@ -231,6 +233,8 @@ impl RequestHandlerBuilder {
             allow_undeclared_input_modes: false,
             refuse_private_file_urls: false,
             approval_gate: None,
+            halt_store: None,
+            halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
             #[cfg(feature = "audit")]
             audit: None,
             #[cfg(feature = "audit")]
@@ -342,6 +346,34 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_approval_gate(mut self, gate: crate::approval::ApprovalGate) -> Self {
         self.approval_gate = Some(gate);
+        self
+    }
+
+    /// Keeps [`halt`](RequestHandler::halt)s in `store` as well as in this
+    /// process (ADR 0019): every handler sharing it follows a halt or resume
+    /// given to any of them, and a restarted process comes back halted.
+    ///
+    /// The handler reads the store before it admits its first send, refusing
+    /// sends while it cannot, then every
+    /// [`with_halt_poll_interval`](Self::with_halt_poll_interval). A halt
+    /// given elsewhere therefore stops this process's running tasks and
+    /// refuses its sends within one interval; one given here acts at once.
+    /// Use [`PostgresHaltStore`](crate::store::PostgresHaltStore) across
+    /// replicas, [`SqliteHaltStore`](crate::store::SqliteHaltStore) for one
+    /// process that restarts.
+    #[must_use]
+    pub fn with_halt_store(mut self, store: impl crate::store::HaltStore) -> Self {
+        self.halt_store = Some(Arc::new(store));
+        self
+    }
+
+    /// How often a handler with a halt store reads it; default
+    /// [`DEFAULT_HALT_POLL_INTERVAL`](crate::handler::DEFAULT_HALT_POLL_INTERVAL)
+    /// (one second). It bounds how long a halt given on another replica
+    /// takes to stop this one. `build` refuses zero.
+    #[must_use]
+    pub const fn with_halt_poll_interval(mut self, interval: std::time::Duration) -> Self {
+        self.halt_poll_interval = interval;
         self
     }
 
@@ -819,6 +851,11 @@ impl RequestHandlerBuilder {
     ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
+        if self.halt_store.is_some() && self.halt_poll_interval.is_zero() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "the halt poll interval must be greater than zero".to_owned(),
+            ));
+        }
         // A card this server would publish must be valid: a name, and every
         // repeated field the proto marks REQUIRED non-empty (spec §5.7).
         // Until 2026-10-11 only the interface list was checked, so a card
@@ -1180,7 +1217,13 @@ impl RequestHandlerBuilder {
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             in_flight: crate::handler::InFlight::default(),
-            halts: std::sync::RwLock::default(),
+            halts: Arc::default(),
+            halt_sync: self.halt_store.map(|store| {
+                Arc::new(crate::handler::halt::sync::HaltSync::new(
+                    store,
+                    self.halt_poll_interval,
+                ))
+            }),
             approval_gate: self.approval_gate,
             #[cfg(feature = "audit")]
             audit: self.audit,
@@ -1260,7 +1303,9 @@ impl std::fmt::Debug for RequestHandlerBuilder {
                 &self.allow_undeclared_input_modes,
             )
             .field("refuse_private_file_urls", &self.refuse_private_file_urls)
-            .field("approval_gate", &self.approval_gate);
+            .field("approval_gate", &self.approval_gate)
+            .field("halt_store", &self.halt_store.is_some())
+            .field("halt_poll_interval", &self.halt_poll_interval);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some())
             .field("profile", &self.profile);

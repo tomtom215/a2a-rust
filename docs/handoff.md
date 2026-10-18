@@ -116,8 +116,8 @@ only: when something here is done, delete it rather than annotating it.
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
-  `tests/multi_replica.rs` that is ignored by default); a halt across
-  replicas and G1-B (`ROADMAP.md`); a stale unscoped write from another
+  `tests/multi_replica.rs` that is ignored by default); G1-B
+  (`ROADMAP.md`); a stale unscoped write from another
   replica keeps a stored position whose effect it overwrote
   (`store/applied.rs`).
 - **Server:** JSON-RPC parses a request's params
@@ -142,8 +142,8 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 - **Control map (2026-10-18 review):** of the 13 `partial` rows, four
   had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
   caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
-  new dependency); still open are AIA-14-4e and ASI10, a halt that persists and crosses
-  replicas; ASI08, G1-B's lease; ASI03, the originating principal carried
+  new dependency); AIA-14-4e's and ASI10's, a halt that persists and crosses replicas, is
+  closed too (ADR 0019); still open are ASI08, G1-B's lease; ASI03, the originating principal carried
   on delegated calls. The rest, and all 19 `integrator` rows, are split
   by nature (reviewed, unchanged).
 - **Gates:** a mutation shard that starts after its PR merges grades

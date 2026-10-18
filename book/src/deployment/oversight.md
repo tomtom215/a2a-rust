@@ -20,7 +20,7 @@ far these features go toward each provision, and what is left, is in the
 
 ```rust,no_run
 use a2a_protocol_server::{HaltScope, RequestHandler};
-# async fn admin(handler: &RequestHandler) {
+# async fn admin(handler: &RequestHandler) -> Result<(), a2a_protocol_server::ServerError> {
 // One tenant: its new sends are refused, and every task of it that is
 // running is stopped.
 let report = handler
@@ -29,10 +29,11 @@ let report = handler
 println!("stopped {} tasks", report.stopped.len());
 
 // Later:
-handler.resume(HaltScope::Tenant("acme".into()), "oncall:alice").await;
+handler.resume(HaltScope::Tenant("acme".into()), "oncall:alice").await?;
 
 // Everything:
 handler.halt(HaltScope::All, "oncall:alice", "model provider incident").await;
+# Ok(())
 # }
 ```
 
@@ -57,8 +58,17 @@ watcher, so that who may halt is your access control's decision.
 
 ### Limits
 
-- **A halt holds in one process.** It is not persisted: halt every replica,
-  and halt again after a restart if it should still hold.
+- **Without a halt store, a halt holds in one process.** It is then not
+  persisted: halt every replica, and halt again after a restart. With one
+  (`RequestHandlerBuilder::with_halt_store`, ADR 0019), a halt given to any
+  replica stops every replica sharing the store within its poll interval
+  (`with_halt_poll_interval`, one second by default), and a restarted
+  process comes back halted. Use `PostgresHaltStore` across replicas and
+  `SqliteHaltStore` for one process. A halt the store cannot take still
+  holds where it was given (`HaltReport::persisted` is `Some(false)`) and
+  is written again on every poll; a resume it cannot take lifts nothing
+  and returns an error. Until the store has been read once, a process
+  refuses sends.
 - **An executor that ignores its cancellation token keeps running.** Its task
   keeps whatever state it had. Executors should watch
   `ctx.cancellation_token`.

@@ -831,8 +831,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `canceled`, as on shutdown. Reads and cancels are still served. A send
   racing the halt is either refused or stopped; with the second check
   removed, the race test failed. With `audit`, each halt and resume is a
-  `halt` record naming the operator and the tasks stopped. A halt holds in
-  one process and is not persisted.
+  `halt` record naming the operator and the tasks stopped. `resume` returns
+  `ServerResult<bool>`.
+  - **Across replicas and restarts** (ADR 0019): with
+    `RequestHandlerBuilder::with_halt_store` a halt is also written to a
+    `HaltStore` (`InMemoryHaltStore`, `SqliteHaltStore`,
+    `PostgresHaltStore`), which each replica reads before admitting its
+    first send and then every `with_halt_poll_interval` (one second by
+    default). A halt given to any replica stops every replica's tasks
+    within one interval, and a restarted process comes back halted. A halt
+    the store cannot take still holds where it was given
+    (`HaltReport::persisted` is `Some(false)`) and is written again on each
+    poll. Without a store, a halt holds in one process, as before.
 - **The approval extension, and `approval::ApprovalGate`** (types and
   server; `https://a2a-rust.com/extensions/approval/v1`; book, "Human
   Oversight"). An executor asks with `EventEmitter::request_approval`,

@@ -365,7 +365,7 @@ impl RequestHandler {
         let started = Box::pin(async move {
             // A halted tenant takes no new work (`halt`); a halt that lands
             // after this check is caught once the token is registered.
-            self.refuse_if_halted()?;
+            self.refuse_if_halted().await?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;

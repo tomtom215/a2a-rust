@@ -48,6 +48,7 @@ is on docs.rs.
 | [0016](adr/0016-types-generated-from-the-proto.md) | Types Generated from the Proto | The public types are generated from `a2a.proto`, and CI fails on drift |
 | [0017](adr/0017-context-lookup-and-stored-task.md) | Context Lookup and Stored Task | The send's context lookup lists without history and reads the chosen task whole; `RequestContext::stored_task` keeps its meaning |
 | [0018](adr/0018-mutual-tls-caller-identity.md) | Mutual-TLS Caller Identity | Every listener passes the client certificate to the interceptors; `MutualTlsAuthInterceptor` names the caller by fingerprint or a deployment's mapping, with no X.509 parser in the SDK |
+| [0019](adr/0019-shared-halt-store.md) | Shared Halt Store | Halts written through to a store every replica polls and reads before its first send; a halt the store refuses holds locally and is retried |
 
 ## Audits, measurements and design notes
 

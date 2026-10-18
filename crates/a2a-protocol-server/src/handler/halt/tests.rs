@@ -104,17 +104,25 @@ async fn halting_a_tenant_cancels_its_tasks_and_refuses_its_sends() {
 #[tokio::test]
 async fn resume_lifts_exactly_its_scope() {
     let h = handler();
-    assert!(!h.resume(HaltScope::Tenant("acme".into()), "oncall").await);
+    assert!(
+        !h.resume(HaltScope::Tenant("acme".into()), "oncall")
+            .await
+            .unwrap()
+    );
 
     h.halt(HaltScope::Tenant("acme".into()), "oncall", "check")
         .await;
     h.halt(HaltScope::All, "oncall", "everything").await;
-    assert!(h.resume(HaltScope::Tenant("acme".into()), "oncall").await);
+    assert!(
+        h.resume(HaltScope::Tenant("acme".into()), "oncall")
+            .await
+            .unwrap()
+    );
     assert!(
         matches!(start(&h, "acme").await, Err(ServerError::Halted(r)) if r == "everything"),
         "a server-wide halt still holds"
     );
-    assert!(h.resume(HaltScope::All, "oncall").await);
+    assert!(h.resume(HaltScope::All, "oncall").await.unwrap());
     start(&h, "acme").await.expect("served again");
 }
 
@@ -199,7 +207,9 @@ async fn a_halt_and_a_resume_are_recorded_with_the_operator() {
     reaches(&h, "acme", &id, TaskState::Working).await;
     h.halt(HaltScope::Tenant("acme".into()), "oncall", "runaway spend")
         .await;
-    h.resume(HaltScope::Tenant("acme".into()), "oncall").await;
+    h.resume(HaltScope::Tenant("acme".into()), "oncall")
+        .await
+        .unwrap();
 
     let records = log.export("acme").await.expect("export");
     let halts: Vec<_> = records.iter().filter(|r| r.kind == kind::HALT).collect();

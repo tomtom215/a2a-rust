@@ -104,6 +104,7 @@ impl BindingSpan {
     /// service spells it (`"GetTask"`); one this crate does not know is
     /// recorded as `_OTHER`, so a peer's string never becomes a span name or
     /// a metric attribute.
+    #[must_use]
     pub fn open(
         handler: &RequestHandler,
         binding: CustomBinding,

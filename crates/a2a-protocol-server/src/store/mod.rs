@@ -8,6 +8,7 @@
 pub mod applied;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
+pub mod halt;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
@@ -48,6 +49,7 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
+pub use halt::{HaltStore, InMemoryHaltStore, StoredHalt};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at
@@ -93,12 +95,16 @@ pub(crate) fn status_timestamp_rfc3339(ts: Option<&str>) -> Option<String> {
 }
 
 #[cfg(feature = "sqlite")]
+pub use halt::SqliteHaltStore;
+#[cfg(feature = "sqlite")]
 pub use migration::{Migration, MigrationRunner};
 #[cfg(feature = "sqlite")]
 pub use sqlite_store::SqliteTaskStore;
 #[cfg(feature = "sqlite")]
 pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
 
+#[cfg(feature = "postgres")]
+pub use halt::PostgresHaltStore;
 #[cfg(feature = "postgres")]
 pub use pg_migration::{BUILTIN_PG_MIGRATIONS, PgMigration, PgMigrationRunner};
 #[cfg(feature = "postgres")]

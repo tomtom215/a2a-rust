@@ -22,7 +22,7 @@
 mod capability;
 mod concurrency;
 mod event_processing;
-mod halt;
+pub(crate) mod halt;
 pub(crate) mod helpers;
 pub(crate) mod input_modes;
 mod introspection;
@@ -36,7 +36,7 @@ mod push_config_page;
 mod shutdown;
 mod undeclared_binding;
 
-pub use halt::{HaltReport, HaltScope};
+pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
 pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
@@ -161,8 +161,11 @@ pub struct RequestHandler {
     /// every executor and background processor is spawned on. See
     /// [`RequestHandler::cancel_in_flight`].
     pub(crate) in_flight: shutdown::InFlight,
-    /// The halts in force; see [`RequestHandler::halt`].
-    pub(crate) halts: std::sync::RwLock<halt::Halts>,
+    /// The halts in force; see [`RequestHandler::halt`]. Shared, so a halt
+    /// store's poller can hold it weakly.
+    pub(crate) halts: Arc<std::sync::RwLock<halt::Halts>>,
+    /// The halt store this handler follows, if any; see [`halt::sync`].
+    pub(crate) halt_sync: Option<Arc<halt::sync::HaltSync>>,
     /// Checks approval decisions on continuations; see [`crate::approval`].
     pub(crate) approval_gate: Option<crate::approval::ApprovalGate>,
     /// The audit log, when the handler was built with one.

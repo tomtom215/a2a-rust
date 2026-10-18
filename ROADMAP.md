@@ -1104,10 +1104,10 @@ the provenance extension, the Kani proofs and the ACTS gate landed on
 `claude/bold-gauss-9qc9dc`. The control map has each row and its tests.
 Work committed to and not yet built:
 
-* **A halt that holds across replicas and restarts.** `RequestHandler::halt`
-  holds in one process and is not persisted, so each replica is halted
-  separately. Closing this needs a shared store for halts, read at
-  admission.
+* ~~**A halt that holds across replicas and restarts.**~~ **Done
+  2026-10-18 (ADR 0019):** `RequestHandlerBuilder::with_halt_store` writes
+  halts through to a `HaltStore` every replica polls and reads before its
+  first send.
 * **G1-B: children that stop when their parent goes quiet.** A `Delegation`
   cannot cancel a child once the parent process has crashed. A lease
   extension can (`docs/swarm-orchestration.md`).
