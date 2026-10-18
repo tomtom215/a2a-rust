@@ -540,6 +540,29 @@ fn refuse_an_unservable_config(
             ),
         });
     }
+    refuse_unsendable_credentials(config)
+}
+
+/// Refuses credentials a delivery could not send: none, or none but
+/// whitespace, under an `authentication` block, and a token or credentials a
+/// header cannot carry.
+fn refuse_unsendable_credentials(config: &TaskPushNotificationConfig) -> ServerResult<()> {
+    // §4.3.3: a delivery MUST carry the credentials its config specifies,
+    // so an authentication block with none could only ever be delivered
+    // without them; it was stored, and every delivery then went out with no
+    // `Authorization`, or with an empty `Bearer ` (release audit, 2026-10-18).
+    if config.authentication.as_ref().is_some_and(|auth| {
+        auth.credentials
+            .as_deref()
+            .is_none_or(|c| c.trim().is_empty())
+    }) {
+        return Err(ServerError::InvalidField {
+            field: "authentication.credentials".into(),
+            message: "push notification authentication names a scheme but carries no \
+                      credentials; give the credentials, or leave authentication out"
+                .into(),
+        });
+    }
     // The token and the credentials travel as header values. One a header
     // cannot carry (CR, LF or another control character) was stored, and
     // listed back, then refused at every delivery until 2026-10-13.

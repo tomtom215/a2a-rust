@@ -655,7 +655,8 @@ impl PushSender for HttpPushSender {
 
             // At least one attempt even if the public field was set to 0
             // directly (§4.3.3).
-            for attempt in 0..self.retry_policy.max_attempts.max(1) {
+            let attempts = self.retry_policy.max_attempts.max(1);
+            for attempt in 0..attempts {
                 // §4.3.3 fixes the webhook request's Content-Type as
                 // `application/a2a+json`, and unlike §9's JSON-RPC binding —
                 // which specifies `application/json` — this one is the A2A
@@ -694,7 +695,10 @@ impl PushSender for HttpPushSender {
                     } else {
                         None
                     };
-                    match (canonical_scheme, auth.credentials.as_deref()) {
+                    // Empty counts as none: a config stored before creation
+                    // refused it would otherwise send a bare `Bearer `.
+                    let credentials = auth.credentials.as_deref().filter(|c| !c.trim().is_empty());
+                    match (canonical_scheme, credentials) {
                         (Some(prefix), Some(credentials)) => {
                             builder =
                                 builder.header("authorization", format!("{prefix} {credentials}"));
@@ -785,7 +789,9 @@ impl PushSender for HttpPushSender {
                 }
 
                 // Retry with backoff (except on last attempt).
-                if attempt < self.retry_policy.max_attempts - 1 {
+                // `attempts`, not the field: a field set to 0 directly
+                // underflowed here (release audit F19).
+                if attempt + 1 < attempts {
                     let delay = self
                         .retry_policy
                         .backoff

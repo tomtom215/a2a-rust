@@ -219,6 +219,33 @@ async fn retries_on_server_error_and_eventually_fails() {
     handle.abort();
 }
 
+/// A policy whose public `max_attempts` was set to 0 directly makes one
+/// attempt and returns, with no backoff after it. The backoff guard
+/// computed `max_attempts - 1`, which underflowed: a panic in a debug build,
+/// and in release a sleep after the only attempt (release audit F19).
+#[tokio::test]
+async fn a_zero_attempt_policy_makes_one_attempt_and_no_backoff() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let (addr, handle) = mock_server(500, Arc::clone(&counter)).await;
+    let mut policy = a2a_protocol_server::push::PushRetryPolicy::default()
+        .with_backoff(vec![Duration::from_millis(1500)]);
+    policy.max_attempts = 0;
+    let sender = HttpPushSender::new()
+        .allow_private_urls()
+        .with_retry_policy(policy);
+    let url = format!("http://{addr}/webhook");
+    let started = tokio::time::Instant::now();
+    let result = sender.send(&url, &status_event(), &base_config(&url)).await;
+    assert!(result.is_err());
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    assert!(
+        started.elapsed() < Duration::from_millis(1000),
+        "no backoff after the only attempt: {:?}",
+        started.elapsed()
+    );
+    handle.abort();
+}
+
 /// The backoff is paid *between* attempts and not after the last one.
 ///
 /// `retries_on_server_error_and_eventually_fails` already pins the attempt
@@ -934,4 +961,31 @@ async fn a_flooding_response_body_is_not_read() {
     .expect("send must return once the status line arrives")
     .expect("a 200 status is a delivery");
     flooding.abort();
+}
+
+/// A config stored with empty credentials sends no `Authorization`, rather
+/// than a bare `Bearer ` with nothing after it. Creation refuses such a
+/// config since 2026-10-18; this covers one stored before that.
+#[tokio::test]
+async fn empty_credentials_send_no_authorization_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(a2a_protocol_types::push::AuthenticationInfo {
+        scheme: "Bearer".into(),
+        credentials: Some("  ".into()),
+    });
+    sender
+        .send(&url, &status_event(), &config)
+        .await
+        .expect("delivered");
+    wait_for("the request", || !captured.lock().unwrap().is_empty()).await;
+    let request = captured.lock().unwrap()[0].clone();
+    assert!(
+        header_values(&request, "authorization").is_empty(),
+        "{request}"
+    );
+    handle.abort();
 }

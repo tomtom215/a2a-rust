@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **A push config whose `authentication` carries no credentials is
+  refused** (server; spec §4.3.3: a delivery MUST carry the credentials its
+  config specifies). `CreateTaskPushNotificationConfig` answers
+  `InvalidParams` naming `authentication.credentials` when they are absent,
+  empty or whitespace; such a config was stored and every delivery went out
+  with no `Authorization`, or with an empty `Bearer `. Leave
+  `authentication` out for an unauthenticated webhook. Test:
+  `push_config_credentials`.
 - **A card carrying a credential in a URL is refused when published**
   (server; spec §14 "The Agent Card SHOULD NOT include sensitive
   credentials", §13.3 an extended card no "unmasked credentials"). `build()`,
@@ -1536,6 +1544,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Push delivery with `max_attempts` set to 0** (server; release audit
+  F19). The field is public, and the backoff guard computed
+  `max_attempts - 1`: a panic in a debug build, and in release a backoff
+  sleep after the only attempt. The loop already made one attempt; the guard
+  now uses the same count. Test:
+  `push_sender_tests::a_zero_attempt_policy_makes_one_attempt_and_no_backoff`,
+  which fails with "attempt to subtract with overflow" on the old guard.
+- **A stored push config with empty credentials sends no `Authorization`**
+  (server), rather than `Bearer ` with nothing after it; for configs stored
+  before creation refused them. Test:
+  `push_sender_tests::empty_credentials_send_no_authorization_header`.
 - **A task answered at `AUTH_REQUIRED` by a blocking send now records the
   rest of its run** (server; spec §7.6.1 "The agent MAY immediately continue
   Task processing after receiving the credential"). Once a blocking

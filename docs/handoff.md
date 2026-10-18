@@ -111,8 +111,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   replicas and G1-B (`ROADMAP.md`); a stale unscoped write from another
   replica keeps a stored position whose effect it overwrote
   (`store/applied.rs`).
-- **Server:** empty push credentials are sent as a bare `Bearer` prefix
-  with nothing after it (`push/sender.rs`); no `412` for a non-GET request
+- **Server:** no `412` for a non-GET request
   with a matching `If-None-Match` (`agent_card/caching.rs`); JSON-RPC and
   REST on one socket without a hand-written accept loop;
   `find_task_by_context` clones full history and
@@ -123,7 +122,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   PostgreSQL artifact append without a length check (also under
   *Privacy*); F6 cancel through the status delta; F7 `EncryptedTaskStore`
   re-seal cost and budget; F8 the idempotency index cap; F9 a row rollback
-  in `CommitGuard`; F19 `max_attempts` of 0; F25 sqlx's SQLite coupling;
+  in `CommitGuard`; F25 sqlx's SQLite coupling;
   F26 `#[non_exhaustive]` on `SseParseError` and `ConvertError`; F27
   `doc(cfg)`.
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its

@@ -3126,12 +3126,14 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config.rs set_push_config_refuses_an_auth_scheme_it_cannot_send",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs basic_auth_header_is_sent",
-    "crates/a2a-protocol-server/tests/push_config_header_values.rs:79 a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation"
+    "crates/a2a-protocol-server/tests/push_config_header_values.rs:79 a_token_or_credentials_a_header_cannot_carry_is_refused_at_creation",
+    "crates/a2a-protocol-server/tests/push_config_credentials.rs authentication_without_credentials_is_refused_at_creation",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs empty_credentials_send_no_authorization_header"
    ],
-   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before. Since 2026-10-13 a token or credentials a header cannot carry (CR, LF or another control character) is InvalidParams at creation, inline or by CreateTaskPushNotificationConfig; it was stored and refused at every delivery. v1.0.1's text names PushNotificationConfig, which the v1.0.1 proto does not define: the message with `authentication` is TaskPushNotificationConfig (a2a.proto line 469), the name upstream main uses since.",
+   "notes": "The sender writes Authorization for Bearer and Basic (case-insensitive), as a2a-go v2.5.0 does. A config naming any other scheme is now refused at creation with InvalidParams, so no webhook is called without the credentials its config specifies. Until 2026-10-10 such a config was stored and delivered without credentials (a2a-go still does that). The sender's runtime drop remains for configs stored before. Since 2026-10-13 a token or credentials a header cannot carry (CR, LF or another control character) is InvalidParams at creation, inline or by CreateTaskPushNotificationConfig; it was stored and refused at every delivery. v1.0.1's text names PushNotificationConfig, which the v1.0.1 proto does not define: the message with `authentication` is TaskPushNotificationConfig (a2a.proto line 469), the name upstream main uses since. Since 2026-10-18 a config whose authentication carries no credentials (absent, empty or whitespace) is refused at creation, naming authentication.credentials: it could only ever be delivered without them. A config stored before that sends no Authorization rather than an empty Bearer prefix.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 877,
