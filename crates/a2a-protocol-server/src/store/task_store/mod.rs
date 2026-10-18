@@ -23,6 +23,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
 pub use in_memory::InMemoryTaskStore;
+pub(crate) use in_memory::TaskBudget;
 
 mod config;
 mod records;

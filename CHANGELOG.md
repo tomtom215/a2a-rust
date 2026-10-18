@@ -121,6 +121,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An opt-in total task cap across tenant partitions** (server; the
+  maintainer's 2026-10-18 decision). The default tenant store's bound was
+  `max_tenants × max_capacity` (ten million tasks at the defaults).
+  `TenantStoreConfig::with_max_total_tasks(n)` caps the sum: a new task at
+  the total first evicts its own partition's oldest finished task, and is
+  otherwise refused as temporary (HTTP `503`, gRPC `UNAVAILABLE`); an update
+  is never refused and no other tenant's task is evicted for it.
+  `TenantAwareInMemoryTaskStore::total_tasks()` reports the count. Tests:
+  `store::tenant::store::total_cap_tests`.
 - **`wss://` from the WebSocket listener itself** (server, feature
   `tls-rustls`; spec §7.1 "Production deployments MUST use encrypted
   communication", §13.4). `WebSocketDispatcher::with_tls(rustls::ServerConfig)`
@@ -1340,6 +1349,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A tenant partition no longer reserves room for its whole capacity on
+  creation** (server; release audit F4). Each partition of
+  `TenantAwareInMemoryTaskStore` pre-allocated its map for `max_capacity`
+  tasks (10,000 at the default), and a partition is created for every
+  tenant id a request names, so a run of junk tenant ids reserved that much
+  per id before storing anything. A partition now starts at 256 and grows.
+  `run_eviction_all` also sweeps a snapshot of the partitions instead of
+  holding the tenant map's lock across every sweep (F24).
 - **A subscription on another replica no longer loses the event being
   stored** (server; spec §3.5.2, "Each stream MUST receive the same events
   in the same order"; audit register R69). A `SubscribeToTask` on a replica

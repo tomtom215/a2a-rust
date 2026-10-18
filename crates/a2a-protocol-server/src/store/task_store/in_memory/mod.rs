@@ -25,7 +25,10 @@
 //! | (this file) | Core CRUD operations and `TaskStore` trait impl |
 //! | [`eviction`] | TTL and capacity-based eviction logic |
 
+mod budget;
 mod eviction;
+
+pub use budget::TaskBudget;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
@@ -141,6 +144,12 @@ pub(super) struct StoreData {
     /// shrank: a key is removed when its send fails, and otherwise stayed for
     /// the life of the process.
     pub(super) idempotency_index: HashMap<String, (MessageId, TaskId, Instant)>,
+    /// The budget this store's tasks count against beside its own
+    /// `max_capacity`, when it is one partition of a tenant-aware store with
+    /// a total cap. A slot is taken when a new task id is inserted
+    /// ([`admit`](Self::admit)) and given back in [`remove`](Self::remove),
+    /// which every eviction, expiry and delete goes through.
+    pub(super) budget: Option<std::sync::Arc<TaskBudget>>,
 }
 
 impl StoreData {
@@ -153,7 +162,35 @@ impl StoreData {
             expiry_index: BTreeMap::new(),
             next_seq: 0,
             idempotency_index: HashMap::new(),
+            budget: None,
         }
+    }
+
+    /// Whether a write of `id` may go ahead under the shared budget: always
+    /// for a task already held, and for a new one when a slot is free or can
+    /// be freed by evicting this store's own oldest terminal task. Another
+    /// partition's tasks are never evicted for it, and a running task never
+    /// is.
+    pub(super) fn admit(&mut self, id: &TaskId) -> bool {
+        let Some(budget) = self.budget.clone() else {
+            return true;
+        };
+        if self.entries.contains_key(id) || budget.reserve() {
+            return true;
+        }
+        let oldest_terminal = self
+            .order_index
+            .values()
+            .find(|candidate| {
+                self.entries
+                    .get(*candidate)
+                    .is_some_and(|e| e.task.status.state.is_terminal())
+            })
+            .cloned();
+        oldest_terminal.is_some_and(|victim| {
+            self.remove(&victim);
+            budget.reserve()
+        })
     }
 
     /// The refusal a write of `task` would meet, if the stored copy is
@@ -354,6 +391,9 @@ impl StoreData {
     /// Removes a task by ID, maintaining all indexes.
     pub(super) fn remove(&mut self, id: &TaskId) -> Option<TaskEntry> {
         if let Some(entry) = self.entries.remove(id) {
+            if let Some(budget) = &self.budget {
+                budget.release();
+            }
             self.expiry_index
                 .remove(&(entry.last_updated, entry.order_key.1));
             self.order_index.remove(&entry.order_key);
@@ -467,6 +507,15 @@ impl Default for InMemoryTaskStore {
 /// Default pre-allocation capacity when no `max_capacity` is configured.
 const DEFAULT_INITIAL_CAPACITY: usize = 256;
 
+/// The refusal of a new task when the shared budget has no slot and this
+/// store holds no finished task to make room with: temporary, so HTTP `503`
+/// and gRPC `UNAVAILABLE`.
+fn budget_exhausted() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::unavailable(
+        "task store full: the total task cap across tenants is reached",
+    )
+}
+
 /// Current wall-clock time in Unix milliseconds — the order-key fallback for
 /// tasks whose status carries no parseable timestamp.
 #[allow(clippy::cast_possible_truncation)]
@@ -564,6 +613,39 @@ impl InMemoryTaskStore {
             write_count: std::sync::atomic::AtomicU64::new(0),
             eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// One partition of a tenant-aware store: `config`, counted against
+    /// `budget` when there is one, and pre-allocated for
+    /// `DEFAULT_INITIAL_CAPACITY` tasks rather than `max_capacity`.
+    ///
+    /// A partition is created for every tenant id the store sees, and tenant
+    /// ids come from the request, so pre-allocating each one for its
+    /// `max_capacity` (10,000 at the default) let a run of junk tenant ids
+    /// reserve that much memory per id before storing anything (release
+    /// audit F4). A partition that fills grows as any map does.
+    pub(crate) fn partition(
+        config: TaskStoreConfig,
+        budget: Option<std::sync::Arc<TaskBudget>>,
+    ) -> Self {
+        let capacity = config.max_capacity.map_or(DEFAULT_INITIAL_CAPACITY, |max| {
+            max.min(DEFAULT_INITIAL_CAPACITY)
+        });
+        let mut data = StoreData::with_capacity(capacity);
+        data.budget = budget;
+        Self {
+            data: RwLock::new(data),
+            config,
+            metrics: MetricsHandle::default(),
+            write_count: std::sync::atomic::AtomicU64::new(0),
+            eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// How many tasks the primary map has room for without growing.
+    #[cfg(test)]
+    pub(crate) async fn reserved_capacity(&self) -> usize {
+        self.data.read().await.entries.capacity()
     }
 
     /// Sets where this store reports an event it could not record.
@@ -855,6 +937,10 @@ impl TaskStore for InMemoryTaskStore {
                 if let Some(conflict) = store.refusal(&task) {
                     drop(store);
                     return Err(conflict.into_error());
+                }
+                if !store.admit(&task.id) {
+                    drop(store);
+                    return Err(budget_exhausted());
                 }
                 store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
@@ -1186,6 +1272,10 @@ impl TaskStore for InMemoryTaskStore {
                 let mut store = self.data.write().await;
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
+                }
+                if !store.admit(&task.id) {
+                    drop(store);
+                    return Err(budget_exhausted());
                 }
                 store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();

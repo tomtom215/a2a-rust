@@ -162,6 +162,28 @@ break; every use site now gets a compiler warning naming the replacement.
 
 If you set `max_stored_tasks` and wondered why nothing was capped: that is why.
 
+### A total across every tenant
+
+Each partition's `max_capacity` bounds that tenant, so the default store's
+bound overall is `max_tenants × max_capacity`: ten million tasks at the
+defaults. `TenantStoreConfig::with_max_total_tasks(n)` (since 0.15) caps the
+sum. A write that would add a new task at the total first evicts the
+writer's own partition's oldest finished task; when that partition holds
+none, the write is refused as temporary (HTTP `503`, gRPC `UNAVAILABLE`). A
+write to a task already held is never refused, another tenant's tasks are
+never evicted to make room, and a running task never is.
+`TenantAwareInMemoryTaskStore::total_tasks()` reports the count. The SQL
+tenant stores have no total; size their tables with the database.
+
+```rust
+use a2a_protocol_server::{TenantAwareInMemoryTaskStore, TenantStoreConfig};
+
+let store = TenantAwareInMemoryTaskStore::with_config(
+    TenantStoreConfig::default().with_max_total_tasks(100_000),
+);
+assert_eq!(store.total_tasks(), Some(0));
+```
+
 ## Callers within one tenant
 
 A tenant is a boundary between organisations, not between the people in one.

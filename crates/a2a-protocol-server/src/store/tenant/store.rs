@@ -58,6 +58,20 @@ pub struct TenantStoreConfig {
     /// id must come from something authenticated, not from a header a client
     /// chose. Raise this only alongside that.
     pub max_tenants: usize,
+
+    /// Most tasks held across every partition at once. Default: `None`, no
+    /// total beyond each partition's own `max_capacity`, so the store's
+    /// bound is `max_tenants × max_capacity` (10 million tasks at the
+    /// defaults).
+    ///
+    /// When set, a write that would add a new task while the total is
+    /// reached first evicts its own partition's oldest finished task, and
+    /// when that partition holds none, is refused with a temporary error
+    /// (HTTP `503`, gRPC `UNAVAILABLE`). A write to a task already held is
+    /// never refused, another tenant's tasks are never evicted to make room,
+    /// and a running task never is. Added 2026-10-18 at the maintainer's
+    /// decision.
+    pub max_total_tasks: Option<usize>,
 }
 
 impl Default for TenantStoreConfig {
@@ -65,6 +79,7 @@ impl Default for TenantStoreConfig {
         Self {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 1000,
+            max_total_tasks: None,
         }
     }
 }
@@ -82,6 +97,14 @@ impl TenantStoreConfig {
     #[must_use]
     pub const fn with_max_tenants(mut self, max: usize) -> Self {
         self.max_tenants = max;
+        self
+    }
+
+    /// Caps the tasks held across every partition at once. See
+    /// [`max_total_tasks`](Self::max_total_tasks).
+    #[must_use]
+    pub const fn with_max_total_tasks(mut self, max: usize) -> Self {
+        self.max_total_tasks = Some(max);
         self
     }
 }
@@ -141,6 +164,9 @@ pub struct TenantAwareInMemoryTaskStore {
     /// would report to `NoopMetrics` and a whole multi-tenant deployment
     /// would be the one configuration where those reports go nowhere.
     metrics: crate::metrics::MetricsHandle,
+    /// The total every partition counts against, when
+    /// [`max_total_tasks`](TenantStoreConfig::max_total_tasks) is set.
+    budget: Option<Arc<crate::store::task_store::TaskBudget>>,
 }
 
 impl Default for TenantAwareInMemoryTaskStore {
@@ -153,12 +179,7 @@ impl TenantAwareInMemoryTaskStore {
     /// Creates a new tenant-aware store with default configuration.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            stores: RwLock::new(HashMap::new()),
-            config: TenantStoreConfig::default(),
-            overrides: HashMap::new(),
-            metrics: crate::metrics::MetricsHandle::default(),
-        }
+        Self::with_config(TenantStoreConfig::default())
     }
 
     /// Creates a new tenant-aware store with custom configuration.
@@ -166,10 +187,21 @@ impl TenantAwareInMemoryTaskStore {
     pub fn with_config(config: TenantStoreConfig) -> Self {
         Self {
             stores: RwLock::new(HashMap::new()),
+            budget: config
+                .max_total_tasks
+                .map(|max| Arc::new(crate::store::task_store::TaskBudget::new(max))),
             config,
             overrides: HashMap::new(),
             metrics: crate::metrics::MetricsHandle::default(),
         }
+    }
+
+    /// Tasks held across every partition, when
+    /// [`max_total_tasks`](TenantStoreConfig::max_total_tasks) is set;
+    /// `None` when there is no total to count against.
+    #[must_use]
+    pub fn total_tasks(&self) -> Option<usize> {
+        self.budget.as_ref().map(|b| b.held())
     }
 
     /// Sends every partition's store metrics to `metrics`.
@@ -255,11 +287,12 @@ impl TenantAwareInMemoryTaskStore {
         }
 
         let store = Arc::new(
-            InMemoryTaskStore::with_config(
+            InMemoryTaskStore::partition(
                 self.overrides
                     .get(&config_tenant)
                     .unwrap_or(&self.config.per_tenant)
                     .clone(),
+                self.budget.clone(),
             )
             .with_metrics(self.metrics.clone()),
         );
@@ -288,8 +321,13 @@ impl TenantAwareInMemoryTaskStore {
     ///
     /// Call periodically to clean up terminal tasks in idle tenants.
     pub async fn run_eviction_all(&self) {
-        let stores = self.stores.read().await;
-        for store in stores.values() {
+        // A snapshot, so the tenant map's lock is not held across every
+        // partition's sweep: a write lock waiting behind this read (a new
+        // tenant's first request) would otherwise wait for all of them
+        // (release audit F24). A partition created meanwhile is swept next
+        // time.
+        let stores: Vec<_> = self.stores.read().await.values().cloned().collect();
+        for store in stores {
             store.run_eviction().await;
         }
     }
@@ -319,6 +357,12 @@ impl TenantAwareInMemoryTaskStore {
     /// Calling it will not relieve a store that is at its cap because of live
     /// tasks; see `max_tenants` for why that matters.
     pub async fn prune_empty_tenants(&self) {
+        // The write lock is held across the checks on purpose, unlike
+        // `run_eviction_all`'s snapshot: with it released, a request could
+        // take a partition found empty and write to it before it is removed,
+        // and the write would go with the partition. Every other caller
+        // reaches a partition through this lock, so holding it makes the
+        // check and the removal one step.
         let mut stores = self.stores.write().await;
         let mut empty_tenants = Vec::new();
         for (tenant, store) in stores.iter() {
@@ -618,6 +662,7 @@ mod tests {
                 ..TaskStoreConfig::default()
             },
             max_tenants: 10,
+            max_total_tasks: None,
         });
 
         TenantContext::scope("capped", async {
@@ -684,6 +729,7 @@ mod tests {
                 ..TaskStoreConfig::default()
             },
             max_tenants: 10,
+            max_total_tasks: None,
         })
         .with_tenant_override(
             "small",
@@ -921,6 +967,7 @@ mod tests {
         let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 2,
+            max_total_tasks: None,
         });
 
         for junk in ["junk-1", "junk-2"] {
@@ -1006,6 +1053,7 @@ mod tests {
         let config = TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 2,
+            max_total_tasks: None,
         };
         let store = TenantAwareInMemoryTaskStore::with_config(config);
 
@@ -1041,6 +1089,7 @@ mod tests {
         let config = TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 1,
+            max_total_tasks: None,
         };
         let store = TenantAwareInMemoryTaskStore::with_config(config);
 
@@ -1622,3 +1671,7 @@ mod event_log_tests {
         assert_eq!(store.tenant_count().await, 0);
     }
 }
+
+#[cfg(test)]
+#[path = "total_cap_tests.rs"]
+mod total_cap_tests;
