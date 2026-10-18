@@ -47,7 +47,9 @@ use start::{ExecutorStart, runtime_has_one_worker};
 pub(super) mod terminal;
 mod validation;
 
+#[cfg(test)]
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
+pub use decisions::TASK_HISTORY_LIMIT;
 
 /// How the send is driven and shaped, read once from the request.
 #[derive(Clone, Copy)]

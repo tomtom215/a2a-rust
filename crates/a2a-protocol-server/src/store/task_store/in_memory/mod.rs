@@ -349,7 +349,7 @@ impl StoreData {
         &mut self,
         task: &Task,
         messages: &[Message],
-        max_history: usize,
+        limit: crate::store::HistoryLimit,
         last_updated: Instant,
     ) -> bool {
         // Re-keys the indexes for the new status timestamp, which §3.1.4
@@ -362,9 +362,7 @@ impl StoreData {
         };
         let mut history = entry.task.history.take().unwrap_or_default();
         history.extend_from_slice(messages);
-        // `drain(..0)` skips its memmove, so this is O(1) under the cap.
-        let excess = history.len().saturating_sub(max_history);
-        history.drain(..excess);
+        limit.trim(&mut history);
         entry.task.history = Some(history);
         entry.task.context_id.clone_from(&task.context_id);
         entry.task.artifacts.clone_from(&task.artifacts);
@@ -1097,7 +1095,7 @@ impl TaskStore for InMemoryTaskStore {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        limit: crate::store::HistoryLimit,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let outcome = {
@@ -1106,7 +1104,7 @@ impl TaskStore for InMemoryTaskStore {
                     drop(store);
                     return Err(conflict.into_error());
                 }
-                let applied = store.append_history(task, messages, max_history, Instant::now());
+                let applied = store.append_history(task, messages, limit, Instant::now());
                 let len = store.len();
                 drop(store);
                 applied.then(|| self.should_evict(len))

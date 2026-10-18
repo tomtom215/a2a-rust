@@ -26,12 +26,14 @@ pub use in_memory::InMemoryTaskStore;
 pub(crate) use in_memory::TaskBudget;
 
 mod config;
+mod history;
 mod records;
 
 pub use config::{
     DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_IDEMPOTENCY_KEYS,
     DEFAULT_MAX_PAGE_SIZE, TaskStoreConfig,
 };
+pub use history::HistoryLimit;
 pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 
 /// Trait for persisting and retrieving [`Task`] objects.
@@ -476,11 +478,11 @@ pub trait TaskStore: Send + Sync + 'static {
     /// Every other field of `task` is the new snapshot and replaces what is
     /// stored, exactly as `save` would.
     ///
-    /// `max_history` is the cap the merged history is trimmed to, oldest
-    /// first. It is a parameter rather than a constant here because retention
-    /// is the handler's policy, not the store's; a store that invented its own
-    /// cap would silently disagree with the one the rest of the server
-    /// enforces.
+    /// `limit` is what the merged history is trimmed to, oldest first, by
+    /// message count and by bytes ([`HistoryLimit::trim`]). It is a parameter
+    /// rather than a constant here because retention is the handler's policy,
+    /// not the store's; a store that invented its own cap would silently
+    /// disagree with the one the rest of the server enforces.
     ///
     /// # Implementing this
     ///
@@ -503,16 +505,13 @@ pub trait TaskStore: Send + Sync + 'static {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        limit: HistoryLimit,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let stored = self.get(&task.id).await?;
             let mut history = stored.and_then(|s| s.history).unwrap_or_default();
             history.extend_from_slice(messages);
-            // `drain(..0)` is a no-op rather than a shift, so this is O(1)
-            // whenever the history is at or under the cap.
-            let excess = history.len().saturating_sub(max_history);
-            history.drain(..excess);
+            limit.trim(&mut history);
             let mut merged = task.clone();
             merged.history = Some(history);
             self.save(&merged).await

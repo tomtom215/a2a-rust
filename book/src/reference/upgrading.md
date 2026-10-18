@@ -140,6 +140,15 @@ These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
 
+### `save_appending_history` takes a `HistoryLimit`
+
+A `TaskStore` that overrides `save_appending_history` takes
+`limit: HistoryLimit` where it took `max_history: usize`, and trims with
+`limit.trim(&mut history)`, which bounds bytes as well as messages (release
+audit F2). A caller that passed a count passes
+`HistoryLimit::new(count, usize::MAX)` for the old behaviour; the handler
+passes `TASK_HISTORY_LIMIT`, 1,024 messages and 16 MiB.
+
 ### `a2a.server.latency` is gone; units are UCUM
 
 Dashboards and alerts on `a2a.server.latency` (Prometheus

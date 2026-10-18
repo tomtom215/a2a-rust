@@ -127,7 +127,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   `RequestContext::stored_task` is `pub`; JSON-RPC parses a request's params
   before the interceptor chain authenticates it (a malformed body is
   refused `-32602` before `401`).
-- **Release audit (2026-10-18), not yet fixed:** F2 history bytes bound; F5
+- **Release audit (2026-10-18), not yet fixed:** F5
   PostgreSQL artifact append without a length check (also under
   *Privacy*); F6 cancel through the status delta; F7 `EncryptedTaskStore`
   re-seal cost and budget; F9 a row rollback

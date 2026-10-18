@@ -82,7 +82,7 @@ impl TaskStore for Observed {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        max_history: a2a_protocol_server::store::HistoryLimit,
     ) -> Fut<'a, ()> {
         Box::pin(async move {
             let result = self

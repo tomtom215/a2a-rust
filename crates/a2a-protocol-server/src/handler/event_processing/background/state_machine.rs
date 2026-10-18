@@ -440,18 +440,9 @@ pub(super) async fn process_event_with(
             // Task.history (same cap as the send path) and persist.
             let history = last_task.history.get_or_insert_with(Vec::new);
             history.push(msg);
-            // What the append cost, so a failed save can undo exactly it.
-            let appended_len = history.len();
-            // Third copy of this cap; same shape as `messaging.rs` and the sync
-            // collector, and for the same reason. The `if` this replaces
-            // guarded only a no-op, which made `>` to `>=` an equivalent
-            // mutant, and the raw subtraction under it was mutable to `+` and
-            // `/` with no test able to tell. `drain(..0)` is a no-op, so
-            // behaviour is unchanged.
-            let excess = history
-                .len()
-                .saturating_sub(crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES);
-            history.drain(..excess);
+            // The same limit, by count and by bytes, as the send path. What
+            // it dropped is kept so a failed save can undo exactly the append.
+            let dropped = crate::handler::messaging::TASK_HISTORY_LIMIT.trim_returning(history);
             if let Err(e) = task_store.save(last_task).await {
                 if let Some(refused) = refusal(&e) {
                     return refused;
@@ -477,10 +468,14 @@ pub(super) async fn process_event_with(
                 // the record, a message it refused is not in the record, and a
                 // snapshot claiming otherwise is the "phantom state" the
                 // contract names.
-                if let Some(history) = last_task.history.as_mut()
-                    && history.len() == appended_len
-                {
+                //
+                // The trim always keeps the newest message, so the last entry
+                // is the one appended; what it dropped goes back in front.
+                // Until the byte bound (release audit F2), a trim that dropped
+                // anything left the appended message in place instead.
+                if let Some(history) = last_task.history.as_mut() {
                     history.pop();
+                    history.splice(0..0, dropped);
                 }
                 return Outcome::NotPersisted;
             }
@@ -1284,6 +1279,52 @@ mod tests {
             history[0].id,
             MessageId::new("m-existing"),
             "the revert must remove the appended message and only that one"
+        );
+    }
+
+    /// A refused append that the trim made room for restores the history
+    /// exactly: the appended message goes and the oldest one the trim
+    /// dropped comes back. Until the byte bound (release audit F2) a trim
+    /// that dropped anything left the refused message in place, so the
+    /// in-memory task ran ahead of the store at the cap.
+    #[tokio::test]
+    async fn a_failed_history_save_at_the_cap_restores_what_the_trim_dropped() {
+        use a2a_protocol_types::message::Message;
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-cap-revert");
+        task_store
+            .inner
+            .save(&make_task("t-cap-revert", TaskState::Working))
+            .await
+            .unwrap();
+        let full: Vec<Message> = (0..crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES)
+            .map(|i| Message::user_text(format!("m{i}"), "recorded"))
+            .collect();
+        let mut last_task = make_task("t-cap-revert", TaskState::Working);
+        last_task.history = Some(full.clone());
+
+        process_event_bg(
+            Ok(StreamResponse::Message(Message::agent_text(
+                "agent-refused",
+                "this write will fail",
+            ))),
+            &task_id,
+            &mut last_task,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
+        )
+        .await;
+
+        assert_eq!(
+            last_task.history.as_deref(),
+            Some(full.as_slice()),
+            "the history must be exactly what it was before the refused append"
         );
     }
 

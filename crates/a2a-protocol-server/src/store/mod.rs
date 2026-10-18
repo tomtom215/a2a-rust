@@ -56,8 +56,8 @@ pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // audience this module exists to serve.
 pub use task_store::{
     ArtifactDelta, DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK,
-    DEFAULT_MAX_IDEMPOTENCY_KEYS, DEFAULT_MAX_PAGE_SIZE, IdempotencyClaim, InMemoryTaskStore,
-    RecordedEvent, TaskStore, TaskStoreConfig,
+    DEFAULT_MAX_IDEMPOTENCY_KEYS, DEFAULT_MAX_PAGE_SIZE, HistoryLimit, IdempotencyClaim,
+    InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 pub use terminal::{TERMINAL_STATE_CONFLICT_MARKER, TerminalStateConflict, refuses_write};

@@ -232,7 +232,7 @@ impl TaskStore for FailsTurns {
         &'a self,
         t: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        max_history: a2a_protocol_server::store::HistoryLimit,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         if self.failing.load(Ordering::SeqCst) {
             return Box::pin(async {

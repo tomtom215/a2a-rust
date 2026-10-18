@@ -12,7 +12,7 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use super::super::RequestHandler;
-use super::decisions::MAX_TASK_HISTORY_MESSAGES;
+use super::decisions::TASK_HISTORY_LIMIT;
 use crate::error::ServerResult;
 use crate::request_context::RequestContext;
 
@@ -139,7 +139,7 @@ impl RequestHandler {
         let appended = task.history.clone().unwrap_or_default();
         if let Err(e) = self
             .task_store
-            .save_appending_history(task, &appended, MAX_TASK_HISTORY_MESSAGES)
+            .save_appending_history(task, &appended, TASK_HISTORY_LIMIT)
             .await
         {
             self.release_admission(&task.id).await;

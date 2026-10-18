@@ -265,14 +265,14 @@ impl TaskStore for EncryptedTaskStore {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        limit: crate::store::HistoryLimit,
     ) -> Fut<'a, ()> {
         Box::pin(async move {
             let sealer = self.sealer();
             let record = sealer.seal_task(task).await?;
             let appended = sealer.seal_messages(&task.id, messages).await?;
             self.inner
-                .save_appending_history(&record, &appended, max_history)
+                .save_appending_history(&record, &appended, limit)
                 .await
         })
     }

@@ -1285,6 +1285,75 @@ async fn history_is_capped_at_max_messages() {
     );
 }
 
+/// Release audit F2: the history is bounded in bytes as well as messages.
+/// Twenty 1 MiB messages are 20 MiB, over the 16 MiB bound and far under
+/// the 1,024-message one; after a further send the stored history fits the
+/// byte bound, kept the newest messages, and dropped from the oldest end.
+#[tokio::test]
+async fn history_is_capped_in_bytes() {
+    use super::decisions::MAX_TASK_HISTORY_BYTES;
+    let handler = make_handler();
+    let mib = "x".repeat(1024 * 1024);
+    let big: Vec<Message> = (0..20)
+        .map(|i| Message::user_text(format!("big-{i:02}"), mib.clone()))
+        .collect();
+    handler
+        .task_store
+        .save(&Task {
+            id: TaskId::new("bytes-task"),
+            context_id: ContextId::new("ctx-bytes"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: Some(big),
+            artifacts: None,
+            metadata: None,
+        })
+        .await
+        .unwrap();
+
+    let mut params = make_params(Some("ctx-bytes"));
+    params.message.task_id = Some(TaskId::new("bytes-task"));
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("continuation should succeed");
+
+    let history = handler
+        .task_store
+        .get(&TaskId::new("bytes-task"))
+        .await
+        .unwrap()
+        .unwrap()
+        .history
+        .unwrap();
+    let bytes: usize = history
+        .iter()
+        .map(|m| serde_json::to_vec(m).unwrap().len())
+        .sum();
+    assert!(bytes <= MAX_TASK_HISTORY_BYTES, "{bytes} bytes kept");
+    assert!(
+        history.len() > 10 && history.len() < 21,
+        "kept {} messages",
+        history.len()
+    );
+    assert_eq!(
+        history.last().unwrap().parts[0].text_content(),
+        Some("hello"),
+        "the newest message is retained"
+    );
+    assert_eq!(history[history.len() - 2].id, MessageId::new("big-19"));
+    let first: usize = history[0].id.0["big-".len()..].parse().unwrap();
+    assert_eq!(
+        history[..history.len() - 1]
+            .iter()
+            .map(|m| m.id.0.clone())
+            .collect::<Vec<_>>(),
+        (first..20)
+            .map(|i| format!("big-{i:02}"))
+            .collect::<Vec<_>>(),
+        "a contiguous run of the newest, the oldest dropped"
+    );
+}
+
 #[tokio::test]
 async fn send_response_omits_history_by_default_and_honors_history_length() {
     // The store keeps full history, but the send RESPONSE omits it
@@ -2515,6 +2584,63 @@ agent_executor!(ReplyingExecutor, |_ctx, queue| async {
     Ok(())
 });
 
+/// An agent's message collected by a blocking send is trimmed like a
+/// send's own turn. Seeded at the 1,024-message cap, a turn adds the user's
+/// message (trimmed by the store) and the agent's (trimmed by the sync
+/// collector); both stay newest and the cap holds. No test reached the
+/// collector's trim before this one: removing it survived the library's
+/// whole suite (found 2026-10-18).
+#[tokio::test]
+async fn a_collected_agent_message_is_trimmed_to_the_cap() {
+    let handler = RequestHandlerBuilder::new(ReplyingExecutor)
+        .without_agent_card()
+        .build()
+        .expect("build handler");
+    let seeded: Vec<Message> = (0..MAX_TASK_HISTORY_MESSAGES)
+        .map(|i| Message::user_text(format!("old-{i}"), "recorded"))
+        .collect();
+    handler
+        .task_store
+        .save(&Task {
+            id: TaskId::new("collected-cap"),
+            context_id: ContextId::new("ctx-collected-cap"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: Some(seeded),
+            artifacts: None,
+            metadata: None,
+        })
+        .await
+        .unwrap();
+
+    let mut params = make_params(Some("ctx-collected-cap"));
+    params.message.id = MessageId::new("user-turn");
+    params.message.task_id = Some(TaskId::new("collected-cap"));
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("continuation");
+
+    let history = handler
+        .task_store
+        .get(&TaskId::new("collected-cap"))
+        .await
+        .unwrap()
+        .unwrap()
+        .history
+        .unwrap();
+    assert_eq!(history.len(), MAX_TASK_HISTORY_MESSAGES, "capped");
+    let newest: Vec<&str> = history[history.len() - 2..]
+        .iter()
+        .map(|m| m.id.0.as_str())
+        .collect();
+    assert_eq!(newest, ["user-turn", "agent-reply"]);
+    assert_eq!(
+        history[0].id,
+        MessageId::new("old-2"),
+        "the two oldest went"
+    );
+}
+
 /// Three turns on one channel keep every message all three wrote.
 #[tokio::test]
 async fn a_continuation_keeps_what_earlier_turns_wrote() {
@@ -2942,7 +3068,7 @@ impl crate::store::TaskStore for GatedStore {
         &'a self,
         task: &'a a2a_protocol_types::task::Task,
         messages: &'a [Message],
-        max_history: usize,
+        max_history: crate::store::HistoryLimit,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
     > {

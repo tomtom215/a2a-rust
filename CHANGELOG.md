@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`TaskStore::save_appending_history` takes a `HistoryLimit`, not a
+  message count** (server; release audit F2). The limit bounds bytes as well
+  as messages. A store that overrides the method trims with
+  `limit.trim(&mut history)`, and a caller that passed `n` passes
+  `HistoryLimit::new(n, usize::MAX)` to keep the old meaning.
+
 - **OpenTelemetry instrumentation is on by default; export is `otlp`**
   (server, client, SDK; decided 2026-10-14, the exporter's place settled
   2026-10-18). The server's `otel` feature is now the instrumentation only
@@ -1602,6 +1608,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **Task history is bounded in bytes** (server; release audit F2). It was
+  capped at 1,024 messages and nothing else, so at the 4 MiB request body one
+  task could hold 4 GiB of remote input. Every place a history grows now
+  applies `TASK_HISTORY_LIMIT`: 1,024 messages and `MAX_TASK_HISTORY_BYTES`,
+  16 MiB of serialized messages, oldest first, always keeping the newest.
+  Those places are a send's turn appended by the store, and an agent's
+  messages appended by the background processor and the blocking-send
+  collector. The four copies of the count-only trim are now one,
+  `HistoryLimit::trim`. That function measures nothing when a cheap upper
+  bound shows the history fits, so a long conversation's turn costs a median
+  of 10 µs, not 108 µs (measured; see its docs). Two defects were fixed on
+  the way:
+  - A refused agent-message save at the cap left the message in the
+    in-memory task; it now restores exactly what the trim dropped.
+  - No test reached the blocking-send collector's trim; one does now.
 
 - **The in-memory idempotency index is bounded by count, not only by age**
   (server; release audit F8). Its 24-hour TTL let a client add one key per

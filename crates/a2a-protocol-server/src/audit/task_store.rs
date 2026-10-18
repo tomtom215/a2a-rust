@@ -155,10 +155,9 @@ impl TaskStore for AuditedTaskStore {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        limit: crate::store::HistoryLimit,
     ) -> Fut<'a, ()> {
-        self.inner
-            .save_appending_history(task, messages, max_history)
+        self.inner.save_appending_history(task, messages, limit)
     }
 
     fn supports_event_log(&self) -> bool {

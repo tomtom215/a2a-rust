@@ -90,7 +90,14 @@ async fn keeps_the_applied_position(store: &dyn TaskStore) {
     assert_eq!(position(store, &id).await, Some(6), "parts appended");
 
     let turn = [Message::user_text("m-1", "next")];
-    store.save_appending_history(&t, &turn, 100).await.unwrap();
+    store
+        .save_appending_history(
+            &t,
+            &turn,
+            a2a_protocol_server::store::HistoryLimit::new(100, usize::MAX),
+        )
+        .await
+        .unwrap();
     assert_eq!(
         position(store, &id).await,
         Some(6),

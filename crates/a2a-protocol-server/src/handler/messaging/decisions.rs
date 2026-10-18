@@ -15,12 +15,27 @@ use super::super::CancellationEntry;
 use super::super::helpers::truncate_history;
 use a2a_protocol_types::task::Task;
 
+use crate::store::HistoryLimit;
+
 /// Hard cap on the number of messages retained in `Task.history`.
 ///
 /// Oldest messages are dropped first. Bounds per-task memory for
 /// long-running multi-turn conversations; `GetTask`'s `historyLength`
 /// further truncates what is returned to clients.
 pub const MAX_TASK_HISTORY_MESSAGES: usize = 1024;
+
+/// Hard cap on the serialized bytes retained in `Task.history` (release audit
+/// F2).
+///
+/// The count above bounds nothing in bytes: 1,024 messages at the default
+/// 4 MiB request body is 4 GiB in one task, from remote input. 16 MiB keeps at
+/// least four full-size messages and far more ordinary ones; the newest
+/// message is kept whatever its size. See [`HistoryLimit`].
+pub const MAX_TASK_HISTORY_BYTES: usize = 16 * 1024 * 1024;
+
+/// Both caps, as every place a history grows applies them.
+pub const TASK_HISTORY_LIMIT: HistoryLimit =
+    HistoryLimit::new(MAX_TASK_HISTORY_MESSAGES, MAX_TASK_HISTORY_BYTES);
 
 /// Shapes the history carried by a *send response* (or streaming snapshot)
 /// per `SendMessageConfiguration.historyLength`.
