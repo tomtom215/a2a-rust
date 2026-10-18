@@ -10,6 +10,7 @@
 //! itself is defined in [`crate::client`].
 
 pub mod extended_card;
+pub mod follow;
 pub mod push_config;
 pub mod send_message;
 pub mod tasks;

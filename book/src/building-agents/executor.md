@@ -173,7 +173,11 @@ the task at `AUTH_REQUIRED` with a message saying what to authorize, and
 take the credential out of band. `auth_required` does the first two. The
 executor can then return, and continue on the client's next message, or
 wait for the credential on the same run: the stream stays open across
-`AUTH_REQUIRED` until the task ends.
+`AUTH_REQUIRED` until the task ends, and after a blocking send, which answers
+at `AUTH_REQUIRED`, what the executor emits next is still stored, so a client
+polling `GetTask` sees the task finish. On the client side,
+`A2aClient::follow_task(id, poll_every)` follows such a task, by subscription
+when the agent can stream and by polling when it cannot (spec §7.6.2).
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;

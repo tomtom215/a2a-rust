@@ -167,6 +167,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`A2aClient::follow_task(id, poll_every)`** (client; spec §7.6.2: a
+  client without an open stream "SHOULD perform one of the following:
+  Subscribe to Task ... Register a webhook ... Begin polling the Task").
+  Returns a `TaskFollow` whose `next()` yields the task's updates until it
+  ends: from `SubscribeToTask` when the agent can stream, and from `GetTask`
+  every `poll_every`, reporting each status change once, when its card does
+  not declare streaming or it refuses the subscription
+  (`UnsupportedOperation`, as for a task already ended). Test:
+  `follow_task_e2e`.
 - **`erase_caller(identity)` on every tenant-aware store** (server; spec
   §13.4 "Agents SHOULD provide mechanisms for users to request deletion of
   their data"). The in-memory, SQLite and PostgreSQL task stores remove the
@@ -1527,6 +1536,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A task answered at `AUTH_REQUIRED` by a blocking send now records the
+  rest of its run** (server; spec §7.6.1 "The agent MAY immediately continue
+  Task processing after receiving the credential"). Once a blocking
+  `SendMessage` answered at an interrupted state, nothing read the task's
+  event queue: every event the executor emitted afterwards failed with "event
+  queue: no active receivers", and the stored task stayed at `AUTH_REQUIRED`
+  (or `INPUT_REQUIRED`) for good, so `GetTask` never saw it finish. Only a
+  client holding a stream saw the rest. The collection now answers at the
+  interrupted state and goes on storing the executor's events until the task
+  ends or the queue closes. Found by the `follow_task` end-to-end test.
+  Regression test: `auth_required_in_task::a_blocking_send_answered_at_auth_required_still_records_the_rest`.
 - **An unauthenticated push-config call is refused for its credential, not
   told the agent lacks push** (server; spec §3.3.2). `Get`, `List` and
   `DeleteTaskPushNotificationConfig` checked the card's push capability

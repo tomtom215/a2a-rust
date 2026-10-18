@@ -29,7 +29,7 @@ use a2a_protocol_server::{EventEmitter, agent_executor};
 use a2a_protocol_types::Message;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::message::{Part, PartContent};
-use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::params::{MessageSendParams, TaskQueryParams};
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{TaskState, TaskStatus};
 use tokio::sync::Notify;
@@ -148,6 +148,52 @@ async fn the_stream_stays_open_across_auth_required_until_the_task_ends() {
         Some(&TaskState::Completed),
         "the same stream carried the task past AUTH_REQUIRED to its end: {states:?}"
     );
+}
+
+/// §7.6.1 "MAY immediately continue Task processing": after a blocking send
+/// answered at `AUTH_REQUIRED`, the executor's later events are stored, so
+/// a client polling `GetTask` sees the task finish. Until 2026-10-18 the
+/// queue had no reader once the send answered: every later event failed
+/// with "no active receivers" and the task stayed at `AUTH_REQUIRED`.
+#[tokio::test]
+async fn a_blocking_send_answered_at_auth_required_still_records_the_rest() {
+    let credential = Arc::new(Notify::new());
+    let handler = RequestHandlerBuilder::new(WaitsForCredential {
+        credential: Arc::clone(&credential),
+    })
+    .without_agent_card()
+    .build()
+    .expect("handler");
+    let SendMessageResult::Response(SendMessageResponse::Task(task)) = handler
+        .on_send_message(
+            MessageSendParams::new(Message::user_text("m1", "go")),
+            false,
+            None,
+        )
+        .await
+        .expect("send")
+    else {
+        panic!("a blocking send answers with a task");
+    };
+    assert_eq!(task.status.state, TaskState::AuthRequired);
+
+    credential.notify_one();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let stored = handler
+            .on_get_task(TaskQueryParams::new(&task.id.0), None)
+            .await
+            .expect("get");
+        if stored.status.state == TaskState::Completed {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the task stayed at {:?}",
+            stored.status.state
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }
 
 /// §7.6.2: an agent whose downstream agent asked for authorization passes the

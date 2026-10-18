@@ -190,31 +190,122 @@ impl SyncCollector {
     /// closing the queue properly, we detect it and avoid blocking forever
     /// (CB-3). The executor is borrowed, not taken: when it runs inline, the
     /// caller drives it to its end after the collection returns.
+    #[cfg(test)]
     pub(crate) async fn collect_events(
         &self,
         mut events: CollectedEvents,
         task_id: TaskId,
         executor: &mut crate::handler::messaging::WatchedExecutor,
     ) -> ServerResult<Collected> {
-        let mut state = CollectState {
+        let mut state = self.collect_state(&task_id).await?;
+        let mut executor_done = false;
+        self.run(
+            &mut events,
+            &task_id,
+            executor,
+            &mut state,
+            &mut executor_done,
+            true,
+        )
+        .await?;
+        Ok(self.answer(&task_id, &mut state))
+    }
+
+    /// [`collect_events`](Self::collect_events), answering on `answer`, and
+    /// then, when the answer was an interrupted state, folding the
+    /// executor's later events into the store until the task ends or the
+    /// queue closes.
+    ///
+    /// Spec §7.6.1: an agent that receives the credential an
+    /// `AUTH_REQUIRED` asked for out of band "MAY immediately continue Task
+    /// processing", and a client then follows the task by `GetTask` or a
+    /// subscription (§7.6.2). Until 2026-10-18 nothing read the queue after
+    /// a blocking send answered: every event after the interrupted state
+    /// failed with "no active receivers", and the stored task stayed at
+    /// `AUTH_REQUIRED` for good.
+    pub(crate) async fn collect_then_follow(
+        &self,
+        mut events: CollectedEvents,
+        task_id: TaskId,
+        executor: &mut crate::handler::messaging::WatchedExecutor,
+        answer: tokio::sync::oneshot::Sender<ServerResult<Collected>>,
+    ) {
+        let mut state = match self.collect_state(&task_id).await {
+            Ok(state) => state,
+            Err(e) => {
+                let _ = answer.send(Err(e));
+                return;
+            }
+        };
+        let mut executor_done = false;
+        if let Err(e) = self
+            .run(
+                &mut events,
+                &task_id,
+                executor,
+                &mut state,
+                &mut executor_done,
+                true,
+            )
+            .await
+        {
+            let _ = answer.send(Err(e));
+            return;
+        }
+        let interrupted = state.task.status.state.is_interrupted();
+        // The caller may have gone; what was collected is stored either way.
+        let _ = answer.send(Ok(self.answer(&task_id, &mut state)));
+        if !interrupted {
+            return;
+        }
+        if let Err(_e) = self
+            .run(
+                &mut events,
+                &task_id,
+                executor,
+                &mut state,
+                &mut executor_done,
+                false,
+            )
+            .await
+        {
+            trace_warn!(
+                task_id = %task_id,
+                error = %_e,
+                "storing a task's events after its interrupted state failed"
+            );
+        }
+        self.spawn_push_delivery(task_id, std::mem::take(&mut state.push_events));
+    }
+
+    /// The task as stored, to fold events into.
+    async fn collect_state(&self, task_id: &TaskId) -> ServerResult<CollectState> {
+        Ok(CollectState {
             task: self
                 .task_store
-                .get(&task_id)
+                .get(task_id)
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?,
             first_message: None,
             saw_task_shaped_event: false,
             push_events: Vec::new(),
-            cancel: self.executor_token(&task_id).await,
-        };
+            cancel: self.executor_token(task_id).await,
+        })
+    }
 
-        // Pin the executor handle so we can poll it alongside the reader.
-        // When the executor finishes (or panics), we'll drain remaining events
-        // and then return, rather than blocking forever.
-        let mut executor_done = false;
-
+    /// Folds events into `state` until the task is terminal, or interrupted
+    /// when `stop_at_interrupted`, or the queue closes.
+    async fn run(
+        &self,
+        events: &mut CollectedEvents,
+        task_id: &TaskId,
+        executor: &mut crate::handler::messaging::WatchedExecutor,
+        state: &mut CollectState,
+        executor_done: &mut bool,
+        stop_at_interrupted: bool,
+    ) -> ServerResult<()> {
         loop {
-            if executor_done {
+            if *executor_done {
                 // Executor finished — drain any remaining buffered events.
                 // Bounded: everything the executor wrote is already in the
                 // queue, so the only thing this can wait on is the queue
@@ -225,10 +316,10 @@ impl SyncCollector {
                     .await
                     .map(|e| e.map(crate::streaming::event_queue::unshare))
                 {
-                    Ok(Some(event)) => self.fold(event, &task_id, &mut state).await?,
+                    Ok(Some(event)) => self.fold(event, task_id, state).await?,
                     Ok(None) => break,
                     Err(_elapsed) => {
-                        self.on_drain_timeout(&task_id);
+                        self.on_drain_timeout(task_id);
                         break;
                     }
                 }
@@ -237,25 +328,31 @@ impl SyncCollector {
                     biased;
                     event = events.recv() => {
                         match event.map(crate::streaming::event_queue::unshare) {
-                            Some(event) => self.fold(event, &task_id, &mut state).await?,
+                            Some(event) => self.fold(event, task_id, state).await?,
                             None => break,
                         }
                     }
                     returned = &mut *executor => {
-                        executor_done = true;
-                        let folded = self.on_executor_finished(returned, &task_id, &mut state).await;
-                        self.unless_superseded(folded, &task_id, &mut state).await?;
+                        *executor_done = true;
+                        let folded = self.on_executor_finished(returned, task_id, state).await;
+                        self.unless_superseded(folded, task_id, state).await?;
                     }
                 }
             }
 
             // Per Section 3.2.2: blocking SendMessage MUST return when the task
             // reaches a terminal OR interrupted state (INPUT_REQUIRED, AUTH_REQUIRED).
-            if state.task.status.state.is_terminal() || state.task.status.state.is_interrupted() {
+            let task_state = state.task.status.state;
+            if task_state.is_terminal() || (stop_at_interrupted && task_state.is_interrupted()) {
                 break;
             }
         }
+        Ok(())
+    }
 
+    /// The answer for what `state` holds: the task, or the agent's only
+    /// message. Hands the buffered events to webhook delivery.
+    fn answer(&self, task_id: &TaskId, state: &mut CollectState) -> Collected {
         // Deliver the buffered events to registered webhooks from a spawned
         // task, so a slow or hanging webhook cannot delay the response we are
         // about to return. Ordering and the 30s budget are preserved inside
@@ -268,12 +365,12 @@ impl SyncCollector {
         let direct_message = if state.saw_task_shaped_event {
             None
         } else {
-            state.first_message
+            state.first_message.take()
         };
-        Ok(Collected {
-            task: state.task,
+        Collected {
+            task: state.task.clone(),
             direct_message,
-        })
+        }
     }
 
     /// The running executor's cancellation token, if it is still registered.

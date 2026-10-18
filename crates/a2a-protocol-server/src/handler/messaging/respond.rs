@@ -200,12 +200,11 @@ impl RequestHandler {
         self.in_flight
             .executors()
             .spawn(crate::rpc_span::in_current_span(tenant.scope(async move {
-                let result = collector
-                    .collect_events(events, task.id, &mut executor)
+                // Answers at a terminal or interrupted state, and after an
+                // interrupted one goes on storing the executor's events.
+                collector
+                    .collect_then_follow(events, task.id, &mut executor, answer)
                     .await;
-                // The caller may have gone; the collection is done and
-                // persisted either way.
-                let _ = answer.send(result);
                 executor.finish().await;
             })));
         let collected = collected.await.map_err(|_| {
