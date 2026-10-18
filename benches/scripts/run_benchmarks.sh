@@ -118,7 +118,7 @@ cat > "$SUMMARY_FILE" <<EOF
 {
   "language": "rust",
   "sdk": "a2a-protocol-sdk",
-  "version": "0.5.0",
+  "version": "$(grep -m1 '^version' "$REPO_ROOT/crates/a2a-protocol-sdk/Cargo.toml" | cut -d'"' -f2)",
   "timestamp": "$TIMESTAMP",
   "rust_version": "$(rustc --version)",
   "platform": "$(uname -s)-$(uname -m)",

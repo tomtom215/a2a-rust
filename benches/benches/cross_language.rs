@@ -7,22 +7,22 @@
 
 //! Canonical-workload benchmarks for this SDK.
 //!
-//! These measure **this SDK only**, on workloads defined by the shared JSON
-//! fixtures in `benches/cross_language/` so that an equivalent run in another
-//! language would be driving the same payloads. No such equivalent run exists
-//! in this repository, and nothing here compares languages — the name is
-//! historical.
+//! These measure **this SDK only**, and nothing here compares languages — the
+//! name is historical. `benches/cross_language/` holds JSON fixtures written
+//! for a cross-language run; these benchmarks do not read them, and build
+//! their payloads in Rust (`fixtures`) instead.
 //!
 //! The workloads:
 //!
-//! 1. **echo_roundtrip** — Send a fixed 256-byte text message, receive the
-//!    echoed response. Measures full HTTP round-trip including ser/de.
+//! 1. **echo_roundtrip** — Send a 256-byte text message to a local JSON-RPC
+//!    echo agent and receive the response: the full HTTP round trip,
+//!    serialization included.
 //!
-//! 2. **stream_10_events** — Send a message that produces exactly 10 stream
-//!    events (5 status updates + 5 artifact updates), drain all events.
+//! 2. **stream_events** — Send a streaming message whose executor emits 3
+//!    events (`Working`, an artifact update, `Completed`) and drain them.
 //!
-//! 3. **serialize_agent_card** — Serialize a reference AgentCard (identical
-//!    JSON structure across all SDKs) 10,000 times.
+//! 3. **serialize_agent_card** — Serialize, deserialize and round-trip the
+//!    `fixtures::agent_card` card, as many times as Criterion chooses.
 //!
 //! 4. **concurrent_50_sends** — Fire 50 concurrent send-message requests
 //!    against a local echo server and wait for all responses.
@@ -69,9 +69,8 @@ fn rt() -> tokio::runtime::Runtime {
         .expect("build tokio runtime")
 }
 
-/// The canonical 256-byte payload used across all language benchmarks.
+/// A 256-byte text payload.
 fn canonical_payload() -> String {
-    // Exactly 256 ASCII characters — same across every SDK benchmark.
     "A".repeat(256)
 }
 

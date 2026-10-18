@@ -2,8 +2,8 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Counting global allocator (feature `alloc-count`), identical in both agents.
-//! Every `ALLOC_REPORT_MS` it prints `allocs=<n> bytes=<n>` cumulative totals to
-//! stderr; allocations per request = Δallocs / Δrequests from the load run.
+//! Every 500 ms `spawn_reporter`'s thread prints `allocs=<n> bytes=<n>`
+//! cumulative totals to stderr; allocations per request = Δallocs / Δrequests from the load run.
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 

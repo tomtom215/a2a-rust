@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
-# Usage: run_acts.sh <sdk-root> <ITK_SDK_REPO> [extra build timeout]
+# Usage: run_itk.sh <sdk-root> <ITK_SDK_REPO>   (ITK_CHECKOUT must name an a2a-itk checkout)
 # Mirrors the SDK's own itk/run_itk.sh shim; differences: host networking
 # (sandbox proxy), prebuilt image, a2a-itk pinned to b57c5332.
 set -e

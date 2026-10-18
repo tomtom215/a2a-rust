@@ -146,15 +146,6 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness still pins `=0.14.1`.
-- **Housekeeping (2026-10-15 README review):**
-  `benches/sdk-comparison/scripts/run_itk.sh`'s usage header names
-  `run_acts.sh`, and both advertise a third argument neither reads;
-  `benches/scripts/run_benchmarks.sh` writes `"version": "0.5.0"`;
-  `benches/benches/cross_language.rs`'s doc comment describes events the code
-  does not have; `alloc_count.rs` names an `ALLOC_REPORT_MS` that does not
-  exist; `.github/dependabot.yml` cites PROVENANCE §3.3 for the exemption
-  in §3.2; the SDK's `Cargo.toml` says the client verifies nothing under
-  `signing`, though card discovery can verify signatures.
 
 ## Waivers and their removal tests
 

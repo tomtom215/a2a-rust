@@ -29,8 +29,9 @@ categories             = ["network-programming", "web-programming", "api-binding
 default = ["tls-rustls", "tracing", "webhook"]
 ## Make `a2a_protocol_types::signing` available across the three crates.
 ##
-## Signing and verification are primitives you call, not behaviour the server or
-## client performs on your behalf — see those crates' own `signing` entries.
+## Signing is a primitive you call. Verification is too, except that card
+## discovery verifies a fetched card's signatures when given the keys to trust
+## (`CardFetchOptions::with_signature_keys`); see the client's `signing` entry.
 signing = ["a2a-protocol-types/signing", "a2a-protocol-server/signing", "a2a-protocol-client/signing"]
 ## Structured logging via the `tracing` crate, in the client and server (on by
 ## default).
