@@ -43,8 +43,10 @@ The server terminates TLS on its own listener with `tls-rustls`:
 `Server::with_tls_pem` takes a certificate chain and key, and `Server::with_tls`
 takes a `rustls::ServerConfig` as built, so a configuration that requires
 client certificates gives mutual TLS on the HTTP bindings as it does on gRPC
-(`GrpcDispatcher::with_tls`). The dispatchers do not see the client
-certificate; authenticate the caller with an interceptor as well. See
+(`GrpcDispatcher::with_tls`). The client certificate reaches the
+interceptors on every binding, and `MutualTlsAuthInterceptor` names the
+caller from it ([Authentication](../building-agents/authentication.md#mutual-tls-the-client-certificate-names-the-caller));
+until 2026-10-18 the HTTP dispatchers did not see it. See
 [Production](./production.md) for the setup. A reverse proxy in front remains
 a fine choice when it already manages your certificates.
 

@@ -148,6 +148,48 @@ let interceptor = JwtAuthInterceptor::new(
 # }
 ```
 
+### Mutual TLS: the client certificate names the caller
+
+With TLS on the listener and a rustls configuration whose client verifier
+trusts your CAs (`rustls::server::WebPkiClientVerifier`, passed to
+`Server::with_tls` or `WebSocketDispatcher::with_tls`; for gRPC,
+`ServerTlsConfig::client_ca_root`), the certificate a client presents
+reaches the interceptors as `CallContext::peer_certificate`, the DER of its
+leaf. `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) names the
+caller from it and refuses a call without one (`401`, `WWW-Authenticate:
+MutualTLS`; gRPC `UNAUTHENTICATED`):
+
+```rust,no_run
+use a2a_protocol_server::auth::MutualTlsAuthInterceptor;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+// `mtls:sha256:<fingerprint>`: exact, needs no parser, changes on renewal.
+let by_fingerprint = MutualTlsAuthInterceptor::new();
+
+// `mtls:<name>` from your own mapping; `None` refuses the certificate. To
+// name callers by subject, parse `der` with the X.509 crate you trust.
+let by_name = MutualTlsAuthInterceptor::with_names(|der| {
+    (der.len() > 0).then(|| "billing-agent".to_owned())
+});
+# let _ = by_fingerprint;
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_interceptor(by_name)
+    .build()?;
+# let _ = handler;
+# Ok(())
+# }
+```
+
+The handshake verifies the certificate; the interceptor only names it. A
+verifier that also admits clients without one
+(`allow_unauthenticated()`, `client_auth_optional(true)`) leaves the refusal
+to the interceptor, so the same listener can serve the agent card to anyone.
+Behind a proxy that terminates TLS, the listener sees the proxy's handshake,
+not the client's, and there is no client certificate to read.
+
 ### Security properties
 
 - **Only HS256/RS256/ES256 are accepted.** `alg: none` and any unlisted

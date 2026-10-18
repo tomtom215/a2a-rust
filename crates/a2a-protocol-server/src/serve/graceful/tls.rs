@@ -27,7 +27,13 @@ impl Server {
     /// `config` is used as built, client authentication included, so its
     /// crypto provider is the one it was built with. For a certificate and
     /// key in PEM files, [`with_tls_pem`](Self::with_tls_pem) builds one.
-    /// The dispatchers do not see a client certificate.
+    /// When the client presents a certificate, each of the connection's
+    /// requests carries it as a [`PeerCertificate`](crate::PeerCertificate)
+    /// extension, which the dispatchers pass to interceptors as
+    /// [`CallContext::peer_certificate`](crate::CallContext::peer_certificate);
+    /// [`MutualTlsAuthInterceptor`](crate::auth::MutualTlsAuthInterceptor)
+    /// names the caller from it. Until 2026-10-18 the dispatchers did not see
+    /// it.
     #[must_use]
     pub fn with_tls(mut self, config: rustls::ServerConfig) -> Self {
         self.tls = Some(Tls::new(config, &[b"h2", b"http/1.1"]));

@@ -140,9 +140,9 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   the Go interop script has not been re-run since this branch's grpc and
   dependency updates.
 - **Control map (2026-10-18 review):** of the 13 `partial` rows, four
-  have gaps engineering could close: ASI07, the HTTP dispatchers naming a
-  caller from a mutual-TLS client certificate (needs an X.509 parser, a
-  new dependency); AIA-14-4e and ASI10, a halt that persists and crosses
+  had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
+  caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
+  new dependency); still open are AIA-14-4e and ASI10, a halt that persists and crosses
   replicas; ASI08, G1-B's lease; ASI03, the originating principal carried
   on delegated calls. The rest, and all 19 `integrator` rows, are split
   by nature (reviewed, unchanged).

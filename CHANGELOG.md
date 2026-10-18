@@ -214,6 +214,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A mutual-TLS client certificate names the caller, on every binding**
+  (server; ADR 0018; OWASP ASI07). The HTTP `Server`, the WebSocket
+  listener and gRPC carry the leaf certificate a client presented in a
+  mutual-TLS handshake to the interceptors. It is
+  `CallContext::peer_certificate`, through the `PeerCertificate` request
+  extension and the `:peer-certificate` headers-map key. Until now the
+  dispatchers never saw it, so mutual TLS admitted a connection without
+  naming who made it. `auth::MutualTlsAuthInterceptor` (`tls-rustls` or
+  `grpc-tls`) names the caller `mtls:sha256:<fingerprint>`, or
+  `mtls:<name>` through `with_names`, and refuses a call without a
+  certificate (`401`, `WWW-Authenticate: MutualTLS`; gRPC
+  `UNAUTHENTICATED`). No new dependency: `tls-rustls` and `grpc-tls` now
+  name `ring`, which rustls already linked.
 - **`CombinedDispatcher`: JSON-RPC and HTTP+JSON on one listener**
   (server). Serving both bindings on one port took a hand-written hyper
   accept loop; four examples each carried one, outside `Server`'s timeouts,

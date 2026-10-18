@@ -64,7 +64,7 @@
 //! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], [`CombinedDispatcher`] (both on one listener), `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
-//! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature) |
+//! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature), `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) |
 //! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
@@ -192,7 +192,9 @@ pub use auth::{
     BearerTokenAuthInterceptor,
 };
 pub use builder::RequestHandlerBuilder;
-pub use call_context::{CallContext, PEER_ADDR_KEY, PeerAddr};
+pub use call_context::{
+    CallContext, PEER_ADDR_KEY, PEER_CERTIFICATE_KEY, PeerAddr, PeerCertificate,
+};
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]

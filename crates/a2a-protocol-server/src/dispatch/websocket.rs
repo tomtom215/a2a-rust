@@ -511,6 +511,7 @@ impl WebSocketDispatcher {
                 .handshake(stream, Some(self.handshake_timeout))
                 .await
                 .map_err(WsError::Tls)?;
+            let certificate = crate::tls::peer_certificate(session.get_ref().1);
             // Spec §8.1 under TLS: the card request is read, not peeked, and
             // the bytes are replayed to whichever side takes the connection.
             let (card, seen) = card::read_card_request(&mut session, self.handshake_timeout).await;
@@ -519,7 +520,7 @@ impl WebSocketDispatcher {
                 card::serve(io, super::well_known::card_handler(&self.handler)).await;
                 return Ok(());
             }
-            return self.upgrade(io, peer, closing).await;
+            return self.upgrade(io, peer, certificate, closing).await;
         }
 
         // Spec §8.1: the agent card, at its well-known path, on this listener
@@ -528,15 +529,17 @@ impl WebSocketDispatcher {
             card::serve(stream, super::well_known::card_handler(&self.handler)).await;
             return Ok(());
         }
-        self.upgrade(WsIo::Plain(stream), peer, closing).await
+        self.upgrade(WsIo::Plain(stream), peer, None, closing).await
     }
 
-    /// Runs the WebSocket handshake on `io`, then serves the connection.
+    /// Runs the WebSocket handshake on `io`, then serves the connection;
+    /// `certificate` is the one the client presented in a TLS handshake.
     #[allow(clippy::result_large_err)]
     async fn upgrade(
         &self,
         io: WsIo,
         peer: Option<SocketAddr>,
+        certificate: Option<crate::PeerCertificate>,
         closing: &tokio_util::sync::CancellationToken,
     ) -> Result<(), WsError> {
         // Cap message/frame sizes at the protocol level so oversized input is
@@ -556,6 +559,7 @@ impl WebSocketDispatcher {
             check_a2a_version(req, require_version)?;
             let mut headers = extract_upgrade_headers(req);
             super::record_peer_addr(&mut headers, peer);
+            super::record_peer_certificate(&mut headers, certificate.as_ref().map(|c| &*c.0));
             upgrade_headers = Some(headers);
             Ok(resp)
         };

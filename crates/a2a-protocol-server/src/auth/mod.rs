@@ -63,11 +63,15 @@ mod credentials;
 pub(crate) mod declared;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+mod mtls;
 pub mod throttle;
 
 pub use credentials::CredentialSet;
 #[cfg(feature = "auth-jwt")]
 pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+pub use mtls::MutualTlsAuthInterceptor;
 pub use throttle::{AuthFailureThrottle, AuthFailureThrottleConfig};
 
 /// The challenge the bearer-token interceptors send with a `401`.

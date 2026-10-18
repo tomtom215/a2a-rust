@@ -333,6 +333,7 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for CallHeaders {
                 .map(|info| info.0)
         });
         super::record_peer_addr(&mut headers, peer);
+        super::record_peer_certificate(&mut headers, super::certificate_of(&parts.extensions));
         std::future::ready(Ok(Self(headers)))
     }
 }

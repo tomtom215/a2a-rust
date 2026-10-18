@@ -14,6 +14,7 @@ pub mod cors;
 pub mod grpc;
 pub mod hsts;
 pub mod jsonrpc;
+mod peer;
 pub mod rest;
 mod version;
 #[cfg(feature = "websocket")]
@@ -27,6 +28,7 @@ pub use cors::CorsConfig;
 pub use grpc::{GrpcConfig, GrpcDispatcher};
 pub use hsts::Hsts;
 pub use jsonrpc::JsonRpcDispatcher;
+pub(crate) use peer::{certificate_of, peer_of, record_peer_addr, record_peer_certificate};
 pub use rest::RestDispatcher;
 pub use version::{A2A_VERSION_METADATA_KEY, validate_version_metadata};
 pub(crate) use version::{requested_version, validate_version_header};
@@ -252,21 +254,6 @@ pub(crate) fn add_auth_challenge(headers: &mut hyper::HeaderMap, err: &crate::er
     headers.insert(hyper::header::WWW_AUTHENTICATE, value);
 }
 
-/// Records the address of the connection a call arrived on in its headers
-/// map, under [`PEER_ADDR_KEY`](crate::call_context::PEER_ADDR_KEY), where
-/// [`CallContext::peer_addr`](crate::CallContext::peer_addr) reads it.
-pub(crate) fn record_peer_addr(
-    headers: &mut std::collections::HashMap<String, String>,
-    peer: Option<std::net::SocketAddr>,
-) {
-    if let Some(addr) = peer {
-        headers.insert(
-            crate::call_context::PEER_ADDR_KEY.to_owned(),
-            addr.to_string(),
-        );
-    }
-}
-
 /// A request's header fields by name, as the handler reads them.
 ///
 /// Names are lowercase, as `http` stores them. A field sent as several lines
@@ -304,14 +291,6 @@ pub(crate) fn field_value(headers: &hyper::HeaderMap, name: &str) -> Option<Stri
         .filter_map(|line| line.to_str().ok())
         .collect();
     (!lines.is_empty()).then(|| lines.join(separator))
-}
-
-/// The [`PeerAddr`](crate::call_context::PeerAddr) a server attached to a
-/// request, if any.
-pub(crate) fn peer_of(extensions: &hyper::http::Extensions) -> Option<std::net::SocketAddr> {
-    extensions
-        .get::<crate::call_context::PeerAddr>()
-        .map(|peer| peer.0)
 }
 
 #[cfg(test)]

@@ -610,14 +610,17 @@ id = "ASI07"
 source = "owasp-asi"
 provision = "ASI07 Insecure Inter-Agent Communication"
 requirement = "Messages between agents are authenticated and protected against interception and forgery."
-sdk = "TLS on every client transport and on the server's HTTP and gRPC listeners, mutual TLS on both, authenticated calls, signed agent cards, and signed messages and artifacts (the provenance extension) that a receiver can verify end to end, across intermediaries."
+sdk = "TLS on every client transport and on the server's HTTP, WebSocket and gRPC listeners, mutual TLS on each with the client certificate naming the caller (MutualTlsAuthInterceptor), authenticated calls, signed agent cards, and signed messages and artifacts (the provenance extension) that a receiver can verify end to end, across intermediaries."
 status = "partial"
 tests = [
   "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
   "crates/a2a-protocol-types/src/provenance/sign/tests.rs::a_signed_message_verifies_under_either_algorithm",
   "crates/a2a-protocol-server/tests/serve_tls.rs::a_listener_requiring_client_certificates_serves_only_clients_with_one",
+  "crates/a2a-protocol-server/tests/mtls_caller_identity.rs::the_client_certificate_names_the_caller_over_https",
+  "crates/a2a-protocol-server/tests/mtls_caller_identity.rs::the_client_certificate_names_the_caller_over_wss",
+  "crates/a2a-protocol-sdk/tests/grpc_mtls_caller_e2e.rs::the_client_certificate_names_the_caller_over_grpc",
 ]
-gap = "Signing messages and artifacts (the provenance extension) is opt-in, and verifying them is the receiver's call; unsigned content can still be altered by an intermediary that terminates TLS. The HTTP dispatchers do not see a client certificate, so on HTTP mutual TLS admits a connection but does not name the caller."
+gap = "Signing messages and artifacts (the provenance extension) is opt-in, and verifying them is the receiver's call; unsigned content can still be altered by an intermediary that terminates TLS. Behind a TLS-terminating proxy the listener sees no client certificate, so mutual TLS names the caller only on a listener that terminates TLS itself (ADR 0018)."
 
 [[control]]
 id = "ASI08"

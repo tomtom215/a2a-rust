@@ -48,6 +48,28 @@
 //!
 //! Behind a reverse proxy this is the proxy's address. The client's is in
 //! `x-forwarded-for`, which only the deployment knows how far to trust.
+//!
+//! # The peer's certificate
+//!
+//! [`peer_certificate`](CallContext::peer_certificate) is the certificate
+//! the client presented in a mutual-TLS handshake on the listener itself,
+//! the leaf of its chain, DER-encoded. The TLS configuration's client
+//! verifier has already checked it against the CAs it trusts; this is the
+//! certificate it accepted. It travels under [`PEER_CERTIFICATE_KEY`],
+//! base64, for the same reason the address does, and is set from:
+//!
+//! - JSON-RPC and REST: the [`PeerCertificate`] request extension, which
+//!   [`Server::with_tls`](crate::Server) inserts on a connection whose
+//!   client presented one.
+//! - The axum router: [`PeerCertificate`], when the server it runs on
+//!   inserts it.
+//! - WebSocket: its TLS listener's handshake. gRPC: tonic's, under
+//!   `grpc-tls`.
+//!
+//! [`MutualTlsAuthInterceptor`](crate::auth::MutualTlsAuthInterceptor) names
+//! the caller from it. A TLS-terminating proxy in front of the listener
+//! means there is none: the proxy's own handshake is the one the listener
+//! sees.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -71,6 +93,17 @@ pub const PEER_ADDR_KEY: &str = ":peer-addr";
 /// [module docs](self).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PeerAddr(pub SocketAddr);
+
+/// The headers-map key under which a binding records the client's
+/// mutual-TLS certificate, standard base64 of its DER encoding; see
+/// [`CallContext::peer_certificate`].
+pub const PEER_CERTIFICATE_KEY: &str = ":peer-certificate";
+
+/// The certificate a client presented in the TLS handshake of the
+/// connection a request arrived on, DER-encoded, as an HTTP request
+/// extension; see the [module docs](self).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PeerCertificate(pub std::sync::Arc<[u8]>);
 
 /// Metadata about the current server-side method call.
 ///
@@ -280,6 +313,20 @@ impl CallContext {
         self.http_headers.get(PEER_ADDR_KEY)?.parse().ok()
     }
 
+    /// The DER encoding of the certificate the client presented in a
+    /// mutual-TLS handshake on this listener, when it presented one; see the
+    /// [module docs](self).
+    ///
+    /// Read from the headers map's [`PEER_CERTIFICATE_KEY`] entry; `None`
+    /// when there is none or it is not base64.
+    #[must_use]
+    pub fn peer_certificate(&self) -> Option<Vec<u8>> {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD
+            .decode(self.http_headers.get(PEER_CERTIFICATE_KEY)?)
+            .ok()
+    }
+
     /// The task this request names, as the caller sent it: the `id` of
     /// `GetTask`, `CancelTask` and `SubscribeToTask`, the `taskId` of a
     /// push-config operation, or the `taskId` of a `SendMessage` continuing
@@ -366,6 +413,17 @@ impl CallContext {
     #[must_use]
     pub fn with_peer_addr(self, addr: SocketAddr) -> Self {
         self.with_http_header(PEER_ADDR_KEY, addr.to_string())
+    }
+
+    /// Sets the certificate the client presented (the
+    /// [`PEER_CERTIFICATE_KEY`] entry of the headers map), DER-encoded.
+    #[must_use]
+    pub fn with_peer_certificate(self, der: &[u8]) -> Self {
+        use base64::Engine as _;
+        self.with_http_header(
+            PEER_CERTIFICATE_KEY,
+            base64::engine::general_purpose::STANDARD.encode(der),
+        )
     }
 
     /// Sets the HTTP headers map (replacing any existing headers).

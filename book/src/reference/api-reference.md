@@ -348,6 +348,7 @@ are rustdoc's job.
 | `CORS_ALLOW_ALL` | CORS Access-Control-Allow-Origin header value for public agent cards |
 | `A2A_VERSION_METADATA_KEY` | The service parameter naming the A2A protocol version, spelled the way a non-HTTP binding carries it |
 | `PEER_ADDR_KEY` | The headers-map key (`":peer-addr"`) under which a binding records the connection's address for `CallContext::peer_addr` |
+| `PEER_CERTIFICATE_KEY` | The headers-map key (`":peer-certificate"`) under which a binding records the client's mutual-TLS certificate, base64 DER, for `CallContext::peer_certificate` |
 
 ### Core Types
 
@@ -452,6 +453,7 @@ are rustdoc's job.
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
 | `AuthFailureThrottle` | Refuses a peer whose credentials were refused too often, until its window ends |
 | `PeerAddr` | Request extension carrying the connection's address, which the dispatchers copy to `CallContext::peer_addr` |
+| `PeerCertificate` | Request extension carrying the client's mutual-TLS certificate (DER), which the dispatchers pass to `CallContext::peer_certificate` |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
 | `CallOutcome` | How a call ended — succeeded, failed with the error sent, or cancelled — as `ServerInterceptor::on_complete` is told |
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |

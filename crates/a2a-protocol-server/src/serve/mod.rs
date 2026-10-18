@@ -187,11 +187,14 @@ pub async fn serve(
 }
 
 /// The per-connection service: dispatches each request with its connection's
-/// [`PeerAddr`](crate::PeerAddr), counted in flight when tracked (audit O10).
+/// [`PeerAddr`](crate::PeerAddr), and its client's
+/// [`PeerCertificate`](crate::PeerCertificate) when its TLS handshake carried
+/// one, counted in flight when tracked (audit O10).
 fn service<D: Dispatcher>(
     dispatcher: Arc<D>,
     requests: Option<connections::Requests>,
     peer: SocketAddr,
+    certificate: Option<crate::PeerCertificate>,
 ) -> impl hyper::service::Service<
     hyper::Request<Incoming>,
     Response = DispatchResponse,
@@ -200,6 +203,9 @@ fn service<D: Dispatcher>(
 > + Clone {
     hyper::service::service_fn(move |mut req: hyper::Request<Incoming>| {
         req.extensions_mut().insert(crate::PeerAddr(peer));
+        if let Some(certificate) = &certificate {
+            req.extensions_mut().insert(certificate.clone());
+        }
         let d = Arc::clone(&dispatcher);
         let requests = requests.clone();
         async move {

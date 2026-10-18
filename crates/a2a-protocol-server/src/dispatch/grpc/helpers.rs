@@ -54,6 +54,18 @@ pub(super) fn request_headers<T>(
 ) -> Result<HashMap<String, String>, Status> {
     let mut headers = validated_metadata(request.metadata(), require_version)?;
     crate::dispatch::record_peer_addr(&mut headers, request.remote_addr());
+    // The client's mutual-TLS certificate, the leaf of its chain, when the
+    // listener serves TLS and the client presented one.
+    #[cfg(feature = "grpc-tls")]
+    let certificate = request.peer_certs();
+    #[cfg(feature = "grpc-tls")]
+    let leaf = certificate
+        .as_ref()
+        .and_then(|chain| chain.first())
+        .map(AsRef::as_ref);
+    #[cfg(not(feature = "grpc-tls"))]
+    let leaf = None;
+    crate::dispatch::record_peer_certificate(&mut headers, leaf);
     Ok(headers)
 }
 

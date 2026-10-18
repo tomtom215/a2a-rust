@@ -7,8 +7,9 @@
 //! R12).
 //!
 //! A caller is named by how it authenticated as well as by what it
-//! presented: `api-key:<label>`, `bearer:<label>`, or
-//! `jwt:<issuer>:<subject>`. A JWT `sub` is unique only within its issuer
+//! presented: `api-key:<label>`, `bearer:<label>`,
+//! `jwt:<issuer>:<subject>`, or `mtls:<name>` for a mutual-TLS client
+//! certificate. A JWT `sub` is unique only within its issuer
 //! (RFC 7519 §4.1.2), and a key's label is the deployer's to choose, so
 //! without the scheme and the issuer two callers could share a name, and
 //! with it a task partition, a rate-limit budget, an approver allowlist
@@ -61,6 +62,28 @@ pub fn jwt(issuer: Option<&str>, subject: &str) -> String {
     }
     out.push(':');
     out.push_str(subject);
+    out
+}
+
+/// The identity of a caller whose mutual-TLS certificate is named `name`
+/// (by default its [`certificate_fingerprint`]).
+#[must_use]
+pub fn mtls(name: &str) -> String {
+    format!("mtls:{name}")
+}
+
+/// A certificate's name when nothing else names it: `sha256:` and the
+/// SHA-256 digest of its DER encoding, in lowercase hex.
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+#[must_use]
+pub fn certificate_fingerprint(der: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let digest = ring::digest::digest(&ring::digest::SHA256, der);
+    let mut out = String::with_capacity(7 + 64);
+    out.push_str("sha256:");
+    for byte in digest.as_ref() {
+        let _ = write!(out, "{byte:02x}");
+    }
     out
 }
 

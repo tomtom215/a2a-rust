@@ -62,6 +62,14 @@ impl Tls {
     }
 }
 
+/// The certificate the client presented in `session`'s handshake, the leaf
+/// of its chain; `None` when it presented none. With a client verifier in
+/// the configuration, it is one the verifier accepted.
+pub fn peer_certificate(session: &rustls::ServerConnection) -> Option<crate::PeerCertificate> {
+    let leaf = session.peer_certificates()?.first()?;
+    Some(crate::PeerCertificate(std::sync::Arc::from(leaf.as_ref())))
+}
+
 /// A server configuration from a PEM certificate chain (leaf first) and its
 /// private key (PKCS#8, PKCS#1 or SEC1): rustls' safe defaults (TLS 1.2 and
 /// 1.3) on the `ring` provider, chosen explicitly so that a binary linking

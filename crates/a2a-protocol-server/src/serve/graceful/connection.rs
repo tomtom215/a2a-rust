@@ -36,15 +36,17 @@ pub fn spawn_connection(
     let header_read_timeout = config.header_read_timeout;
 
     tokio::spawn(async move {
-        let service = super::super::service(
-            dispatcher,
-            connection.as_ref().map(connections::Connection::requests),
-            peer,
-        );
+        let requests = connection.as_ref().map(connections::Connection::requests);
         #[cfg(feature = "tls-rustls")]
         if let Some(tls) = accepted.tls {
             let result = match tls.handshake(io, header_read_timeout).await {
-                Ok(io) => serve_io(io, service, watcher, header_read_timeout).await,
+                Ok(io) => {
+                    // The leaf of the chain the client verifier accepted, so
+                    // the dispatchers can name the caller from it.
+                    let certificate = crate::tls::peer_certificate(io.get_ref().1);
+                    let service = super::super::service(dispatcher, requests, peer, certificate);
+                    serve_io(io, service, watcher, header_read_timeout).await
+                }
                 Err(_e) => {
                     trace_warn!(error = %_e, "TLS handshake failed");
                     Err(())
@@ -56,6 +58,7 @@ pub fn spawn_connection(
             drop(permit);
             return;
         }
+        let service = super::super::service(dispatcher, requests, peer, None);
         let result = serve_io(io, service, watcher, header_read_timeout).await;
         if let Some(connection) = connection {
             connection.close(result.is_err());

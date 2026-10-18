@@ -39,8 +39,10 @@ tracing = ["dep:tracing"]
 ## (no OpenSSL system dependency). Without this feature the bundled
 ## `HttpPushSender` speaks plaintext HTTP only and fails fast on `https://`.
 ## It also gives `serve::Server` HTTPS on its own listener
-## (`Server::with_tls`, `Server::with_tls_pem`; spec §14).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
+## (`Server::with_tls`, `Server::with_tls_pem`; spec §14), and
+## `auth::MutualTlsAuthInterceptor`, which names a caller from its client
+## certificate (`ring`, already in the graph through rustls).
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
@@ -60,7 +62,7 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## installed as the default (an application that wants `aws-lc-rs` installs
 ## it first). Without this feature the listener is plaintext and TLS is
 ## terminated in front of it.
-grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
+grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls", "dep:ring"]
 ## OpenTelemetry instrumentation, on by default: `OtelMetrics`, and the bridge
 ## that gives each call's span the caller's `traceparent` as its parent. The
 ## OpenTelemetry API only (`opentelemetry`, `tracing-opentelemetry`): what is

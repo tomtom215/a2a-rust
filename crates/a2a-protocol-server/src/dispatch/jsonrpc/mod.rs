@@ -179,6 +179,7 @@ impl JsonRpcDispatcher {
         // this name, so a client cannot supply it.
         headers.insert(":path".to_owned(), req.uri().path().to_owned());
         super::record_peer_addr(&mut headers, super::peer_of(req.extensions()));
+        super::record_peer_certificate(&mut headers, super::certificate_of(req.extensions()));
 
         // Read body with size limit (default 4 MiB).
         let body_bytes = match read_body_limited(

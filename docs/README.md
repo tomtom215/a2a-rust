@@ -47,6 +47,7 @@ is on docs.rs.
 | [0015](adr/0015-audit-trail.md) | Audit Trail | Every call, run, task event and cancel request in a hash chain per tenant, content by digest, signed checkpoints, six-month retention floor, legal holds |
 | [0016](adr/0016-types-generated-from-the-proto.md) | Types Generated from the Proto | The public types are generated from `a2a.proto`, and CI fails on drift |
 | [0017](adr/0017-context-lookup-and-stored-task.md) | Context Lookup and Stored Task | The send's context lookup lists without history and reads the chosen task whole; `RequestContext::stored_task` keeps its meaning |
+| [0018](adr/0018-mutual-tls-caller-identity.md) | Mutual-TLS Caller Identity | Every listener passes the client certificate to the interceptors; `MutualTlsAuthInterceptor` names the caller by fingerprint or a deployment's mapping, with no X.509 parser in the SDK |
 
 ## Audits, measurements and design notes
 
