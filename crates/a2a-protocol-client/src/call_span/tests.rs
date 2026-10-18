@@ -331,6 +331,49 @@ fn a_current_trace_is_the_parent_only_without_a_recorded_span() {
     assert_ne!(sent.trace_id(), ambient.trace_id());
 }
 
+/// A transport that answers every call with one task, naming its system as
+/// told.
+#[cfg(feature = "tracing")]
+struct Named(Option<&'static str>);
+#[cfg(feature = "tracing")]
+impl crate::transport::Transport for Named {
+    fn send_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        _headers: &'a std::collections::HashMap<String, String>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = crate::error::ClientResult<serde_json::Value>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async {
+            Ok(serde_json::json!({"id": "t1", "contextId": "c1",
+                "status": {"state": "TASK_STATE_COMPLETED"}}))
+        })
+    }
+    fn send_streaming_request<'a>(
+        &'a self,
+        _method: &'a str,
+        _params: serde_json::Value,
+        _headers: &'a std::collections::HashMap<String, String>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = crate::error::ClientResult<crate::streaming::EventStream>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Err(crate::error::ClientError::Transport("unused".into())) })
+    }
+    fn rpc_system(&self) -> Option<&'static str> {
+        self.0
+    }
+}
+
 /// A transport given to `with_custom_transport` names its own
 /// `rpc.system.name`, with a retry policy too (the builder reads the name
 /// before wrapping the transport in retries), and the span keeps the agent
@@ -338,47 +381,7 @@ fn a_current_trace_is_the_parent_only_without_a_recorded_span() {
 #[cfg(feature = "tracing")]
 #[test]
 fn a_custom_transport_names_its_system_and_keeps_the_agent() {
-    use crate::transport::Transport;
     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
-
-    struct Named(Option<&'static str>);
-    impl Transport for Named {
-        fn send_request<'a>(
-            &'a self,
-            _method: &'a str,
-            _params: serde_json::Value,
-            _headers: &'a std::collections::HashMap<String, String>,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<Output = crate::error::ClientResult<serde_json::Value>>
-                    + Send
-                    + 'a,
-            >,
-        > {
-            Box::pin(async {
-                Ok(serde_json::json!({"id": "t1", "contextId": "c1",
-                    "status": {"state": "TASK_STATE_COMPLETED"}}))
-            })
-        }
-        fn send_streaming_request<'a>(
-            &'a self,
-            _method: &'a str,
-            _params: serde_json::Value,
-            _headers: &'a std::collections::HashMap<String, String>,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = crate::error::ClientResult<crate::streaming::EventStream>,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            Box::pin(async { Err(crate::error::ClientError::Transport("unused".into())) })
-        }
-        fn rpc_system(&self) -> Option<&'static str> {
-            self.0
-        }
-    }
 
     let card = AgentCard::new(
         "worker",
