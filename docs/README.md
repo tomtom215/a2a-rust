@@ -46,6 +46,7 @@ is on docs.rs.
 | [0014](adr/0014-auth-rejection-status.md) | Auth Rejection Status | A refused credential answers `401`/`403` and gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED`; supersedes ADR 0010's `400` mapping |
 | [0015](adr/0015-audit-trail.md) | Audit Trail | Every call, run, task event and cancel request in a hash chain per tenant, content by digest, signed checkpoints, six-month retention floor, legal holds |
 | [0016](adr/0016-types-generated-from-the-proto.md) | Types Generated from the Proto | The public types are generated from `a2a.proto`, and CI fails on drift |
+| [0017](adr/0017-context-lookup-and-stored-task.md) | Context Lookup and Stored Task | The send's context lookup lists without history and reads the chosen task whole; `RequestContext::stored_task` keeps its meaning |
 
 ## Audits, measurements and design notes
 

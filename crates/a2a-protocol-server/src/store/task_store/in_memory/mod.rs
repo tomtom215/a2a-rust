@@ -24,10 +24,14 @@
 //! |---|---|
 //! | (this file) | Core CRUD operations and `TaskStore` trait impl |
 //! | [`eviction`] | TTL and capacity-based eviction logic |
+//! | [`listing`] | A listed task's copy, with only the history asked for |
 
 mod budget;
 mod erase;
 mod eviction;
+mod listing;
+
+use listing::listed;
 
 pub use budget::TaskBudget;
 
@@ -1246,7 +1250,7 @@ impl TaskStore for InMemoryTaskStore {
                         {
                             return None;
                         }
-                        Some((*key, entry.task.clone()))
+                        Some((*key, listed(&entry.task, params.history_length)))
                     })
                     .take(take)
                     .collect()

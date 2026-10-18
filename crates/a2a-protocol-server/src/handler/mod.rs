@@ -477,6 +477,10 @@ pub enum SendMessageResult {
 }
 
 #[cfg(test)]
+mod context_lookup_cost;
+#[cfg(test)]
+mod context_lookup_tests;
+#[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]
 mod tenant_limits_tests;

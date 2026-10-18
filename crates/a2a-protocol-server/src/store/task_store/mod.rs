@@ -153,6 +153,13 @@ pub trait TaskStore: Send + Sync + 'static {
 
     /// Lists tasks matching the given filter parameters.
     ///
+    /// A store may return each task with only the last `history_length`
+    /// messages of its history (none for `0`), saving the copy of the rest;
+    /// the caller trims to the same length either way, so a store that
+    /// returns whole tasks is correct too. The in-memory stores do this
+    /// since 2026-10-18 (ADR 0017). `include_artifacts` is the caller's to
+    /// apply.
+    ///
     /// # Errors
     ///
     /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.

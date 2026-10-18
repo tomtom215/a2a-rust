@@ -2245,6 +2245,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **A send's context lookup copies one history, not ten** (server; ADR
+  0017). `find_task_by_context` listed up to ten tasks of the context
+  whole, to choose one. It now lists them with `history_length: Some(0)`,
+  which `InMemoryTaskStore` honours while copying (`TaskStore::list` now
+  documents that a store may), and reads the chosen task whole by id. A
+  store that ignores `history_length` lists whole tasks; one of those is
+  used as it is, with no second read. `RequestContext::stored_task` is
+  unchanged: still the stored task, history included. Measured with
+  `context_lookup_cost` (release build, shared 4-vCPU Xeon, medians of 201,
+  three runs each). For ten tasks of 1,024 messages in one context the
+  lookup went from 3.21–3.73 ms to 364–552 µs. For one task it is unchanged
+  within noise: 132–146 µs before, 135–277 µs after.
 - **A streaming send's background processor and SSE forwarder are boxed
   before they are spawned**, so the span, tenant-scope and tracker
   wrappers and tokio's task cell move a pointer rather than ~5.6 KB and

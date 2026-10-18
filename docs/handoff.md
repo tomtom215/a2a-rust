@@ -121,9 +121,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   replica keeps a stored position whose effect it overwrote
   (`store/applied.rs`).
 - **Server:** JSON-RPC and
-  REST on one socket without a hand-written accept loop;
-  `find_task_by_context` clones full history and
-  `RequestContext::stored_task` is `pub`; JSON-RPC parses a request's params
+  REST on one socket without a hand-written accept loop; JSON-RPC parses a request's params
   before the interceptor chain authenticates it (a malformed body is
   refused `-32602` before `401`).
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its

@@ -458,6 +458,16 @@ API decision rather than on effort: its result becomes `RequestContext`'s
 turn, so serving it without history changes what every user-written executor
 sees.
 
+**Fix 3 (2026-10-18, ADR 0017).** The decision kept `stored_task` whole
+and removed the other copies. The lookup lists with `history_length:
+Some(0)`, which the in-memory store honours while copying, and then reads
+the chosen task whole. In `context_lookup_cost` (release build, medians of
+201, three runs) a context of ten tasks at the cap went from 3.21–3.73 ms
+to 364–552 µs. A context of one task is unchanged within noise (132–146 µs
+before, 135–277 µs after): that one copy is the executor's view, and it
+stays. The 511 µs above was measured inside a whole send by a different
+method, so it is not compared with these figures.
+
 The background processor's re-read at `background/mod.rs:84` survives too. It
 is why the refactor did not corrupt anything — it is the reason a continuation
 still accumulates history — and being off the request's critical path it costs
