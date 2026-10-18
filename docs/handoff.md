@@ -30,9 +30,14 @@ only: when something here is done, delete it rather than annotating it.
   authority on the counts. Since 2026-10-18 it also refuses `SUPPORTED` or
   `NOT_SUPPORTED` on anything but a MAY or OPTIONAL: 23 entries had used it
   for a MUST or SHOULD, 12 of them now `TESTED` and 11 `APPLICATION` (each
-  note says which hook the SDK gives). The five PARTIAL entries are
-  unchanged: §3.5.2 MUST, §5.7 MUST, §12.4 MUST, §5.4 SHOULD, §11.1 SHOULD,
-  each waiting on something outside this repository (`docs/upstream/`).
+  note says which hook the SDK gives). Three entries stay PARTIAL, each
+  short of a MUST for a reason outside this repository: §3.5.2 (a lag
+  beyond the in-memory log's 512 events), §5.7 (the specification
+  contradicts itself on an empty `ListTasksResponse.tasks`) and §12.4
+  (agntcy-slim-rpc carries no error details). §5.4 and §11.1 closed on
+  2026-10-18: the SLIMRPC README has the full error table, and §11.1's one
+  exception is a stated, valid reason to set aside a SHOULD (a2a-go). Every
+  NOT_APPLICABLE and APPLICATION entry records a 2026-10-18 review.
 - **Ledger citations drift:** the checker verifies test names, not line
   text, so any edit above a cited line moves its citation silently. After
   editing a cited file, re-derive test lines by name and map
@@ -48,7 +53,7 @@ only: when something here is done, delete it rather than annotating it.
    and `-j 2` takes roughly a minute a mutant; survivors found so far were
    fixed in the branch, and the last local results are in the session
    report, not here.
-2. **APPLICATION entries (33).** 22 were re-examined and kept on
+2. **APPLICATION entries (35).** 22 were re-examined and kept on
    2026-10-18 (each note says why); 11 are card-content, deployment or
    agent-reasoning requirements the SDK only warns about or hands the agent
    (moved from a mistaken `SUPPORTED`). What could still become SDK work:

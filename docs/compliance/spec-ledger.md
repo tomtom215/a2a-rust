@@ -30,27 +30,25 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §2 | 1 |  | 1 | 1 |  | 3 |
 | §3 | 100 | 12 | 21 | 3 | 1 | 137 |
 | §4 | 12 | 1 | 2 |  |  | 15 |
-| §5 | 27 | 2 | 2 | 2 | 2 | 35 |
+| §5 | 28 | 2 | 2 | 2 | 1 | 35 |
 | §7 | 13 | 5 | 1 |  |  | 19 |
 | §8 | 35 | 3 | 7 |  |  | 45 |
 | §9 | 13 |  |  |  |  | 13 |
 | §10 | 6 |  |  |  |  | 6 |
-| §11 | 16 |  | 2 |  | 1 | 19 |
+| §11 | 17 |  | 2 |  |  | 19 |
 | §12 | 15 | 1 | 1 | 1 | 1 | 19 |
 | §13 | 57 | 5 | 7 |  |  | 69 |
 | §14 | 10 | 2 | 3 |  |  | 15 |
 | §A |  |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 88 | 4 | 6 | 8 |  | 106 |
-| **All** | **396** | **35** | **53** | **20** | **5** | **509** |
+| **All** | **398** | **35** | **53** | **20** | **3** | **509** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
-| low | PARTIAL | §5.4 (line 1194) | The binding specification SHOULD provide a similar mapping table showing how each A2A error type is represented in the custom binding's nat… | WebSocket now has an error mapping table (binding spec §5). Remaining: SLIMRPC's vendored upstream table omits -32007/-32008/-32009. |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
-| low | PARTIAL | §11.1 (line 2750) | Content-Type: application/a2a+json SHOULD be used for requests and responses | Since 2026-10-15 (maintainer decision) the server answers application/a2a+json whenever the request states no preference: no Accept, only wildcards or unrelated types, with or without an application/json body; before, those got application/json, so the spec e… |
 | low | PARTIAL | §12.4 (line 3016) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
 
 ## After the release

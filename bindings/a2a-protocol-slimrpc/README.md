@@ -196,6 +196,25 @@ Status codes follow the SLIMRPC specification's own table
 `VersionNotSupportedError`) take A2A §5.4's gRPC code, `FAILED_PRECONDITION`.
 An overload or a rate-limit refusal is `RESOURCE_EXHAUSTED`.
 
+| A2A error (JSON-RPC code) | SLIMRPC status | Source |
+|---|---|---|
+| `JSONParseError` (-32700) | `INTERNAL` | SLIMRPC §6.1 |
+| `InvalidRequestError` (-32600) | `INVALID_ARGUMENT` | SLIMRPC §6.1 |
+| `MethodNotFoundError` (-32601) | `UNIMPLEMENTED` | SLIMRPC §6.1 |
+| `InvalidParamsError` (-32602) | `INVALID_ARGUMENT` | SLIMRPC §6.1 |
+| `InternalError` (-32603) | `INTERNAL` | SLIMRPC §6.1 |
+| `TaskNotFoundError` (-32001) | `NOT_FOUND` | SLIMRPC §6.1 |
+| `TaskNotCancelableError` (-32002) | `FAILED_PRECONDITION` | SLIMRPC §6.1 |
+| `PushNotificationNotSupportedError` (-32003) | `UNIMPLEMENTED` | SLIMRPC §6.1 |
+| `UnsupportedOperationError` (-32004) | `UNIMPLEMENTED` | SLIMRPC §6.1 |
+| `ContentTypeNotSupportedError` (-32005) | `UNIMPLEMENTED` | SLIMRPC §6.1 |
+| `InvalidAgentResponseError` (-32006) | `INTERNAL` | SLIMRPC §6.1 |
+| `ExtendedAgentCardNotConfiguredError` (-32007) | `FAILED_PRECONDITION` | A2A §5.4, gRPC column |
+| `ExtensionSupportRequiredError` (-32008) | `FAILED_PRECONDITION` | A2A §5.4, gRPC column |
+| `VersionNotSupportedError` (-32009) | `FAILED_PRECONDITION` | A2A §5.4, gRPC column |
+
+`status_codes_follow_the_slimrpc_table` in `src/error.rs` pins every row.
+
 Where SLIMRPC differs is error *identity*. gRPC attaches `google.rpc.ErrorInfo`
 to `status.details`; SLIMRPC has no details protobuf, so the spec puts the A2A
 error type name in the message:
