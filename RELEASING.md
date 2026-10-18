@@ -109,6 +109,15 @@ git checkout -b release/vX.Y.Z main
 # rather than something to remember. It went unchecked until 0.12.1, by which
 # point 28 snippets across 14 files named 0.7, 0.8 or 0.11.
 
+# If this release changes an extension or a binding this SDK defines in a
+# way an older peer cannot follow, give it a new URI, and keep serving the
+# old one while peers move (spec §4.6.3: "A new URI MUST be created for
+# breaking changes to an extension"; §5.8, the same for a binding). The
+# URIs are the `*_EXTENSION_URI` constants and `WEBSOCKET_BINDING_URI` in
+# crates/a2a-protocol-types/src, all `/v1`; find them with
+#     git grep -n '_URI: &str = "https://a2a-rust.com' -- crates
+# and read the CHANGELOG's Breaking Changes for anything that touches them.
+
 # Update ROADMAP.md's "Current release:" line, and add a section to
 # book/src/reference/changelog.md — neither is checked by anything, and both
 # have rotted before.

@@ -24,9 +24,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Concerns the spec project's documentation build, not an SDK.",
+   "notes": "Concerns the spec project's documentation build, not an SDK. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 107,
@@ -72,9 +73,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Binds the specification maintainers.",
+   "notes": "Binds the specification maintainers. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 113,
@@ -86,9 +88,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Binds the specification website.",
+   "notes": "Binds the specification website. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 114,
@@ -147,9 +150,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Definitional.",
+   "notes": "Definitional. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 174,
@@ -1278,10 +1282,10 @@
     "crates/a2a-protocol-client/tests/api_key_query.rs:131 http_json_puts_the_key_after_the_routes_own_query",
     "crates/a2a-protocol-client/tests/api_key_query.rs:229 a_transport_without_query_support_refuses_rather_than_drops"
    ],
-   "notes": "Client: get_extended_agent_card does not check that credentials matching the card's schemes are attached; the caller must register an interceptor for one of them. For an APIKeySecurityScheme, AuthInterceptor::api_key sends the key in the header or cookie the scheme names, over JSON-RPC, HTTP+JSON and gRPC (e2e against ApiKeyAuthInterceptor); until 2026-10-14 the only API-key path wrote Authorization, which such an agent refuses. A key placed in the query string goes in the request URL over JSON-RPC and HTTP+JSON (since 2026-10-14, audit register R67; refused before, as no transport could add a query parameter), and the gRPC and WebSocket transports refuse the call with ClientError::InvalidAuthScheme rather than send it without the key. Server side refuses the call unless an authenticating interceptor exists (or allow_unauthenticated_extended_card opt-out).",
+   "notes": "Client: get_extended_agent_card does not check that credentials matching the card's schemes are attached; the caller must register an interceptor for one of them. For an APIKeySecurityScheme, AuthInterceptor::api_key sends the key in the header or cookie the scheme names, over JSON-RPC, HTTP+JSON and gRPC (e2e against ApiKeyAuthInterceptor); until 2026-10-14 the only API-key path wrote Authorization, which such an agent refuses. A key placed in the query string goes in the request URL over JSON-RPC and HTTP+JSON (since 2026-10-14, audit register R67; refused before, as no transport could add a query parameter), and the gRPC and WebSocket transports refuse the call with ClientError::InvalidAuthScheme rather than send it without the key. Server side refuses the call unless an authenticating interceptor exists (or allow_unauthenticated_extended_card opt-out). Re-examined 2026-10-18, kept: a client-side check before sending would have to know which of the caller's headers carry a credential, and an interceptor of the caller's own can put one anywhere, so the SDK would refuse calls that are correctly authenticated. The SDK's part is placing a credential where a declared scheme says (AuthInterceptor::with_scheme, api_key; tested) and the server refusing GetExtendedAgentCard without one (tested); choosing the scheme is the caller's.",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 424,
@@ -1511,9 +1515,10 @@
     "crates/a2a-protocol-types/src/lib.rs:109"
    ],
    "test_evidence": [],
-   "notes": "Naming rule for the spec itself; SDK constants use the `A2A-` prefix.",
+   "notes": "Naming rule for the spec itself; SDK constants use the `A2A-` prefix. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 495,
@@ -3022,9 +3027,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Informative allowance; SDK additionally offers SSE resumption (sse_resumption_e2e.rs) which narrows the gap.",
+   "notes": "Informative allowance; SDK additionally offers SSE resumption (sse_resumption_e2e.rs) which narrows the gap. Re-examined 2026-10-18, kept: an allowance describing what a client may experience, not something an implementation does.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 762,
@@ -3330,13 +3336,17 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "A new URI MUST be created for breaking changes to an extension.",
-   "status": "NOT_APPLICABLE",
+   "status": "APPLICATION",
    "severity": null,
-   "impl_evidence": [],
+   "impl_evidence": [
+    "RELEASING.md (release checklist: new URI for a breaking change)",
+    "crates/a2a-protocol-types/src/lib.rs:85 WEBSOCKET_BINDING_URI"
+   ],
    "test_evidence": [],
-   "notes": "Process requirement on extension authors; not code-testable.",
+   "notes": "Process requirement on extension authors; not code-testable. Re-examined 2026-10-18, reclassified from NOT_APPLICABLE: the SDK defines four extensions (failure, provenance, idempotency, approval), so this binds its maintainers whenever they revise an extension. A release-process obligation, not code: RELEASING.md's checklist now carries it, with the command that lists the URIs; all are /v1 and none has had a breaking revision.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1141,
@@ -3892,9 +3902,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Keyword appears only inside an enum identifier in an example; covered by the §5.5 enum entry.",
+   "notes": "Keyword appears only inside an enum identifier in an example; covered by the §5.5 enum entry. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1230,
@@ -4015,9 +4026,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive; requirements are in the next entries.",
+   "notes": "Descriptive; requirements are in the next entries. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1263,
@@ -4152,15 +4164,17 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "When a breaking change is introduced to a binding, a new URI MUST be used",
-   "status": "NOT_APPLICABLE",
+   "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:85"
+    "RELEASING.md (release checklist: new URI for a breaking change)",
+    "crates/a2a-protocol-types/src/lib.rs:85 WEBSOCKET_BINDING_URI"
    ],
    "test_evidence": [],
-   "notes": "Process requirement; both custom-binding URIs carry /v1, no breaking revision exists yet.",
+   "notes": "Process requirement; both custom-binding URIs carry /v1, no breaking revision exists yet. Re-examined 2026-10-18, reclassified from NOT_APPLICABLE: the SDK defines the WebSocket binding, so this binds its maintainers whenever they revise a binding. A release-process obligation, not code: RELEASING.md's checklist now carries it, with the command that lists the URIs; all are /v1 and none has had a breaking revision.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3238,
@@ -4483,9 +4497,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Spec-document anchor requirement.",
+   "notes": "Spec-document anchor requirement. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3417,
@@ -4497,9 +4512,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Spec-document editorial requirement.",
+   "notes": "Spec-document editorial requirement. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3421,
@@ -4555,9 +4571,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Spec-repo process.",
+   "notes": "Spec-repo process. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 1879,
@@ -7069,9 +7086,10 @@
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:422"
    ],
    "test_evidence": [],
-   "notes": "Both custom bindings support streaming.",
+   "notes": "Both custom bindings support streaming. Re-examined 2026-10-18, kept: conditional on a binding without streaming; both custom bindings this SDK provides stream (websocket_binding_spec.rs a_stream_is_frames_then_the_marker; SLIMRPC e2e streaming_send_delivers_events_and_terminates).",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3033,
@@ -8666,9 +8684,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Linter directive naming a rule; no normative content.",
+   "notes": "Linter directive naming a rule; no normative content. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 145,
@@ -8687,10 +8706,10 @@
     "crates/a2a-protocol-server/tests/accepted_output_modes.rs no_configuration_means_no_preference",
     "crates/a2a-protocol-client/src/methods/send_message_tests.rs:113 apply_config_sets_accepted_output_modes_when_empty"
    ],
-   "notes": "RequestContext::accepted_output_modes() now carries SendMessageConfiguration.acceptedOutputModes to the executor (empty = no preference); tailoring the output is the agent's job. Until 2026-10-10 the executor could not see the field at all. The client sends what its ClientConfig::accepted_output_modes names (default text/plain and application/json) on a request with no configuration of its own; until 2026-10-13 it sent [\"text/plain\"] there, SendMessageConfiguration::default()'s value, whatever the config said.",
+   "notes": "RequestContext::accepted_output_modes() now carries SendMessageConfiguration.acceptedOutputModes to the executor (empty = no preference); tailoring the output is the agent's job. Until 2026-10-10 the executor could not see the field at all. The client sends what its ClientConfig::accepted_output_modes names (default text/plain and application/json) on a request with no configuration of its own; until 2026-10-13 it sent [\"text/plain\"] there, SendMessageConfiguration::default()'s value, whatever the config said. Re-examined 2026-10-18, kept: what output to produce is the agent's reasoning; the SDK's hook, RequestContext::accepted_output_modes, is tested.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 148,
@@ -8856,9 +8875,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement.",
+   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 213,
@@ -9750,9 +9770,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement.",
+   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 461,
@@ -9784,9 +9805,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement.",
+   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 463,
@@ -9838,9 +9860,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive lowercase 'should'.",
+   "notes": "Descriptive lowercase 'should'. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 479,
@@ -9871,9 +9894,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement.",
+   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 496,
@@ -9885,9 +9909,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement.",
+   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 523,
@@ -10141,9 +10166,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement.",
+   "notes": "Descriptive use of 'required' (duplicated by a field_behavior annotation or describing field semantics); no separate testable requirement. Re-examined 2026-10-18, kept: the keyword is descriptive here; the normative requirement is the field_behavior annotation or the neighbouring entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 593,
