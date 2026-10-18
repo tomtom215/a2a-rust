@@ -91,3 +91,20 @@ pub fn config_from_pem(cert_chain: &[u8], key: &[u8]) -> std::io::Result<rustls:
         .with_single_cert(certs, key)
         .map_err(|e| invalid(format!("the certificate and key are not usable: {e}")))
 }
+
+#[cfg(test)]
+mod tests {
+    /// The acceptor's `Debug` names the type and hides the configuration,
+    /// whose private key a log line must not carry.
+    #[test]
+    fn debug_hides_the_configuration() {
+        let key = rcgen::KeyPair::generate().expect("key");
+        let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+            .expect("params")
+            .self_signed(&key)
+            .expect("cert");
+        let config = super::config_from_pem(cert.pem().as_bytes(), key.serialize_pem().as_bytes())
+            .expect("config");
+        assert_eq!(format!("{:?}", super::Tls::new(config, &[])), "Tls(..)");
+    }
+}

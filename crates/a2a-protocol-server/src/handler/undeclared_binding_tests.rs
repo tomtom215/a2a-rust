@@ -63,3 +63,22 @@ fn the_http_dispatchers_name_their_bindings() {
     );
     assert_eq!(RestDispatcher::new(h).protocol_binding(), Some("HTTP+JSON"));
 }
+
+/// A dispatcher that keeps the trait's default names no binding, so the
+/// listener checks nothing against the card (the default is documented as
+/// "`None`, is not checked").
+#[test]
+fn a_custom_dispatcher_names_no_binding_by_default() {
+    struct Custom;
+    impl Dispatcher for Custom {
+        fn dispatch(
+            &self,
+            _req: hyper::Request<hyper::body::Incoming>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
+        > {
+            Box::pin(async { unreachable!("never dispatched") })
+        }
+    }
+    assert_eq!(Custom.protocol_binding(), None);
+}

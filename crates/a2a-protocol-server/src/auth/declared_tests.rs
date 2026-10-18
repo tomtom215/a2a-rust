@@ -163,3 +163,56 @@ fn a_bearer_interceptor_checks_oauth_and_oidc_schemes() {
     )
     .expect("an OIDC access token arrives as a bearer token");
 }
+
+/// An authenticator the bundled ones are not, which does not say which
+/// schemes it checks.
+struct CustomAuth;
+
+impl crate::interceptor::ServerInterceptor for CustomAuth {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a crate::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a crate::CallContext,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn authenticates(&self) -> bool {
+        true
+    }
+}
+
+/// `checks_scheme` documents that a custom authenticator which does not
+/// answer "is not checked": the trait default is "cannot tell", so the
+/// build accepts it whatever the card declares.
+#[test]
+fn a_custom_authenticator_that_does_not_answer_is_not_checked() {
+    assert_eq!(
+        crate::interceptor::ServerInterceptor::checks_scheme(
+            &CustomAuth,
+            bearer_card()
+                .security_schemes
+                .as_ref()
+                .and_then(|s| s.values().next())
+                .expect("a scheme"),
+        ),
+        None
+    );
+    build(
+        RequestHandlerBuilder::new(Idle)
+            .with_agent_card(bearer_card())
+            .with_interceptor(CustomAuth)
+            .share_tasks_across_callers(),
+    )
+    .expect("an authenticator that cannot tell is not refused");
+}
