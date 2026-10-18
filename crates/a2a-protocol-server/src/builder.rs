@@ -289,6 +289,15 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sets a push-config store from an existing `Arc`, to keep a handle for
+    /// work outside requests, such as a tenant-aware store's
+    /// `erase_caller`.
+    #[must_use]
+    pub fn with_push_config_store_arc(mut self, store: Arc<dyn PushConfigStore>) -> Self {
+        self.push_config_store = Some(store);
+        self
+    }
+
     /// Sets a push notification sender.
     #[must_use]
     pub fn with_push_sender(mut self, sender: impl PushSender + 'static) -> Self {

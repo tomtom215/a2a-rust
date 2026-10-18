@@ -232,6 +232,40 @@ subscribe to Alice's, and register a webhook on them):
 * A handler with no authenticating interceptor has no identities to keep apart
   and shares, as before.
 
+### Erasing a caller
+
+Spec §13.4 says agents SHOULD let users ask for their data to be deleted.
+With callers isolated, a caller's data is exactly its partitions, so every
+tenant-aware store has `erase_caller(identity)`: it removes that caller's
+partitions in every tenant, with their tasks, logged events and idempotency
+keys (task stores) or webhooks (push-config stores), in one transaction on
+the SQL stores, and reports how many partitions and rows went. The identity
+is the one the interceptor set, such as `bearer:alice` or
+`jwt:<issuer>:<sub>` (`auth::caller_id` builds them). Keep a handle to each
+store (`with_task_store_arc`, `with_push_config_store_arc`) to call it.
+
+```rust
+# async fn run() {
+use std::sync::Arc;
+use a2a_protocol_server::push::TenantAwareInMemoryPushConfigStore;
+use a2a_protocol_server::store::TenantAwareInMemoryTaskStore;
+
+let tasks = Arc::new(TenantAwareInMemoryTaskStore::new());
+let webhooks = Arc::new(TenantAwareInMemoryPushConfigStore::new());
+// ... builder.with_task_store_arc(tasks.clone()).with_push_config_store_arc(webhooks.clone())
+
+let caller = a2a_protocol_server::auth::caller_id::bearer("alice");
+let removed = tasks.erase_caller(&caller).await;
+let _ = webhooks.erase_caller(&caller).await;
+println!("{} partitions, {} rows", removed.partitions, removed.rows);
+# }
+```
+
+It does not reach records the caller left in the tenant's shared partition
+(an unlabelled credential, or `share_tasks_across_callers`), which name no
+one; audit records, which `AuditLog::erase_subject` handles; or copies in
+backups and logs.
+
 ## What is not isolated
 
 * **CPU and memory are shared.** A tenant inside its task limit can still run

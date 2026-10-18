@@ -7,7 +7,9 @@
 //! [`caller_keys`](crate::store::caller_keys).
 
 use super::TenantAwareSqliteTaskStore;
-use crate::store::caller_keys::{CallerKeyMigration, moved_partition};
+use crate::store::caller_keys::{
+    CallerErasure, CallerKeyMigration, is_callers_partition, moved_partition,
+};
 
 impl TenantAwareSqliteTaskStore {
     /// Moves each caller partition `map` renames to its new key, with its
@@ -68,6 +70,46 @@ impl TenantAwareSqliteTaskStore {
             .rows_affected();
             done.partitions += 1;
             done.rows += tasks + events + keys;
+        }
+        tx.commit().await?;
+        Ok(done)
+    }
+}
+
+impl TenantAwareSqliteTaskStore {
+    /// Removes every partition of `caller`, in every tenant, with its tasks,
+    /// their logged events and its idempotency keys, in one transaction; see
+    /// [`CallerErasure`](crate::store::caller_keys::CallerErasure).
+    ///
+    /// # Errors
+    ///
+    /// A database error; nothing is removed then.
+    pub async fn erase_caller(&self, caller: &str) -> Result<CallerErasure, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        let partitions: Vec<(String,)> = sqlx::query_as(
+            "SELECT tenant_id FROM tenant_tasks UNION SELECT tenant_id FROM tenant_idempotency_keys
+             UNION SELECT tenant_id FROM tenant_task_events",
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        let mut done = CallerErasure::default();
+        for (partition,) in partitions {
+            if !is_callers_partition(&partition, caller) {
+                continue;
+            }
+            // Events first: their foreign key names the task.
+            for table in [
+                "tenant_task_events",
+                "tenant_tasks",
+                "tenant_idempotency_keys",
+            ] {
+                done.rows += sqlx::query(&format!("DELETE FROM {table} WHERE tenant_id = ?1"))
+                    .bind(&partition)
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected();
+            }
+            done.partitions += 1;
         }
         tx.commit().await?;
         Ok(done)

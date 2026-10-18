@@ -9,7 +9,9 @@
 use a2a_protocol_types::error::A2aResult;
 
 use super::{Sealing, TenantAwarePostgresPushConfigStore, to_a2a_error};
-use crate::store::caller_keys::{CallerKeyMigration, moved_partition};
+use crate::store::caller_keys::{
+    CallerErasure, CallerKeyMigration, is_callers_partition, moved_partition,
+};
 
 impl TenantAwarePostgresPushConfigStore {
     /// Moves each caller partition `map` renames to its new key, in one
@@ -69,6 +71,39 @@ impl TenantAwarePostgresPushConfigStore {
                 .map_err(|e| to_a2a_error(&e))?;
                 done.rows += 1;
             }
+            done.partitions += 1;
+        }
+        tx.commit().await.map_err(|e| to_a2a_error(&e))?;
+        Ok(done)
+    }
+}
+
+impl TenantAwarePostgresPushConfigStore {
+    /// Removes every config of `caller`, in every tenant, in one
+    /// transaction; see
+    /// [`CallerErasure`](crate::store::caller_keys::CallerErasure).
+    ///
+    /// # Errors
+    ///
+    /// A database error; nothing is removed then.
+    pub async fn erase_caller(&self, caller: &str) -> A2aResult<CallerErasure> {
+        let mut tx = self.pool.begin().await.map_err(|e| to_a2a_error(&e))?;
+        let partitions: Vec<(String,)> =
+            sqlx::query_as("SELECT DISTINCT tenant_id FROM tenant_push_configs")
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
+        let mut done = CallerErasure::default();
+        for (partition,) in partitions {
+            if !is_callers_partition(&partition, caller) {
+                continue;
+            }
+            done.rows += sqlx::query("DELETE FROM tenant_push_configs WHERE tenant_id = $1")
+                .bind(&partition)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| to_a2a_error(&e))?
+                .rows_affected();
             done.partitions += 1;
         }
         tx.commit().await.map_err(|e| to_a2a_error(&e))?;

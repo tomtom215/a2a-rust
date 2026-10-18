@@ -8515,17 +8515,27 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Agents SHOULD provide mechanisms for users to request deletion of their data",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/mod.rs:179"
+    "crates/a2a-protocol-server/src/store/caller_keys.rs CallerErasure",
+    "crates/a2a-protocol-server/src/store/tenant/store.rs erase_caller",
+    "crates/a2a-protocol-server/src/store/tenant_sqlite_store/caller_keys.rs erase_caller",
+    "crates/a2a-protocol-server/src/store/tenant_postgres_store/caller_keys.rs erase_caller",
+    "crates/a2a-protocol-server/src/push/tenant_config_store.rs erase_caller",
+    "crates/a2a-protocol-server/src/push/tenant_sqlite_config_store/caller_keys.rs erase_caller",
+    "crates/a2a-protocol-server/src/push/tenant_postgres_config_store/caller_keys.rs erase_caller",
+    "crates/a2a-protocol-server/src/audit/privacy/log.rs:127 erase_subject"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/tenant_store_tests.rs:107 tenant_task_store_delete_isolation"
+    "crates/a2a-protocol-server/tests/erase_caller.rs erase_caller_removes_a_callers_data_from_the_in_memory_stores",
+    "crates/a2a-protocol-server/tests/erase_caller.rs erase_caller_removes_a_callers_data_from_the_sqlite_stores",
+    "crates/a2a-protocol-server/tests/erase_caller.rs erase_caller_removes_a_callers_data_from_the_postgres_stores"
    ],
-   "notes": "TaskStore::delete exists; no A2A operation or per-user deletion API (no per-user ownership, see 3075).",
+   "notes": "Re-examined 2026-10-18: since caller isolation gives each identified caller partitions of its own (the default with an authenticating interceptor), the SDK has a per-user deletion mechanism: erase_caller(identity) on every tenant-aware task and push-config store removes the caller's partitions in every tenant (tasks, logged events, idempotency keys, webhooks), in one transaction on SQLite and PostgreSQL, and reports partitions and rows; AuditLog::erase_subject erases the caller from audit records. Tested on all three backends (the PostgreSQL test runs where A2A_TEST_POSTGRES_URL is set; run 2026-10-18 against a local server). Residual, the operator's: how a user's request reaches the operator (no A2A operation exists for it), records left in a tenant's shared partition (unidentified callers, or share_tasks_across_callers), and copies in backups and logs.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3209,

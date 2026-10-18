@@ -167,6 +167,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`erase_caller(identity)` on every tenant-aware store** (server; spec
+  §13.4 "Agents SHOULD provide mechanisms for users to request deletion of
+  their data"). The in-memory, SQLite and PostgreSQL task stores remove the
+  caller's partitions in every tenant with their tasks, logged events and
+  idempotency keys; the push-config stores remove its webhooks; the SQL
+  stores do it in one transaction. Reports a new
+  `store::caller_keys::CallerErasure` (partitions, rows). New
+  `RequestHandlerBuilder::with_push_config_store_arc`, to keep a handle to a
+  push-config store as `with_task_store_arc` does for a task store. Test:
+  `erase_caller`, on all three backends.
 - **A card-signing key past its `exp` is not used** (types; spec §8.4.3
   "Expired or revoked keys MUST NOT be used for verification"). `Jwk` gains
   an `exp` member (seconds since the epoch, the JWT `NumericDate`), which

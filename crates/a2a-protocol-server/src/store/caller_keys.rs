@@ -91,6 +91,37 @@ pub(crate) fn moved_partition(
     (!new.is_empty() && new != caller).then(|| format!("{tenant}{CALLER_SEPARATOR}{new}"))
 }
 
+/// What an `erase_caller` run removed (spec §13.4: agents SHOULD provide
+/// mechanisms for users to request deletion of their data).
+///
+/// Every tenant-aware store has `erase_caller(caller)`, which removes every
+/// partition of that caller, in every tenant: its tasks, their logged events
+/// and its idempotency keys in a task store, its webhooks in a push-config
+/// store. `caller` is the identity the authenticating interceptor set
+/// ([`CallContext::caller_identity`](crate::CallContext::caller_identity),
+/// built by [`caller_id`]). Records a caller left in the tenant's shared
+/// partition, before caller isolation or under `share_tasks_across_callers`,
+/// are not attributed to anyone and are not touched; audit records are
+/// erased with `AuditLog::erase_subject`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CallerErasure {
+    /// Caller partitions removed, one per tenant the caller had records in.
+    pub partitions: u64,
+    /// Rows removed: tasks, logged events and idempotency keys in a task
+    /// store, configs in a push-config store.
+    pub rows: u64,
+}
+
+/// Whether `partition` is one of `caller`'s, in any tenant. An empty
+/// `caller` names nobody, so it matches nothing.
+pub(crate) fn is_callers_partition(partition: &str, caller: &str) -> bool {
+    !caller.is_empty()
+        && partition
+            .split_once(CALLER_SEPARATOR)
+            .is_some_and(|(_, c)| c == caller)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +144,31 @@ mod tests {
             moved_partition(&key("acme", "alice"), &jwt_subjects(Some("https://i"))),
             Some(key("acme", "jwt:https%3A//i:alice"))
         );
+    }
+
+    #[test]
+    fn a_callers_partitions_are_found_in_every_tenant_and_no_others() {
+        assert!(is_callers_partition(
+            &key("acme", "bearer:alice"),
+            "bearer:alice"
+        ));
+        assert!(is_callers_partition(
+            &key("", "bearer:alice"),
+            "bearer:alice"
+        ));
+        assert!(!is_callers_partition(
+            &key("acme", "bearer:alicia"),
+            "bearer:alice"
+        ));
+        assert!(!is_callers_partition(
+            &key("acme", "bearer:alice2"),
+            "bearer:alice"
+        ));
+        assert!(
+            !is_callers_partition("bearer:alice", "bearer:alice"),
+            "a tenant, not a caller"
+        );
+        assert!(!is_callers_partition(&key("acme", ""), ""), "nobody");
     }
 
     /// The tenant's shared partition has no caller, and stays put.

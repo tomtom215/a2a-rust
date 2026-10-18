@@ -26,6 +26,7 @@
 //! | [`eviction`] | TTL and capacity-based eviction logic |
 
 mod budget;
+mod erase;
 mod eviction;
 
 pub use budget::TaskBudget;

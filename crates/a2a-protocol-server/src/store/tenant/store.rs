@@ -332,6 +332,26 @@ impl TenantAwareInMemoryTaskStore {
         }
     }
 
+    /// Removes every partition of `caller`, in every tenant, with its tasks,
+    /// their logged events and its idempotency keys; see
+    /// [`CallerErasure`](crate::store::caller_keys::CallerErasure).
+    pub async fn erase_caller(&self, caller: &str) -> crate::store::caller_keys::CallerErasure {
+        let mut stores = self.stores.write().await;
+        let theirs: Vec<String> = stores
+            .keys()
+            .filter(|p| crate::store::caller_keys::is_callers_partition(p, caller))
+            .cloned()
+            .collect();
+        let mut done = crate::store::caller_keys::CallerErasure::default();
+        for partition in theirs {
+            if let Some(store) = stores.remove(&partition) {
+                done.rows += store.erase_all().await;
+                done.partitions += 1;
+            }
+        }
+        done
+    }
+
     /// Removes empty tenant partitions to reclaim memory.
     ///
     /// A partition is empty when it holds neither a task nor an idempotency
