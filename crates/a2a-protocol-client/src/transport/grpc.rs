@@ -1120,10 +1120,7 @@ mod tests {
 
     #[test]
     fn convert_error_maps_to_non_retryable_transport() {
-        let err = convert_error(ConvertError {
-            field: "part.raw",
-            reason: "invalid base64".into(),
-        });
+        let err = convert_error(ConvertError::new("part.raw", "invalid base64"));
         assert!(
             matches!(err, ClientError::Transport(_)),
             "conversion failures must be non-retryable: {err:?}"

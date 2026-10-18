@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`ConvertError` and `SseParseError` are `#[non_exhaustive]`** (types,
+  client; release audit F26). A match on `SseParseError` needs a wildcard
+  arm, and a `ConvertError` is built with the now-public
+  `ConvertError::new(field, reason)` rather than a struct literal, so a
+  variant or field added later is not a breaking change.
 - **A push config whose `authentication` carries no credentials is
   refused** (server; spec §4.3.3: a delivery MUST carry the credentials its
   config specifies). `CreateTaskPushNotificationConfig` answers

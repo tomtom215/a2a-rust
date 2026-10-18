@@ -123,7 +123,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   *Privacy*); F6 cancel through the status delta; F7 `EncryptedTaskStore`
   re-seal cost and budget; F8 the idempotency index cap; F9 a row rollback
   in `CommitGuard`; F25 sqlx's SQLite coupling;
-  F26 `#[non_exhaustive]` on `SseParseError` and `ConvertError`; F27
+  F27
   `doc(cfg)`.
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive

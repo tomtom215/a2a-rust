@@ -58,10 +58,10 @@ fn send_result_to_stream(
             apb::stream_response::Payload::Message(m.try_into()?)
         }
         other => {
-            return Err(ConvertError {
-                field: "sendMessageResponse.payload",
-                reason: format!("unsupported response variant: {other:?}"),
-            });
+            return Err(ConvertError::new(
+                "sendMessageResponse.payload",
+                format!("unsupported response variant: {other:?}"),
+            ));
         }
     };
     Ok(apb::StreamResponse {
@@ -446,10 +446,7 @@ mod tests {
     #[test]
     fn bad_request_maps_to_invalid_argument() {
         use tonic_types::StatusExt as _;
-        let status = bad_request(ConvertError {
-            field: "message.role",
-            reason: "unknown Role number 9".into(),
-        });
+        let status = bad_request(ConvertError::new("message.role", "unknown Role number 9"));
         assert_eq!(status.code(), tonic::Code::InvalidArgument);
         assert!(status.message().contains("message.role"));
         let violations = status
@@ -465,10 +462,7 @@ mod tests {
 
     #[test]
     fn bad_response_maps_to_internal() {
-        let status = bad_response(ConvertError {
-            field: "task.metadata",
-            reason: "boom".into(),
-        });
+        let status = bad_response(ConvertError::new("task.metadata", "boom"));
         assert_eq!(status.code(), tonic::Code::Internal);
     }
 
