@@ -152,9 +152,10 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant(method_name, headers, params.tenant.as_deref())
             .await?;
+        // Boxed: the send path's state is larger than clippy's
+        // `large_futures` bound, and every binding awaits this.
         let result = crate::store::tenant::TenantContext::scope_request(tenant, async {
-            self.send_message_inner(params, streaming, method_name, headers)
-                .await
+            Box::pin(self.send_message_inner(params, streaming, method_name, headers)).await
         })
         .await
         .map_err(crate::error::ServerError::not_retry_safe);
@@ -190,7 +191,10 @@ impl RequestHandler {
         method_name: &str,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<SendMessageResult> {
-        let call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
+        let mut call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
+        if let Some(task_id) = &params.message.task_id {
+            call_ctx = call_ctx.with_task_id(task_id.as_ref());
+        }
         let mut call = self.interceptors.begin(&call_ctx);
         let result = async {
             self.admit(&mut call, &call_ctx).await?;

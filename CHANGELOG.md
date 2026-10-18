@@ -167,6 +167,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CallContext::task_id()`** (server; spec §13.1 "Servers MUST implement
+  authorization checks on every A2A Protocol Operations request"). The task a
+  request names (the `id` of `GetTask`, `CancelTask` and `SubscribeToTask`,
+  the `taskId` of a push-config operation or of a message continuing a task)
+  is on the context before the interceptor chain runs, so an authorizer can
+  decide per task; `None` for a request that names none. New
+  `CallContext::with_task_id` for a context built by hand. Test:
+  `authorization_per_task`, every method on both HTTP bindings.
+- **`A2aError::insufficient_scope(message, scopes)`** (types; spec §3.3.2
+  "Servers SHOULD indicate what permission or scope is missing"). A `403` /
+  `PERMISSION_DENIED` like `permission_denied`, carrying the RFC 6750 §3
+  challenge `Bearer error="insufficient_scope", scope="..."`, which every
+  binding sends as it sends a `401`'s (header, gRPC metadata, WebSocket
+  `ErrorInfo` metadata). A scope that is not an RFC 6749 `scope-token` is
+  left out.
+- **`JwtValidator::require_scope(scope)`** (server, `auth-jwt`). A token that
+  verifies but does not grant the scope in its `scope` claim (space-separated
+  string or array) is refused with `insufficient_scope`, naming only the
+  scopes it lacks; a token that fails any other check is still `401`, before
+  its scopes are read. Test: `jwt_required_scope`.
 - **`webhook::WebhookReceiver`: the receiving side of push notifications**
   (client, feature `webhook`, on by default in the client and the SDK; spec
   §4.3.3, §13.2). Register the config `set_push_config` returned, then hand

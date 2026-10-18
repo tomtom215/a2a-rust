@@ -546,7 +546,8 @@ impl RequestHandler {
             tenant,
             Box::pin(async {
                 let call_ctx =
-                    build_call_context("SubscribeToTask", headers, self.inbound_trace_policy);
+                    build_call_context("SubscribeToTask", headers, self.inbound_trace_policy)
+                        .with_task_id(params.id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;

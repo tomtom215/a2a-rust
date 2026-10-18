@@ -1680,19 +1680,24 @@
    "keyword": "MUST",
    "binds": "agent-application",
    "requirement": "Servers MUST return an authorization error when the authenticated client lacks required permissions",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:22",
+    "crates/a2a-protocol-types/src/error.rs:405 insufficient_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:355 require_scope",
     "crates/a2a-protocol-server/src/error/mod.rs:180",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:74"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings"
+    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings",
+    "crates/a2a-protocol-server/tests/jwt_required_scope.rs a_valid_token_without_the_scope_is_refused_403_naming_it",
+    "crates/a2a-protocol-server/tests/authorization_per_task.rs an_authorizer_sees_the_task_every_method_names_and_can_refuse_it"
    ],
-   "notes": "Hook: an interceptor returns A2aError::permission_denied -> 403 / PERMISSION_DENIED. Permission policy itself is the application's.",
+   "notes": "Re-examined 2026-10-18: A2aError::permission_denied and insufficient_scope answer 403 / PERMISSION_DENIED on every binding, and the SDK now applies a permission itself: JwtValidator::require_scope refuses a valid token lacking a required scope with 403 (not 401), on both HTTP bindings in the test. Which permissions an operation needs beyond that is the agent's policy, expressed in an interceptor.",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 513,
@@ -1700,15 +1705,21 @@
    "keyword": "SHOULD",
    "binds": "agent-application",
    "requirement": "Servers SHOULD indicate what permission or scope is missing (without leaking sensitive information ...)",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/auth_rejection.rs:46"
+    "crates/a2a-protocol-types/src/auth_rejection.rs insufficient_scope",
+    "crates/a2a-protocol-types/src/error.rs:405 insufficient_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:513"
    ],
-   "test_evidence": [],
-   "notes": "permission_denied takes a caller-chosen message; SDK has no structured scope field.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/src/auth_rejection.rs:123 insufficient_scope_names_the_scopes_in_its_challenge",
+    "crates/a2a-protocol-server/tests/jwt_required_scope.rs a_valid_token_without_the_scope_is_refused_403_naming_it"
+   ],
+   "notes": "Re-examined 2026-10-18: A2aError::insufficient_scope(message, scopes) carries the RFC 6750 §3 challenge Bearer error=\"insufficient_scope\", scope=\"...\", which every binding sends with its 403 (header, gRPC metadata, WebSocket ErrorInfo metadata). JwtValidator::require_scope names only the scopes the token lacks, and only to a caller whose token verified, so a caller without a valid credential learns nothing about them (the test's forged token gets 401 with no scope in the challenge).",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 514,
@@ -7168,28 +7179,24 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Servers MUST implement authorization checks on every A2A Protocol Operations request",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
+    "crates/a2a-protocol-server/src/call_context.rs:297 task_id",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:39",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:61",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:41",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:393",
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:40",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:183",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:143",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:209",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:278",
-    "crates/a2a-protocol-server/src/handler/push_config.rs:342",
-    "crates/a2a-protocol-server/src/auth/mod.rs:243"
+    "crates/a2a-protocol-server/src/handler/push_config.rs",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/interceptor_on_complete.rs:125 every_handler_method_reports_its_outcome",
-    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings"
+    "crates/a2a-protocol-server/tests/authorization_per_task.rs an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
+    "crates/a2a-protocol-server/tests/auth_every_method.rs every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
+    "crates/a2a-protocol-server/tests/caller_isolation.rs isolated_another_callers_task_is_not_found_by_any_operation"
    ],
-   "notes": "SDK hook provided: every handler entry point (all 11 operations, all bindings incl. WebSocket per message) runs ServerInterceptorChain::before, and ServerInterceptor can return A2aError::permission_denied keyed on ctx.method()/caller_identity(). Nothing enforces that an authorizer is registered; a default build performs no authorization (the interceptor sees no task id, so per-resource checks cannot be written there; see 3092).",
+   "notes": "Re-examined 2026-10-18: every operation on every binding runs the interceptor chain before the handler acts, and since 2026-10-18 the chain sees the task the request names (CallContext::task_id), so a per-task authorizer can be written there; the test drives all of Method::ALL on both HTTP bindings, checks the id each method exposes and that a refused task is 403. The default with identified callers authorizes per caller (caller isolation: another caller's task is TaskNotFound on every operation). A finer policy (roles, per-task ACLs) is the agent's, through ServerInterceptor; the earlier note that per-resource checks could not be written in an interceptor no longer holds.",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
   },
   {
    "spec_line": 3080,

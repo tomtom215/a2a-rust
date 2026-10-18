@@ -192,11 +192,14 @@ impl RequestHandler {
                     });
                 }
 
-                let call_ctx = build_call_context(
+                let mut call_ctx = build_call_context(
                     "CreateTaskPushNotificationConfig",
                     headers,
                     self.inbound_trace_policy,
                 );
+                if let Some(task_id) = config.task_id.as_deref() {
+                    call_ctx = call_ctx.with_task_id(task_id);
+                }
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
@@ -261,7 +264,8 @@ impl RequestHandler {
                     "GetTaskPushNotificationConfig",
                     headers,
                     self.inbound_trace_policy,
-                );
+                )
+                .with_task_id(params.task_id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
@@ -336,7 +340,8 @@ impl RequestHandler {
                     "ListTaskPushNotificationConfigs",
                     headers,
                     self.inbound_trace_policy,
-                );
+                )
+                .with_task_id(task_id);
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
@@ -410,7 +415,8 @@ impl RequestHandler {
                     "DeleteTaskPushNotificationConfig",
                     headers,
                     self.inbound_trace_policy,
-                );
+                )
+                .with_task_id(params.task_id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;

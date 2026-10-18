@@ -39,7 +39,8 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                let call_ctx = build_call_context("CancelTask", headers, self.inbound_trace_policy);
+                let call_ctx = build_call_context("CancelTask", headers, self.inbound_trace_policy)
+                    .with_task_id(params.id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
