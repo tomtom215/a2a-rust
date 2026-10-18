@@ -258,6 +258,20 @@ impl RequestHandler {
         Ok(())
     }
 
+    /// Records the approval the gate admitted for this send, if any, in the
+    /// audit log, if there is one.
+    #[cfg(feature = "audit")]
+    pub(super) async fn audit_approval(
+        &self,
+        call_ctx: &crate::call_context::CallContext,
+        task_id: &TaskId,
+        approval: Option<&crate::approval::VerifiedApproval>,
+    ) {
+        if let (Some(log), Some(approval)) = (&self.audit, approval) {
+            crate::audit::record_approval(log, &*self.metrics, call_ctx, task_id, approval).await;
+        }
+    }
+
     /// Withdraws the config a continuation registered when its turn then
     /// could not be saved. The client is told the send failed, and a retry
     /// registers the config again; left in place, the retry's would be a

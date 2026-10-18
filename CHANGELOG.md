@@ -1609,6 +1609,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A send dropped mid-commit leaves no task behind** (server; release audit
+  F9). A new task's row is saved before its inline push config is
+  registered, and a client that went away during that registration left the
+  row `Submitted` for good. No executor ran it, the retention sweeps delete
+  only terminal tasks, and `GetTask` and `ListTasks` showed it. Its released
+  idempotency key also let the retry create a second task for one send. The
+  send's `CommitGuard` now deletes such a row, along with the push configs
+  registered for it. It holds the per-context lock until the rollback is
+  done, so a concurrent send for the same context waits instead of finding
+  the doomed task. The approval's audit record is written before the save,
+  so a continuation has nothing awaited between its save and its executor.
+  Found on the way: the guard's release ran in a spawned task outside the
+  request's tenant scope, so a dropped keyed send under a tenant released
+  its key in the empty tenant's partition and kept it held in its own. The
+  release now runs in the captured tenant and caller scope.
+
 - **Task history is bounded in bytes** (server; release audit F2). It was
   capped at 1,024 messages and nothing else, so at the 4 MiB request body one
   task could hold 4 GiB of remote input. Every place a history grows now

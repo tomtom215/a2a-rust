@@ -288,7 +288,12 @@ impl RequestHandler {
     // and splitting it would separate the per-context lock from the work it
     // is held across, which is the one thing this function exists to keep
     // together.
-    #[allow(clippy::too_many_lines)]
+    //
+    // `significant_drop_tightening` (nursery) reads the per-context lock as
+    // held to the end of the function; it is moved into the `CommitGuard`,
+    // which releases it at the point the lock stops being needed, and the
+    // lint does not follow moves into a struct.
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     async fn commit_task(
         &self,
         params: MessageSendParams,
@@ -302,7 +307,9 @@ impl RequestHandler {
         // context_id, so two concurrent sends cannot both create a new task
         // for it. Held until the task is saved.
         let context_lock = self.keyed_lock(&context_id).await;
-        let context_guard = context_lock.lock().await;
+        // Owned, so a send dropped mid-commit can hold it until its rollback
+        // is done (see `commit_guard`).
+        let context_guard = context_lock.lock_owned().await;
 
         let stored_task = self.find_task_by_context(&context_id).await?;
         let resolution = self
@@ -345,7 +352,9 @@ impl RequestHandler {
             self.event_queue_manager.clone(),
             std::sync::Arc::clone(&self.cancellation_tokens),
             std::sync::Arc::clone(&self.task_store),
+            std::sync::Arc::clone(&self.push_config_store),
             claimed_key.clone(),
+            context_guard,
         );
         let guard_ref = &mut guard;
 
@@ -409,19 +418,19 @@ impl RequestHandler {
             // tokens before this one was inserted; it has set its flag by
             // now, so stop this turn the way the walk would have (`halt`).
             self.stop_if_halted(&turn, &ctx.cancellation_token);
+            // Before the save, so that nothing is awaited between a
+            // continuation's save and its executor starting: a drop there
+            // would leave the turn saved with nothing to run it, and the
+            // guard rolls back only a new row (see `commit_guard`). The
+            // record states a decision the gate admitted, which is as true
+            // before the row exists as after.
+            #[cfg(feature = "audit")]
+            Box::pin(self.audit_approval(call_ctx, &task_id, ctx.approval.as_ref())).await;
             // A continuation's inline push config is registered here, before
             // its turn is saved; a new task's below (see `save_turn`).
             Box::pin(self.save_turn(&task, params.configuration.as_ref(), continues)).await?;
-            #[cfg(feature = "audit")]
-            if let (Some(log), Some(approval)) = (&self.audit, ctx.approval.as_ref()) {
-                Box::pin(crate::audit::record_approval(
-                    log,
-                    &*self.metrics,
-                    call_ctx,
-                    &task_id,
-                    approval,
-                ))
-                .await;
+            if !continues {
+                guard_ref.created_row();
             }
 
             // Boxed, and with every local confined to the helper, so this cold
@@ -439,7 +448,7 @@ impl RequestHandler {
 
             // Subsequent requests for this context_id will now find the task via
             // find_task_by_context.
-            drop(context_guard);
+            guard_ref.release_context();
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();
@@ -466,6 +475,7 @@ impl RequestHandler {
         })
         .await;
         guard.disarm();
+        drop(guard);
 
         match started {
             Ok(started) => Ok(Committed::Started(Box::new(started))),
