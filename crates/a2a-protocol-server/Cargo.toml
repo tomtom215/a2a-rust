@@ -18,10 +18,13 @@ keywords               = ["a2a", "agent2agent", "agent", "protocol", "server"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
-## `tracing` is on by default: a default build logs through, and records
-## spans with, whatever `tracing` subscriber the application installs, and
-## costs a level check when none is. Opt out with `default-features = false`.
-default = ["tracing"]
+## `tracing` and `otel` are on by default: a default build logs through, and
+## records spans with, whatever `tracing` subscriber the application installs,
+## and costs a level check when none is; `otel` adds the OpenTelemetry API, so
+## a process that installs a provider gets this crate's spans and metrics
+## without enabling anything here (decided 2026-10-14). Exporting them is
+## `otlp`. Opt out with `default-features = false`.
+default = ["tracing", "otel"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
 ## A forwarding feature: this crate contains no `#[cfg(feature = "signing")]`
@@ -58,14 +61,21 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## it first). Without this feature the listener is plaintext and TLS is
 ## terminated in front of it.
 grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
-## OpenTelemetry: `OtelMetrics`, the spans' OpenTelemetry bridge, and
-## `Telemetry` — one entry point that exports traces, metrics and logs over
-## OTLP/gRPC or OTLP/HTTP (protobuf), configured from the standard `OTEL_*`
-## environment. HTTP export runs on this crate's hyper and rustls (ring)
-## stack, not reqwest, on a private export thread.
-otel = [
-    "tracing",
-    "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry",
+## OpenTelemetry instrumentation, on by default: `OtelMetrics`, and the bridge
+## that gives each call's span the caller's `traceparent` as its parent. The
+## OpenTelemetry API only (`opentelemetry`, `tracing-opentelemetry`): what is
+## recorded goes to whatever provider the process installs, and to nothing
+## when it installs none.
+otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry"]
+## OTLP export: `Telemetry` — one entry point that exports traces, metrics and
+## logs over OTLP/gRPC or OTLP/HTTP (protobuf), configured from the standard
+## `OTEL_*` environment — the `Langfuse` preset, and `init_otlp_pipeline`.
+## HTTP export runs on this crate's hyper and rustls (ring) stack, not
+## reqwest, on a private export thread. Off by default here;
+## `a2a-protocol-sdk` turns it on.
+otlp = [
+    "otel",
+    "dep:opentelemetry_sdk", "dep:opentelemetry-otlp",
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
     "dep:http",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
@@ -178,6 +188,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
+# The instrument tests read what `OtelMetrics` records through a
+# `ManualReader`, which needs the SDK `otel` itself no longer pulls in.
+opentelemetry_sdk = { version = "0.33", features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time", "test-util"] }
 hyper = { workspace = true }

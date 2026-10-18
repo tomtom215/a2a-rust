@@ -10,7 +10,7 @@
 //! endpoint and protocol in code, which wins over the process environment,
 //! so a developer's own `OTEL_EXPORTER_OTLP_*` cannot redirect them.
 
-#![cfg(feature = "otel")]
+#![cfg(feature = "otlp")]
 
 mod agent_spans;
 mod collector;

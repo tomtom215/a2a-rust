@@ -18,23 +18,27 @@
 //! | `builder` | `OtelMetricsBuilder` — fluent configuration |
 //! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — OTLP export setup |
 //!
-//! # Feature flag
+//! # Feature flags
 //!
-//! This module is only available when the `otel` feature is enabled.
+//! `otel` (on by default) gives [`OtelMetrics`] and [`OtelMetricsBuilder`],
+//! which record through the OpenTelemetry API: to the provider the process
+//! installs, or to nothing. `otlp` adds what exports them: `Telemetry`, the
+//! `Langfuse` preset and `init_otlp_pipeline`.
 //!
 //! # Quick start
 //!
 //! ```rust,no_run
-//! use a2a_protocol_server::otel::{OtelMetrics, OtelMetricsBuilder, init_otlp_pipeline};
-//!
+//! // `init_otlp_pipeline` needs the `otlp` feature (on by default in
+//! // `a2a-protocol-sdk`).
+//! # #[cfg(feature = "otlp")]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use a2a_protocol_server::otel::{OtelMetricsBuilder, init_otlp_pipeline};
+//!
 //! // 1. Initialise the OTLP export pipeline (sets the global MeterProvider).
 //! let provider = init_otlp_pipeline(Some("my-a2a-agent"))?;
 //!
 //! // 2. Build the metrics instance.
-//! let metrics = OtelMetricsBuilder::new()
-//!     .meter_name("a2a.server")
-//!     .build();
+//! let metrics = OtelMetricsBuilder::new().meter_name("a2a.server").build();
 //!
 //! // 3. Pass `metrics` to `RequestHandlerBuilder::metrics(metrics)`.
 //! # Ok(())
@@ -42,7 +46,9 @@
 //! ```
 
 mod builder;
+#[cfg(feature = "otlp")]
 mod pipeline;
+#[cfg(feature = "otlp")]
 mod telemetry;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -54,7 +60,9 @@ use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
+#[cfg(feature = "otlp")]
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
+#[cfg(feature = "otlp")]
 pub use telemetry::{
     LANGFUSE_SELF_HOSTED, Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder, TelemetryError,
 };

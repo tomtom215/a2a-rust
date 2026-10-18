@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **OpenTelemetry instrumentation is on by default; export is `otlp`**
+  (server, client, SDK; decided 2026-10-14, the exporter's place settled
+  2026-10-18). The server's `otel` feature is now the instrumentation only
+  (`OtelMetrics`, the spans' OpenTelemetry bridge), through the OpenTelemetry
+  API (`opentelemetry`, `tracing-opentelemetry`), and is a default feature
+  of the server, the client and the SDK: a process that installs a provider
+  gets the SDK's spans and metrics with nothing to enable, and one that
+  installs none records to nothing. `Telemetry`, the `Langfuse` preset and
+  `init_otlp_pipeline` moved to a new `otlp` feature, with the SDK and
+  exporter dependencies; it is default in `a2a-protocol-sdk` only.
+  Migration: a direct dependency on `a2a-protocol-server` that used
+  `Telemetry` asks for `features = ["otlp"]`; on the SDK nothing changes.
 - **The metric catalogue follows the OpenTelemetry conventions** (server,
   `otel`; decided 2026-10-15). `a2a.server.latency`, deprecated in 0.14.0, is
   removed: read `a2a.server.request.duration` (Prometheus

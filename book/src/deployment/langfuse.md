@@ -44,7 +44,7 @@ the secrets to change.
 ## Setup
 
 ```toml
-a2a-protocol-sdk = { version = "0.15", features = ["otel"] }
+a2a-protocol-sdk = "0.15"   # `otlp`, which Langfuse needs, is a default feature
 ```
 
 ```bash

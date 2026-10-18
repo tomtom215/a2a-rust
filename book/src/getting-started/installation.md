@@ -85,7 +85,8 @@ and no logging.
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
 | `grpc-tls` | TLS on the gRPC listener (`GrpcDispatcher::with_tls`); implies `grpc` |
-| `otel` | `Telemetry`: OTLP export of traces, metrics and logs, gRPC or HTTP/protobuf, with a Langfuse preset |
+| `otel` | `OtelMetrics` and the spans' OpenTelemetry bridge, through the API only (on by default) |
+| `otlp` | `Telemetry`: OTLP export of traces, metrics and logs, gRPC or HTTP/protobuf, with a Langfuse preset (implies `otel`) |
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -104,7 +105,8 @@ and no logging.
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
 | `postgres` | Enables PostgreSQL stores in the server |
-| `otel` | Enables `otel` in the server and the client |
+| `otel` | Enables `otel` in the server and the client (on by default) |
+| `otlp` | Enables the server's `otlp`: `Telemetry` and OTLP export (on by default) |
 | `axum` | Enables Axum integration in the server |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
 | `encryption` | Enables encryption at rest for task content in the server |

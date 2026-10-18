@@ -329,7 +329,7 @@ are rustdoc's job.
 | `handler` | Core request handler — protocol logic layer |
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
-| `otel` | `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset) and `OtelMetrics` (`otel` feature) |
+| `otel` | `OtelMetrics` (`otel` feature, on by default) and `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset; `otlp` feature) |
 | `profile` | `Profile::Auditable`: one call that turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature) |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
@@ -455,7 +455,7 @@ are rustdoc's job.
 | `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
 | `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |
 | `NoopMetrics` | No-op metrics implementation (default) |
-| `OtelMetrics` | OpenTelemetry metrics (`otel` feature) |
+| `OtelMetrics` | OpenTelemetry metrics (`otel` feature, on by default) |
 
 ### Streaming
 

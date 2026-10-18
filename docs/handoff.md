@@ -68,10 +68,10 @@ only: when something here is done, delete it rather than annotating it.
    `a2a-protocol-sdk` only (decided 2026-10-18). Done 2026-10-18: UCUM
    units, `a2a.server.latency` removed for `a2a.server.request.duration`,
    `init_otlp_pipeline(Option<&str>)` with the environment first, ADR 0013
-   Accepted. Left: splitting the server's `otel` feature into
-   instrumentation (default-on everywhere) and the OTLP exporter (default-on
-   in the SDK only), mTLS and `http/json` OTLP, and spans and metrics on
-   every binding.
+   Accepted, and the split: `otel` (instrumentation, the API only) is a
+   default feature of the server, client and SDK, and `otlp` (`Telemetry`,
+   the exporters) is default in the SDK only. Left: mTLS and `http/json`
+   OTLP, and spans and metrics on every binding.
 5. **Freshness:** record the first 24-shard weekly mutation sweep in
    `book/src/reference/mutation-history.md` after it runs (Monday
    2026-10-19); after the next release, check the versioned docs deploy.

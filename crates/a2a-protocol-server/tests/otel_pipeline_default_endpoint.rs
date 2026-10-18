@@ -18,7 +18,7 @@
 //! shutdown, while the mutant's bare provider — no reader, no exporter, and
 //! never installed globally — shuts down cleanly having exported nothing.
 
-#![cfg(feature = "otel")]
+#![cfg(feature = "otlp")]
 
 use a2a_protocol_server::otel::init_otlp_pipeline;
 

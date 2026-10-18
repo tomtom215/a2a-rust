@@ -149,6 +149,15 @@ buckets, under the conventions' name. It was deprecated in 0.14.0. Units of
 counts are brace-annotated (`{request}`); the other Prometheus names are
 unchanged.
 
+### `Telemetry` is the `otlp` feature; `otel` is on by default
+
+On `a2a-protocol-server` directly, `Telemetry`, the `Langfuse` preset and
+`init_otlp_pipeline` need `features = ["otlp"]`; `otel` now means the
+instrumentation alone (`OtelMetrics`, the span bridge) and is a default
+feature of the server and the client. On `a2a-protocol-sdk` both are default
+and nothing changes. A build that must not link the OpenTelemetry API sets
+`default-features = false`.
+
 ### `init_otlp_pipeline` takes `Option<&str>`
 
 Wrap the service name in `Some`. It now names the service only when

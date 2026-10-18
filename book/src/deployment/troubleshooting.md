@@ -22,9 +22,9 @@ anything else:
 
 | Crate | Default features |
 |---|---|
-| `a2a-protocol-sdk` | `tls-rustls`, `tracing` |
-| `a2a-protocol-client` | `tls-rustls`, `tracing` |
-| `a2a-protocol-server` | `tracing` |
+| `a2a-protocol-sdk` | `tls-rustls`, `tracing`, `otel`, `otlp`, `webhook` |
+| `a2a-protocol-client` | `tls-rustls`, `tracing`, `otel`, `webhook` |
+| `a2a-protocol-server` | `tracing`, `otel` |
 
 So a reader who depends on the umbrella `a2a-protocol-sdk` already has TLS, and
 one who depends on `a2a-protocol-server` directly does not. Everything else is
@@ -33,14 +33,14 @@ off in all three cases:
 | You want | Feature |
 |---|---|
 | Structured logs | `tracing` (default; re-add it if you set `default-features = false`) |
-| Metrics over OTLP (metrics only — there is no span export) | `otel` |
+| Traces, metrics and logs over OTLP (`Telemetry`) | `otlp` (default in the SDK; `otel`, its instrumentation, is default everywhere) |
 | SQLite / PostgreSQL task stores | `sqlite`, `postgres` |
 | WebSocket, gRPC, Axum | `websocket`, `grpc`, `axum` |
 | JWT bearer auth | `auth-jwt` |
 | Card signing types | `signing` |
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["tracing", "otel", "sqlite"] }
+a2a-protocol-server = { version = "0.15", features = ["otlp", "sqlite"] }
 ```
 
 ## The agent logs nothing

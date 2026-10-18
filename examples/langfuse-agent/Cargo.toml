@@ -12,7 +12,7 @@ rust-version.workspace = true
 license.workspace      = true
 
 [dependencies]
-a2a-protocol-sdk   = { path = "../../crates/a2a-protocol-sdk", features = ["otel"] }
+a2a-protocol-sdk   = { path = "../../crates/a2a-protocol-sdk", features = ["otlp"] }
 tokio              = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["registry", "env-filter"] }

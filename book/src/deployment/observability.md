@@ -17,20 +17,25 @@ and the answer is almost always this page's first section.
 ## Turning them on
 
 ```toml
-a2a-protocol-sdk = { version = "0.15", features = ["otel"] }
+a2a-protocol-sdk = "0.15"   # `tracing`, `otel` and `otlp` are default features
 ```
 
 * **`tracing`** — on by default in all three crates; with
   `default-features = false` the logging calls and spans compile to nothing.
   With it, your binary still has to install a subscriber; the library emits
   events and spans and does not decide where they go.
-* **`otel`** — makes [`Telemetry`](#exporting-with-telemetry) available: OTLP
+* **`otel`** — on by default in the client, the server and the SDK (since
+  0.15): `OtelMetrics`, and each span's OpenTelemetry bridge, so the server's
+  `SERVER` span takes the caller's `traceparent` as its parent and each client
+  call's `traceparent` names the call's own span (see [Spans](#spans)). The
+  OpenTelemetry API only: recorded to the provider your process installs, or
+  to nothing.
+* **`otlp`** — makes [`Telemetry`](#exporting-with-telemetry) available: OTLP
   export of traces, metrics and logs, configured by the standard `OTEL_*`
-  environment. On the SDK it also turns on the client's half: each call's
-  `traceparent` names the call's own span (see [Spans](#spans)).
+  environment. On by default in the SDK only; on `a2a-protocol-server`
+  directly, ask for it (`features = ["otlp"]`).
 
-With the `otel` feature, the whole setup is this, and the rest of the page
-explains it:
+With `otlp`, the whole setup is this, and the rest of the page explains it:
 
 ```rust,no_run
 use a2a_protocol_server::otel::Telemetry;
@@ -88,8 +93,8 @@ Hand it to the builder with `.with_metrics(CountingMetrics)`. If those lines
 appear and your dashboard is still empty, the problem is the exporter, not the
 SDK — which is the distinction this two-minute step buys you.
 
-With the `otel` feature, `OtelMetrics` is the real provider and exports the
-catalogue below over OTLP.
+With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
+`Telemetry` exports it over OTLP.
 
 ## Exporting with `Telemetry`
 

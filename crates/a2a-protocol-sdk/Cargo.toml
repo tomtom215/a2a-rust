@@ -21,12 +21,14 @@ categories             = ["network-programming", "web-programming", "api-binding
 ## HTTPS is on by default: the A2A spec serves agents over HTTPS, so both the
 ## client (reaching agents) and the bundled push sender (delivering webhooks)
 ## must speak TLS out of the box. `tracing` is on by default too, so a default
-## build logs through the application's subscriber. `webhook` (the client's
+## build logs through the application's subscriber. `otel` and `otlp` are on
+## too (decided 2026-10-14): the client and server record OpenTelemetry spans
+## and metrics, and `server::otel::Telemetry` exports them over OTLP; this is
+## the one crate whose defaults include the exporter. `webhook` (the client's
 ## push-notification receiver) costs nothing `tls-rustls` does not already
-## link. Opt out of all three with
-## `default-features = false`: the three crates below are taken without their
-## own defaults, so this list is the only one in force.
-default = ["tls-rustls", "tracing", "webhook"]
+## link. Opt out with `default-features = false`: the three crates below are
+## taken without their own defaults, so this list is the only one in force.
+default = ["tls-rustls", "tracing", "otel", "otlp", "webhook"]
 ## Make `a2a_protocol_types::signing` available across the three crates.
 ##
 ## Signing is a primitive you call. Verification is too, except that card
@@ -48,8 +50,12 @@ grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 ## crate's entry) and the server's own gRPC listener can serve TLS through
 ## `GrpcDispatcher::with_tls` (see the server crate's entry).
 grpc-tls = ["grpc", "tls-rustls", "a2a-protocol-client/grpc-tls", "a2a-protocol-server/grpc-tls"]
-## Enable OpenTelemetry integration.
+## OpenTelemetry instrumentation in the client and server: spans and
+## `OtelMetrics`, recorded through the API (on by default).
 otel = ["a2a-protocol-server/otel", "a2a-protocol-client/otel"]
+## OTLP export: `server::otel::Telemetry`, the `Langfuse` preset and
+## `init_otlp_pipeline` (on by default).
+otlp = ["otel", "a2a-protocol-server/otlp"]
 ## Enable WebSocket transport via tokio-tungstenite.
 websocket = ["a2a-protocol-client/websocket", "a2a-protocol-server/websocket"]
 ## Enable SQLite-backed task and push config stores via sqlx.

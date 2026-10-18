@@ -144,7 +144,8 @@ println!("{report:?}");
 | `websocket` | No | WebSocket transport |
 | `grpc` | No | gRPC transport via tonic (`lf.a2a.v1.A2AService`) |
 | `grpc-tls` | No | TLS on the gRPC listener; implies `grpc` |
-| `otel` | No | `otel::Telemetry`: OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, configured by `OTEL_*`, with a Langfuse preset; and `OtelMetrics` |
+| `otel` | Yes | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`; no exporter) |
+| `otlp` | No | `otel::Telemetry`: OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, configured by `OTEL_*`, with a Langfuse preset; and `init_otlp_pipeline` (implies `otel`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | No | Axum integration (`A2aRouter`) |
 | `auth-jwt` | No | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS) |

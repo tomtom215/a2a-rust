@@ -21,11 +21,12 @@ categories             = ["network-programming", "web-programming"]
 ## HTTPS is on by default: the A2A spec serves agents over HTTPS, so the client
 ## must reach them out of the box. `tracing` is on by default too: several
 ## failure paths — a trace header the WebSocket binding cannot carry, a refused
-## stream event — report only through it. `webhook` adds only `ring`, which
-## `tls-rustls` already links. Opt out of all three with
-## `default-features = false` for a plaintext-HTTP-only build with no rustls
-## or ring dependency and no logging.
-default = ["tls-rustls", "tracing", "webhook"]
+## stream event — report only through it. `otel` adds the OpenTelemetry API,
+## so a process that installs a provider gets the client's spans (decided
+## 2026-10-14). `webhook` adds only `ring`, which `tls-rustls` already links.
+## Opt out of all four with `default-features = false` for a
+## plaintext-HTTP-only build with no rustls or ring dependency and no logging.
+default = ["tls-rustls", "tracing", "otel", "webhook"]
 ## Enable HTTPS support via rustls (no OpenSSL system dependency), and
 ## `wss://` for the `websocket` transport. tokio-tungstenite's `__rustls-tls`
 ## is the feature that compiles its rustls connector in without a root store

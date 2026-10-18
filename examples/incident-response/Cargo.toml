@@ -34,7 +34,7 @@ tls-rustls = [
     "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:rcgen",
 ]
 ## OpenTelemetry metrics export (Act 5: a collected `a2a.server.requests`).
-otel = ["a2a-protocol-server/otel", "dep:opentelemetry", "dep:opentelemetry_sdk"]
+otel = ["a2a-protocol-server/otlp", "dep:opentelemetry", "dep:opentelemetry_sdk"]
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }

@@ -47,7 +47,7 @@ impl OtelMetricsBuilder {
     /// Build the [`OtelMetrics`] instance.
     ///
     /// Instruments are created from the global [`MeterProvider`]. Make sure
-    /// you have called [`init_otlp_pipeline`](super::init_otlp_pipeline) (or
+    /// you have called `init_otlp_pipeline` (the `otlp` feature; or
     /// otherwise installed a `MeterProvider`) before calling this method.
     ///
     /// [`MeterProvider`]: opentelemetry::metrics::MeterProvider

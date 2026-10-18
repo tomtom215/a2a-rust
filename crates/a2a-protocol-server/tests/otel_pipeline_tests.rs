@@ -29,7 +29,7 @@
 //! exporter performs no I/O against the endpoint. Each test shuts its
 //! provider down so the periodic export task does not outlive it.
 
-#![cfg(feature = "otel")]
+#![cfg(feature = "otlp")]
 
 use a2a_protocol_server::otel::init_otlp_pipeline;
 
