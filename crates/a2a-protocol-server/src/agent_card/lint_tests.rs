@@ -89,6 +89,9 @@ fn an_extension_uri_without_a_version_is_reported() {
 fn shapes() {
     assert!(is_uri("urn:a:b") && is_uri("https://x"));
     assert!(!is_uri("WEBSOCKET") && !is_uri(":x") && !is_uri("a b:c") && !is_uri("x:"));
+    // Whitespace or a control character anywhere, each on its own: a space
+    // is not a control character and BEL is not whitespace.
+    assert!(!is_uri("urn:a b") && !is_uri("urn:a\u{7}"));
     assert!(is_loopback("http://user@localhost:1/x") && is_loopback("http://[::1]/"));
     assert!(!is_loopback("http://example.com") && !is_loopback("nonsense"));
     // A URL names a host: `scheme://` with nothing after it, or with a path

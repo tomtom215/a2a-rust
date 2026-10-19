@@ -410,6 +410,12 @@ async fn a_written_halt_is_no_longer_held_as_unwritten() {
     sync.hold(halt.clone());
     assert!(sync.persist(&halt).await);
     assert!(!sync.forget(&HaltScope::All), "nothing left held");
+
+    // One not written yet is held, and forgetting it says so, once.
+    let acme = HaltScope::Tenant("acme".into());
+    sync.hold(StoredHalt::new(acme.clone(), "r", "b"));
+    assert!(sync.forget(&acme), "held until written");
+    assert!(!sync.forget(&acme), "forgotten");
 }
 
 /// A halt read from the store is reported once, by the poll that first reads

@@ -173,4 +173,79 @@ mod tests {
             .expect("read");
         assert_eq!(&got, b"hi");
     }
+
+    /// A TLS connection's flush waits for the records rustls still holds.
+    /// The client never reads, so once a write is refused the socket is
+    /// full and rustls holds sealed records; a flush that reported done
+    /// then would leave the last bytes unsent while the caller waits for an
+    /// answer.
+    #[cfg(feature = "tls-rustls")]
+    #[tokio::test]
+    async fn a_tls_flush_is_pending_while_records_are_unsent() {
+        use std::pin::Pin;
+        use std::sync::Arc;
+        use std::task::{Context, Poll, Waker};
+        use tokio::io::AsyncWrite;
+
+        let mut ca_params = rcgen::CertificateParams::new(vec![]).expect("params");
+        ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let ca_key = rcgen::KeyPair::generate().expect("key");
+        let ca = ca_params.self_signed(&ca_key).expect("ca");
+        let issuer = rcgen::Issuer::new(ca_params, ca_key);
+        let key = rcgen::KeyPair::generate().expect("key");
+        let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+            .expect("params")
+            .signed_by(&key, &issuer)
+            .expect("cert");
+        let server =
+            crate::tls::config_from_pem(cert.pem().as_bytes(), key.serialize_pem().as_bytes())
+                .expect("server config");
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(ca.der().clone()).expect("root");
+        let client = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let connecting = tokio::spawn(async move {
+            let tcp = tokio::net::TcpStream::connect(addr).await.expect("tcp");
+            tokio_rustls::TlsConnector::from(Arc::new(client))
+                .connect(
+                    rustls_pki_types::ServerName::try_from("localhost").expect("name"),
+                    tcp,
+                )
+                .await
+                .expect("client handshake")
+        });
+        let (tcp, _) = listener.accept().await.expect("accept");
+        let tls = tokio_rustls::TlsAcceptor::from(Arc::new(server))
+            .accept(tcp)
+            .await
+            .expect("server handshake");
+        let _client = connecting.await.expect("client");
+
+        let mut io = super::WsIo::Tls(Box::new(super::Replay::new(Vec::new(), tls)));
+        let mut cx = Context::from_waker(Waker::noop());
+        let chunk = [0u8; 16 * 1024];
+        let mut written = 0usize;
+        loop {
+            match Pin::new(&mut io).poll_write(&mut cx, &chunk) {
+                Poll::Ready(Ok(n)) if n > 0 => written += n,
+                Poll::Ready(Ok(_)) | Poll::Pending => break,
+                Poll::Ready(Err(e)) => panic!("write: {e}"),
+            }
+            assert!(written < 1 << 30, "the socket never filled");
+        }
+        assert!(
+            Pin::new(&mut io).poll_flush(&mut cx).is_pending(),
+            "flushed with records still held, after {written} bytes"
+        );
+    }
 }
