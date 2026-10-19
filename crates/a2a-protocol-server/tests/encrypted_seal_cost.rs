@@ -193,6 +193,58 @@ async fn tenant_aware_status_writes_seal_only_their_message() {
     .await;
 }
 
+/// Pushing an artifact seals that artifact's parts alone; the task's other
+/// parts are not sealed again. Returns how many values were sealed.
+async fn seals_for_a_pushed_artifact(inner: Arc<dyn TaskStore>) -> u64 {
+    let cipher = cipher();
+    let store = EncryptedTaskStore::from_arc(inner, Arc::clone(&cipher) as Arc<dyn ContentCipher>);
+    store.save(&task(5)).await.expect("first write");
+    let before = cipher.seal_count();
+    let mut next = task(5);
+    next.artifacts
+        .as_mut()
+        .expect("artifacts")
+        .push(Artifact::new("two", vec![Part::text("pushed")]));
+    store
+        .save_artifact_delta(&next, ArtifactDelta::Pushed { index: 1 })
+        .await
+        .expect("push");
+    let sealed = cipher.seal_count() - before;
+    let read = store
+        .get(&TaskId::new("t-seal"))
+        .await
+        .expect("opens")
+        .expect("stored");
+    let artifacts = read.artifacts.expect("artifacts");
+    assert_eq!(artifacts.len(), 2);
+    assert_eq!(artifacts[1].parts[0].text_content(), Some("pushed"));
+    sealed
+}
+
+#[tokio::test]
+async fn in_memory_pushes_seal_only_the_pushed_artifact() {
+    assert_eq!(
+        seals_for_a_pushed_artifact(Arc::new(InMemoryTaskStore::new())).await,
+        1
+    );
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_pushes_seal_only_the_pushed_artifact() {
+    let path = std::env::temp_dir().join(format!("a2a-seal-push-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let store =
+        a2a_protocol_server::store::SqliteTaskStore::new(&format!("sqlite://{}", path.display()))
+            .await
+            .expect("store");
+    let sealed = seals_for_a_pushed_artifact(Arc::new(store)).await;
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+    }
+    assert_eq!(sealed, 1);
+}
+
 /// The store's required methods only: no in-place path at all.
 struct WholeWrites(InMemoryTaskStore);
 

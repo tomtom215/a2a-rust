@@ -200,6 +200,20 @@ mod tests {
         assert_eq!(ctx.caller_identity(), None);
     }
 
+    /// The debug form says how callers are named and nothing else: a
+    /// custom namer is a closure, which has no form to print.
+    #[test]
+    fn debug_names_the_naming_and_nothing_else() {
+        assert_eq!(
+            format!("{:?}", MutualTlsAuthInterceptor::new()),
+            r#"MutualTlsAuthInterceptor { names: "fingerprint" }"#
+        );
+        assert_eq!(
+            format!("{:?}", MutualTlsAuthInterceptor::with_names(|_| None)),
+            r#"MutualTlsAuthInterceptor { names: "custom" }"#
+        );
+    }
+
     #[test]
     fn it_checks_the_mutual_tls_scheme_only() {
         use a2a_protocol_types::security::{MutualTlsSecurityScheme, SecurityScheme};
