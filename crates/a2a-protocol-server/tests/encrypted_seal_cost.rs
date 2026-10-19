@@ -230,6 +230,26 @@ async fn a_store_without_in_place_writes_is_written_whole() {
     assert_every_chunk_reads_back(&store).await;
 }
 
+/// The same for a status write: with no in-place status path, the wrapper
+/// writes the task whole and the new status reads back.
+#[tokio::test]
+async fn a_status_write_to_a_store_without_in_place_writes_is_written_whole() {
+    let store = EncryptedTaskStore::new(
+        WholeWrites(InMemoryTaskStore::new()),
+        cipher() as Arc<dyn ContentCipher>,
+    );
+    store.save(&task(1)).await.expect("first write");
+    let mut next = task(1);
+    next.status = TaskStatus::new(TaskState::InputRequired);
+    store.save_status_delta(&next).await.expect("status");
+    let read = store
+        .get(&TaskId::new("t-seal"))
+        .await
+        .expect("opens")
+        .expect("stored");
+    assert_eq!(read.status.state, TaskState::InputRequired);
+}
+
 /// A store that breaks the in-place contract and writes the task it was
 /// handed whole stores placeholders, and the read fails: never plaintext,
 /// never a part from another place.

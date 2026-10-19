@@ -503,11 +503,10 @@ pub trait TaskStore: Send + Sync + 'static {
     /// The store's error, and the terminal-state refusal `save` would report.
     fn try_save_artifact_delta<'a>(
         &'a self,
-        task: &'a Task,
-        delta: ArtifactDelta,
+        _task: &'a Task,
+        _delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
-        let _ = (task, delta);
-        Box::pin(async { Ok(false) })
+        Box::pin(async move { Ok(false) })
     }
 
     /// [`try_save_artifact_delta`](TaskStore::try_save_artifact_delta) for
@@ -524,10 +523,9 @@ pub trait TaskStore: Send + Sync + 'static {
     /// The store's error, and the terminal-state refusal `save` would report.
     fn try_save_status_delta<'a>(
         &'a self,
-        task: &'a Task,
+        _task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
-        let _ = task;
-        Box::pin(async { Ok(false) })
+        Box::pin(async move { Ok(false) })
     }
 
     /// Persists a task whose history grew by `messages`, without the caller
