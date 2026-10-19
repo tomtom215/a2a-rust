@@ -245,12 +245,19 @@ jobs:
             port: 9101
           - sdk: go
             setup: |
-              cd itk/agents/go-agent && go mod tidy && go run . &
+              # Build in the FOREGROUND and background only the server, as
+              # the `javascript` leg does for npm: a backgrounded `go run`
+              # still compiling when the readiness poll ends left the agent
+              # unstarted (go-sdk leg, CI run 39287001899).
+              cd itk/agents/go-agent && go mod tidy && go build -o agent .
+              ./agent &
               sleep 3
             port: 9102
           - sdk: java
             setup: |
-              cd itk/agents/java-agent && mvn -q compile exec:java &
+              # Compile in the foreground, run in the background (see `go`).
+              cd itk/agents/java-agent && mvn -q compile
+              mvn -q exec:java &
               sleep 5
             port: 9103
           # ── Agents built on the OFFICIAL SDKs — the runs that prove real
@@ -292,7 +299,9 @@ jobs:
             # year.
           - sdk: go-sdk
             setup: |
-              cd itk/agents/go-sdk && go mod tidy && PORT=9112 go run . &
+              # Build in the foreground, run in the background (see `go`).
+              cd itk/agents/go-sdk && go mod tidy && go build -o agent .
+              PORT=9112 ./agent &
               sleep 5
             port: 9112
           - sdk: java-sdk
