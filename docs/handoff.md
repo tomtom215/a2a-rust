@@ -83,9 +83,8 @@ only: when something here is done, delete it rather than annotating it.
    `book/src/reference/mutation-history.md`, from the shards' logs (the
    artifacts could not be downloaded here). It is incomplete: three of the
    24 `a2a-server` shards hit the 240-minute limit, so the shard count or
-   the timeout needs raising again before a sweep is whole. Three survivors
-   are open (`final_snapshot_hook`, `RestTransport::send_request`,
-   `Delegation::observe`; the row names them). After the next release,
+   the timeout needs raising again before a sweep is whole. Its three
+   survivors have tests on this branch (the row names them). After the next release,
    check the versioned docs deploy.
 6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 

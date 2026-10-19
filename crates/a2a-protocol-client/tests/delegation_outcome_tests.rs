@@ -278,3 +278,39 @@ async fn a_renewal_asks_for_the_lease_extension_alone() {
         )]
     );
 }
+
+/// A message after the child has a task id is part of that task's stream,
+/// not the answer: the handle stays unsettled, and dropping or cancelling
+/// it still reaches the running child.
+#[tokio::test]
+async fn a_message_after_the_task_does_not_settle_the_handle() {
+    let note = serde_json::to_value(StreamResponse::Message(Message::new(
+        "note",
+        MessageRole::Agent,
+        vec![Part::text("working on it")],
+    )))
+    .expect("json");
+    let url = fake_peer(
+        vec![snapshot("TASK_STATE_WORKING"), note],
+        true,
+        serde_json::Value::Null,
+    )
+    .await;
+    let client = Arc::new(ClientBuilder::new(url).build().expect("client"));
+    let mut d = Delegation::start(client, job("anything"))
+        .await
+        .expect("start");
+    for _ in 0..2 {
+        tokio::time::timeout(GUARD, d.next_event())
+            .await
+            .expect("bounded")
+            .expect("stream open")
+            .expect("event");
+    }
+    assert_eq!(d.task_id(), Some("child-1"));
+    assert!(
+        !d.is_settled(),
+        "a running child is not settled by a message"
+    );
+    let _ = d.detach();
+}

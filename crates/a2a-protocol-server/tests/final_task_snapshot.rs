@@ -240,3 +240,60 @@ async fn no_snapshot_is_sent_when_the_store_cannot_show_the_finished_task() {
         "no Task after the terminal status: {frames:?}"
     );
 }
+
+/// A store whose terminal write takes longer than the queue's write timeout
+/// (5 s), so the terminal gate stops waiting for it and the stream reaches
+/// the terminal status while the store is still writing it.
+struct SlowTerminalWrite(Arc<InMemoryTaskStore>);
+
+impl TaskStore for SlowTerminalWrite {
+    fn save<'a>(&'a self, t: &'a Task) -> Fut<'a, ()> {
+        Box::pin(async move {
+            if t.status.state.is_terminal() {
+                tokio::time::sleep(Duration::from_millis(5_500)).await;
+            }
+            self.0.save(t).await
+        })
+    }
+    fn get<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<Task>> {
+        self.0.get(id)
+    }
+    fn list<'a>(&'a self, p: &'a ListTasksParams) -> Fut<'a, TaskListResponse> {
+        self.0.list(p)
+    }
+    fn insert_if_absent<'a>(&'a self, t: &'a Task) -> Fut<'a, bool> {
+        self.0.insert_if_absent(t)
+    }
+    fn delete<'a>(&'a self, id: &'a TaskId) -> Fut<'a, ()> {
+        self.0.delete(id)
+    }
+}
+
+/// The snapshot waits for a store that is behind, up to
+/// `subscribe_replay_catchup` (2 s by default) from when the stream ends,
+/// rather than giving up at once: here the store finishes about half a
+/// second after the gate stops waiting.
+#[tokio::test]
+async fn the_snapshot_waits_for_a_store_that_is_behind() {
+    let handler = RequestHandlerBuilder::new(Lingers)
+        .without_agent_card()
+        .with_task_store(SlowTerminalWrite(Arc::new(InMemoryTaskStore::new())))
+        .with_handler_limits(limits(true))
+        .build()
+        .unwrap();
+    let mut reader = send_stream(&handler).await;
+    let mut frames = Vec::new();
+    while let Some(frame) = tokio::time::timeout(Duration::from_secs(15), reader.read())
+        .await
+        .expect("the stream must not stall")
+    {
+        frames.push(frame.expect("no stream error").event);
+    }
+    match frames.last() {
+        Some(StreamResponse::Task(task)) => {
+            assert_eq!(task.status.state, TaskState::Completed);
+            assert_eq!(task.artifacts.as_ref().map_or(0, Vec::len), 1);
+        }
+        other => panic!("the last frame is the final Task: {other:?} in {frames:?}"),
+    }
+}
