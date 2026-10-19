@@ -242,7 +242,10 @@ mod tls {
     }
 
     /// Spec §8.1 on the TLS listener: the agent card is answered over the
-    /// same TLS session, read rather than peeked.
+    /// same TLS session, read rather than peeked, and the session is closed
+    /// with `close_notify`: without it the client cannot tell a complete
+    /// answer from a truncated one (RFC 8446 §6.1), and rustls reports the
+    /// end as `UnexpectedEof`.
     #[tokio::test]
     async fn the_agent_card_is_served_over_the_same_tls_listener() {
         let certs = certs();
@@ -255,7 +258,7 @@ mod tls {
         tokio::time::timeout(std::time::Duration::from_secs(5), tls.read_to_end(&mut out))
             .await
             .expect("answered and closed")
-            .ok();
+            .expect("closed with close_notify");
         let text = String::from_utf8_lossy(&out);
         assert!(text.starts_with("HTTP/1.1 200"), "{text}");
         assert!(text.contains("\"ws-agent\""), "{text}");

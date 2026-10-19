@@ -74,7 +74,10 @@ where
     let deadline = tokio::time::Instant::now() + within;
     let mut seen = Vec::with_capacity(DECIDING);
     let mut buf = [0u8; DECIDING];
-    while seen.len() < DECIDING {
+    // `decide` answers by `DECIDING` bytes at the latest
+    // (`deciding_bytes_always_decide`), and no read goes past them, so the
+    // loop always returns from inside.
+    loop {
         let want = DECIDING - seen.len();
         let Ok(Ok(n)) = tokio::time::timeout_at(deadline, io.read(&mut buf[..want])).await else {
             return (false, seen);
@@ -87,7 +90,6 @@ where
             return (answer, seen);
         }
     }
-    (false, seen)
 }
 
 /// Whether `seen`, the start of a request, asks for the card: a method of
@@ -228,6 +230,26 @@ mod tests {
             seen.len() <= super::DECIDING,
             "no more is read than the longest card request line takes to decide"
         );
+    }
+
+    /// `DECIDING` bytes always decide, which is what lets
+    /// `read_card_request` stop reading there. The prefixes that stay
+    /// undecided longest are a method followed by the target, and a run of
+    /// upper-case letters; with the longest method, one byte fewer is still
+    /// undecided, so the bound is tight.
+    #[test]
+    fn deciding_bytes_always_decide() {
+        use super::{DECIDING, MAX_METHOD, TARGET};
+        for method in 1..=MAX_METHOD {
+            let mut seen = vec![b'A'; method];
+            seen.extend_from_slice(TARGET);
+            seen.resize(DECIDING, b' ');
+            assert!(decide(&seen).is_some(), "method of {method}");
+            if method == MAX_METHOD {
+                assert_eq!(decide(&seen[..DECIDING - 1]), None);
+            }
+        }
+        assert_eq!(decide(&[b'A'; DECIDING]), Some(false));
     }
 
     /// A request line still arriving is waited for, not guessed at.

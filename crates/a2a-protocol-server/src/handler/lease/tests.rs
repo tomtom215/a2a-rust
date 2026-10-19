@@ -374,3 +374,11 @@ fn the_check_interval_is_a_quarter_of_the_ttl_at_most_a_second() {
         Duration::from_secs(1)
     );
 }
+
+/// A lease holds through its deadline's millisecond and lapses after it.
+#[test]
+fn a_lease_lapses_after_its_deadline_not_on_it() {
+    assert!(!super::lapsed(1_000, 999));
+    assert!(!super::lapsed(1_000, 1_000));
+    assert!(super::lapsed(1_000, 1_001));
+}

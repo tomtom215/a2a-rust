@@ -8,7 +8,7 @@
 use a2a_protocol_types::agent_card::AgentCard;
 use serde_json::{Value, json};
 
-use super::{card_credentials, card_warnings, is_loopback, is_uri, publishable};
+use super::{card_credentials, card_warnings, is_loopback, is_uri, is_url, publishable};
 
 fn card(extra: &Value) -> AgentCard {
     let mut c = json!({
@@ -91,6 +91,10 @@ fn shapes() {
     assert!(!is_uri("WEBSOCKET") && !is_uri(":x") && !is_uri("a b:c") && !is_uri("x:"));
     assert!(is_loopback("http://user@localhost:1/x") && is_loopback("http://[::1]/"));
     assert!(!is_loopback("http://example.com") && !is_loopback("nonsense"));
+    // A URL names a host: `scheme://` with nothing after it, or with a path
+    // straight after it, is a URI but not a URL.
+    assert!(is_url("https://x") && is_url("http://[::1]:3000/rpc"));
+    assert!(!is_url("https://") && !is_url("https:///rpc") && !is_url("urn:a:b"));
 }
 
 /// Spec §14: a card "SHOULD NOT include sensitive credentials", and §13.3
