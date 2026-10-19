@@ -20,7 +20,7 @@ use std::pin::Pin;
 use crate::builder::RequestHandlerBuilder;
 
 #[cfg(feature = "tracing")]
-mod warning;
+pub(in crate::handler) mod warning;
 use crate::executor::AgentExecutor;
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;

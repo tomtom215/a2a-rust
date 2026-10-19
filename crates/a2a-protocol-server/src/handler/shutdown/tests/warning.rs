@@ -148,7 +148,10 @@ const CANARY: &str = "warn-capture canary";
 /// One global subscriber, installed once, with a sink tests swap in and out
 /// under `CAPTURE_LOCK`, makes the callsite permanently interested and the
 /// result independent of ordering.
-fn warnings_during<F>(f: F) -> Vec<String>
+///
+/// Shared with the halt tests (`halt/store_tests.rs`): a second file
+/// installing its own global subscriber would lose to this one.
+pub(in crate::handler) fn warnings_during<F>(f: F) -> Vec<String>
 where
     F: FnOnce(),
 {

@@ -430,9 +430,11 @@ impl RequestHandler {
             let inline = params.configuration.as_ref().filter(|_| !continues);
             Box::pin(self.register_inline_push_config(inline, &task_id, true)).await?;
 
-            // Subsequent requests for this context_id will now find the task via
-            // find_task_by_context.
-            guard_ref.release_context();
+            // The context lock is released when the guard is dropped after
+            // this block, in the same poll: nothing below awaits. From then
+            // on a send for this context_id finds the task by
+            // `find_task_by_context`. An explicit release here was removed:
+            // with no await before that drop, nothing could tell them apart.
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();

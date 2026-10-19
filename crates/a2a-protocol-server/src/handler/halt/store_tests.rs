@@ -411,3 +411,36 @@ async fn a_written_halt_is_no_longer_held_as_unwritten() {
     assert!(sync.persist(&halt).await);
     assert!(!sync.forget(&HaltScope::All), "nothing left held");
 }
+
+/// A halt read from the store is reported once, by the poll that first reads
+/// it, and not again by every poll while it holds: the warning tells an
+/// operator that another replica halted this one, and repeated each poll
+/// interval it would be noise that buries the first report.
+#[cfg(feature = "tracing")]
+#[test]
+fn a_halt_read_from_the_store_is_warned_about_once() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("runtime");
+    let warnings = crate::handler::shutdown::tests::warning::warnings_during(|| {
+        rt.block_on(async {
+            let store = InMemoryHaltStore::new();
+            let sync = super::sync::HaltSync::new(Arc::new(store.clone()), POLL);
+            let halts = std::sync::RwLock::default();
+            let tokens = tokio::sync::RwLock::new(std::collections::HashMap::new());
+            store
+                .put(&StoredHalt::new(HaltScope::Tenant("acme".into()), "r", "b"))
+                .await
+                .unwrap();
+            for _ in 0..3 {
+                sync.apply(&halts, &tokens).await.unwrap();
+            }
+        });
+    });
+    let reports = warnings
+        .iter()
+        .filter(|w| w.contains("halted by another replica"))
+        .count();
+    assert_eq!(reports, 1, "three polls of one halt; got {warnings:?}");
+}

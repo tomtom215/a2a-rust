@@ -61,8 +61,8 @@ pub(super) struct CommitGuard {
     push_store: Arc<dyn PushConfigStore>,
     /// The idempotency key this send claimed, if any.
     key: Option<String>,
-    /// The per-context lock, held until the commit no longer needs it or,
-    /// on a drop, until the release is done.
+    /// The per-context lock, held until the commit returns and the guard is
+    /// dropped disarmed or, on a drop before that, until the release is done.
     context: Option<OwnedMutexGuard<()>>,
     /// The tenant and caller the stores are scoped to.
     tenant: Option<CapturedTenant>,
@@ -118,12 +118,6 @@ impl CommitGuard {
     /// Records that this send saved a new task's row.
     pub(super) const fn created_row(&mut self) {
         self.created_row = true;
-    }
-
-    /// Releases the per-context lock: the task is committed far enough that
-    /// a concurrent send for the context may find it.
-    pub(super) fn release_context(&mut self) {
-        self.context = None;
     }
 
     /// The commit returned; whatever it holds is someone else's to release.
