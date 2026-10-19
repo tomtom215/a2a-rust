@@ -174,18 +174,14 @@ mod tests {
         assert_eq!(&got, b"hi");
     }
 
-    /// A TLS connection's flush waits for the records rustls still holds.
-    /// The client never reads, so once a write is refused the socket is
-    /// full and rustls holds sealed records; a flush that reported done
-    /// then would leave the last bytes unsent while the caller waits for an
-    /// answer.
+    /// Both ends of a TLS session over loopback: the server's, and the
+    /// client's, which must stay alive for the server's to be writable.
     #[cfg(feature = "tls-rustls")]
-    #[tokio::test]
-    async fn a_tls_flush_is_pending_while_records_are_unsent() {
-        use std::pin::Pin;
+    async fn tls_pair() -> (
+        tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+        tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    ) {
         use std::sync::Arc;
-        use std::task::{Context, Poll, Waker};
-        use tokio::io::AsyncWrite;
 
         let mut ca_params = rcgen::CertificateParams::new(vec![]).expect("params");
         ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
@@ -229,8 +225,22 @@ mod tests {
             .accept(tcp)
             .await
             .expect("server handshake");
-        let _client = connecting.await.expect("client");
+        (tls, connecting.await.expect("client"))
+    }
 
+    /// A TLS connection's flush waits for the records rustls still holds.
+    /// The client never reads, so once a write is refused the socket is
+    /// full and rustls holds sealed records; a flush that reported done
+    /// then would leave the last bytes unsent while the caller waits for an
+    /// answer.
+    #[cfg(feature = "tls-rustls")]
+    #[tokio::test]
+    async fn a_tls_flush_is_pending_while_records_are_unsent() {
+        use std::pin::Pin;
+        use std::task::{Context, Poll, Waker};
+        use tokio::io::AsyncWrite;
+
+        let (tls, _client) = tls_pair().await;
         let mut io = super::WsIo::Tls(Box::new(super::Replay::new(Vec::new(), tls)));
         let mut cx = Context::from_waker(Waker::noop());
         let chunk = [0u8; 16 * 1024];
