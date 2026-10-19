@@ -61,9 +61,10 @@ only: when something here is done, delete it rather than annotating it.
    a declared scheme), §8.4.3 x5c certificate expiry, a JWT revocation list
    (`jti`).
 3. **Official TCK.** Re-run against the newest a2a-tck before a pull request
-   that changes wire behaviour (`--min-graded 88` full, 66 minimal);
-   this branch changed the blocking-send path (`collect_then_follow`) and
-   the push-config, card and auth paths.
+   that changes wire behaviour (`--min-graded 88` full, 66 minimal).
+   Re-run 2026-10-19 on this branch at `8aef50d` (a2a-tck `263b9cf`, debug
+   SUT): the full gate graded 88 with the 9 baselined failures, the minimal
+   gate 66; both exit 0. Re-run it after any further wire change.
 4. **Step 4 — OpenTelemetry on by default**, with the exporter staying in
    `a2a-protocol-sdk` only (decided 2026-10-18). Done 2026-10-18: UCUM
    units, `a2a.server.latency` removed for `a2a.server.request.duration`,
@@ -80,7 +81,9 @@ only: when something here is done, delete it rather than annotating it.
    match every name used. Step 4 is complete.
 5. **Freshness:** record the first 24-shard weekly mutation sweep in
    `book/src/reference/mutation-history.md` after it runs (Monday
-   2026-10-19); after the next release, check the versioned docs deploy.
+   2026-10-19, 03:00 UTC, about four hours), counted from every shard's
+   artifact as the 2026-10-12 row was; after the next release, check the
+   versioned docs deploy.
 6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 
 ## Waiting on the maintainer
