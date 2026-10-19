@@ -139,3 +139,16 @@ fn an_internal_host_is_reported() {
     );
     assert!(!w.iter().any(|m| m.contains("o.example")), "{w:#?}");
 }
+
+/// Only a key ending in `url` or `uri` holds a URL. A skill description
+/// that mentions an address is prose about what the agent does, not where
+/// the card points, so it is neither an internal URL nor a credential.
+#[test]
+fn prose_that_mentions_an_address_is_not_a_card_url() {
+    let c = card(&json!({
+        "skills": [{"id": "s", "name": "S", "tags": ["t"],
+            "description": "Summarises https://user:pw@wiki.corp/reports for the operator"}]
+    }));
+    assert_eq!(card_warnings(&c), Vec::<String>::new());
+    assert_eq!(card_credentials(&c), Vec::<String>::new());
+}

@@ -161,20 +161,40 @@ pub(super) fn protocol(
     match value.trim() {
         "grpc" => Ok(OtlpProtocol::Grpc),
         "http/protobuf" => Ok(OtlpProtocol::HttpProtobuf),
-        #[cfg(feature = "otlp-json")]
-        "http/json" => Ok(OtlpProtocol::HttpJson),
-        #[cfg(not(feature = "otlp-json"))]
-        "http/json" => Err(TelemetryError::config(
-            &var,
-            &value,
-            "OTLP/HTTP with JSON bodies is not compiled in: enable the `otlp-json` feature, \
-             or use `http/protobuf`",
-        )),
+        "http/json" => http_json(&var, &value),
         _ => Err(TelemetryError::config(
             &var,
             &value,
             "expected `grpc`, `http/protobuf` or `http/json`",
         )),
+    }
+}
+
+/// `http/json`, which only the `otlp-json` feature can export.
+///
+/// One function with the feature split inside it rather than two `#[cfg]`
+/// match arms, for the reason `build_jwks_client` gives: under
+/// `--all-features` the `not(otlp-json)` arm is compiled out, so deleting it
+/// builds and passes every test, and the mutation gate reported it as a
+/// survivor no test could reach.
+#[cfg_attr(
+    feature = "otlp-json",
+    allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)
+)]
+fn http_json(var: &str, value: &str) -> Result<OtlpProtocol, TelemetryError> {
+    #[cfg(feature = "otlp-json")]
+    {
+        let _ = (var, value);
+        Ok(OtlpProtocol::HttpJson)
+    }
+    #[cfg(not(feature = "otlp-json"))]
+    {
+        Err(TelemetryError::config(
+            var,
+            value,
+            "OTLP/HTTP with JSON bodies is not compiled in: enable the `otlp-json` feature, \
+             or use `http/protobuf`",
+        ))
     }
 }
 
