@@ -1166,8 +1166,8 @@ PY
 import pathlib, sys
 p = pathlib.Path(".github/workflows/mutants.yml")
 s = p.read_text()
-old = "-- ':(glob)crates/*/src/**/*.rs' > pr-src.diff"
-new = "-- 'crates/*/src/**/*.rs' > pr-src.diff"
+old = "-- ':(glob)crates/${{ matrix.crate }}/src/**/*.rs' > pr-src.diff"
+new = "-- 'crates/${{ matrix.crate }}/src/**/*.rs' > pr-src.diff"
 if s.count(old) != 1:
     sys.exit(f"expected exactly one mutation scoping pathspec; found {s.count(old)}")
 p.write_text(s.replace(old, new))
