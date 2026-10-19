@@ -163,3 +163,22 @@ async fn an_ended_task_is_reported_once() {
     let states = follow_to_the_end(&client, &credential, &id, true).await;
     assert_eq!(states, [TaskState::Completed]);
 }
+
+/// Only a refused subscription (`UnsupportedOperation`) makes the follow
+/// poll; any other error, here an unknown task, is the caller's.
+#[tokio::test]
+async fn following_an_unknown_task_is_an_error() {
+    let (client, _credential) = agent(true).await;
+    let refused = client
+        .follow_task("no-such-task", Duration::from_millis(20))
+        .await
+        .expect_err("an unknown task is not followed");
+    assert!(
+        matches!(
+            &refused,
+            a2a_protocol_client::ClientError::Protocol(e)
+                if e.code == a2a_protocol_types::error::ErrorCode::TaskNotFound
+        ),
+        "{refused:?}"
+    );
+}

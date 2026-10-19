@@ -973,7 +973,10 @@ jobs:
         with:
           command: check
           manifest-path: bindings/a2a-protocol-slimrpc/Cargo.toml
-          command-arguments: "--config bindings/a2a-protocol-slimrpc/deny.toml"
+          # `--config` is a top-level option since cargo-deny 0.20, so it goes
+          # before `check` (`arguments`), not after it (`command-arguments`);
+          # `--all-features` is the input's default, kept.
+          arguments: "--all-features --config bindings/a2a-protocol-slimrpc/deny.toml"
 
       # `cargo package --workspace` in the `package` job cannot see this crate
       # either, so nothing checked that a `publish = true` crate actually
