@@ -158,8 +158,34 @@ fn debug_hides_every_token_and_secret() {
     for secret in ["alices token", "planner token", "s3cret"] {
         assert!(!shown.contains(secret), "{shown}");
     }
+    // Hidden, not absent: what is safe to show is shown.
+    for shown_part in [
+        "ExchangeRequest",
+        "subject_token: \"<redacted>\"",
+        "actor_token: Some(\"<redacted>\")",
+        ACCESS_TOKEN_TYPE,
+    ] {
+        assert!(shown.contains(shown_part), "{shown_part} in {shown}");
+    }
+    for shown_part in [
+        "TokenExchange",
+        "token_url: \"http://idp/token\"",
+        "client_id: \"planner\"",
+        "client_secret: \"<redacted>\"",
+    ] {
+        assert!(shown.contains(shown_part), "{shown_part} in {shown}");
+    }
     let t: ExchangedToken = serde_json::from_str(ISSUED).unwrap();
-    assert!(!format!("{t:?}").contains("delegated"));
+    let issued = format!("{t:?}");
+    assert!(!issued.contains("delegated"), "{issued}");
+    for shown_part in [
+        "ExchangedToken",
+        "access_token: \"<redacted>\"",
+        "token_type: \"Bearer\"",
+        "expires_in: Some(300)",
+    ] {
+        assert!(issued.contains(shown_part), "{shown_part} in {issued}");
+    }
 }
 
 fn percent_decode(s: &str) -> String {

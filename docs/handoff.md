@@ -299,6 +299,9 @@ into this file: the commit that records it changes it.
   (`RUSTFLAGS="-C link-arg=-fuse-ld=lld"`), pass `--test` filters through
   `--`, run it detached from a pinned worktree, and resume with
   `--iterate`.
+- An `--in-place` mutation run, or a hand mutant, interrupted by a
+  container restart leaves the mutant in the source (2026-10-19): diff
+  against `HEAD` before anything else, and never commit while one runs.
 
 ## History
 
