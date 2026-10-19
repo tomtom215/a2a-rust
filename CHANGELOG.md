@@ -214,6 +214,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Leases on delegated tasks: a child whose parent goes quiet stops**
+  (types, server, client; ADR 0020; G1-B in `docs/swarm-orchestration.md`;
+  OWASP ASI08). The extension `https://a2a-rust.com/extensions/lease/v1`
+  carries a grant on the message that starts a task
+  (`a2a_protocol_types::lease::Lease`, `{"ttlMs": n}`). A `GetTask` that
+  activates the extension renews the lease (`A2aClient::renew_lease`). A
+  server with `RequestHandlerBuilder::with_lease_store` (`InMemoryLeaseStore`,
+  `PostgresLeaseStore`) declares the extension, checks a grant against
+  `MIN_LEASE_TTL` (1 s) and `with_max_lease_ttl` (default one hour) before
+  any work, and stops a task whose lease lapses, as a halt does. A store it
+  cannot read counts as a live parent. `Delegation::start_leased` grants
+  the lease and renews it every third of its time to live while the handle
+  lives, so a parent that crashes, hangs or detaches leaves a child that
+  stops within about one time to live (measured in
+  `delegation_lease_tests.rs`).
 - **A mutual-TLS client certificate names the caller, on every binding**
   (server; ADR 0018; OWASP ASI07). The HTTP `Server`, the WebSocket
   listener and gRPC carry the leaf certificate a client presented in a

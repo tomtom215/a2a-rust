@@ -631,15 +631,17 @@ id = "ASI08"
 source = "owasp-asi"
 provision = "ASI08 Cascading Failures"
 requirement = "A failure in one agent or tool does not propagate unchecked through the agents that depend on it."
-sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores. A `Delegation` cancels a task's children on other agents when the task is cancelled, its stream to a child is lost, or its handle is dropped."
+sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores. A `Delegation` cancels a task's children on other agents when the task is cancelled, its stream to a child is lost, or its handle is dropped; with a lease (`Delegation::start_leased`, ADR 0020) a child whose parent crashes or goes quiet is stopped by its own server."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/rate_limit/tests.rs::fast_path_rate_limit_exceeded",
   "crates/a2a-protocol-server/src/handler/tenant_limits_tests.rs::a_tenant_at_its_concurrency_limit_is_refused",
   "crates/a2a-protocol-client/tests/delegation_tests.rs::a_lost_stream_cancels_the_child",
   "crates/a2a-protocol-client/tests/delegation_tests.rs::dropping_an_unsettled_handle_cancels_the_child",
+  "crates/a2a-protocol-client/tests/delegation_lease_tests.rs::a_child_whose_parent_goes_quiet_stops",
+  "crates/a2a-protocol-client/tests/delegation_lease_tests.rs::a_live_parent_keeps_its_child_running",
 ]
-gap = "A parent that crashes leaves its children running until they finish on their own (G1-B, a lease, is not built)."
+gap = "Leases are opt-in on both sides: a child on an agent that grants none, or sent without one, runs on after its parent crashes. Deadline and budget propagation (G5) is not built."
 
 [[control]]
 id = "ASI09"

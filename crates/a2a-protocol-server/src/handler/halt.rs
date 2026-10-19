@@ -316,7 +316,7 @@ impl RequestHandler {
 
 /// Marks `turn` halted, then fires its token: in that order, so the
 /// executor that returns on the token finds the mark.
-fn stop(turn: &ExecutorTurn, token: &CancellationToken) {
+pub(super) fn stop(turn: &ExecutorTurn, token: &CancellationToken) {
     turn.halt();
     token.cancel();
 }

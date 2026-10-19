@@ -9,6 +9,7 @@ pub mod applied;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
 pub mod halt;
+pub mod lease;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
@@ -50,6 +51,7 @@ mod tenant_event_log;
 
 pub use applied::AppliedPosition;
 pub use halt::{HaltStore, InMemoryHaltStore, StoredHalt};
+pub use lease::{InMemoryLeaseStore, LeaseStore};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at
@@ -105,6 +107,8 @@ pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
 
 #[cfg(feature = "postgres")]
 pub use halt::PostgresHaltStore;
+#[cfg(feature = "postgres")]
+pub use lease::PostgresLeaseStore;
 #[cfg(feature = "postgres")]
 pub use pg_migration::{BUILTIN_PG_MIGRATIONS, PgMigration, PgMigrationRunner};
 #[cfg(feature = "postgres")]

@@ -1108,9 +1108,9 @@ Work committed to and not yet built:
   2026-10-18 (ADR 0019):** `RequestHandlerBuilder::with_halt_store` writes
   halts through to a `HaltStore` every replica polls and reads before its
   first send.
-* **G1-B: children that stop when their parent goes quiet.** A `Delegation`
-  cannot cancel a child once the parent process has crashed. A lease
-  extension can (`docs/swarm-orchestration.md`).
+* ~~**G1-B: children that stop when their parent goes quiet.**~~ **Done
+  2026-10-18 (ADR 0020):** the lease extension, `Delegation::start_leased`
+  and `RequestHandlerBuilder::with_lease_store`.
 * ~~**The in-diff mutation sweep over this work.**~~ **Done 2026-10-09:**
   every mutant in the B–F diff has run. Every miss now has a test, or is a
   Kani harness that only Kani compiles. `docs/handoff-history.md` has the counts.

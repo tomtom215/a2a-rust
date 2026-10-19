@@ -49,6 +49,7 @@ is on docs.rs.
 | [0017](adr/0017-context-lookup-and-stored-task.md) | Context Lookup and Stored Task | The send's context lookup lists without history and reads the chosen task whole; `RequestContext::stored_task` keeps its meaning |
 | [0018](adr/0018-mutual-tls-caller-identity.md) | Mutual-TLS Caller Identity | Every listener passes the client certificate to the interceptors; `MutualTlsAuthInterceptor` names the caller by fingerprint or a deployment's mapping, with no X.509 parser in the SDK |
 | [0019](adr/0019-shared-halt-store.md) | Shared Halt Store | Halts written through to a store every replica polls and reads before its first send; a halt the store refuses holds locally and is retried |
+| [0020](adr/0020-delegation-lease.md) | Delegation Lease | A delegated child carries a lease renewed by a `GetTask` that activates the extension; the deadline lives in a shared store, and a lapsed child is stopped |
 
 ## Audits, measurements and design notes
 

@@ -41,6 +41,7 @@ mod eviction;
 mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
+mod mode;
 mod respond;
 mod start;
 use start::{ExecutorStart, runtime_has_one_worker};
@@ -50,31 +51,7 @@ mod validation;
 #[cfg(test)]
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
 pub use decisions::TASK_HISTORY_LIMIT;
-
-/// How the send is driven and shaped, read once from the request.
-#[derive(Clone, Copy)]
-struct SendMode {
-    /// Both streaming and fire-and-forget (`return_immediately`) drive the
-    /// task asynchronously and therefore need the background event processor
-    /// to persist state transitions and fire push notifications. Only the
-    /// default blocking mode collects events in the foreground.
-    use_background: bool,
-    /// `SendMessageConfiguration.historyLength`, applied to the response.
-    response_history_length: Option<u32>,
-}
-
-impl SendMode {
-    fn of(params: &MessageSendParams, streaming: bool) -> Self {
-        let configuration = params.configuration.as_ref();
-        let return_immediately = configuration
-            .and_then(|c| c.return_immediately)
-            .unwrap_or(false);
-        Self {
-            use_background: streaming || return_immediately,
-            response_history_length: configuration.and_then(|c| c.history_length),
-        }
-    }
-}
+use mode::SendMode;
 
 /// A task whose executor is running: what `commit_task` hands the response
 /// phase.
@@ -366,6 +343,9 @@ impl RequestHandler {
             // A halted tenant takes no new work (`halt`); a halt that lands
             // after this check is caught once the token is registered.
             self.refuse_if_halted().await?;
+            // A lease is checked before any work, and stored once the turn
+            // has its token (`lease`).
+            let lease = self.requested_lease(&params.message)?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;
@@ -418,6 +398,10 @@ impl RequestHandler {
             // tokens before this one was inserted; it has set its flag by
             // now, so stop this turn the way the walk would have (`halt`).
             self.stop_if_halted(&turn, &ctx.cancellation_token);
+            if let Some(lease) = lease {
+                self.start_lease(&task_id.0, lease, &turn, &ctx.cancellation_token)
+                    .await?;
+            }
             // Before the save, so that nothing is awaited between a
             // continuation's save and its executor starting: a drop there
             // would leave the turn saved with nothing to run it, and the

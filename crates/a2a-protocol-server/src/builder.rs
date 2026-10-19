@@ -187,6 +187,8 @@ pub struct RequestHandlerBuilder {
     approval_gate: Option<crate::approval::ApprovalGate>,
     halt_store: Option<Arc<dyn crate::store::HaltStore>>,
     halt_poll_interval: std::time::Duration,
+    lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
+    max_lease_ttl: std::time::Duration,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
     /// The profile applied, if any; `build()` checks what it needs.
@@ -235,6 +237,8 @@ impl RequestHandlerBuilder {
             approval_gate: None,
             halt_store: None,
             halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
+            lease_store: None,
+            max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
             #[cfg(feature = "audit")]
             audit: None,
             #[cfg(feature = "audit")]
@@ -374,6 +378,34 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub const fn with_halt_poll_interval(mut self, interval: std::time::Duration) -> Self {
         self.halt_poll_interval = interval;
+        self
+    }
+
+    /// Grants leases on delegated tasks and stops a task whose lease lapses
+    /// (ADR 0020; the lease extension, which the agent card then declares).
+    ///
+    /// A send whose message carries a grant
+    /// ([`Lease::attach`](a2a_protocol_types::lease::Lease::attach)) has it
+    /// stored here; a `GetTask` that activates the extension renews it, on
+    /// any handler sharing the store; a task whose deadline passes is
+    /// stopped as a [`halt`](RequestHandler::halt) stops it. Use
+    /// [`InMemoryLeaseStore`](crate::store::InMemoryLeaseStore) for one
+    /// process and [`PostgresLeaseStore`](crate::store::PostgresLeaseStore)
+    /// across replicas.
+    #[must_use]
+    pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {
+        self.lease_store = Some(Arc::new(store));
+        self
+    }
+
+    /// The longest lease a send may ask for; default
+    /// [`DEFAULT_MAX_LEASE_TTL`](crate::handler::DEFAULT_MAX_LEASE_TTL)
+    /// (an hour). A longer one is refused, as is one shorter than
+    /// [`MIN_LEASE_TTL`](crate::handler::MIN_LEASE_TTL); `build` refuses a
+    /// bound below that.
+    #[must_use]
+    pub const fn with_max_lease_ttl(mut self, ttl: std::time::Duration) -> Self {
+        self.max_lease_ttl = ttl;
         self
     }
 
@@ -851,6 +883,12 @@ impl RequestHandlerBuilder {
     ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
+        if self.lease_store.is_some() && self.max_lease_ttl < crate::handler::MIN_LEASE_TTL {
+            return Err(crate::error::ServerError::InvalidParams(format!(
+                "the longest lease must be at least {} ms",
+                crate::handler::MIN_LEASE_TTL.as_millis()
+            )));
+        }
         if self.halt_store.is_some() && self.halt_poll_interval.is_zero() {
             return Err(crate::error::ServerError::InvalidParams(
                 "the halt poll interval must be greater than zero".to_owned(),
@@ -1050,6 +1088,18 @@ impl RequestHandlerBuilder {
                     params: None,
                 });
             }
+            if self.lease_store.is_some() {
+                wanted.push(AgentExtension {
+                    uri: a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned(),
+                    description: Some(
+                        "A delegated task is stopped when its parent stops renewing \
+                         its lease; a GetTask activating this extension renews it."
+                            .to_owned(),
+                    ),
+                    required: Some(false),
+                    params: None,
+                });
+            }
             if self.approval_gate.is_some() {
                 wanted.push(AgentExtension {
                     uri: a2a_protocol_types::approval::APPROVAL_EXTENSION_URI.to_owned(),
@@ -1218,6 +1268,10 @@ impl RequestHandlerBuilder {
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             in_flight: crate::handler::InFlight::default(),
             halts: Arc::default(),
+            leases: self.lease_store.map(|store| crate::handler::lease::Leases {
+                store,
+                max_ttl: self.max_lease_ttl,
+            }),
             halt_sync: self.halt_store.map(|store| {
                 Arc::new(crate::handler::halt::sync::HaltSync::new(
                     store,
@@ -1305,7 +1359,9 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("refuse_private_file_urls", &self.refuse_private_file_urls)
             .field("approval_gate", &self.approval_gate)
             .field("halt_store", &self.halt_store.is_some())
-            .field("halt_poll_interval", &self.halt_poll_interval);
+            .field("halt_poll_interval", &self.halt_poll_interval)
+            .field("lease_store", &self.lease_store.is_some())
+            .field("max_lease_ttl", &self.max_lease_ttl);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some())
             .field("profile", &self.profile);

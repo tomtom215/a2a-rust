@@ -26,6 +26,7 @@ pub(crate) mod halt;
 pub(crate) mod helpers;
 pub(crate) mod input_modes;
 mod introspection;
+pub(crate) mod lease;
 mod lifecycle;
 mod limits;
 /// Per-key locks shared by the messaging and push-config paths.
@@ -38,6 +39,7 @@ mod undeclared_binding;
 
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
+pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
 pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
 pub use shutdown::{InFlightReport, ShutdownReport};
@@ -166,6 +168,8 @@ pub struct RequestHandler {
     pub(crate) halts: Arc<std::sync::RwLock<halt::Halts>>,
     /// The halt store this handler follows, if any; see [`halt::sync`].
     pub(crate) halt_sync: Option<Arc<halt::sync::HaltSync>>,
+    /// The leases this handler grants and watches, if any; see [`lease`].
+    pub(crate) leases: Option<lease::Leases>,
     /// Checks approval decisions on continuations; see [`crate::approval`].
     pub(crate) approval_gate: Option<crate::approval::ApprovalGate>,
     /// The audit log, when the handler was built with one.
