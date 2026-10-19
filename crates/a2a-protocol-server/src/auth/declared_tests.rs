@@ -148,6 +148,36 @@ fn a_bearer_interceptor_with_an_api_key_card_is_refused() {
     assert!(why.contains("§13.3") && why.contains("key"), "{why}");
 }
 
+/// The same for the JWT interceptor, which validates bearer tokens too: in
+/// front of a card that declares only an API key it is refused, and in
+/// front of a bearer card it is accepted. One that answered "don't know"
+/// would let the first build.
+#[cfg(feature = "auth-jwt")]
+#[test]
+fn a_jwt_interceptor_is_checked_against_the_card_like_a_bearer_one() {
+    use crate::auth::{Jwks, JwtAuthInterceptor, JwtValidator};
+    let jwt = || JwtAuthInterceptor::new(JwtValidator::new(), Jwks::new());
+    let key_card = card(&json!({
+        "securitySchemes": {"key": {"apiKeySecurityScheme": {"location": "header", "name": "X-API-Key"}}},
+        "securityRequirements": [{"schemes": {"key": {}}}]
+    }));
+    let why = build(
+        RequestHandlerBuilder::new(Idle)
+            .with_agent_card(key_card)
+            .with_interceptor(jwt())
+            .share_tasks_across_callers(),
+    )
+    .expect_err("the card declares an API key only");
+    assert!(why.contains("§13.3") && why.contains("key"), "{why}");
+    build(
+        RequestHandlerBuilder::new(Idle)
+            .with_agent_card(bearer_card())
+            .with_interceptor(jwt())
+            .share_tasks_across_callers(),
+    )
+    .expect("a JWT arrives as a bearer token");
+}
+
 /// OAuth 2.0 and `OpenID` Connect access tokens are bearer tokens.
 #[test]
 fn a_bearer_interceptor_checks_oauth_and_oidc_schemes() {
