@@ -302,6 +302,10 @@ into this file: the commit that records it changes it.
 - An `--in-place` mutation run, or a hand mutant, interrupted by a
   container restart leaves the mutant in the source (2026-10-19): diff
   against `HEAD` before anything else, and never commit while one runs.
+- A change to a crate's default features changes what `itk/` and `fuzz/`
+  resolve, though neither manifest changes: run `scripts/check_lockfiles.sh`
+  before a pull request. On 2026-10-19 `otel` by default left both stale,
+  and the ITK harness's `cargo build --locked` failed every scenario.
 
 ## History
 
