@@ -65,7 +65,9 @@ async fn a_protected_record_names_no_one_and_still_verifies() {
     let (log, _) = log();
     let stored = log.append(record("acme", ALICE)).await.unwrap();
     let shown = json(&stored);
-    for clear in ["alice", "bob", "asked", &digest_of(&SECRET).unwrap()] {
+    // Each probe carries a character outside the base64 alphabet the sealed
+    // values use (`@`, a space), so random ciphertext cannot contain one.
+    for clear in ["alice@", "bob@", " asked", &digest_of(&SECRET).unwrap()] {
         assert!(!shown.contains(clear), "{clear} in the clear: {shown}");
     }
     assert!(
@@ -131,7 +133,7 @@ async fn erasure_destroys_one_persons_key_and_leaves_the_chain_whole() {
     let note = erased.record.unwrap();
     assert_eq!(note.kind, kind::SUBJECT_ERASED);
     assert_eq!(note.detail["sids"], serde_json::json!(erased.sids));
-    assert!(!json(&note).contains("alice"));
+    assert!(!json(&note).contains("alice@"));
 
     let r = log.reveal(&alices).await.unwrap();
     assert_eq!(r.erased, vec!["actor".to_owned(), "reason".to_owned()]);
@@ -394,7 +396,9 @@ async fn each_actor_is_sealed_opened_kept_and_erased_alone() {
         .insert("actors".to_owned(), serde_json::json!([CAROL, BOB]));
     let stored = log.append(written.clone()).await.unwrap();
     let shown = json(&stored);
-    for clear in ["carol", "bob"] {
+    // `-` and `@` are outside the sealed values' base64 alphabet: on
+    // 2026-10-19 a bare "bob" matched the ciphertext `...RNxbobIqj...`.
+    for clear in ["carol-agent", "bob@"] {
         assert!(!shown.contains(clear), "{clear} in the clear: {shown}");
     }
     assert!(log.verify("acme").await.unwrap().is_intact());

@@ -73,7 +73,7 @@ async fn an_erasure_names_who_asked_for_it_and_only_the_sids() {
     log.append(record("acme", ALICE)).await.unwrap();
     let erased = log.erase_subject("acme", ALICE, DPO).await.unwrap();
     let note = erased.record.unwrap();
-    assert!(!serde_json::to_string(&note).unwrap().contains("dpo"));
+    assert!(!serde_json::to_string(&note).unwrap().contains("dpo@"));
     let shown = log.reveal(&note).await.unwrap().record;
     assert_eq!(shown.actor.unwrap().subject, DPO);
     assert_eq!(shown.detail["sids"], serde_json::json!(erased.sids));
