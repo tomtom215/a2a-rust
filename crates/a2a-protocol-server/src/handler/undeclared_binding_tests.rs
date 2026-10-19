@@ -49,6 +49,22 @@ fn a_binding_the_card_does_not_declare_is_reported() {
     assert!(why.contains("HTTP+JSON") && why.contains("§5.2"), "{why}");
 }
 
+/// What a listener logs when it starts: the reason, as a warning, for a
+/// binding the card does not declare, and nothing for one it does.
+#[cfg(feature = "tracing")]
+#[test]
+fn an_undeclared_binding_is_warned_about_and_a_declared_one_is_not() {
+    let h = handler(Some(jsonrpc_card()));
+    let warnings = crate::handler::shutdown::tests::warning::warnings_during(|| {
+        h.warn_if_undeclared("HTTP+JSON");
+    });
+    assert_eq!(warnings, ["undeclared binding"], "{warnings:?}");
+    let warnings = crate::handler::shutdown::tests::warning::warnings_during(|| {
+        h.warn_if_undeclared("JSONRPC");
+    });
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
 #[test]
 fn without_a_static_card_nothing_is_checked() {
     assert_eq!(handler(None).undeclared_binding("GRPC"), None);
