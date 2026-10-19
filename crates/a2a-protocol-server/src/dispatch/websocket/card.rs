@@ -234,6 +234,7 @@ mod tests {
 
     /// A request line that arrives in pieces is read across them: each
     /// read asks only for what deciding still needs.
+    #[cfg(feature = "tls-rustls")]
     #[tokio::test]
     async fn a_request_line_in_pieces_is_read_whole() {
         use tokio::io::AsyncWriteExt;
