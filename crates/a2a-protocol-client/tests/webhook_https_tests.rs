@@ -102,6 +102,10 @@ mod record {
                 tracing_subscriber::registry().with(RecordWarnings),
             )
             .expect("the only subscriber in this binary");
+            // A callsite first hit on another test's thread while the
+            // subscriber was registered but not yet global is cached as never
+            // enabled; recompute it now. See `plaintext_tests.rs` in src/.
+            tracing::callsite::rebuild_interest_cache();
         });
     }
 }

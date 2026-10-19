@@ -163,7 +163,14 @@ where
 
     if let Err(why) = INSTALLED.get_or_init(|| {
         let subscriber = Registry::default().with(WarnCapture);
-        tracing::subscriber::set_global_default(subscriber).map_err(|e| e.to_string())
+        let installed =
+            tracing::subscriber::set_global_default(subscriber).map_err(|e| e.to_string());
+        // `Dispatch::new` registers the subscriber before it becomes global; a
+        // callsite another test's thread hits in between is cached as never
+        // enabled (tracing-core 0.1.36). Recompute every cached interest now
+        // that the global is set.
+        tracing::callsite::rebuild_interest_cache();
+        installed
     }) {
         panic!(
             "the global tracing subscriber in this binary is not the one this file \

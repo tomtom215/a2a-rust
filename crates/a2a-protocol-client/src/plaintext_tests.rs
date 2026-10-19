@@ -110,6 +110,20 @@ fn without_refuse_the_call_goes_and_is_logged_once() {
 /// one run in three (CI run 39245951120, both Ubuntu legs, 0 warnings
 /// counted where 1 was emitted); the server's shutdown warning tests met the
 /// same race and settled on the same shape.
+///
+/// The global subscriber narrows that race but does not close it.
+/// `Dispatch::new` registers the subscriber before `set_global_default`
+/// marks it initialized (tracing-core 0.1.36, `dispatcher.rs`). While it is
+/// the only one registered, a callsite registering on another thread takes
+/// its interest from that thread's `get_default`, which is still `NONE`
+/// during that window (`callsite.rs`, `Rebuilder::JustOne`).
+/// `without_refuse_the_call_goes_and_is_logged_once` hits this same warning
+/// in parallel; if its first hit falls in the window, the callsite is cached
+/// as never enabled. CI run 39320253336 (Ubuntu, stable) counted 0 once
+/// more. A standalone program forcing that order (register, first hit on
+/// another thread, then install) saw 0 events after the install and 1 after
+/// `rebuild_interest_cache`. The cache is therefore rebuilt here after the
+/// install, when every rebuild sees this subscriber.
 #[cfg(feature = "tracing")]
 #[test]
 fn the_warning_is_logged_once_per_client() {
@@ -141,6 +155,7 @@ fn the_warning_is_logged_once_per_client() {
         })
         .as_ref()
         .expect("this test's subscriber is the global one");
+    tracing::callsite::rebuild_interest_cache();
 
     COUNT.with(|c| c.set(Some(0)));
     let mut guard = Guard::default();
