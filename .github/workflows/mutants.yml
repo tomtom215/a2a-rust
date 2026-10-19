@@ -1043,7 +1043,17 @@ jobs:
     # so the shard needed ~83 minutes at --jobs 4 and was cancelled at 75 with
     # 18 untested. The other seven shards finished in 13-49 minutes. 120
     # leaves that worst case ~35 minutes of headroom.
-    timeout-minutes: 120
+    #
+    # 180, raised from 120 on 2026-10-19. Run 39288567688 (the 0.15.0
+    # release-readiness PR, head 67ab554) is the first to outgrow 120: of the
+    # ten a2a-protocol-server shards, 5, 6 and 7 finished in 108, 108 and 117
+    # minutes and the other seven were cancelled at the limit with no report,
+    # roughly 20 runner-hours that graded nothing. Round-robin dealing gives
+    # every shard a similar load, so the seven most likely needed a little
+    # over 120; 180 is half again the slowest that finished. Not measured past
+    # 120, so like the 75 before it this is an estimate: if a shard overruns
+    # it, add server shards rather than raising this again.
+    timeout-minutes: 180
     # Same reasoning as the full sweep above: a PR touching Postgres code must
     # be judged against a real database, not against absent tests.
     services:
