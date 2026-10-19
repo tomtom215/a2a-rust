@@ -62,7 +62,10 @@ PATTERNS = {
     "todo": re.compile(r"\b(?:todo|unimplemented)!\("),
 }
 CFG_TEST_ITEM = re.compile(r"#\[cfg\(test\)\]")
-CFG_TEST_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+(\w+)\s*;")
+# Any visibility, as ANY_MOD and CFG_TEST_PATH_MOD take it: a test module
+# declared `pub(super) mod tests;` so a sibling's tests can share its
+# helpers is as test-only as one declared `mod tests;`.
+CFG_TEST_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
 # The same declaration with a `#[path = "..."]` attribute, in either order.
 # `#[cfg(test)] #[path = "processor_tests.rs"] mod tests;` keeps a test module
 # a child of the file it tests (so it sees that file's private items) while
@@ -286,6 +289,13 @@ def self_test() -> int:
         if found != {"processor_tests.rs", "other_tests.rs"}:
             print("check_panic_paths --self-test: FAILED\n\n  #[path] cfg(test) modules "
                   f"resolved to {sorted(found)}, expected both", file=sys.stderr)
+            return 1
+    # A restricted visibility on a cfg(test) module declaration.
+    for decl in ("#[cfg(test)]\npub(super) mod tests;\n",
+                 "#[cfg(test)]\npub(in crate::handler) mod tests;\n"):
+        if [m.group(1) for m in CFG_TEST_MOD.finditer(decl)] != ["tests"]:
+            print("check_panic_paths --self-test: FAILED\n\n  a cfg(test) module "
+                  f"declared {decl.splitlines()[1]!r} was not recognised", file=sys.stderr)
             return 1
     print("check_panic_paths --self-test: comments, literals, cfg(test) and "
           "#[path] test modules all excluded")

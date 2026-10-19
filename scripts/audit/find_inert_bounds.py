@@ -92,14 +92,17 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
-CFG_TEST_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+[A-Za-z_]\w*\s*\{")
+CFG_TEST_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+[A-Za-z_]\w*\s*\{")
 STRUCT = re.compile(r"pub struct ([A-Za-z_]\w*(?:Config|Limits|Policy|Options|Settings))\s*[\{<]")
 FIELD = re.compile(r"^\s*pub (?:const )?([a-z_]\w*)\s*:", re.M)
 IMPL = re.compile(
     r"^\s*impl(?:<[^>]*>)?\s+(?:async\s+)?([A-Za-z_]\w*)(?:<[^>]*>)?\s+for\s+([A-Za-z_]\w*)", re.M
 )
 TRAIT_DECL = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?trait\s+([A-Za-z_]\w*)", re.M)
-CFG_TEST_FILE_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+([A-Za-z_]\w*)\s*;")
+CFG_TEST_FILE_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;")
+# Any `mod name;` declaration, whatever its attributes and visibility: what a
+# test-only file declares is test-only too.
+ANY_FILE_MOD = re.compile(r"(?:^|\n)\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;")
 # The same declaration carrying `#[path = "..."]`, in either attribute order:
 # `#[cfg(test)] #[path = "processor_tests.rs"] mod tests;`. The file is not
 # where the module name says, so CFG_TEST_FILE_MOD alone never finds it.
@@ -192,25 +195,39 @@ def test_only_files(paths) -> set:
     `#[path = "..."]` attribute names the file outright, relative to the
     declaring file's directory.
     """
+    def child(path, name):
+        own_dir = path.parent if path.name in ("mod.rs", "lib.rs", "main.rs") else path.parent / path.stem
+        for candidate in (
+            own_dir / f"{name}.rs",
+            own_dir / name / "mod.rs",
+            path.parent / f"{name}.rs",
+            path.parent / name / "mod.rs",
+        ):
+            if candidate.exists():
+                return candidate.resolve()
+        return None
+
     out = set()
     for path in paths:
         text = path.read_text(encoding="utf-8")
-        own_dir = path.parent if path.name in ("mod.rs", "lib.rs", "main.rs") else path.parent / path.stem
         for m in CFG_TEST_FILE_MOD.finditer(text):
-            name = m.group(1)
-            for candidate in (
-                own_dir / f"{name}.rs",
-                own_dir / name / "mod.rs",
-                path.parent / f"{name}.rs",
-                path.parent / name / "mod.rs",
-            ):
-                if candidate.exists():
-                    out.add(candidate.resolve())
-                    break
+            if (hit := child(path, m.group(1))) is not None:
+                out.add(hit)
         for before, after in CFG_TEST_PATH_MOD.findall(text):
             candidate = path.parent / (before or after)
             if candidate.exists():
                 out.add(candidate.resolve())
+    # Gating is inherited, as in check_panic_paths.py: what a test-only file
+    # declares is test-only. Without this, `idempotency_tests/claim_errors.rs`
+    # (declared `mod claim_errors;` from a cfg(test) module) counted its
+    # test store as a TaskStore implementation.
+    pending = list(out)
+    while pending:
+        path = pending.pop()
+        for name in ANY_FILE_MOD.findall(path.read_text(encoding="utf-8")):
+            if (hit := child(path, name)) is not None and hit not in out:
+                out.add(hit)
+                pending.append(hit)
     return out
 
 
