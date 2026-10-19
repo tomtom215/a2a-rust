@@ -161,8 +161,10 @@ pub trait ServerInterceptor: Send + Sync + 'static {
     /// the card could never present the credential such an interceptor
     /// checks. The bundled authenticators answer; a custom one that does not
     /// is not checked.
-    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
-        let _ = scheme;
+    fn checks_scheme(
+        &self,
+        _scheme: &a2a_protocol_types::security::SecurityScheme,
+    ) -> Option<bool> {
         None
     }
 }

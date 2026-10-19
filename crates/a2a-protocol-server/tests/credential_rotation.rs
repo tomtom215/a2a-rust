@@ -72,6 +72,7 @@ async fn rotate(
     );
     set.add(new.trim_start_matches("Bearer "));
     assert_eq!(set.len(), 2);
+    assert!(!set.is_empty());
     assert_eq!(status(addr, header, new).await, 200, "the new one, added");
     assert_eq!(
         status(addr, header, old).await,

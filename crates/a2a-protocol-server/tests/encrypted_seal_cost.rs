@@ -157,13 +157,9 @@ async fn postgres_appends_cost_one_seal_each() {
 }
 
 /// A status write seals its message alone, not the task's other parts.
-#[tokio::test]
-async fn a_status_write_seals_only_its_message() {
+async fn a_status_write_seals_only_its_message(inner: Arc<dyn TaskStore>) {
     let cipher = cipher();
-    let store = EncryptedTaskStore::new(
-        InMemoryTaskStore::new(),
-        Arc::clone(&cipher) as Arc<dyn ContentCipher>,
-    );
+    let store = EncryptedTaskStore::from_arc(inner, Arc::clone(&cipher) as Arc<dyn ContentCipher>);
     store.save(&task(50)).await.expect("first write");
     let before = cipher.seal_count();
     let mut next = task(50);
@@ -182,6 +178,19 @@ async fn a_status_write_seals_only_its_message() {
         Some("what next?")
     );
     assert_eq!(read.artifacts.unwrap()[0].parts.len(), 50);
+}
+
+#[tokio::test]
+async fn in_memory_status_writes_seal_only_their_message() {
+    a_status_write_seals_only_its_message(Arc::new(InMemoryTaskStore::new())).await;
+}
+
+#[tokio::test]
+async fn tenant_aware_status_writes_seal_only_their_message() {
+    a_status_write_seals_only_its_message(Arc::new(
+        a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new(),
+    ))
+    .await;
 }
 
 /// The store's required methods only: no in-place path at all.

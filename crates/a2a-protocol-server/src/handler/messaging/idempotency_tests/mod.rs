@@ -15,6 +15,7 @@ use a2a_protocol_types::idempotency::IDEMPOTENCY_METADATA_KEY;
 
 use super::*;
 
+mod claim_errors;
 mod fixtures;
 mod replay_wait;
 use crate::builder::RequestHandlerBuilder;

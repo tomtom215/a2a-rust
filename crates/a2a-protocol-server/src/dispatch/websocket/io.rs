@@ -152,4 +152,25 @@ mod tests {
         r.read_to_end(&mut rest).await.expect("read");
         assert_eq!(rest, b"lo world");
     }
+
+    /// A flush reaches the inner stream: over one that buffers, the bytes
+    /// arrive only once flushed, which is what the card responder and the
+    /// handshake rely on before they wait for the client.
+    #[cfg(feature = "tls-rustls")]
+    #[tokio::test]
+    async fn a_flush_reaches_the_inner_stream() {
+        use super::Replay;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (near, mut far) = tokio::io::duplex(64);
+        let mut w = Replay::new(Vec::new(), tokio::io::BufWriter::new(near));
+        w.write_all(b"hi").await.expect("write");
+        w.flush().await.expect("flush");
+        let mut got = [0u8; 2];
+        tokio::time::timeout(std::time::Duration::from_secs(1), far.read_exact(&mut got))
+            .await
+            .expect("flushed through")
+            .expect("read");
+        assert_eq!(&got, b"hi");
+    }
 }
