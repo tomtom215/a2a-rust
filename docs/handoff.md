@@ -23,8 +23,8 @@ only: when something here is done, delete it rather than annotating it.
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
 - **Working branch:** `claude/charming-lamport-yp20d6`, started 2026-10-18
-  from `main` at `86c8fac` (pull request #172 merged). No pull request is
-  open for it. `git log 86c8fac..` lists its commits; each message says what
+  from `main` at `86c8fac` (pull request #172 merged). Pull request #173
+  is open for it (2026-10-19). `git log 86c8fac..` lists its commits; each message says what
   it changed and how it was verified.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
   authority on the counts. Since 2026-10-18 it also refuses `SUPPORTED` or
