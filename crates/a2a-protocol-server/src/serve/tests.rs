@@ -121,59 +121,50 @@ async fn backoff_pauses_only_on_fd_exhaustion() {
 /// header-read timeout on `serve_with_addr`, which until 2026-10-18 ran
 /// an accept loop with no hyper timer and so no header timeout at all.
 ///
-/// On a paused clock, so the 30-second default costs nothing: the runtime
-/// advances virtual time whenever every task is waiting. The assertions
-/// are on that virtual time, which is what the timeout reads.
+/// On the real clock, so it takes the full 30-second default. Two paused-clock
+/// versions failed on macOS CI. Auto-advance jumps to the next timer whether
+/// or not a loopback readiness event has arrived (see
+/// `graceful/idle/tests.rs`). The first lost to the client's own timeout;
+/// the second, with no client timer, lost to the server's: run 39308035477
+/// closed after 103.7 virtual seconds, so the server read the partial
+/// headers only after the clock had jumped. A real socket is what this test
+/// is about, so the clock has to be real too.
 ///
-/// The client holds no timer of its own. Auto-advance jumps to the next
-/// timer whether or not a loopback readiness event has arrived yet (see
-/// `graceful/idle/tests.rs`), so a client-side `timeout` could be crossed
-/// before the server had read the socket at all; on macOS it once was.
-/// With the server's header timer the only one, the clock can jump only to
-/// it. The give-up is a real-time watchdog thread instead, which the paused
-/// clock cannot advance.
-#[tokio::test(start_paused = true)]
+/// The two defaults tell the outcomes apart: with the header timeout the
+/// connection closes at about 30 s; without it, the 75 s idle timeout would,
+/// and the 40 s ceiling (inside nextest's 45 s limit) fails first.
+#[tokio::test]
 async fn serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers() {
+    use std::time::{Duration, Instant};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const CEILING: Duration = Duration::from_secs(40);
+    assert!(DEFAULT_HEADER_READ_TIMEOUT < CEILING && CEILING < DEFAULT_IDLE_TIMEOUT);
 
     let addr = serve_with_addr("127.0.0.1:0", MockDispatcher)
         .await
         .expect("server should bind");
+    // Before the connect: the header timer may start at accept, and the
+    // lower bound must not count from after it.
+    let started = Instant::now();
     let mut sock = tokio::net::TcpStream::connect(addr).await.expect("connect");
     sock.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
         .await
         .expect("partial headers");
 
-    let (watchdog, expired) = tokio::sync::oneshot::channel::<()>();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(20));
-        let _ = watchdog.send(());
-    });
-
-    let started = tokio::time::Instant::now();
     let mut sink = Vec::new();
-    let closed = tokio::select! {
-        read = sock.read_to_end(&mut sink) => Some(read),
-        _ = expired => None,
-    };
+    let closed = tokio::time::timeout(CEILING, sock.read_to_end(&mut sink)).await;
+    let elapsed = started.elapsed();
     assert!(
-        closed.is_some(),
-        "a half-sent request was held open for 20 real seconds; \
-         serve_with_addr is not applying the default header-read timeout"
+        closed.is_ok(),
+        "a half-sent request was held open for {CEILING:?}, past the \
+         {DEFAULT_HEADER_READ_TIMEOUT:?} header timeout: serve_with_addr is not \
+         applying it"
     );
     assert!(
-        started.elapsed() >= DEFAULT_HEADER_READ_TIMEOUT,
-        "closed after {:?}, before the {DEFAULT_HEADER_READ_TIMEOUT:?} \
-         header timeout: something dropped it rather than timing it out",
-        started.elapsed()
-    );
-    // Without a header timeout the idle timeout still closes the
-    // connection, later; only this bound tells the two apart.
-    assert!(
-        started.elapsed() < DEFAULT_IDLE_TIMEOUT,
-        "closed after {:?}, at or past the {DEFAULT_IDLE_TIMEOUT:?} idle \
-         timeout: the header-read timeout did not fire",
-        started.elapsed()
+        elapsed >= DEFAULT_HEADER_READ_TIMEOUT,
+        "closed after {elapsed:?}, before the {DEFAULT_HEADER_READ_TIMEOUT:?} \
+         header timeout: something dropped it rather than timing it out"
     );
 }
 
