@@ -89,7 +89,10 @@ func text(t string) *a2a.SendMessageRequest {
 
 func main() {
 	expectSecurity := flag.Bool("expect-security", false,
-		"require the card to publish apiKey [read write] securityRequirements")
+		"require the card to publish apiKey [read write] securityRequirements, "+
+			"and present -api-key through a2a-go's AuthInterceptor")
+	apiKey := flag.String("api-key", "interop-api-key",
+		"the key presented under -expect-security")
 	flag.Parse()
 	if flag.NArg() < 1 {
 		fmt.Fprintln(os.Stderr, "usage: go-sdk-client [-expect-security] <agent-base-url> [binding,...]")
@@ -134,13 +137,34 @@ func main() {
 			s.fail("binding listed in card", "%s requested but the card does not list it", binding)
 			continue
 		}
-		client, err := a2aclient.NewFromEndpoints(ctx, ifaces,
-			grpcv1.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())))
+		opts := []a2aclient.FactoryOption{
+			grpcv1.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		}
+		if *expectSecurity {
+			opts = append(opts, a2aclient.WithCallInterceptors(
+				&a2aclient.AuthInterceptor{Service: staticKey(*apiKey)}))
+		}
+		client, err := a2aclient.NewFromEndpoints(ctx, ifaces, opts...)
 		if err != nil {
 			s.fail("create client", "%v", err)
 			continue
 		}
-		run(ctx, s, client, binding, hook)
+		callCtx := ctx
+		if *expectSecurity {
+			// a2a-go's AuthInterceptor places the key where the card's
+			// scheme says, and only for a request in a session.
+			if err := client.UpdateCard(card); err != nil {
+				s.fail("client takes the card", "%v", err)
+			}
+			if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{ID: "does-not-exist"}); err == nil ||
+				!strings.Contains(strings.ToLower(err.Error()), "auth") {
+				s.fail("call without the key -> refused", "%v", err)
+			} else {
+				s.ok("call without the key -> refused", err.Error())
+			}
+			callCtx = a2aclient.AttachSessionID(ctx, "interop")
+		}
+		run(callCtx, s, client, binding, hook)
 		_ = client.Destroy()
 	}
 	finish(s)
@@ -152,6 +176,13 @@ func finish(s *suite) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+// staticKey answers every session with one API key.
+type staticKey string
+
+func (k staticKey) Get(_ context.Context, _ a2aclient.SessionID, _ a2a.SecuritySchemeName) (a2aclient.AuthCredential, error) {
+	return a2aclient.AuthCredential(k), nil
 }
 
 // checkCardSecurity runs under -expect-security, once a2a-go can read the

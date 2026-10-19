@@ -1667,6 +1667,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Go SDK interop's secured-card leg enforces the key it publishes**
+  (`examples/echo-agent`, `itk/interop/go-sdk-client`). The handler build
+  now refuses a card whose `securityRequirements` no interceptor checks, so
+  echo-agent's `A2A_INTEROP_CARD=1` mode stopped starting and leg 1b of
+  `scripts/go_sdk_interop.sh` failed. In that mode echo-agent now registers
+  an `ApiKeyAuthInterceptor` on the card's `X-API-Key` header, with
+  tenant-aware stores for the caller isolation that implies. The a2a-go
+  client presents the key through a2a-go's own `AuthInterceptor`, which
+  reads the scheme from our card, and first checks that a call without the
+  key is refused.
 - **The agent card's path answers every method other than `GET` and `HEAD`
   with `405` and `Allow: GET, HEAD`, on every listener** (server). RFC 9110
   §15.5.6 says a `405` MUST carry `Allow`. Measured before the fix, a

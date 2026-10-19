@@ -135,9 +135,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
   measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
   10K tasks.
-- **Interop:** `itk/interop/card_signature_interop.py` checks Python only;
-  the Go interop script has not been re-run since this branch's grpc and
-  dependency updates.
+- **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
+  `scripts/go_sdk_interop.sh` re-run 2026-10-19 (debug build, a2a-go
+  v2.6.0): both directions pass. Leg 1, 52 checks; leg 1b (secured card),
+  38, now with the key enforced and a keyless call refused; leg 2, every
+  method on all three bindings. The first run failed leg 1b: this branch's
+  build check refused echo-agent's secured card, which nothing enforced.
 - **Control map (2026-10-18 review):** of the 13 `partial` rows, four
   had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
   caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
