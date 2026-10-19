@@ -478,8 +478,7 @@ pub trait TaskStore: Send + Sync + 'static {
     /// [`save_artifact_delta`](TaskStore::save_artifact_delta) is this
     /// followed by `save` on `false`. The split exists for a wrapper that
     /// transforms parts before storing them —
-    /// [`EncryptedTaskStore`](crate::store::encrypted::EncryptedTaskStore)
-    /// seals each one — so that it can transform only what an in-place write
+    /// `EncryptedTaskStore` (the `encryption` feature) seals each one — so that it can transform only what an in-place write
     /// stores, and everything only when the write is whole.
     ///
     /// # What an implementation may read from `task`

@@ -362,9 +362,9 @@ impl RequestHandlerBuilder {
     /// [`with_halt_poll_interval`](Self::with_halt_poll_interval). A halt
     /// given elsewhere therefore stops this process's running tasks and
     /// refuses its sends within one interval; one given here acts at once.
-    /// Use [`PostgresHaltStore`](crate::store::PostgresHaltStore) across
-    /// replicas, [`SqliteHaltStore`](crate::store::SqliteHaltStore) for one
-    /// process that restarts.
+    /// Use `PostgresHaltStore` (the `postgres` feature) across replicas,
+    /// `SqliteHaltStore` (the `sqlite` feature) for one process that
+    /// restarts.
     #[must_use]
     pub fn with_halt_store(mut self, store: impl crate::store::HaltStore) -> Self {
         self.halt_store = Some(Arc::new(store));
@@ -390,8 +390,8 @@ impl RequestHandlerBuilder {
     /// any handler sharing the store; a task whose deadline passes is
     /// stopped as a [`halt`](RequestHandler::halt) stops it. Use
     /// [`InMemoryLeaseStore`](crate::store::InMemoryLeaseStore) for one
-    /// process and [`PostgresLeaseStore`](crate::store::PostgresLeaseStore)
-    /// across replicas.
+    /// process and `PostgresLeaseStore` (the `postgres` feature) across
+    /// replicas.
     #[must_use]
     pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {
         self.lease_store = Some(Arc::new(store));

@@ -66,7 +66,7 @@ pub fn jwt(issuer: Option<&str>, subject: &str) -> String {
 }
 
 /// The identity of a caller whose mutual-TLS certificate is named `name`
-/// (by default its [`certificate_fingerprint`]).
+/// (by default its `certificate_fingerprint`, with `tls-rustls` or `grpc-tls`).
 #[must_use]
 pub fn mtls(name: &str) -> String {
     format!("mtls:{name}")

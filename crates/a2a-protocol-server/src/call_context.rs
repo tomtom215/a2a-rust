@@ -66,8 +66,8 @@
 //! - WebSocket: its TLS listener's handshake. gRPC: tonic's, under
 //!   `grpc-tls`.
 //!
-//! [`MutualTlsAuthInterceptor`](crate::auth::MutualTlsAuthInterceptor) names
-//! the caller from it. A TLS-terminating proxy in front of the listener
+//! `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) names the
+//! caller from it. A TLS-terminating proxy in front of the listener
 //! means there is none: the proxy's own handshake is the one the listener
 //! sees.
 

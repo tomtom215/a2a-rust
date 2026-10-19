@@ -11,8 +11,9 @@
 //! it is also written here, every replica sharing the store reads it before
 //! admitting its first send and then on an interval, and a restarted process
 //! comes back halted. [`InMemoryHaltStore`] shares halts between handlers in
-//! one process; [`SqliteHaltStore`] keeps them across a restart of one
-//! process; [`PostgresHaltStore`] does both across replicas.
+//! one process; `SqliteHaltStore` (the `sqlite` feature) keeps them across
+//! a restart of one process; `PostgresHaltStore` (the `postgres` feature)
+//! does both across replicas.
 
 use std::collections::HashMap;
 use std::future::Future;

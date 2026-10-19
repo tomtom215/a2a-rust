@@ -33,7 +33,9 @@ use super::{HaltScope, Halts, stop};
 use crate::handler::CancellationEntry;
 use crate::store::{HaltStore, StoredHalt};
 
-/// The default [`HaltSync::interval`].
+/// How often a handler with a halt store polls it, unless
+/// [`with_halt_poll_interval`](crate::builder::RequestHandlerBuilder::with_halt_poll_interval)
+/// sets otherwise.
 pub const DEFAULT_HALT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The tokens of the tasks running in this process.

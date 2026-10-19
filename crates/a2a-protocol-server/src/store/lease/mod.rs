@@ -8,7 +8,8 @@
 //! A lease is granted on the replica that runs the task and renewed by a
 //! `GetTask` that may land on any replica, so its deadline lives where every
 //! replica can see it. [`InMemoryLeaseStore`] serves one process;
-//! [`PostgresLeaseStore`] serves replicas sharing a database.
+//! `PostgresLeaseStore` (the `postgres` feature) serves replicas sharing a
+//! database.
 
 use std::collections::HashMap;
 use std::future::Future;
