@@ -34,10 +34,15 @@ The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separat
 |------|---------|-------|
 | **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (24-way for `a2a-protocol-server`, 4-way for `a2a-protocol-types` and `a2a-protocol-client`, 1 for `a2a-protocol-sdk`) |
 
-Every pull request additionally runs an **incremental** mutation gate:
+Every pull request additionally has an **incremental** mutation gate:
 `cargo-mutants --in-diff` mutates only the source lines changed in the PR
-and fails on any missed mutant — this one *is* a blocking PR check, enforced
-on every commit. The full sweep is the one that doesn't run on every
+and fails on any missed mutant — this one *is* a blocking PR check. Its
+shards run only while the PR carries the `mutation-test` label, because a
+server shard takes about two hours and each push re-mutates the whole PR
+diff; without the label the required `Mutation Testing (incremental)` check
+fails with a message asking for it, so no PR merges unmutated. Add the label
+when the code is ready for review; while it is present, every push re-runs
+the gate. The full sweep is the one that doesn't run on every
 commit: a full sweep can take 100+ minutes per crate and a2a-server alone
 generates hundreds of mutants, so it runs on its own weekly schedule (plus
 `workflow_dispatch` for an on-demand run against `main`) rather than

@@ -447,7 +447,7 @@ scopes. Know which one applies to you:
 
 | Gate | Scope | When | Blocking? |
 |---|---|---|---|
-| `Mutation Testing (incremental)` | mutants in the lines your PR changed (`--in-diff`) | every pull request | **yes** |
+| `Mutation Testing (incremental)` | mutants in the lines your PR changed (`--in-diff`) | every pull request; the mutants run only once it carries the `mutation-test` label, and the check fails until then | **yes** |
 | `Mutants Summary` | the whole workspace | weekly, and on `workflow_dispatch` | no — it reports |
 
 **What a contributor is accountable for is the first row.** Your PR must add no

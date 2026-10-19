@@ -5,7 +5,8 @@
 #
 # Runs cargo-mutants on all library crates and fails if any mutant survives.
 # Full sweep is scheduled weekly + on-demand; PRs to main run the
-# incremental (diff-only) job instead — see the `on.schedule` cron below.
+# incremental (diff-only) job instead — see the `on.schedule` cron below —
+# once the PR carries the `mutation-test` label.
 #
 # Architecture:
 #   - Full sweep splits into 33 parallel jobs: 24 shards of a2a-server,
@@ -38,8 +39,19 @@ on:
   # every crate (`mutants-crate`) is gated on the matrix itself (`if:
   # github.event_name != 'pull_request'`) so incremental runs on PRs and
   # the full sweep runs on schedule / workflow_dispatch.
+  #
+  # The incremental shards run only on a PR labelled `mutation-test`. A server
+  # shard takes about two hours and every push to a PR re-mutates the whole PR
+  # diff, so running them on every push spent runner-hours on heads that were
+  # superseded before review. The required aggregator still runs on every PR
+  # event and fails until the label is present, so no PR merges unmutated; add
+  # the label once the code is ready, and remove it to stop further runs.
+  # `labeled`/`unlabeled` are in `types` so adding the label starts a run and
+  # removing it cancels one. Any label change re-runs the shards while the
+  # label is present; label churn is rare enough here not to filter for.
   pull_request:
     branches: ["main"]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   # Full sweep runs weekly (and on-demand via workflow_dispatch). The
   # incremental PR gate only re-checks mutation adequacy of files a PR
   # touches; without a recurring whole-repo sweep, code outside recent diffs
@@ -1010,7 +1022,7 @@ jobs:
   # and fails if any shard failed.
   mutants-incremental-shard:
     name: "Mutants incremental (${{ matrix.crate }} shard ${{ matrix.shard }}/${{ matrix.of }})"
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation-test')
     runs-on: ubuntu-latest
     # 75, raised from 45 on 2026-08-07. Unlike the full sweep's 240, this one
     # is **not** measured — no recent PR has produced enough in-diff mutants to
@@ -1470,6 +1482,18 @@ jobs:
 
       - name: Aggregate shard results and gate
         run: |
+          # Unlabelled, the shards were skipped, and a skipped required check
+          # counts as passing, so this job must fail rather than skip.
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'mutation-test') }}" != "true" ]; then
+            {
+              echo "# Mutation Testing — incremental"
+              echo ""
+              echo "Not run: add the \`mutation-test\` label to this PR to run it."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Incremental mutation testing has not run: the PR has no 'mutation-test' label. Add it once the code is ready for review."
+            exit 1
+          fi
+
           # See the full-sweep job for why the previous one-liner was unsafe.
           count() {
             if [ ! -f "$1" ]; then echo 0; return; fi
