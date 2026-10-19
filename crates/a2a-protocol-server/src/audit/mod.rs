@@ -52,6 +52,8 @@ mod postgres;
 mod sqlite;
 
 #[cfg(test)]
+mod actors_tests;
+#[cfg(test)]
 mod tests;
 
 pub use a2a_protocol_types::audit as record;

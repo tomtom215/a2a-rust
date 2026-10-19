@@ -134,9 +134,10 @@ request runs an incremental `--in-diff` mutation gate on the changed lines.
 | 0018 | A mutual-TLS client certificate reaches the interceptors on every binding, and `MutualTlsAuthInterceptor` names the caller by its SHA-256 fingerprint or a deployment's mapping; no X.509 parser in the SDK (Accepted) |
 | 0019 | Halts are written through to a `HaltStore` that every replica reads before its first send and polls; a halt the store refuses holds where it was given and is retried (Accepted) |
 | 0020 | A delegated child carries a lease, renewed by a `GetTask` that activates the lease extension; the deadline lives in a store every replica shares, and a child whose lease lapses is stopped (Accepted) |
+| 0021 | The originating principal travels as an RFC 8693 delegated token: the server reads its `act` chain into `CallContext::actors` and the audit record, and the client exchanges tokens at the identity provider (Accepted) |
 
 Only ADRs 0001–0008 have a section above; the table is the summary for all
-twenty.
+twenty-one.
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

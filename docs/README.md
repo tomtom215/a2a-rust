@@ -50,6 +50,7 @@ is on docs.rs.
 | [0018](adr/0018-mutual-tls-caller-identity.md) | Mutual-TLS Caller Identity | Every listener passes the client certificate to the interceptors; `MutualTlsAuthInterceptor` names the caller by fingerprint or a deployment's mapping, with no X.509 parser in the SDK |
 | [0019](adr/0019-shared-halt-store.md) | Shared Halt Store | Halts written through to a store every replica polls and reads before its first send; a halt the store refuses holds locally and is retried |
 | [0020](adr/0020-delegation-lease.md) | Delegation Lease | A delegated child carries a lease renewed by a `GetTask` that activates the extension; the deadline lives in a shared store, and a lapsed child is stopped |
+| [0021](adr/0021-originating-principal.md) | Originating Principal | Delegated calls carry the principal by RFC 8693 token exchange; the server reads the `act` chain into `CallContext::actors` and the audit record |
 
 ## Audits, measurements and design notes
 

@@ -134,6 +134,10 @@ pub struct CallContext {
     /// write-once for the same reason as `caller_identity`.
     auth_scheme: OnceLock<String>,
 
+    /// The RFC 8693 actors acting for the caller, nearest first; see
+    /// [`actors`](Self::actors). Write-once, as `caller_identity`.
+    actors: OnceLock<Vec<String>>,
+
     /// Extension URIs active for this request.
     extensions: Vec<String>,
 
@@ -192,6 +196,7 @@ impl std::fmt::Debug for CallContext {
             .field("method", &self.method)
             .field("caller_identity", &self.caller_identity)
             .field("auth_scheme", &self.auth_scheme)
+            .field("actors", &self.actors)
             .field("extensions", &self.extensions)
             .field("request_id", &self.request_id)
             .field("http_header_names", &names)
@@ -260,6 +265,24 @@ impl CallContext {
     /// authentication interceptor.
     pub fn set_auth_scheme(&self, scheme: impl Into<String>) -> bool {
         self.auth_scheme.set(scheme.into()).is_ok()
+    }
+
+    /// The agents acting for the caller, nearest first, when the caller's
+    /// credential names them: the RFC 8693 `act` chain of a delegated token
+    /// (ADR 0021), each as
+    /// [`caller_id::jwt`](crate::auth::caller_id::jwt). The
+    /// [`caller_identity`](Self::caller_identity) is then the principal the
+    /// work is for. Empty when nothing named an actor.
+    #[must_use]
+    pub fn actors(&self) -> &[String] {
+        self.actors.get().map_or(&[], Vec::as_slice)
+    }
+
+    /// Records the actors, if nothing has yet; returns whether this call
+    /// set them. An authentication interceptor sets them beside the
+    /// identity.
+    pub fn set_actors(&self, actors: Vec<String>) -> bool {
+        self.actors.set(actors).is_ok()
     }
 
     /// Returns the active extension URIs.
@@ -354,6 +377,7 @@ impl CallContext {
             method: method.into(),
             caller_identity: OnceLock::new(),
             auth_scheme: OnceLock::new(),
+            actors: OnceLock::new(),
             extensions: Vec::new(),
             request_id: None,
             http_headers: HashMap::new(),

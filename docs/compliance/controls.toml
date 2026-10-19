@@ -582,14 +582,17 @@ id = "ASI03"
 source = "owasp-asi"
 provision = "ASI03 Identity and Privilege Abuse"
 requirement = "Agents act under identities and delegated privileges that are scoped, attributable and not escalated."
-sdk = "Authenticated callers are named, and the name reaches the executor through the request context."
+sdk = "Authenticated callers are named, and the name reaches the executor through the request context. A delegated call carries the originating principal as an RFC 8693 token whose `act` chain names the agents acting for it (`TokenExchange` on the client; `CallContext::actors` and the audit record on the server, ADR 0021); the identity provider scopes what may be delegated."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/auth/identity_tests.rs::a_labelled_api_key_names_its_caller",
   "crates/a2a-protocol-server/tests/request_context_tests.rs::an_executor_sees_the_caller_identity_the_interceptor_established",
   "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::a_delegated_token_names_its_principal_and_its_actors",
+  "crates/a2a-protocol-server/src/audit/actors_tests.rs::a_record_names_the_agents_that_acted_for_its_caller",
+  "crates/a2a-protocol-client/src/token_provider/exchange/tests.rs::an_exchange_sends_rfc_8693_parameters_and_reads_the_issued_token",
 ]
-gap = "A delegated call carries the delegating agent's credential, not the originating principal. Each hop's audit record names its immediate caller and carries the call's trace id, so the chain can be joined afterwards, but the originating principal travels with no call."
+gap = "The originating principal travels only where the identity provider supports RFC 8693 token exchange and the delegating agent uses it; otherwise a delegated call carries the delegating agent's credential, and the chain is joined afterwards through the trace id. Scope attenuation is the identity provider's policy."
 
 [[control]]
 id = "ASI04"

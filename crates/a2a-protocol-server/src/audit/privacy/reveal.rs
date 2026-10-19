@@ -11,7 +11,10 @@ use base64::engine::general_purpose::STANDARD;
 use a2a_protocol_types::audit::AuditRecord;
 use a2a_protocol_types::error::A2aResult;
 
-use super::{AuditPrivacy, PERSON_FIELDS, Revealed, SEALED_PREFIX, TEXT_FIELDS, refused};
+use super::{
+    ACTORS_FIELD, AuditPrivacy, PERSON_FIELDS, Revealed, SEALED_PREFIX, TEXT_FIELDS,
+    actors_element, refused,
+};
 use crate::audit::store::AuditStore;
 
 impl AuditPrivacy {
@@ -67,6 +70,26 @@ impl AuditPrivacy {
             }
             out.detail
                 .insert((*field).to_owned(), opened.unwrap_or_default().into());
+        }
+        if let Some(serde_json::Value::Array(actors)) = record.detail.get(ACTORS_FIELD) {
+            let mut opened_all = Vec::with_capacity(actors.len());
+            for (i, actor) in actors.iter().enumerate() {
+                let value = actor.as_str().ok_or_else(refused)?;
+                if !value.starts_with(SEALED_PREFIX) {
+                    opened_all.push(actor.clone());
+                    continue;
+                }
+                let field = actors_element(i);
+                let opened = self.open(store, record, &field, value).await?;
+                if opened.is_none() {
+                    erased.push(field);
+                }
+                opened_all.push(opened.unwrap_or_default().into());
+            }
+            out.detail.insert(
+                ACTORS_FIELD.to_owned(),
+                serde_json::Value::Array(opened_all),
+            );
         }
         Ok(Revealed {
             record: out,

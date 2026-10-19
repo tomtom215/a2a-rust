@@ -142,9 +142,9 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
   caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
   new dependency); AIA-14-4e's and ASI10's, a halt that persists and crosses replicas, is
-  closed too (ADR 0019), and ASI08's, G1-B's lease (ADR 0020); still open
-  is ASI03, the originating principal carried
-  on delegated calls. The rest, and all 19 `integrator` rows, are split
+  closed too (ADR 0019), ASI08's, G1-B's lease (ADR 0020), and ASI03's,
+  the originating principal on delegated calls (ADR 0021, RFC 8693; it
+  needs an identity provider that supports token exchange). The rest, and all 19 `integrator` rows, are split
   by nature (reviewed, unchanged).
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the

@@ -502,21 +502,27 @@ impl JwtValidator {
         let claims: JwtClaims = decode_json(claims_b64).map_err(|()| ValidateOutcome::Rejected)?;
         self.check_claims(&claims)
             .map_err(|()| ValidateOutcome::Rejected)?;
-        let granted = claims.scope.unwrap_or_default();
-        let missing: Vec<String> = self
-            .required_scopes
-            .iter()
-            .filter(|s| !granted.contains(s))
-            .cloned()
-            .collect();
+        let missing = self.missing_scopes(claims.scope.as_deref().unwrap_or_default());
         if !missing.is_empty() {
             return Err(ValidateOutcome::InsufficientScope(missing));
         }
 
+        let actors = super::actors::actors_of(claims.act.as_ref(), claims.iss.as_deref())
+            .map_err(|()| ValidateOutcome::Rejected)?;
         Ok(AuthenticatedPrincipal {
             subject: claims.sub,
             issuer: claims.iss,
+            actors,
         })
+    }
+
+    /// The required scopes `granted` lacks.
+    fn missing_scopes(&self, granted: &[String]) -> Vec<String> {
+        self.required_scopes
+            .iter()
+            .filter(|s| !granted.contains(s))
+            .cloned()
+            .collect()
     }
 
     fn check_claims(&self, claims: &JwtClaims) -> Result<(), ()> {
@@ -616,6 +622,9 @@ struct JwtClaims {
     nbf: Option<u64>,
     #[serde(default, deserialize_with = "de_scope")]
     scope: Option<Vec<String>>,
+    /// RFC 8693 §4.1 actor chain, read by [`super::actors`].
+    #[serde(default)]
+    act: Option<serde_json::Value>,
 }
 
 /// `scope` is a space-separated string (RFC 9068 §2.2.3, RFC 8693 §4.2);
@@ -850,6 +859,10 @@ impl ServerInterceptor for JwtAuthInterceptor {
                     principal.issuer.as_deref(),
                     subject,
                 ));
+            }
+            // RFC 8693: the agents acting for the subject (ADR 0021).
+            if !principal.actors.is_empty() {
+                ctx.set_actors(principal.actors);
             }
             ctx.set_auth_scheme("jwt");
             Ok(())
@@ -1473,7 +1486,61 @@ mod tests {
             exp,
             nbf,
             scope: None,
+            act: None,
         }
+    }
+
+    /// An HS256 token for `base_validator`'s issuer and audience, valid for
+    /// an hour, with `extra` (a JSON object's members) among its claims.
+    fn hs256_token_with(secret: &[u8], extra: &str) -> String {
+        let exp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600;
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+        let claims = URL_SAFE_NO_PAD.encode(format!(
+            r#"{{"iss":"https://issuer.test","aud":"a2a-agent","sub":"alice","exp":{exp},{extra}}}"#
+        ));
+        let input = format!("{header}.{claims}");
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+        let sig = URL_SAFE_NO_PAD.encode(ring::hmac::sign(&key, input.as_bytes()).as_ref());
+        format!("{input}.{sig}")
+    }
+
+    /// RFC 8693 (ADR 0021): a delegated token names the principal in `sub`
+    /// and the agents acting for it in `act`. The identity stays the
+    /// principal; the actors are recorded beside it, nearest first. A token
+    /// whose chain cannot be read is refused.
+    #[tokio::test]
+    async fn a_delegated_token_names_its_principal_and_its_actors() {
+        let secret = [9u8; MIN_HS256_SECRET_LEN];
+        let i = JwtAuthInterceptor::new(base_validator().with_hs256_secret(secret), Jwks::new());
+
+        let ctx = ctx_bearer(&hs256_token_with(
+            &secret,
+            r#""act":{"sub":"planner","act":{"sub":"gateway","iss":"https://gw.test"}}"#,
+        ));
+        i.before(&ctx).await.unwrap();
+        assert_eq!(
+            ctx.caller_identity(),
+            Some(super::super::caller_id::jwt(Some("https://issuer.test"), "alice").as_str())
+        );
+        assert_eq!(
+            ctx.actors(),
+            [
+                super::super::caller_id::jwt(Some("https://issuer.test"), "planner"),
+                super::super::caller_id::jwt(Some("https://gw.test"), "gateway"),
+            ]
+        );
+
+        let plain = ctx_bearer(&hs256_token_with(&secret, r#""x":1"#));
+        i.before(&plain).await.unwrap();
+        assert_eq!(plain.actors(), [] as [String; 0]);
+
+        let unreadable = ctx_bearer(&hs256_token_with(&secret, r#""act":"planner""#));
+        assert!(i.before(&unreadable).await.is_err());
+        assert_eq!(unreadable.caller_identity(), None);
     }
 
     /// `scope` as RFC 9068 writes it, as an array, and in a shape neither

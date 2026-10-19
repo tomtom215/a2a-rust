@@ -214,6 +214,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The originating principal on delegated calls, by RFC 8693 token
+  exchange** (server, client; ADR 0021; OWASP ASI03). `JwtAuthInterceptor`
+  reads the `act` chain of a verified token. The caller identity stays its
+  `sub`, the principal the work is for, and `CallContext::actors` lists the
+  agents acting for it, nearest first (at most `MAX_ACTORS`, 16). A token
+  whose chain cannot be read is refused. With `audit`, a call record
+  carries the chain in `detail.actors`, which audit privacy seals per
+  person, opens on reveal, and erases per person. The client's
+  `token_provider::TokenExchange` performs the exchange at the identity
+  provider (`ExchangeRequest`: subject and actor tokens, audience,
+  resource, scopes), so a delegating agent sends a token naming the
+  principal instead of its own credential.
 - **Leases on delegated tasks: a child whose parent goes quiet stops**
   (types, server, client; ADR 0020; G1-B in `docs/swarm-orchestration.md`;
   OWASP ASI08). The extension `https://a2a-rust.com/extensions/lease/v1`

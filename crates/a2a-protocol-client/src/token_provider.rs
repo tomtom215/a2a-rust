@@ -101,7 +101,13 @@ const DEFAULT_REFRESH_LEEWAY: Duration = Duration::from_secs(30);
 /// waiting on an attempt share its outcome regardless of this value.
 const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
 
+mod exchange;
 mod flight;
+
+pub use exchange::{
+    ACCESS_TOKEN_TYPE, ExchangeRequest, ExchangedToken, JWT_TOKEN_TYPE, TOKEN_EXCHANGE_GRANT,
+    TokenExchange,
+};
 
 /// Cache lifetime applied when the token response omits `expires_in`
 /// (RFC 6749 leaves expiry unspecified in that case — re-check soon rather

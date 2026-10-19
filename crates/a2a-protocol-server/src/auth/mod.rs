@@ -58,6 +58,8 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
+#[cfg(feature = "auth-jwt")]
+mod actors;
 pub mod caller_id;
 mod credentials;
 pub(crate) mod declared;
@@ -67,6 +69,8 @@ pub mod jwt;
 mod mtls;
 pub mod throttle;
 
+#[cfg(feature = "auth-jwt")]
+pub use actors::MAX_ACTORS;
 pub use credentials::CredentialSet;
 #[cfg(feature = "auth-jwt")]
 pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
@@ -455,6 +459,9 @@ pub struct AuthenticatedPrincipal {
     pub subject: Option<String>,
     /// The token issuer (`iss` claim), when present.
     pub issuer: Option<String>,
+    /// The RFC 8693 `act` chain: the agents acting for the subject, nearest
+    /// first, each as [`caller_id::jwt`]; empty for a token that names none.
+    pub actors: Vec<String>,
 }
 
 /// Convenience alias for a shared principal.

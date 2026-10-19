@@ -44,6 +44,11 @@ pub fn record_for(ctx: &CallContext, kind: &str) -> AuditRecord {
     let mut r = AuditRecord::new(chain_of(ctx), kind);
     r.actor = actor_of(ctx);
     r.trace = trace_of(ctx);
+    // RFC 8693: who acted for the caller (ADR 0021).
+    if !ctx.actors().is_empty() {
+        r.detail
+            .insert("actors".to_owned(), serde_json::json!(ctx.actors()));
+    }
     r
 }
 
