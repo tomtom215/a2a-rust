@@ -232,6 +232,27 @@ mod tests {
         );
     }
 
+    /// A request line that arrives in pieces is read across them: each
+    /// read asks only for what deciding still needs.
+    #[tokio::test]
+    async fn a_request_line_in_pieces_is_read_whole() {
+        use tokio::io::AsyncWriteExt;
+
+        let (mut client, mut server) = tokio::io::duplex(256);
+        let reading = tokio::spawn(async move {
+            super::read_card_request(&mut server, std::time::Duration::from_secs(5)).await
+        });
+        client.write_all(b"GET /.well-known/").await.expect("write");
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        client
+            .write_all(b"agent-card.json HTTP/1.1\r\n\r\n")
+            .await
+            .expect("write");
+        let (card, seen) = reading.await.expect("read");
+        assert!(card);
+        assert!(seen.starts_with(b"GET /.well-known/agent-card.json"));
+    }
+
     /// `DECIDING` bytes always decide, which is what lets
     /// `read_card_request` stop reading there. The prefixes that stay
     /// undecided longest are a method followed by the target, and a run of

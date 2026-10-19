@@ -128,3 +128,15 @@ async fn no_cap_admits_any_number() {
         assert_eq!(claim(&store, i).await, Ok(IdempotencyClaim::Claimed));
     }
 }
+
+/// Below the cap a claim expires nothing: keys past their TTL are left to
+/// the eviction pass, and a claim removes them only to make room in a full
+/// index.
+#[tokio::test]
+async fn a_claim_below_the_cap_expires_nothing() {
+    let store = store(Some(10), Some(Duration::from_millis(30)));
+    assert_eq!(claim(&store, 0).await, Ok(IdempotencyClaim::Claimed));
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert_eq!(claim(&store, 1).await, Ok(IdempotencyClaim::Claimed));
+    assert_eq!(store.idempotency_key_count().await, 2);
+}
