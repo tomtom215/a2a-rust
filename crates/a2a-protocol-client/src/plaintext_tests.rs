@@ -101,31 +101,54 @@ fn without_refuse_the_call_goes_and_is_logged_once() {
 
 /// The warning is logged, and only once: each call after the first goes
 /// silently, however many credentials it carries.
+///
+/// Counted through one global subscriber, installed once, whose layer counts
+/// only this thread's WARN events. A scoped `with_default` subscriber is not
+/// enough: `tracing` caches each callsite's interest globally, and a first
+/// evaluation of this callsite on another test's thread, with no subscriber
+/// of its own, could leave it disabled here. That made this test fail about
+/// one run in three (CI run 39245951120, both Ubuntu legs, 0 warnings
+/// counted where 1 was emitted); the server's shutdown warning tests met the
+/// same race and settled on the same shape.
 #[cfg(feature = "tracing")]
 #[test]
 fn the_warning_is_logged_once_per_client() {
-    use std::sync::{Arc, Mutex};
+    use std::cell::Cell;
+    use std::sync::OnceLock;
     use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
-    #[derive(Clone, Default)]
-    struct Count(Arc<Mutex<usize>>);
-    impl<S: tracing::Subscriber> Layer<S> for Count {
+    thread_local! {
+        /// WARN events seen on this thread while armed; `None` when not.
+        static COUNT: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    struct CountThisThread;
+    impl<S: tracing::Subscriber> Layer<S> for CountThisThread {
         fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
             if *event.metadata().level() == tracing::Level::WARN {
-                *self.0.lock().unwrap() += 1;
+                COUNT.with(|c| c.set(c.get().map(|n| n + 1)));
             }
         }
     }
 
-    let count = Count::default();
-    let subscriber = tracing_subscriber::registry().with(count.clone());
-    tracing::subscriber::with_default(subscriber, || {
-        let mut guard = Guard::default();
-        guard.arm("http://agent.example");
-        let req = request(&["authorization"], &[]);
-        for _ in 0..3 {
-            assert!(guard.check(&req).is_ok());
-        }
-    });
-    assert_eq!(*count.0.lock().unwrap(), 1);
+    static INSTALLED: OnceLock<Result<(), String>> = OnceLock::new();
+    INSTALLED
+        .get_or_init(|| {
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::registry().with(CountThisThread),
+            )
+            .map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .expect("this test's subscriber is the global one");
+
+    COUNT.with(|c| c.set(Some(0)));
+    let mut guard = Guard::default();
+    guard.arm("http://agent.example");
+    let req = request(&["authorization"], &[]);
+    for _ in 0..3 {
+        assert!(guard.check(&req).is_ok());
+    }
+    let warnings = COUNT.with(|c| c.replace(None));
+    assert_eq!(warnings, Some(1));
 }
