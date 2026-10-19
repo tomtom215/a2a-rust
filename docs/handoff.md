@@ -79,11 +79,14 @@ only: when something here is done, delete it rather than annotating it.
    `Transport::rpc_system` naming custom transports on client spans. The
    RPC semantic conventions were re-read on upstream `main` that day and
    match every name used. Step 4 is complete.
-5. **Freshness:** record the first 24-shard weekly mutation sweep in
-   `book/src/reference/mutation-history.md` after it runs (Monday
-   2026-10-19, 03:00 UTC, about four hours), counted from every shard's
-   artifact as the 2026-10-12 row was; after the next release, check the
-   versioned docs deploy.
+5. **Freshness:** the 2026-10-19 sweep is recorded in
+   `book/src/reference/mutation-history.md`, from the shards' logs (the
+   artifacts could not be downloaded here). It is incomplete: three of the
+   24 `a2a-server` shards hit the 240-minute limit, so the shard count or
+   the timeout needs raising again before a sweep is whole. Three survivors
+   are open (`final_snapshot_hook`, `RestTransport::send_request`,
+   `Delegation::observe`; the row names them). After the next release,
+   check the versioned docs deploy.
 6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 
 ## Waiting on the maintainer
