@@ -30,3 +30,43 @@ impl InMemoryTaskStore {
         rows
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use a2a_protocol_types::message::MessageId;
+    use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+
+    use super::*;
+    use crate::store::TaskStore;
+
+    fn task(id: &str) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    /// The count is every task and every key removed, and a second run
+    /// finds nothing: the shared erasure test only bounds it from below.
+    #[tokio::test]
+    async fn erase_all_counts_each_task_and_key_it_removes() {
+        let store = InMemoryTaskStore::new();
+        store.save(&task("t1")).await.unwrap();
+        store.save(&task("t2")).await.unwrap();
+        store
+            .claim_idempotency_key(
+                "8f14e45fceea167a5a36dedd4bea2543",
+                &MessageId::new("m1"),
+                &TaskId::new("t1"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(store.erase_all().await, 3);
+        assert_eq!(store.erase_all().await, 0);
+        assert_eq!(store.idempotency_key_count().await, 0);
+    }
+}
