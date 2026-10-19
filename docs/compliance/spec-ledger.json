@@ -4843,7 +4843,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_required_in_task.rs the_stream_stays_open_across_auth_required_until_the_task_ends",
     "crates/a2a-protocol-server/tests/auth_required_in_task.rs a_blocking_send_answered_at_auth_required_still_records_the_rest",
-    "crates/a2a-protocol-sdk/tests/follow_task_e2e.rs a_non_streaming_agents_task_is_followed_by_polling"
+    "crates/a2a-protocol-client/tests/follow_task_e2e.rs a_non_streaming_agents_task_is_followed_by_polling"
    ],
    "notes": "An executor may keep writing events after AUTH_REQUIRED; the test continues on the same run after an out-of-band credential with no follow-up message. Corrected 2026-10-18: this held only while a client held a stream. After a blocking send answered at AUTH_REQUIRED nothing read the event queue, so the executor's later events failed with 'no active receivers' and the stored task stayed at AUTH_REQUIRED; the collection now goes on storing them (sync_collector.rs collect_then_follow), pinned by auth_required_in_task.rs a_blocking_send_answered_at_auth_required_still_records_the_rest, which fails without the fix.",
    "auditor": "D",
@@ -4903,9 +4903,9 @@
     "crates/a2a-protocol-client/src/webhook/receiver.rs WebhookReceiver"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-sdk/tests/follow_task_e2e.rs a_streaming_agents_task_is_followed_by_subscription",
-    "crates/a2a-protocol-sdk/tests/follow_task_e2e.rs a_non_streaming_agents_task_is_followed_by_polling",
-    "crates/a2a-protocol-sdk/tests/follow_task_e2e.rs an_ended_task_is_reported_once"
+    "crates/a2a-protocol-client/tests/follow_task_e2e.rs a_streaming_agents_task_is_followed_by_subscription",
+    "crates/a2a-protocol-client/tests/follow_task_e2e.rs a_non_streaming_agents_task_is_followed_by_polling",
+    "crates/a2a-protocol-client/tests/follow_task_e2e.rs an_ended_task_is_reported_once"
    ],
    "notes": "Re-examined 2026-10-18: A2aClient::follow_task(id, poll_every) does the first or third of the spec's three: SubscribeToTask when the agent can stream, GetTask polling (each status change reported once) when its card does not declare streaming or it refuses the subscription; the webhook option is set_push_config with a WebhookReceiver. The end-to-end test parks a task at AUTH_REQUIRED with a blocking send, releases the credential out of band, and follows it to COMPLETED both ways over JSON-RPC. Writing that test found that a blocking send stored nothing after the interrupted state (fixed the same day; see §7.6.1 1931). Calling follow_task after a send is the client application's choice; the SDK does not start it on its own. ClientError::AuthRequired is still never produced: a task at AUTH_REQUIRED is a task, not an error.",
    "auditor": "D",
