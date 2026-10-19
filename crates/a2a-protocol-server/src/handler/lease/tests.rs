@@ -357,6 +357,13 @@ fn the_card_declares_the_extension_and_the_bound_is_checked() {
         .with_max_lease_ttl(MIN_LEASE_TTL.checked_sub(Duration::from_millis(1)).unwrap())
         .build();
     assert!(matches!(refused, Err(ServerError::InvalidParams(_))));
+    // The minimum itself is a valid longest lease.
+    RequestHandlerBuilder::new(Sleeper)
+        .without_agent_card()
+        .with_lease_store(InMemoryLeaseStore::new())
+        .with_max_lease_ttl(MIN_LEASE_TTL)
+        .build()
+        .expect("a longest lease of exactly the minimum");
 }
 
 #[test]

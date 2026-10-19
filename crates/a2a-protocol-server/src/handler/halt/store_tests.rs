@@ -444,3 +444,28 @@ fn a_halt_read_from_the_store_is_warned_about_once() {
         .count();
     assert_eq!(reports, 1, "three polls of one halt; got {warnings:?}");
 }
+
+/// A halt given on another replica and not yet polled here is still one
+/// this replica's resume lifts: it is removed from the store, and resume
+/// says there was a halt.
+#[tokio::test]
+async fn a_resume_reports_a_halt_this_replica_has_not_polled_yet() {
+    let store = InMemoryHaltStore::new();
+    let a = replica(store.clone());
+    let b = Arc::new(
+        RequestHandlerBuilder::new(Sleeper)
+            .without_agent_card()
+            .with_halt_store(store)
+            .with_halt_poll_interval(Duration::from_secs(3600))
+            .build()
+            .expect("handler"),
+    );
+    start(&b).await.unwrap();
+    assert_eq!(
+        a.halt(HaltScope::All, "oncall", "x").await.persisted,
+        Some(true)
+    );
+    assert_eq!(b.halt_reason(""), None, "b has not polled the halt");
+    assert!(b.resume(HaltScope::All, "oncall").await.unwrap());
+    sees(&a, false).await;
+}
