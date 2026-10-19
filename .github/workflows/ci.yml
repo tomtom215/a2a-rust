@@ -13,10 +13,16 @@
 name: CI
 
 on:
+  # Pushes to `main` only. A branch with an open PR is built by the
+  # `pull_request` event; pushing `claude/**` as well ran every job twice per
+  # push (the two runs land in different concurrency groups, `CI-claude/x` and
+  # `CI-refs/heads/claude/x`, so neither cancelled the other). A branch with
+  # no PR yet can be built on demand with `workflow_dispatch`.
   push:
-    branches: ["main", "claude/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same branch/PR — saves CI minutes when
 # multiple commits are pushed in quick succession.  Main-branch pushes
@@ -63,6 +69,7 @@ jobs:
   static-checks:
     name: Static checks (formatting, sources, docs, gate inventory)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
@@ -428,6 +435,7 @@ jobs:
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     # One platform's failure must not cancel the other five. A macOS-only flake
     # cancelled every other leg of this matrix once, and the cancelled logs —
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
@@ -515,6 +523,7 @@ jobs:
   test:
     name: Test (${{ matrix.rust }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
     # One platform's failure must not cancel the other five. A macOS-only flake
     # cancelled every other leg of this matrix once, and the cancelled logs —
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
@@ -574,6 +583,7 @@ jobs:
   test-postgres:
     name: Test (postgres integration)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -660,7 +670,11 @@ jobs:
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
     name: Nightly (informational)
+    # Not on PRs: a canary for upcoming toolchain breakage says the same
+    # thing for every PR, and main gets it on every merge.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -711,6 +725,7 @@ jobs:
   doc:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
@@ -749,6 +764,7 @@ jobs:
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Named, and not left as a bare `- uses:`, because
@@ -807,6 +823,7 @@ jobs:
   semver:
     name: cargo-semver-checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
@@ -829,6 +846,7 @@ jobs:
   package:
     name: Package validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15

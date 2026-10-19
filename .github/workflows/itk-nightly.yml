@@ -29,6 +29,7 @@ on:
   # nothing else triggers the hour-long run. The rolling-release upload
   # below is main-only, so these runs only produce the artifact.
   pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/itk-nightly.yml'
       - 'itk/run_itk.sh'
@@ -43,9 +44,12 @@ on:
 permissions:
   contents: read
 
+# Each PR in its own group, cancelled by its next push; the scheduled and
+# manual runs share one group that is never cancelled. One global group let a
+# PR touching `itk/` cancel the nightly run that publishes `nightly-metrics`.
 concurrency:
-  group: itk-nightly
-  cancel-in-progress: true
+  group: itk-nightly-${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   A2A_ITK_REVISION: main

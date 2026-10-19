@@ -10,9 +10,11 @@ name: Coverage
 
 on:
   push:
-    # `claude/**` as in ci.yml: a branch's coverage is uploaded under its
-    # own name, so the number can be read back before a PR exists.
-    branches: ["main", "claude/**"]
+    # `main` only, as in ci.yml: a PR branch is covered by the
+    # `pull_request` event, and pushing `claude/**` too ran the job twice per
+    # push. A branch's coverage can still be read back before a PR exists by
+    # running this workflow on it with `workflow_dispatch`.
+    branches: ["main"]
   pull_request:
     branches: [main]
   # On demand as well, so a change to the upload step can be proven without

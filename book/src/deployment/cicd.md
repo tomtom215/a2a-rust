@@ -4,7 +4,7 @@ a2a-rust uses GitHub Actions for continuous integration, crate publishing, and d
 
 ## CI Pipeline
 
-The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main` and `claude/**` and on PRs to `main`:
+The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main`, on PRs to `main`, and on demand (`workflow_dispatch`, for a branch with no PR yet). It no longer runs on pushes to `claude/**`: those branches are built by their PR, and building them on push as well ran every job twice:
 
 | Job | Description |
 |-----|-------------|
@@ -13,7 +13,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main` and `claud
 | **Feature matrix** | `cargo hack clippy --each-feature` over the four published crates — every feature on its own, plus no-default-features and all-features — so a `#[cfg(feature)]` gap is caught here rather than by a downstream build enabling an unusual subset |
 | **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, websocket, grpc, auth-jwt, auth-jwt + tls-rustls, all-features, no-default-features) across 3 OSes and 2 Rust versions |
 | **Test (postgres integration)** | Runs the `#[ignore]`-gated live-database suite (`postgres_store_tests.rs`) against a `postgres:16` service container |
-| **Nightly** | Tests and clippy on the nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking) |
+| **Nightly** | Tests and clippy on the nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking; pushes to `main` and manual runs only) |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --workspace --no-deps`, then each published crate on its own in its own default features — verifies documentation builds |
 | **Package** | `cargo package --workspace` (excluding example and tool crates) — validates crate packaging for publish |
@@ -23,7 +23,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main` and `claud
 | **Example surface coverage** | runs the examples (echo-agent, incident-response, genai, rig, multi-lang-team), each driving every method over every binding it supports |
 | **Go SDK interop** | `scripts/go_sdk_interop.sh` — both directions, three bindings |
 
-The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and `claude/**`, on PRs, on demand, and weekly (for the `codecov.yml` ignores-applied check):
+The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main`, on PRs, on demand (which is how a branch with no PR yet gets a coverage number), and weekly (for the `codecov.yml` ignores-applied check):
 - Uses `cargo-llvm-cov` for source-based coverage instrumentation
 - Generates LCOV reports and uploads to [Codecov](https://codecov.io/gh/tomtom215/a2a-rust)
 
@@ -32,7 +32,7 @@ The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separat
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
-| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (12-way for `a2a-server`, 4-way for `a2a-types` and `a2a-client`) |
+| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (24-way for `a2a-protocol-server`, 4-way for `a2a-protocol-types` and `a2a-protocol-client`, 1 for `a2a-protocol-sdk`) |
 
 Every pull request additionally runs an **incremental** mutation gate:
 `cargo-mutants --in-diff` mutates only the source lines changed in the PR

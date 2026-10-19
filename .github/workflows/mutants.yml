@@ -57,6 +57,14 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes the incremental run on the old head, whose
+# shards would otherwise keep their runners for up to two hours each. The
+# weekly sweep and manual runs get a group of their own (`run_id`), so
+# nothing ever cancels them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -1108,18 +1116,6 @@ jobs:
         with:
           fetch-depth: 0 # full history for diff
 
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
-        with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      # protoc is bundled via the `protoc-bin-vendored` crate.
-
-      # Pinned and patched; see the full sweep's install step.
-      - name: Install cargo-mutants and nextest
-        run: scripts/install_cargo_mutants.sh
-
       - name: Build PR source diff (rename-aware)
         id: diff
         run: |
@@ -1168,6 +1164,24 @@ jobs:
             cat pr-src.diff
             echo "::endgroup::"
           fi
+
+      # Setup only once the diff says there is something to mutate: on a
+      # narrow PR most crates' shards have nothing, and installing
+      # cargo-mutants (a source build) cost them 1 to 5 minutes each.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
+        if: steps.diff.outputs.skip == 'false'
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.diff.outputs.skip == 'false'
+
+      # protoc is bundled via the `protoc-bin-vendored` crate.
+
+      # Pinned and patched; see the full sweep's install step.
+      - name: Install cargo-mutants and nextest
+        if: steps.diff.outputs.skip == 'false'
+        run: scripts/install_cargo_mutants.sh
 
       - name: Run incremental mutation testing
         id: mutants

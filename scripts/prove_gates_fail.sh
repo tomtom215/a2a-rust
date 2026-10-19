@@ -874,10 +874,10 @@ PY
 import pathlib, sys
 p = pathlib.Path(".github/workflows/ci.yml")
 s = p.read_text()
-old = 'on:\n  push:\n    branches: ["main", "claude/**"]\n  pull_request:'
+old = '  push:\n    branches: ["main"]\n  pull_request:'
 if s.count(old) != 1:
-    sys.exit(f"expected exactly one ci.yml on: block; found {s.count(old)}")
-p.write_text(s.replace(old, "on:\n  pull_request:"))
+    sys.exit(f"expected exactly one ci.yml push trigger; found {s.count(old)}")
+p.write_text(s.replace(old, "  pull_request:"))
 PY
             ;;
         mutants_config)
