@@ -646,7 +646,7 @@ id = "ASI04"
 source = "owasp-asi"
 provision = "ASI04 Agentic Supply Chain Vulnerabilities"
 requirement = "Agents, tools and schemas an agent imports are verified before they are trusted."
-sdk = "Agent cards can be signed (JWS over RFC 8785 canonical form, ES256 or EdDSA) and verified against a raw or SPKI key, or against a JWK Set by `kid`, trying every signature the card carries (key rotation). The client fetches a JWK Set from a URL the caller trusts, over HTTPS, bounded in size and time; removing a key from the set revokes it, and a key whose `exp` has passed is never used (spec §8.4.3)."
+sdk = "Agent cards can be signed (JWS over RFC 8785 canonical form, ES256 or EdDSA) and verified against a raw or SPKI key, or against a JWK Set by `kid`, trying every signature the card carries (key rotation). The client fetches a JWK Set from a URL the caller trusts, over HTTPS, bounded in size and time; removing a key from the set revokes it, and a key whose `exp` has passed, or whose `x5c` leaf certificate is outside its validity period or holds another key, is never used (spec §8.4.3, RFC 7517 §4.7)."
 status = "partial"
 tests = [
   "crates/a2a-protocol-types/src/signing.rs::sign_and_verify_agent_card",
@@ -656,8 +656,11 @@ tests = [
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::an_expired_key_is_not_used",
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::the_rfc_8037_ed25519_example_verifies",
   "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs::a_card_verifies_under_a_fetched_set",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_expired_leaf_is_not_used",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_leaf_holding_another_key_is_not_used",
+  "crates/a2a-protocol-client/tests/jwks_fetch_tests.rs::a_fetched_key_whose_certificate_has_expired_is_not_used",
 ]
-gap = "Which key set to trust is the caller's decision: the SDK never follows a `jku` taken from the card itself, and has no X.509 chain check. A key's expiry is honoured only when the set carries `exp`, which RFC 7517 does not define. Tools and schemas an agent imports outside A2A are out of scope."
+gap = "Not built: validating an `x5c` chain to a trust anchor, its certificates' signatures, and CRL/OCSP revocation. Which key set to trust is the caller's decision: the SDK never follows a `jku` taken from the card itself. A key's expiry is honoured from `exp` (which RFC 7517 does not define) and from its `x5c` leaf's validity period. Tools and schemas an agent imports outside A2A are out of scope."
 
 [[control]]
 id = "ASI07"
