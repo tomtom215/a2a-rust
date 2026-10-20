@@ -22,10 +22,16 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Working branch:** `claude/charming-lamport-yp20d6`, started 2026-10-18
-  from `main` at `86c8fac` (pull request #172 merged). Pull request #173
-  is open for it (2026-10-19). `git log 86c8fac..` lists its commits; each message says what
-  it changed and how it was verified.
+- **Working branch:** `claude/jolly-hypatia-lsr7uv`, started 2026-10-20
+  from `main` at `6c90d0b` (pull request #173 merged that day). `git log
+  6c90d0b..` lists its commits; each message says what it changed and how it
+  was verified.
+- **Trailers on `main` (for the maintainer):** 36 of the 86 non-merge
+  commits pull request #173 merged (`86c8fac..6c90d0b^2`) carry
+  `Co-Authored-By` and `Claude-Session` trailers, against `CONTRIBUTING.md`'s
+  "no other trailer" rule, and the `Co-Authored-By` line names a model.
+  Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
+  rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
   authority on the counts. Since 2026-10-18 it also refuses `SUPPORTED` or
   `NOT_SUPPORTED` on anything but a MAY or OPTIONAL: 23 entries had used it
@@ -47,12 +53,12 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Next, in order
 
-1. **Mutation testing of this branch's diff.** CI's incremental job
-   (split by crate on this branch: types 2, client 2, sdk 1, server 10
-   shards) grades it once a pull request is open. A local run with `lld`
-   and `-j 2` takes roughly a minute a mutant; survivors found so far were
-   fixed in the branch, and the last local results are in the session
-   report, not here.
+1. **Mutation testing.** CI's incremental job is split by crate (types 2,
+   client 2, sdk 1, server 10 shards). On pull request #173's last run
+   (39343090044) server shard 7 took 2h42m of its 180 minutes, so the
+   server's incremental shard count needs raising before the next large
+   pull request. A local run with `lld` and `-j 2` takes roughly a minute a
+   mutant.
 2. **APPLICATION entries (35).** 22 were re-examined and kept on
    2026-10-18 (each note says why); 11 are card-content, deployment or
    agent-reasoning requirements the SDK only warns about or hands the agent
