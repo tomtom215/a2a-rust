@@ -113,10 +113,14 @@ impl InMemoryTaskStore {
     /// Runs background eviction of expired and over-capacity entries.
     ///
     /// Call this periodically (e.g. every 60 seconds) to clean up terminal
-    /// tasks that would otherwise persist until the next `save()` call.
+    /// tasks that would otherwise persist until the next `save()` call. It
+    /// also trims back to `max_events_per_task` each event log that a
+    /// stream's hold kept past it, once no stream holds it any more.
     pub async fn run_eviction(&self) {
         let mut store = self.data.write().await;
         Self::evict(&mut store, &self.config, EvictionPasses::all());
+        drop(store);
+        self.shrink_held_logs().await;
     }
 
     /// Returns which eviction passes this write has earned.
@@ -166,6 +170,10 @@ impl InMemoryTaskStore {
 
         let mut store = self.data.write().await;
         Self::evict(&mut store, &self.config, passes);
+        drop(store);
+        if passes.ttl {
+            self.shrink_held_logs().await;
+        }
     }
 
     /// Runs the passes `passes` asks for (must be called with write lock held).

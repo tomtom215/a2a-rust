@@ -1095,7 +1095,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`metrics::event_append_error::HOLD_CEILING`). **Memory:** a task with a
   slow or stalled stream attached now keeps up to the ceiling in its log
   instead of the bound, until the stream advances or disconnects and the
-  next append trims it back. The audit, encrypted and tenant-aware wrappers
+  next append, or for a finished task the next eviction sweep, trims it
+  back. The ceiling's report is counted on every append it forces and
+  logged once per task; `Some(1)` consults no hold and reports nothing, as
+  before. A streaming send takes its hold before the task's event
+  processor starts appending; it was taken after a store read that a
+  `historyLength` request makes, and a stream that lagged during that read
+  still ended with `streamLagged` (both found by the independent review). The audit, encrypted and tenant-aware wrappers
   forward the hold (the tenant store to the request's partition). Tests:
   `tests/stream_lag_holds.rs` (a lag of 62 positions behind a bound of 10
   now delivers every one, through a send, a subscription and a tenant

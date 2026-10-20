@@ -120,3 +120,23 @@ fn the_floor_is_not_asked_for_a_log_within_its_bound() {
     });
     assert!(!asked.get(), "an append below the bound costs what it did");
 }
+
+#[test]
+fn the_ceiling_is_reported_once_per_task_until_its_log_is_back_at_the_bound() {
+    let holds = EventHolds::new();
+    let (a, b) = (TaskId::new("a"), TaskId::new("b"));
+    holds.note_bound(&a, true);
+    assert!(holds.first_forced(&a));
+    assert!(
+        !holds.first_forced(&a),
+        "a second forced trim on one task is not warned again"
+    );
+    assert!(holds.first_forced(&b), "another task's first is");
+    holds.note_bound(&a, false);
+    assert_eq!(holds.over_bound(), vec![b]);
+    holds.note_bound(&a, true);
+    assert!(
+        holds.first_forced(&a),
+        "back over the bound after a trim, it is news again"
+    );
+}

@@ -115,6 +115,17 @@ impl RequestHandler {
             cancel,
             gate,
         } = started;
+        // §3.5.2: a streaming reader holds the log before the processor that
+        // appends to it starts. Taken after it, with `hydrate_response_history`
+        // awaiting a store read in between, the log was bounded with no hold
+        // at all for that long, and a stream that lagged in that window ended
+        // with `streamLagged` (found by the independent review of the holds,
+        // 2026-10-20).
+        let reader = if streaming {
+            self.holding_log(reader, &task.id, None)
+        } else {
+            reader
+        };
         self.spawn_background_event_processor(
             task.id.clone(),
             executor.into_handle(),
@@ -136,9 +147,8 @@ impl RequestHandler {
             // and a message-only stream MUST be exactly one Message. Which one
             // this is, the executor's first event decides.
             // §3.5.2: a stream that falls behind catches up from the log,
-            // which holds what the stream still owes.
-            let mut reader = self
-                .holding_log(reader, &snapshot.id, None)
+            // which holds what the stream still owes (held above).
+            let mut reader = reader
                 .with_catch_up(self.lag_catch_up_hook(snapshot.id.clone()))
                 .with_final_snapshot(self.final_snapshot_hook(snapshot.id.clone(), move |task| {
                     shape_response_history(task, response_history_length);

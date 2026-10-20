@@ -165,13 +165,47 @@ async fn the_ceiling_drops_held_events_and_reports_each_append_that_did() {
     drop(hold);
 }
 
+/// `Some(1)` is the trim before holds existed, reports included: a ceiling
+/// at the bound used to count every owed event it dropped as forced, one
+/// `hold_ceiling` per append, which the old trim never reported.
 #[tokio::test]
 async fn a_factor_of_one_holds_nothing_past_the_bound() {
-    let store = store(Some(1)).await;
+    let recorder = Arc::new(Recorder::default());
+    let store = store(Some(1))
+        .await
+        .with_metrics(crate::metrics::MetricsHandle::from_arc(recorder.clone()));
     let hold = store.hold_events(&TaskId::new("t-1"), 0).expect("a hold");
     append(&store, 1..=10).await;
     assert_eq!(held(&store).await, vec![7, 8, 9, 10]);
+    let seen = recorder
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    assert!(seen.is_empty(), "the old trim reported nothing: {seen:?}");
     drop(hold);
+}
+
+/// A task that appends nothing after its holds are released keeps its held
+/// log only until the eviction sweep: before, until the task expired.
+#[tokio::test]
+async fn the_eviction_sweep_trims_a_released_held_log_to_the_bound() {
+    let store = store(Some(8)).await;
+    let hold = store.hold_events(&TaskId::new("t-1"), 2).expect("a hold");
+    append(&store, 1..=10).await;
+    store.run_eviction().await;
+    assert_eq!(
+        held(&store).await,
+        (3..=10).collect::<Vec<_>>(),
+        "a sweep keeps what a hold still owes"
+    );
+    drop(hold);
+    store.run_eviction().await;
+    assert_eq!(held(&store).await, vec![7, 8, 9, 10]);
+    assert!(
+        store.holds.over_bound().is_empty(),
+        "a log back at its bound is no longer tracked"
+    );
 }
 
 #[tokio::test]

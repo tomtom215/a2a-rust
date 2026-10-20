@@ -27,7 +27,9 @@
 //! mark, so the log may drop position `s` only when `s` is at or below the
 //! lowest mark on the task ([`EventHolds::floor`]). With no hold the log is
 //! trimmed exactly as before. Dropping the hold, which dropping the stream
-//! does, releases it; the log shrinks back to its bound on the next append.
+//! does, releases it; the log shrinks back to its bound on the next append,
+//! or, for a task that appends nothing more, at the store's next eviction
+//! sweep.
 //!
 //! # The ceiling, and what is still lost past it
 //!
@@ -81,6 +83,11 @@ struct Registry {
     /// Each task's holds. A task with none has no entry, so a registry whose
     /// holds have all been dropped is empty.
     tasks: HashMap<TaskId, Vec<(u64, Arc<AtomicU64>)>>,
+    /// The tasks whose log a hold has kept over its bound, each with whether
+    /// the ceiling has already been reported for it. The store's eviction
+    /// sweep trims these back once their holds are gone; a task's last
+    /// append cannot, since there is none after it.
+    over: HashMap<TaskId, bool>,
 }
 
 /// The holds attached streams have on one store's event logs, per task.
@@ -144,6 +151,36 @@ impl EventHolds {
         let empty = registry.tasks.is_empty();
         drop(registry);
         empty
+    }
+
+    /// Records whether `task_id`'s log is over its bound after a trim.
+    pub(crate) fn note_bound(&self, task_id: &TaskId, over: bool) {
+        let mut registry = self.lock();
+        if over {
+            registry.over.entry(task_id.clone()).or_insert(false);
+        } else {
+            registry.over.remove(task_id);
+        }
+        drop(registry);
+    }
+
+    /// The tasks whose log a hold has kept over its bound.
+    pub(crate) fn over_bound(&self) -> Vec<TaskId> {
+        let registry = self.lock();
+        let tasks = registry.over.keys().cloned().collect();
+        drop(registry);
+        tasks
+    }
+
+    /// Whether this is the first time the ceiling has forced out events
+    /// `task_id`'s holds still owed. A stalled stream on a busy task meets
+    /// the ceiling on every append; one warning says so, and the metric
+    /// counts every time.
+    pub(crate) fn first_forced(&self, task_id: &TaskId) -> bool {
+        let mut registry = self.lock();
+        let first = !std::mem::replace(registry.over.entry(task_id.clone()).or_insert(false), true);
+        drop(registry);
+        first
     }
 
     /// The registry, whatever a panic elsewhere left it as: it holds only

@@ -245,7 +245,13 @@ pub struct TaskStoreConfig {
     /// operator already chose.
     ///
     /// A held log shrinks back to the bound on the first append after the
-    /// streams holding it advance or go away, not at the moment they do.
+    /// streams holding it advance or go away, or, for a task that appends
+    /// nothing more, at the next eviction sweep
+    /// ([`InMemoryTaskStore::run_eviction`](crate::store::InMemoryTaskStore::run_eviction),
+    /// or the one the store's own writes trigger every
+    /// [`eviction_interval`](Self::eviction_interval)); not at the moment
+    /// they do. The ceiling's report is counted on every append it forces,
+    /// and logged once per task.
     pub max_held_events_factor: Option<usize>,
 }
 

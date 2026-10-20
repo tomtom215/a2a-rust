@@ -34,31 +34,60 @@ impl InMemoryTaskStore {
         let Some(max) = self.config.effective_max_events_per_task() else {
             return 0;
         };
-        trim_log(
-            log,
-            max,
-            self.config.effective_max_held_events_per_task(),
-            || self.holds.floor(task_id),
-        )
+        let ceiling = self.config.effective_max_held_events_per_task();
+        // A ceiling at the bound holds nothing, so it is the old trim exactly:
+        // no hold asked for, and none of its drops counted as forced.
+        if ceiling.is_some_and(|c| c <= max) {
+            return trim_log(log, max, None, || None);
+        }
+        let forced = trim_log(log, max, ceiling, || self.holds.floor(task_id));
+        self.holds.note_bound(task_id, log.len() > max);
+        forced
+    }
+
+    /// Trims each log a hold kept over its bound back to it, for the tasks
+    /// whose holds are gone. A task's log is otherwise trimmed only on its
+    /// next append, and a finished task has none: before this sweep it kept
+    /// what its slowest stream had held, up to the ceiling, until the task
+    /// itself expired (found by the independent review of the holds,
+    /// 2026-10-20).
+    pub(super) async fn shrink_held_logs(&self) {
+        for task_id in self.holds.over_bound() {
+            let mut store = self.data.write().await;
+            let forced = if let Some(entry) = store.entries.get_mut(&task_id) {
+                self.bound_log(&task_id, &mut entry.log)
+            } else {
+                // The task is gone, and its log with it.
+                self.holds.note_bound(&task_id, false);
+                0
+            };
+            drop(store);
+            if forced > 0 {
+                self.report_forced_trim(&task_id, forced);
+            }
+        }
     }
 
     /// Reports that the ceiling dropped `forced` events an attached stream
     /// still owed. That stream ends with `streamLagged` when it reaches the
     /// gap, so nothing is lost silently; this is how an operator sees how
     /// often the ceiling, rather than the stream, decided.
-    // `_task_id` and `_forced` for the reason `report_dropped_append` gives:
+    // `_forced` for the reason `report_dropped_append` gives:
     // `trace_warn!` compiles to nothing without the `tracing` feature, and the
     // metric takes only low-cardinality labels.
-    pub(super) fn report_forced_trim(&self, _task_id: &TaskId, _forced: usize) {
-        trace_warn!(
-            task_id = %_task_id,
-            dropped = _forced,
-            "in-memory event log: the held-events ceiling dropped events an attached \
-             stream still owed; that stream will end with streamLagged"
-        );
+    pub(super) fn report_forced_trim(&self, task_id: &TaskId, _forced: usize) {
         self.metrics.on_persistence_error(
             metrics::persistence_operation::EVENT_APPEND,
             metrics::event_append_error::HOLD_CEILING,
         );
+        if self.holds.first_forced(task_id) {
+            trace_warn!(
+                task_id = %task_id,
+                dropped = _forced,
+                "in-memory event log: the held-events ceiling dropped events an attached \
+                 stream still owed; that stream will end with streamLagged (reported once \
+                 per task; the metric counts each time)"
+            );
+        }
     }
 }
