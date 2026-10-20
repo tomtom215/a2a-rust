@@ -82,6 +82,14 @@ async fn jsonrpc_records_every_refusal_with_the_code_it_answered() {
         r#"{"jsonrpc":"2.0","id":1,"method":"tasks/get","params":{}}"#,
     )
     .await;
+    // Nor the v0.3 spelling of one it does: refused, so `_OTHER`, not
+    // `SendStreamingMessage`, which it was recorded as until 2026-10-20.
+    post(
+        addr,
+        "/",
+        r#"{"jsonrpc":"2.0","id":1,"method":"message/stream","params":{}}"#,
+    )
+    .await;
     // A served method with params it cannot read.
     post(
         addr,
@@ -109,6 +117,7 @@ async fn jsonrpc_records_every_refusal_with_the_code_it_answered() {
         *seen.lock().unwrap(),
         [
             failed("jsonrpc", None, "-32700"),
+            failed("jsonrpc", Some("_OTHER"), "-32601"),
             failed("jsonrpc", Some("_OTHER"), "-32601"),
             failed("jsonrpc", get_task, "-32602"),
             failed("jsonrpc", get_task, "-32001"),

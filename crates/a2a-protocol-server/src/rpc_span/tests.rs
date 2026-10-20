@@ -24,10 +24,13 @@ fn every_served_method_is_qualified_and_anything_else_is_other() {
     ] {
         assert_eq!(a2a_method(m), format!("lf.a2a.v1.A2AService/{m}"));
     }
-    assert_eq!(
-        a2a_method("message/stream"),
-        "lf.a2a.v1.A2AService/SendStreamingMessage"
-    );
+    // A v0.3 spelling is a method this server does not serve. This expected
+    // `message/stream` as `SendStreamingMessage`, from when the WebSocket
+    // binding still routed it; it stopped on 2026-10-12 and the JSON-RPC
+    // binding never did, so that expectation pinned a refused call
+    // (`-32601`) recorded under a method it never reached, and without the
+    // `rpc.method_original` an `_OTHER` carries.
+    assert_eq!(a2a_method("message/stream"), "_OTHER");
     assert_eq!(a2a_method("message/send"), "_OTHER");
     assert_eq!(a2a_method("DropTables; --"), "_OTHER");
 }
@@ -424,6 +427,19 @@ fn the_span_is_named_by_its_method_or_by_its_system_for_other() {
     assert_eq!(
         unknown.get("rpc.method_original").map(String::as_str),
         Some("NoSuchMethod")
+    );
+}
+
+/// The v0.3 `message/stream`, which no binding routes, is an `_OTHER` call
+/// that keeps what the peer sent.
+#[cfg(feature = "tracing")]
+#[test]
+fn a_legacy_method_name_is_other_with_its_original() {
+    let legacy = span_fields("message/stream");
+    assert_eq!(legacy.get("rpc.method").map(String::as_str), Some(OTHER));
+    assert_eq!(
+        legacy.get("rpc.method_original").map(String::as_str),
+        Some("message/stream")
     );
 }
 

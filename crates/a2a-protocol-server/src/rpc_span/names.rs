@@ -119,8 +119,11 @@ impl WireStatus for A2aError {
 pub fn a2a_method(method: &str) -> &'static str {
     match method {
         "SendMessage" => "lf.a2a.v1.A2AService/SendMessage",
-        // The WebSocket binding also routes this v0.3 spelling.
-        "SendStreamingMessage" | "message/stream" => "lf.a2a.v1.A2AService/SendStreamingMessage",
+        // Not the v0.3 `message/stream`: no binding routes it — the WebSocket
+        // binding stopped on 2026-10-12, the JSON-RPC one never did — so a
+        // call of it is refused `MethodNotFound` and recorded as `_OTHER`,
+        // with `rpc.method_original`, like every other method not served.
+        "SendStreamingMessage" => "lf.a2a.v1.A2AService/SendStreamingMessage",
         "GetTask" => "lf.a2a.v1.A2AService/GetTask",
         "ListTasks" => "lf.a2a.v1.A2AService/ListTasks",
         "CancelTask" => "lf.a2a.v1.A2AService/CancelTask",

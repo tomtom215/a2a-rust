@@ -1711,6 +1711,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `message/stream` call is recorded as `_OTHER`** (server). The span and
+  metric name mapping still treated the v0.3 spelling as
+  `SendStreamingMessage`, though no binding routes it (WebSocket stopped on
+  2026-10-12; JSON-RPC never did), so a refused legacy call was counted
+  under a method it never reached and without `rpc.method_original`.
 - **Requests refused before their span opens are in
   `rpc.server.call.duration`** (server). gRPC (a missing or unsupported
   `A2A-Version`, metadata or a request that does not convert), HTTP+JSON and
