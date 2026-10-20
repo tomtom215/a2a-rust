@@ -64,10 +64,13 @@ title = "Expired or revoked keys must not be used for verification"
 section = "8.4.3"
 level = "MUST"
 upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/agent_card.py; also backlog task-29 (To Do)."
-scope = "A JWKS key past its `exp` is no verification candidate, and a key removed from the set no longer verifies (docs/official-tck-findings.md §19: key lifecycle is the caller's, expressed through the key set). Not covered here: expiry of an `x5c` certificate chain, which is a separate change."
+scope = "A JWKS key past its `exp` is no verification candidate, and a key removed from the set no longer verifies (docs/official-tck-findings.md §19: key lifecycle is the caller's, expressed through the key set). A key carrying `x5c` is used only while its leaf certificate is valid and holds the JWK's own key. Not covered: validating the chain to a trust anchor and CRL/OCSP revocation."
 tests = [
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::an_expired_key_is_not_used",
   "crates/a2a-protocol-types/src/signing/keys/tests.rs::removing_a_key_from_the_set_revokes_it",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_expired_leaf_is_not_used",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_not_yet_valid_leaf_is_not_used",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_leaf_holding_another_key_is_not_used",
 ]
 
 [[requirement]]
