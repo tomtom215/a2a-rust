@@ -139,11 +139,16 @@ fn is_url(s: &str) -> bool {
             .is_some_and(|(_, rest)| !rest.is_empty() && !rest.starts_with('/'))
 }
 
-/// [`is_url`] with the `https` scheme, compared without regard to case.
+/// [`is_url`] with an encrypted scheme, compared without regard to case:
+/// `https`, or `wss`, the WebSocket binding's (spec §7.1 asks for encrypted
+/// communication, which `wss` is; it was warned as plaintext until
+/// 2026-10-20).
 fn is_https_url(s: &str) -> bool {
     is_url(s)
-        && s.get(..8)
-            .is_some_and(|p| p.eq_ignore_ascii_case("https://"))
+        && ["https://", "wss://"].iter().any(|scheme| {
+            s.get(..scheme.len())
+                .is_some_and(|p| p.eq_ignore_ascii_case(scheme))
+        })
 }
 
 /// Query parameter names that carry a secret.

@@ -1787,6 +1787,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `wss://` interface was warned as plaintext** (server, the card lint
+  `build()` runs). The check behind "is not https; production deployments
+  MUST use encrypted communication" accepted only `https://`, so a
+  production WebSocket interface on `wss://` drew the warning; `wss://` is
+  now encrypted too, and `ws://` still warns. Found by the ledger audit of
+  2026-10-20; `agent_card::lint::tests::a_wss_interface_is_encrypted_and_a_ws_one_is_not`.
+
 - **A blocking request outlasting the idle timeout lost its answer**
   (server, `Server` / `serve`). `ServeConfig::idle_timeout` (75s by
   default) measured silence on the socket, and a blocking `SendMessage`
