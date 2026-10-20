@@ -220,17 +220,19 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "The agent MAY create a new `Task` to process the provided message asynchronously",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:220"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:12 send_message_returns_completed_task"
+    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:12 send_message_returns_completed_task",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:90 send_message_returns_task_and_processing_continues_after_response"
    ],
-   "notes": "",
+   "notes": " Asserts a returnImmediately send is answered with a non-terminal Task while the agent is still blocked; shown able to fail by forcing return_immediately off in mode.rs (the test times out) (2026-10-20)",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 180,
@@ -238,17 +240,19 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "or MAY return a direct `Message` response for simple interactions.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:214"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/send_sync_tests.rs:174 message_only_executor_returns_a_message"
+    "crates/a2a-protocol-server/tests/send_sync_tests.rs:174 message_only_executor_returns_a_message",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:128 send_message_simple_interaction_returns_direct_message"
    ],
-   "notes": "Non-streaming only: Message returned when the executor emitted a message and nothing task-shaped (a task row is still persisted).",
+   "notes": "Non-streaming only: Message returned when the executor emitted a message and nothing task-shaped (a task row is still persisted). Asserts a blocking send whose agent emits only a Message gets that Message (its id and text) as the response; shown able to fail by filtering out collected.direct_message in respond.rs (2026-10-20)",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 180,
@@ -276,17 +280,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Task processing MAY continue asynchronously after the response when a Task is returned.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:117"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:695 return_immediately_persists_final_state"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:695 return_immediately_persists_final_state",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:90 send_message_returns_task_and_processing_continues_after_response"
    ],
-   "notes": "Background event processor keeps persisting after the response.",
+   "notes": "Background event processor keeps persisting after the response. Asserts the task reaches Completed after the returnImmediately response with no stream open; shown able to fail by not spawning the background processor for non-streaming sends in respond.rs (2026-10-20)",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 194,
@@ -294,17 +300,19 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "Subsequent events following a `Task` MAY include stream of TaskStatusUpdateEvent and TaskArtifactUpdateEvent objects",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader"
+    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:146 streaming_task_is_followed_by_status_and_artifact_updates"
    ],
-   "notes": "",
+   "notes": " Asserts the exact stream Task, Working status, artifact, Completed status, all for the streamed task; shown able to fail by dropping ArtifactUpdate events in InMemoryQueueReader::next_live (2026-10-20)",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 199,
@@ -501,17 +509,19 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "The agent MAY return a `Task` for complex processing with status/artifact updates",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader"
+    "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:146 streaming_task_is_followed_by_status_and_artifact_updates"
    ],
-   "notes": "",
+   "notes": " Asserts a task-lifecycle stream starts with the Task snapshot then its updates; shown able to fail by disabling the provisional Task snapshot in InMemoryQueueReader::read (2026-10-20)",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 212,
@@ -519,18 +529,19 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "or MAY return a `Message` for direct streaming responses without task overhead.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/delegation_tests.rs a_direct_reply_is_a_message_outcome"
+    "crates/a2a-protocol-client/tests/delegation_tests.rs a_direct_reply_is_a_message_outcome",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:177 streaming_direct_message_is_the_whole_stream"
    ],
-   "notes": "A Message as the executor's first event is streamed as the whole response.",
+   "notes": "A Message as the executor's first event is streamed as the whole response. Asserts a Message-answering agent streams exactly one Message and nothing else; shown able to fail by disabling the message-only branch in InMemoryQueueReader::read (2026-10-20)",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 212,
@@ -1117,7 +1128,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "and MAY support pagination for tasks with many configurations.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/push_config_page.rs on_list_push_configs_page",
@@ -1130,10 +1141,10 @@
     "crates/a2a-protocol-server/tests/push_config_pagination.rs the_axum_router_carries_the_page_and_its_token",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs list_push_configs_pages_with_a_token"
    ],
-   "notes": "Since 2026-10-14 RequestHandler::on_list_push_configs_page pages the list on every binding (JSON-RPC and WebSocket params, HTTP+JSON and axum query, gRPC and SLIMRPC fields): ordered by id, at most pageSize, nextPageToken while more remain (base64url of the last id returned), InvalidField(pageToken) for one this server did not give, pageSize 0 read as unset. Without pageSize or pageToken the whole list is returned unordered, as before. Before: pageSize/pageToken were ignored and nextPageToken was always None; the list is bounded by max_push_configs_per_task either way.",
+   "notes": "Since 2026-10-14 RequestHandler::on_list_push_configs_page pages the list on every binding (JSON-RPC and WebSocket params, HTTP+JSON and axum query, gRPC and SLIMRPC fields): ordered by id, at most pageSize, nextPageToken while more remain (base64url of the last id returned), InvalidField(pageToken) for one this server did not give, pageSize 0 read as unset. Without pageSize or pageToken the whole list is returned unordered, as before. Before: pageSize/pageToken were ignored and nextPageToken was always None; the list is bounded by max_push_configs_per_task either way. Existing tests assert 5 configs come back in 3 pages of at most 2 with no token on the last, also over JSON-RPC and REST; shown able to fail by making push_config_page.rs page() return every config unpaged (2026-10-20)",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 397,
@@ -1263,7 +1274,7 @@
    "keyword": "MUST",
    "binds": "client",
    "requirement": "The client MUST authenticate the request using one of the schemes declared in the public AgentCard.securitySchemes and AgentCard.security fields.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:28",
@@ -1271,7 +1282,10 @@
     "crates/a2a-protocol-client/src/auth.rs:276 api_key",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:105",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:211",
-    "crates/a2a-protocol-client/src/transport/mod.rs:310 with_query"
+    "crates/a2a-protocol-client/src/transport/mod.rs:310 with_query",
+    "crates/a2a-protocol-client/src/credential_preflight.rs:252 check",
+    "crates/a2a-protocol-client/src/credential_preflight.rs:76 with_credential_preflight",
+    "crates/a2a-protocol-client/src/interceptor.rs:354 run_before"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:258 get_extended_agent_card_with_authenticator_gates_on_credentials",
@@ -1280,12 +1294,22 @@
     "crates/a2a-protocol-sdk/tests/api_key_placement_e2e.rs:94 an_api_key_reaches_the_agent_over_json_rpc",
     "crates/a2a-protocol-client/tests/api_key_query.rs:119 jsonrpc_puts_the_key_in_the_url",
     "crates/a2a-protocol-client/tests/api_key_query.rs:131 http_json_puts_the_key_after_the_routes_own_query",
-    "crates/a2a-protocol-client/tests/api_key_query.rs:229 a_transport_without_query_support_refuses_rather_than_drops"
+    "crates/a2a-protocol-client/tests/api_key_query.rs:229 a_transport_without_query_support_refuses_rather_than_drops",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:218 preflight_refuse_bearer_against_api_key_card_sends_nothing",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:238 preflight_refuse_applies_to_a_streaming_call",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:251 preflight_refuse_matching_api_key_is_sent",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:265 preflight_refuse_custom_interceptor_writing_declared_header_is_sent",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:279 preflight_refuse_no_credential_is_refused",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:292 preflight_refuse_mtls_only_requirement_is_sent",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:328 preflight_off_never_checks",
+    "crates/a2a-protocol-client/tests/declared_credentials.rs:411 preflight_warn_sends_and_logs_once_per_kind",
+    "crates/a2a-protocol-client/src/credential_preflight_tests.rs:122 preflight_requirement_needs_all_its_schemes_and_any_requirement_will_do",
+    "crates/a2a-protocol-client/src/credential_preflight_tests.rs:172 preflight_refusal_names_schemes_and_never_a_credential"
    ],
-   "notes": "Client: get_extended_agent_card does not check that credentials matching the card's schemes are attached; the caller must register an interceptor for one of them. For an APIKeySecurityScheme, AuthInterceptor::api_key sends the key in the header or cookie the scheme names, over JSON-RPC, HTTP+JSON and gRPC (e2e against ApiKeyAuthInterceptor); until 2026-10-14 the only API-key path wrote Authorization, which such an agent refuses. A key placed in the query string goes in the request URL over JSON-RPC and HTTP+JSON (since 2026-10-14, audit register R67; refused before, as no transport could add a query parameter), and the gRPC and WebSocket transports refuse the call with ClientError::InvalidAuthScheme rather than send it without the key. Server side refuses the call unless an authenticating interceptor exists (or allow_unauthenticated_extended_card opt-out). Re-examined 2026-10-18, kept: a client-side check before sending would have to know which of the caller's headers carry a credential, and an interceptor of the caller's own can put one anywhere, so the SDK would refuse calls that are correctly authenticated. The SDK's part is placing a credential where a declared scheme says (AuthInterceptor::with_scheme, api_key; tested) and the server refusing GetExtendedAgentCard without one (tested); choosing the scheme is the caller's.",
+   "notes": "Client: get_extended_agent_card does not check that credentials matching the card's schemes are attached; the caller must register an interceptor for one of them. For an APIKeySecurityScheme, AuthInterceptor::api_key sends the key in the header or cookie the scheme names, over JSON-RPC, HTTP+JSON and gRPC (e2e against ApiKeyAuthInterceptor); until 2026-10-14 the only API-key path wrote Authorization, which such an agent refuses. A key placed in the query string goes in the request URL over JSON-RPC and HTTP+JSON (since 2026-10-14, audit register R67; refused before, as no transport could add a query parameter), and the gRPC and WebSocket transports refuse the call with ClientError::InvalidAuthScheme rather than send it without the key. Server side refuses the call unless an authenticating interceptor exists (or allow_unauthenticated_extended_card opt-out). Since 2026-10-20 a client built from a card checks every call (streaming included, on every transport) after its interceptors run, where the §13.4 plaintext check runs: the request must meet one of the card's securityRequirements, judged by where each declared scheme puts its credential (Authorization with the HTTP scheme, Bearer for OAuth2 and OIDC, the API key's header, query parameter or cookie; mutual TLS counts as met), so a credential the caller's own interceptor writes in a declared place passes and the 2026-10-18 objection holds only for one in a place the card does not declare; CredentialPreflight::Warn (default) logs once per client per mismatch kind, Refuse returns ClientError::InvalidAuthScheme before anything is sent, Off skips the check. Supplying the credential stays the caller's; refusing is opt-in (Refuse), the default warns. The SDK's part is placing a credential where a declared scheme says (AuthInterceptor::with_scheme, api_key; tested) and the server refusing GetExtendedAgentCard without one (tested); choosing the scheme is the caller's.",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 424,
@@ -1293,19 +1317,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "The operation MAY return different details based on client authentication level, including additional skills, capabilities, or configuration not available in the public Agent Card.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:394",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs each_caller_is_served_the_card_chosen_for_it"
    ],
-   "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one. Without it a card that declares the capability answers ExtendedAgentCardNotConfiguredError (since 2026-10-14; the public card used to be served). One extended card for every authenticated caller: no per-caller variation (see 3144). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56).",
+   "notes": "RequestHandlerBuilder::with_extended_agent_card sets the card served to an authenticated caller, distinct from the public one. Without it a card that declares the capability answers ExtendedAgentCardNotConfiguredError (since 2026-10-14; the public card used to be served). One extended card for every authenticated caller: no per-caller variation (see 3144). Until 2026-10-14 the builder had no extended-card setting, so the 'extended' card was always the public one (audit register R56). Existing test asserts two authenticated callers are served extended cards with different skills; shown able to fail by serving the configured extended card without the per-caller provider in extended_card.rs (2026-10-20)",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 425,
@@ -1526,17 +1551,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Send Message operations MAY be idempotent. Agents may utilize the messageId to detect duplicate messages.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/idempotency.rs:40"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:34 a_retry_of_the_same_message_returns_the_first_task_and_runs_the_agent_once"
+    "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:34 a_retry_of_the_same_message_returns_the_first_task_and_runs_the_agent_once",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:298 send_message_with_idempotency_key_is_not_executed_twice"
    ],
-   "notes": "Implemented through an opt-in idempotency extension key in message metadata (IDEMPOTENCY_EXTENSION_URI), not by messageId alone.",
+   "notes": "Implemented through an opt-in idempotency extension key in message metadata (IDEMPOTENCY_EXTENSION_URI), not by messageId alone. Asserts a retried send with the same idempotency key returns the first task and runs the agent once, and the key on another messageId is refused; shown able to fail by treating every key as absent in claim_send_key (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 496,
@@ -1544,18 +1571,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "A duplicate cancellation request MAY return `TaskNotFoundError` if the task has already been canceled and purged.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:42",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:48"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:241 cancel_task_terminal_state_returns_not_cancelable"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:241 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:182 duplicate_cancel_after_purge_returns_task_not_found"
    ],
-   "notes": "Purged task -> TaskNotFound (store miss). A duplicate cancel of a still-stored Canceled task returns TaskNotCancelableError (cancel_task.rs:48), consistent with that error's definition though not literally 'the same effect' as the first cancel.",
+   "notes": "Purged task -> TaskNotFound (store miss). A duplicate cancel of a still-stored Canceled task returns TaskNotCancelableError (cancel_task.rs:48), consistent with that error's definition though not literally 'the same effect' as the first cancel. Asserts a duplicate cancel is TaskNotCancelable while the canceled task is stored and TaskNotFound once TTL eviction purges it; shown able to fail by disabling evict_expired (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 500,
@@ -2031,7 +2060,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY accept additional messages for tasks in non-terminal states to enable multi-turn interactions",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:158",
@@ -2042,12 +2071,13 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:1907 input_required_continuation_reuses_task_id",
     "crates/a2a-protocol-server/tests/event_log_tests/continuation_race.rs:67 a_continuation_sent_on_input_required_does_not_collide_with_the_log",
-    "crates/a2a-protocol-server/tests/event_log_tests/continuation_race.rs:157 a_turn_that_writes_past_its_blocking_answer_does_not_hold_the_next_back"
+    "crates/a2a-protocol-server/tests/event_log_tests/continuation_race.rs:157 a_turn_that_writes_past_its_blocking_answer_does_not_hold_the_next_back",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:216 non_terminal_task_accepts_follow_up_message"
    ],
-   "notes": "Non-terminal continuations reuse the task id; a send to a task whose executor is still running is refused (UnsupportedOperation), see tests.rs concurrent_send_to_in_flight_task_is_rejected. A continuation sent as soon as the task parks is built from the task as the previous turn left it (2026-10-13): it waits for that turn to store its events and reads the task again, where it used to save over what the turn had just stored, such as an artifact.",
+   "notes": "Non-terminal continuations reuse the task id; a send to a task whose executor is still running is refused (UnsupportedOperation), see tests.rs concurrent_send_to_in_flight_task_is_rejected. A continuation sent as soon as the task parks is built from the task as the previous turn left it (2026-10-13): it waits for that turn to store its events and reads the task again, where it used to save over what the turn had just stored, such as an artifact. Asserts a follow-up to an input-required task runs as the same task, completes it, and both user messages are in its history; shown able to fail by refusing non-terminal continuations in resolve_task_id (2026-10-20)",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 571,
@@ -2196,17 +2226,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY generate a new contextId when processing a Message that does not include a contextId field",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:66"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:812 empty_context_id_is_unset_and_a_context_is_generated"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:812 empty_context_id_is_unset_and_a_context_is_generated",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:75 context_id_absent_is_generated_fresh_per_message"
    ],
-   "notes": "UUIDv4 generated.",
+   "notes": "UUIDv4 generated. Asserts a message without contextId gets a non-empty contextId, distinct per message, which the agent runs in; shown able to fail by generating a constant contextId in resolve_context_id (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 591,
@@ -2235,17 +2267,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY accept and preserve client-provided contextId values",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:67"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:90 context_id_from_client_is_preserved_verbatim"
    ],
-   "notes": "Client contextId used verbatim after validation.",
+   "notes": "Client contextId used verbatim after validation. Asserts a client contextId is kept verbatim on the response, the stored task and the agent request context; shown able to fail by replacing client contextIds with generated ones in resolve_context_id (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 593,
@@ -2329,15 +2363,18 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "Agents MAY use the contextId to maintain internal state, conversational history, or LLM context",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/request_context.rs:46"
    ],
-   "test_evidence": [],
-   "notes": "context_id exposed on RequestContext.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:105 context_id_keys_agent_conversation_state"
+   ],
+   "notes": "context_id exposed on RequestContext. Asserts an agent keying a turn counter on RequestContext.context_id sees turns accumulate per context (1, 2 in A; 1 in B; 3 in A); shown able to fail by ignoring client contextIds in resolve_context_id (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 602,
@@ -2345,17 +2382,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY implement context expiration or cleanup policies",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/store/retention"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:657 task_store_config_both_ttl_and_capacity"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:657 task_store_config_both_ttl_and_capacity",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:156 context_expiration_removes_finished_tasks_after_ttl"
    ],
-   "notes": "Task-store TTL/capacity and retention modules.",
+   "notes": "Task-store TTL/capacity and retention modules. Asserts that with a task TTL a finished context is listed before expiry and gone after, while a context with an open task is kept; shown able to fail by disabling evict_expired (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 602,
@@ -2455,15 +2494,18 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "Clients MAY include the contextId in subsequent messages",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/message.rs:1"
    ],
-   "test_evidence": [],
-   "notes": "Message.context_id field exposed.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:265 context_id_without_task_id_starts_new_task_in_context"
+   ],
+   "notes": "Message.context_id field exposed. Asserts a client message carrying back the server-generated contextId serialises it as contextId and lands in that context; shown able to fail by ignoring client contextIds in resolve_context_id (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 625,
@@ -2471,7 +2513,7 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "Clients MAY use taskId (with or without contextId) to continue or refine a specific task",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:123",
@@ -2485,12 +2527,14 @@
     "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:190 a_continuation_over_the_push_config_quota_keeps_its_task",
     "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:274 a_continuation_whose_turn_cannot_be_saved_withdraws_its_config",
     "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:312 a_continuation_whose_turn_cannot_be_saved_keeps_a_named_config",
-    "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:355 an_accepted_continuation_registers_its_config_once"
+    "crates/a2a-protocol-server/tests/inline_push_config_continuation.rs:355 an_accepted_continuation_registers_its_config_once",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:248 task_id_without_context_id_continues_that_task",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:216 non_terminal_task_accepts_follow_up_message"
    ],
-   "notes": "A refused continuation leaves the task it names as it was: an inline push config is registered before the turn touches the row, and a refusal no longer runs the new-task rollback that deleted the row (2026-10-13). When the config is accepted but the turn cannot be saved, a config the server created is withdrawn; one the request named by id stays, since it may have replaced the client's own.",
+   "notes": "A refused continuation leaves the task it names as it was: an inline push config is registered before the turn touches the row, and a refusal no longer runs the new-task rollback that deleted the row (2026-10-13). When the config is accepted but the turn cannot be saved, a config the server created is withdrawn; one the request named by id stays, since it may have replaced the client's own. Asserts a taskId-only follow-up continues that task in its inferred context, and taskId plus contextId does too; shown able to fail by not inferring the context from the task in resolve_context_id (2026-10-20)",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 626,
@@ -2498,17 +2542,19 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "Clients MAY use contextId without taskId to start a new task within an existing conversation context",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:102"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:1515 send_message_to_terminal_context_without_task_id_creates_new_task"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:1515 send_message_to_terminal_context_without_task_id_creates_new_task",
+    "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:265 context_id_without_task_id_starts_new_task_in_context"
    ],
-   "notes": "",
+   "notes": " Asserts contextId without taskId creates a new task in that context and leaves the open earlier task input-required; shown able to fail by making such a send reuse the open task in resolve_task_id (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 627,
@@ -2634,17 +2680,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "An agent MAY serve multiple concurrent streams to one or more clients for the same task",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:305"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/event_queue_tests.rs:550 subscribe_creates_additional_reader"
+    "crates/a2a-protocol-server/tests/event_queue_tests.rs:550 subscribe_creates_additional_reader",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:188 subscribe_serves_concurrent_streams_for_one_task"
    ],
-   "notes": "",
+   "notes": " Asserts two SubscribeToTask streams opened beside the originating stream all see the task through to Completed; shown able to fail by refusing a subscribe while the task has a live queue (a dead broadcast receiver alone does not fail it: the store-backed reattach hook still delivers the terminal status) (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 691,
@@ -2845,7 +2893,7 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "Clients MAY provide the A2A-Version as a request parameter instead of a header.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/version_query.rs:41",
@@ -2857,12 +2905,15 @@
     "crates/a2a-protocol-client/tests/version_query.rs:90 jsonrpc_sends_the_version_as_a_parameter_and_a_header",
     "crates/a2a-protocol-client/tests/version_query.rs:104 http_json_sends_the_version_after_the_routes_own_query",
     "crates/a2a-protocol-client/tests/version_query.rs:127 without_the_interceptor_only_the_header_is_sent",
-    "crates/a2a-protocol-client/src/version_query.rs:110 a_parameter_the_request_already_names_is_kept"
+    "crates/a2a-protocol-client/src/version_query.rs:110 a_parameter_the_request_already_names_is_kept",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs rest_version_request_parameter_is_honoured",
+    "crates/a2a-protocol-client/tests/version_query.rs jsonrpc_sends_the_version_as_a_parameter_and_a_header",
+    "crates/a2a-protocol-client/tests/version_query.rs http_json_sends_the_version_after_the_routes_own_query"
    ],
-   "notes": "Since 2026-10-15, opt-in: VersionQueryInterceptor adds A2A-Version=1.0 to every request's query parameters, which the JSON-RPC and HTTP+JSON transports append to the URL; the header is still sent beside it, so a server reading both (this SDK's, dispatch/version.rs requested_version: header first, then the parameter) answers the same either way, and a proxy that drops unknown headers no longer drops the version. Sending the parameter instead of the header was not chosen: a server that reads only the header would take the request for 0.3. gRPC and WebSocket have no per-request query string and send the version as metadata.",
+   "notes": "Since 2026-10-15, opt-in: VersionQueryInterceptor adds A2A-Version=1.0 to every request's query parameters, which the JSON-RPC and HTTP+JSON transports append to the URL; the header is still sent beside it, so a server reading both (this SDK's, dispatch/version.rs requested_version: header first, then the parameter) answers the same either way, and a proxy that drops unknown headers no longer drops the version. Sending the parameter instead of the header was not chosen: a server that reads only the header would take the request for 0.3. gRPC and WebSocket have no per-request query string and send the version as metadata. Existing tests assert the server honours and validates ?A2A-Version= without the header and the client interceptor puts A2A-Version=1.0 on the URL; shown able to fail by dropping the query fallback in requested_version and by never adding the parameter in VersionQueryInterceptor (2026-10-20)",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 724,
@@ -3053,16 +3104,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY choose to persist all Messages that contain important information in the Task history",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:491",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:374"
    ],
-   "test_evidence": [],
-   "notes": "SDK persists every agent Message event into Task.history (capped at 1024).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:238 blocking_send_persists_agent_message_in_task_history",
+    "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:255 streaming_send_persists_agent_message_in_task_history"
+   ],
+   "notes": "SDK persists every agent Message event into Task.history (capped at 1024). Asserts an agent Message emitted mid-task is stored in Task.history after the user message on both the blocking and streaming paths; shown able to fail by removing history.push(msg) in sync_collector.rs and in background/state_machine.rs respectively (2026-10-20)",
    "auditor": "B",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 764,
@@ -3253,7 +3308,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY implement retry logic with exponential backoff for failed deliveries",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:177",
@@ -3261,11 +3316,14 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:196 retries_on_server_error_and_eventually_fails",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:248 backoff_is_paid_between_attempts_but_not_after_the_last"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:248 backoff_is_paid_between_attempts_but_not_after_the_last",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:275 backoff_is_paid_between_attempts_but_not_after_the_last",
+    "crates/a2a-protocol-server/src/push/sender.rs:890 push_retry_policy_default"
    ],
-   "notes": "PushRetryPolicy default 3 attempts, backoff [1s,2s]; only 5xx/408/429/transport errors are retried.",
+   "notes": "PushRetryPolicy default 3 attempts, backoff [1s,2s]; only 5xx/408/429/transport errors are retried. Tests assert 3 attempts against a failing webhook, the backoff paid between attempts and not after the last, and the default doubling [1s, 2s] schedule; shown able to fail by fixing attempts at 1 (attempt-count tests fail), removing the backoff sleep (backoff test fails) and changing the default to [1s, 1s] (default-policy test fails) (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 886,
@@ -3296,18 +3354,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY stop attempting delivery after a configured number of consecutive failures",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:177",
     "crates/a2a-protocol-server/src/push/sender.rs:883"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:196 retries_on_server_error_and_eventually_fails"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:196 retries_on_server_error_and_eventually_fails",
+    "crates/a2a-protocol-server/tests/optional_features/push_retry.rs:78 push_delivery_stops_after_the_configured_number_of_failures"
    ],
-   "notes": "max_attempts per delivery; non-retryable 4xx stops immediately.",
+   "notes": "max_attempts per delivery; non-retryable 4xx stops immediately. push_delivery_stops_after_the_configured_number_of_failures asserts a webhook failing every attempt gets exactly 2, then exactly 5, attempts when that many are configured and the delivery is reported failed; shown able to fail by fixing the retry loop at one attempt (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1139,
@@ -3549,18 +3609,21 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "Clients MAY choose any protocol declared by the agent",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:191",
     "crates/a2a-protocol-client/src/builder/mod.rs:374"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/mod.rs:657 from_card_prefers_the_callers_binding_order_over_the_cards"
+    "crates/a2a-protocol-client/src/builder/mod.rs:657 from_card_prefers_the_callers_binding_order_over_the_cards",
+    "crates/a2a-protocol-client/src/builder/mod.rs:722 from_card_prefers_the_callers_binding_order_over_the_cards",
+    "crates/a2a-protocol-client/src/builder/mod.rs:736 a_later_preference_wins_when_the_earlier_one_is_not_offered"
    ],
-   "notes": "from_card_preferring / with_protocol_binding.",
+   "notes": "from_card_preferring / with_protocol_binding. The tests assert from_card_preferring connects to the binding the caller ranks, not the card's first interface; shown able to fail by removing the preference sort in builder/selection.rs (both fail) (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1158,
@@ -3988,17 +4051,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "When millisecond precision is not available, the fractional seconds portion MAY be omitted or zero-filled",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/lib.rs:246"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:525 parse_epoch_and_known_instants"
+    "crates/a2a-protocol-types/src/lib.rs:525 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/tests/optional_wire_forms.rs:28 timestamp_without_or_with_zero_filled_fraction_names_the_same_instant"
    ],
-   "notes": "Parser accepts with and without fractional seconds.",
+   "notes": "Parser accepts with and without fractional seconds. Asserts a timestamp with no fraction, and with .0, .000 and .000000, parses to the same millisecond instant while a non-zero fraction is read; shown able to fail by making parse_iso8601_to_unix_millis refuse a timestamp without a fraction (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1255,
@@ -4351,15 +4416,18 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "The Agent Card MAY contain public information about an agent's capabilities",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:90"
    ],
-   "test_evidence": [],
-   "notes": "",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/optional_features/wire.rs:125 the_public_card_describes_capabilities_without_credentials"
+   ],
+   "notes": " Asserts a server whose every operation needs a bearer token (control: GetTask without it is 401) serves /.well-known/agent-card.json without credentials, carrying its skills and capabilities; shown able to fail by serving the card only to requests with an Authorization header (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3341,
@@ -4417,17 +4485,21 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "Agent Cards MAY be signed using JWS",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:579"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/signing_tests.rs:78 canonicalize_sorts_object_keys_lexicographically"
+    "crates/a2a-protocol-types/tests/signing_tests.rs:78 canonicalize_sorts_object_keys_lexicographically",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:316 sign_and_verify_roundtrip",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:405 verify_rejects_tampered_card",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:232 a_card_verifies_when_any_of_its_signatures_does"
    ],
-   "notes": "Signing/verification in a2a-protocol-types::signing.",
+   "notes": "Signing/verification in a2a-protocol-types::signing. The tests assert a card signed with ES256 verifies, a tampered card does not, and a card carrying signatures verifies against a key set; shown able to fail by making the JWS verification ignore its result (the rejection tests fail) and by trying only the first signature (the multi-signature test fails) (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3344,
@@ -4460,19 +4532,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Extended Agent Cards ... MAY contain additional information",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:394",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one",
+    "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:66 extended_card_exposes_quota_capabilities_the_public_card_lacks"
    ],
-   "notes": "with_extended_agent_card (since 2026-10-14) sets an extended card with whatever the operator adds; before, the handler served the public card.",
+   "notes": "with_extended_agent_card (since 2026-10-14) sets an extended card with whatever the operator adds; before, the handler served the public card. The tests assert an authenticated caller is served the configured extended card with a skill and quota capabilities the public card lacks, and an unauthenticated one is refused; shown able to fail by serving the public card in its place (2026-10-20).",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3345,
@@ -4554,18 +4627,21 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Server Implementations MAY accept both legacy and current request message forms; emit only current form",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/task.rs:23",
     "crates/a2a-protocol-types/src/generated/agent_card.rs:152"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/tck_wire_format.rs:532 tck_agent_card_no_legacy_fields"
+    "crates/a2a-protocol-types/tests/tck_wire_format.rs:532 tck_agent_card_no_legacy_fields",
+    "crates/a2a-protocol-types/tests/optional_wire_forms.rs:104 legacy_enum_and_field_forms_are_accepted_and_only_current_forms_are_emitted",
+    "crates/a2a-protocol-server/tests/optional_features/wire.rs:143 a_legacy_request_form_is_accepted_and_answered_in_the_current_form"
    ],
-   "notes": "Aliases accept legacy input; skip_serializing keeps output current-form.",
+   "notes": "Aliases accept legacy input; skip_serializing keeps output current-form. The tests assert v0.3 lower-case role/state and snake_case fields are accepted, by the types and by a JSON-RPC SendMessage, and the reply carries only messageId/ROLE_USER/TASK_STATE_COMPLETED; shown able to fail by removing the \"user\" alias of ROLE_USER (both fail, the server answering -32602) (2026-10-20).",
    "auditor": "C",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3596,
@@ -4722,18 +4798,21 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Authorization logic is implementation-specific and **MAY** consider: skills, actions, data access policies, OAuth scopes",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:24",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:147"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings"
+    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings",
+    "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
+    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:97 a_valid_token_without_the_scope_is_refused_403_naming_it"
    ],
-   "notes": "Custom ServerInterceptor returning A2aError::permission_denied; caller identity on CallContext.",
+   "notes": "Custom ServerInterceptor returning A2aError::permission_denied; caller identity on CallContext. The tests assert an interceptor sees the method and the task each request names and can refuse one task with 403, and a JWT lacking a required OAuth scope is refused 403; shown able to fail by hiding CallContext::task_id and by making require_scope a no-op; skills are not visible to an authorizer, as no request names one (2026-10-20).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1925,
@@ -5058,15 +5137,18 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "URLs **MAY** be reused if multiple transports are available at the same endpoint",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:595"
    ],
-   "test_evidence": [],
-   "notes": "No uniqueness constraint on interface URLs.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/optional_features/wire.rs:75 two_bindings_declared_at_one_url_are_both_served_there"
+   ],
+   "notes": "No uniqueness constraint on interface URLs. Asserts a card declaring JSONRPC and HTTP+JSON at one URL is accepted and served, and that URL answers a JSON-RPC SendMessage at / and an HTTP+JSON one at /message:send on one listener (CombinedDispatcher); shown able to fail by routing nothing to the JSON-RPC binding (2026-10-20).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1997,
@@ -5160,18 +5242,21 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agent Cards **MAY** be digitally signed using JSON Web Signature (JWS)",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:333",
     "crates/a2a-protocol-types/src/signing.rs:383"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/signing_tests.rs:316 sign_and_verify_roundtrip"
+    "crates/a2a-protocol-types/tests/signing_tests.rs:316 sign_and_verify_roundtrip",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:405 verify_rejects_tampered_card",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:128 a_jwks_verifies_by_kid_and_alg"
    ],
-   "notes": "ES256 and EdDSA signers (signing feature).",
+   "notes": "ES256 and EdDSA signers (signing feature). The tests assert ES256 and EdDSA signatures verify and a tampered card does not; shown able to fail by making the JWS verification ignore its result (2026-10-20).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2008,
@@ -5415,7 +5500,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "The protected header **MAY** include: `jku`",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs sign_card_es256_with_jku",
@@ -5425,12 +5510,14 @@
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:1115 signature_header_reads_jku_from_a_foreign_signer",
     "crates/a2a-protocol-types/tests/signing_jku.rs the_jku_is_in_the_signed_header_and_the_card_still_verifies",
-    "crates/a2a-protocol-types/tests/signing_jku.rs a_jku_that_is_not_https_is_refused"
+    "crates/a2a-protocol-types/tests/signing_jku.rs a_jku_that_is_not_https_is_refused",
+    "crates/a2a-protocol-types/tests/signing_jku.rs:46 the_jku_is_in_the_signed_header_and_the_card_still_verifies",
+    "crates/a2a-protocol-types/tests/signing_jku.rs:76 ed25519_carries_the_jku_too"
    ],
-   "notes": "Since 2026-10-14 sign_card_es256_with_jku and sign_card_ed25519_with_jku put jku in the protected header, covered by the signature, and refuse one that is not https:// (RFC 7515 §4.1.2); signature_header reads jku from any signer. This SDK's verification never follows jku (§8.4.3 line 2122). Before: signers took no jku parameter.",
+   "notes": "Since 2026-10-14 sign_card_es256_with_jku and sign_card_ed25519_with_jku put jku in the protected header, covered by the signature, and refuse one that is not https:// (RFC 7515 §4.1.2); signature_header reads jku from any signer. This SDK's verification never follows jku (§8.4.3 line 2122). Before: signers took no jku parameter. The tests assert the jku is in the signed protected header of an ES256 and an EdDSA signature and is covered by it; shown able to fail by leaving jku out of the protected header (2026-10-20).",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2121,
@@ -5600,7 +5687,7 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "Clients **MAY** maintain a trusted key store for known agent providers",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:604"
@@ -5608,9 +5695,10 @@
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:128 a_jwks_verifies_by_kid_and_alg"
    ],
-   "notes": "Caller-supplied Jwks.",
+   "notes": "Caller-supplied Jwks. Asserts a caller-supplied key set verifies by kid and alg and refuses an unknown kid; shown able to fail by dropping the kid filter from Jwks::candidates_at (2026-10-20).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2133,
@@ -5640,17 +5728,19 @@
    "keyword": "MAY",
    "binds": "both",
    "requirement": "Multiple signatures **MAY** be present to support key rotation",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:636"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing/keys/tests.rs:204 a_card_verifies_when_any_of_its_signatures_does"
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:204 a_card_verifies_when_any_of_its_signatures_does",
+    "crates/a2a-protocol-types/src/signing/keys/tests.rs:232 a_card_verifies_when_any_of_its_signatures_does"
    ],
-   "notes": "",
+   "notes": " Asserts a card carrying a rotated-out signature and a current one verifies; shown able to fail by trying only the first signature (2026-10-20).",
    "auditor": "D",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2215,
@@ -5751,7 +5841,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agent Card HTTP endpoints **MAY** include a `Last-Modified` response header",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:54",
@@ -5762,12 +5852,13 @@
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:143 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:154 handle_sends_no_last_modified",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored",
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:429 an_unreadable_if_none_match_still_hides_if_modified_since"
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:429 an_unreadable_if_none_match_still_hides_if_modified_since",
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:147 static_handler_returns_etag_and_cache_headers"
    ],
-   "notes": "Static handler: set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:159), and ignored when If-None-Match is present, readable or not, or the method is not GET or HEAD (RFC 9110 §13.1.3; until 2026-10-13 an unreadable If-None-Match fell through to it). Dynamic handler: sends none since 2026-10-13. It had stamped the current second on every request, claiming the card changed at each one; a card produced per request has no modification date (RFC 9110 §8.8.2.1), so it now ignores If-Modified-Since (§13.1.3) and revalidates by ETag alone.",
+   "notes": "Static handler: set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:159), and ignored when If-None-Match is present, readable or not, or the method is not GET or HEAD (RFC 9110 §13.1.3; until 2026-10-13 an unreadable If-None-Match fell through to it). Dynamic handler: sends none since 2026-10-13. It had stamped the current second on every request, claiming the card changed at each one; a card produced per request has no modification date (RFC 9110 §8.8.2.1), so it now ignores If-Modified-Since (§13.1.3) and revalidates by ETag alone. Asserts the static card handler sends Last-Modified; shown able to fail by removing the header from its 200 response (2026-10-20).",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2225,
@@ -5838,7 +5929,7 @@
    "keyword": "MAY",
    "binds": "client",
    "requirement": "When the server does not include caching headers, clients **MAY** apply an implementation-specific default cache duration",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:420",
@@ -5851,10 +5942,10 @@
     "crates/a2a-protocol-client/tests/card_freshness.rs:258 the_default_lifetime_does_not_override_max_age",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:356 the_default_lifetime_fills_only_a_missing_one"
    ],
-   "notes": "Since 2026-10-15, opt-in: CachingCardResolver::with_default_freshness(lifetime) gives a card whose response has no max-age and no Expires that freshness lifetime (RFC 9111 §4.2.2 heuristic freshness), less any Age it arrived with, capped at 2^31 s. It never applies to a no-cache, Vary: * or no-store response, and is off by default, so without it such a card is revalidated on every resolve.",
+   "notes": "Since 2026-10-15, opt-in: CachingCardResolver::with_default_freshness(lifetime) gives a card whose response has no max-age and no Expires that freshness lifetime (RFC 9111 §4.2.2 heuristic freshness), less any Age it arrived with, capped at 2^31 s. It never applies to a no-cache, Vary: * or no-store response, and is off by default, so without it such a card is revalidated on every resolve. The tests assert with_default_freshness keeps a card served without caching headers fresh and fills only a missing lifetime; shown able to fail by ignoring the default lifetime in fresh_until (2026-10-20).",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2236,
@@ -6561,7 +6652,7 @@
    "keyword": "MAY",
    "binds": "both",
    "requirement": "Repeated Fields: multiple values MAY be passed by repeating the parameter name or as comma-separated values",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:19",
@@ -6571,10 +6662,10 @@
    "test_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/query.rs:162 build_query_string_repeats_an_array_parameter"
    ],
-   "notes": "No v1.0 GET or DELETE request has a repeated field, so this has no wire effect today. Since 2026-10-15 the client sends an array by repeating the parameter, one per element (the first form the MAY names); it JSON-encoded the array (ids=%5B1%2C2%5D), which matched neither form. The server has no repeated field to read: parse_query_param returns a parameter's first occurrence, which is right for the single-valued fields every v1.0 route takes. Counted as SUPPORTED on that reading: what this SDK sends follows the MAY, and there is nothing for it to receive.",
+   "notes": "No v1.0 GET or DELETE request has a repeated field, so this has no wire effect today. Since 2026-10-15 the client sends an array by repeating the parameter, one per element (the first form the MAY names); it JSON-encoded the array (ids=%5B1%2C2%5D), which matched neither form. The server has no repeated field to read: parse_query_param returns a parameter's first occurrence, which is right for the single-valued fields every v1.0 route takes. Counted as SUPPORTED on that reading: what this SDK sends follows the MAY, and there is nothing for it to receive. Asserts the client sends an array query parameter by repeating its name; shown able to fail by JSON-encoding the array again (2026-10-20).",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2889,
@@ -6755,7 +6846,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "MAY optionally resend a final Task snapshot before closing",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:247",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:478",
@@ -6773,10 +6864,11 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/final_snapshot_tests.rs:101 a_read_dropped_while_the_snapshot_is_awaited_keeps_it",
     "crates/a2a-protocol-server/src/streaming/event_queue/final_snapshot_tests.rs:118 no_terminal_state_no_snapshot"
    ],
-   "notes": "Since 2026-10-15, opt-in (HandlerLimits::with_final_task_snapshot): a send stream and a SubscribeToTask stream send the task once more, as a Task without a position, after the terminal state and before closing, on every binding (they all stream the same reader). It is read once the queue's consumer has stored the terminal event (the applied mark), waiting at most subscribe_replay_catchup, and is sent only when that read is exact and the stored task is terminal: no snapshot rather than an older one. A send stream's snapshot is trimmed to the history the request asked for, as its first Task is. Off by default, so the stream still ends right after the terminal event unless asked.",
+   "notes": "Since 2026-10-15, opt-in (HandlerLimits::with_final_task_snapshot): a send stream and a SubscribeToTask stream send the task once more, as a Task without a position, after the terminal state and before closing, on every binding (they all stream the same reader). It is read once the queue's consumer has stored the terminal event (the applied mark), waiting at most subscribe_replay_catchup, and is sent only when that read is exact and the stored task is terminal: no snapshot rather than an older one. A send stream's snapshot is trimmed to the history the request asked for, as its first Task is. Off by default, so the stream still ends right after the terminal event unless asked. The tests assert, with with_final_task_snapshot, a send stream and a subscription end with the finished Task after the terminal event; shown able to fail by never sending the snapshot (four tests fail) (2026-10-20).",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/lucid-edison-4hn5kb (2026-10-15)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)",
+   "severity": null
   },
   {
    "spec_line": 2977,
@@ -6784,17 +6876,21 @@
    "keyword": "MAY",
    "binds": "spec-authors",
    "requirement": "implementers MAY create custom protocol bindings",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1-33",
     "bindings/a2a-protocol-slimrpc/src/binding.rs:37-38",
     "crates/a2a-protocol-types/src/lib.rs:85"
    ],
-   "test_evidence": [],
-   "notes": "Two custom bindings: WebSocket (https://a2a-rust.com/bindings/websocket/v1) and SLIMRPC (https://a2a-protocol.org/bindings/experimental-slimrpc/v1).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:83 the_data_types_are_the_json_rpc_bindings_proto_json",
+    "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:192 a_stream_is_frames_then_the_marker"
+   ],
+   "notes": "Two custom bindings: WebSocket (https://a2a-rust.com/bindings/websocket/v1) and SLIMRPC (https://a2a-protocol.org/bindings/experimental-slimrpc/v1). The tests assert the custom WebSocket binding answers SendMessage and GetTask in the JSON-RPC binding's ProtoJSON and streams one StreamResponse per frame then its marker; shown able to fail by unrouting SendMessage and SendStreamingMessage in dispatch/websocket.rs; the SLIMRPC binding was not built or tested (2026-10-20).",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 2977,
@@ -7292,17 +7388,21 @@
    "keyword": "MAY",
    "binds": "agent-application",
    "requirement": "Authorization models are agent-defined and MAY be based on: user identity, roles/groups, project/workspace, tenant boundaries, custom logic",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/tenant_resolver.rs:92",
     "crates/a2a-protocol-server/src/call_context.rs:177"
    ],
-   "test_evidence": [],
-   "notes": "MAY: multi-tenant model SUPPORTED (TenantResolver + TenantAware stores); user/role/project models only expressible as tenants or as method-level allow/deny in an interceptor; no resource-level hook. (Re-graded on 2026-10-10: a MAY takes SUPPORTED/NOT_SUPPORTED; the tenant model is supported, and the missing per-principal hook is the §13.1 entries at lines 3075-3093.) The user-identity model is now supported too: isolate_tasks_by_caller, the default with an authenticating interceptor since 2026-10-12.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/caller_isolation.rs:130 isolated_another_callers_task_is_not_found_by_any_operation",
+    "crates/a2a-protocol-server/tests/rest_tenant_binding_tests.rs:206 path_prefix_selects_the_partition_for_send_and_get",
+    "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it"
+   ],
+   "notes": "MAY: multi-tenant model SUPPORTED (TenantResolver + TenantAware stores); user/role/project models only expressible as tenants or as method-level allow/deny in an interceptor; no resource-level hook. (Re-graded on 2026-10-10: a MAY takes SUPPORTED/NOT_SUPPORTED; the tenant model is supported, and the missing per-principal hook is the §13.1 entries at lines 3075-3093.) The user-identity model is now supported too: isolate_tasks_by_caller, the default with an authenticating interceptor since 2026-10-12. The tests assert the user-identity model (another caller's task is not found), the tenant model (another tenant's task is not found) and custom logic in an interceptor (one task refused 403); shown able to fail by collapsing TenantContext::partition to one partition and by hiding CallContext::task_id; roles, groups and projects remain expressible only as tenants or interceptor logic (2026-10-20).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3091,
@@ -7480,18 +7580,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY stop attempting delivery after a configured number of consecutive failures",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:200",
     "crates/a2a-protocol-server/src/push/sender.rs:874"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1112 push_retry_policy_with_max_attempts"
+    "crates/a2a-protocol-server/src/push/sender.rs:1112 push_retry_policy_with_max_attempts",
+    "crates/a2a-protocol-server/tests/optional_features/push_retry.rs:78 push_delivery_stops_after_the_configured_number_of_failures"
    ],
-   "notes": "Per-event max_attempts only; no cross-event circuit breaker that disables a config after N consecutive failed events.",
+   "notes": "Per-event max_attempts only; no cross-event circuit breaker that disables a config after N consecutive failed events. Asserts a webhook failing every attempt gets exactly the configured 2, then 5, attempts and no more; shown able to fail by fixing the retry loop at one attempt; the count is per delivery, with no cross-event circuit breaker (2026-10-20).",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3113,
@@ -7857,7 +7959,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY return different extended card content based on the authenticated client's identity or authorization level",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/per_caller.rs ExtendedCardProvider",
@@ -7868,12 +7970,15 @@
     "crates/a2a-protocol-server/tests/extended_card_per_caller.rs each_caller_is_served_the_card_chosen_for_it",
     "crates/a2a-protocol-server/tests/extended_card_per_caller.rs the_provider_can_refuse_a_caller",
     "crates/a2a-protocol-server/tests/extended_card_per_caller.rs an_unauthenticated_request_is_refused_before_the_provider",
-    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs over_rest_each_caller_gets_its_own_body_and_etag"
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs over_rest_each_caller_gets_its_own_body_and_etag",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs:94 each_caller_is_served_the_card_chosen_for_it",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs:109 the_provider_can_refuse_a_caller",
+    "crates/a2a-protocol-server/tests/extended_card_per_caller.rs:271 over_rest_each_caller_gets_its_own_body_and_etag"
    ],
-   "notes": "Since 2026-10-14 an ExtendedCardProvider (RequestHandlerBuilder::with_extended_card_provider) chooses each caller's extended card from the configured one, after the interceptor chain authenticated the request, or refuses the caller. Its card is checked as build() checks the configured one (valid, push notifications only with a push sender, the server's extensions advertised, refused when signed without them). Before: one extended card (with_extended_agent_card) for every authenticated caller.",
+   "notes": "Since 2026-10-14 an ExtendedCardProvider (RequestHandlerBuilder::with_extended_card_provider) chooses each caller's extended card from the configured one, after the interceptor chain authenticated the request, or refuses the caller. Its card is checked as build() checks the configured one (valid, push notifications only with a push sender, the server's extensions advertised, refused when signed without them). Before: one extended card (with_extended_agent_card) for every authenticated caller. The tests assert each authenticated caller is served the card the ExtendedCardProvider chooses for it, or refused; shown able to fail by making for_caller ignore the provider (six tests fail) (2026-10-20).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3145,
@@ -7901,7 +8006,7 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Extended cards MAY include additional skills not present in the public card",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:394",
@@ -7910,10 +8015,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:355 a_configured_extended_card_is_served_in_place_of_the_public_one"
    ],
-   "notes": "with_extended_agent_card serves a card with skills the public one lacks; the test adds one. Until 2026-10-14 the public and extended card were the same (audit register R56).",
+   "notes": "with_extended_agent_card serves a card with skills the public one lacks; the test adds one. Until 2026-10-14 the public and extended card were the same (audit register R56). Asserts the extended card served to an authenticated caller has a skill the public card lacks; shown able to fail by serving the public card in its place (2026-10-20).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3150,
@@ -7921,19 +8026,20 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Extended cards MAY expose more detailed capability information (e.g., rate limits, quotas)",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:394",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:430 build_checks_the_extended_card_as_it_checks_the_public_one"
+    "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:430 build_checks_the_extended_card_as_it_checks_the_public_one",
+    "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:66 extended_card_exposes_quota_capabilities_the_public_card_lacks"
    ],
-   "notes": "The extended card is any valid card the operator sets, capabilities included; build() advertises this server's extensions on it as on the public card. Until 2026-10-14 there was one card.",
+   "notes": "The extended card is any valid card the operator sets, capabilities included; build() advertises this server's extensions on it as on the public card. Until 2026-10-14 there was one card. Asserts over HTTP+JSON that /extendedAgentCard carries a quotas extension (requestsPerMinute, monthlyTasks) that the public well-known card lacks; shown able to fail by serving the public card in place of the extended one (2026-10-20).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3151,
@@ -7941,17 +8047,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Extended cards MAY include organization-specific or user-specific configuration",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:394",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:91"
    ],
-   "test_evidence": [],
-   "notes": "Organization-specific content in the one extended card (with_extended_agent_card); user-specific content needs per-caller variation, which the handler does not provide (3144).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/optional_features/extended_card.rs:125 extended_card_carries_configuration_specific_to_the_caller"
+   ],
+   "notes": "Organization-specific content in the one extended card (with_extended_agent_card); user-specific content needs per-caller variation, which the handler does not provide (3144). Asserts an ExtendedCardProvider gives alice and bob each an extended card carrying their own workspace configuration; shown able to fail by making for_caller ignore the provider; the note that per-caller variation is not provided is out of date since the 3144 provider (2026-10-20).",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3152,
@@ -8526,15 +8634,18 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "Agents MAY implement different rate limits for different operations or user tiers",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/rate_limit/mod.rs:311"
    ],
-   "test_evidence": [],
-   "notes": "Per-tenant allowance (tiers via tenant config) supported; no per-operation limits in the built-in limiter (custom interceptor can key on ctx.method()).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/optional_features/rate_tiers.rs:67 tenants_on_different_tiers_get_different_rate_limits"
+   ],
+   "notes": "Per-tenant allowance (tiers via tenant config) supported; no per-operation limits in the built-in limiter (custom interceptor can key on ctx.method()). Asserts under one RateLimitInterceptor a free tenant (1 rps) is admitted 60 requests per 60s window and a premium tenant (3 rps) 180; shown able to fail by skipping the per-tenant allowance (free admitted all 1000); per-operation limits still need a custom interceptor (2026-10-20).",
    "auditor": "F",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3207,
@@ -8764,17 +8875,19 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "but MAY apply a lower limit.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:39"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:474 shape_response_history_covers_every_branch"
+    "crates/a2a-protocol-server/src/handler/messaging/tests.rs:474 shape_response_history_covers_every_branch",
+    "crates/a2a-protocol-server/tests/optional_features/history_limit.rs:83 send_message_history_length_is_capped_below_what_was_asked"
    ],
-   "notes": "Absent historyLength omits history in the SendMessage response; history also capped at MAX_TASK_HISTORY_MESSAGES.",
+   "notes": "Absent historyLength omits history in the SendMessage response; history also capped at MAX_TASK_HISTORY_MESSAGES. Asserts a send asking historyLength 2048 on a 1,025-message conversation gets the newest 1,024 (and 3 when asking 3); shown able to fail by raising MAX_TASK_HISTORY_MESSAGES to 4096 (1,025 returned) (2026-10-20).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 157,
@@ -8862,15 +8975,19 @@
    "keyword": "may",
    "binds": "agent-application",
    "requirement": "This may be done during initial task creation or later once an agent has determined it can't or won't proceed.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/task.rs:265"
    ],
-   "test_evidence": [],
-   "notes": "Executor may emit Rejected from any non-terminal state; can_transition_to allows it. Descriptive, not a server obligation.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/optional_features/rejected.rs:59 an_agent_may_reject_a_task_at_creation",
+    "crates/a2a-protocol-server/tests/optional_features/rejected.rs:71 an_agent_may_reject_a_task_after_it_started_working"
+   ],
+   "notes": "Executor may emit Rejected from any non-terminal state; can_transition_to allows it. Descriptive, not a server obligation. The tests assert an executor rejecting at once, or after Working, ends the task Rejected in the response and the store; shown able to fail by forbidding Working to Rejected in can_transition_to (InvalidStateTransition) (2026-10-20).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 206,
@@ -10288,18 +10405,19 @@
    "keyword": "MAY",
    "binds": "both",
    "requirement": "The map MAY be empty.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:282"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
+    "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty",
+    "crates/a2a-protocol-types/tests/optional_wire_forms.rs:53 implicit_flow_scopes_may_be_empty_or_omitted"
    ],
-   "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty.",
+   "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty. Asserts an implicit flow with scopes omitted or {} parses to an empty map and an empty map round-trips; shown able to fail by removing #[serde(default)] from ImplicitFlow.scopes (2026-10-20).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 622,
@@ -10345,18 +10463,19 @@
    "keyword": "MAY",
    "binds": "both",
    "requirement": "The map MAY be empty.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:303"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty"
+    "crates/a2a-protocol-types/src/security.rs oauth_flows_without_a_scopes_key_parse_as_empty",
+    "crates/a2a-protocol-types/tests/optional_wire_forms.rs:78 password_flow_scopes_may_be_empty_or_omitted"
    ],
-   "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty.",
+   "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty. Asserts a password flow with scopes omitted or {} parses to an empty map and an empty map round-trips; shown able to fail by removing #[serde(default)] from PasswordOAuthFlow.scopes (2026-10-20).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/nifty-fermat-roj04f (2026-10-10)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 638,
@@ -10559,15 +10678,18 @@
    "keyword": "MAY",
    "binds": "server",
    "requirement": "but MAY apply a lower limit.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:286"
    ],
-   "test_evidence": [],
-   "notes": "History is also bounded by MAX_TASK_HISTORY_MESSAGES at write time.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/optional_features/history_limit.rs:101 get_task_history_length_is_capped_below_what_was_asked"
+   ],
+   "notes": "History is also bounded by MAX_TASK_HISTORY_MESSAGES at write time. Asserts GetTask asking historyLength 2048 on a 1,025-message conversation gets the newest 1,024 (and 2 when asking 2); shown able to fail by raising MAX_TASK_HISTORY_MESSAGES to 4096 (2026-10-20).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 676,
@@ -10595,19 +10717,20 @@
    "keyword": "may",
    "binds": "server",
    "requirement": "The service may return fewer than this value.",
-   "status": "SUPPORTED",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:44"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
-    "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params"
+    "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params",
+    "crates/a2a-protocol-server/tests/optional_features/list_page_size.rs:24 list_tasks_may_return_fewer_than_the_page_size_asked_for"
    ],
-   "notes": "A pageSize outside a2a.proto's 1 to 100 is InvalidParams (2026-10-13; it was clamped to 1000, and 0 read as 50). Within the range a store returns fewer only when configured with a max_page_size below the size asked; every built-in store caps at its max_page_size, DEFAULT_MAX_PAGE_SIZE (1000) by default.",
+   "notes": "A pageSize outside a2a.proto's 1 to 100 is InvalidParams (2026-10-13; it was clamped to 1000, and 0 read as 50). Within the range a store returns fewer only when configured with a max_page_size below the size asked; every built-in store caps at its max_page_size, DEFAULT_MAX_PAGE_SIZE (1000) by default. Asserts pageSize 4 against a store with max_page_size 2 returns pages of 2, 2, 1 with tokens and lists all 5 tasks once; shown able to fail by not capping the in-memory store's page at max_page_size ([4, 1]) (2026-10-20).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 705,
