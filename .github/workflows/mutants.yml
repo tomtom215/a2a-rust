@@ -9,13 +9,14 @@
 # once the PR carries the `mutation-test` label.
 #
 # Architecture:
-#   - Full sweep splits into 33 parallel jobs: 24 shards of a2a-server,
+#   - Full sweep splits into 69 parallel jobs: 60 shards of a2a-server,
 #     4 each of a2a-types and a2a-client, and a2a-sdk whole (it is a pure
 #     re-export facade and generates no mutants at all). Sharding exists to
 #     stay inside the per-job timeout, which was 120 minutes until 2026-08-07
 #     and is now 240; at 8 shards two of them hit the old limit (run
 #     30236603180, 2026-07-27) and were cancelled, and at 12 two more hit the
-#     new one (run 38199170161, 2026-10-12). Mutants are dealt round-robin,
+#     new one (run 38199170161, 2026-10-12), and at 24 three more did
+#     (run 39193157308, 2026-10-19). Mutants are dealt round-robin,
 #     so every shard of a crate carries the same mix of slow and fast ones.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
@@ -248,6 +249,20 @@ jobs:
         # a job's timeout runs from its own start, so queueing costs
         # wall-clock, not completeness.
         #
+        # 24 stopped being enough on 2026-10-19 (run 39193157308, on 86c8fac):
+        # shards 6/24, 20/24 and 21/24 were cancelled at 240 minutes, and the
+        # 21 that finished took 152-239 minutes (mean 203), twice the ~110
+        # projected, at 4,872 a2a-server mutants (`cargo mutants --list -p
+        # a2a-protocol-server --all-features` at that commit). By then the
+        # crate listed 5,548 at 6c90d0b. Taking a shard's fixed cost as 10
+        # minutes, the finished shards spent at least 4,736 shard-minutes
+        # mutating (the cancelled three counted at the limit, so this is a
+        # floor), about 0.97 a mutant; scaled to 5,548 that is ~5,400. With
+        # the slowest shard 1.18 times the mean (that run's own spread), 60
+        # shards put the slowest at ~10 + 5,400 / 60 x 1.18 = ~116 minutes,
+        # inside the 2x headroom rule; 52 would be ~133, outside it. Re-measure
+        # from the next sweep: the cancelled shards' true cost is unknown.
+        #
         # The `shard` value is passed verbatim to cargo-mutants' `--shard K/N`
         # flag, which splits mutants deterministically across shards. a2a-sdk
         # stays whole at K=0/N=1 (≡ no sharding): it has no mutants to split.
@@ -286,100 +301,244 @@ jobs:
             shard: "3/4"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 1/24
-            shard: "0/24"
+            name: a2a-server shard 1/60
+            shard: "0/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 2/24
-            shard: "1/24"
+            name: a2a-server shard 2/60
+            shard: "1/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 3/24
-            shard: "2/24"
+            name: a2a-server shard 3/60
+            shard: "2/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 4/24
-            shard: "3/24"
+            name: a2a-server shard 4/60
+            shard: "3/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 5/24
-            shard: "4/24"
+            name: a2a-server shard 5/60
+            shard: "4/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 6/24
-            shard: "5/24"
+            name: a2a-server shard 6/60
+            shard: "5/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 7/24
-            shard: "6/24"
+            name: a2a-server shard 7/60
+            shard: "6/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 8/24
-            shard: "7/24"
+            name: a2a-server shard 8/60
+            shard: "7/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 9/24
-            shard: "8/24"
+            name: a2a-server shard 9/60
+            shard: "8/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 10/24
-            shard: "9/24"
+            name: a2a-server shard 10/60
+            shard: "9/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 11/24
-            shard: "10/24"
+            name: a2a-server shard 11/60
+            shard: "10/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 12/24
-            shard: "11/24"
+            name: a2a-server shard 12/60
+            shard: "11/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 13/24
-            shard: "12/24"
+            name: a2a-server shard 13/60
+            shard: "12/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 14/24
-            shard: "13/24"
+            name: a2a-server shard 14/60
+            shard: "13/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 15/24
-            shard: "14/24"
+            name: a2a-server shard 15/60
+            shard: "14/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 16/24
-            shard: "15/24"
+            name: a2a-server shard 16/60
+            shard: "15/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 17/24
-            shard: "16/24"
+            name: a2a-server shard 17/60
+            shard: "16/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 18/24
-            shard: "17/24"
+            name: a2a-server shard 18/60
+            shard: "17/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 19/24
-            shard: "18/24"
+            name: a2a-server shard 19/60
+            shard: "18/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 20/24
-            shard: "19/24"
+            name: a2a-server shard 20/60
+            shard: "19/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 21/24
-            shard: "20/24"
+            name: a2a-server shard 21/60
+            shard: "20/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 22/24
-            shard: "21/24"
+            name: a2a-server shard 22/60
+            shard: "21/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 23/24
-            shard: "22/24"
+            name: a2a-server shard 23/60
+            shard: "22/60"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 24/24
-            shard: "23/24"
+            name: a2a-server shard 24/60
+            shard: "23/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 25/60
+            shard: "24/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 26/60
+            shard: "25/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 27/60
+            shard: "26/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 28/60
+            shard: "27/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 29/60
+            shard: "28/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 30/60
+            shard: "29/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 31/60
+            shard: "30/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 32/60
+            shard: "31/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 33/60
+            shard: "32/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 34/60
+            shard: "33/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 35/60
+            shard: "34/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 36/60
+            shard: "35/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 37/60
+            shard: "36/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 38/60
+            shard: "37/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 39/60
+            shard: "38/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 40/60
+            shard: "39/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 41/60
+            shard: "40/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 42/60
+            shard: "41/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 43/60
+            shard: "42/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 44/60
+            shard: "43/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 45/60
+            shard: "44/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 46/60
+            shard: "45/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 47/60
+            shard: "46/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 48/60
+            shard: "47/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 49/60
+            shard: "48/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 50/60
+            shard: "49/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 51/60
+            shard: "50/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 52/60
+            shard: "51/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 53/60
+            shard: "52/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 54/60
+            shard: "53/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 55/60
+            shard: "54/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 56/60
+            shard: "55/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 57/60
+            shard: "56/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 58/60
+            shard: "57/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 59/60
+            shard: "58/60"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 60/60
+            shard: "59/60"
           - crate: a2a-protocol-sdk
             short: a2a-sdk
             name: a2a-sdk
@@ -778,12 +937,13 @@ jobs:
           # Completeness is decided by the per-shard COMPLETED markers below.
           SHARD_RESULT: ${{ needs.mutants-crate.result }}
           # Must equal the number of `include:` entries in mutants-crate:
-          # 24 a2a-server + 4 a2a-types + 4 a2a-client + 1 a2a-sdk. Deliberately
+          # 60 a2a-server + 4 a2a-types + 4 a2a-client + 1 a2a-sdk. Deliberately
           # a literal: if the matrix grows and this does not, the sweep fails
           # loudly here rather than quietly measuring less. It went 15 -> 21 on
           # 2026-08-07 when a2a-types and a2a-client were sharded 4 ways, and
-          # 21 -> 33 on 2026-10-12 when a2a-server went from 12 shards to 24.
-          EXPECTED_SHARDS: 33
+          # 21 -> 33 on 2026-10-12 when a2a-server went from 12 shards to 24,
+          # and 33 -> 69 on 2026-10-20 when it went from 24 to 60.
+          EXPECTED_SHARDS: 69
           # A workflow_dispatch scoped to one package skips the other matrix
           # entries by design, so they legitimately upload nothing. Only the
           # unscoped sweep — the one whose score means "the whole workspace" —
@@ -1115,22 +1275,43 @@ jobs:
         # projection from that run, not a measurement; re-measure from the
         # first large PR after this change. A crate whose diff is empty skips
         # at "Build PR source diff", as before.
+        #
+        # 10 was not enough for pull request #173 (run 39343090044, 2026-10-19):
+        # the ten a2a-protocol-server shards' mutation steps took 115-173
+        # minutes (mean 146), shard 3 used 175 of its 180 minutes, and shard 7
+        # finished its mutation step at 161 and was then cancelled at the limit
+        # while its runner hung stopping the Postgres container (its re-run
+        # passed). That is ~1,460 shard-minutes for the server's part of a large
+        # diff. At that run's spread (slowest 1.2 times the mean), 20 shards put
+        # the slowest at ~1,460 / 20 x 1.2 = ~88 minutes, half the timeout;
+        # a shard whose slice is empty skips in a minute or two. Re-measure on
+        # the next large pull request.
         include:
           - { crate: a2a-protocol-types, shard: 0, of: 2 }
           - { crate: a2a-protocol-types, shard: 1, of: 2 }
           - { crate: a2a-protocol-client, shard: 0, of: 2 }
           - { crate: a2a-protocol-client, shard: 1, of: 2 }
           - { crate: a2a-protocol-sdk, shard: 0, of: 1 }
-          - { crate: a2a-protocol-server, shard: 0, of: 10 }
-          - { crate: a2a-protocol-server, shard: 1, of: 10 }
-          - { crate: a2a-protocol-server, shard: 2, of: 10 }
-          - { crate: a2a-protocol-server, shard: 3, of: 10 }
-          - { crate: a2a-protocol-server, shard: 4, of: 10 }
-          - { crate: a2a-protocol-server, shard: 5, of: 10 }
-          - { crate: a2a-protocol-server, shard: 6, of: 10 }
-          - { crate: a2a-protocol-server, shard: 7, of: 10 }
-          - { crate: a2a-protocol-server, shard: 8, of: 10 }
-          - { crate: a2a-protocol-server, shard: 9, of: 10 }
+          - { crate: a2a-protocol-server, shard: 0, of: 20 }
+          - { crate: a2a-protocol-server, shard: 1, of: 20 }
+          - { crate: a2a-protocol-server, shard: 2, of: 20 }
+          - { crate: a2a-protocol-server, shard: 3, of: 20 }
+          - { crate: a2a-protocol-server, shard: 4, of: 20 }
+          - { crate: a2a-protocol-server, shard: 5, of: 20 }
+          - { crate: a2a-protocol-server, shard: 6, of: 20 }
+          - { crate: a2a-protocol-server, shard: 7, of: 20 }
+          - { crate: a2a-protocol-server, shard: 8, of: 20 }
+          - { crate: a2a-protocol-server, shard: 9, of: 20 }
+          - { crate: a2a-protocol-server, shard: 10, of: 20 }
+          - { crate: a2a-protocol-server, shard: 11, of: 20 }
+          - { crate: a2a-protocol-server, shard: 12, of: 20 }
+          - { crate: a2a-protocol-server, shard: 13, of: 20 }
+          - { crate: a2a-protocol-server, shard: 14, of: 20 }
+          - { crate: a2a-protocol-server, shard: 15, of: 20 }
+          - { crate: a2a-protocol-server, shard: 16, of: 20 }
+          - { crate: a2a-protocol-server, shard: 17, of: 20 }
+          - { crate: a2a-protocol-server, shard: 18, of: 20 }
+          - { crate: a2a-protocol-server, shard: 19, of: 20 }
     env:
       A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
