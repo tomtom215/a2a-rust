@@ -22,7 +22,7 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`](crate::error::ServerError) if the store query fails.
+    /// Returns a [`ServerError`] if the store query fails.
     #[allow(clippy::too_many_lines)]
     pub async fn on_list_tasks(
         &self,
