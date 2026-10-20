@@ -96,6 +96,8 @@ use bytes::Bytes;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
+mod validate;
+
 // ── A2aRouter ────────────────────────────────────────────────────────────────
 
 /// Builder for an Axum [`Router`] that serves all A2A v1.0 protocol methods.
@@ -152,13 +154,13 @@ impl A2aRouter {
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
-        let require_version = self.config.require_version_header;
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
             card_handler,
         };
+        let checks = state.clone();
 
         Router::new()
             // Messaging (colon-suffixed paths are literal — no conflict)
@@ -185,44 +187,11 @@ impl A2aRouter {
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
             .layer(axum::middleware::from_fn_with_state(
-                require_version,
-                validate_a2a_request,
+                checks,
+                validate::validate_a2a_request,
             ))
             .layer(axum::middleware::from_fn(negotiate_media_type))
     }
-}
-
-/// The protocol checks `RestDispatcher` makes before routing, made here too.
-///
-/// Until 2026-10-10 this router made neither: it served `A2A-Version: 2.0`
-/// (and an absent version) with 1.0 semantics, against §3.6.2's MUST to
-/// answer `VersionNotSupportedError`, and it accepted any request media type.
-/// Discovery and the probes stay versionless, exactly as on the REST
-/// dispatcher, so a client can read the card before it knows what to send.
-async fn validate_a2a_request(
-    State(require_version): State<bool>,
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
-    let path = req.uri().path();
-    // The card's path is versionless for every method, so a method it does
-    // not perform is its `405` with `Allow`, as on the other listeners, not a
-    // version or media-type error.
-    let versionless = path == "/.well-known/agent-card.json"
-        || matches!(
-            *req.method(),
-            axum::http::Method::GET | axum::http::Method::HEAD
-        ) && matches!(path, "/health" | "/ready");
-    if !versionless {
-        if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
-            return handler_error_to_response(&crate::error::ServerError::Protocol(err));
-        }
-        let version = super::requested_version(req.headers(), req.uri());
-        if let Err(err) = super::validate_version_header(version.as_deref(), require_version) {
-            return handler_error_to_response(&crate::error::ServerError::Protocol(err));
-        }
-    }
-    next.run(req).await
 }
 
 /// Labels the response's media type exactly as `RestDispatcher` does (§11.1;
@@ -531,7 +500,7 @@ async fn handle_tasks_catchall(
             .await
         }
 
-        _ => plain_error(404, "not found"),
+        _ => crate::rpc_span::refused(plain_error(404, "not found")),
     }
 }
 

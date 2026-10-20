@@ -13,6 +13,7 @@ mod error_response;
 pub(crate) mod media_type;
 pub(crate) mod query;
 mod response;
+mod span;
 
 // The axum adapter answers errors through these, so the two HTTP+JSON
 // dispatchers send one error shape (audit N37).
@@ -40,6 +41,9 @@ use query::{
     parse_query_param_u32, percent_decode_path, strip_tenant_prefix,
 };
 use response::{health_response, read_body_limited, set_path_field};
+use span::HttpRoute;
+
+use crate::rpc_span::{RpcSystem, record_if_refused, refused};
 
 /// REST HTTP request dispatcher.
 ///
@@ -96,9 +100,11 @@ impl RestDispatcher {
         &self,
         req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let started = std::time::Instant::now();
         let media = media_type::ResponseMediaType::from_headers(req.headers());
         let negotiable = media_type::is_negotiable_path(req.uri().path());
         let mut resp = self.dispatch_unlabelled(req).await;
+        record_if_refused(&self.handler, RpcSystem::HttpJson, started, &mut resp);
         if negotiable {
             media.apply(resp.headers_mut());
         }
@@ -126,14 +132,14 @@ impl RestDispatcher {
 
         // Reject oversized query strings (DoS protection).
         if query.len() > self.config.max_query_string_length {
-            let mut resp = error_json_response(
+            let mut resp = refused(error_json_response(
                 414,
                 &format!(
                     "query string too long: {} bytes exceeds {} byte limit",
                     query.len(),
                     self.config.max_query_string_length
                 ),
-            );
+            ));
             if let Some(ref cors) = self.cors {
                 cors.apply_headers(&mut resp);
             }
@@ -155,12 +161,17 @@ impl RestDispatcher {
         // A2A error (§11.6). It went out as a bare 400 with no details until
         // 2026-10-10.
         if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
-            return server_error_to_response(&crate::error::ServerError::Protocol(err));
+            return refused(server_error_to_response(
+                &crate::error::ServerError::Protocol(err),
+            ));
         }
 
         // Reject path traversal attempts (check both raw and percent-decoded forms).
         if contains_path_traversal(&path) {
-            return error_json_response(400, "invalid path: path traversal not allowed");
+            return refused(error_json_response(
+                400,
+                "invalid path: path traversal not allowed",
+            ));
         }
 
         // Agent card is always at the well-known path (no tenant prefix), and
@@ -185,7 +196,9 @@ impl RestDispatcher {
             version_value.as_deref(),
             self.config.require_version_header,
         ) {
-            return server_error_to_response(&crate::error::ServerError::Protocol(err));
+            return refused(server_error_to_response(
+                &crate::error::ServerError::Protocol(err),
+            ));
         }
 
         // Strip the optional tenant prefix — `/{tenant}/...` from the proto's
@@ -230,36 +243,6 @@ impl RestDispatcher {
             cors.apply_headers(&mut resp);
         }
         resp
-    }
-
-    /// Runs one routed call in its `SERVER` span, recorded with the HTTP
-    /// status it answered (ADR 0013).
-    ///
-    /// Not `async`: an `async fn` awaiting `call` would hold that future twice,
-    /// and a route's future is the largest thing a request allocates.
-    fn call(
-        &self,
-        http: &HttpRoute<'_>,
-        method: &str,
-        route: &str,
-        headers: &HashMap<String, String>,
-        call: impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>>,
-    ) -> impl std::future::Future<Output = hyper::Response<BoxBody<Bytes, Infallible>>> {
-        let prefixed;
-        let route = if http.tenant_in_path {
-            prefixed = format!("/{{tenant}}{route}");
-            prefixed.as_str()
-        } else {
-            route
-        };
-        crate::rpc_span::ServerSpan::open(
-            &self.handler,
-            crate::rpc_span::RpcSystem::HttpJson,
-            method,
-            Some(headers),
-        )
-        .with_http(http.method, route)
-        .run_response(call)
     }
 
     /// Dispatch on the tenant-stripped path.
@@ -495,7 +478,7 @@ impl RestDispatcher {
                 .await
             }
 
-            _ => not_found_response(),
+            _ => refused(not_found_response()),
         }
     }
 
@@ -794,13 +777,6 @@ impl RestDispatcher {
             Err(e) => server_error_to_response(&e),
         }
     }
-}
-
-/// What an HTTP+JSON call's span records about the HTTP request.
-struct HttpRoute<'a> {
-    method: &'a str,
-    /// The path began with a tenant segment, which the route template shows.
-    tenant_in_path: bool,
 }
 
 impl std::fmt::Debug for RestDispatcher {

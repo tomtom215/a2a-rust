@@ -52,6 +52,7 @@ mod call;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;
+mod refusal;
 mod webhook;
 
 #[cfg(feature = "tracing")]
@@ -74,6 +75,9 @@ pub use names::{RpcSystem, WireStatus, a2a_method};
 pub use otel::current_recorded_span;
 #[cfg(feature = "otel")]
 use otel::remote_parent;
+#[cfg(feature = "grpc")]
+pub use refusal::record_refused;
+pub use refusal::{record_if_refused, record_unrouted, refused};
 pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the
@@ -362,26 +366,6 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
         gen_ai.agent.description = tracing::field::Empty,
         gen_ai.agent.version = tracing::field::Empty,
     )
-}
-
-/// Records a request refused before it named a method — a body that is not
-/// JSON-RPC, a batch over the limit, an unsupported content type — as a
-/// failed call without `rpc.method`, which the conventions require only "if
-/// available". No span: there is no method to name one for, and the peer's
-/// trace context has not been read.
-pub fn record_unrouted(
-    handler: &RequestHandler,
-    system: RpcSystem,
-    started: Instant,
-    status: &str,
-) {
-    handler.metrics.on_rpc_call(&RpcCall {
-        system: system.name(),
-        method: None,
-        duration: started.elapsed(),
-        status_code: Some(status),
-        error_type: system.is_server_error(status).then_some(status),
-    });
 }
 
 /// `s` cut to at most `max` bytes, on a character boundary.

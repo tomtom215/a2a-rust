@@ -1711,6 +1711,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Requests refused before their span opens are in
+  `rpc.server.call.duration`** (server). gRPC (a missing or unsupported
+  `A2A-Version`, metadata or a request that does not convert), HTTP+JSON and
+  the axum router (version, content type, path traversal, an oversized query,
+  a path no route serves) answered these without recording them, while the
+  JSON-RPC and WebSocket bindings did. Each is now one point with the status
+  it was answered: on gRPC under its method, on HTTP+JSON with no
+  `rpc.method`.
 - **A failed or timed-out executor's `invoke_agent` span says so** (server).
   The GenAI conventions require `error.type` "if the operation ended in an
   error"; the span never set it. A run that ends `Failed` — the executor's

@@ -230,11 +230,15 @@ only server failures, and one that wants the 4xx class reads
 `CustomBinding::with_grpc_server_errors`.
 
 It
-records calls the handler never sees: on JSON-RPC, a body that is not a
-request (no `rpc.method`), an unknown method, a batch over the limit; on
-HTTP+JSON, a request refused on its body or parameters, under the route's
-method. For a streaming method it times the call up to the stream being
-established, not the stream.
+records calls the handler never sees, with the status they were answered:
+on JSON-RPC, a body that is not a request (no `rpc.method`), an unknown
+method, a batch over the limit; on HTTP+JSON and the axum router, a request
+refused before routing — an unsupported or missing `A2A-Version`, a content
+type, a path no route serves (no `rpc.method`) — and one refused on its body
+or parameters, under the route's method; on gRPC, a call refused for its
+metadata or a request that does not convert, under its method. For a
+streaming method it times the call up to the stream being established, not
+the stream.
 The same values reach a custom `Metrics` as `on_rpc_call`.
 
 `a2a.server.request.duration` times the same calls by A2A method, with the

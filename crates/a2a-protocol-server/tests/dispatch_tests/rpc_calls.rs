@@ -223,3 +223,64 @@ async fn the_axum_router_records_the_http_status_it_answered() {
 
     assert_eq!(*seen.lock().unwrap(), http_json_failures());
 }
+
+/// `GET path` with `a2a-version: version`, or no version header; the status.
+async fn get(addr: SocketAddr, path: &str, version: Option<&str>) -> hyper::StatusCode {
+    let mut req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}{path}"));
+    if let Some(version) = version {
+        req = req.header("a2a-version", version);
+    }
+    let resp = http_client()
+        .request(req.body(Full::new(Bytes::new())).unwrap())
+        .await
+        .expect("request");
+    let status = resp.status();
+    let _ = resp.into_body().collect().await;
+    status
+}
+
+/// Requests refused before routing: no `A2A-Version`, one this server does
+/// not speak, and a path no route serves.
+async fn refuse_before_routing(addr: SocketAddr) {
+    assert_eq!(get(addr, "/tasks/t", None).await, 400);
+    assert_eq!(get(addr, "/tasks/t", Some("2.0")).await, 400);
+    assert_eq!(get(addr, "/tasks/t/no-such-route", Some("1.0")).await, 404);
+}
+
+/// Each is one `rpc.server.call.duration` point, with the status it was
+/// answered and no method — none was recorded until 2026-10-20 — and, a 4xx,
+/// no `error.type` (`RpcSystem::is_server_error`).
+fn refused_before_routing() -> [Call; 3] {
+    [
+        answered("a2a_http_json", None, "400"),
+        answered("a2a_http_json", None, "400"),
+        answered("a2a_http_json", None, "404"),
+    ]
+}
+
+#[tokio::test]
+async fn rest_records_each_request_refused_before_routing() {
+    let seen = Seen::default();
+    let addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&seen)))
+        .await
+        .expect("serve");
+    refuse_before_routing(addr).await;
+    assert_eq!(*seen.lock().unwrap(), refused_before_routing());
+}
+
+#[cfg(feature = "axum")]
+#[tokio::test]
+async fn the_axum_router_records_each_request_refused_before_routing() {
+    let seen = Seen::default();
+    let app =
+        a2a_protocol_server::dispatch::axum_adapter::A2aRouter::new(handler(&seen)).into_router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    refuse_before_routing(addr).await;
+    assert_eq!(*seen.lock().unwrap(), refused_before_routing());
+}
