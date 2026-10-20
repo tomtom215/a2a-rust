@@ -489,6 +489,12 @@ jobs:
         run: cargo clippy -p a2a-protocol-server --all-targets --features postgres -- -D warnings
       - name: Clippy (axum)
         run: cargo clippy -p a2a-protocol-server --all-targets --features axum -- -D warnings
+      # The tool loop's model client is plaintext-only without `tls-rustls`
+      # and HTTPS-capable with it: both builds, so neither cfg arm rots.
+      - name: Clippy (tool-loop)
+        run: cargo clippy -p a2a-protocol-server --all-targets --features tool-loop -- -D warnings
+      - name: Clippy (tool-loop + tls-rustls)
+        run: cargo clippy -p a2a-protocol-server --all-targets --features tool-loop,tls-rustls -- -D warnings
       - name: Clippy (websocket)
         run: cargo clippy --workspace --all-targets --features websocket -- -D warnings
       - name: Clippy (grpc)
@@ -566,6 +572,8 @@ jobs:
         run: cargo test -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
         run: cargo test -p a2a-protocol-server --features axum
+      - name: Test (tool-loop feature)
+        run: cargo test -p a2a-protocol-server --features tool-loop
       # Dedicated websocket/grpc legs: --all-features also compiles these,
       # but a feature-specific regression (missing gate, dep drift) only
       # surfaces when the feature is built in isolation.
@@ -863,7 +871,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
+        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude tool-loop-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #

@@ -50,6 +50,8 @@ only: when something here is done, delete it rather than annotating it.
   `impl_evidence` lines through a line diff from the last commit.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
+- **ADR 0022 is built:** `server::tool_loop` (feature `tool-loop`) and
+  `examples/tool-loop-agent`, whose README records the live run.
 
 ## Next, in order
 
