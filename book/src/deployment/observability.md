@@ -49,8 +49,8 @@ let telemetry = Telemetry::builder()
     .build()?;
 tracing_subscriber::registry().with(telemetry.layer()).init();
 
-// Hand the handler builder `.with_metrics(telemetry.otel_metrics())`, serve,
-// and on the way out:
+// Build handlers after this: one given no `with_metrics` records to the meter
+// provider it installed. Serve, and on the way out:
 telemetry.shutdown()?; // or let it drop: both flush
 # Ok(())
 # }
@@ -94,7 +94,11 @@ appear and your dashboard is still empty, the problem is the exporter, not the
 SDK — which is the distinction this two-minute step buys you.
 
 With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
-`Telemetry` exports it over OTLP.
+`Telemetry` exports it over OTLP. `otel` is a default feature, and with it a
+handler given no `with_metrics` records through `OtelMetrics` on the global
+meter provider as it stands when `RequestHandlerBuilder::new` runs: install
+the provider first (`Telemetry` does) and nothing else is needed. Before 0.15
+such a handler recorded nothing until given `with_metrics`.
 
 ## Exporting with `Telemetry`
 

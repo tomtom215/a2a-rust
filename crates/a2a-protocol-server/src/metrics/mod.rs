@@ -322,6 +322,26 @@ pub struct NoopMetrics;
 
 impl Metrics for NoopMetrics {}
 
+/// What a `RequestHandlerBuilder` records to unless given other metrics.
+///
+/// With the `otel` feature (on by default), an
+/// [`OtelMetrics`](crate::otel::OtelMetrics) on the global meter provider as
+/// it stands when the builder is created: a process that installed one —
+/// `Telemetry` does — gets `rpc.server.call.duration` and the `a2a.server.*`
+/// instruments with nothing to enable, and one that installed none records
+/// into OpenTelemetry's no-op meter. Without the feature, [`NoopMetrics`].
+#[must_use]
+pub(crate) fn default_metrics() -> Arc<dyn Metrics> {
+    #[cfg(feature = "otel")]
+    {
+        Arc::new(crate::otel::OtelMetricsBuilder::new().build())
+    }
+    #[cfg(not(feature = "otel"))]
+    {
+        Arc::new(NoopMetrics)
+    }
+}
+
 /// A shareable [`Metrics`] a store can hold, and discard into by default.
 ///
 /// The task stores all `#[derive(Debug)]` and `dyn Metrics` does not implement

@@ -480,7 +480,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |
 | `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
 | `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |
-| `NoopMetrics` | No-op metrics implementation (default) |
+| `NoopMetrics` | No-op metrics implementation (the default without the `otel` feature) |
 | `OtelMetrics` | OpenTelemetry metrics (`otel` feature, on by default) |
 
 ### Streaming

@@ -104,7 +104,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_max_concurrent_streams(usize)` | 1,024 | Limit concurrent SSE streams (pass `usize::MAX` to disable) |
 | `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (see [HandlerLimits](#handlerlimits) below) |
 | `with_task_store_arc(Arc<dyn TaskStore>)` | — | Share a store instance via `Arc` |
-| `with_metrics(impl Metrics)` | `NoopMetrics` | Metrics observer for handler activity |
+| `with_metrics(impl Metrics)` | `OtelMetrics` on the global meter provider (`otel`, on by default); `NoopMetrics` without it | Metrics observer for handler activity |
 | `with_tenant_resolver(impl TenantResolver)` | None | Multi-tenant tenant extraction |
 | `with_tenant_config(PerTenantConfig)` | None | Per-tenant concurrency, executor timeout and queue capacity. `rate_limit_rps` additionally needs the same config on `RateLimitInterceptor::with_tenant_config` |
 | `require_resolved_tenant()` | off | Refuse a request the configured tenant resolver cannot place, instead of using the shared default partition |

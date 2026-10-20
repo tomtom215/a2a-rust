@@ -1073,6 +1073,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A handler records its metrics to the global meter provider by default**
+  (server, `otel`). `RequestHandlerBuilder` defaulted to `NoopMetrics`, so a
+  process that installed a provider — `Telemetry` does — got the SDK's spans
+  and none of its metrics until every handler was given
+  `.with_metrics(...)`, though the `otel` entry above says it gets both with
+  nothing to enable. With the `otel` feature (on by default) the default is
+  now `OtelMetrics` on the global meter provider as it stands when
+  `RequestHandlerBuilder::new` runs; with none installed that is
+  OpenTelemetry's no-op meter. Without the feature it is still
+  `NoopMetrics`, and `with_metrics` still replaces it.
 - **A WebSocket call's span links to the upgrade request's trace instead
   of being its child** (server, WebSocket binding). A frame carries no
   trace context — the binding defines none, and this SDK's client sends

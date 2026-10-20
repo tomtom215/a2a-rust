@@ -20,7 +20,7 @@ use crate::error::ServerResult;
 use crate::executor::AgentExecutor;
 use crate::handler::{HandlerLimits, RequestHandler};
 use crate::interceptor::{ServerInterceptor, ServerInterceptorChain};
-use crate::metrics::{Metrics, NoopMetrics};
+use crate::metrics::{Metrics, default_metrics};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
 use crate::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use crate::streaming::EventQueueManager;
@@ -216,7 +216,7 @@ impl RequestHandlerBuilder {
             event_queue_capacity: None,
             max_event_size: None,
             max_concurrent_streams: None,
-            metrics: Arc::new(NoopMetrics),
+            metrics: default_metrics(),
             handler_limits: HandlerLimits::default(),
             tenant_resolver: None,
             tenant_config: None,
@@ -569,7 +569,7 @@ impl RequestHandlerBuilder {
 
     /// Sets a metrics observer for handler activity.
     ///
-    /// Defaults to [`NoopMetrics`] which discards all events.
+    /// Defaults to `OtelMetrics` on the global meter provider (`otel`), else `NoopMetrics`.
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
         self.metrics = Arc::new(metrics);
