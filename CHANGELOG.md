@@ -1696,6 +1696,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed or timed-out executor's `invoke_agent` span says so** (server).
+  The GenAI conventions require `error.type` "if the operation ended in an
+  error"; the span never set it. A run that ends `Failed` — the executor's
+  own status, or the one written for an executor that returned `Err` or ran
+  past its timeout — now sets `error.type` to the failure class
+  (`internal`, `invalid-request`, `transient`, `policy-refusal`,
+  `budget-exhausted`; a timeout is `budget-exhausted`) and the span's status
+  to `Error` explicitly. The status was already `Error` only by way of the
+  `executor failed` ERROR event and `tracing-opentelemetry`'s default of
+  turning error events into span status.
 - **The Go SDK interop's secured-card leg enforces the key it publishes**
   (`examples/echo-agent`, `itk/interop/go-sdk-client`). The handler build
   now refuses a card whose `securityRequirements` no interceptor checks, so

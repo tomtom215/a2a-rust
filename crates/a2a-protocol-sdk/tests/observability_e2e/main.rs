@@ -57,6 +57,7 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tracing_subscriber::layer::SubscriberExt;
 
 mod conventions;
+mod executor_errors;
 mod fixtures;
 mod push;
 use fixtures::*;
@@ -218,6 +219,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         .is_some()
     {}
     push::deliver(jsonrpc_client).await;
+    executor_errors::run().await;
 
     // ── What the exporter and the reader received ───────────────────────────
     // A span is exported when it closes, and `tracing` keeps a parent open
@@ -357,6 +359,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     }
     conventions::check_unique_keys(&spans, &mut gaps);
     push::check_webhook(&exporter, &tracer_provider, &mut gaps).await;
+    executor_errors::check(&exporter, &tracer_provider, &mut gaps).await;
     for name in [EXECUTE, "a2a.process_events", "a2a.sse"] {
         if !spans.iter().any(|s| s.name == name) {
             gaps.push(format!("no `{name}` span was recorded (O4)"));

@@ -159,6 +159,8 @@ fn executor_span(
         a2a.task.id = task_id,
         a2a.context.id = context_id,
         a2a.task.state = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+        error.type = tracing::field::Empty,
         gen_ai.operation.name = tracing::field::Empty,
         gen_ai.conversation.id = tracing::field::Empty,
         gen_ai.agent.name = tracing::field::Empty,
@@ -225,8 +227,17 @@ impl OutputRecorder {
     /// direct reply — because a field recorded twice is exported twice
     /// (`a2a.rs` says why), and because a long run then serialises its
     /// output once rather than per event. The first ending wins, as the
-    /// task store's transition rules have it.
+    /// task store's transition rules have it. A turn ending `Failed` — the
+    /// executor's own status, or the one written for an executor that
+    /// returned `Err` or timed out — marks the span failed: `Error` status and
+    /// an `error.type` ([`failure_type`]), which the `GenAI` conventions
+    /// require "if the operation ended in an error".
     pub fn observe(&self, event: &StreamResponse) {
+        let status = match event {
+            StreamResponse::Task(t) => Some(&t.status),
+            StreamResponse::StatusUpdate(u) => Some(&u.status),
+            _ => None,
+        };
         let (state, parts, reply) = match event {
             StreamResponse::Task(t) => (Some(t.status.state), None, false),
             StreamResponse::StatusUpdate(u) => (
@@ -263,6 +274,10 @@ impl OutputRecorder {
             self.span
                 .record("a2a.task.state", super::a2a::task_state(state));
         }
+        if let Some(status) = status.filter(|s| s.state == TaskState::Failed) {
+            self.span.record("error.type", failure_type(status));
+            self.span.record("otel.status_code", "ERROR");
+        }
         if self.content && !collected.is_empty() {
             let mut message = json!({ "role": "assistant", "parts": collected });
             if let Some(reason) = state.and_then(finish_reason) {
@@ -274,6 +289,23 @@ impl OutputRecorder {
             );
         }
     }
+}
+
+/// The `error.type` of a turn that ended `Failed`: the failure class the
+/// status message carries (`a2a_protocol_types::failure`) — `internal`,
+/// `invalid-request`, `transient`, `policy-refusal` or `budget-exhausted`,
+/// the class an executor timeout is given — and `internal` for a status that
+/// classifies nothing, as that module reads one. A bounded list, as the
+/// `GenAI` conventions ask ("another low-cardinality error identifier").
+#[cfg(feature = "tracing")]
+fn failure_type(status: &a2a_protocol_types::task::TaskStatus) -> &'static str {
+    use a2a_protocol_types::failure::{FailureClass, class_of};
+    status
+        .message
+        .as_ref()
+        .and_then(class_of)
+        .unwrap_or(FailureClass::Internal)
+        .as_str()
 }
 
 /// The conventions' `finish_reason` for a terminal state that has one.

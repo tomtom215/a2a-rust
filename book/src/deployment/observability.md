@@ -394,7 +394,11 @@ backend keys on: Langfuse shows the run as an agent and groups a context's
 runs into one session. If an agent framework inside your executor reports
 its own `invoke_agent` span, turn this one off with
 `RequestHandlerBuilder::with_agent_span_conventions(false)`; the span is then
-`a2a.execute`, as in 0.14.
+`a2a.execute`, as in 0.14. A run that ends `Failed` — the executor's own
+status, or the one written for an executor that returned `Err` or ran past
+its timeout — sets the span's status to error and its `error.type` to the
+failure class (`internal`, `invalid-request`, `transient`, `policy-refusal`,
+or `budget-exhausted`, which a timeout is).
 
 **Each push-notification POST is an HTTP `CLIENT` span**, named `POST`, a
 child of `a2a.deliver_push` or `a2a.process_events`, with
