@@ -277,3 +277,33 @@ async fn a_model_that_only_calls_tools_hits_the_turn_limit() {
         "the loop must spend exactly its budget — no more, and no fewer"
     );
 }
+
+/// A small model sometimes writes its call as the reply's text; the loop runs
+/// it as the call it is (see `leaked`) rather than answering the caller with
+/// the raw JSON.
+#[tokio::test]
+async fn a_call_written_as_text_is_run_as_a_call() {
+    let model = ScriptedModel::new([
+        says(r#"{"name": "service_status", "arguments": {"service": "checkout"}}"#),
+        says("checkout is healthy on 2.8.0."),
+    ]);
+    let observer = model.clone();
+
+    let (result, events) = drive(&executor(model, false), &ctx("how is checkout?")).await;
+
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        artifact(&events, "rig-response").as_deref(),
+        Some("checkout is healthy on 2.8.0.")
+    );
+    assert!(
+        artifact(&events, "tool-trace").is_some_and(|t| t.contains("service_status")),
+        "the recovered call is not in the trace"
+    );
+    assert_eq!(observer.request_count(), 2);
+    let replayed = history_of(&observer.requests()[1]);
+    assert!(
+        replayed.contains("healthy") && replayed.contains("2.8.0"),
+        "the tool result never reached the model: {replayed}"
+    );
+}

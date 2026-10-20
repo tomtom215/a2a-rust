@@ -73,6 +73,7 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod agent;
+mod leaked;
 mod surface;
 mod tools;
 
@@ -321,7 +322,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| format!("failed to build the rig OpenAI client: {e}"))?;
         Ok(RigAgent::new(
             client.completion_model(model),
-            "You are a helpful A2A protocol agent.",
+            agent::PREAMBLE,
         ))
     };
 

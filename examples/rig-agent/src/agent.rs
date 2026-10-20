@@ -60,6 +60,17 @@ use crate::tools;
 /// [timeout]: a2a_protocol_server::builder::RequestHandlerBuilder::with_executor_timeout
 pub const MAX_TURNS: usize = 6;
 
+/// What the agent is told before every prompt.
+///
+/// Small models otherwise tell the caller to call a tool rather than call it
+/// (1 of 20 billing runs on Qwen3-1.7B, 2026-10-20), and restate a tool's
+/// numbers from memory (2 of 10 checkout runs reported an uptime the tool
+/// did not return).
+pub const PREAMBLE: &str = "You are an operations agent with tools for checking services. \
+Call the tools yourself to answer; never ask the user to call a tool. \
+If a tool returns an error that suggests another tool, call that tool, then answer. \
+Report values exactly as the tools returned them.";
+
 /// What one prompt produced.
 pub struct Answer {
     /// The model's final text, with no tool calls left outstanding.
@@ -130,6 +141,7 @@ impl<M: CompletionModel + Clone> RigAgent<M> {
     /// [`AgentError::TurnLimit`] if the model never stops calling tools.
     pub async fn prompt(&self, user_text: &str) -> Result<Answer, AgentError> {
         let catalogue = tools::definitions();
+        let names: Vec<String> = catalogue.iter().map(|d| d.name.clone()).collect();
         // Everything before the current turn. The request builder appends
         // the prompt *after* `messages`, so `history` holds the settled
         // conversation and `turn` holds what we are asking about now.
@@ -137,7 +149,7 @@ impl<M: CompletionModel + Clone> RigAgent<M> {
         let mut turn = Message::user(user_text);
         let mut trace = Vec::new();
 
-        for _ in 0..MAX_TURNS {
+        for round in 0..MAX_TURNS {
             let response = self
                 .model
                 .completion_request(turn.clone())
@@ -147,8 +159,8 @@ impl<M: CompletionModel + Clone> RigAgent<M> {
                 .send()
                 .await?;
 
-            let calls: Vec<ToolCall> = response
-                .choice
+            let mut choice = response.choice.clone();
+            let mut calls: Vec<ToolCall> = choice
                 .iter()
                 .filter_map(|content| match content {
                     AssistantContent::ToolCall(call) => Some(call.clone()),
@@ -157,10 +169,15 @@ impl<M: CompletionModel + Clone> RigAgent<M> {
                 .collect();
 
             if calls.is_empty() {
-                return Ok(Answer {
-                    text: text_of(&response.choice),
-                    trace,
-                });
+                let text = text_of(&response.choice);
+                let Some(function) = crate::leaked::leaked_call(&text, &names) else {
+                    return Ok(Answer { text, trace });
+                };
+                // The model wrote the call as text: run it as the call it is,
+                // and keep it in history as one (see `leaked`).
+                let call = ToolCall::from_wire(format!("recovered-{round}"), function);
+                choice = vec![AssistantContent::ToolCall(call.clone())];
+                calls.push(call);
             }
 
             // The asking turn and the model's reply both settle into history;
@@ -168,7 +185,7 @@ impl<M: CompletionModel + Clone> RigAgent<M> {
             history.push(turn);
             history.push(Message::Assistant {
                 id: response.message_id.clone(),
-                content: response.choice.clone(),
+                content: choice,
             });
 
             let mut results = Vec::with_capacity(calls.len());
