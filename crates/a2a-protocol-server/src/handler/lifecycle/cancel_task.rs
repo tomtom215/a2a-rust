@@ -37,8 +37,16 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant("CancelTask", headers, params.tenant.as_deref())
             .await?;
-        let result: ServerResult<_> =
-            crate::store::tenant::TenantContext::scope_request(tenant, async {
+        // Boxed for clippy's `large_futures`, which estimates this future at
+        // about 16 KiB and every dispatcher's that awaits it inline over its
+        // 16 KiB limit once `serde_json`'s `preserve_order` (genai 0.7 in the
+        // examples) grows `Value`. Its estimate, not the layout: `size_of_val`
+        // measures the unboxed future at 656 bytes, 736 with `preserve_order`
+        // (2026-10-20). One allocation per cancel; the gate is CI's workspace
+        // clippy.
+        let result: ServerResult<_> = Box::pin(crate::store::tenant::TenantContext::scope_request(
+            tenant,
+            async {
                 let call_ctx = build_call_context("CancelTask", headers, self.inbound_trace_policy)
                     .with_task_id(params.id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
@@ -163,8 +171,9 @@ impl RequestHandler {
                 }
                 .await;
                 call.finish(result).await
-            })
-            .await;
+            },
+        ))
+        .await;
 
         #[cfg(feature = "tracing")]
         match &result {

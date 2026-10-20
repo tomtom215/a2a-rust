@@ -35,9 +35,9 @@
 //! unexercised while `INCIDENT_REQUIRE_ALL` was set.
 
 mod agents;
-mod local_model;
 mod demo;
 mod hardening;
+mod local_model;
 mod serving;
 
 #[cfg(test)]
