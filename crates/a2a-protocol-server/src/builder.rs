@@ -879,6 +879,9 @@ impl RequestHandlerBuilder {
     ///   tenant, with no authenticating interceptor (when asked for
     ///   explicitly), or with an approval gate that needs a second approver
     ///   (see [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller));
+    /// - an approval gate whose [quorum](crate::approval::ApprovalGate::with_quorum)
+    ///   could never be met: `0`, more than its allowed approvers, or more
+    ///   than one with tasks isolated by caller;
     /// - with the `audit` feature, a `Profile` whose requirements are not
     ///   met.
     #[allow(clippy::too_many_lines)]
@@ -1187,6 +1190,13 @@ impl RequestHandlerBuilder {
                  callers; without one every request would be refused"
                     .to_owned(),
             ));
+        }
+        if let Some(why) = self
+            .approval_gate
+            .as_ref()
+            .and_then(|gate| gate.unsatisfiable(isolate_callers))
+        {
+            return Err(crate::error::ServerError::InvalidParams(why));
         }
         if isolate_callers
             && self

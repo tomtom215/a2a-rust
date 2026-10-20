@@ -14,6 +14,7 @@
 //! | `continuation` | which context and task the message belongs to |
 //! | `admission` | in-flight rejection and the event-queue lease |
 //! | `eviction` | the stale-token sweep and the token insert |
+//! | `quorum` | the approval gate's check, and its count under a quorum |
 //! | `create` | the initial task, its request context, the store write, the inline push config |
 //! | `execute` | the spawned executor and the guard that releases its resources |
 //! | `decisions` | the pure predicates the phases above decide with |
@@ -43,6 +44,7 @@ mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
 mod mode;
+mod quorum;
 mod respond;
 mod start;
 use start::{ExecutorStart, runtime_has_one_worker};
@@ -89,6 +91,9 @@ enum Committed {
     /// future: a `Task` inline here pushed all three dispatch futures past
     /// clippy's `large_futures` threshold.
     Replay(Box<Task>),
+    /// An approval recorded toward a quorum that is still short (`quorum`):
+    /// the task as saved, still waiting. Nothing runs.
+    Waiting(Box<Task>),
 }
 
 /// Which file references a message may carry; see
@@ -201,6 +206,7 @@ impl RequestHandler {
                     Box::pin(self.respond_replay(*task, streaming, mode.response_history_length))
                         .await
                 }
+                Committed::Waiting(task) => Ok(Self::respond_waiting(*task, streaming, mode)),
                 Committed::Started(started) => {
                     if mode.use_background {
                         Ok(self
@@ -303,9 +309,10 @@ impl RequestHandler {
             .await?;
         // A decision is checked against the request pending on the task it
         // continues, before anything is claimed; see `crate::approval`.
-        let approval = match &self.approval_gate {
-            Some(gate) => gate.check(stored_task.as_ref(), &params.message, call_ctx)?,
-            None => None,
+        let gated = self.gate_decision(stored_task.as_ref(), &params.message, call_ctx);
+        let approval = match Box::pin(gated).await? {
+            quorum::Gated::Pass(approval) => approval,
+            quorum::Gated::Waiting(task) => return Ok(Committed::Waiting(task)),
         };
 
         // An idempotency key, if the send carries one, is claimed here: after

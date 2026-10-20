@@ -21,6 +21,7 @@ use a2a_protocol_types::task::Task;
 use super::super::{RequestHandler, SendMessageResult};
 use super::Started;
 use super::decisions::shape_response_history;
+use super::mode::SendMode;
 use crate::error::ServerResult;
 use crate::streaming::InMemoryQueueReader;
 
@@ -42,6 +43,28 @@ impl RequestHandler {
         // a wrong answer, and a failed read is not a reason to fail the send.
         if let Ok(Some(stored)) = self.task_store.get(&task.id).await {
             task.history = stored.history;
+        }
+    }
+
+    /// Answers an approval recorded toward a quorum that is still short: the
+    /// task as saved, `input-required`, whose status message says who has
+    /// approved and how many are required
+    /// ([`QUORUM_METADATA_KEY`](crate::approval::QUORUM_METADATA_KEY)).
+    /// No turn ran, so a stream is that one `Task` and ends, as a stream
+    /// ends at any interrupted state.
+    pub(super) fn respond_waiting(
+        task: Task,
+        streaming: bool,
+        mode: SendMode,
+    ) -> SendMessageResult {
+        let mut snapshot = task;
+        shape_response_history(&mut snapshot, mode.response_history_length);
+        if streaming {
+            SendMessageResult::Stream(InMemoryQueueReader::snapshot_then_end(
+                StreamResponse::Task(snapshot),
+            ))
+        } else {
+            SendMessageResult::Response(SendMessageResponse::Task(snapshot))
         }
     }
 

@@ -349,16 +349,23 @@ id = "AIA-14-5"
 source = "ai-act"
 provision = "Art. 14(5)"
 requirement = "For high-risk AI systems referred to in point 1(a) of Annex III, the oversight measures ensure that no action or decision is taken by the deployer on the basis of the identification resulting from the system unless that identification has been separately verified and confirmed by at least two natural persons with the necessary competence, training and authority; this does not apply to systems used for law enforcement, migration, border control or asylum where Union or national law considers it disproportionate. Text read 2026-10-20 in the Official Journal edition of Regulation (EU) 2024/1689 (OJ L, 2024/1689, 12.7.2024, from the Publications Office); whether Regulation (EU) 2026/1744 amends this paragraph was not checked that day."
-sdk = "The approval extension holds a task at `input-required` until an authenticated approver the `ApprovalGate` allows confirms the digest of the exact action, and audits who confirmed it (AIA-14-4d)."
-status = "partial"
+sdk = "The approval extension holds a task at `input-required` until an authenticated approver the `ApprovalGate` allows confirms the digest of the exact action (AIA-14-4d). `ApprovalGate::with_quorum(2)` holds it until two distinct allowed approvers, told apart by authenticated identity, have each sent their own approval of the same request and digest: the requester is refused, an approver approving twice counts once, a decision on another digest is refused and not counted, and a deny from any approver ends it. Until then the executor does not run and each approver is answered with the task still `input-required`; the executor then sees the decision with every approver named. Each decision is its own audit record (who, request id, digest, the count so far, whether it reached the executor). The count is kept on the task's status message, so replicas sharing a task store count together."
+status = "supported"
 code = [
-  "crates/a2a-protocol-server/src/approval.rs::ApprovalGate",
+  "crates/a2a-protocol-server/src/approval.rs::ApprovalGate::with_quorum",
+  "crates/a2a-protocol-server/src/approval/quorum.rs::ApprovalGate::tally",
+  "crates/a2a-protocol-server/src/handler/messaging/quorum.rs::RequestHandler::gate_decision",
 ]
 tests = [
+  "crates/a2a-protocol-server/src/approval/quorum_tests.rs::a_quorum_of_two_waits_for_a_second_distinct_approver",
+  "crates/a2a-protocol-server/src/approval/quorum_tests.rs::a_deny_before_the_quorum_reaches_the_executor_at_once",
+  "crates/a2a-protocol-server/src/approval/quorum_tests.rs::a_decision_on_another_digest_is_not_counted",
+  "crates/a2a-protocol-server/src/approval/quorum_tests.rs::a_record_for_another_digest_or_a_refused_name_counts_for_nothing",
+  "crates/a2a-protocol-server/src/approval/quorum_tests/recorded.rs::each_approval_toward_a_quorum_is_audited",
+  "crates/a2a-protocol-server/src/approval/quorum_tests/recorded.rs::a_quorum_is_met_across_two_handlers_sharing_a_sqlite_store",
   "crates/a2a-protocol-server/src/approval/tests.rs::who_may_approve",
-  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
 ]
-gap = "Not built: the gate admits one approver's decision, so 'separately verified and confirmed by at least two natural persons' needs the executor to ask twice and compare. A quorum on the gate (n distinct allowed approvers on the same digest before the decision reaches the executor, each audited) is SDK work. Who is competent and authorised to verify stays the deployer's."
+remainder = "Which systems fall under Annex III point 1(a), and so need the quorum, and that the approvers are natural persons with the necessary competence, training and authority, are the deployer's: the gate counts authenticated identities, so one person holding two identities the gate allows counts twice, and the allowed list is where the deployer names who may confirm. Which actions wait for confirmation is the executor's, as in AIA-14-4d. On replicas sharing a store, two approvals arriving at two replicas at the same moment can overwrite each other's record, because no shipped store writes conditionally on what it read: the count can fall short and an approver has to confirm again, but it never counts an approval nobody sent (re-examined 2026-10-20)."
 
 [[control]]
 id = "AIA-14-4e"

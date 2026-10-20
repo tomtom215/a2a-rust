@@ -195,6 +195,57 @@ record. Its actor is the approver. It holds the action's digest, the
 request id, the decision, and who asked. The approver's comment is not
 recorded.
 
+### More than one approver
+
+The EU AI Act's Article 14(5) asks, for the remote biometric identification
+systems in its Annex III point 1(a), that nothing is done on an
+identification until at least two natural persons have separately verified
+and confirmed it. `with_quorum(n)` makes the gate wait for `n` distinct
+approvers:
+
+```rust
+use a2a_protocol_server::approval::ApprovalGate;
+use a2a_protocol_server::auth::caller_id;
+// Any two of these three, never the caller whose run asked.
+let gate = ApprovalGate::new()
+    .with_approvers([
+        caller_id::bearer("alice"),
+        caller_id::bearer("bob"),
+        caller_id::bearer("carol"),
+    ])
+    .with_quorum(2);
+# let _ = gate;
+```
+
+Each approver sends the same decision they would send to a gate without a
+quorum, for the same request id and digest. Until `n` of them have
+approved, the executor does not run: each approver is answered with the task
+still `input-required`, and its status message carries, under
+`a2a-rust.com/approval-quorum`, who has approved so far and how many are
+required. The `n`-th approval reaches the executor, and `ctx.approval()`
+names every approver in `approvers`.
+
+- Approvers are told apart by their authenticated identity. One approver
+  approving twice counts once; the requester is refused, as without a quorum.
+- A deny from any allowed approver reaches the executor at once, naming who
+  had approved before it. The action needs all `n`, so one refusal settles it.
+- A decision for another digest is refused and counts for nothing.
+- Each decision is its own `approval` audit record, with `required`, the
+  `approvedBy` list as it stood, and `reachedExecutor`.
+- `build()` refuses a quorum of `0`, one larger than the `with_approvers`
+  list, or one above `1` with tasks isolated by caller.
+
+The count is kept on the task, so replicas sharing a task store count
+together. One handler serializes the approvals for a task; two replicas do
+not, and two approvals arriving at two replicas at the same moment can each
+overwrite the other's record. The count then falls short, never over: the
+approver whose record was lost sends the approval again.
+
+Whether a system falls under Annex III point 1(a), and whether the
+approvers have the competence, training and authority the Article asks for,
+are the deployer's to decide; the gate counts identities, so a person who
+holds two allowed identities counts twice.
+
 ### Limits
 
 - **The executor decides which actions to ask about.** The gate checks and

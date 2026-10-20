@@ -214,6 +214,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A quorum on the approval gate: `ApprovalGate::with_quorum(n)`** (server;
+  EU AI Act Art. 14(5), control map row AIA-14-5, now `supported`). The gate
+  waits for `n` distinct allowed approvers, told apart by authenticated
+  identity, to approve the same pending request and digest before the
+  decision reaches the executor. Until then each approval is recorded on the
+  task's status message under `QUORUM_METADATA_KEY`
+  (`a2a-rust.com/approval-quorum`), the approver is answered with the task
+  still `input-required`, and the executor does not run. An approver
+  approving twice counts once, the requester is refused as before, a decision
+  on another digest is refused and not counted, and a deny from any approver
+  reaches the executor at once. `VerifiedApproval` gains `approvers` (every
+  approver counted) and `required`. Each decision is its own `approval` audit
+  record, which under a quorum also holds `required`, `approvedBy` and
+  `reachedExecutor`. The record lives in the task store, so replicas sharing
+  one count together; two approvals arriving at two replicas at once can
+  overwrite each other's record, leaving the count short (never over) until
+  the approver sends again. `build()` refuses a quorum of `0`, one above the
+  `with_approvers` list, or one above `1` with tasks isolated by caller. The
+  default, `1`, is the gate as it was. The approval extension's wire contract
+  (`approval/v1`: request and decision) is unchanged; the record is new,
+  additive metadata on the status message.
+
 - **`Server` warns when it serves plaintext beyond loopback** (server, spec
   §7.1: production deployments MUST use encrypted communication). Once, at
   start, when the listener has no TLS and its address is not loopback,
