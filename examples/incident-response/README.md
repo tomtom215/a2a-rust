@@ -72,7 +72,7 @@ and the Apache-2.0 Qwen3.5-0.8B model (~500 MB):
 curl -L -o model.gguf \
   'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf'
 llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
-  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+  -c 8192 --reasoning off &   # direct answers, no thinking preamble; 8K context bounds memory
 cargo run -p incident-response          # INCIDENT_MODEL defaults to qwen3.5:0.8b
 ```
 

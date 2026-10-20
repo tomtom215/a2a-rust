@@ -38,7 +38,7 @@ GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 curl -L -o model.gguf \
   'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf'
 llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
-  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+  -c 8192 --reasoning off &   # direct answers, no thinking preamble; 8K context bounds memory
 GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent
 ```
 

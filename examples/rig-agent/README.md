@@ -149,7 +149,7 @@ curl -L -o model.gguf \
 # tool-call format. Without it the model never emits one.
 ./llama.cpp/build/bin/llama-server -m model.gguf --port 11434 --alias qwen3:1.7b \
   --jinja \
-  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+  -c 8192 --reasoning off &   # direct answers, no thinking preamble; 8K context bounds memory
 
 # 3. Point the rig agent at it
 export OPENAI_API_KEY=local              # any non-empty value
