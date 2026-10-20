@@ -90,8 +90,13 @@ impl MetricReader for SharedReader {
     }
 }
 
+/// The `traceparent` of each POST the webhook received, `None` for one that
+/// carried none.
+pub static WEBHOOK_TRACEPARENTS: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
+
 /// A webhook that accepts every POST, so a push delivery completes, and
-/// counts what it received.
+/// counts what it received — once it has read the request's headers into
+/// [`WEBHOOK_TRACEPARENTS`].
 pub async fn webhook(hits: Arc<std::sync::atomic::AtomicUsize>) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -102,11 +107,19 @@ pub async fn webhook(hits: Arc<std::sync::atomic::AtomicUsize>) -> String {
             let Ok((mut s, _)) = listener.accept().await else {
                 return;
             };
-            hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let hits = Arc::clone(&hits);
             tokio::spawn(async move {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = vec![0_u8; 64 * 1024];
-                let _ = s.read(&mut buf).await;
+                let n = s.read(&mut buf).await.unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]);
+                let traceparent = head.lines().find_map(|l| {
+                    let (name, value) = l.split_once(':')?;
+                    name.eq_ignore_ascii_case("traceparent")
+                        .then(|| value.trim().to_owned())
+                });
+                WEBHOOK_TRACEPARENTS.lock().expect("lock").push(traceparent);
+                hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let _ = s
                     .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
                     .await;

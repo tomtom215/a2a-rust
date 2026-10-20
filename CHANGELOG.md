@@ -232,6 +232,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing; fetching the extended card replaces the requirements, as it does
   the capabilities. Tests: `declared_credentials`,
   `credential_preflight::tests`.
+
+- **Push webhooks carry the trace and have a span** (server). Each webhook
+  POST from `HttpPushSender` runs in an HTTP `CLIENT` span named `POST`
+  (`docs/http/http-spans.md`): `http.request.method`, `server.address`,
+  `server.port`, `url.full` (the origin and `/REDACTED`, since a webhook's
+  path or query is often its secret), `http.response.status_code`,
+  `http.request.resend_count` on a retry, and `error.type` with `Error`
+  status for a failed attempt (the status, `timeout` or `transport`). With
+  `otel`, the POST carries that span as `traceparent` and `tracestate`, so a
+  receiver that continues the trace hangs off a span the exporter has; it
+  sent neither before. Nothing is sent when no span is recorded.
 - **The originating principal on delegated calls, by RFC 8693 token
   exchange** (server, client; ADR 0021; OWASP ASI03). `JwtAuthInterceptor`
   reads the `act` chain of a verified token. The caller identity stays its

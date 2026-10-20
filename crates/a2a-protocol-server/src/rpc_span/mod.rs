@@ -48,6 +48,7 @@ mod binding;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;
+mod webhook;
 
 #[cfg(feature = "tracing")]
 use crate::handler::InboundTracePolicy;
@@ -68,6 +69,7 @@ pub use names::{RpcSystem, WireStatus, a2a_method};
 pub use otel::current_recorded_span;
 #[cfg(feature = "otel")]
 use otel::remote_parent;
+pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the
 /// original value; a request body may be megabytes, and an attribute that

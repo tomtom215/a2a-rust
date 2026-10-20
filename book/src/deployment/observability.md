@@ -396,6 +396,18 @@ its own `invoke_agent` span, turn this one off with
 `RequestHandlerBuilder::with_agent_span_conventions(false)`; the span is then
 `a2a.execute`, as in 0.14.
 
+**Each push-notification POST is an HTTP `CLIENT` span**, named `POST`, a
+child of `a2a.deliver_push` or `a2a.process_events`, with
+`http.request.method`, `server.address`, `server.port`,
+`http.response.status_code`, `http.request.resend_count` on a retry, and
+`error.type` — the status, `timeout` or `transport` — for a failed attempt.
+Its `url.full` is the webhook's origin and `/REDACTED`, since a webhook's
+path or query is often its secret. With the `otel` feature the POST carries
+that span as its `traceparent` (and `tracestate`), so a receiver that
+continues the trace is a child of a span your backend has; when no span is
+recorded — no OpenTelemetry layer, or `InboundTracePolicy::Drop` — none is
+sent.
+
 **Message content is opt-in.** With
 `RequestHandlerBuilder::with_span_content_capture(true)`, the executor's span
 records the request's message as `gen_ai.input.messages` and the agent's

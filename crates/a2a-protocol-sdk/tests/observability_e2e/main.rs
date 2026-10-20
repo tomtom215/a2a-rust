@@ -46,8 +46,7 @@ use a2a_protocol_sdk::server::{
     GrpcConfig, GrpcDispatcher, HttpPushSender, JsonRpcDispatcher, RequestHandlerBuilder,
     RestDispatcher, serve_with_addr,
 };
-use a2a_protocol_sdk::types::params::{SendMessageConfiguration, TaskQueryParams};
-use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
+use a2a_protocol_sdk::types::params::TaskQueryParams;
 use a2a_protocol_sdk::types::trace_context::TraceContext;
 use a2a_protocol_sdk::types::{AgentCapabilities, AgentCard, AgentInterface};
 use opentelemetry::trace::{SpanKind, TracerProvider as _};
@@ -59,6 +58,7 @@ use tracing_subscriber::layer::SubscriberExt;
 
 mod conventions;
 mod fixtures;
+mod push;
 use fixtures::*;
 
 /// The advisory buckets for `rpc.server.call.duration`, from the semantic
@@ -217,31 +217,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         .flatten()
         .is_some()
     {}
-    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let hook = webhook(Arc::clone(&hits)).await;
-    let mut push = message("push", None);
-    push.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig::new("", hook)),
-        ..SendMessageConfiguration::default()
-    });
-    let mut stream = jsonrpc_client
-        .stream_message(push)
-        .await
-        .expect("push stream");
-    while tokio::time::timeout(Duration::from_secs(10), stream.next())
-        .await
-        .ok()
-        .flatten()
-        .is_some()
-    {}
-    // Push delivery runs behind the stream: wait for the webhook to be hit,
-    // with a deadline, rather than for a fixed time (CONTRIBUTING.md).
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while hits.load(std::sync::atomic::Ordering::SeqCst) == 0
-        && tokio::time::Instant::now() < deadline
-    {
-        tokio::time::sleep(Duration::from_millis(2)).await;
-    }
+    push::deliver(jsonrpc_client).await;
 
     // ── What the exporter and the reader received ───────────────────────────
     // A span is exported when it closes, and `tracing` keeps a parent open
@@ -380,6 +356,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         }
     }
     conventions::check_unique_keys(&spans, &mut gaps);
+    push::check_webhook(&exporter, &tracer_provider, &mut gaps).await;
     for name in [EXECUTE, "a2a.process_events", "a2a.sse"] {
         if !spans.iter().any(|s| s.name == name) {
             gaps.push(format!("no `{name}` span was recorded (O4)"));

@@ -46,3 +46,25 @@ pub fn current_recorded_span() -> Option<([u8; 16], [u8; 8], u8)> {
         )
     })
 }
+
+/// `span`'s own context as `traceparent` and `tracestate` header values,
+/// the state empty when it has none; `None` when no OpenTelemetry layer
+/// records the span.
+pub fn trace_headers(span: &tracing::Span) -> Option<(String, String)> {
+    use opentelemetry::trace::TraceContextExt as _;
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+    let context = span.context();
+    let span = context.span();
+    let sc = span.span_context();
+    if !sc.is_valid() {
+        return None;
+    }
+    let parent = a2a_protocol_types::trace_context::TraceContext::from_bytes(
+        sc.trace_id().to_bytes(),
+        sc.span_id().to_bytes(),
+        sc.trace_flags().to_u8(),
+    )
+    .ok()?
+    .traceparent();
+    Some((parent, sc.trace_state().header()))
+}
