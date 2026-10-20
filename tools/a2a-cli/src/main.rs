@@ -80,6 +80,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let _telemetry = telemetry();
     // `clap` exits 2 on a usage error and 0 after `--help`/`--version`
     // itself, so by the time this returns the arguments are valid.
     let cli = Cli::parse();
@@ -90,4 +91,28 @@ async fn main() -> ExitCode {
             ExitCode::from(err.exit_code())
         }
     }
+}
+
+/// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
+/// `examples/langfuse-agent`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+/// collector, traces, metrics and logs go there; without it nothing is built
+/// or installed — no exporter, no export thread, no subscriber. Keep it for
+/// the life of the process: dropping it flushes.
+fn telemetry() -> a2a_protocol_server::otel::Telemetry {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+    let export = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some();
+    let telemetry = a2a_protocol_server::otel::Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_traces(export)
+        .with_metrics(export)
+        .with_logs(export)
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    if telemetry.tracer_provider().is_some() || telemetry.logger_provider().is_some() {
+        tracing_subscriber::registry()
+            .with(telemetry.layer())
+            .init();
+    }
+    telemetry
 }

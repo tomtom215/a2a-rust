@@ -14,6 +14,10 @@ license.workspace      = true
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
+# For `go_sdk_interop` only: the SDK's `Telemetry` (`otlp`), which exports when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["otlp"] }
+tracing-subscriber  = { workspace = true }
 uuid                = { workspace = true }
 tokio               = { workspace = true, features = ["time"] }
 

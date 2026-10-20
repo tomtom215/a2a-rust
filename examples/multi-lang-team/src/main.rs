@@ -49,6 +49,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod surface;
 
+mod telemetry;
 #[cfg(test)]
 mod tests;
 /// The Rust worker, compiled into the coordinator only for its tests; the
@@ -372,6 +373,7 @@ async fn probe_workers() -> Vec<&'static Worker> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let telemetry = telemetry::init();
     println!("Multi-Language Agent Team Example");
     println!("=================================");
     println!();
@@ -440,6 +442,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(c) => clients.push((*binding, c)),
             Err(e) => {
                 eprintln!("could not build a {} client: {e}", binding.label());
+                drop(telemetry);
                 std::process::exit(1);
             }
         }
@@ -482,6 +485,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let code = outcome.exit_code();
     if code != 0 {
+        drop(telemetry);
         std::process::exit(code);
     }
     Ok(())

@@ -45,6 +45,7 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod local_model;
 mod surface;
+mod telemetry;
 
 #[cfg(test)]
 mod tests;
@@ -274,6 +275,7 @@ fn env_flag(name: &str) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let telemetry = telemetry::init();
     let model = std::env::var("GENAI_MODEL").unwrap_or_else(|_| "qwen3.5:0.8b".to_string());
 
     println!("Genai + A2A Agent Example");
@@ -448,6 +450,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(c) => clients.push((*binding, c)),
             Err(e) => {
                 eprintln!("could not build a {} client: {e}", binding.label());
+                drop(telemetry);
                 std::process::exit(1);
             }
         }
@@ -474,6 +477,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let code = outcome.exit_code();
     if code != 0 {
+        drop(telemetry);
         std::process::exit(code);
     }
     Ok(())

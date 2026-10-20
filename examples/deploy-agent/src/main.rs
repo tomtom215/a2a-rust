@@ -233,6 +233,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _telemetry = telemetry();
     let config = Config::from_env()?;
     let (router, handler) = app(&config)?;
 
@@ -281,6 +282,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     Ok(())
+}
+
+/// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
+/// `examples/langfuse-agent`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+/// collector, traces, metrics and logs go there; without it nothing is built
+/// or installed — no exporter, no export thread, no subscriber. Keep it for
+/// the life of the process: dropping it flushes.
+fn telemetry() -> a2a_protocol_sdk::server::otel::Telemetry {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+    let export = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some();
+    let telemetry = a2a_protocol_sdk::server::otel::Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_traces(export)
+        .with_metrics(export)
+        .with_logs(export)
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    if telemetry.tracer_provider().is_some() || telemetry.logger_provider().is_some() {
+        tracing_subscriber::registry()
+            .with(telemetry.layer())
+            .init();
+    }
+    telemetry
 }
 
 #[cfg(test)]

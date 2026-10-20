@@ -24,7 +24,6 @@
 //! (matching the reference Go v10 agent), joined with `\n`.
 
 use std::future::Future;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -35,7 +34,6 @@ use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::RequestContext;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
-use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::streaming::EventQueueWriter;
 use a2a_protocol_types::error::A2aResult;
@@ -355,6 +353,8 @@ fn handle_instruction<'a>(
 mod acts;
 mod acts_client_parse;
 mod acts_modes;
+mod serve;
+mod telemetry;
 
 // ── Executor ─────────────────────────────────────────────────────────────────
 
@@ -529,57 +529,6 @@ fn build_card(http_port: u16, grpc_port: u16) -> AgentCard {
     }
 }
 
-/// Serves JSON-RPC (POST /), REST (other paths), and the agent card on one
-/// listener — the same routing as the reference agents' HTTP port.
-async fn serve_http(
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-    port: u16,
-) -> std::io::Result<SocketAddr> {
-    let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
-    let rest = Arc::new(RestDispatcher::new(handler));
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-    let addr = listener.local_addr()?;
-
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let _ = stream.set_nodelay(true);
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let jsonrpc = Arc::clone(&jsonrpc);
-            let rest = Arc::clone(&rest);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
-                    let jsonrpc = Arc::clone(&jsonrpc);
-                    let rest = Arc::clone(&rest);
-                    async move {
-                        // The ITK runner (and the reference agents' layout)
-                        // target v1.0 JSON-RPC at /jsonrpc as well as /.
-                        let path = req.uri().path();
-                        let is_jsonrpc = req.method() == hyper::Method::POST
-                            && (path == "/"
-                                || path.is_empty()
-                                || path == "/jsonrpc"
-                                || path == "/jsonrpc/");
-                        if is_jsonrpc {
-                            Ok::<_, std::convert::Infallible>(jsonrpc.dispatch(req).await)
-                        } else {
-                            Ok(rest.dispatch(req).await)
-                        }
-                    }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection_with_upgrades(io, service)
-                .await;
-            });
-        }
-    });
-    Ok(addr)
-}
-
 fn uuid_v4() -> String {
     // Tiny unique-id helper: nanosecond clock + counter (collision-free for
     // this process's purposes; avoids adding a uuid dependency).
@@ -594,6 +543,7 @@ fn uuid_v4() -> String {
 
 #[tokio::main]
 async fn main() {
+    let _telemetry = telemetry::init();
     let mut http_port: u16 = 10110;
     let mut grpc_port: u16 = 11010;
     let args: Vec<String> = std::env::args().collect();
@@ -651,7 +601,7 @@ async fn main() {
             .expect("build handler"),
     );
 
-    let http_addr = serve_http(Arc::clone(&handler), http_port)
+    let http_addr = serve::serve_http(Arc::clone(&handler), http_port)
         .await
         .expect("bind http port");
     let grpc = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());

@@ -244,6 +244,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   llama-server b11751 on Qwen3-1.7B (its README has the results). Tests:
   `tool_loop::run::tests`, `rpc_span::tool::tests`, `tests/tool_loop/`.
 
+- **Every example, the TCK SUT, the ITK agent and the `a2a` CLI start the
+  SDK's `Telemetry`** (examples, `tck/sut`, `itk`, `tools/a2a-cli`). Each
+  builds it from the standard `OTEL_*` environment as `langfuse-agent` does,
+  keeps the guard for the life of the process, and flushes it before every
+  `std::process::exit`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+  collector, the process's traces, metrics and logs go there; unset, nothing
+  is built or installed, so a plain `cargo run` needs no collector. Not
+  `hello-agent`, whose point is that the prelude alone says hello, nor
+  `mcp-agent`'s `tool_server`, which runs no A2A code. The CLI now depends on
+  `a2a-protocol-server` (for `Telemetry`, the `otlp` feature) as well as the
+  client.
 - **`rpc.client.call.duration`** (client, `otel`, on by default): the
   semantic conventions' client histogram, the counterpart of the server's
   `rpc.server.call.duration` — unit `s`, the same advisory buckets, with
