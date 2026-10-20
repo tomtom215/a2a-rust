@@ -2440,6 +2440,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task id, and `on_complete` reports them `Failed` with the `-32602`; a rate
   limiter counts them and an audit interceptor records them. HTTP+JSON, gRPC
   and WebSocket still read params first. Test: `jsonrpc_auth_before_params`.
+- **A card-signing key whose `x5c` certificate has expired is not used**
+  (types, `signing`; spec §8.4.3 "Expired or revoked keys MUST NOT be used
+  for verification"; RFC 7517 §4.7). `Jwk` had no `x5c` member, so serde
+  dropped it and a key whose certificate had expired still verified a card.
+  `Jwk` gains `x5c: Option<Vec<String>>`, and `Jwks::candidates` (so
+  `verify_agent_card_with_jwks`, `verify_card_with_jwks`,
+  `verify_card_json_with_jwks` and the client's signed-card fetch) uses a
+  key that carries one only when its first certificate holds the same key
+  (algorithm, curve and key bits from the parsed `SubjectPublicKeyInfo`)
+  and the verification time is within its `notBefore`..`notAfter`,
+  inclusive. An empty chain, an entry that is not standard base64 or not
+  exactly one DER certificate leaves the key unused; the refusal reads as
+  a missing key. Keys without `x5c` are unchanged. Not checked: the chain
+  to a trust anchor, the certificates' signatures, key usage, and
+  revocation (CRL/OCSP); the set itself is the caller's trusted source.
+  New dependency of the `signing` feature: `x509-parser` 0.18
+  (MIT OR Apache-2.0, already in the lockfile through `rcgen`), default
+  features off. Tests: `signing::keys::x5c::tests`,
+  `signing::keys::x5c::spki_tests`, and
+  `a_fetched_key_whose_certificate_has_expired_is_not_used` in the
+  client's `jwks_fetch_tests`.
 
 - **SLIMRPC: the binding has no advisory waivers** (`a2a-protocol-slimrpc`).
   With `agntcy-slim-auth` 0.17.5 the lock takes `mls-rs-crypto-awslc`
@@ -2451,6 +2472,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from its `osv-scanner.toml`; cargo-deny 0.20.2 and osv-scanner 2.6.0 report
   nothing without them. `deny.toml` allows `CDLA-Permissive-2.0` again, as
   the root does, for `webpki-root-certs`, which the SLIM 3.x tree brings.
+  Since 2026-10-19 it carries one again: `mls-rs-crypto-awslc` 0.25.1 was
+  yanked with no stated defect, and 0.25.0 would bring the four rustls
+  advisories back; the binding's `deny.toml` explains the entry. Update the
+  binding's lockfile by package name, never with a blanket `cargo update`,
+  which cannot keep a yanked version and downgrades rustls to 0.23.43.
 
 - **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
   four rustls advisories on 2026-10-14, all patched in 0.23.46

@@ -62,6 +62,13 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
 - **Expiring a key:** publish it with an `exp` member (seconds since the
   epoch; `Jwk::with_expiry`). RFC 7517 defines none, but some key sets carry
   it, and a key at or past it is never used to verify (spec §8.4.3).
+- **Certificates (`x5c`):** a key that carries its X.509 certificate chain
+  (RFC 7517 §4.7) is used only while the first certificate is valid
+  (`notBefore` through `notAfter`) and only if that certificate holds the
+  same key. A chain that is not standard base64 DER certificates leaves
+  the key unused. The chain is not validated to a root, and CRL/OCSP are
+  not consulted: the key set is already the source you trust, and
+  removing a key from it is how it is revoked.
 - **A single key:** `verify_agent_card` takes the raw key (the 65-byte P-256
   point, or the 32-byte Ed25519 key) or its `SubjectPublicKeyInfo` DER, as
   `openssl pkey -pubout -outform DER` writes it.

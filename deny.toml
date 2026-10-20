@@ -103,6 +103,17 @@ ignore    = []
 #     through rustls and hyper-rustls (`cargo tree -p a2a-protocol-client
 #     -i ring`, same day). License `Apache-2.0 AND ISC`, both on the allow
 #     list. No new duplicate version.
+#   * `x509-parser` 0.18 in `a2a-protocol-types`, optional under `signing`
+#     (2026-10-20), to read the certificate a JWK's `x5c` carries (spec
+#     §8.4.3, RFC 7517 §4.7). Rusticata's parser, `MIT OR Apache-2.0`;
+#     what it brings (`asn1-rs`, `der-parser`, `oid-registry`, `time`, ...)
+#     is MIT or MIT/Apache-2.0, `nom` 7, `data-encoding` and `synstructure`
+#     MIT only. rust-version 1.67.1; no default features, so no
+#     `ring`/`aws-lc` verify path. Already in
+#     Cargo.lock through `rcgen`, though unbuilt there. It brings one new
+#     duplicate, `synstructure` 0.13 beside 0.14, a build-time proc-macro
+#     helper, skipped below. RustCrypto's `x509-cert` was the alternative:
+#     fewer crates, a stricter DER decoder, but absent from the lockfile.
 multiple-versions = "deny"
 wildcards         = "warn"
 
@@ -163,6 +174,9 @@ skip = [
     { crate = "crypto-common", reason = "follows digest (RustCrypto 0.10 -> 0.11)" },
     { crate = "cpufeatures", reason = "sha1 0.11 and chacha20 0.10 on 0.3; sha2 0.10 still on 0.2" },
     { crate = "syn", reason = "syn 2 -> 3: async-trait 0.1.92 (via tonic) is on 3 while every derive crate is on 2" },
+    # Added 2026-10-20 with `x509-parser` (types, `signing`: the JWK `x5c`
+    # check). A proc-macro helper, compiled at build time only.
+    { crate = "synstructure", reason = "asn1-rs-derive 0.6 (via x509-parser 0.18) is on 0.13; yoke-derive/zerofrom-derive (via url/icu) are on 0.14" },
     { crate = "redox_syscall", reason = "parking_lot_core 0.9 pins 0.5; libredox 0.1.23 (via whoami, sqlx-postgres) is on 0.9; only compiled for the redox target" },
     { crate = "foldhash", reason = "hashbrown 0.15 (sqlx 0.8 via hashlink) is on 0.1; serde_json's preserve_order, which genai 0.7 turns on in the two genai examples, is on 0.2 (2026-10-20)" },
 ]

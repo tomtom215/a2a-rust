@@ -215,10 +215,12 @@ dependencies = [
  "prost-build",
  "prost-types",
  "protoc-bin-vendored",
+ "rcgen",
  "ring",
  "serde",
  "serde_json",
  "time",
+ "x509-parser",
 ]
 
 [[package]]

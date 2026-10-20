@@ -594,18 +594,18 @@ pub fn signature_header(sig: &AgentCardSignature) -> A2aResult<SignatureHeader> 
 /// revoked key here will verify successfully, because the mathematics is
 /// sound; the key was simply one the caller was not entitled to trust.
 ///
-/// This split is deliberate, not an omission, and the reason is that expiry
-/// and revocation are not properties this crate can observe:
+/// This split is deliberate, not an omission: given only key bytes, this
+/// function cannot observe expiry, and revocation is not observable here:
 ///
 /// * A JWKS key is revoked by *removal from the `jku` endpoint*. Detecting
 ///   that means re-fetching over HTTPS. `a2a-protocol-types` has no network
 ///   dependency and should not acquire one — it is the shared wire-type crate
 ///   that every other crate, including `no-network` consumers, depends on.
-/// * An X.509 key expires per `notAfter` and is revoked per CRL/OCSP. Checking
-///   that means an `x5c` chain, a trust store, and a revocation fetcher —
-///   duplicating `webpki`/`rustls` inside a serialization crate.
+/// * An X.509 key is revoked per CRL/OCSP, which needs a trust store and a
+///   revocation fetcher. Its expiry is observable when a JWK carries its
+///   certificate (`x5c`), and [`verify_agent_card_with_jwks`] checks it.
 ///
-/// Both belong to the layer that already owns transport and trust policy.
+/// Revocation belongs to the layer that owns transport and trust policy.
 ///
 /// ## What a caller must do
 ///
@@ -650,12 +650,12 @@ pub fn verify_agent_card(
 /// with the signature's `kid` (every key, when it names none) whose type is
 /// for its `alg`. Succeeds when one of them verifies.
 ///
-/// This is spec §8.4.3 step 2 done against a set the caller supplies. Where
-/// the set comes from — a trusted store, or a `jku` the caller independently
-/// trusts, fetched over HTTPS — and whether its keys are current, remain the
-/// caller's decision, for the reasons [`verify_agent_card`] gives. Removing a
-/// key from the set is how it is revoked: a caller that re-fetches the set
-/// stops accepting signatures by it.
+/// This is spec §8.4.3 step 2 done against a set the caller supplies, from a
+/// trusted store or a `jku` it independently trusts. A key past its `exp`,
+/// or whose `x5c` certificate is outside its validity or holds another key,
+/// is not used ([`Jwks::candidates`]); the chain is not validated to a root.
+/// Removing a key from the set is how it is revoked: a caller that re-fetches
+/// the set stops accepting signatures by it.
 ///
 /// # Errors
 ///
