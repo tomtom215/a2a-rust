@@ -102,6 +102,20 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Waiting on the maintainer
 
+- **Compare-and-set for task writes (cross-replica).** The 2026-10-20 fix
+  makes a stale continuation save record the position of its read, so a
+  subscriber replays the event it overwrote, but only until the continuing
+  turn's first fold stores a position past it again; the stored task keeps
+  the lost update. Closing both needs a conditional write: provided methods
+  `get_versioned` and `save_appending_history_if(.., expected)` (defaults
+  unchecked), a `version BIGINT` column on Postgres and SQLite (two
+  migrations; on SQLite compare `(row version, MAX(journal seq))` so the
+  journal keeps its O(1) appends), a counter under the in-memory write
+  lock, forwarding in the encrypted, audit and tenant wrappers, and a
+  bounded re-read and retry on a refused continuation. It changes the store
+  contract custom stores implement, so it is the maintainer's call. It
+  does not make concurrent turns on two replicas safe; that needs
+  cross-replica single-writer admission (a lease row per task).
 - **A release signing key.** `.github/release-signers/allowed_signers` and
   `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
   tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
