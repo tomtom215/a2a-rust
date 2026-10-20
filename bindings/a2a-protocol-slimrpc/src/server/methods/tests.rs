@@ -268,3 +268,52 @@ fn a_verified_peer_does_not_skip_the_version_check() {
         .expect_err("no version is 0.3, verified peer or not");
     assert!(format!("{err:?}").contains("'0.3'"), "{err:?}");
 }
+
+/// `rpc.status_code` and `error.type` of each call recorded.
+type Recorded = std::sync::Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
+
+struct Recorder(Recorded);
+
+impl a2a_protocol_server::Metrics for Recorder {
+    fn on_rpc_call(&self, call: &a2a_protocol_server::RpcCall<'_>) {
+        self.0.lock().unwrap().push((
+            call.status_code.map(str::to_owned),
+            call.error_type.map(str::to_owned),
+        ));
+    }
+}
+
+fn recorded_handler(recorded: &Recorded) -> RequestHandler {
+    struct Idle;
+    a2a_protocol_server::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+    a2a_protocol_server::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .with_metrics(Recorder(std::sync::Arc::clone(recorded)))
+        .build()
+        .unwrap()
+}
+
+/// Statuses as on a gRPC server span (`docs/rpc/grpc.md`): a `NOT_FOUND` is
+/// recorded with no `error.type`, an `INTERNAL` with one.
+#[tokio::test]
+async fn only_server_side_statuses_are_errors() {
+    use a2a_protocol_server::ServerError;
+    let recorded = Recorded::default();
+    let handler = recorded_handler(&recorded);
+    for error in [
+        ServerError::TaskNotFound("t".into()),
+        ServerError::Internal("broke".into()),
+    ] {
+        let _ = BindingSpan::open(&handler, SLIMRPC, method::GET_TASK, None)
+            .run(async { Err::<(), _>(error) })
+            .await;
+    }
+    let some = |s: &str| Some(s.to_owned());
+    assert_eq!(
+        *recorded.lock().unwrap(),
+        [
+            (some("NOT_FOUND"), None),
+            (some("INTERNAL"), some("INTERNAL"))
+        ]
+    );
+}

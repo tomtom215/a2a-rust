@@ -1073,6 +1073,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **SLIMRPC: a client-side status is not a server error**
+  (`a2a-protocol-slimrpc`). The binding sends gRPC's status codes and its
+  server span now counts them as a gRPC server span does
+  (`CustomBinding::with_grpc_server_errors`; `docs/rpc/grpc.md`): only
+  `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE`
+  and `DATA_LOSS` set `error.type` and `Error` status. A `GetTask` for an
+  unknown task is `rpc.status_code` `NOT_FOUND` with no `error.type`, as on
+  the gRPC binding; it was counted as a server error.
 - **A handler records its metrics to the global meter provider by default**
   (server, `otel`). `RequestHandlerBuilder` defaulted to `NoopMetrics`, so a
   process that installed a provider — `Telemetry` does — got the SDK's spans

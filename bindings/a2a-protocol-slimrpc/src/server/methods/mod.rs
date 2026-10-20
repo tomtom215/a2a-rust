@@ -33,11 +33,15 @@ use headers::a2a_headers;
 
 /// This binding on its spans and in `rpc.server.call.duration` (ADR 0013): a
 /// custom `rpc.system.name`, as the semantic conventions allow for a system
-/// they do not list, and the status [`server_error_to_rpc_error`] sends.
+/// they do not list, and the status [`server_error_to_rpc_error`] sends —
+/// gRPC's status codes, so `OK` on success, and, as on a gRPC server span
+/// (`docs/rpc/grpc.md`), only gRPC's server-side statuses count as errors: a
+/// `NOT_FOUND` `GetTask` is the caller's mistake, answered correctly.
 const SLIMRPC: CustomBinding = CustomBinding::new("slimrpc", |e| {
     std::borrow::Cow::Owned(server_error_to_rpc_error(e).code().to_string())
 })
-.with_ok_status("OK");
+.with_ok_status("OK")
+.with_grpc_server_errors();
 
 /// What every method closure holds: the handler, and whether a call that
 /// declares no `A2A-Version` is refused.
