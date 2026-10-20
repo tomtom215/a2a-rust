@@ -162,16 +162,24 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   by nature (reviewed, unchanged).
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
-  benchmark comparison harness still pins `=0.14.1`.
+  benchmark comparison harness pins `=0.14.1`, the newest release on
+  crates.io (checked 2026-10-20): it benchmarks the published crate, so it
+  moves when 0.15.0 is published.
 
 ## Waivers and their removal tests
 
-The SLIMRPC binding carries none since 2026-10-15: its move to
-agntcy-slim-rpc 3.4.1 (R13) took rustls to 0.23.46 and removed
-`unsafe-libyaml`, and its `deny.toml` and `osv-scanner.toml` notes say how
-each of the five was cleared. The root `deny.toml` ignores
-RUSTSEC-2024-0436 (`paste`, unmaintained) until genai drops it; its own
-comment is the authority.
+The SLIMRPC binding's `deny.toml` ignores one entry since 2026-10-19: the
+yanked `mls-rs-crypto-awslc` 0.25.1, which its comment explains (0.25.0
+would bring back four rustls advisories). **Never run a blanket `cargo
+update` in the binding:** it cannot keep a yanked version, so it downgrades
+agntcy-slim-* (3.4.3 to 3.4.2), aws-lc-rs and rustls (0.23.46 to 0.23.43)
+back into those advisories. Update named packages with `cargo update -p`.
+On 2026-10-20 agntcy-slim-rpc 3.4.5 still could not be taken: every
+agntcy-slim-auth after 0.17.6 requires the yanked `^0.25.1`.
+The root `deny.toml` ignores nothing since 2026-10-20, when the
+examples moved to genai 0.7 and `paste` left the graph. The root
+`osv-scanner.toml` keeps RUSTSEC-2023-0071 (`rsa`, in `Cargo.lock` through
+`sqlx-mysql` but resolved by no feature; re-checked 2026-10-20).
 
 ## Decisions the maintainer made
 
