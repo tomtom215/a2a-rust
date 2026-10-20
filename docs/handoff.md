@@ -133,9 +133,14 @@ only: when something here is done, delete it rather than annotating it.
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
-  `tests/multi_replica.rs` that is ignored by default); a stale unscoped
-  write from another replica keeps a stored position whose effect it
-  overwrote (`store/applied.rs`).
+  `tests/multi_replica.rs` that is ignored by default). A continuation's
+  save on one replica still overwrites an artifact another replica's
+  running turn folded after the save's read: a lost update only a
+  compare-and-set write would refuse. Since 2026-10-20 the save records
+  the position of its read, so a subscriber replays that event rather than
+  losing it, until the continuing turn's first fold stores a position past
+  it again (`store/applied.rs`, `handler/messaging/basis.rs`,
+  `tests/stale_write_position`).
 - **Holds (§3.5.2):** the subscription's setup hold
   (`handler/lifecycle/subscribe/hold.rs`) has no test that fails without
   it; with the in-memory processor the window it guards cannot open past

@@ -14,17 +14,20 @@ use std::sync::Arc;
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::super::RequestHandler;
+use super::basis::LeaseRead;
 use super::decisions::second_send_blocked;
 use crate::error::{ServerError, ServerResult};
 use crate::streaming::{InMemoryQueueReader, InMemoryQueueWriter, QueueConsumer, QueueLease};
 
 /// What a successful lease hands the send path: the writer the executor will
-/// own, the first reader, and the persistence receiver when a background
-/// processor was requested.
+/// own, the first reader, the persistence receiver when a background
+/// processor was requested, and the task as the lease read it to number the
+/// turn, which a continuation's save is built from ([`LeaseRead`]).
 pub(super) type LeasedQueue = (
     Arc<InMemoryQueueWriter>,
     InMemoryQueueReader,
     Option<crate::streaming::event_queue::PersistenceRx>,
+    Option<LeaseRead>,
 );
 
 impl RequestHandler {
@@ -177,6 +180,7 @@ impl RequestHandler {
                 // turn's positions and have every event of this turn silently
                 // dropped. Here, and not inside `write`, because this is the
                 // one moment no event can be in flight.
+                let mut read = None;
                 if self.task_store.supports_event_log() {
                     // A failed read must not become `0`. Seeding at 0 restarts
                     // the numbering at 1, and because appends are idempotent
@@ -187,7 +191,8 @@ impl RequestHandler {
                     // to show for it. A refused send is recoverable by retrying;
                     // a turn whose events were never recorded is not.
                     match self.resume_after(task_id).await {
-                        Ok(seq) => {
+                        Ok((seq, lease_read)) => {
+                            read = lease_read;
                             writer.seed_seq(seq);
                             // A lag catch-up resumes after the previous
                             // turns, which this stream does not carry.
@@ -207,7 +212,7 @@ impl RequestHandler {
                         }
                     }
                 }
-                Ok((writer, reader, persistence_rx))
+                Ok((writer, reader, persistence_rx, read))
             }
             QueueLease::Existing => Err(ServerError::UnsupportedOperation(format!(
                 "task {task_id} is already being processed; wait for it to reach \
@@ -236,14 +241,23 @@ impl RequestHandler {
     /// position, or one that saw the failed event live — dropped it as
     /// delivered. Past both, the failed position is a hole in the log, which a
     /// replay reports, and no position names two events.
-    async fn resume_after(&self, task_id: &TaskId) -> a2a_protocol_types::error::A2aResult<u64> {
+    ///
+    /// The task read with its position comes back too, when the store reports
+    /// one: a continuation's save is built from it and records that position
+    /// (since 2026-10-20, [`LeaseRead`]), which is never past the number
+    /// returned here.
+    async fn resume_after(
+        &self,
+        task_id: &TaskId,
+    ) -> a2a_protocol_types::error::A2aResult<(u64, Option<LeaseRead>)> {
         let end = self.task_store.last_event_seq(task_id).await?;
-        let stored = self
+        let read = self
             .task_store
             .get_with_position(task_id)
             .await?
-            .and_then(|(_, position)| position);
-        Ok(stored.map_or(end, |position| end.max(position)))
+            .and_then(|(task, position)| Some(LeaseRead::new(task, position?)));
+        let seq = read.as_ref().map_or(end, |read| end.max(read.position()));
+        Ok((seq, read))
     }
 }
 

@@ -23,21 +23,39 @@
 //! inside [`AppliedPosition::scope`], the position that write folds, and
 //! returns it with the task from
 //! [`TaskStore::get_with_position`](super::TaskStore::get_with_position).
-//! A write outside a scope keeps the position already stored: the send
-//! path's history append and the handler's own status writes change no
-//! logged event's effect.
+//! A write outside a scope keeps the position already stored: a new task's
+//! first save and the handler's own status writes change no logged event's
+//! effect. A write inside one stores its position even when that is lower
+//! than the stored one, which is how a continuation's save says it
+//! overwrote events folded after its read (below).
 //!
 //! What the position does not cover:
 //!
-//! - **A stale write from another replica.** An unscoped write that read the
-//!   task before a scoped write landed (the default `save_appending_history`,
-//!   a cancel's read and save) overwrites it and keeps its position, so the
-//!   task can reflect less than the position says. That lost update is older
-//!   than the position; reading the log's end first lost the event as well.
+//! - **The lost update of a stale write from another replica.** A
+//!   continuation's save replaces the stored artifacts and metadata with the
+//!   ones its send read, so an event another replica folded after that read
+//!   is gone from the task. Until 2026-10-20 the save was unscoped and kept
+//!   the position that fold stored, so the position claimed an event the
+//!   task had lost and a subscriber starting from it lost it too
+//!   (`tests/stale_write_position`). The save now records the position of
+//!   the read it was built from (`handler/messaging/basis.rs`, which also
+//!   says why a new turn's numbering survives the lower position), so a
+//!   subscriber that starts before the continuing turn's first fold replays
+//!   the event. From that fold on the position is past it again and the task
+//!   still lacks it: the lost update itself, which only a compare-and-set
+//!   write would refuse. The other unscoped
+//!   task writes overwrite no folded event a stream starts from: a cancel
+//!   writes the status alone and leaves the task terminal, which no
+//!   subscription starts from, and a processor's own (an executor's panic,
+//!   an error event) writes the snapshot its turn's folds built, which
+//!   reflects the position its last fold stored unless another replica's
+//!   turn writes the task at the same time (single-writer admission does not
+//!   cross replicas, `tests/multi_replica.rs`).
 //! - **A replica on an earlier release.** Its writes leave the position where
 //!   it was, so until every replica writes it the position can trail the task
 //!   and a subscription replays events the snapshot already holds: duplicates,
-//!   not losses.
+//!   not losses. Its continuation saves keep the stored position, as every
+//!   release before 2026-10-20 did (the first entry).
 //! - **A failed append.** The fold is stored with the position of an event the
 //!   log does not hold, so the position can be past the log's end. A new turn
 //!   is numbered after the later of the two, so no position names two events.
@@ -46,9 +64,9 @@
 //!
 //! Read [`AppliedPosition::current`] at the start of every write method, before
 //! anything is spawned (a task-local does not cross `tokio::spawn`), and store
-//! it with the write in one atomic step; keep the stored position when it is
-//! `None`. Then override `get_with_position` to read the task and the
-//! position together. A store that does neither keeps the trait's default,
+//! it with the write in one atomic step, even when it is lower than the
+//! stored one; keep the stored position when it is `None`. Then override
+//! `get_with_position` to read the task and the position together. A store that does neither keeps the trait's default,
 //! `None`, and a subscription falls back to reading the log's end.
 
 use std::future::Future;

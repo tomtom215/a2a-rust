@@ -1925,6 +1925,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A continuation saved on one replica could hide another replica's event
+  from a subscriber** (server, spec §3.5.2). A continuation's save replaces
+  the stored artifacts and metadata with the ones its send read; when
+  another replica's turn folded an event into the task after that read, the
+  save dropped it and kept the log position that fold had stored, so the
+  store said the task reflected an event it no longer held. A subscription
+  on a replica with no live queue starts from the stored task and replays
+  the log after that position, and the event was in neither: missing from
+  its stream, with no `streamLagged`. The save is now built from the task
+  the queue lease reads to number the turn, and records that read's
+  position, so the subscriber replays the event. The task still loses it
+  (a lost update, open: only a compare-and-set write would refuse the stale
+  save), and the continuing turn's first fold stores a position past it
+  again. Reproduced on the in-memory store shared by two handlers, on two
+  `SQLite` pools and on two `PostgreSQL` pools on one database;
+  `tests/stale_write_position`.
+
 - **The axum `A2aRouter` did not warn about an undeclared binding** (server,
   spec §5.2). Every other listener warns when it starts if the static card
   declares no interface for the binding it serves; `A2aRouter::into_router`

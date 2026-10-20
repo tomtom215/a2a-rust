@@ -129,19 +129,26 @@ impl RequestHandler {
     /// Persists the initial task. If the store refuses it, the queue and
     /// token admitted for it are released, so a store error leaks neither.
     ///
+    /// `read_at` is the log position of the read a continuation's `task` was
+    /// built from, which the write records (`basis`); `None` keeps the
+    /// stored one.
+    ///
     /// # Errors
     ///
     /// The store's error, converted.
-    pub(super) async fn persist_initial_task(&self, task: &Task) -> ServerResult<()> {
+    pub(super) async fn persist_initial_task(
+        &self,
+        task: &Task,
+        read_at: Option<u64>,
+    ) -> ServerResult<()> {
         // `task.history` holds only this turn's message (see
         // `build_initial_task`), and that is what gets appended. The store
         // keeps the conversation; the send path never holds it.
         let appended = task.history.clone().unwrap_or_default();
-        if let Err(e) = self
+        let save = self
             .task_store
-            .save_appending_history(task, &appended, TASK_HISTORY_LIMIT)
-            .await
-        {
+            .save_appending_history(task, &appended, TASK_HISTORY_LIMIT);
+        if let Err(e) = crate::store::applied::scope_if(read_at, save).await {
             self.release_admission(&task.id).await;
             return Err(e.into());
         }
@@ -242,6 +249,7 @@ impl RequestHandler {
     pub(super) async fn save_turn(
         &self,
         task: &Task,
+        read_at: Option<u64>,
         configuration: Option<&SendMessageConfiguration>,
         continues: bool,
     ) -> ServerResult<()> {
@@ -251,7 +259,7 @@ impl RequestHandler {
         } else {
             None
         };
-        if let Err(e) = self.persist_initial_task(task).await {
+        if let Err(e) = self.persist_initial_task(task, read_at).await {
             self.withdraw_inline_push_config(registered).await;
             return Err(e);
         }

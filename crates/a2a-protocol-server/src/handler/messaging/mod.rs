@@ -33,6 +33,7 @@ use super::helpers::build_call_context;
 use super::{RequestHandler, SendMessageResult};
 
 mod admission;
+mod basis;
 mod commit_guard;
 mod continuation;
 mod create;
@@ -383,7 +384,7 @@ impl RequestHandler {
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.
-            let (writer, reader, persistence_rx) =
+            let (writer, reader, persistence_rx, lease_read) =
                 self.lease_event_queue(&task_id, use_background).await?;
             writer.bind_identity(
                 task_id.clone(),
@@ -412,7 +413,10 @@ impl RequestHandler {
             Box::pin(self.audit_approval(call_ctx, &task_id, ctx.approval.as_ref())).await;
             // A continuation's inline push config is registered here, before
             // its turn is saved; a new task's below (see `save_turn`).
-            Box::pin(self.save_turn(&task, params.configuration.as_ref(), continues)).await?;
+            // Saved as the lease read it, at that read's position (`basis`).
+            let (task, read_at) = basis::based_on(task, lease_read, continues);
+            let config = params.configuration.as_ref();
+            Box::pin(self.save_turn(&task, read_at, config, continues)).await?;
             if !continues {
                 guard_ref.created_row();
             }
