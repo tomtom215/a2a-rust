@@ -214,6 +214,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tool calling in the SDK: `tool_loop`** (server, feature `tool-loop`,
+  off by default; forwarded as `tool-loop` by the SDK; ADR 0022). Two new
+  open traits, `ToolModel` (one completion turn: preamble, conversation and
+  tool specifications in, text and tool calls out) and `Tool` (name,
+  description, JSON Schema, `call`); `ToolSet`, which refuses a second tool
+  of one name with `DuplicateTool`; `ToolLoop`, which runs turns until the
+  model answers without a call, at most `max_turns` (default 8), sends an
+  unknown tool, arguments that are not a JSON object and
+  `ToolError::Failed` back to the model as that call's result, and runs a
+  reply that is exactly one JSON call to a known tool (bare, fenced or in
+  `<tool_call>` tags) as that call (`with_recover_text_calls`, on by
+  default); `ToolLoopExecutor`, which emits `Working`, the `answer`
+  artifact, the `tool-trace` artifact when a tool ran and `Completed`, or
+  `Failed` with failure class `internal` (the provider failed, or
+  `ToolError::Fatal`) or `budget-exhausted` (the turn bound), and stops at
+  the next turn or call when cancelled; and `OpenAiChatModel`, a
+  `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server,
+  vLLM, Ollama) on the push sender's hyper client, so no new dependency:
+  HTTPS needs `tls-rustls` and is refused at construction without it; an
+  optional bearer key; a 120 s turn timeout and an 8 MiB response cap, both
+  settable; a non-2xx answer is `ModelError::Status` with at most 512 bytes
+  of the body; arguments read as a JSON string or an object; extra request
+  fields (`chat_template_kwargs`, `temperature`) through `with_extra_body`.
+  Each turn is a `chat {model}` span and each call an `execute_tool {name}`
+  span, with the `GenAI` conventions' attributes and token usage, inside the
+  executor's `invoke_agent` span; neither records prompt, arguments or
+  results. New example: `examples/tool-loop-agent`, run against
+  llama-server b11751 on Qwen3-1.7B (its README has the results). Tests:
+  `tool_loop::run::tests`, `rpc_span::tool::tests`, `tests/tool_loop/`.
+
 - **`ClientBuilder::with_credential_preflight(CredentialPreflight)`**
   (client; spec §3.1.11 "The client MUST authenticate the request using one
   of the schemes declared in the public `AgentCard.securitySchemes` and

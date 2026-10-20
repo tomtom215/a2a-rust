@@ -341,6 +341,7 @@ are rustdoc's job.
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
+| `tool_loop` | Tool calling inside a task: the model/tool loop, its executor, and a chat-completions client (`tool-loop` feature, ADR 0022) |
 | `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url` |
 
 ### Constants
@@ -391,6 +392,8 @@ are rustdoc's job.
 | `Metrics` | Pluggable metrics observer (requests, latency, errors) |
 | `TenantResolver` | Extracts tenant from request context |
 | `RateLimitCounter` | A request counter every replica shares |
+| `ToolModel` | One completion turn of a model that can call tools: preamble, conversation and tool specs in, text and tool calls out (`tool-loop` feature) |
+| `Tool` | Something a model may call: a name, a description, a JSON Schema and `call(arguments)` (`tool-loop` feature) |
 
 ### Dispatchers
 
@@ -422,6 +425,18 @@ are rustdoc's job.
 |------|-------------|
 | `agent_executor!` | Macro: generates an `AgentExecutor` implementation from a closure-like syntax |
 | `boxed_future` | Wraps an async expression into a pinned, boxed, `Send` future |
+
+### Tool Calling
+
+All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
+`ChatMessage`, `ModelError`, `LoopError`, …) is at `tool_loop::`.
+
+| Type | Description |
+|------|-------------|
+| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one |
+| `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted` |
+| `ToolSet` | The tools a loop offers; refuses two of one name |
+| `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls` |
 
 ### Built-in Implementations
 

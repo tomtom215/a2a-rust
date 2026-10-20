@@ -149,6 +149,7 @@ println!("{report:?}");
 | `otlp-json` | No | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`); off by default because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | No | Axum integration (`A2aRouter`) |
+| `tool-loop` | No | Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, `ToolLoopExecutor`, and `OpenAiChatModel` for the chat-completions API; HTTPS to the model needs `tls-rustls` |
 | `auth-jwt` | No | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS) |
 | `encryption` | No | Encryption at rest for task content: `store::encrypted::EncryptedTaskStore`, AES-256-GCM over a key ring, or a cipher of your own |
 | `audit` | No | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |

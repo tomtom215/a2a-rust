@@ -34,9 +34,9 @@ use super::pinning::{host_header_from_url, pin_target, rewrite_uri_with_pinned_a
 /// Plaintext-HTTP only in the default build; an HTTPS-capable
 /// (`https_or_http`) client when the `tls-rustls` feature is enabled.
 #[cfg(not(feature = "tls-rustls"))]
-type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
+pub(crate) type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
-type PushHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+pub(crate) type PushHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
 
 /// Builds the rustls `ClientConfig` used for HTTPS push delivery: TLS 1.2+ with
 /// `ring` selected explicitly (avoiding the multi-provider "could not determine
@@ -56,7 +56,7 @@ fn push_tls_config() -> rustls::ClientConfig {
 
 /// Builds an HTTPS-capable (`https_or_http`) push client from a rustls config.
 #[cfg(feature = "tls-rustls")]
-fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
+pub(crate) fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
     let mut http = HttpConnector::new();
     // Let the HttpsConnector wrapper handle TLS for https:// targets while
     // still permitting plaintext http:// via `https_or_http()`.
@@ -72,7 +72,7 @@ fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
 
 /// Builds the push-delivery hyper client for the active feature set, using the
 /// default trust roots.
-fn build_push_http_client() -> PushHttpClient {
+pub(crate) fn build_push_http_client() -> PushHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
         Client::builder(TokioExecutor::new()).build_http()

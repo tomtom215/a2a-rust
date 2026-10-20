@@ -225,6 +225,7 @@ and the `with_*` setters.
 | `otlp-json` | Off | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
+| `tool-loop` | Off | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Off | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Off | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
@@ -267,6 +268,7 @@ and the `with_*` setters.
 | `otlp` | On | Enables the server's `otlp` (implies `otel`) |
 | `otlp-json` | Off | Enables the server's `otlp-json` (implies `otlp`) |
 | `axum` | Off | Enables `axum` in the server |
+| `tool-loop` | Off | Enables `tool-loop` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
 | `encryption` | Off | Enables `encryption` in the server |
 | `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |

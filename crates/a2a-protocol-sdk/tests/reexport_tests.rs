@@ -111,3 +111,21 @@ fn sdk_reexported_types_are_send_sync() {
     _assert_send_sync::<a2a_protocol_sdk::prelude::ClientError>();
     _assert_send_sync::<a2a_protocol_sdk::prelude::ServerError>();
 }
+
+// ── Feature-gated server modules ────────────────────────────────────────────
+
+/// `tool-loop` is forwarded to the server and reached through `server::`,
+/// both as the module and at the root, and its executor is an executor.
+#[cfg(feature = "tool-loop")]
+#[test]
+fn tool_loop_is_reexported_when_forwarded() {
+    use a2a_protocol_sdk::server::tool_loop::{DEFAULT_MAX_TURNS, ToolSet};
+    fn _executor(_: a2a_protocol_sdk::server::ToolLoopExecutor) {}
+    fn _is_executor<T: a2a_protocol_sdk::prelude::AgentExecutor>() {}
+    _is_executor::<a2a_protocol_sdk::server::ToolLoopExecutor>();
+    _assert_send_sync::<a2a_protocol_sdk::server::OpenAiChatModel>();
+    assert_eq!(DEFAULT_MAX_TURNS, 8);
+    assert!(ToolSet::new().is_empty());
+    let model = a2a_protocol_sdk::server::OpenAiChatModel::new("http://127.0.0.1:1/v1", "m");
+    assert!(model.is_ok());
+}

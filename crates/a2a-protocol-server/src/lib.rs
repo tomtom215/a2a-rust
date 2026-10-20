@@ -72,6 +72,7 @@
 //! | [`tenant_resolver`] | [`TenantResolver`], [`HeaderTenantResolver`], [`BearerTokenTenantResolver`], [`PathSegmentTenantResolver`] |
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
 //! | `otel` | `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+//! | `tool_loop` | `ToolLoop`, `ToolLoopExecutor`, `ToolModel`, `Tool`, `ToolSet`, `OpenAiChatModel`: tool calling inside a task (`tool-loop` feature, ADR 0022) |
 //!
 //! # Axum integration
 //!
@@ -154,6 +155,8 @@ pub mod tenant_config;
 pub mod tenant_resolver;
 #[cfg(feature = "tls-rustls")]
 mod tls;
+#[cfg(feature = "tool-loop")]
+pub mod tool_loop;
 pub mod url_guard;
 
 #[cfg(feature = "conformance")]
@@ -255,3 +258,5 @@ pub use tenant_config::{PerTenantConfig, TenantLimits};
 pub use tenant_resolver::{
     BearerTokenTenantResolver, HeaderTenantResolver, PathSegmentTenantResolver, TenantResolver,
 };
+#[cfg(feature = "tool-loop")]
+pub use tool_loop::{OpenAiChatModel, Tool, ToolLoop, ToolLoopExecutor, ToolModel, ToolSet};

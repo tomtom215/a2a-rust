@@ -90,6 +90,7 @@ and no logging.
 | `otlp-json` | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default because it would also make JSON the default of an application's own `opentelemetry-otlp` exporters (implies `otlp`) |
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
+| `tool-loop` | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor` and the chat-completions client `OpenAiChatModel` |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
 | `encryption` | Encryption at rest for task content (`EncryptedTaskStore`) |
 | `audit` | Tamper-evident audit trail (`RequestHandlerBuilder::with_audit`, ADR 0015): calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, signed checkpoints, legal holds, a six-month retention floor; SQLite/PostgreSQL audit stores with those features |
@@ -110,6 +111,7 @@ and no logging.
 | `otlp` | Enables the server's `otlp`: `Telemetry` and OTLP export (on by default) |
 | `otlp-json` | Enables the server's `otlp-json`: OTLP/HTTP with JSON bodies (off by default) |
 | `axum` | Enables Axum integration in the server |
+| `tool-loop` | Enables `tool-loop` in the server (`server::tool_loop`) |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
 | `encryption` | Enables encryption at rest for task content in the server |
 | `audit` | Enables the audit trail in the server and its record types in `a2a-protocol-types` |

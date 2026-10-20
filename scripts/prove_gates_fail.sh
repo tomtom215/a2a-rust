@@ -456,6 +456,7 @@ injection_for() {
             echo "clippy:$TYPES_LIB:signing" ;;
         "cargo clippy"*"--features tracing"*)
             echo "clippy:$CLIENT_LIB:tracing" ;;
+        "cargo clippy"*"--features tool-loop"*) echo "clippy:$SERVER_LIB:tool-loop" ;;
         "cargo clippy"*"--features tls-rustls"*)
             echo "clippy:$CLIENT_LIB:tls-rustls" ;;
         "cargo clippy"*"--features sqlite"*)
@@ -480,6 +481,7 @@ injection_for() {
             echo "test:$TYPES_LIB:signing" ;;
         "cargo test"*"--features tracing"*)
             echo "test:$CLIENT_LIB:tracing" ;;
+        "cargo test"*"--features tool-loop"*) echo "test:$SERVER_LIB:tool-loop" ;;
         "cargo test -p a2a-protocol-client --features tls-rustls")
             echo "test:$CLIENT_LIB:tls-rustls" ;;
         "cargo test -p a2a-protocol-server --features tls-rustls")
@@ -494,9 +496,7 @@ injection_for() {
             echo "test:$CLIENT_LIB:websocket" ;;
         "cargo test"*"--features grpc"*)
             echo "test:$CLIENT_LIB:grpc" ;;
-        "cargo test"*"--features auth-jwt,tls-rustls"*)
-            echo "test:$SERVER_LIB:auth-jwt" ;;
-        "cargo test"*"--features auth-jwt"*)
+        "cargo test"*"--features auth-jwt,tls-rustls"*|"cargo test"*"--features auth-jwt"*)
             echo "test:$SERVER_LIB:auth-jwt" ;;
         "cargo test --workspace")
             echo "test_always:$TYPES_LIB" ;;

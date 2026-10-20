@@ -53,6 +53,8 @@ mod names;
 #[cfg(feature = "otel")]
 mod otel;
 mod refusal;
+#[cfg(feature = "tool-loop")]
+mod tool;
 mod webhook;
 
 #[cfg(feature = "tracing")]
@@ -78,6 +80,8 @@ use otel::remote_parent;
 #[cfg(feature = "grpc")]
 pub use refusal::record_refused;
 pub use refusal::{record_if_refused, record_unrouted, refused};
+#[cfg(feature = "tool-loop")]
+pub use tool::GenAiSpan;
 pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the

@@ -95,6 +95,12 @@ otlp-json = ["otlp", "opentelemetry-otlp/http-json"]
 ## servers, and this grades the thing an adopter actually writes. Pulls in no
 ## extra dependencies.
 conformance = []
+## Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, the
+## `ToolModel` and `Tool` traits, `ToolLoopExecutor`, and `OpenAiChatModel`
+## for the chat-completions API (OpenAI, llama-server, vLLM, Ollama). On the
+## hyper client push delivery uses, so no extra dependencies; HTTPS to the
+## model needs `tls-rustls`.
+tool-loop = []
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
