@@ -40,16 +40,17 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-20: TESTED 452, APPLICATION 34,
-  NOT_APPLICABLE 20, PARTIAL 3, SUPPORTED 0). The three PARTIAL entries,
+  authority on the counts (2026-10-20: TESTED 453, APPLICATION 34,
+  NOT_APPLICABLE 20, PARTIAL 3, SUPPORTED 0; 510 entries). The three PARTIAL entries,
   each short of a MUST for a stated reason: §3.5.2, a stream lagging past
   the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
   itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
   carries no error details (maintainer: stays PARTIAL until it does). The
-  APPLICATION and NOT_APPLICABLE entries were last reviewed against the
-  notes on 2026-10-18; a review against the code and the specification text
-  is the first item under *Next*.
+  APPLICATION and NOT_APPLICABLE entries were reviewed against the code and
+  the specification text on 2026-10-20 (*Next*, item 1). The checker now
+  also reads `impl_evidence`: a cited file must exist, a cited line be
+  inside it, a named symbol appear in it.
 - **Ledger citations drift:** the checker verifies test names, not line
   text, so any edit above a cited line moves its citation silently. After
   editing a cited file, re-derive test lines by name and map
@@ -66,10 +67,18 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Next, in order
 
-1. **The APPLICATION and NOT_APPLICABLE review against primary sources**
-   (34 + 20 entries): each classification against the specification
-   sentence, each claim in its note against the code. The 2026-10-20
-   session started it; its result is the first thing to read.
+1. **After the APPLICATION and NOT_APPLICABLE review** (2026-10-20, all
+   54 against the v1.0.1 text, tag `3303592`, and the code; about 130 note
+   claims checked, 8 not verifiable from the repository): 35 kept as they
+   were, 16 kept with wrong or stale note claims and citations corrected,
+   §14 line 3244 split (what the SDK consumes is TESTED; content an agent
+   forwards stays APPLICATION), and two moved to SDK work: §4.6.3 1139 and
+   §5.8 1297, URI-contract golden tests for the five extensions and the
+   WebSocket binding (in progress). Left as suggestions, not done: a
+   startup warning in the axum `A2aRouter` and a public check for bindings
+   outside the crate (§5.2 1156), and a warning when the server binds
+   plaintext off loopback (§7.1). `spec_line` N is line N + 31 of the
+   vendored file (the header ends at line 30, then one blank line).
 2. **The tool-calling study** (`scripts/tool_calling_study/`,
    `docs/tool-calling-study.md` once written): direct and SDK arms over four
    GGUFs, n = 30 a cell. Started 2026-10-20; results to be scored, audited

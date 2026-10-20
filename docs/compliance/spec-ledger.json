@@ -1049,7 +1049,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -1536,11 +1536,11 @@
    "status": "NOT_APPLICABLE",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:49",
-    "crates/a2a-protocol-types/src/lib.rs:109"
+    "crates/a2a-protocol-types/src/lib.rs:105",
+    "crates/a2a-protocol-types/src/lib.rs:113"
    ],
    "test_evidence": [],
-   "notes": "Naming rule for the spec itself; SDK constants use the `A2A-` prefix. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
+   "notes": "Naming rule for the spec itself; SDK constants use the `A2A-` prefix. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation. Re-verified against the code 2026-10-20 (ledger audit): the two header constants' lines re-pointed (they cited doc-comment lines).",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -1765,7 +1765,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -2310,10 +2310,10 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/send_message.rs:150"
+    "crates/a2a-protocol-client/src/methods/send_message.rs:114"
    ],
    "test_evidence": [],
-   "notes": "The client SDK never fills context_id itself; the caller builds the Message. Re-examined 2026-10-18, kept: whether to send a contextId of its own is a decision about the client's conversation, which only the caller can make; the SDK never generates one.",
+   "notes": "The client SDK never fills context_id itself; the caller builds the Message. Re-examined 2026-10-18, kept: whether to send a contextId of its own is a decision about the client's conversation, which only the caller can make; the SDK never generates one. Re-verified against the code 2026-10-20 (ledger audit): the citation named a blank line; it now names where the caller's params are serialized unchanged.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -2350,9 +2350,10 @@
     "crates/a2a-protocol-server/src/request_context.rs:46"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id"
+    "crates/a2a-protocol-server/src/handler/context_lookup_tests.rs:159 the_live_task_is_chosen_and_read_whole",
+    "crates/a2a-protocol-server/src/handler/context_lookup_tests.rs:132 the_found_task_is_whole_on_either_kind_of_store"
    ],
-   "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's. Re-examined 2026-10-18, kept: the SDK keys storage, locks and continuation on contextId and gives the executor the context's latest task (RequestContext::stored_task); what a conversational session means is the agent's.",
+   "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's. Re-examined 2026-10-18, kept: the SDK keys storage, locks and continuation on contextId and gives the executor the context's latest task (RequestContext::stored_task); what a conversational session means is the agent's. Re-verified against the code 2026-10-20 (ledger audit): multi_turn_same_context_id asserted only that both sends succeed; the context_lookup_tests that pin the grouping replace it.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -2458,10 +2459,10 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/send_message.rs:150"
+    "crates/a2a-protocol-client/src/methods/send_message.rs:114"
    ],
    "test_evidence": [],
-   "notes": "Client-side obligation; the server enforces it (line 614). Re-examined 2026-10-18, kept: which task a client means is the caller's knowledge; the server side of the same rule (TaskNotFound for an unknown taskId, §3.4.2 line 614) is TESTED.",
+   "notes": "Client-side obligation; the server enforces it (line 614). Re-examined 2026-10-18, kept: which task a client means is the caller's knowledge; the server side of the same rule (TaskNotFound for an unknown taskId, §3.4.2 line 614) is TESTED. Re-verified against the code 2026-10-20 (ledger audit): the citation named a blank line; it now names where the caller's params are serialized unchanged.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -2604,10 +2605,10 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/message.rs:1"
+    "crates/a2a-protocol-types/src/message.rs:223"
    ],
    "test_evidence": [],
-   "notes": "Field exposed on Message; client SDK never sets it. Re-examined 2026-10-18, kept: which tasks are related is the caller's knowledge; Message::with_reference_task_ids (message.rs:223) sets the field, and the server resolves it since 2026-10-18 (RequestContext::referenced_tasks).",
+   "notes": "Field exposed on Message; client SDK never sets it. Re-examined 2026-10-18, kept: which tasks are related is the caller's knowledge; Message::with_reference_task_ids (message.rs:223) sets the field, and the server resolves it since 2026-10-18 (RequestContext::referenced_tasks). Re-verified against the code 2026-10-20 (ledger audit): the citation named the licence header.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -2627,7 +2628,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/referenced_tasks.rs referenced_tasks_are_resolved_within_the_callers_partition"
    ],
-   "notes": "Since 2026-10-18 the handler resolves message.referenceTaskIds into RequestContext::referenced_tasks before the executor runs: read in the caller's partition (another caller's task resolves to nothing, as GetTask does), unknown ids skipped, duplicates once, at most 16. Using them is the agent's: SUPPORTED. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The requirement binds the agent's reasoning; the SDK's hook (RequestContext::referenced_tasks, resolved in the caller's partition) is tested.",
+   "notes": "Since 2026-10-18 the handler resolves message.referenceTaskIds into RequestContext::referenced_tasks before the executor runs: read in the caller's partition (another caller's task resolves to nothing, as GetTask does), unknown ids skipped, duplicates once, at most 16. Using them is the agent's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The requirement binds the agent's reasoning; the SDK's hook (RequestContext::referenced_tasks, resolved in the caller's partition) is tested.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -3131,7 +3132,7 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Design guidance for agent/client authors; not testable in the SDK. Re-examined 2026-10-18, kept: a design rule for agent and client authors; the SDK's own critical signals (failure class, approval, provenance) ride in Task.status and task metadata, which GetTask returns, not in messages.",
+   "notes": "Design guidance for agent/client authors; not testable in the SDK. Re-examined 2026-10-18, kept: a design rule for agent and client authors; the SDK's own critical signals do not depend on message delivery: the failure class and an approval request ride in the metadata of the task's status message, which is stored as Task.status.message and returned by GetTask; provenance rides on Message and Artifact metadata (failure.rs, approval.rs, provenance.rs). Corrected 2026-10-20 (ledger audit): the note said Task.status and task metadata, and none of them uses Task.metadata.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -3625,7 +3626,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs warn_if_undeclared",
     "crates/a2a-protocol-server/src/serve/mod.rs protocol_binding",
     "crates/a2a-protocol-server/src/serve/graceful/mod.rs serve_with_shutdown",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs accept_loop",
@@ -3635,7 +3636,7 @@
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported",
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs the_http_dispatchers_name_their_bindings"
    ],
-   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The card is the author's; the SDK's hook is the startup warning for a served binding the card omits (tested), deliberately not a refusal.",
+   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The card is the author's; the SDK's hook is the startup warning for a served binding the card omits (tested), deliberately not a refusal. Re-verified against the code 2026-10-20 (ledger audit): 'every SDK listener' overstated it: the axum adapter (A2aRouter) and the SLIMRPC server do not check, and warn_if_undeclared is pub(crate), so a binding outside the crate cannot call it.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -4326,12 +4327,12 @@
    "spec_line": 3244,
    "section": "§14",
    "keyword": "MUST",
-   "binds": "both",
-   "requirement": "Implementations MUST sanitize user-provided content to prevent injection attacks",
-   "status": "APPLICATION",
+   "binds": "server",
+   "requirement": "Implementations MUST sanitize user-provided content to prevent injection attacks [what the SDK itself consumes: identifiers, header values and paths]",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:523",
+    "crates/a2a-protocol-server/src/push/sender.rs:454",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:180",
     "crates/a2a-protocol-server/src/handler/ids.rs:29",
     "crates/a2a-protocol-server/src/handler/ids.rs:60"
@@ -4345,7 +4346,22 @@
     "crates/a2a-protocol-server/src/push/sender.rs:1182 rejects_header_with_crlf",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:380 path_traversal_raw"
    ],
-   "notes": "What the SDK itself takes from a request and uses is sanitized: push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and, since 2026-10-20, every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs). Until then validate_id refused only empty and over-long ids, so \"a\\r\\nb\" was stored and logged, and push-config ids and the ListTasks filter were not validated at all; the 2026-10-18 note claimed the ids were sanitized, which overstated it (found 2026-10-20; the wire tests fail without the check). Kept APPLICATION: sanitizing message and artifact content for wherever an agent sends it next depends on that destination, which only the agent knows.",
+   "notes": "Split 2026-10-20 from the APPLICATION entry on this line (ledger audit): the SDK is an implementation, and what it takes from a request and uses itself is sanitized and tested. Push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs, since 2026-10-20; until then validate_id refused only empty and over-long ids). The SQL stores bind values as placeholders; that was grepped, not audited, and is not claimed here.",
+   "auditor": "C",
+   "source": "spec",
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
+  },
+  {
+   "spec_line": 3244,
+   "section": "§14",
+   "keyword": "MUST",
+   "binds": "both",
+   "requirement": "Implementations MUST sanitize user-provided content to prevent injection attacks [message and artifact content an agent forwards to its own destinations]",
+   "status": "APPLICATION",
+   "severity": null,
+   "impl_evidence": [],
+   "test_evidence": [],
+   "notes": "Split 2026-10-20 (ledger audit): what the SDK itself consumes is the TESTED entry on this line. Kept APPLICATION: message and artifact content is passed to the executor as sent, and sanitizing it for wherever an agent sends it next (a shell, a query, a page) depends on that destination, which only the agent knows.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
@@ -4622,7 +4638,7 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Spec-document anchor requirement. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
+   "notes": "Spec-document anchor requirement. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation. Corrected reason 2026-10-20 (ledger audit): the lifecycle below this line also marks legacy names deprecated in SDKs and schemas, so it is not about the specification's documents alone; it is NOT_APPLICABLE because every removal version it states is 0.5.0 or earlier, which v1.0.1 is past. The SDK's own alias duty is the separate entry at spec line 114 (TESTED).",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -4713,7 +4729,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:32",
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:195",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
     "crates/a2a-protocol-client/src/tls.rs:60"
@@ -4724,7 +4740,7 @@
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs tls_client_round_trips_through_the_tls_dispatcher",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs a_wss_endpoint_is_reached_with_the_configured_roots"
    ],
-   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's: SUPPORTED, not TESTED, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on.",
+   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Not done: the server does not warn when it binds plaintext on a non-loopback address (the client has such a guard for credentials, client/src/plaintext.rs).",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -7238,11 +7254,11 @@
    "status": "NOT_APPLICABLE",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1104",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1192",
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:422"
    ],
    "test_evidence": [],
-   "notes": "Both custom bindings support streaming. Re-examined 2026-10-18, kept: conditional on a binding without streaming; both custom bindings this SDK provides stream (websocket_binding_spec.rs a_stream_is_frames_then_the_marker; SLIMRPC e2e streaming_send_delivers_events_and_terminates).",
+   "notes": "Both custom bindings support streaming. Re-examined 2026-10-18, kept: conditional on a binding without streaming; both custom bindings this SDK provides stream (websocket_binding_spec.rs a_stream_is_frames_then_the_marker; SLIMRPC e2e streaming_send_delivers_events_and_terminates). Re-verified against the code 2026-10-20 (ledger audit): the WebSocket citation named the push-config list handler; it now names stream_events.",
    "auditor": "E",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -7402,7 +7418,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -7423,7 +7439,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -7466,7 +7482,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -7487,7 +7503,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -7508,7 +7524,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs in_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs isolate_tasks_by_caller"
    ],
@@ -7552,10 +7568,11 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
+    "book/src/deployment/multi-tenancy.md",
     "crates/a2a-protocol-server/src/tenant_resolver.rs:20"
    ],
    "test_evidence": [],
-   "notes": "Deployment documentation duty; the SDK documents its own (tenant-only) model in tenant_resolver.rs module docs and book/src/deployment/multi-tenancy.md. Re-examined 2026-10-18, kept: the spec leaves the authorization model to each agent. The SDK documents the model it enforces by default, caller isolation within a tenant (book/src/deployment/multi-tenancy.md); the earlier wording 'tenant-only' was stale.",
+   "notes": "Deployment documentation duty; the SDK documents its own (tenant-only) model in tenant_resolver.rs module docs and book/src/deployment/multi-tenancy.md. Re-examined 2026-10-18, kept: the spec leaves the authorization model to each agent. The SDK documents the model it enforces by default, caller isolation within a tenant (book/src/deployment/multi-tenancy.md); the earlier wording 'tenant-only' was stale. Re-verified against the code 2026-10-20 (ledger audit): the caller-isolation model is documented in book/src/deployment/multi-tenancy.md, now the first citation.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -8264,7 +8281,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:32",
+    "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:195",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
     "crates/a2a-protocol-client/src/tls.rs:60",
@@ -8278,7 +8295,7 @@
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused"
    ],
-   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty, so SUPPORTED. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879.",
+   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Not done: the server does not warn when it binds plaintext on a non-loopback address (the client has such a guard for credentials, client/src/plaintext.rs).",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -8588,10 +8605,13 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:33"
+    "crates/a2a-protocol-server/src/metrics/mod.rs:52",
+    "crates/a2a-protocol-server/src/interceptor/mod.rs:129",
+    "crates/a2a-protocol-server/src/rate_limit/mod.rs:159",
+    "crates/a2a-protocol-server/src/auth/throttle.rs:135"
    ],
    "test_evidence": [],
-   "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle.",
+   "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle. Re-verified against the code 2026-10-20 (ledger audit): the citation named a ListTasks log line; it now names the signals the note lists.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -10357,10 +10377,10 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/token_provider.rs:133"
+    "crates/a2a-protocol-client/src/token_provider.rs:139"
    ],
    "test_evidence": [],
-   "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider. Re-examined 2026-10-18, kept: the SDK runs no authorization-code flow (client credentials and static tokens only); an application that does plugs in a TokenProvider and owns PKCE.",
+   "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider. Re-examined 2026-10-18, kept: the SDK runs no authorization-code flow (client credentials and static tokens only); an application that does plugs in a TokenProvider and owns PKCE. Corrected 2026-10-20 (ledger audit): besides client credentials and static tokens the SDK has RFC 8693 token exchange (token_provider/exchange.rs TokenExchange); it has no authorization-code flow and no PKCE code (no pkce, code_verifier or authorization_code anywhere), so the classification holds.",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
