@@ -1019,6 +1019,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **`error.type` marks a server failure, by each binding's conventions**
+  (server; `rpc.server.call.duration` and the `SERVER` span). It was set,
+  with `Error` status, for every status but success. Now: every JSON-RPC
+  error code, as `docs/rpc/json-rpc.md` says ("All JSON RPC error codes
+  SHOULD be considered errors"); on HTTP+JSON a 5xx and not a 4xx, as
+  `docs/http/http-spans.md` says of a server span ("For HTTP status codes in
+  the 4xx range span status MUST be left unset"); on gRPC only `UNKNOWN`,
+  `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE` and
+  `DATA_LOSS`, as `docs/rpc/grpc.md` says of a server span. `rpc.status_code`
+  is unchanged and still carries every status, so a `GetTask` for an unknown
+  task over gRPC is `NOT_FOUND` with no `error.type`. A dashboard counting
+  client errors from `error.type` on HTTP+JSON or gRPC reads
+  `rpc.status_code` instead. `CustomBinding::with_grpc_server_errors` gives
+  a binding outside this crate gRPC's rule; without it every failure is
+  still an error.
 - **An agent message on a task status, or in a snapshot's history, is
   given the task's ids when it carries none** (server; a2a.proto `Message`:
   "For server messages, `context_id` must be provided"). Only a direct

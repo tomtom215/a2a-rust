@@ -214,7 +214,22 @@ instrument, with their advisory buckets (5 ms to 10 s) and attributes:
 serve; `rpc.status_code`; and, only when the call failed, `error.type`. Both
 are the status the binding answered with — the JSON-RPC error code (`-32001`),
 the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC and
-SLIMRPC, which uses gRPC's status codes, also report `OK`) — or `cancelled` for a call whose peer went away first. It
+SLIMRPC, which uses gRPC's status codes, also report `OK`) — or `cancelled` for a call whose peer went away first.
+
+**What counts as failed** is each binding's semantic conventions' rule, so
+`error.type` marks a server failure rather than every answer that was not a
+success: every JSON-RPC error code ("All JSON RPC error codes SHOULD be
+considered errors"); on HTTP+JSON a 5xx but not a 4xx (the HTTP conventions
+leave a server span's status unset for a 4xx); on gRPC only `UNKNOWN`,
+`DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE` and
+`DATA_LOSS`. A `GetTask` for an unknown task is `rpc.status_code` `NOT_FOUND`
+(or `404`) with no `error.type`. Before 0.15 every non-success status set it;
+a dashboard counting failures from `error.type` on HTTP+JSON or gRPC now sees
+only server failures, and one that wants the 4xx class reads
+`rpc.status_code`. A binding outside this crate opts into gRPC's rule with
+`CustomBinding::with_grpc_server_errors`.
+
+It
 records calls the handler never sees: on JSON-RPC, a body that is not a
 request (no `rpc.method`), an unknown method, a batch over the limit; on
 HTTP+JSON, a request refused on its body or parameters, under the route's
@@ -347,9 +362,10 @@ context.
 With the `tracing` feature — on by default — every inbound call, on every
 binding, runs in one span of kind `SERVER`, named for the method as the gRPC
 service spells it: `lf.a2a.v1.A2AService/SendMessage`. It carries the
-semantic conventions' `rpc.system.name`, `rpc.method` and, when the call
-fails, `rpc.status_code` and `error.type` with the span's status set to
-error — the same values as `rpc.server.call.duration` above. A method the
+semantic conventions' `rpc.system.name`, `rpc.method`, `rpc.status_code`
+when the binding sent one, and, when the call failed by its binding's rule
+above, `error.type` with the span's status set to error — the same values as
+`rpc.server.call.duration`. A method the
 server does not serve is named for its binding (`jsonrpc`), with
 `rpc.method` `_OTHER` and the name the peer sent, cut to 128 bytes, as
 `rpc.method_original`.

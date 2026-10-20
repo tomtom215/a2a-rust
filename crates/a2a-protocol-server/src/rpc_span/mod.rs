@@ -21,13 +21,16 @@
 //! plain future.
 //!
 //! The call's duration and outcome go to [`Metrics::on_rpc_call`] whatever
-//! the features: a metrics callback is always compiled. A failed call carries
-//! the status code its binding put on the wire — the JSON-RPC error code, the
-//! HTTP status, the gRPC status name — as both `rpc.status_code` and
-//! `error.type`, as the semantic conventions ask ("If a status code is
-//! returned and it indicates an error, `error.type` SHOULD be set to that
-//! status code"). Each binding's own mapping produces it, so the metric
-//! cannot disagree with the response.
+//! the features: a metrics callback is always compiled. A call that did not
+//! succeed carries the status code its binding put on the wire — the
+//! JSON-RPC error code, the HTTP status, the gRPC status name — as
+//! `rpc.status_code`, and, when that status "indicates an error", also as
+//! `error.type` with `Error` status, as the semantic conventions ask. Which
+//! statuses indicate one is each binding's conventions' rule
+//! ([`RpcSystem::is_server_error`]): every JSON-RPC code, a 5xx but not a
+//! 4xx, and gRPC's six server-side codes but not `NOT_FOUND`. Each binding's
+//! own mapping produces the status, so the metric cannot disagree with the
+//! response.
 //!
 //! Attribute names and rules are the OpenTelemetry semantic conventions'
 //! `docs/rpc/{rpc-spans,rpc-metrics,grpc,json-rpc}.md`, read upstream on
@@ -45,6 +48,7 @@ use std::time::{Duration, Instant};
 mod a2a;
 mod agent;
 mod binding;
+mod call;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;
@@ -62,6 +66,7 @@ pub use a2a::{
 pub use agent::OutputRecorder;
 pub use agent::{ExecutorSpan, SpanSettings};
 pub use binding::{BindingSpan, CustomBinding};
+use call::{Call, Pending};
 #[cfg(feature = "tracing")]
 use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
@@ -286,15 +291,20 @@ impl ServerSpan {
         }
     }
 
-    /// Records a finished call on the span and in the metrics.
-    fn finish(&self, duration: Duration, failed_with: Option<&str>) {
+    /// Records a finished call on the span and in the metrics: `status` is
+    /// the wire status of a call that did not succeed, `None` for one that
+    /// did. Whether it is an error is the binding's conventions' call
+    /// ([`RpcSystem::is_server_error`]); a call that never finished is one
+    /// on every binding.
+    fn finish(&self, duration: Duration, status: Option<&str>) {
         // gRPC always has a status; the other bindings have one only on error.
-        let status_code = match (failed_with, self.system) {
+        let status_code = match (status, self.system) {
             (Some(code), _) => Some(code),
             (None, RpcSystem::Grpc) => Some("OK"),
             (None, RpcSystem::Custom(binding)) => binding.ok_status,
             (None, _) => None,
         };
+        let failed_with = status.filter(|s| *s == CANCELLED || self.system.is_server_error(s));
         #[cfg(feature = "tracing")]
         {
             if let Some(code) = status_code {
@@ -354,68 +364,6 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
     )
 }
 
-/// The future inside a call's span, as the call's future is wrapped when
-/// tracing is compiled in.
-#[cfg(feature = "tracing")]
-type Inner<F> = tracing::instrument::Instrumented<tokio::task::futures::TaskLocalFuture<bool, F>>;
-#[cfg(not(feature = "tracing"))]
-type Inner<F> = F;
-
-pin_project_lite::pin_project! {
-    /// A call running in its span; when it finishes, it is recorded and its
-    /// outcome handed on. See [`ServerSpan::run`].
-    pub struct Call<F, C, T>
-    where
-        F: Future,
-    {
-        #[pin]
-        inner: Inner<F>,
-        pending: Pending,
-        finish: Option<(C, T)>,
-    }
-}
-
-impl<F, C, T, R> Future for Call<F, C, T>
-where
-    F: Future,
-    C: FnOnce(&F::Output, RpcSystem) -> Option<Cow<'static, str>>,
-    T: FnOnce(F::Output) -> R,
-{
-    type Output = R;
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<R> {
-        let this = self.project();
-        let out = std::task::ready!(this.inner.poll(cx));
-        // Both are taken only here, on the poll that returns `Ready`, so they
-        // are missing only if the future is polled again after completing —
-        // which `Future`'s contract lets an implementation panic on, and
-        // which every `async` block does. No caller in this crate re-polls.
-        let (classify, then) = this.finish.take().expect("a call polled after it finished");
-        let call = this
-            .pending
-            .call
-            .take()
-            .expect("a call polled after it finished");
-        let status = classify(&out, call.system);
-        call.finish(this.pending.started.elapsed(), status.as_deref());
-        call.enter(|| then(out)).into()
-    }
-}
-
-/// A call in flight; records it as cancelled if dropped unfinished.
-struct Pending {
-    call: Option<ServerSpan>,
-    started: Instant,
-}
-
-impl Drop for Pending {
-    fn drop(&mut self) {
-        if let Some(call) = self.call.take() {
-            call.finish(self.started.elapsed(), Some(CANCELLED));
-        }
-    }
-}
-
 /// Records a request refused before it named a method — a body that is not
 /// JSON-RPC, a batch over the limit, an unsupported content type — as a
 /// failed call without `rpc.method`, which the conventions require only "if
@@ -432,7 +380,7 @@ pub fn record_unrouted(
         method: None,
         duration: started.elapsed(),
         status_code: Some(status),
-        error_type: Some(status),
+        error_type: system.is_server_error(status).then_some(status),
     });
 }
 

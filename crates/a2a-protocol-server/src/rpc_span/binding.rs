@@ -25,6 +25,12 @@ pub struct CustomBinding {
     pub(super) name: &'static str,
     pub(super) ok_status: Option<&'static str>,
     pub(super) error_status: fn(&ServerError) -> Cow<'static, str>,
+    pub(super) server_error: fn(&str) -> bool,
+}
+
+/// A custom binding's default rule: every failure is a server error.
+const fn every_status(_: &str) -> bool {
+    true
 }
 
 impl CustomBinding {
@@ -46,7 +52,21 @@ impl CustomBinding {
             name,
             ok_status: None,
             error_status,
+            server_error: every_status,
         }
+    }
+
+    /// Counts a failure as an error on the span and in the metric — sets
+    /// `error.type` and `Error` status — only for gRPC's server-side
+    /// statuses (`UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`,
+    /// `UNAVAILABLE`, `DATA_LOSS`), as the semantic conventions' gRPC server
+    /// span does, for a binding whose `error_status` returns gRPC status
+    /// names. Any other status is still recorded as `rpc.status_code`.
+    /// Without it every failure is an error, as before this existed.
+    #[must_use]
+    pub const fn with_grpc_server_errors(mut self) -> Self {
+        self.server_error = super::names::grpc_server_error;
+        self
     }
 
     /// The status a successful call sends, for a binding that sends one —

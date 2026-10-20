@@ -155,8 +155,13 @@ pub struct RpcCall<'a> {
     /// status name (`NOT_FOUND`, and `OK` on success). `None` on success for
     /// the bindings that send no status code for one.
     pub status_code: Option<&'a str>,
-    /// Set if and only if the call failed, as `error.type`: the failing
-    /// `status_code`, or `cancelled` for a call dropped before it finished.
+    /// Set if and only if the call failed, as `error.type`: the
+    /// `status_code`, when the binding's semantic conventions count it as a
+    /// server failure — every JSON-RPC code; a 5xx, not a 4xx; gRPC's
+    /// `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`,
+    /// `UNAVAILABLE` and `DATA_LOSS`, not `NOT_FOUND` — or `cancelled` for a
+    /// call dropped before it finished. A `GetTask` for an unknown task over
+    /// gRPC is `status_code` `NOT_FOUND` with no `error_type`.
     pub error_type: Option<&'a str>,
 }
 

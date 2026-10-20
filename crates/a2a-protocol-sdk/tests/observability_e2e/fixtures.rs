@@ -39,8 +39,13 @@ agent_executor!(Recorder, |ctx, queue| async {
 });
 
 /// An in-memory store that refuses to persist any non-initial state of a task
-/// in the context `persist-fail`, so the persistence-error path runs.
+/// in the context `persist-fail`, so the persistence-error path runs, and
+/// fails every read of the task [`STORE_DOWN`], so a call fails on the
+/// server's side.
 pub struct FailingStore(pub InMemoryTaskStore);
+
+/// The task id whose every read fails.
+pub const STORE_DOWN: &str = "store-down";
 
 pub type Fut<'a, T> = Pin<Box<dyn std::future::Future<Output = A2aResult<T>> + Send + 'a>>;
 
@@ -52,6 +57,9 @@ impl TaskStore for FailingStore {
         self.0.save(task)
     }
     fn get<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<Task>> {
+        if id.as_ref() == STORE_DOWN {
+            return Box::pin(async { Err(A2aError::internal("injected store outage")) });
+        }
         self.0.get(id)
     }
     fn list<'a>(&'a self, params: &'a ListTasksParams) -> Fut<'a, TaskListResponse> {

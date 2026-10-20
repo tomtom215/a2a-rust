@@ -171,11 +171,27 @@ async fn rest_records_the_http_status_it_answered() {
     assert_eq!(*seen.lock().unwrap(), http_json_failures());
 }
 
-/// A missing task, then a send refused before the handler ran.
+/// A call answered with `code` that is not a server failure: the status is
+/// recorded, `error.type` is not.
+fn answered(system: &str, method: Option<&str>, code: &str) -> Call {
+    (
+        system.to_owned(),
+        method.map(str::to_owned),
+        Some(code.to_owned()),
+        None,
+    )
+}
+
+/// A missing task, then a send refused before the handler ran: both 4xx,
+/// recorded with their status and, since 2026-10-20, without `error.type`.
+/// The HTTP conventions leave a server span's status unset for a 4xx and set
+/// `error.type` only for a status that "indicates an error" by that rule
+/// (`docs/http/http-spans.md`); these expected the status as `error.type`
+/// while every non-2xx counted as a server failure.
 fn http_json_failures() -> [Call; 2] {
     [
-        failed("a2a_http_json", Some("lf.a2a.v1.A2AService/GetTask"), "404"),
-        failed(
+        answered("a2a_http_json", Some("lf.a2a.v1.A2AService/GetTask"), "404"),
+        answered(
             "a2a_http_json",
             Some("lf.a2a.v1.A2AService/SendMessage"),
             "400",
