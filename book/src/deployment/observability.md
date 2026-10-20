@@ -462,10 +462,15 @@ replies and artifacts as `gen_ai.output.messages`, in the conventions' JSON
 message format. That copies what users and agents say into your traces and
 wherever they are exported, which is why it is off. Each attribute holds at
 most 64 KiB of text and data, cut with a marker beyond that; raw file bytes
-are never recorded, only their media type and length.
+are never recorded, only their media type and length. The finish reason is
+not content: a completed turn records `gen_ai.response.finish_reasons`
+`["stop"]` and a failed one `["error"]` either way, as a string array (it was
+a `finish_reason` inside the output message before 0.15, which the
+conventions deprecate).
 
 **Each call through the client is a `CLIENT` span** with the same name as the
-server span it causes, the same A2A attributes as far as the request and
+server span it causes (for a method outside the A2A service, `_OTHER`, it is
+named for its `rpc.system.name` and carries `rpc.method_original`), the same A2A attributes as far as the request and
 response show them, the agent's name, description and version when the
 client was built from its card, and `server.address` and `server.port`. A
 streaming call's span covers consuming the stream, and is exported when the

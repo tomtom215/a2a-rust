@@ -1084,6 +1084,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **Two names the semantic conventions spell differently** (server and
+  client; checked against `open-telemetry/semantic-conventions@55c98cf` and
+  `semantic-conventions-genai@547934a`). The executor span's finish reason
+  is `gen_ai.response.finish_reasons`, a string array recorded whether
+  content capture is on or not; it was a `finish_reason` member of the
+  captured `gen_ai.output.messages`, which `gen-ai-output-messages.json`
+  deprecates in its favour. A client call whose `rpc.method` is `_OTHER` is
+  named for its `rpc.system.name` and records `rpc.method_original`, as
+  `docs/rpc/rpc-spans.md` asks and as the server already did; it was named
+  `_OTHER`.
 - **SLIMRPC: a streaming call's span and duration cover its stream**
   (`a2a-protocol-slimrpc`), as on the server crate's bindings (the entry
   on streaming calls below): `SendStreamingMessage` and `SubscribeToTask`

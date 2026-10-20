@@ -278,11 +278,12 @@ impl OutputRecorder {
             self.span.record("error.type", failure_type(status));
             self.span.record("otel.status_code", "ERROR");
         }
+        #[cfg(feature = "otel")]
+        if let Some(reason) = state.and_then(finish_reason) {
+            super::a2a::record_finish_reason(&self.span, reason);
+        }
         if self.content && !collected.is_empty() {
-            let mut message = json!({ "role": "assistant", "parts": collected });
-            if let Some(reason) = state.and_then(finish_reason) {
-                message["finish_reason"] = json!(reason);
-            }
+            let message = json!({ "role": "assistant", "parts": collected });
             self.span.record(
                 "gen_ai.output.messages",
                 json!([message]).to_string().as_str(),
@@ -308,7 +309,8 @@ fn failure_type(status: &a2a_protocol_types::task::TaskStatus) -> &'static str {
         .as_str()
 }
 
-/// The conventions' `finish_reason` for a terminal state that has one.
+/// The conventions' finish reason for a terminal state that has one, as
+/// `gen_ai.response.finish_reasons` records it.
 /// `canceled`, `rejected` and the interrupted states have no counterpart in
 /// its list (`stop`, `length`, `content_filter`, `tool_call`, `compaction`,
 /// `error`), so

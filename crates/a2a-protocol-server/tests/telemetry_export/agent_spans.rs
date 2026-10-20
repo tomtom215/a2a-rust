@@ -128,7 +128,8 @@ fn the_executor_span_is_invoke_agent_without_content_by_default() {
 }
 
 /// Opted in: the request's message and the agent's artifact, in the
-/// conventions' message format, with a finish reason for the completed task.
+/// conventions' message format. The finish reason is not in the message,
+/// where the conventions deprecate it, but `gen_ai.response.finish_reasons`.
 #[test]
 fn content_capture_records_input_and_output_messages() {
     let span = run_once("Ada", |b| b.with_span_content_capture(true));
@@ -141,9 +142,34 @@ fn content_capture_records_input_and_output_messages() {
         serde_json::json!([{
             "role": "assistant",
             "parts": [{ "type": "text", "content": "echo: Ada" }],
-            "finish_reason": "stop",
         }])
     );
+}
+
+/// The finish reason, content capture or not: `gen_ai.response.finish_reasons`
+/// (Recommended on the `invoke_agent` internal span, `gen-ai-agent-spans.md`
+/// at `547934a`), a string array.
+#[test]
+fn a_completed_turn_records_its_finish_reason() {
+    use opentelemetry_proto::tonic::common::v1::any_value::Value;
+    let span = run_once("Ada", |b| b);
+    let reasons = span
+        .attributes
+        .iter()
+        .find(|kv| kv.key == "gen_ai.response.finish_reasons")
+        .and_then(|kv| kv.value.as_ref()?.value.as_ref());
+    let Some(Value::ArrayValue(array)) = reasons else {
+        panic!("no string-array finish reasons: {reasons:?}");
+    };
+    let values: Vec<_> = array
+        .values
+        .iter()
+        .filter_map(|v| match v.value.as_ref()? {
+            Value::StringValue(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(values, ["stop"]);
 }
 
 /// A message past the limit is cut, marked, and the attribute stays near

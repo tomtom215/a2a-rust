@@ -127,14 +127,18 @@ impl CallSpan {
     /// its message, task and context.
     pub(crate) fn open(method: &str, peer: &Peer, params: &serde_json::Value) -> Self {
         let qualified = qualified(method);
+        // `docs/rpc/rpc-spans.md`: a span whose `rpc.method` is `_OTHER` is
+        // named `{rpc.system.name}`, and carries the method as sent.
+        let other = qualified == "_OTHER";
         let span = tracing::info_span!(
             target: "a2a_protocol_client::rpc",
             "a2a.rpc.client",
-            otel.name = qualified,
+            otel.name = if other { peer.system.unwrap_or(qualified) } else { qualified },
             otel.kind = "client",
             otel.status_code = tracing::field::Empty,
             rpc.system.name = peer.system,
             rpc.method = qualified,
+            rpc.method_original = other.then_some(method),
             a2a.method.name = method,
             a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
             server.address = peer.address.as_deref(),
