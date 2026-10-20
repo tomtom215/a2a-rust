@@ -23,9 +23,16 @@ only: when something here is done, delete it rather than annotating it.
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
 - **Working branch:** `claude/jolly-hypatia-lsr7uv`, started 2026-10-20
-  from `main` at `6c90d0b` (pull request #173 merged that day). `git log
-  6c90d0b..` lists its commits; each message says what it changed and how it
-  was verified.
+  from `main` at `6c90d0b` (pull request #173 merged that day), pushed, no
+  pull request yet. `git log 6c90d0b..` lists its commits; each message says
+  what it changed and how it was verified.
+- **Built on this branch (2026-10-20):** ADR 0022's tool loop
+  (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
+  whose README records the live run); the §3.5.2 holds, with the
+  independent review's findings fixed (`store/holds`); a fix for the idle
+  timeout cutting a blocking request still being answered
+  (`serve::graceful::idle::Serving`); the dependency refresh (genai 0.7,
+  tokio 1.54, no `deny.toml` waiver left at the root).
 - **Trailers on `main` (for the maintainer):** 36 of the 86 non-merge
   commits pull request #173 merged (`86c8fac..6c90d0b^2`) carry
   `Co-Authored-By` and `Claude-Session` trailers, against `CONTRIBUTING.md`'s
@@ -33,67 +40,54 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. Since 2026-10-18 it also refuses `SUPPORTED` or
-  `NOT_SUPPORTED` on anything but a MAY or OPTIONAL: 23 entries had used it
-  for a MUST or SHOULD, 12 of them now `TESTED` and 11 `APPLICATION` (each
-  note says which hook the SDK gives). Three entries stay PARTIAL, each
-  short of a MUST for a reason outside this repository: §3.5.2 (a lag
-  beyond the in-memory log's 512 events), §5.7 (the specification
-  contradicts itself on an empty `ListTasksResponse.tasks`) and §12.4
-  (agntcy-slim-rpc carries no error details). §5.4 and §11.1 closed on
-  2026-10-18: the SLIMRPC README has the full error table, and §11.1's one
-  exception is a stated, valid reason to set aside a SHOULD (a2a-go). Every
-  NOT_APPLICABLE and APPLICATION entry records a 2026-10-18 review.
+  authority on the counts (2026-10-20: TESTED 452, APPLICATION 34,
+  NOT_APPLICABLE 20, PARTIAL 3, SUPPORTED 0). The three PARTIAL entries,
+  each short of a MUST for a stated reason: §3.5.2, a stream lagging past
+  the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
+  default) ends with `streamLagged`; §5.7, the specification contradicts
+  itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
+  carries no error details (maintainer: stays PARTIAL until it does). The
+  APPLICATION and NOT_APPLICABLE entries were last reviewed against the
+  notes on 2026-10-18; a review against the code and the specification text
+  is the first item under *Next*.
 - **Ledger citations drift:** the checker verifies test names, not line
   text, so any edit above a cited line moves its citation silently. After
   editing a cited file, re-derive test lines by name and map
-  `impl_evidence` lines through a line diff from the last commit.
+  `impl_evidence` lines by their text in the version they came from
+  (2026-10-20: a three-way merge re-derived 2,341 that way; one, §5.1's
+  `grpc/dispatcher.rs:888`, had pointed past the end of a 444-line file
+  since `7deff577`).
+- **CI on `main` at `6c90d0b`:** every workflow green except CI, cancelled:
+  `Example surface coverage` ran out of its 20 minutes compiling `swarm`,
+  every earlier step green. Split into two jobs on this branch
+  (`example-surface-ops`).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
-- **ADR 0022 is built:** `server::tool_loop` (feature `tool-loop`) and
-  `examples/tool-loop-agent`, whose README records the live run.
 
 ## Next, in order
 
-1. **Mutation testing.** CI's incremental job is split by crate (types 2,
-   client 2, sdk 1, server 10 shards). On pull request #173's last run
-   (39343090044) server shard 7 took 2h42m of its 180 minutes, so the
-   server's incremental shard count needs raising before the next large
-   pull request. A local run with `lld` and `-j 2` takes roughly a minute a
-   mutant.
-2. **APPLICATION entries (35).** 22 were re-examined and kept on
-   2026-10-18 (each note says why); 11 are card-content, deployment or
-   agent-reasoning requirements the SDK only warns about or hands the agent
-   (moved from a mistaken `SUPPORTED`). What could still become SDK work:
-   §3.1.11 423 (a client preflight that the credentials it attaches match
-   a declared scheme), §8.4.3 x5c certificate expiry, a JWT revocation list
-   (`jti`).
-3. **Official TCK.** Re-run against the newest a2a-tck before a pull request
-   that changes wire behaviour (`--min-graded 88` full, 66 minimal).
-   Re-run 2026-10-19 on this branch at `8aef50d` (a2a-tck `263b9cf`, debug
-   SUT): the full gate graded 88 with the 9 baselined failures, the minimal
-   gate 66; both exit 0. Re-run it after any further wire change.
-4. **Step 4 — OpenTelemetry on by default**, with the exporter staying in
-   `a2a-protocol-sdk` only (decided 2026-10-18). Done 2026-10-18: UCUM
-   units, `a2a.server.latency` removed for `a2a.server.request.duration`,
-   `init_otlp_pipeline(Option<&str>)` with the environment first, ADR 0013
-   Accepted, and the split: `otel` (instrumentation, the API only) is a
-   default feature of the server, client and SDK, and `otlp` (`Telemetry`,
-   the exporters) is default in the SDK only. Also done 2026-10-18: mTLS
-   to the collector and `http/json` (the opt-in `otlp-json` feature; see the
-   CHANGELOG for why it is not in `otlp`), and the server span and
-   `rpc.server.call.duration` on SLIMRPC through the new public
-   `BindingSpan` (ADR 0013, 2026-10-18 section), with
-   `Transport::rpc_system` naming custom transports on client spans. The
-   RPC semantic conventions were re-read on upstream `main` that day and
-   match every name used. Step 4 is complete.
-5. **Freshness:** the 2026-10-19 sweep is recorded in
-   `book/src/reference/mutation-history.md`, from the shards' logs (the
-   artifacts could not be downloaded here). It is incomplete: three of the
-   24 `a2a-server` shards hit the 240-minute limit, so the shard count or
-   the timeout needs raising again before a sweep is whole. Its three
-   survivors have tests on this branch (the row names them). After the next release,
-   check the versioned docs deploy.
+1. **The APPLICATION and NOT_APPLICABLE review against primary sources**
+   (34 + 20 entries): each classification against the specification
+   sentence, each claim in its note against the code. The 2026-10-20
+   session started it; its result is the first thing to read.
+2. **The tool-calling study** (`scripts/tool_calling_study/`,
+   `docs/tool-calling-study.md` once written): direct and SDK arms over four
+   GGUFs, n = 30 a cell. Started 2026-10-20; results to be scored, audited
+   run by run against the rubric in `score.py`, and written up with
+   intervals. What it answers: whether this SDK's loop changes what a model
+   does with tools, against the same model asked directly.
+3. **OpenTelemetry, batch B:** telemetry initialised in every example,
+   `tck/sut`, the ITK agents and the CLI; streaming span lifetime; a span per
+   WebSocket frame; a client call-duration metric; store spans; SLIMRPC's
+   gRPC error classification. Started 2026-10-20.
+4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
+   and the incremental gate across 20 (`mutants.yml`, measured from runs
+   39193157308 and 39343090044). The three 2026-10-19 survivors were
+   re-verified killed on this branch by hand mutants (2026-10-20). Read the
+   next scheduled sweep's logs.
+5. **Official TCK** after any wire change: `--min-graded 88` full, 66
+   minimal (last run 2026-10-19 at `8aef50d`). The 2026-10-20 branch changed
+   no wire format, but re-run before the pull request.
 6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 
 ## Waiting on the maintainer
@@ -129,47 +123,50 @@ only: when something here is done, delete it rather than annotating it.
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
-  `tests/multi_replica.rs` that is ignored by default); a stale unscoped write from another
-  replica keeps a stored position whose effect it overwrote
-  (`store/applied.rs`).
+  `tests/multi_replica.rs` that is ignored by default); a stale unscoped
+  write from another replica keeps a stored position whose effect it
+  overwrote (`store/applied.rs`).
 - **Server:** HTTP+JSON, gRPC and WebSocket parse a request's params before
   the interceptor chain authenticates it (a malformed body is refused `400`
   / `INVALID_ARGUMENT` / `-32602` before `401`). JSON-RPC was fixed
   2026-10-20 (`RequestHandler::refuse_unreadable`); `ListTasks` still
   checks `pageSize` and `statusTimestampAfter`, and
   `CreateTaskPushNotificationConfig` its `taskId`, before admission.
+- **Holds (§3.5.2):** the subscription's setup hold
+  (`handler/lifecycle/subscribe/hold.rs`) has no test that fails without
+  it; with the in-memory processor the window it guards cannot open past
+  the bound (ledger §3.5.2 note). The gap path's early returns in
+  `replay_after` predate the holds and skip the positions between the
+  snapshot and the attach point if the log cannot cover them, with no
+  `streamLagged` (independent review, 2026-10-20, finding 6): rarer now,
+  not closed.
+- **Tool loop:** spans record no content, because the handler's
+  content-capture setting does not reach an executor; a `Failed` status
+  carries up to 512 bytes of the provider's error body to the A2A caller;
+  `CONTRIBUTING.md` still says the server has "eleven public traits"
+  (21 `pub trait`s on 2026-10-20).
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive
   in backups and logs, erasure is not serialised across replicas.
   `erase_caller` (2026-10-18) removes a caller's partitions but not what a
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
   ids, states, timestamps, `metadata` and order unprotected, and its seal
-  limit is per process while the true budget is per key across processes
-  (F7 made deltas seal only what they store). Two concurrent writers no longer leave a record
-  unreadable: the SQL appends are compare-and-append (F5, 2026-10-18).
+  limit is per process while the true budget is per key across processes.
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
   measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
   10K tasks.
 - **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
-  `scripts/go_sdk_interop.sh` re-run 2026-10-19 (debug build, a2a-go
-  v2.6.0): both directions pass. Leg 1, 52 checks; leg 1b (secured card),
-  38, now with the key enforced and a keyless call refused; leg 2, every
-  method on all three bindings. The first run failed leg 1b: this branch's
-  build check refused echo-agent's secured card, which nothing enforced.
-- **Control map (2026-10-18 review):** of the 13 `partial` rows, four
-  had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
-  caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
-  new dependency); AIA-14-4e's and ASI10's, a halt that persists and crosses replicas, is
-  closed too (ADR 0019), ASI08's, G1-B's lease (ADR 0020), and ASI03's,
-  the originating principal on delegated calls (ADR 0021, RFC 8693; it
-  needs an identity provider that supports token exchange). The rest, and all 19 `integrator` rows, are split
-  by nature (reviewed, unchanged).
+  `scripts/go_sdk_interop.sh` last passed both directions 2026-10-19.
+- **Control map:** 13 supported, 2 documented, 11 partial, 22 integrator
+  (`python3 scripts/check_compliance_map.py`); the partial rows' remaining
+  gaps are in each row's `gap`.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on
-  crates.io (checked 2026-10-20): it benchmarks the published crate, so it
-  moves when 0.15.0 is published.
+  crates.io (checked 2026-10-20), and moves when 0.15.0 is published;
+  `prove_workflow_gates_fail.py` needs `ssh-keygen`, absent in the cloud
+  container (apt has no candidate), so it did not run here on 2026-10-20.
 
 ## Waivers and their removal tests
 
@@ -287,11 +284,26 @@ into this file: the commit that records it changes it.
   12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
   and delete it afterwards.
 - **PostgreSQL 16** is installed: `pg_ctlcluster 16 main start`, then
-  `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`
-  (password `postgres`).
+  `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`.
+  The `postgres` role's password is not always `postgres` in a fresh
+  container (scram auth refused it on 2026-10-20): set it with
+  `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`.
+- **llama.cpp** b11751 (`8466395`) is built at `/opt/llama/src/build/bin`;
+  the study's GGUFs are in `/opt/models` (hashes in the study). Use
+  `-c 8192` (the default context sized the KV cache to ~4.6 GB and the OOM
+  killer took the server), and send one request at a time to a server whose
+  results must replay.
 - **No Docker daemon** in the cloud container, so `itk/docker-compose.yml`
   cannot be run here.
-- `pkill -f` matches its own shell: kill by PID.
+- `pkill -f` and `pgrep -f` match their own shell's command line, which
+  contains the pattern: kill by PID, or put the command in a script file
+  (cost a killed shell twice on 2026-10-20).
+- Agents in worktrees that share `target/` race on a crate's `.rlib`
+  (`linking with cc failed` while the other build replaced it): re-run the
+  step before reading anything into it.
+- `cargo test --workspace` stops at the first failing test binary; use
+  `--no-fail-fast`, or one package at a time when the disk allowance cannot
+  hold every test binary at once.
 - `cmd | tail` reports `tail`'s exit status; use `PIPESTATUS` or a file.
 - Run `rustup update stable` and nightly clippy before trusting local clippy;
   CI's stable moves.
@@ -333,6 +345,21 @@ into this file: the commit that records it changes it.
   resolve, though neither manifest changes: run `scripts/check_lockfiles.sh`
   before a pull request. On 2026-10-19 `otel` by default left both stale,
   and the ITK harness's `cargo build --locked` failed every scenario.
+
+- tokio 1.54.0 starts an accepted socket readable (#8435), so a mock that
+  read only the request head and answered left the body unread; five push
+  sender mocks failed until `tests/support/raw_http.rs` read the whole
+  request. Its signal driver's panic text also changed ("IO is disabled").
+- One example dependency turning on `serde_json/preserve_order`
+  (genai 0.7) changes every crate built with it: map iteration order (the
+  card ETag, a lint's output) and type sizes (`A2aError` past clippy's
+  `result_large_err`). Sort explicitly where order is a contract.
+- An idle timeout that counts bytes cuts a request the server is still
+  answering: a blocking `SendMessage` is silent while its executor works.
+  Found only by driving a slow live model through the SDK (2026-10-20).
+- A test that passes with and without the code it is meant to guard is
+  not coverage: prove each new test fails without its fix, and drop one
+  that cannot.
 
 ## History
 
