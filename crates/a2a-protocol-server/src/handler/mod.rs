@@ -24,6 +24,7 @@ mod concurrency;
 mod event_processing;
 pub(crate) mod halt;
 pub(crate) mod helpers;
+mod ids;
 pub(crate) mod input_modes;
 mod introspection;
 pub(crate) mod lease;
@@ -36,6 +37,7 @@ mod push_config;
 mod push_config_page;
 mod shutdown;
 mod undeclared_binding;
+mod unreadable;
 
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
@@ -434,11 +436,11 @@ impl RequestHandler {
     /// [`ServerError::UnsupportedOperation`](crate::error::ServerError::UnsupportedOperation)
     /// naming what to configure.
     fn isolatable(&self, tenant: String) -> ServerResult<String> {
-        // The separator joins a tenant to a caller in a store partition key;
-        // a tenant containing it could name another tenant's caller partition.
-        if tenant.contains(crate::store::tenant::CALLER_SEPARATOR) {
+        // The U+001F separator joins a tenant to a caller in a partition key,
+        // and a tenant is logged: no control character reaches either (§14).
+        if tenant.chars().any(char::is_control) {
             return Err(crate::error::ServerError::InvalidParams(
-                "a tenant may not contain the U+001F unit separator".to_owned(),
+                "a tenant may not contain a control character such as U+001F".to_owned(),
             ));
         }
         if tenant.is_empty() || !self.refuse_unisolated_tenants {

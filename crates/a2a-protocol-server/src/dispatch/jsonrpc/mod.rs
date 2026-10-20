@@ -10,6 +10,7 @@
 //! response (or streams SSE for streaming methods).
 
 mod notification;
+mod params;
 mod refusal;
 mod response;
 
@@ -32,8 +33,8 @@ use crate::serve::Dispatcher;
 use crate::streaming::build_sse_response;
 
 use response::{
-    error_response, error_response_bytes, json_response, parse_params, read_body_limited,
-    success_response, success_response_bytes,
+    error_response, error_response_bytes, json_response, read_body_limited, success_response,
+    success_response_bytes,
 };
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -312,14 +313,13 @@ impl JsonRpcDispatcher {
             return notification::no_content();
         }
         let id = rpc_req.id.to_response_id();
-        trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
+        trace_info!(method = ?rpc_req.method, "dispatching JSON-RPC request");
 
         // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {
             "SendStreamingMessage" => {
                 let call = async {
-                    let params =
-                        parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req)?;
+                    let params = self.params(rpc_req, Some(headers)).await?;
                     self.handler
                         .on_send_message(params, true, Some(headers))
                         .await
@@ -340,7 +340,7 @@ impl JsonRpcDispatcher {
             }
             "SubscribeToTask" => {
                 let call = async {
-                    let params = parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req)?;
+                    let params = self.params(rpc_req, Some(headers)).await?;
                     self.handler.on_resubscribe(params, Some(headers)).await
                 };
                 self.rpc_span(rpc_req, headers)
@@ -398,8 +398,7 @@ impl JsonRpcDispatcher {
         let headers = Some(headers);
         match rpc_req.method.as_str() {
             "SendMessage" => {
-                let params =
-                    parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 match self.handler.on_send_message(params, false, headers).await? {
                     SendMessageResult::Response(resp) => Ok(success_response_bytes(id, &resp)),
                     // Shouldn't happen in non-streaming mode.
@@ -418,35 +417,32 @@ impl JsonRpcDispatcher {
                 "SubscribeToTask not supported in batch requests".into(),
             )),
             "GetTask" => {
-                let params = parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 let task = self.handler.on_get_task(params, headers).await?;
                 Ok(success_response_bytes(id, &task))
             }
             "ListTasks" => {
-                let params = parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 let tasks = self.handler.on_list_tasks(params, headers).await?;
                 Ok(success_response_bytes(id, &tasks))
             }
             "CancelTask" => {
-                let params = parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 let task = self.handler.on_cancel_task(params, headers).await?;
                 Ok(success_response_bytes(id, &task))
             }
             "CreateTaskPushNotificationConfig" => {
-                let params =
-                    parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 let config = self.handler.on_set_push_config(params, headers).await?;
                 Ok(success_response_bytes(id, &config))
             }
             "GetTaskPushNotificationConfig" => {
-                let params =
-                    parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 let config = self.handler.on_get_push_config(params, headers).await?;
                 Ok(success_response_bytes(id, &config))
             }
             "ListTaskPushNotificationConfigs" => {
-                let params =
-                    parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 let resp = self
                     .handler
                     .on_list_push_configs_page(&params, headers)
@@ -454,8 +450,7 @@ impl JsonRpcDispatcher {
                 Ok(success_response_bytes(id, &resp))
             }
             "DeleteTaskPushNotificationConfig" => {
-                let params =
-                    parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req)?;
+                let params = self.params(rpc_req, headers).await?;
                 self.handler.on_delete_push_config(params, headers).await?;
                 Ok(success_response_bytes(id, &serde_json::json!({})))
             }

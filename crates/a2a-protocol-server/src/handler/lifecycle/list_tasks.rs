@@ -85,9 +85,9 @@ impl RequestHandler {
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
-                    // SPEC §3.3.4: reject clients that do not declare support for
-                    // extensions the agent card marks required.
+                    // SPEC §3.3.4: refuse a client not declaring a required extension.
                     self.ensure_required_extensions(&call_ctx)?;
+                    super::super::ids::refuse_control_chars_in_filter(&params)?;
                     let mut result = self.task_store.list(&params).await?;
 
                     // Apply historyLength: truncate each task's history to the

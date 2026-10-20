@@ -130,9 +130,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   `tests/multi_replica.rs` that is ignored by default); a stale unscoped write from another
   replica keeps a stored position whose effect it overwrote
   (`store/applied.rs`).
-- **Server:** JSON-RPC parses a request's params
-  before the interceptor chain authenticates it (a malformed body is
-  refused `-32602` before `401`).
+- **Server:** HTTP+JSON, gRPC and WebSocket parse a request's params before
+  the interceptor chain authenticates it (a malformed body is refused `400`
+  / `INVALID_ARGUMENT` / `-32602` before `401`). JSON-RPC was fixed
+  2026-10-20 (`RequestHandler::refuse_unreadable`); `ListTasks` still
+  checks `pageSize` and `statusTimestampAfter`, and
+  `CreateTaskPushNotificationConfig` its `taskId`, before admission.
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive
   in backups and logs, erasure is not serialised across replicas.

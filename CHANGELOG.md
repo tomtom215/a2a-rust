@@ -2414,6 +2414,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A control character in a client's id is refused** (server; spec §14
+  "MUST sanitize user-provided content"). `validate_id` refused only empty
+  and over-long ids, so `"a\r\nb"` as a message, context, task or reference
+  task id was stored, and `GetTask`, `CancelTask` and `SubscribeToTask`
+  logged the requested id with `%`, writing a line of the client's choosing
+  into the server's log. The push-config `taskId` and `id` (create, get,
+  list, delete, and inline in `SendMessage`) and the `ListTasks` `contextId`
+  filter never reached `validate_id` at all. Each now answers
+  `InvalidParams` naming the field — `-32602` on JSON-RPC, `400` on
+  HTTP+JSON — for any `char::is_control` character (C0, DEL, C1), as the
+  idempotency key already did; a tenant is refused likewise, not only for
+  U+001F. An inline push config is checked before the task is created. The
+  three entry logs and JSON-RPC's dispatch log now record the id and method
+  with `?`, escaped, since they run before validation. Letters outside ASCII
+  still pass. Tests: `control_chars_in_ids`, `handler::ids::tests`.
+- **JSON-RPC authenticates a call before reading its params** (server;
+  `docs/handoff.md` "Open engineering"). A call whose `params` did not
+  deserialize was answered `-32602`, naming the field at fault, before the
+  interceptor chain saw it, so a caller with no credential got the parameter
+  schema where a well-formed call got `401`. Such a call is now admitted
+  first: one the chain refuses gets the refusal (`401`/`403` with its
+  challenge, `-32600` in the body; `200` inside a batch), and one it admits
+  gets the `-32602` it always got. Interceptors now see these calls, with no
+  task id, and `on_complete` reports them `Failed` with the `-32602`; a rate
+  limiter counts them and an audit interceptor records them. HTTP+JSON, gRPC
+  and WebSocket still read params first. Test: `jsonrpc_auth_before_params`.
+
 - **SLIMRPC: the binding has no advisory waivers** (`a2a-protocol-slimrpc`).
   With `agntcy-slim-auth` 0.17.5 the lock takes `mls-rs-crypto-awslc`
   0.25.1, which pins `aws-lc-rs =1.18.1`, so `rustls` resolves to 0.23.46
