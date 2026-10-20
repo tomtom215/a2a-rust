@@ -46,6 +46,9 @@ use tokio::task::AbortHandle;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::sse_parser::SseParser;
 
+#[cfg(feature = "tracing")]
+pub(crate) mod call;
+
 // ── Chunk ─────────────────────────────────────────────────────────────────────
 
 /// A raw byte chunk from the HTTP body reader task.
@@ -132,13 +135,12 @@ pub struct EventStream {
     held: Option<
         Box<dyn std::any::Any + Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>,
     >,
-    /// The call's span, kept open while the stream is: a streaming call
-    /// lasts until its consumer is done with it (`call_span.rs`).
-    /// `AssertUnwindSafe` keeps the stream's own unwind-safety auto traits,
-    /// which `held` above says `cargo-semver-checks` guards; a span holds no
-    /// state a panic could leave half-written.
+    /// The call, which lasts until its consumer is done with the stream
+    /// (`event_stream/call.rs`). `AssertUnwindSafe` keeps the stream's own
+    /// unwind-safety auto traits, which `held` above says `cargo-semver-checks`
+    /// guards; the call holds no state a panic could leave half-written.
     #[cfg(feature = "tracing")]
-    span: Option<std::panic::AssertUnwindSafe<tracing::Span>>,
+    call: Option<std::panic::AssertUnwindSafe<Box<call::StreamCall>>>,
 }
 
 impl EventStream {
@@ -166,7 +168,7 @@ impl EventStream {
             last_event_id: None,
             held: None,
             #[cfg(feature = "tracing")]
-            span: None,
+            call: None,
         }
     }
 
@@ -196,7 +198,7 @@ impl EventStream {
             last_event_id: None,
             held: None,
             #[cfg(feature = "tracing")]
-            span: None,
+            call: None,
         }
     }
 
@@ -291,7 +293,7 @@ impl EventStream {
             last_event_id: None,
             held: None,
             #[cfg(feature = "tracing")]
-            span: None,
+            call: None,
         }
     }
 
@@ -385,14 +387,6 @@ impl EventStream {
         self
     }
 
-    /// Keeps `span` open until the stream is dropped.
-    #[cfg(feature = "tracing")]
-    #[must_use]
-    pub(crate) fn with_span(mut self, span: tracing::Span) -> Self {
-        self.span = Some(std::panic::AssertUnwindSafe(span));
-        self
-    }
-
     /// Returns the HTTP status code from the response that established this stream.
     ///
     /// The transport layer validates the HTTP status during stream establishment
@@ -433,8 +427,12 @@ impl EventStream {
         // stream: `tracing-opentelemetry` ends a span at its last exit, and
         // holding it alone would end it when the stream opened.
         #[cfg(feature = "tracing")]
-        if let Some(span) = self.span.as_ref().map(|s| s.0.clone()) {
-            return tracing::Instrument::instrument(self.next_event(), span).await;
+        if let Some(span) = self.call.as_ref().map(|c| c.0.span.clone()) {
+            let next = tracing::Instrument::instrument(self.next_event(), span).await;
+            if let (Some(Err(e)), Some(call)) = (&next, self.call.as_mut()) {
+                call.0.fail(e);
+            }
+            return next;
         }
         self.next_event().await
     }

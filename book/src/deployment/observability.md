@@ -245,6 +245,19 @@ is recorded then, with the error the stream's last frame carried, or
 to the stream being established, and recorded as a success whatever the
 stream did next. The same values reach a custom `Metrics` as `on_rpc_call`.
 
+**The client measures its calls too:** `rpc.client.call.duration`, the
+conventions' client histogram (unit `s`, the same buckets), with
+`rpc.system.name`, `rpc.method`, `rpc.status_code` as the server records it
+(the JSON-RPC code, the HTTP status, or the gRPC status name, `OK` on a gRPC
+success), `error.type` for a failed call (that status, or the failure's
+class — `timeout`, `transport` — when the agent never answered), and
+`server.address` and `server.port`. A streaming call is measured until the
+caller drops its stream, as its span is. It records through the global
+meter provider — the one `Telemetry` installs — as it stood when the client
+was built, under the meter `a2a.client`; a call on a custom transport that
+names no `rpc.system.name` is not recorded, since that attribute is
+required.
+
 `a2a.server.request.duration` times the same calls by A2A method, with the
 same buckets. Before 0.15 it was `a2a.server.latency`, deprecated in 0.14.0
 and removed in 0.15.0 per `STABILITY.md` §3; OpenTelemetry names a duration
@@ -346,8 +359,6 @@ Stated so a green dashboard is not mistaken for a complete one:
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.
   (The call's span does carry `a2a.tenant`.)
-* **The client records spans, not metrics.** There is no
-  `rpc.client.call.duration`; the client span's duration is the measure.
 * **Model calls are not seen.** The SDK does not know which model your
   executor calls. Instrument the model client itself — its spans nest under
   `invoke_agent` — or use a framework that reports `chat` spans.
@@ -454,7 +465,8 @@ server span it causes, the same A2A attributes as far as the request and
 response show them, the agent's name, description and version when the
 client was built from its card, and `server.address` and `server.port`. A
 streaming call's span covers consuming the stream, and is exported when the
-stream is dropped. As the draft conventions require of A2A instrumentation,
+stream is dropped; it carries `rpc.status_code` as the client's metric does,
+and the error a stream ended on. As the draft conventions require of A2A instrumentation,
 the client reports no `invoke_agent` span of its own.
 
 A span is exported when it closes, and `tracing` holds a span open until its

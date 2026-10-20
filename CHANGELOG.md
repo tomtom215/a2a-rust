@@ -244,6 +244,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   llama-server b11751 on Qwen3-1.7B (its README has the results). Tests:
   `tool_loop::run::tests`, `rpc_span::tool::tests`, `tests/tool_loop/`.
 
+- **`rpc.client.call.duration`** (client, `otel`, on by default): the
+  semantic conventions' client histogram, the counterpart of the server's
+  `rpc.server.call.duration` — unit `s`, the same advisory buckets, with
+  `rpc.system.name`, `rpc.method`, `rpc.status_code`, `error.type` on
+  failure, and `server.address` and `server.port`
+  (`docs/rpc/rpc-metrics.md`). A streaming call is measured until its stream
+  is dropped, as its `CLIENT` span is. It records through the global meter
+  provider as it stood when the client was built (the one `Telemetry`
+  installs), under the meter `a2a.client`. The `CLIENT` span gains
+  `rpc.status_code` — the JSON-RPC code, the HTTP status, or the gRPC status
+  name, `OK` on a gRPC or SLIMRPC success — and records the error a stream
+  ended on, which it did not before. Its `error.type` is now that status
+  when the agent answered with one, as the conventions ask ("If a status
+  code is returned and it indicates an error, `error.type` SHOULD be set to
+  that status code"): a failed HTTP+JSON or gRPC call that recorded the
+  JSON-RPC code (`-32001`) records `404` or `NOT_FOUND`; JSON-RPC is
+  unchanged.
 - **`ClientBuilder::with_credential_preflight(CredentialPreflight)`**
   (client; spec §3.1.11 "The client MUST authenticate the request using one
   of the schemes declared in the public `AgentCard.securitySchemes` and

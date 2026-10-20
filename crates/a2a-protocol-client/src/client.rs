@@ -58,6 +58,9 @@ pub struct A2aClient {
     pub(crate) config: ClientConfig,
     /// The agent called, as its spans describe it.
     pub(crate) peer: crate::call_span::Peer,
+    /// Where each call's `rpc.client.call.duration` goes.
+    #[cfg(feature = "otel")]
+    pub(crate) metric: crate::call_metric::CallMetric,
     /// The optional capabilities the agent's card declares, checked before a
     /// call that needs one; `None` when there is no card to check against or
     /// the checks were turned off. Behind a lock because fetching the
@@ -114,6 +117,8 @@ impl A2aClient {
             interceptors,
             config,
             peer: crate::call_span::Peer::default(),
+            #[cfg(feature = "otel")]
+            metric: crate::call_metric::CallMetric::global(),
             declared: RwLock::new(None),
         }
     }
@@ -178,6 +183,8 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<serde_json::Value> {
         let params = std::mem::take(&mut req.params);
+        #[cfg(feature = "otel")]
+        let started = std::time::Instant::now();
         #[cfg(feature = "tracing")]
         let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
         #[cfg(feature = "otel")]
@@ -196,6 +203,8 @@ impl A2aClient {
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
         let result = send.await;
+        #[cfg(feature = "otel")]
+        self.measure(method, started, result.as_ref().err());
         #[cfg(feature = "tracing")]
         match &result {
             Ok(value) => call.succeeded(Some(value)),
@@ -215,6 +224,8 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<EventStream> {
         let params = std::mem::take(&mut req.params);
+        #[cfg(feature = "otel")]
+        let started = std::time::Instant::now();
         #[cfg(feature = "tracing")]
         let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
         #[cfg(feature = "otel")]
@@ -233,16 +244,25 @@ impl A2aClient {
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
         let result = send.await;
-        // A stream's span stays open with the stream: the call lasts until
-        // the caller has finished consuming it (`call_span.rs`).
+        // A stream's span stays open with the stream, and its duration runs:
+        // the call lasts until the caller has finished consuming it
+        // (`call_span.rs`, `call_metric.rs`).
         #[cfg(feature = "tracing")]
         let result = match result {
             Ok(stream) => {
-                let span = call.span.clone();
-                call.succeeded(None);
-                Ok(stream.with_span(span))
+                let stream_call = crate::streaming::event_stream::call::StreamCall::new(
+                    call.span.clone(),
+                    call.system,
+                );
+                #[cfg(feature = "otel")]
+                let stream_call =
+                    stream_call.measured(self.metric.clone(), self.peer.clone(), method, started);
+                call.opened(None);
+                Ok(stream.with_call(stream_call))
             }
             Err(e) => {
+                #[cfg(feature = "otel")]
+                self.measure(method, started, Some(&e));
                 call.failed(&e);
                 Err(e)
             }
@@ -251,6 +271,26 @@ impl A2aClient {
             self.interceptors.run_on_error(req, e).await;
         }
         result
+    }
+}
+
+#[cfg(feature = "otel")]
+impl A2aClient {
+    /// Records a call of `method` begun at `started`, which failed with
+    /// `error` or, without one, succeeded (`call_metric.rs`).
+    fn measure(
+        &self,
+        method: &str,
+        started: std::time::Instant,
+        error: Option<&crate::error::ClientError>,
+    ) {
+        let system = self.peer.system;
+        let status = error.map_or_else(
+            || crate::call_span::Status::ok(system),
+            |e| crate::call_span::Status::failed(system, e),
+        );
+        let method = crate::call_span::qualified(method);
+        self.metric.record(&self.peer, method, started, &status);
     }
 }
 

@@ -235,6 +235,50 @@ fn every_error_class_has_its_error_type() {
     }
 }
 
+/// `rpc.status_code` is the status in the binding's own terms, as the server
+/// records the same call; `error.type` is that status, or the failure's class
+/// when the binding has none for it.
+#[cfg(feature = "tracing")]
+#[test]
+fn each_binding_reports_the_status_it_was_answered_with() {
+    use crate::error::ClientError as E;
+    let not_found = || E::Protocol(a2a_protocol_types::error::A2aError::task_not_found("t"));
+    let status = |system: Option<&str>, error: &E| {
+        let s = Status::failed(system, error);
+        (s.code, s.error)
+    };
+    let both = |v: &str| (Some(v.to_owned()), Some(v.to_owned()));
+    assert_eq!(status(Some("jsonrpc"), &not_found()), both("-32001"));
+    assert_eq!(status(Some("a2a_http_json"), &not_found()), both("404"));
+    assert_eq!(status(Some("grpc"), &not_found()), both("NOT_FOUND"));
+    assert_eq!(status(Some("slimrpc"), &not_found()), both("NOT_FOUND"));
+    let unavailable = E::UnexpectedStatus {
+        status: 503,
+        body: String::new(),
+        retry_after: None,
+    };
+    assert_eq!(status(Some("a2a_http_json"), &unavailable), both("503"));
+    // A JSON-RPC status is an error code; an HTTP status is not one.
+    assert_eq!(
+        status(Some("jsonrpc"), &unavailable),
+        (None, Some("503".to_owned()))
+    );
+    assert_eq!(
+        status(Some("grpc"), &E::Timeout("slow".into())),
+        (None, Some("timeout".to_owned()))
+    );
+    for (system, ok) in [
+        (Some("grpc"), Some("OK")),
+        (Some("slimrpc"), Some("OK")),
+        (Some("jsonrpc"), None),
+        (Some("a2a_http_json"), None),
+        (None, None),
+    ] {
+        let s = Status::ok(system);
+        assert_eq!((s.code.as_deref(), s.error), (ok, None), "{system:?}");
+    }
+}
+
 /// `f` with a `tracing-opentelemetry` layer recording every span.
 #[cfg(feature = "otel")]
 fn with_otel<R>(f: impl FnOnce() -> R) -> R {

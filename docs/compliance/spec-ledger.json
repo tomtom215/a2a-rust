@@ -1342,7 +1342,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:59",
-    "crates/a2a-protocol-client/src/client.rs:145",
+    "crates/a2a-protocol-client/src/client.rs:150",
     "crates/a2a-protocol-client/src/discovery.rs:493"
    ],
    "test_evidence": [
@@ -2205,7 +2205,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/declared.rs:60",
-    "crates/a2a-protocol-client/src/client.rs:134",
+    "crates/a2a-protocol-client/src/client.rs:139",
     "crates/a2a-protocol-client/src/methods/send_message.rs:49",
     "crates/a2a-protocol-client/src/builder/mod.rs:506"
    ],
@@ -8201,7 +8201,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:59",
-    "crates/a2a-protocol-client/src/client.rs:145",
+    "crates/a2a-protocol-client/src/client.rs:150",
     "crates/a2a-protocol-client/src/discovery.rs:493"
    ],
    "test_evidence": [

@@ -22,8 +22,8 @@ categories             = ["network-programming", "web-programming"]
 ## must reach them out of the box. `tracing` is on by default too: several
 ## failure paths — a trace header the WebSocket binding cannot carry, a refused
 ## stream event — report only through it. `otel` adds the OpenTelemetry API,
-## so a process that installs a provider gets the client's spans (decided
-## 2026-10-14). `webhook` adds only `ring`, which `tls-rustls` already links.
+## so a process that installs a provider gets the client's spans and its
+## `rpc.client.call.duration` (decided 2026-10-14). `webhook` adds only `ring`, which `tls-rustls` already links.
 ## Opt out of all four with `default-features = false` for a
 ## plaintext-HTTP-only build with no rustls or ring dependency and no logging.
 default = ["tls-rustls", "tracing", "otel", "webhook"]
@@ -49,7 +49,8 @@ signing = ["a2a-protocol-types/signing"]
 tracing = ["dep:tracing"]
 ## OpenTelemetry for the client's spans: each call's `traceparent` names the
 ## call's own span, recorded by a `tracing-opentelemetry` layer, so the agent
-## called is its child. No exporter — the application, or the server crate's
+## called is its child; and `rpc.client.call.duration`, through the global
+## meter provider. No exporter — the application, or the server crate's
 ## `Telemetry`, installs one.
 otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
@@ -98,7 +99,7 @@ uuid           = { workspace = true }
 # `ring` rustls links in the default build; no new crate.
 ring           = { version = "0.17.12", optional = true }
 tracing        = { workspace = true, optional = true }
-opentelemetry  = { version = "0.33", optional = true, default-features = false, features = ["trace"] }
+opentelemetry  = { version = "0.33", optional = true, default-features = false, features = ["trace", "metrics"] }
 tracing-opentelemetry = { version = ">=0.34, <0.35", optional = true, default-features = false }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
@@ -123,8 +124,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
 # The call span's own tests record through a real OpenTelemetry tracer, to
-# check the `traceparent` it sends (`src/call_span/tests.rs`).
-opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
+# check the `traceparent` it sends (`src/call_span/tests.rs`), and the call
+# metric's through a `ManualReader` (`src/call_metric/tests.rs`).
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace", "metrics", "experimental_metrics_custom_reader"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 criterion = { workspace = true }
 bytes = "1.11.1"

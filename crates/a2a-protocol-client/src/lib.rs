@@ -123,6 +123,8 @@ struct ReadmeDoctests;
 #[macro_use]
 mod trace;
 
+#[cfg(feature = "otel")]
+mod call_metric;
 mod call_span;
 mod credential_preflight;
 mod declared;
