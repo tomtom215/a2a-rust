@@ -1056,6 +1056,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A WebSocket call's span links to the upgrade request's trace instead
+  of being its child** (server, WebSocket binding). A frame carries no
+  trace context — the binding defines none, and this SDK's client sends
+  none — so the only `traceparent` a WebSocket call had was the upgrade
+  request's, and every call on a connection was recorded as a child of the
+  operation that opened it: W3C Trace Context §3.4 has each request name its
+  own parent, which is why the client already refused to send one fixed at
+  the handshake. Each call's `SERVER` span is now a root of its own with a
+  span link to that trace, under `InboundTracePolicy::Continue`. The
+  upgrade's `traceparent` and `tracestate` reach the handler as the
+  pseudo-headers `:upgrade-traceparent` and `:upgrade-tracestate`, so a
+  WebSocket call's `CallContext` no longer carries the handshake's trace
+  either.
 - **A streaming call's span and `rpc.server.call.duration` cover its
   stream** (server; `SendStreamingMessage` and `SubscribeToTask` over SSE —
   JSON-RPC, HTTP+JSON and the axum router — gRPC and WebSocket). The

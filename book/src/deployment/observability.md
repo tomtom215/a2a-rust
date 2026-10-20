@@ -547,7 +547,11 @@ it carries headers only on the HTTP upgrade, and a `traceparent` fixed there
 would report every request on the connection as one span, which W3C §3.4
 forbids. The interceptor is silently ineffective on an established WebSocket
 connection; the transport warns once per connection when it drops one. Send
-traced calls over one of the other three.
+traced calls over one of the other three. On the server, for the same reason,
+a WebSocket call's span is not a child of the upgrade request's
+`traceparent`: each call is a root span of its own, with a span link to the
+upgrade's trace (under `InboundTracePolicy::Continue`). Before 0.15 every call
+on a connection was recorded as a child of the operation that opened it.
 
 **Trusting the caller's trace.** The inbound `traceparent` is read while the
 `CallContext` is built, which is before your interceptors run — so on a public

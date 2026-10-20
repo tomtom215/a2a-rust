@@ -49,6 +49,7 @@ mod a2a;
 mod agent;
 mod binding;
 mod call;
+mod link;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;

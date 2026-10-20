@@ -809,15 +809,29 @@ impl WebSocketDispatcher {
 
 /// The upgrade request's header fields, read as the HTTP bindings read them
 /// ([`header_fields`](super::header_fields)), plus the request path (under
-/// `":path"`), less `Last-Event-ID`.
+/// `":path"`), less `Last-Event-ID`, and with its trace context set aside.
 ///
 /// This binding has no resumption: a resubscribe starts from the task's
 /// snapshot. `Last-Event-ID` is the HTTP binding's resumption cursor, and
 /// these headers reach every call on the connection, so until 2026-10-14 one
 /// on the upgrade made every `SubscribeToTask` replay the log from it.
+///
+/// For the same reason `traceparent` and `tracestate` move to
+/// [`UPGRADE_TRACEPARENT`] and [`UPGRADE_TRACESTATE`]: read as each call's,
+/// they made every call on the connection a child of the operation that
+/// opened it. Each call's span links to that trace instead (`ws_span`).
 fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
+    use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER};
     let mut map = super::header_fields(req.headers());
     map.remove("last-event-id");
+    for (header, kept) in [
+        (TRACEPARENT_HEADER, UPGRADE_TRACEPARENT),
+        (TRACESTATE_HEADER, UPGRADE_TRACESTATE),
+    ] {
+        if let Some(value) = map.remove(header) {
+            map.insert(kept.to_owned(), value);
+        }
+    }
     // The pseudo-header name cannot collide with a real HTTP/1 header (colons
     // are not valid in field names), and it is what
     // `PathSegmentTenantResolver` documents reading.
@@ -1147,13 +1161,26 @@ async fn process_ws_message(
     }
 }
 
-/// The span one WebSocket call runs in: JSON-RPC frames, so `jsonrpc`.
+/// Where the upgrade request's `traceparent` and `tracestate` are kept
+/// ([`extract_upgrade_headers`]): pseudo-header names, like `":path"`, which
+/// no real header can collide with.
+const UPGRADE_TRACEPARENT: &str = ":upgrade-traceparent";
+const UPGRADE_TRACESTATE: &str = ":upgrade-tracestate";
+
+/// The span one WebSocket call runs in: JSON-RPC frames, so `jsonrpc`. A
+/// frame carries no trace context, so the span is no remote child; it links
+/// to the trace the upgrade request carried, if any (`rpc_span/link.rs`).
 fn ws_span(
     handler: &RequestHandler,
     rpc_req: &JsonRpcRequest,
     headers: &HashMap<String, String>,
 ) -> crate::rpc_span::ServerSpan {
-    crate::rpc_span::ServerSpan::open_jsonrpc(handler, rpc_req, Some(headers))
+    crate::rpc_span::ServerSpan::open_jsonrpc(handler, rpc_req, Some(headers)).with_link(
+        handler,
+        headers,
+        UPGRADE_TRACEPARENT,
+        UPGRADE_TRACESTATE,
+    )
 }
 
 /// Dispatches a `SendMessage` or `SendStreamingMessage`.
@@ -2998,5 +3025,24 @@ mod tests {
                 .contains("binary"),
             "error should explain binary frames are unsupported: {v}"
         );
+    }
+
+    /// The upgrade's trace context is set aside for the link, not read as
+    /// every call's own (`rpc_span/link.rs`).
+    #[test]
+    fn upgrade_trace_context_is_kept_aside() {
+        let req = WsUpgradeRequest::builder()
+            .uri("/")
+            .header(
+                "traceparent",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            )
+            .header("tracestate", "vendor=1")
+            .body(())
+            .unwrap();
+        let headers = extract_upgrade_headers(&req);
+        assert!(!headers.contains_key("traceparent") && !headers.contains_key("tracestate"));
+        assert_eq!(headers[UPGRADE_TRACEPARENT], req.headers()["traceparent"]);
+        assert_eq!(headers[UPGRADE_TRACESTATE], "vendor=1");
     }
 }
