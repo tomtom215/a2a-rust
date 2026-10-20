@@ -181,6 +181,48 @@ impl ServerSpan {
         }
     }
 
+    /// [`open`](Self::open) for a JSON-RPC request — over HTTP or WebSocket —
+    /// adding what `docs/rpc/json-rpc.md` asks of its span:
+    /// `jsonrpc.protocol.version` `2.0` (Conditionally Required "if other
+    /// than the default version (`1.0`)"); `rpc.method_original`, the method
+    /// as sent (Conditionally Required "if and only if it's different than
+    /// `rpc.method`", which a served method's `SendMessage` always is); and
+    /// `jsonrpc.request.id` (Recommended; not for a notification or a `null`
+    /// id, which the conventions say not to capture). The two the peer
+    /// chooses are cut to 128 bytes.
+    pub fn open_jsonrpc(
+        handler: &RequestHandler,
+        request: &a2a_protocol_types::jsonrpc::JsonRpcRequest,
+        headers: Option<&HashMap<String, String>>,
+    ) -> Self {
+        let call = Self::open(handler, RpcSystem::JsonRpc, &request.method, headers);
+        #[cfg(feature = "tracing")]
+        {
+            call.span.record("jsonrpc.protocol.version", "2.0");
+            // `open` records it for `_OTHER`; a field recorded twice is
+            // exported twice (`a2a.rs`).
+            if call.method != OTHER {
+                call.span.record(
+                    "rpc.method_original",
+                    truncated(&request.method, METHOD_ORIGINAL_MAX),
+                );
+            }
+            match request.id.as_value() {
+                Some(serde_json::Value::String(id)) => {
+                    call.span
+                        .record("jsonrpc.request.id", truncated(id, METHOD_ORIGINAL_MAX));
+                }
+                Some(id) => {
+                    let id = id.to_string();
+                    call.span
+                        .record("jsonrpc.request.id", truncated(&id, METHOD_ORIGINAL_MAX));
+                }
+                None => {}
+            }
+        }
+        call
+    }
+
     /// Adds the HTTP request method and matched route template to an
     /// HTTP+JSON call's span, so HTTP-oriented tooling still finds it (ADR
     /// 0013, option 2). `route` is the template (`/tasks/{id}`), never the
@@ -352,6 +394,8 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
         rpc.method = qualified,
         rpc.method_original = tracing::field::Empty,
         rpc.status_code = tracing::field::Empty,
+        jsonrpc.protocol.version = tracing::field::Empty,
+        jsonrpc.request.id = tracing::field::Empty,
         error.type = tracing::field::Empty,
         http.request.method = tracing::field::Empty,
         http.route = tracing::field::Empty,
@@ -419,6 +463,8 @@ pub fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
     }
 }
 
+#[cfg(test)]
+mod jsonrpc_tests;
 #[cfg(test)]
 mod span_tests;
 #[cfg(test)]

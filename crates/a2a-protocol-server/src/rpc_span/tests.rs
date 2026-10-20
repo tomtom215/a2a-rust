@@ -68,7 +68,7 @@ fn grpc_reports_the_status_name_it_sends() {
     );
 }
 
-type Seen = Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
+pub(super) type Seen = Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
 
 struct Recording(Seen);
 
@@ -81,7 +81,7 @@ impl Metrics for Recording {
     }
 }
 
-fn handler(seen: &Seen) -> RequestHandler {
+pub(super) fn handler(seen: &Seen) -> RequestHandler {
     struct Idle;
     crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
     crate::RequestHandlerBuilder::new(Idle)

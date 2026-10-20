@@ -1148,12 +1148,7 @@ fn ws_span(
     rpc_req: &JsonRpcRequest,
     headers: &HashMap<String, String>,
 ) -> crate::rpc_span::ServerSpan {
-    crate::rpc_span::ServerSpan::open(
-        handler,
-        crate::rpc_span::RpcSystem::JsonRpc,
-        &rpc_req.method,
-        Some(headers),
-    )
+    crate::rpc_span::ServerSpan::open_jsonrpc(handler, rpc_req, Some(headers))
 }
 
 /// Dispatches a `SendMessage` or `SendStreamingMessage`.

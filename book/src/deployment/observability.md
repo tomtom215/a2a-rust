@@ -372,7 +372,11 @@ above, `error.type` with the span's status set to error — the same values as
 `rpc.server.call.duration`. A method the
 server does not serve is named for its binding (`jsonrpc`), with
 `rpc.method` `_OTHER` and the name the peer sent, cut to 128 bytes, as
-`rpc.method_original`; the v0.3 `message/stream` is one of them.
+`rpc.method_original`; the v0.3 `message/stream` is one of them. A JSON-RPC
+span, over HTTP or WebSocket, also carries `jsonrpc.protocol.version`
+(`2.0`), the method as sent (`SendMessage`) as `rpc.method_original`, and the
+request's id as `jsonrpc.request.id` (not for a notification or a `null` id),
+as `docs/rpc/json-rpc.md` asks.
 
 It also carries the attributes of the **draft OpenTelemetry A2A
 conventions** — `open-telemetry/semantic-conventions-genai` pull request

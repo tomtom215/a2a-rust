@@ -291,12 +291,7 @@ impl JsonRpcDispatcher {
         rpc_req: &JsonRpcRequest,
         headers: &HashMap<String, String>,
     ) -> crate::rpc_span::ServerSpan {
-        crate::rpc_span::ServerSpan::open(
-            &self.handler,
-            crate::rpc_span::RpcSystem::JsonRpc,
-            &rpc_req.method,
-            Some(headers),
-        )
+        crate::rpc_span::ServerSpan::open_jsonrpc(&self.handler, rpc_req, Some(headers))
     }
 
     /// Dispatches a single JSON-RPC request and returns an HTTP response.

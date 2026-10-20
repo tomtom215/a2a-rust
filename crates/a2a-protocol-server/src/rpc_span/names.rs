@@ -36,6 +36,7 @@ impl RpcSystem {
             Self::Custom(binding) => binding.name,
         }
     }
+
     /// Whether a `SERVER` span that ended with wire status `status` failed,
     /// as each binding's semantic conventions count it — which decides
     /// `error.type` and `Error` status, while `rpc.status_code` keeps the

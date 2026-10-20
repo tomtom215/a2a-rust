@@ -233,6 +233,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the capabilities. Tests: `declared_credentials`,
   `credential_preflight::tests`.
 
+- **JSON-RPC spans carry `jsonrpc.protocol.version`, `jsonrpc.request.id`
+  and `rpc.method_original`** (server; `docs/rpc/json-rpc.md`). Over HTTP and
+  WebSocket: `jsonrpc.protocol.version` `2.0` (Conditionally Required when
+  not `1.0`), the request's id (not for a notification or a `null` id, which
+  the conventions say not to capture), and the method as sent
+  (`SendMessage`), which differs from the qualified `rpc.method` and so is
+  Conditionally Required. The id and method are cut to 128 bytes.
 - **Push webhooks carry the trace and have a span** (server). Each webhook
   POST from `HttpPushSender` runs in an HTTP `CLIENT` span named `POST`
   (`docs/http/http-spans.md`): `http.request.method`, `server.address`,

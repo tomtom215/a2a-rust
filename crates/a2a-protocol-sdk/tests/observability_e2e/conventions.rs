@@ -64,6 +64,30 @@ pub fn check_call(b: &str, span: &SpanData, server: &SpanData, gaps: &mut Vec<St
     if attr(server, "a2a.message.id").is_none_or(|v| v.is_empty()) {
         gaps.push(format!("{b}: the server span has no a2a.message.id"));
     }
+    if b == "JSONRPC" {
+        check_jsonrpc(server, gaps);
+    }
+}
+
+/// `docs/rpc/json-rpc.md`: `jsonrpc.protocol.version` is Conditionally
+/// Required "if other than the default version (`1.0`)", `rpc.method_original`
+/// "if and only if it's different than `rpc.method`" — the wire's
+/// `SendMessage` is — and `jsonrpc.request.id` Recommended.
+fn check_jsonrpc(server: &SpanData, gaps: &mut Vec<String>) {
+    for (key, want) in [
+        ("jsonrpc.protocol.version", "2.0"),
+        ("rpc.method_original", "SendMessage"),
+    ] {
+        if attr(server, key).as_deref() != Some(want) {
+            gaps.push(format!(
+                "JSONRPC: the server span has {key} {:?}, not {want:?}",
+                attr(server, key)
+            ));
+        }
+    }
+    if attr(server, "jsonrpc.request.id").is_none_or(|v| v.is_empty()) {
+        gaps.push("JSONRPC: the server span has no jsonrpc.request.id".to_owned());
+    }
 }
 
 /// The call's `CLIENT` span sits under the caller's context, and the server
