@@ -15,7 +15,7 @@
 #               what the SDK offers the integrator who must
 
 [meta]
-as_of = "2026-10-18"
+as_of = "2026-10-20"
 preamble = """
 This is a map from regulatory and standards provisions to what a2a-rust, a
 protocol library, provides toward them. It is not a claim that the SDK is
@@ -289,7 +289,7 @@ source = "ai-act"
 provision = "Art. 14(4)(a)"
 requirement = "Natural persons overseeing the system are enabled to properly understand its relevant capacities and limitations and to duly monitor its operation, including in view of detecting and addressing anomalies, dysfunctions and unexpected performance."
 sdk = "Every handler method reports its outcome to the interceptor chain (`ServerInterceptor::on_complete`) and to `Metrics` (requests, errors by bounded label, latency, queue depth); the bundled `OtelMetrics` exports them, and every call gets a span named by its method. A failed executor is logged at ERROR with its task and cause, and a timed-out one ends its task `Failed`."
-status = "partial"
+status = "supported"
 code = [
   "crates/a2a-protocol-server/src/metrics/mod.rs::Metrics",
   "crates/a2a-protocol-server/src/otel/mod.rs::OtelMetrics",
@@ -299,10 +299,12 @@ tests = [
   "crates/a2a-protocol-server/tests/interceptor_on_complete.rs::every_handler_method_reports_its_outcome",
   "crates/a2a-protocol-server/tests/executor_failure_logged.rs::a_failed_executor_is_logged_at_error_with_its_task_and_cause",
   "crates/a2a-protocol-server/tests/audit_tests/public_api.rs::executor_timeout_causes_failure",
+  "crates/a2a-protocol-server/src/handler/messaging/tests.rs::executor_timeout_returns_failed_task",
   "crates/a2a-protocol-server/src/rpc_span/tests.rs::the_span_is_named_by_its_method_or_by_its_system_for_other",
+  "crates/a2a-protocol-sdk/tests/observability_e2e/main.rs::one_server_three_bindings_what_an_operator_sees",
 ]
 evidence = ["docs/adr/0013-observability.md"]
-gap = "The SDK reports protocol-level operation: calls, task states, failures, latency. Whether the AI system's outputs are anomalous, and the human-machine interface through which a person monitors it, are the provider's to build on these signals."
+remainder = "The SDK reports protocol-level operation: calls, task states, failures, latency. Whether the AI system's outputs are anomalous, and the human-machine interface through which a person monitors it, are the provider's to build on these signals (re-examined 2026-10-20: nothing further a protocol library can report toward 14(4)(a) is unbuilt)."
 
 [[control]]
 id = "AIA-14-4d"
@@ -310,7 +312,7 @@ source = "ai-act"
 provision = "Art. 14(4)(d)"
 requirement = "Natural persons overseeing the system can decide not to use it, or disregard, override or reverse its output."
 sdk = "The approval extension: an executor asks with `EventEmitter::request_approval`, naming the action by the SHA-256 digest of its canonical JSON, and the task waits at `input-required`. With an `ApprovalGate`, the answer reaches the executor (`RequestContext::approval`) only if it answers the pending request, echoes its digest, and comes from an authenticated approver the gate allows, by default not the caller whose run asked. With the audit trail, each admitted decision is an `approval` record naming the approver."
-status = "partial"
+status = "supported"
 code = [
   "crates/a2a-protocol-server/src/approval.rs::ApprovalGate",
   "crates/a2a-protocol-server/src/executor_helpers.rs::EventEmitter::request_approval",
@@ -322,7 +324,7 @@ tests = [
   "crates/a2a-protocol-server/src/approval/tests.rs::who_may_approve",
   "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
 ]
-gap = "Which actions wait for a person is the executor's decision: the gate checks and records decisions, and cannot make an executor ask, or stop one that acts without asking."
+remainder = "Which actions wait for a person is the executor's decision: the gate checks and records decisions, and cannot make an executor ask, or stop one that acts without asking (re-examined 2026-10-20: every part of 14(4)(d) a library can carry is built and tested)."
 
 [[control]]
 id = "AIA-14-4e"
@@ -652,13 +654,19 @@ source = "owasp-asi"
 provision = "ASI09 Human-Agent Trust Exploitation"
 requirement = "Sensitive actions require explicit human confirmation rather than trust in confident output."
 sdk = "The approval extension binds a person's confirmation to the digest of the exact action, and the `ApprovalGate` refuses a confirmation of anything else, from anyone not allowed, or from the caller who asked; each admitted confirmation is an audit record."
-status = "partial"
+status = "supported"
+code = [
+  "crates/a2a-protocol-server/src/approval.rs::ApprovalGate",
+  "crates/a2a-protocol-server/src/executor_helpers.rs::EventEmitter::request_approval",
+]
 tests = [
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_approval_flows_through_the_gate_to_the_executor",
   "crates/a2a-protocol-server/src/approval/tests.rs::a_decision_for_another_request_or_action_is_refused",
   "crates/a2a-protocol-server/src/approval/tests.rs::who_may_approve",
   "crates/a2a-protocol-server/src/approval/tests.rs::without_a_gate_a_decision_is_never_reported_as_checked",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
 ]
-gap = "Which actions are sensitive enough to ask about is the executor's decision; the SDK cannot make it ask."
+remainder = "Which actions are sensitive enough to ask about is the executor's decision; the SDK cannot make it ask (re-examined 2026-10-20: the confirmation path is built and tested end to end)."
 
 [[control]]
 id = "ASI10"

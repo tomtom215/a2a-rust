@@ -28,7 +28,8 @@ behind it. This script makes the citations load-bearing.
     `.github/workflows/` — the string must occur verbatim in one;
   * a row's status and fields disagree: `supported` backed by neither a test
     nor a CI step, `documented` with no evidence file, either of them with a
-    gap text, any other status without one, an unknown status or source;
+    gap text, any other status without one, a `remainder` on anything but
+    those two, an unknown status or source;
   * two rows share an id;
   * `docs/compliance/control-map.md` is not what the TOML renders to.
 
@@ -141,11 +142,16 @@ def validate(doc: dict) -> list[str]:
             errors.append(f"{cid}: `supported` cites neither a test nor a CI step")
         if status == "documented" and not c.get("evidence"):
             errors.append(f"{cid}: `documented` cites no evidence file")
+        # `gap` is SDK work not done; `remainder` is what stays with the
+        # provider or deployer once the SDK has done all a library can. A
+        # finished row with a remainder is `supported`, not `partial`.
         if status in ("supported", "documented"):
             if gap:
                 errors.append(f"{cid}: `{status}` with a gap text — is it partial?")
         elif status in STATUSES and not gap:
             errors.append(f"{cid}: `{status}` must say what is missing, in `gap`")
+        if c.get("remainder") and status not in ("supported", "documented"):
+            errors.append(f"{cid}: `remainder` is for a finished row; `{status}` says it in `gap`")
         for step in ci:
             if not any(step in w for w in WORKFLOWS):
                 errors.append(f"{cid}: CI step {step!r} appears in no workflow")
@@ -168,6 +174,12 @@ def validate(doc: dict) -> list[str]:
 
 def cell(text: str) -> str:
     return " ".join(text.split()).replace("|", "\\|")
+
+
+def reason(c: dict) -> str:
+    if c.get("remainder"):
+        return "Left to the integrator: " + cell(c["remainder"])
+    return cell(c.get("gap", "")) or "—"
 
 
 def render(doc: dict) -> str:
@@ -220,7 +232,7 @@ def render(doc: dict) -> str:
             out.append(
                 f"| {c['id']} | {cell(c['provision'])} | {cell(c['requirement'])} | "
                 f"{cell(c['sdk'])} | {STATUSES[c['status']]} | {tests} | "
-                f"{cell(c.get('gap', '')) or '—'} |"
+                f"{reason(c)} |"
             )
         out.append("")
     out += ["## Where each cited test lives", ""]
