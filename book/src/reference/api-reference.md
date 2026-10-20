@@ -235,6 +235,7 @@ are rustdoc's job.
 | `ClientConfig` | Configuration for an `A2aClient` instance |
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
+| `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
 | `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |

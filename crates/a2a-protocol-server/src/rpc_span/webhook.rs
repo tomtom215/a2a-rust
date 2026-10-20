@@ -184,7 +184,8 @@ fn scrubbed(url: &str) -> String {
     }
 }
 
-#[cfg(all(test, feature = "tracing"))]
+#[cfg(test)]
+#[cfg(feature = "tracing")]
 mod tests {
     use super::*;
 
