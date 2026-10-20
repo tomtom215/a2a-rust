@@ -173,3 +173,33 @@ pub fn attr(span: &SpanData, key: &str) -> Option<String> {
         .find(|kv| kv.key.as_str() == key)
         .map(|kv| kv.value.to_string())
 }
+
+/// Each data point of an f64 histogram: its attributes, and its maximum.
+pub fn histogram_points(
+    metric: &opentelemetry_sdk::metrics::data::Metric,
+    gaps: &mut Vec<String>,
+) -> Vec<(std::collections::BTreeMap<String, String>, f64)> {
+    let opentelemetry_sdk::metrics::data::AggregatedMetrics::F64(
+        opentelemetry_sdk::metrics::data::MetricData::Histogram(h),
+    ) = metric.data()
+    else {
+        gaps.push(format!("{} is not an f64 histogram", metric.name()));
+        return Vec::new();
+    };
+    if metric.unit() != "s" {
+        gaps.push(format!(
+            "{} has unit {:?}, not \"s\"",
+            metric.name(),
+            metric.unit()
+        ));
+    }
+    h.data_points()
+        .map(|p| {
+            let attributes = p
+                .attributes()
+                .map(|kv| (kv.key.to_string(), kv.value.to_string()))
+                .collect();
+            (attributes, p.max().unwrap_or_default())
+        })
+        .collect()
+}

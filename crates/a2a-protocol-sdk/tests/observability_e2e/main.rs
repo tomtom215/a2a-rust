@@ -61,6 +61,7 @@ mod executor_errors;
 mod fixtures;
 mod grpc_status;
 mod push;
+mod streams;
 use fixtures::*;
 
 /// The advisory buckets for `rpc.server.call.duration`, from the semantic
@@ -222,12 +223,13 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     push::deliver(jsonrpc_client).await;
     executor_errors::run().await;
     grpc_status::run(&clients["GRPC"]).await;
+    streams::run().await;
 
     // ── What the exporter and the reader received ───────────────────────────
     // A span is exported when it closes, and `tracing` keeps a parent open
     // until its children close — the call's span waits for the background
-    // processor and the SSE writer it spawned (its recorded end time is still
-    // the call's own). So wait, with a deadline, for every span the SDK
+    // processor and the SSE writer it spawned (its recorded end time is the
+    // call's own, or its stream's). So wait, with a deadline, for every span the SDK
     // spawns to have its parent exported, rather than for a fixed time.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let spans = loop {
@@ -344,21 +346,23 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             ));
         }
     }
-    // A call's span ends when the call does, not when the stream it opened
-    // does: `tracing` keeps it open for its children, and the exported end
-    // time must still be the call's own.
+    // A streaming call's span ends when its stream does (`rpc-spans.md`:
+    // "the span SHOULD cover the full lifetime of the request and/or
+    // response streams"), so after the SSE writer it spawned. Until
+    // 2026-10-20 this asserted the opposite: the call ended at the handshake.
     for sse in spans.iter().filter(|s| s.name == "a2a.sse") {
         if let Some(call) = spans
             .iter()
             .find(|s| s.span_context.span_id() == sse.parent_span_id)
-            && call.end_time >= sse.end_time
+            && call.end_time < sse.end_time
         {
             gaps.push(format!(
-                "`{}` ends with the stream it opened, not with the call (O1)",
+                "`{}` ends before the stream it opened (rpc-spans.md)",
                 call.name
             ));
         }
     }
+    streams::check_spans(&spans, &mut gaps);
     conventions::check_unique_keys(&spans, &mut gaps);
     push::check_webhook(&exporter, &tracer_provider, &mut gaps).await;
     executor_errors::check(&exporter, &tracer_provider, &mut gaps).await;
@@ -406,6 +410,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     }
     let mut catalogue = book_catalogue();
     catalogue.insert("rpc.server.call.duration".to_owned());
+    catalogue.insert("rpc.client.call.duration".to_owned());
     for name in &catalogue {
         if !emitted.contains_key(name.as_str()) {
             gaps.push(format!(
@@ -467,6 +472,13 @@ async fn one_server_three_bindings_what_an_operator_sees() {
                 ));
             }
             grpc_status::check_points(&points, &mut gaps);
+            let client = emitted
+                .get("rpc.client.call.duration")
+                .map(|m| histogram_points(m, &mut gaps))
+                .unwrap_or_default();
+            let client_points: Vec<_> = client.iter().map(|(p, _)| p.clone()).collect();
+            streams::check_client_points(&client_points, &mut gaps);
+            streams::check_durations(&histogram_points(metric, &mut gaps), &client, &mut gaps);
         } else {
             gaps.push("rpc.server.call.duration is not an f64 histogram".to_owned());
         }
