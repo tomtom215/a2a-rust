@@ -40,6 +40,7 @@ use serde_json::{Value, json};
 #[cfg(feature = "grpc")]
 mod grpc;
 mod http_json;
+mod tenant;
 #[cfg(feature = "websocket")]
 mod websocket;
 

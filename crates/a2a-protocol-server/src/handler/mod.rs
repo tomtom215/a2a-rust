@@ -36,6 +36,7 @@ mod messaging;
 mod push_config;
 mod push_config_page;
 mod shutdown;
+mod tenant_resolution;
 mod undeclared_binding;
 mod unreadable;
 
@@ -275,64 +276,6 @@ impl RequestHandler {
     pub(crate) fn tenant_limits(&self) -> Option<&crate::tenant_config::TenantLimits> {
         let config = self.tenant_config.as_ref()?;
         Some(config.get(&crate::store::tenant::TenantContext::current()))
-    }
-
-    /// Resolves the authoritative tenant for a request.
-    ///
-    /// When a [`TenantResolver`] is configured it is the source of truth: the
-    /// tenant is derived from trusted request context (an auth token, a
-    /// gateway-set header, a URL path segment) rather than from the
-    /// client-supplied `tenant` field. A client that *also* names a tenant is
-    /// honored only when it matches the resolved one; a mismatch is a
-    /// cross-tenant access attempt and is rejected. This closes the gap where a
-    /// configured resolver was never consulted and the client's `params.tenant`
-    /// alone selected the store partition — letting any caller read or write
-    /// another tenant's tasks by naming it.
-    ///
-    /// With no resolver configured, the client-supplied value is used verbatim
-    /// (single-tenant deployments, or trusted callers behind an authenticating
-    /// gateway), preserving the prior behavior.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ServerError::InvalidParams`] when a client-supplied tenant
-    /// disagrees with the resolver-derived tenant.
-    pub(crate) async fn resolve_tenant(
-        &self,
-        method: &str,
-        headers: Option<&HashMap<String, String>>,
-        client_tenant: Option<&str>,
-    ) -> ServerResult<String> {
-        #[cfg(feature = "tracing")]
-        crate::rpc_span::record_tenant(client_tenant);
-        let Some(resolver) = self.tenant_resolver.as_deref() else {
-            return self.isolatable(client_tenant.unwrap_or_default().to_owned());
-        };
-        let call_ctx =
-            crate::handler::helpers::build_call_context(method, headers, self.inbound_trace_policy);
-        let derived = resolver.resolve(&call_ctx).await;
-        // Strict mode: a resolver that cannot determine a tenant must not fall
-        // through to the shared default partition — reject instead, so a
-        // header-less/unauthenticated request cannot read or write the `""`
-        // bucket. Off by default to preserve the documented resolver contract
-        // (`None` → default partition) for deployments that rely on it.
-        if self.require_resolved_tenant && derived.is_none() {
-            return Err(crate::error::ServerError::InvalidParams(
-                "no tenant could be determined for this request and strict \
-                 multi-tenancy is enabled"
-                    .to_owned(),
-            ));
-        }
-        let authoritative = derived.unwrap_or_default();
-        if let Some(client) = client_tenant
-            && !client.is_empty()
-            && client != authoritative
-        {
-            return Err(crate::error::ServerError::InvalidParams(format!(
-                "request tenant '{client}' does not match the authenticated tenant"
-            )));
-        }
-        self.isolatable(authoritative)
     }
 
     /// Runs the interceptors' `before` hooks, then isolates the rest of the

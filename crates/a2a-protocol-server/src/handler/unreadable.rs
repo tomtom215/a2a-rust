@@ -58,7 +58,7 @@ impl RequestHandler {
         unreadable: ServerError,
     ) -> Result<ServerError, ServerError> {
         let tenant = self
-            .resolve_tenant(method, headers, None)
+            .resolve_tenant_unadmitted(method, headers, None)
             .await
             .unwrap_or_default();
         crate::store::tenant::TenantContext::scope_request(tenant, async {

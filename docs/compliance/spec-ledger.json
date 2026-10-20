@@ -3569,7 +3569,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:133",
+    "crates/a2a-protocol-server/src/handler/mod.rs:134",
     "crates/a2a-protocol-server/src/handler/helpers.rs:22",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:211",
     "crates/a2a-protocol-server/src/handler/push_config.rs:25",
@@ -7584,13 +7584,13 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:41",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:63",
     "crates/a2a-protocol-server/src/handler/push_config.rs:145",
-    "crates/a2a-protocol-server/src/handler/mod.rs:279"
+    "crates/a2a-protocol-server/src/handler/tenant_resolution.rs:43"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/interceptor_tests.rs:199 error_in_before_stops_chain",
     "crates/a2a-protocol-server/src/handler/tenant_isolation_tests.rs:133 a_refused_send_creates_no_task"
    ],
-   "notes": "call.before() (interceptors) and resolve_tenant/isolatable run before any task_store access in every handler; out-of-partition tasks surface as TaskNotFound, indistinguishable from nonexistent. Caveat: the CreateTaskPushNotificationConfig taskId-empty check (push_config.rs:167) runs before interceptors but reads no store.",
+   "notes": "call.before() (interceptors) and resolve_tenant/isolatable run before any task_store access in every handler; out-of-partition tasks surface as TaskNotFound, indistinguishable from nonexistent. Caveat: the CreateTaskPushNotificationConfig taskId-empty check (push_config.rs:167) runs before interceptors but reads no store. 2026-10-20: the handler/mod.rs:279 citation named a blank line above resolve_tenant; it now names resolve_tenant in handler/tenant_resolution.rs, which since today also sends its refusals through the interceptor chain before answering.",
    "auditor": "F",
    "source": "spec"
   },

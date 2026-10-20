@@ -1110,9 +1110,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read timeout (`408`) (§13.4 asks for size limits), the query-string
   length cap, routing (`404`/`405`), a gRPC message tonic cannot decode, and
   a WebSocket frame that is not JSON (`-32700`) or not a request
-  (`-32600`), which names no method to admit it as, as over JSON-RPC. Tests:
-  `auth_before_params` (one module per binding, and the handler checks over
-  JSON-RPC and HTTP+JSON).
+  (`-32600`), which names no method to admit it as, as over JSON-RPC. The
+  tenant too: with a `TenantResolver`, a client tenant the resolver
+  disagrees with, or none under `require_resolved_tenant`, was refused
+  `InvalidParams` before admission, telling an unauthenticated caller that
+  strict multi-tenancy was on or which tenant its credential did not map
+  to; a refusal from `resolve_tenant` now goes through the chain first
+  (`handler/tenant_resolution.rs`). Tests: `auth_before_params` (one module
+  per binding, the handler checks over JSON-RPC and HTTP+JSON, and the
+  tenant).
 - **Two names the semantic conventions spell differently** (server and
   client; checked against `open-telemetry/semantic-conventions@55c98cf` and
   `semantic-conventions-genai@547934a`). The executor span's finish reason
