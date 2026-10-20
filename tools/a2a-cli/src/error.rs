@@ -24,8 +24,9 @@ pub enum CliError {
     Discovery {
         /// The base URL the card was requested from.
         url: String,
-        /// The underlying failure.
-        source: ClientError,
+        /// The underlying failure. Boxed so `CliError` stays under clippy's
+        /// `result_large_err` limit when `serde_json`'s `preserve_order` grows it.
+        source: Box<ClientError>,
     },
     /// A response could not be rendered as JSON. Should not happen — every
     /// protocol type serializes — but a panic would be the wrong answer.
@@ -50,11 +51,11 @@ impl CliError {
     /// The agent's structured error, when the failure carries one.
     fn protocol_error(&self) -> Option<&a2a_protocol_types::A2aError> {
         match self {
-            Self::Client(ClientError::Protocol(e))
-            | Self::Discovery {
-                source: ClientError::Protocol(e),
-                ..
-            } => Some(e),
+            Self::Client(ClientError::Protocol(e)) => Some(e),
+            Self::Discovery { source, .. } => match source.as_ref() {
+                ClientError::Protocol(e) => Some(e),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -122,7 +123,7 @@ mod tests {
         assert_eq!(e.exit_code(), 1);
         let e = CliError::Discovery {
             url: "http://x".into(),
-            source: ClientError::Transport("x".into()),
+            source: Box::new(ClientError::Transport("x".into())),
         };
         assert_eq!(e.exit_code(), 1);
     }
@@ -156,7 +157,7 @@ mod tests {
     fn discovery_failure_names_the_url_and_the_way_out() {
         let e = CliError::Discovery {
             url: "http://127.0.0.1:1".into(),
-            source: ClientError::Transport("refused".into()),
+            source: Box::new(ClientError::Transport("refused".into())),
         };
         let text = e.to_string();
         assert!(text.contains("http://127.0.0.1:1"));

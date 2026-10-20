@@ -10,6 +10,7 @@ pub mod dynamic_handler;
 pub mod hot_reload;
 pub mod lint;
 mod per_caller;
+mod sorted_json;
 pub mod static_handler;
 
 pub use dynamic_handler::{AgentCardProducer, DynamicAgentCardHandler};

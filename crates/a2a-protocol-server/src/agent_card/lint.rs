@@ -210,7 +210,11 @@ fn card_urls(card: &AgentCard) -> Vec<(String, String)> {
     fn walk(v: &serde_json::Value, path: &str, out: &mut Vec<(String, String)>) {
         match v {
             serde_json::Value::Object(map) => {
-                for (k, v) in map {
+                // Key order, so the report reads the same whatever order
+                // `serde_json::Map` keeps (`preserve_order`).
+                let mut entries: Vec<_> = map.iter().collect();
+                entries.sort_by(|a, b| a.0.cmp(b.0));
+                for (k, v) in entries {
                     let here = if path.is_empty() {
                         k.clone()
                     } else {

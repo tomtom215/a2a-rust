@@ -436,8 +436,8 @@ mod tests {
                     .map_or_else(String::new, |s| (*s).to_string())
             });
         assert!(
-            msg.contains("signal driver"),
-            "expected tokio's missing-signal-driver panic, got: {msg}"
+            msg.contains("signal driver") || msg.contains("IO is disabled"),
+            "expected tokio's missing-signal-driver panic (1.54 says IO is disabled), got: {msg}"
         );
     }
 
