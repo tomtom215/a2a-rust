@@ -227,7 +227,7 @@ pub use push::{
 pub use rate_limit::PostgresRateLimitCounter;
 pub use rate_limit::{RateLimitConfig, RateLimitCounter, RateLimitInterceptor};
 pub use request_context::RequestContext;
-pub use rpc_span::{BindingSpan, CustomBinding};
+pub use rpc_span::{BindingSpan, CustomBinding, StreamEnd, StreamOutcome};
 pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,

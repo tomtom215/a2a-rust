@@ -13,6 +13,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
+use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::proto as apb;
 use a2a_protocol_types::proto::convert::ConvertError;
 use tokio::sync::mpsc;
@@ -24,6 +25,7 @@ use super::admit::convert;
 use super::helpers::server_error_to_status;
 use super::pb::a2a_service_server::A2aService;
 use crate::handler::{RequestHandler, SendMessageResult};
+use crate::rpc_span::StreamOutcome;
 
 /// The streaming response type for canonical server-streaming methods.
 type NativeStream =
@@ -66,7 +68,7 @@ fn reader_to_native_stream(
 ) -> NativeStream {
     use crate::streaming::EventQueueReader;
     let (tx, rx) = mpsc::channel(capacity);
-    tokio::spawn(async move {
+    tokio::spawn(crate::rpc_span::spanning_stream(async move {
         loop {
             // Also watch for the client going away: a send is the only other
             // place that notices, and a quiet task sends nothing, so this
@@ -75,30 +77,32 @@ fn reader_to_native_stream(
             // Safe to drop `read()` here: it is cancel-safe (N25).
             let next = tokio::select! {
                 biased;
-                () = tx.closed() => break,
+                () = tx.closed() => break StreamOutcome::Abandoned,
                 next = reader.read() => next,
             };
-            match next {
-                Some(Ok(event)) => {
-                    let item = apb::StreamResponse::try_from(event.event).map_err(bad_response);
-                    let is_err = item.is_err();
-                    if tx.send(item).await.is_err() || is_err {
-                        break;
+            let (status, failed) = match next {
+                Some(Ok(event)) => match apb::StreamResponse::try_from(event.event) {
+                    Ok(item) => {
+                        if tx.send(Ok(item)).await.is_err() {
+                            break StreamOutcome::Abandoned;
+                        }
+                        continue;
                     }
-                }
-                Some(Err(e)) => {
-                    // The error as a unary call answers it, `streamLagged`
-                    // marker included (§5.1); it was a bare internal error.
-                    let status = super::helpers::server_error_to_status(
-                        &crate::error::ServerError::Protocol(e),
-                    );
-                    let _ = tx.send(Err(status)).await;
-                    break;
-                }
-                None => break,
-            }
+                    Err(e) => (bad_response(e), None),
+                },
+                // The error as a unary call answers it, `streamLagged`
+                // marker included (§5.1); it was a bare internal error.
+                Some(Err(e)) => (
+                    server_error_to_status(&crate::error::ServerError::Protocol(e.clone())),
+                    Some(e),
+                ),
+                None => break StreamOutcome::Completed,
+            };
+            let failed = failed.unwrap_or_else(|| A2aError::internal(status.message()));
+            let _ = tx.send(Err(status)).await;
+            break StreamOutcome::Failed(failed);
         }
-    });
+    }));
     Box::pin(ReceiverStream::new(rx))
 }
 
@@ -160,15 +164,12 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::MessageSendParams) =
             self.admit("SendStreamingMessage", request, convert)?;
-        match self
-            .rpc_span("SendStreamingMessage", &headers)
-            .run(self.handler.on_send_message(params, true, Some(&headers)))
-            .await
-        {
-            Ok(SendMessageResult::Stream(reader)) => Ok(Response::new(reader_to_native_stream(
-                reader,
-                self.config.stream_channel_capacity,
-            ))),
+        let capacity = self.config.stream_channel_capacity;
+        let call = self.handler.on_send_message(params, true, Some(&headers));
+        let then = |out| match out {
+            Ok(SendMessageResult::Stream(reader)) => {
+                Ok(Response::new(reader_to_native_stream(reader, capacity)))
+            }
             Ok(SendMessageResult::Response(resp)) => {
                 // Wrap single response as a one-element stream.
                 let payload = send_result_to_stream(resp).map_err(bad_response)?;
@@ -176,7 +177,10 @@ impl A2aService for A2aServiceImpl {
                 Ok(Response::new(stream as NativeStream))
             }
             Err(e) => Err(server_error_to_status(&e)),
-        }
+        };
+        self.rpc_span("SendStreamingMessage", &headers)
+            .run_with(call, then)
+            .await
     }
 
     // ── Task lifecycle ───────────────────────────────────────────────────
@@ -237,17 +241,13 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::TaskIdParams) =
             self.admit("SubscribeToTask", request, |r| Ok(r.into()))?;
-        match self
-            .rpc_span("SubscribeToTask", &headers)
-            .run(self.handler.on_resubscribe(params, Some(&headers)))
+        let capacity = self.config.stream_channel_capacity;
+        self.rpc_span("SubscribeToTask", &headers)
+            .run_with(self.handler.on_resubscribe(params, Some(&headers)), |out| {
+                out.map(|reader| Response::new(reader_to_native_stream(reader, capacity)))
+                    .map_err(|e| server_error_to_status(&e))
+            })
             .await
-        {
-            Ok(reader) => Ok(Response::new(reader_to_native_stream(
-                reader,
-                self.config.stream_channel_capacity,
-            ))),
-            Err(e) => Err(server_error_to_status(&e)),
-        }
     }
 
     // ── Push notification config ─────────────────────────────────────────

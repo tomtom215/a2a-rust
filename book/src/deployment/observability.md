@@ -236,10 +236,14 @@ method, a batch over the limit; on HTTP+JSON and the axum router, a request
 refused before routing — an unsupported or missing `A2A-Version`, a content
 type, a path no route serves (no `rpc.method`) — and one refused on its body
 or parameters, under the route's method; on gRPC, a call refused for its
-metadata or a request that does not convert, under its method. For a
-streaming method it times the call up to the stream being established, not
-the stream.
-The same values reach a custom `Metrics` as `on_rpc_call`.
+metadata or a request that does not convert, under its method. A streaming
+call — `SendStreamingMessage` or `SubscribeToTask`, over SSE, gRPC or
+WebSocket — lasts until its stream ends, as the conventions ask ("the span
+SHOULD cover the full lifetime of the request and/or response streams"): it
+is recorded then, with the error the stream's last frame carried, or
+`cancelled` if the client went away first. Before 0.15 it was timed only up
+to the stream being established, and recorded as a success whatever the
+stream did next. The same values reach a custom `Metrics` as `on_rpc_call`.
 
 `a2a.server.request.duration` times the same calls by A2A method, with the
 same buckets. Before 0.15 it was `a2a.server.latency`, deprecated in 0.14.0
@@ -455,7 +459,8 @@ the client reports no `invoke_agent` span of its own.
 
 A span is exported when it closes, and `tracing` holds a span open until its
 children close, so a call's span reaches your backend once the work it
-spawned has finished — with its own end time, the call's, not theirs. Every
+spawned has finished — with its own end time, the call's, not theirs; a
+streaming call's is its stream's. Every
 attribute is recorded once: `tracing-opentelemetry` 0.34.0 exports a field
 recorded twice as two attributes with one key, and the SDK's observability
 gate fails on any span that carries one.

@@ -148,6 +148,25 @@ impl BindingSpan {
     {
         self.0.run(fut)
     }
+
+    /// [`run`](Self::run), then `then` on the outcome, inside the call: for
+    /// a call that answers with a stream. A stream `then` sets up claims the
+    /// call with [`StreamEnd::claim`](crate::StreamEnd::claim); a successful
+    /// call is then recorded when the stream ends, with the
+    /// [`StreamOutcome`](crate::StreamOutcome) passed to
+    /// [`StreamEnd::end`](crate::StreamEnd::end) — or as `cancelled` if the
+    /// claim is dropped first — so its span and duration cover the stream,
+    /// as the semantic conventions ask of a streaming call.
+    pub fn run_with<T, F, R>(
+        self,
+        fut: F,
+        then: impl FnOnce(ServerResult<T>) -> R,
+    ) -> impl Future<Output = R>
+    where
+        F: Future<Output = ServerResult<T>>,
+    {
+        self.0.run_with(fut, then)
+    }
 }
 
 #[cfg(test)]

@@ -54,14 +54,16 @@ use a2a_protocol_types::jsonrpc::{
 
 use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
-use crate::streaming::EventQueueReader;
+use crate::rpc_span::StreamEnd;
 
 mod card;
 mod io;
 mod origin;
 mod shutdown;
+mod stream;
 
 use io::WsIo;
+use stream::stream_events;
 
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
 ///
@@ -1062,10 +1064,13 @@ async fn process_ws_message(
                 )?;
                 handler.on_resubscribe(params, Some(headers)).await
             };
-            match ws_span(handler, &rpc_req, headers).run(call).await {
-                Ok(reader) => {
-                    stream_events(&writer, reader, id).await;
-                }
+            // The stream claims the call, which then ends with it.
+            let claim = |out: Result<_, _>| out.map(|r| (r, StreamEnd::claim()));
+            match ws_span(handler, &rpc_req, headers)
+                .run_with(call, claim)
+                .await
+            {
+                Ok((reader, end)) => stream_events(&writer, reader, id, end).await,
                 Err(e) => {
                     send_error(&writer, id, &e).await;
                 }
@@ -1167,7 +1172,13 @@ async fn dispatch_send_message(
             .on_send_message(params, streaming, Some(headers))
             .await
     };
-    let outcome = ws_span(handler, rpc_req, headers).run(call).await;
+    // A stream claims the call, which then ends with it.
+    let (outcome, end) = ws_span(handler, rpc_req, headers)
+        .run_with(call, |out| {
+            let streams = matches!(out, Ok(SendMessageResult::Stream(_)));
+            (out, streams.then(StreamEnd::claim).flatten())
+        })
+        .await;
     let Some(writer) = writer else { return };
     match outcome {
         Ok(SendMessageResult::Response(resp)) => {
@@ -1179,68 +1190,11 @@ async fn dispatch_send_message(
             };
             send_json(writer, &success).await;
         }
-        Ok(SendMessageResult::Stream(reader)) => {
-            stream_events(writer, reader, id).await;
-        }
+        Ok(SendMessageResult::Stream(reader)) => stream_events(writer, reader, id, end).await,
         Err(e) => {
             send_error(writer, id, &e).await;
         }
     }
-}
-
-/// Streams events from an event queue reader over WebSocket as individual frames.
-async fn stream_events(
-    writer: &WsSink,
-    mut reader: crate::streaming::InMemoryQueueReader,
-    id: JsonRpcId,
-) {
-    while let Some(event) = reader.read().await {
-        match event.map(|e| e.event) {
-            Ok(stream_resp) => {
-                // Wrap each event in a JSON-RPC success envelope so the client
-                // can route it by `id` and deserialize as `JsonRpcResponse<StreamResponse>`.
-                //
-                // No log position on the wire here: resumption is the SSE
-                // binding's `id:`/`Last-Event-ID` pair, and inventing a
-                // WebSocket spelling for it would be a protocol extension
-                // this server made up.
-                let envelope = JsonRpcSuccessResponse {
-                    jsonrpc: JsonRpcVersion,
-                    id: id.clone(),
-                    result: stream_resp,
-                };
-                let json = serde_json::to_string(&envelope).unwrap_or_default();
-                let mut w = writer.sink.lock().await;
-                if w.send(WsMessage::Text(json.into())).await.is_err() {
-                    return; // Client disconnected
-                }
-                drop(w);
-                // This is the write that keeps a long subscription alive under
-                // an idle timeout: the consumer may say nothing for hours.
-                writer.activity.touch();
-            }
-            Err(e) => {
-                // The error's own code and details, as the SSE binding sends
-                // them. It was rewritten to -32000 with `e.to_string()`,
-                // which lost the A2A code and the `streamLagged` marker
-                // (§12.4: preserve error information).
-                let err_resp = JsonRpcErrorResponse::new(
-                    id.clone(),
-                    crate::streaming::sse::jsonrpc_error_from(&e),
-                );
-                send_json(writer, &err_resp).await;
-                return;
-            }
-        }
-    }
-
-    // Stream complete — send final success response.
-    let success = JsonRpcSuccessResponse {
-        jsonrpc: JsonRpcVersion,
-        id,
-        result: serde_json::json!({"status": "stream_complete"}),
-    };
-    send_json(writer, &success).await;
 }
 
 /// Generic dispatcher for simple (non-streaming) methods.

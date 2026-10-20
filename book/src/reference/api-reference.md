@@ -374,6 +374,8 @@ are rustdoc's job.
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
 | `BindingSpan` | The per-call server span and `rpc.server.call.duration` for a binding outside this crate, as the in-crate bindings record theirs (ADR 0013) |
 | `CustomBinding` | How such a binding names itself: its `rpc.system.name`, its status for each `ServerError`, and optionally the status of a success |
+| `StreamEnd` | A response stream's claim on the call it answers (`BindingSpan::run_with`): the call is recorded when the stream ends, as cancelled if the claim is dropped |
+| `StreamOutcome` | How a response stream ended: completed, failed with an error, or abandoned |
 
 ### Traits
 

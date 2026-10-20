@@ -6,16 +6,19 @@
 
 use std::borrow::Cow;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Instant;
 
+use super::stream::{Scoped, Slot};
 use super::{CANCELLED, RpcSystem, ServerSpan};
 
 /// The future inside a call's span, as the call's future is wrapped when
 /// tracing is compiled in.
 #[cfg(feature = "tracing")]
-type Inner<F> = tracing::instrument::Instrumented<tokio::task::futures::TaskLocalFuture<bool, F>>;
+type Inner<F> =
+    tracing::instrument::Instrumented<tokio::task::futures::TaskLocalFuture<bool, Scoped<F>>>;
 #[cfg(not(feature = "tracing"))]
-type Inner<F> = F;
+type Inner<F> = Scoped<F>;
 
 pin_project_lite::pin_project! {
     /// A call running in its span; when it finishes, it is recorded and its
@@ -28,6 +31,9 @@ pin_project_lite::pin_project! {
         pub(super) inner: Inner<F>,
         pub(super) pending: Pending,
         pub(super) finish: Option<(C, T)>,
+        // Where a stream the call opens claims it; `None` for a call that
+        // cannot answer with one (`stream.rs`).
+        pub(super) slot: Option<Arc<Slot>>,
     }
 }
 
@@ -53,8 +59,14 @@ where
             .take()
             .expect("a call polled after it finished");
         let status = classify(&out, call.system);
-        call.finish(this.pending.started.elapsed(), status.as_deref());
-        call.enter(|| then(out)).into()
+        // `then` first: building the response is where a stream claims the
+        // call, which it then records when it ends rather than now.
+        let response = call.enter(|| super::stream::scope(this.slot.as_ref(), || then(out)));
+        match this.slot.as_ref() {
+            Some(slot) => slot.settle(call, this.pending.started, status.as_deref()),
+            None => call.finish(this.pending.started.elapsed(), status.as_deref()),
+        }
+        response.into()
     }
 }
 

@@ -55,6 +55,8 @@ mod otel;
 mod refusal;
 #[cfg(feature = "tool-loop")]
 mod tool;
+mod spawn;
+mod stream;
 mod webhook;
 
 #[cfg(feature = "tracing")]
@@ -82,6 +84,8 @@ pub use refusal::record_refused;
 pub use refusal::{record_if_refused, record_unrouted, refused};
 #[cfg(feature = "tool-loop")]
 pub use tool::GenAiSpan;
+pub use spawn::{in_child_span, in_current_span};
+pub use stream::{StreamEnd, StreamOutcome, spanning_stream};
 pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the
@@ -255,14 +259,17 @@ impl ServerSpan {
         E: WireStatus,
         F: Future<Output = Result<T, E>>,
     {
-        self.run_with(fut, |out| out)
+        self.call(fut, failed_with, |out| out, false)
     }
 
     /// [`run`](Self::run), then `then` on the outcome, still inside the span:
     /// for a binding that builds its response from the outcome and spawns
     /// work doing so — an SSE response's writer task — so that work is a
-    /// child of the call rather than the root of a trace of its own. The
-    /// call's recorded duration ends before `then`.
+    /// child of the call rather than the root of a trace of its own.
+    ///
+    /// A stream set up in `then` may claim the call
+    /// ([`StreamEnd::claim`], [`spanning_stream`]); a successful call is then
+    /// recorded when that stream ends, with its outcome (`stream.rs`).
     pub fn run_with<T, E, F, R>(
         self,
         fut: F,
@@ -272,18 +279,15 @@ impl ServerSpan {
         E: WireStatus,
         F: Future<Output = Result<T, E>>,
     {
-        self.call(
-            fut,
-            |out, system| out.as_ref().err().map(|e| e.wire_status(system)),
-            then,
-        )
+        self.call(fut, failed_with, then, true)
     }
 
     /// [`run`](Self::run) for a binding whose response already says how the
     /// call went: an HTTP+JSON response's status *is* its wire status, so
     /// timing the whole route — parsing the body and params included — and
     /// classifying by that status records a request refused before the
-    /// handler ran exactly as a caller saw it.
+    /// handler ran exactly as a caller saw it. An SSE response's stream
+    /// claims the call, as in [`run_with`](Self::run_with).
     pub fn run_response<B, F>(self, fut: F) -> impl Future<Output = hyper::Response<B>>
     where
         F: Future<Output = hyper::Response<B>>,
@@ -295,6 +299,7 @@ impl ServerSpan {
                     .then(|| Cow::Owned(resp.status().as_u16().to_string()))
             },
             |resp| resp,
+            true,
         )
     }
 
@@ -306,12 +311,17 @@ impl ServerSpan {
     /// awaited — which doubled every dispatcher's future past clippy's
     /// `large_futures` bound; boxing it instead cost an allocation and a copy
     /// of up to 84 KB per call, measured at +11% on an HTTP+JSON send.
-    fn call<F, C, T, R>(self, fut: F, classify: C, then: T) -> Call<F, C, T>
+    ///
+    /// `streams`: whether the call can answer with a stream, which then
+    /// records it (`stream.rs`).
+    fn call<F, C, T, R>(self, fut: F, classify: C, then: T, streams: bool) -> Call<F, C, T>
     where
         F: Future,
         C: FnOnce(&F::Output, RpcSystem) -> Option<Cow<'static, str>>,
         T: FnOnce(F::Output) -> R,
     {
+        let slot = streams.then(stream::Slot::new);
+        let fut = stream::scope_future(slot.as_ref(), fut);
         #[cfg(feature = "tracing")]
         let inner =
             tracing::Instrument::instrument(UNTRACED.scope(self.untraced, fut), self.span.clone());
@@ -324,6 +334,7 @@ impl ServerSpan {
                 started: Instant::now(),
             },
             finish: Some((classify, then)),
+            slot,
         }
     }
 
@@ -416,6 +427,14 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
     )
 }
 
+/// The wire status of a call that returned `Err`, `None` for `Ok`.
+fn failed_with<T, E: WireStatus>(
+    out: &Result<T, E>,
+    system: RpcSystem,
+) -> Option<Cow<'static, str>> {
+    out.as_ref().err().map(|e| e.wire_status(system))
+}
+
 /// `s` cut to at most `max` bytes, on a character boundary.
 #[cfg(feature = "tracing")]
 fn truncated(s: &str, max: usize) -> &str {
@@ -429,47 +448,11 @@ fn truncated(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
-/// Runs a task spawned on behalf of the current call — the executor, the
-/// event processor, a push delivery — in an `INTERNAL` child span of it, so
-/// the work shows up under the call in a trace and its log events carry the
-/// call's context across the `tokio::spawn` (audit O4).
-pub fn in_child_span<F: Future>(name: &'static str, fut: F) -> impl Future<Output = F::Output> {
-    #[cfg(feature = "tracing")]
-    {
-        let untraced = untraced();
-        let span = if untraced {
-            tracing::Span::none()
-        } else {
-            tracing::info_span!(target: "a2a_protocol_server::rpc", "a2a.task", otel.name = name)
-        };
-        tracing::Instrument::instrument(UNTRACED.scope(untraced, fut), span)
-    }
-    #[cfg(not(feature = "tracing"))]
-    {
-        let _ = name;
-        fut
-    }
-}
-
-/// Runs work spawned to finish a call's own job — not a task of its own —
-/// in the call's span, carrying whether the call is untraced across the
-/// `tokio::spawn`. For work that must outlive the request future when its
-/// client goes away (N27) without adding a span to the call's trace.
-pub fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
-    #[cfg(feature = "tracing")]
-    {
-        let untraced = untraced();
-        tracing::Instrument::instrument(UNTRACED.scope(untraced, fut), tracing::Span::current())
-    }
-    #[cfg(not(feature = "tracing"))]
-    {
-        fut
-    }
-}
-
 #[cfg(test)]
 mod jsonrpc_tests;
 #[cfg(test)]
 mod span_tests;
+#[cfg(test)]
+mod stream_tests;
 #[cfg(test)]
 mod tests;

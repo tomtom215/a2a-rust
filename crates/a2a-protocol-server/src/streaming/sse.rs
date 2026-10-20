@@ -21,6 +21,7 @@ use a2a_protocol_types::jsonrpc::{
     JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcSuccessResponse, JsonRpcVersion,
 };
 
+use crate::rpc_span::{StreamOutcome, in_child_span, spanning_stream};
 use crate::streaming::event_queue::{EventQueueReader, InMemoryQueueReader};
 
 /// Default keep-alive interval for SSE streams.
@@ -398,7 +399,8 @@ pub fn build_sse_response(
         loop {
             tokio::select! {
                 biased;
-
+                // A client gone is noticed now, not at a send a quiet task may never make.
+                () = body_writer.tx.closed() => break StreamOutcome::Abandoned,
                 event = reader.read() => {
                     match event {
                         Some(Ok(queued)) => {
@@ -436,11 +438,11 @@ pub fn build_sse_response(
                                     {
                                         let _ = body_writer.send_event("error", &data).await;
                                     }
-                                    break;
+                                    break StreamOutcome::Failed(err);
                                 }
                             };
                             if body_writer.send_raw_frame(frame_bytes).await.is_err() {
-                                break;
+                                break StreamOutcome::Abandoned;
                             }
                             // Reset keep-alive deadline after each event.
                             keep_alive_deadline.as_mut().reset(
@@ -458,20 +460,18 @@ pub fn build_sse_response(
                             // the error the server was trying to convey. That
                             // made the 0.7.0 `streamLagged` truncation signal
                             // unreadable over JSON-RPC (§9.4.2).
-                            let Ok(data) =
-                                stream_error_payload(&e, jsonrpc_envelope_id.as_ref())
-                            else {
-                                break;
-                            };
-                            let _ = body_writer.send_event("error", &data).await;
-                            break;
+                            let data = stream_error_payload(&e, jsonrpc_envelope_id.as_ref());
+                            if let Ok(data) = data {
+                                let _ = body_writer.send_event("error", &data).await;
+                            }
+                            break StreamOutcome::Failed(e);
                         }
-                        None => break,
+                        None => break StreamOutcome::Completed,
                     }
                 }
                 () = &mut keep_alive_deadline => {
                     if body_writer.send_keep_alive().await.is_err() {
-                        break;
+                        break StreamOutcome::Abandoned;
                     }
                     keep_alive_deadline.as_mut().reset(
                         tokio::time::Instant::now() + interval,
@@ -479,10 +479,10 @@ pub fn build_sse_response(
                 }
             }
         }
-
-        drop(body_writer);
     });
-    tokio::spawn(crate::rpc_span::in_child_span("a2a.sse", forward));
+    // The call this stream answers ends with it: claimed here, inside the
+    // call, and recorded after the writer's own span has closed.
+    tokio::spawn(spanning_stream(in_child_span("a2a.sse", forward)));
 
     let body = ChannelBody { rx };
 
@@ -720,10 +720,8 @@ mod tests {
     /// This asserted nothing until 2026-08-19. It dropped the response, slept
     /// 50ms, wrote one event with `let _ =` under a comment saying the result
     /// "may or may not succeed depending on timing", and ended. It could not
-    /// fail. What makes the behaviour observable is the *second* write: the
-    /// loop only learns the client is gone when a send fails, so the first
-    /// write is the one that teaches it and the second is the one that finds
-    /// the reader dropped and no subscribers left.
+    /// fail. What makes the behaviour observable is a write that fails: it
+    /// finds the reader dropped and no subscribers left.
     #[tokio::test]
     async fn build_sse_response_client_disconnect_stops_stream() {
         use crate::streaming::event_queue::EventQueueWriter;
@@ -748,18 +746,13 @@ mod tests {
 
         // The client goes away: dropping the response drops the body receiver.
         drop(response);
-        tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // The loop is still parked on `reader.read()` and has not yet tried to
-        // send anything, so it does not know. This write is what tells it.
-        writer
-            .write(event())
-            .await
-            .expect("the reader is still subscribed until the loop notices");
-
-        // Let the loop wake, fail its send, break, and drop the reader. Poll
-        // rather than sleeping a fixed amount: the exit is what is being
-        // asserted, and a fixed sleep either flakes or is far too long.
+        // The loop notices without being sent anything — it watches the body
+        // close, as the gRPC forwarder does (N31) — and drops the reader, so
+        // a quiet task's queue loses its subscriber. Until 2026-10-20 only a
+        // write told it. Poll rather than sleeping a fixed amount: the exit is
+        // what is being asserted, and a fixed sleep either flakes or is far
+        // too long. A write still succeeds while the reader is subscribed.
         let mut observed_shutdown = false;
         for _ in 0..200 {
             tokio::time::sleep(Duration::from_millis(10)).await;

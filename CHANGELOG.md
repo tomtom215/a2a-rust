@@ -1056,6 +1056,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A streaming call's span and `rpc.server.call.duration` cover its
+  stream** (server; `SendStreamingMessage` and `SubscribeToTask` over SSE —
+  JSON-RPC, HTTP+JSON and the axum router — gRPC and WebSocket). The
+  semantic conventions' `docs/rpc/rpc-spans.md`: "For streaming RPCs, the
+  span SHOULD cover the full lifetime of the request and/or response
+  streams until they are closed or terminated", and the metric "SHOULD be
+  the same as the RPC server span duration". Both ended when the handler
+  returned the stream, and recorded a success whatever the stream did next.
+  Now the call is recorded when its stream ends: completed; failed with the
+  error its last frame or status carried (as `rpc.status_code` and, by the
+  binding's rule, `error.type`); or `cancelled` when the client went away
+  or the stream was dropped. The `SERVER` span's exported end time is the
+  stream's end, after the SSE writer's `a2a.sse` span. The SSE writer now
+  notices a client that went away at once — it watches the response body
+  close, as the gRPC forwarder does (N31) — instead of at its next send,
+  which a quiet task might not make for a long time, so the reader leaves
+  the task's queue then too. A dashboard reading `rpc.server.call.duration`
+  for the two streaming methods sees stream lifetimes, not handshakes.
+  A binding outside the server crate gets the same through
+  `BindingSpan::run_with`, `StreamEnd` and `StreamOutcome` (new).
 - **`error.type` marks a server failure, by each binding's conventions**
   (server; `rpc.server.call.duration` and the `SERVER` span). It was set,
   with `Error` status, for every status but success. Now: every JSON-RPC
