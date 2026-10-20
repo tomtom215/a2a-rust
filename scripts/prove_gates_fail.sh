@@ -284,6 +284,7 @@ SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
 SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
 MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
 RATE_LIMIT_SHARED=crates/a2a-protocol-server/src/rate_limit/shared.rs
+ENCRYPTED_STORE=crates/a2a-protocol-server/tests/encrypted_store.rs
 
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
@@ -369,6 +370,10 @@ injection_for() {
             echo "doc_versions" ;;
         *"check_feature_tables.py"*)
             echo "feature_tables" ;;
+        *"check_sql_driver_isolation.sh"*)
+            echo "sql_drivers" ;;
+        *"check_store_delta_forwarding.py"*)
+            echo "store_delta_forwarding" ;;
         *"check_readme_doctests.py"*)
             echo "readme_doctests" ;;
         *"check_panic_paths.py"*)
@@ -387,6 +392,8 @@ injection_for() {
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
             echo "ignored_suite:$MULTI_REPLICA:the multi-replica suite" ;;
+        *"--test encrypted_store"*)
+            echo "ignored_suite:$ENCRYPTED_STORE:the encrypted-store PostgreSQL suite" ;;
         # The Postgres rate-limit counter's tests are inline in the module,
         # so the probe is appended to the module file and the step's filter
         # is the module path, which selects the probe too.
@@ -521,6 +528,8 @@ expected_marker() {
         # line, so the marker does not need editing at every minor bump.
         doc_versions)     echo "prose names a version" ;;
         feature_tables)   echo "\`auth-jwt\` is a feature of a2a-protocol-server and is missing from the table" ;;
+        sql_drivers)      echo "--features postgres links libsqlite3-sys" ;;
+        store_delta_forwarding) echo "overrides \`save_status_delta\` but not \`try_save_status_delta\`" ;;
         readme_doctests)  echo "crates/a2a-protocol-client/src/lib.rs: README.md is not included" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
         # The probe step's own name, so a run that failed on some *other*
@@ -734,6 +743,20 @@ if hits != 1:
 README.write_text(text, encoding="utf-8")
 PY
             ;;
+        sql_drivers)
+            # Put SQLite back in the workspace's sqlx entry: the state before
+            # release audit F25, when `postgres` alone linked it.
+            note_touched "Cargo.toml"
+            sed -i 's/^features = \["runtime-tokio"\]$/features = ["runtime-tokio", "sqlite"]/' Cargo.toml
+            ;;
+        store_delta_forwarding)
+            # A wrapper that forwards the status delta but not its in-place
+            # half: the shape that leaves EncryptedTaskStore sealing the whole
+            # task on every status event (release audit F7).
+            note_touched "crates/a2a-protocol-server/src/audit/task_store.rs"
+            sed -i 's/fn try_save_status_delta</fn try_save_status_delta_removed</' \
+                crates/a2a-protocol-server/src/audit/task_store.rs
+            ;;
         feature_tables)
             # Drop one feature from the server's README table — the state it
             # was in for four features until 2026-09-23 (audit S12).
@@ -851,10 +874,10 @@ PY
 import pathlib, sys
 p = pathlib.Path(".github/workflows/ci.yml")
 s = p.read_text()
-old = 'on:\n  push:\n    branches: ["main", "claude/**"]\n  pull_request:'
+old = '  push:\n    branches: ["main"]\n  pull_request:'
 if s.count(old) != 1:
-    sys.exit(f"expected exactly one ci.yml on: block; found {s.count(old)}")
-p.write_text(s.replace(old, "on:\n  pull_request:"))
+    sys.exit(f"expected exactly one ci.yml push trigger; found {s.count(old)}")
+p.write_text(s.replace(old, "  pull_request:"))
 PY
             ;;
         mutants_config)
@@ -1143,8 +1166,8 @@ PY
 import pathlib, sys
 p = pathlib.Path(".github/workflows/mutants.yml")
 s = p.read_text()
-old = "-- ':(glob)crates/*/src/**/*.rs' > pr-src.diff"
-new = "-- 'crates/*/src/**/*.rs' > pr-src.diff"
+old = "-- ':(glob)crates/${{ matrix.crate }}/src/**/*.rs' > pr-src.diff"
+new = "-- 'crates/${{ matrix.crate }}/src/**/*.rs' > pr-src.diff"
 if s.count(old) != 1:
     sys.exit(f"expected exactly one mutation scoping pathspec; found {s.count(old)}")
 p.write_text(s.replace(old, new))

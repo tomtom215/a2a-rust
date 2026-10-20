@@ -49,6 +49,35 @@ impl AuthRejection {
         }
     }
 
+    /// A refusal for a missing scope: `403` with the RFC 6750 §3 challenge
+    /// naming the scopes, `Bearer error="insufficient_scope", scope="a b"`.
+    /// A scope that is not an RFC 6749 §3.3 `scope-token` (printable ASCII
+    /// but space, `"` and `\`) cannot be quoted, and is left out.
+    pub(crate) fn insufficient_scope<S: AsRef<str>>(scopes: impl IntoIterator<Item = S>) -> Self {
+        let scopes: Vec<String> = scopes
+            .into_iter()
+            .map(|s| s.as_ref().to_owned())
+            .filter(|s| {
+                // scope-token = 1*( %x21 / %x23-5B / %x5D-7E )
+                !s.is_empty()
+                    && s.bytes()
+                        .all(|b| matches!(b, 0x21 | 0x23..=0x5b | 0x5d..=0x7e))
+            })
+            .collect();
+        let challenge = if scopes.is_empty() {
+            "Bearer error=\"insufficient_scope\"".to_owned()
+        } else {
+            format!(
+                "Bearer error=\"insufficient_scope\", scope=\"{}\"",
+                scopes.join(" ")
+            )
+        };
+        Self {
+            kind: AuthRejectionKind::PermissionDenied,
+            challenge: Some(challenge),
+        }
+    }
+
     /// Which refusal this is.
     #[must_use]
     pub const fn kind(&self) -> AuthRejectionKind {
@@ -57,8 +86,9 @@ impl AuthRejection {
 
     /// The `WWW-Authenticate` challenge an HTTP binding sends with its `401`
     /// (RFC 9110 §15.5.2 requires one; §11.6.1 defines it), e.g.
-    /// `Bearer realm="a2a"`.
-    /// `None` for [`AuthRejectionKind::PermissionDenied`].
+    /// `Bearer realm="a2a"`, or with a `403` for a missing scope (RFC 6750
+    /// §3), `Bearer error="insufficient_scope", scope="tasks:write"`.
+    /// `None` for any other [`AuthRejectionKind::PermissionDenied`].
     #[must_use]
     pub fn challenge(&self) -> Option<&str> {
         self.challenge.as_deref()
@@ -85,6 +115,34 @@ mod tests {
         let rejection = err.auth_rejection().expect("a rejection");
         assert_eq!(rejection.kind(), AuthRejectionKind::PermissionDenied);
         assert_eq!(rejection.challenge(), None);
+    }
+
+    /// Spec §3.3.2: the refusal names the missing scope, in the RFC 6750 §3
+    /// challenge, and leaves out what it cannot quote.
+    #[test]
+    fn insufficient_scope_names_the_scopes_in_its_challenge() {
+        let err = A2aError::insufficient_scope("insufficient scope", ["tasks:read", "tasks:write"]);
+        assert_eq!(err.code, ErrorCode::InvalidRequest);
+        let rejection = err.auth_rejection().expect("a rejection");
+        assert_eq!(rejection.kind(), AuthRejectionKind::PermissionDenied);
+        assert_eq!(
+            rejection.challenge(),
+            Some("Bearer error=\"insufficient_scope\", scope=\"tasks:read tasks:write\"")
+        );
+        let unquotable = ["", "a b", "a\"b", "a\\b", "caf\u{e9}", "!#[]~"];
+        let err = A2aError::insufficient_scope("insufficient scope", unquotable);
+        assert_eq!(
+            err.auth_rejection().and_then(|r| r.challenge()),
+            Some("Bearer error=\"insufficient_scope\", scope=\"!#[]~\""),
+            "only the RFC 6749 scope-token survives"
+        );
+        let none: [&str; 0] = [];
+        assert_eq!(
+            A2aError::insufficient_scope("m", none)
+                .auth_rejection()
+                .and_then(|r| r.challenge()),
+            Some("Bearer error=\"insufficient_scope\"")
+        );
     }
 
     #[test]

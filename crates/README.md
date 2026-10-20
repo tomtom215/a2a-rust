@@ -79,12 +79,15 @@ enable them:
 | `grpc-tls` | client, server | gRPC over TLS. Client: tonic's rustls connector with the bundled Mozilla roots, or a pinned CA / client certificate. Server: TLS on its own gRPC listener via `GrpcDispatcher::with_tls` (server certificate and key, optional client CA for mutual TLS); the listener then speaks TLS only. Implies `grpc` |
 | `proto` | types | Canonical protobuf message types + JSON⇄proto conversion layer (enabled transitively by `grpc`) |
 | `audit` | types, server | Tamper-evident audit trail: hash-chained, checkpoint-signed records of every call, run, task event and cancel request, per tenant (ADR 0015) |
-| `otel` | client, server | Server: `Telemetry`, OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, with a Langfuse preset. Client: each call's `traceparent` names the call's own span |
+| `otel` | client, server | On by default. Server: `OtelMetrics` and the spans' OpenTelemetry bridge. Client: each call's `traceparent` names the call's own span. The OpenTelemetry API only |
+| `otlp` | server | `Telemetry`, OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, with a Langfuse preset; on by default in the SDK only |
+| `otlp-json` | server | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default everywhere (implies `otlp`) |
 | `axum` | server | Axum framework integration |
 | `auth-jwt` | server | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS with OIDC discovery) via `ring`; the header/token interceptors (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature |
 | `encryption` | server | Encryption at rest for task content (`EncryptedTaskStore`): every part sealed with AES-256-GCM via `ring`, or a cipher of your own |
 | `conformance` | server | Harness that grades an `AgentExecutor` against the protocol invariants that hold for any agent — terminal states, legal transitions, cooperative cancellation, parking. Intended as a dev-dependency; pulls in no extra dependencies |
 | `testing` | client | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents; not for production builds |
+| `webhook` | client | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2); on by default |
 
 ## Design Decisions
 

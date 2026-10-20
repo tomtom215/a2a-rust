@@ -61,6 +61,21 @@ pub struct Peer {
 }
 
 impl Peer {
+    /// The peer of a client given a transport of its own: the system the
+    /// transport names and the agent from the card, if any. The address is
+    /// the transport's own business, so it is not recorded, and no
+    /// `traceparent` is set, since such a transport may carry no headers.
+    pub(crate) fn custom(
+        system: Option<&'static str>,
+        agent: Option<Arc<(String, String, String)>>,
+    ) -> Self {
+        Self {
+            system,
+            agent,
+            ..Self::default()
+        }
+    }
+
     /// The peer of a client this crate built a transport for.
     pub(crate) fn new(
         binding: &str,

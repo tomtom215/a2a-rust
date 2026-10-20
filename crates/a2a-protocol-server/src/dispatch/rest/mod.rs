@@ -163,8 +163,10 @@ impl RestDispatcher {
             return error_json_response(400, "invalid path: path traversal not allowed");
         }
 
-        // Agent card is always at the well-known path (no tenant prefix).
-        if matches!(method.as_str(), "GET" | "HEAD") && path == "/.well-known/agent-card.json" {
+        // Agent card is always at the well-known path (no tenant prefix), and
+        // every method on it is the card's to answer (`405` for all but GET
+        // and HEAD).
+        if path == "/.well-known/agent-card.json" {
             return self
                 .card_handler
                 .as_ref()
@@ -204,6 +206,7 @@ impl RestDispatcher {
         // inserts it the same way).
         headers.insert(":path".to_owned(), path.clone());
         super::record_peer_addr(&mut headers, super::peer_of(req.extensions()));
+        super::record_peer_certificate(&mut headers, super::certificate_of(req.extensions()));
 
         // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
         // and moving that much state around on the stack per request costs
@@ -820,6 +823,10 @@ impl crate::serve::Dispatcher for RestDispatcher {
 
     fn request_handler(&self) -> Option<&Arc<RequestHandler>> {
         Some(&self.handler)
+    }
+
+    fn protocol_binding(&self) -> Option<&'static str> {
+        Some("HTTP+JSON")
     }
 }
 

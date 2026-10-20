@@ -62,9 +62,9 @@
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
 //! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
-//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
+//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], [`CombinedDispatcher`] (both on one listener), `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
-//! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature) |
+//! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature), `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) |
 //! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
@@ -92,6 +92,10 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+// docs.rs builds with `--cfg docsrs` (each manifest's
+// `[package.metadata.docs.rs]`): show which feature each item needs (release
+// audit F27). Nightly-only, so stable builds never see it.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 // `clippy::duration_suboptimal_units` lands in clippy 0.1.95 (stable Rust
@@ -148,6 +152,9 @@ pub mod store;
 pub mod streaming;
 pub mod tenant_config;
 pub mod tenant_resolver;
+#[cfg(feature = "tls-rustls")]
+mod tls;
+pub mod url_guard;
 
 #[cfg(feature = "conformance")]
 pub mod conformance;
@@ -185,14 +192,16 @@ pub use auth::{
     BearerTokenAuthInterceptor,
 };
 pub use builder::RequestHandlerBuilder;
-pub use call_context::{CallContext, PEER_ADDR_KEY, PeerAddr};
+pub use call_context::{
+    CallContext, PEER_ADDR_KEY, PEER_CERTIFICATE_KEY, PeerAddr, PeerCertificate,
+};
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 #[cfg(feature = "axum")]
 pub use dispatch::axum_adapter::A2aRouter;
 pub use dispatch::{
-    A2A_VERSION_METADATA_KEY, CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher,
-    validate_version_metadata,
+    A2A_VERSION_METADATA_KEY, CombinedDispatcher, CorsConfig, DispatchConfig, JsonRpcDispatcher,
+    RestDispatcher, validate_version_metadata,
 };
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
@@ -215,6 +224,7 @@ pub use push::{
 pub use rate_limit::PostgresRateLimitCounter;
 pub use rate_limit::{RateLimitConfig, RateLimitCounter, RateLimitInterceptor};
 pub use request_context::RequestContext;
+pub use rpc_span::{BindingSpan, CustomBinding};
 pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,

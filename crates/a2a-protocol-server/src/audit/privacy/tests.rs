@@ -65,7 +65,9 @@ async fn a_protected_record_names_no_one_and_still_verifies() {
     let (log, _) = log();
     let stored = log.append(record("acme", ALICE)).await.unwrap();
     let shown = json(&stored);
-    for clear in ["alice", "bob", "asked", &digest_of(&SECRET).unwrap()] {
+    // Each probe carries a character outside the base64 alphabet the sealed
+    // values use (`@`, a space), so random ciphertext cannot contain one.
+    for clear in ["alice@", "bob@", " asked", &digest_of(&SECRET).unwrap()] {
         assert!(!shown.contains(clear), "{clear} in the clear: {shown}");
     }
     assert!(
@@ -131,7 +133,7 @@ async fn erasure_destroys_one_persons_key_and_leaves_the_chain_whole() {
     let note = erased.record.unwrap();
     assert_eq!(note.kind, kind::SUBJECT_ERASED);
     assert_eq!(note.detail["sids"], serde_json::json!(erased.sids));
-    assert!(!json(&note).contains("alice"));
+    assert!(!json(&note).contains("alice@"));
 
     let r = log.reveal(&alices).await.unwrap();
     assert_eq!(r.erased, vec!["actor".to_owned(), "reason".to_owned()]);
@@ -378,4 +380,38 @@ fn hex_round_trips_and_refuses_what_is_not_hex() {
     assert_eq!(unhex("abc"), None);
     assert_eq!(unhex("zz"), None);
     assert_eq!(unhex(""), Some(vec![]));
+}
+
+/// RFC 8693 actors (ADR 0021): each name in `detail.actors` is sealed under
+/// its own key, opens for whoever holds the keys, keeps its key alive while
+/// a record names it, and is erased alone.
+#[tokio::test]
+async fn each_actor_is_sealed_opened_kept_and_erased_alone() {
+    const CAROL: &str = "jwt::carol-agent";
+    let (log, _) = log();
+    let mut written = AuditRecord::new("acme", kind::CALL);
+    written.actor = Some(Actor::new(ALICE, Some("jwt".to_owned())));
+    written
+        .detail
+        .insert("actors".to_owned(), serde_json::json!([CAROL, BOB]));
+    let stored = log.append(written.clone()).await.unwrap();
+    let shown = json(&stored);
+    // `-` and `@` are outside the sealed values' base64 alphabet: on
+    // 2026-10-19 a bare "bob" matched the ciphertext `...RNxbobIqj...`.
+    for clear in ["carol-agent", "bob@"] {
+        assert!(!shown.contains(clear), "{clear} in the clear: {shown}");
+    }
+    assert!(log.verify("acme").await.unwrap().is_intact());
+
+    let revealed = log.reveal(&stored).await.unwrap();
+    assert_eq!(revealed.erased, Vec::<String>::new());
+    assert_eq!(revealed.record.detail, written.detail);
+
+    // Named only in `actors`, Bob's and Carol's keys are still in use.
+    assert_eq!(log.drop_unreferenced_keys("acme").await.unwrap(), 0);
+
+    log.erase_subject("acme", CAROL, DPO).await.unwrap();
+    let r = log.reveal(&stored).await.unwrap();
+    assert_eq!(r.erased, vec!["actors/0".to_owned()]);
+    assert_eq!(r.record.detail["actors"], serde_json::json!(["", BOB]));
 }

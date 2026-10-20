@@ -25,6 +25,26 @@ impl RequestHandler {
     /// # Errors
     ///
     /// [`ServerError::InvalidParams`] naming the first field that failed.
+    /// Spec §14: "File references within A2A messages MUST be validated to
+    /// prevent SSRF", when the builder asked for it
+    /// (`refuse_private_file_urls`).
+    fn check_file_urls(&self, message: &a2a_protocol_types::Message) -> ServerResult<()> {
+        if self.file_urls == super::FileUrls::Any {
+            return Ok(());
+        }
+        for (i, part) in message.parts.iter().enumerate() {
+            if let a2a_protocol_types::message::PartContent::Url(url) = &part.content {
+                crate::url_guard::check(url, "file URL").map_err(|e| {
+                    ServerError::InvalidField {
+                        field: format!("message.parts[{i}].url"),
+                        message: e.message,
+                    }
+                })?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn validate_send_params(&self, params: &mut MessageSendParams) -> ServerResult<()> {
         unset_proto3_defaults(params);
 
@@ -89,6 +109,7 @@ impl RequestHandler {
         // Spec §3.1.1: a part whose media type the card does not declare is
         // ContentTypeNotSupportedError (ACTS CORE-SEND-004).
         self.ensure_input_modes_supported(&params.message)?;
+        self.check_file_urls(&params.message)?;
 
         // Cross-binding portability: every client-supplied `metadata` field
         // must be a JSON object so the resulting task is representable over

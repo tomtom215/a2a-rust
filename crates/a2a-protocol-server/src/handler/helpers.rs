@@ -299,7 +299,7 @@ pub fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String>
 ///   branching form the two arms coincide at `len == n` — both yield the same
 ///   messages — which made that mutant equivalent and unkillable by
 ///   construction, in all three copies of this code.
-pub(super) fn truncate_history(history: Option<Vec<Message>>, n: u32) -> Option<Vec<Message>> {
+pub fn truncate_history(history: Option<Vec<Message>>, n: u32) -> Option<Vec<Message>> {
     if n == 0 {
         return None;
     }
@@ -333,6 +333,9 @@ impl RequestHandler {
         } else {
             Some(tenant)
         };
+        // No history: the listing is to pick one task, and a store that
+        // honours `history_length` then copies none of the candidates'
+        // conversations (ADR 0017).
         let params = ListTasksParams {
             tenant: tenant_param,
             context_id: Some(context_id.to_owned()),
@@ -341,22 +344,36 @@ impl RequestHandler {
             page_token: None,
             status_timestamp_after: None,
             include_artifacts: None,
-            history_length: None,
+            history_length: Some(0),
         };
         let resp = self.task_store.list(&params).await?;
 
         // Prefer a non-terminal task (active conversation) over a terminal one.
         // If all tasks are terminal, return the first one the store provided.
         let mut terminal_fallback: Option<Task> = None;
+        let mut chosen = None;
         for task in resp.tasks {
             if !task.status.state.is_terminal() {
-                return Ok(Some(task));
+                chosen = Some(task);
+                break;
             }
             if terminal_fallback.is_none() {
                 terminal_fallback = Some(task);
             }
         }
-        Ok(terminal_fallback)
+        let Some(chosen) = chosen.or(terminal_fallback) else {
+            return Ok(None);
+        };
+        // The task is the executor's `RequestContext::stored_task`, history
+        // and all. A listed task that still has history came from a store
+        // that ignored `history_length` and is whole; one without is read
+        // whole, which costs a task that truly has none a second lookup.
+        // Gone by then (deleted or evicted since the listing), it is treated
+        // as the listing would have treated it a moment later: not there.
+        if chosen.history.is_some() {
+            return Ok(Some(chosen));
+        }
+        Ok(self.task_store.get(&chosen.id).await?)
     }
 }
 

@@ -148,6 +148,25 @@ pub trait ServerInterceptor: Send + Sync + 'static {
     fn authenticates(&self) -> bool {
         false
     }
+
+    /// Whether this interceptor checks the credential `scheme` describes:
+    /// `Some(true)` when it does, `Some(false)` when it checks another kind,
+    /// `None` (the default) when it cannot tell.
+    ///
+    /// [`RequestHandlerBuilder::build`](crate::RequestHandlerBuilder::build)
+    /// asks every authenticating interceptor about each scheme the agent card
+    /// declares, and refuses one that answers `Some(false)` to all of them:
+    /// spec §13.3 requires requests to be authenticated "using one of the
+    /// schemes declared in the public `AgentCard`", and a client following
+    /// the card could never present the credential such an interceptor
+    /// checks. The bundled authenticators answer; a custom one that does not
+    /// is not checked.
+    fn checks_scheme(
+        &self,
+        _scheme: &a2a_protocol_types::security::SecurityScheme,
+    ) -> Option<bool> {
+        None
+    }
 }
 
 /// An ordered chain of [`ServerInterceptor`] instances.
@@ -211,6 +230,11 @@ impl ServerInterceptorChain {
     #[must_use]
     pub fn has_authenticator(&self) -> bool {
         self.interceptors.iter().any(|i| i.authenticates())
+    }
+
+    /// The interceptors that authenticate, in chain order.
+    pub(crate) fn authenticators(&self) -> impl Iterator<Item = &Arc<dyn ServerInterceptor>> {
+        self.interceptors.iter().filter(|i| i.authenticates())
     }
 }
 

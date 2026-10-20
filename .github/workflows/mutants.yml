@@ -5,7 +5,8 @@
 #
 # Runs cargo-mutants on all library crates and fails if any mutant survives.
 # Full sweep is scheduled weekly + on-demand; PRs to main run the
-# incremental (diff-only) job instead — see the `on.schedule` cron below.
+# incremental (diff-only) job instead — see the `on.schedule` cron below —
+# once the PR carries the `mutation-test` label.
 #
 # Architecture:
 #   - Full sweep splits into 33 parallel jobs: 24 shards of a2a-server,
@@ -18,7 +19,8 @@
 #     so every shard of a crate carries the same mix of slow and fast ones.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
-#   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff) in one job.
+#   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff), split
+#     by crate and sharded within each crate (`mutants-incremental-shard`).
 #
 # CI output is optimised for readability:
 #   - cargo-mutants raw output is captured to a file (not streamed to the log)
@@ -37,8 +39,19 @@ on:
   # every crate (`mutants-crate`) is gated on the matrix itself (`if:
   # github.event_name != 'pull_request'`) so incremental runs on PRs and
   # the full sweep runs on schedule / workflow_dispatch.
+  #
+  # The incremental shards run only on a PR labelled `mutation-test`. A server
+  # shard takes about two hours and every push to a PR re-mutates the whole PR
+  # diff, so running them on every push spent runner-hours on heads that were
+  # superseded before review. The required aggregator still runs on every PR
+  # event and fails until the label is present, so no PR merges unmutated; add
+  # the label once the code is ready, and remove it to stop further runs.
+  # `labeled`/`unlabeled` are in `types` so adding the label starts a run and
+  # removing it cancels one. Any label change re-runs the shards while the
+  # label is present; label churn is rare enough here not to filter for.
   pull_request:
     branches: ["main"]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   # Full sweep runs weekly (and on-demand via workflow_dispatch). The
   # incremental PR gate only re-checks mutation adequacy of files a PR
   # touches; without a recurring whole-repo sweep, code outside recent diffs
@@ -55,6 +68,14 @@ on:
 # Mutation testing only reads sources — never grant the default token more.
 permissions:
   contents: read
+
+# A new push to a PR supersedes the incremental run on the old head, whose
+# shards would otherwise keep their runners for up to two hours each. The
+# weekly sweep and manual runs get a group of their own (`run_id`), so
+# nothing ever cancels them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -386,7 +407,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.check.outputs.skip == 'false'
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
         if: steps.check.outputs.skip == 'false'
@@ -1000,8 +1021,8 @@ jobs:
   # `mutants-incremental` aggregator below keeps the stable required-check name
   # and fails if any shard failed.
   mutants-incremental-shard:
-    name: "Mutants incremental (shard ${{ matrix.shard }})"
-    if: github.event_name == 'pull_request'
+    name: "Mutants incremental (${{ matrix.crate }} shard ${{ matrix.shard }}/${{ matrix.of }})"
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation-test')
     runs-on: ubuntu-latest
     # 75, raised from 45 on 2026-08-07. Unlike the full sweep's 240, this one
     # is **not** measured — no recent PR has produced enough in-diff mutants to
@@ -1022,7 +1043,17 @@ jobs:
     # so the shard needed ~83 minutes at --jobs 4 and was cancelled at 75 with
     # 18 untested. The other seven shards finished in 13-49 minutes. 120
     # leaves that worst case ~35 minutes of headroom.
-    timeout-minutes: 120
+    #
+    # 180, raised from 120 on 2026-10-19. Run 39288567688 (the 0.15.0
+    # release-readiness PR, head 67ab554) is the first to outgrow 120: of the
+    # ten a2a-protocol-server shards, 5, 6 and 7 finished in 108, 108 and 117
+    # minutes and the other seven were cancelled at the limit with no report,
+    # roughly 20 runner-hours that graded nothing. Round-robin dealing gives
+    # every shard a similar load, so the seven most likely needed a little
+    # over 120; 180 is half again the slowest that finished. Not measured past
+    # 120, so like the 75 before it this is an estimate: if a shard overruns
+    # it, add server shards rather than raising this again.
+    timeout-minutes: 180
     # Same reasoning as the full sweep above: a PR touching Postgres code must
     # be judged against a real database, not against absent tests.
     services:
@@ -1071,26 +1102,41 @@ jobs:
         # a2a-server one rebuild what depends on it. Ten minutes of headroom is
         # thin; splitting this job by crate, as the full sweep is, would keep
         # round-robin within one crate.
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        #
+        # Split by crate since 2026-10-18, as the full sweep is: each job
+        # mutates only its own crate's diff (`-p` and a pathspec scoped to
+        # `crates/<crate>/src`), so no a2a-protocol-types mutant makes the
+        # next a2a-protocol-server one rebuild what depends on it, and a
+        # shard's cost is one crate's per-mutant cost times its count.
+        # a2a-protocol-server keeps the most shards because each of its
+        # mutants runs the server and Postgres suites: on the 1,160-mutant PR
+        # above it held ~733 of them, which 10 shards put at ~73 each against
+        # the 91-92 in the round-robin shard that took 110 minutes. That is a
+        # projection from that run, not a measurement; re-measure from the
+        # first large PR after this change. A crate whose diff is empty skips
+        # at "Build PR source diff", as before.
+        include:
+          - { crate: a2a-protocol-types, shard: 0, of: 2 }
+          - { crate: a2a-protocol-types, shard: 1, of: 2 }
+          - { crate: a2a-protocol-client, shard: 0, of: 2 }
+          - { crate: a2a-protocol-client, shard: 1, of: 2 }
+          - { crate: a2a-protocol-sdk, shard: 0, of: 1 }
+          - { crate: a2a-protocol-server, shard: 0, of: 10 }
+          - { crate: a2a-protocol-server, shard: 1, of: 10 }
+          - { crate: a2a-protocol-server, shard: 2, of: 10 }
+          - { crate: a2a-protocol-server, shard: 3, of: 10 }
+          - { crate: a2a-protocol-server, shard: 4, of: 10 }
+          - { crate: a2a-protocol-server, shard: 5, of: 10 }
+          - { crate: a2a-protocol-server, shard: 6, of: 10 }
+          - { crate: a2a-protocol-server, shard: 7, of: 10 }
+          - { crate: a2a-protocol-server, shard: 8, of: 10 }
+          - { crate: a2a-protocol-server, shard: 9, of: 10 }
     env:
-      INCREMENTAL_SHARDS: 8
       A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history for diff
-
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
-        with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      # protoc is bundled via the `protoc-bin-vendored` crate.
-
-      # Pinned and patched; see the full sweep's install step.
-      - name: Install cargo-mutants and nextest
-        run: scripts/install_cargo_mutants.sh
 
       - name: Build PR source diff (rename-aware)
         id: diff
@@ -1125,7 +1171,9 @@ jobs:
           # already assume, and the pattern matches all 141. Verified with
           # `git ls-files -- ':(glob)crates/*/src/**/*.rs' | wc -l` = 141,
           # against 100 for the unprefixed form, with nothing outside `src/`.
-          git diff -M "${BASE}...HEAD" -- ':(glob)crates/*/src/**/*.rs' > pr-src.diff
+          # Scoped to this job's crate since the job was split by crate
+          # (2026-10-18); the glob reasoning above is unchanged.
+          git diff -M "${BASE}...HEAD" -- ':(glob)crates/${{ matrix.crate }}/src/**/*.rs' > pr-src.diff
           ADDED=$(grep -cE '^\+[^+]' pr-src.diff || true)
 
           if [ "${ADDED:-0}" -eq 0 ]; then
@@ -1138,6 +1186,24 @@ jobs:
             cat pr-src.diff
             echo "::endgroup::"
           fi
+
+      # Setup only once the diff says there is something to mutate: on a
+      # narrow PR most crates' shards have nothing, and installing
+      # cargo-mutants (a source build) cost them 1 to 5 minutes each.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
+        if: steps.diff.outputs.skip == 'false'
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.diff.outputs.skip == 'false'
+
+      # protoc is bundled via the `protoc-bin-vendored` crate.
+
+      # Pinned and patched; see the full sweep's install step.
+      - name: Install cargo-mutants and nextest
+        if: steps.diff.outputs.skip == 'false'
+        run: scripts/install_cargo_mutants.sh
 
       - name: Run incremental mutation testing
         id: mutants
@@ -1164,10 +1230,11 @@ jobs:
           # exclusion applied to only one would make a PR pass a check the
           # weekly sweep then fails on, or the reverse.
           cargo mutants --in-diff pr-src.diff \
+            -p ${{ matrix.crate }} \
             --output . \
             --timeout 300 \
             --jobs 4 \
-            --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
+            --shard ${{ matrix.shard }}/${{ matrix.of }} \
             --sharding round-robin \
             --test-tool=nextest \
             --profile=mutants \
@@ -1186,7 +1253,7 @@ jobs:
         run: |
           echo "# Mutation Testing — Skipped" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "No Rust source files changed in \`crates/*/src/\` — nothing to mutate." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Rust source files changed in \`crates/${{ matrix.crate }}/src/\` — nothing to mutate." >> "$GITHUB_STEP_SUMMARY"
 
       # Same guard as the full sweep, with one legitimate exception: when the
       # PR diff selects no mutable code, cargo-mutants logs "No mutants to
@@ -1400,7 +1467,7 @@ jobs:
         if: always() && steps.diff.outputs.skip == 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mutation-report-incremental-shard-${{ matrix.shard }}
+          name: mutation-report-incremental-shard-${{ matrix.crate }}-${{ matrix.shard }}
           path: mutants.out/
           retention-days: 14
 
@@ -1425,6 +1492,18 @@ jobs:
 
       - name: Aggregate shard results and gate
         run: |
+          # Unlabelled, the shards were skipped, and a skipped required check
+          # counts as passing, so this job must fail rather than skip.
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'mutation-test') }}" != "true" ]; then
+            {
+              echo "# Mutation Testing — incremental"
+              echo ""
+              echo "Not run: add the \`mutation-test\` label to this PR to run it."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Incremental mutation testing has not run: the PR has no 'mutation-test' label. Add it once the code is ready for review."
+            exit 1
+          fi
+
           # See the full-sweep job for why the previous one-liner was unsafe.
           count() {
             if [ ! -f "$1" ]; then echo 0; return; fi

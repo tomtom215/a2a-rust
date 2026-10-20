@@ -99,7 +99,8 @@ allow = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
-# No active ignores. Five were removed on 2026-10-15, when the binding moved
+# One active ignore, the yanked mls-rs-crypto-awslc 0.25.1 (below). Five
+# earlier ones were removed on 2026-10-15, when the binding moved
 # from agntcy-slim-rpc 2.3.0 to 3.4.1 (audit register R13), each because its
 # own removal condition was met:
 #
@@ -127,7 +128,23 @@ yanked  = "deny"
 # ok. osv-scanner 2.6.0 with no waivers reports no issues in the new lock's
 # 534 packages, and the same five in the old one. osv-scanner.toml beside
 # this file drops its matching entries.
-ignore  = []
+#
+# mls-rs-crypto-awslc 0.25.1 (yanked), added 2026-10-19.
+#   crates.io shows it yanked on 2026-10-19 (the version's updated_at,
+#   18:15 UTC), with no yank message and no RustSec advisory naming the
+#   crate. It cannot be updated away: every agntcy-slim-mls release this
+#   graph can take (0.4.11, 0.4.12, 0.5.0) requires `^0.25.1`, and 0.26.0 is
+#   outside that range. Nor should it be downgraded: 0.25.0 pins aws-lc-rs
+#   `=1.16.3`, which holds rustls below 0.23.45 and so brings back
+#   RUSTSEC-2026-0285, -0346, -0348 and -0349 (see above). A yank with no
+#   stated defect is the lesser risk than four known ones.
+#   Remove when an agntcy-slim-mls release accepts mls-rs-crypto-awslc
+#   0.26 (or a non-yanked 0.25.x appears) and the binding moves to it; the
+#   check is `cargo deny ... check advisories` reporting this entry as
+#   not encountered.
+ignore  = [
+    { crate = "mls-rs-crypto-awslc@0.25.1", reason = "yanked 2026-10-19 with no stated defect; 0.25.0 reintroduces four rustls advisories; see the comment above" },
+]
 
 # ---------------------------------------------------------------------------
 # Banned crates

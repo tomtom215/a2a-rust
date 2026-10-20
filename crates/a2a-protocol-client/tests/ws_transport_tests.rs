@@ -163,6 +163,17 @@ async fn ws_transport_endpoint_returns_url() {
     assert_eq!(transport.endpoint(), url);
 }
 
+/// JSON-RPC frames over WebSocket: the client span's `rpc.system.name` is
+/// `jsonrpc`, as the server records the same call.
+#[tokio::test]
+async fn ws_transport_names_its_rpc_system_jsonrpc() {
+    let addr = start_ws_server().await;
+    let transport = WebSocketTransport::connect(&format!("ws://{addr}"))
+        .await
+        .expect("connect should succeed");
+    assert_eq!(transport.rpc_system(), Some("jsonrpc"));
+}
+
 #[tokio::test]
 async fn ws_transport_debug_contains_endpoint() {
     let addr = start_ws_server().await;

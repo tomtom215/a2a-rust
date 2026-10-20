@@ -31,7 +31,7 @@ serde_json  = { version = ">=1.0.145, <2" }
 hyper       = { version = ">=1.7.0, <2", features = ["http1", "server"] }
 hyper-util  = { version = ">=0.1.17, <0.2", features = ["server", "server-auto", "tokio"] }
 prost       = ">=0.14.1, <0.15"
-base64      = "0.22"
+base64      = "0.23"
 
 [build-dependencies]
 prost-build         = ">=0.14.1, <0.15"

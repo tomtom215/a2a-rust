@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use a2a_protocol_server::streaming::EventQueueReader as _;
-use a2a_protocol_server::{RequestHandler, SendMessageResult};
+use a2a_protocol_server::{BindingSpan, CustomBinding, RequestHandler, SendMessageResult};
 use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
 use slim_rpc::{Context, RpcError, Server};
@@ -30,6 +30,14 @@ use crate::server::peer::VerifiedPeer;
 mod headers;
 
 use headers::a2a_headers;
+
+/// This binding on its spans and in `rpc.server.call.duration` (ADR 0013): a
+/// custom `rpc.system.name`, as the semantic conventions allow for a system
+/// they do not list, and the status [`server_error_to_rpc_error`] sends.
+const SLIMRPC: CustomBinding = CustomBinding::new("slimrpc", |e| {
+    std::borrow::Cow::Owned(server_error_to_rpc_error(e).code().to_string())
+})
+.with_ok_status("OK");
 
 /// What every method closure holds: the handler, and whether a call that
 /// declares no `A2A-Version` is refused.
@@ -82,11 +90,11 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let result = h
-                    .handler
-                    .on_send_message(params, false, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let result =
+                    BindingSpan::open(&h.handler, SLIMRPC, method::SEND_MESSAGE, Some(&headers))
+                        .run(h.handler.on_send_message(params, false, Some(&headers)))
+                        .await
+                        .map_err(|e| server_error_to_rpc_error(&e))?;
 
                 // Blocking sends never return a stream; `SendMessageResult` is
                 // shared with the streaming entry point, so the stream arm is
@@ -120,11 +128,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let result = h
-                    .handler
-                    .on_send_message(params, true, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let result = BindingSpan::open(
+                    &h.handler,
+                    SLIMRPC,
+                    method::SEND_STREAMING_MESSAGE,
+                    Some(&headers),
+                )
+                .run(h.handler.on_send_message(params, true, Some(&headers)))
+                .await
+                .map_err(|e| server_error_to_rpc_error(&e))?;
 
                 match result {
                     SendMessageResult::Stream(reader) => Ok(event_stream(reader)),
@@ -155,9 +167,8 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let task = h
-                    .handler
-                    .on_get_task(params, Some(&headers))
+                let task = BindingSpan::open(&h.handler, SLIMRPC, method::GET_TASK, Some(&headers))
+                    .run(h.handler.on_get_task(params, Some(&headers)))
                     .await
                     .map_err(|e| server_error_to_rpc_error(&e))?;
                 let proto: pb::Task = to_proto(task)?;
@@ -179,11 +190,11 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let list = h
-                    .handler
-                    .on_list_tasks(params, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let list =
+                    BindingSpan::open(&h.handler, SLIMRPC, method::LIST_TASKS, Some(&headers))
+                        .run(h.handler.on_list_tasks(params, Some(&headers)))
+                        .await
+                        .map_err(|e| server_error_to_rpc_error(&e))?;
                 let proto: pb::ListTasksResponse = to_proto(list)?;
                 Ok(Pb(proto))
             }
@@ -203,11 +214,11 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let task = h
-                    .handler
-                    .on_cancel_task(params, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let task =
+                    BindingSpan::open(&h.handler, SLIMRPC, method::CANCEL_TASK, Some(&headers))
+                        .run(h.handler.on_cancel_task(params, Some(&headers)))
+                        .await
+                        .map_err(|e| server_error_to_rpc_error(&e))?;
                 let proto: pb::Task = to_proto(task)?;
                 Ok(Pb(proto))
             }
@@ -228,11 +239,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     tenant: non_empty(inner.tenant),
                     id: inner.id,
                 };
-                let reader = h
-                    .handler
-                    .on_resubscribe(params, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let reader = BindingSpan::open(
+                    &h.handler,
+                    SLIMRPC,
+                    method::SUBSCRIBE_TO_TASK,
+                    Some(&headers),
+                )
+                .run(h.handler.on_resubscribe(params, Some(&headers)))
+                .await
+                .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(event_stream(reader))
             }
         },
@@ -248,11 +263,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             async move {
                 let headers = h.headers(&ctx)?;
                 let config = req.into_inner().into();
-                let saved = h
-                    .handler
-                    .on_set_push_config(config, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let saved = BindingSpan::open(
+                    &h.handler,
+                    SLIMRPC,
+                    method::CREATE_PUSH_CONFIG,
+                    Some(&headers),
+                )
+                .run(h.handler.on_set_push_config(config, Some(&headers)))
+                .await
+                .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Pb(pb::TaskPushNotificationConfig::from(saved)))
             }
         },
@@ -268,11 +287,11 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             async move {
                 let headers = h.headers(&ctx)?;
                 let params = req.into_inner().into();
-                let config = h
-                    .handler
-                    .on_get_push_config(params, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let config =
+                    BindingSpan::open(&h.handler, SLIMRPC, method::GET_PUSH_CONFIG, Some(&headers))
+                        .run(h.handler.on_get_push_config(params, Some(&headers)))
+                        .await
+                        .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Pb(pb::TaskPushNotificationConfig::from(config)))
             }
         },
@@ -291,11 +310,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let page = h
-                    .handler
-                    .on_list_push_configs_page(&params, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let page = BindingSpan::open(
+                    &h.handler,
+                    SLIMRPC,
+                    method::LIST_PUSH_CONFIGS,
+                    Some(&headers),
+                )
+                .run(h.handler.on_list_push_configs_page(&params, Some(&headers)))
+                .await
+                .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Pb(pb::ListTaskPushNotificationConfigsResponse {
                     configs: page.configs.into_iter().map(Into::into).collect(),
                     next_page_token: page.next_page_token.unwrap_or_default(),
@@ -314,10 +337,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             async move {
                 let headers = h.headers(&ctx)?;
                 let params = req.into_inner().into();
-                h.handler
-                    .on_delete_push_config(params, Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                BindingSpan::open(
+                    &h.handler,
+                    SLIMRPC,
+                    method::DELETE_PUSH_CONFIG,
+                    Some(&headers),
+                )
+                .run(h.handler.on_delete_push_config(params, Some(&headers)))
+                .await
+                .map_err(|e| server_error_to_rpc_error(&e))?;
                 Ok(Empty::default())
             }
         },
@@ -332,11 +360,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             let h = Arc::clone(&h);
             async move {
                 let headers = h.headers(&ctx)?;
-                let card = h
-                    .handler
-                    .on_get_extended_agent_card(Some(&headers))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
+                let card = BindingSpan::open(
+                    &h.handler,
+                    SLIMRPC,
+                    method::GET_EXTENDED_AGENT_CARD,
+                    Some(&headers),
+                )
+                .run(h.handler.on_get_extended_agent_card(Some(&headers)))
+                .await
+                .map_err(|e| server_error_to_rpc_error(&e))?;
                 let proto: pb::AgentCard = to_proto(card)?;
                 Ok(Pb(proto))
             }

@@ -15,13 +15,39 @@
 //! The guard is disarmed as soon as the commit returns, success or failure:
 //! on success the spawned executor owns the release (see `execute`), and on
 //! failure the failing step already released. So it fires only on a drop.
+//!
+//! # The task row (release audit F9)
+//!
+//! A new task's row is saved before its inline push config is registered,
+//! because the config store checks that the task exists; a drop in that await
+//! left the row `Submitted` with no executor for ever (the retention sweeps
+//! delete only terminal tasks), visible to `GetTask` and `ListTasks`, and the
+//! released key let the client's retry create a second task for one send. A
+//! saved new row is now deleted with the push configs registered for it.
+//!
+//! The deletion holds the per-context lock until it is done: the guard owns
+//! the lock, so a concurrent send for the same context cannot find the task by
+//! context in the window between the drop and the deletion. A continuation's
+//! row is saved with nothing awaited after it (the approval's audit record is
+//! written before the save), so a drop cannot leave a turn half-committed.
+//!
+//! # The tenant
+//!
+//! The release runs in a spawned task, and the tenant-aware stores read the
+//! tenant and caller from task-locals a spawned task does not inherit. They
+//! are captured when the guard is made and put back around the release; until
+//! 2026-10-18 a dropped send under a tenant released its key in the empty
+//! tenant's partition and kept it held in its own.
 
 use std::sync::Arc;
 
 use a2a_protocol_types::task::TaskId;
+use tokio::sync::OwnedMutexGuard;
 
 use super::super::ExecutorTurn;
+use crate::push::PushConfigStore;
 use crate::store::TaskStore;
+use crate::store::tenant::{CapturedTenant, TenantContext};
 use crate::streaming::EventQueueManager;
 
 use super::execute::CancellationTokens;
@@ -32,8 +58,16 @@ pub(super) struct CommitGuard {
     queues: EventQueueManager,
     tokens: CancellationTokens,
     store: Arc<dyn TaskStore>,
+    push_store: Arc<dyn PushConfigStore>,
     /// The idempotency key this send claimed, if any.
     key: Option<String>,
+    /// The per-context lock, held until the commit returns and the guard is
+    /// dropped disarmed or, on a drop before that, until the release is done.
+    context: Option<OwnedMutexGuard<()>>,
+    /// The tenant and caller the stores are scoped to.
+    tenant: Option<CapturedTenant>,
+    /// Set once this send has saved a *new* task's row.
+    created_row: bool,
     /// Set once this send's queue lease exists.
     leased: bool,
     /// This send's token entry, identified by its turn: only an entry whose
@@ -51,14 +85,20 @@ impl CommitGuard {
         queues: EventQueueManager,
         tokens: CancellationTokens,
         store: Arc<dyn TaskStore>,
+        push_store: Arc<dyn PushConfigStore>,
         key: Option<String>,
+        context: OwnedMutexGuard<()>,
     ) -> Self {
         Self {
             task_id,
             queues,
             tokens,
             store,
+            push_store,
             key,
+            context: Some(context),
+            tenant: Some(TenantContext::capture()),
+            created_row: false,
             leased: false,
             turn: None,
             armed: true,
@@ -73,6 +113,11 @@ impl CommitGuard {
     /// Records the token entry this send registered.
     pub(super) fn registered(&mut self, turn: &Arc<ExecutorTurn>) {
         self.turn = Some(Arc::clone(turn));
+    }
+
+    /// Records that this send saved a new task's row.
+    pub(super) const fn created_row(&mut self) {
+        self.created_row = true;
     }
 
     /// The commit returned; whatever it holds is someone else's to release.
@@ -93,13 +138,29 @@ impl Drop for CommitGuard {
         let key = self.key.take();
         let leased = self.leased;
         let turn = self.turn.take();
+        let push_store = Arc::clone(&self.push_store);
+        let created_row = self.created_row;
+        let context = self.context.take();
+        let tenant = self.tenant.take();
         trace_warn!(
             task_id = %task_id,
             "send dropped before its executor started; releasing what it took"
         );
-        // Spawned because `Drop` cannot await. The order mirrors the error
-        // paths: queue, then token, then key.
-        tokio::spawn(async move {
+        // Spawned because `Drop` cannot await, in the request's tenant scope.
+        // The order mirrors the error paths: the row, queue, token, key.
+        let release = async move {
+            if created_row {
+                // Nothing outside this send has seen the task: the context
+                // lock is still held, and the executor never started.
+                if let Ok(configs) = push_store.list(&task_id.0).await {
+                    for config in configs {
+                        if let Some(id) = config.id {
+                            let _ = push_store.delete(&task_id.0, &id).await;
+                        }
+                    }
+                }
+                let _ = store.delete(&task_id).await;
+            }
             if leased {
                 queues.destroy(&task_id).await;
             }
@@ -114,6 +175,15 @@ impl Drop for CommitGuard {
             }
             if let Some(key) = key {
                 let _ = store.release_idempotency_key(&key).await;
+            }
+            // Only now may a concurrent send for this context look for its
+            // task.
+            drop(context);
+        };
+        tokio::spawn(async move {
+            match tenant {
+                Some(tenant) => tenant.scope(release).await,
+                None => release.await,
             }
         });
     }

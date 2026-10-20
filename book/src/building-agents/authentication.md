@@ -47,8 +47,9 @@ let handler = RequestHandlerBuilder::new(my_executor)
 `ApiKeyAuthInterceptor::new([...])` reads `x-api-key` by default; change the
 header with `.with_header("X-Company-Key")`.
 
-`new` authenticates without naming the caller, so every valid caller shares
-the rate limiter's `"anonymous"` bucket. To give each credential an identity
+`new` authenticates without naming the caller, so the rate limiter keys
+every valid caller by its address (or, behind trusted proxies, the forwarded
+client address), not by who it is. To give each credential an identity
 (`CallContext::caller_identity`), build the interceptor with
 `BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
 `ApiKeyAuthInterceptor::with_labelled_keys(…)`; the label, not the secret, is
@@ -63,6 +64,31 @@ caller's task is `TaskNotFound`. Callers `new` leaves unnamed keep sharing the
 tenant's records. To let identified callers share, call
 `RequestHandlerBuilder::share_tasks_across_callers()`; see
 [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant).
+
+**Rotating and revoking** (spec §13.4: credentials SHOULD be rotated
+periodically, and agents SHOULD have a way to revoke them). Both interceptors
+hand out a `CredentialSet` from `credentials()`, a handle you keep after
+giving the interceptor to the builder. What you add or revoke applies from the
+next request on, without a restart:
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::BearerTokenAuthInterceptor;
+
+let auth = BearerTokenAuthInterceptor::with_labelled_tokens([("token-2026-09", "billing")]);
+let tokens = auth.credentials(); // keep this; pass `auth` to `with_interceptor`
+
+// Rotation: accept the new token, move the caller over, retire the old one.
+tokens.add_labelled("token-2026-10", "billing");
+assert!(tokens.revoke("token-2026-09"));
+// Revocation of a leaked token is the same call; its next request gets 401.
+# Ok(())
+# }
+```
+
+A JWT is revoked by removing its signing key from the JWKS (a remote set is
+refetched on rotation) or by its `exp`; `JwtAuthInterceptor` keeps no list of
+revoked token ids.
 
 ### JWT (HS256 / RS256 / ES256)
 
@@ -122,6 +148,48 @@ let interceptor = JwtAuthInterceptor::new(
 # }
 ```
 
+### Mutual TLS: the client certificate names the caller
+
+With TLS on the listener and a rustls configuration whose client verifier
+trusts your CAs (`rustls::server::WebPkiClientVerifier`, passed to
+`Server::with_tls` or `WebSocketDispatcher::with_tls`; for gRPC,
+`ServerTlsConfig::client_ca_root`), the certificate a client presents
+reaches the interceptors as `CallContext::peer_certificate`, the DER of its
+leaf. `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) names the
+caller from it and refuses a call without one (`401`, `WWW-Authenticate:
+MutualTLS`; gRPC `UNAUTHENTICATED`):
+
+```rust,no_run
+use a2a_protocol_server::auth::MutualTlsAuthInterceptor;
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+// `mtls:sha256:<fingerprint>`: exact, needs no parser, changes on renewal.
+let by_fingerprint = MutualTlsAuthInterceptor::new();
+
+// `mtls:<name>` from your own mapping; `None` refuses the certificate. To
+// name callers by subject, parse `der` with the X.509 crate you trust.
+let by_name = MutualTlsAuthInterceptor::with_names(|der| {
+    (der.len() > 0).then(|| "billing-agent".to_owned())
+});
+# let _ = by_fingerprint;
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_interceptor(by_name)
+    .build()?;
+# let _ = handler;
+# Ok(())
+# }
+```
+
+The handshake verifies the certificate; the interceptor only names it. A
+verifier that also admits clients without one
+(`allow_unauthenticated()`, `client_auth_optional(true)`) leaves the refusal
+to the interceptor, so the same listener can serve the agent card to anyone.
+Behind a proxy that terminates TLS, the listener sees the proxy's handshake,
+not the client's, and there is no client certificate to read.
+
 ### Security properties
 
 - **Only HS256/RS256/ES256 are accepted.** `alg: none` and any unlisted
@@ -136,6 +204,28 @@ let interceptor = JwtAuthInterceptor::new(
 - **Rejections are generic.** A missing, malformed, expired, or wrong token all
   produce the same error, so the response can't be used as an oracle.
 - **Constant-time comparison** for API keys and static bearer tokens.
+
+### The card and the interceptors must agree
+
+`RequestHandlerBuilder::build` compares the authentication the agent card
+declares with the interceptors that enforce it (since 0.15):
+
+- A card whose `securityRequirements` (or a skill's) ask for a credential is
+  refused when no registered interceptor authenticates, because every request
+  would be served without it (spec §3.3.2, §7.4). An empty requirement `{}`
+  makes authentication optional, as in OpenAPI, and asks for nothing. When a
+  gateway, mesh or sidecar in front of the process checks the credential,
+  say so with `authenticated_upstream()`.
+- An authenticating interceptor that checks none of the schemes the card
+  declares is refused: §13.3 requires requests to be authenticated "using one
+  of the schemes declared in the public `AgentCard`", and a client following
+  the card could never pass it. `BearerTokenAuthInterceptor` and
+  `JwtAuthInterceptor` check the HTTP `bearer` scheme and OAuth 2.0 or OpenID
+  Connect schemes (whose access tokens are bearer tokens);
+  `ApiKeyAuthInterceptor` checks an `apiKeySecurityScheme` in the header it
+  reads, compared without regard to case. A custom interceptor answers
+  through `ServerInterceptor::checks_scheme`; one that does not is not
+  checked.
 
 ### Throttling guessed credentials
 
@@ -229,6 +319,90 @@ proxy if WebSocket clients need a `401`.
 Through 0.13 every refusal answered `400` / `INVALID_ARGUMENT`; see
 **Behaviour Changes** in the changelog.
 
+### Authorization: scopes and per-task checks
+
+Spec §13.1 requires an authorization check on every operation, and §3.3.2 a
+`403` when the authenticated caller lacks a permission, naming the missing
+scope where that leaks nothing. Two pieces help.
+
+**A scope every call needs.** `JwtValidator::require_scope` refuses a token
+that verifies but does not grant the scope in its `scope` claim (a
+space-separated string, or an array). The answer is `403` with the RFC 6750
+challenge `Bearer error="insufficient_scope", scope="tasks:write"`, naming only
+the scopes the token lacks. A token that fails any other check gets `401`
+before its scopes are looked at.
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
+
+let validator = JwtValidator::new()
+    .with_issuer("https://issuer")
+    .with_audience("agent")
+    .require_scope("a2a:invoke");
+let interceptor = JwtAuthInterceptor::new(validator, Jwks::new());
+# Ok(())
+# }
+```
+
+**A decision per operation or per task.** An interceptor sees the method
+(`CallContext::method`), who the caller is (`caller_identity`, set by the
+authenticating interceptor before it) and the task the request names
+(`task_id`: the `id` of `GetTask`, `CancelTask` and `SubscribeToTask`, the
+`taskId` of a push-config call or of a message continuing a task). To refuse,
+return `A2aError::permission_denied` (`403`), or
+`A2aError::insufficient_scope(message, scopes)` (`403` with the challenge
+naming the scopes) when a scope would let the caller in:
+
+```rust
+use std::future::Future;
+use std::pin::Pin;
+
+use a2a_protocol_server::{CallContext, ServerInterceptor};
+use a2a_protocol_types::error::{A2aError, A2aResult};
+
+/// Only callers on the task's allow-list may touch it.
+struct TaskAcl;
+
+impl TaskAcl {
+    fn may(&self, caller: Option<&str>, task: &str) -> bool {
+        // Look the pair up in your own records; refuse what is not listed.
+        caller.is_some() && !task.is_empty()
+    }
+}
+
+impl ServerInterceptor for TaskAcl {
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            match ctx.task_id() {
+                Some(task) if !self.may(ctx.caller_identity(), task) => {
+                    Err(A2aError::permission_denied("not permitted"))
+                }
+                _ => Ok(()),
+            }
+        })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+```
+
+Register it after the authenticating interceptor, so the identity is set when
+it runs. `task_id` is what the caller sent, before the handler looks the task
+up, so decide from your own records and not from whether the task exists: an
+allow-list that refuses every id it does not list answers `403` for an unknown
+task and a forbidden one alike, and reveals nothing (spec §3.3.2). With caller
+isolation on (the default once callers are identified) another caller's task
+is already `TaskNotFound`.
+
 ## Client: acquiring and attaching tokens
 
 ### A token you already have
@@ -257,6 +431,16 @@ interceptor calls
 still fails, but the next one fetches a new token instead of resending the
 refused one until it expires. A custom `TokenProvider` gets this only if it
 overrides `invalidate`; the default does nothing.
+
+**Plaintext.** Spec §13.4 says credentials SHOULD travel only over encrypted
+connections. A client whose endpoint is `http://` or `ws://` on a host other
+than loopback logs a warning, once, the first time a call carries a
+credential: an `Authorization`, `Proxy-Authorization` or `Cookie` header, or
+the header or query parameter an `AuthInterceptor::api_key` writes.
+`ClientBuilder::require_https_credentials()` refuses such a call instead,
+before sending it, with `ClientError::InsecureTransport` naming the header and
+the endpoint's origin. `http://localhost` and other loopback addresses are
+allowed either way.
 
 ### OAuth 2.0 client credentials
 
@@ -321,6 +505,38 @@ mid-refresh does not strand the others; the next one starts a new attempt.
 The client secret is never logged, never echoed in an error, and redacted from
 `Debug`. `Basic` client authentication is the default; switch to form-body
 credentials with `.with_auth_style(TokenEndpointAuthStyle::Post)`.
+
+### Delegating for a principal: RFC 8693 token exchange
+
+An agent serving Alice that delegates to another agent should send neither
+its own credential (it names only the agent) nor Alice's (the next agent
+was never meant to accept it). It exchanges the token it was called with at
+the identity provider for one issued for the next agent: `sub` is still
+Alice, and `act` names the agent acting for her (ADR 0021).
+
+```rust,no_run
+use a2a_protocol_client::token_provider::{ExchangeRequest, TokenExchange};
+# async fn run(alices_token: String) -> Result<(), Box<dyn std::error::Error>> {
+let idp = TokenExchange::new("https://idp.example/oauth/token", "planner-agent", "secret");
+let delegated = idp
+    .exchange(
+        &ExchangeRequest::new(alices_token)
+            .with_audience("https://worker.example")
+            .with_scopes(["tasks:read"]),
+    )
+    .await?;
+# let _ = delegated;
+# Ok(())
+# }
+```
+
+Send the call with `delegated.access_token`. The exchanged token belongs to
+one principal, so give it to that call alone, for example on a client
+built with `StaticTokenProvider`, not to a client every principal shares.
+On the receiving agent, `JwtAuthInterceptor` makes Alice the caller
+identity and lists the acting agents in `CallContext::actors`, nearest
+first. With `audit`, every call record names both. The identity provider
+decides what may be delegated, to whom, and with which scopes.
 
 ### Interactive flows
 

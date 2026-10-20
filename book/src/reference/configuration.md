@@ -63,6 +63,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
 | `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound |
 | `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
+| `max_idempotency_keys` | `Option<usize>` | 100,000 | How many keys the index holds at once (per store, so per tenant partition); a send with a new key past it is refused with `503` / `RESOURCE_EXHAUSTED` and runs nothing, and no held key is evicted; `None` is no limit |
 
 ### InMemoryPushConfigStore
 
@@ -219,7 +220,9 @@ and the `with_*` setters.
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext listener) |
 | `grpc-tls` | Off | TLS on the gRPC listener itself: `GrpcDispatcher::with_tls(ServerTlsConfig)` with a server identity and, optionally, a client CA for mutual TLS; implies `grpc`; the TLS types are re-exported from `dispatch::grpc` |
-| `otel` | Off | `Telemetry`: OTLP export of traces, metrics and logs (gRPC or HTTP/protobuf), `OtelMetrics`, the Langfuse preset, and the spans' OpenTelemetry bridge (implies `tracing`) |
+| `otel` | On | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`) |
+| `otlp` | Off | `Telemetry`: OTLP export of traces, metrics and logs (gRPC or HTTP/protobuf), the Langfuse preset, and `init_otlp_pipeline` (implies `otel`) |
+| `otlp-json` | Off | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | Off | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -232,12 +235,13 @@ and the `with_*` setters.
 |---------|---------|-------------|
 | `signing` | Off | Forwards `a2a-protocol-types/signing`; the client itself neither signs nor verifies anything |
 | `tracing` | **On** | Structured logging via `tracing` crate, and a `CLIENT` span per call; `default-features = false` compiles both out |
-| `otel` | Off | Each call's `traceparent` names the call's own span when a `tracing-opentelemetry` layer records it (implies `tracing`) |
+| `otel` | On | Each call's `traceparent` names the call's own span when a `tracing-opentelemetry` layer records it (implies `tracing`) |
 | `tls-rustls` | **On** | HTTPS via rustls (no OpenSSL dependency); `default-features = false` for a plaintext-only build |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` (plaintext; `https://` is refused with a message naming `grpc-tls`) |
 | `grpc-tls` | Off | gRPC over TLS: implies `grpc` (not `tls-rustls`), verifies against the bundled Mozilla roots or a supplied `ClientTlsConfig` (re-exported from `transport::grpc`) |
 | `testing` | Off | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
+| `webhook` | **On** | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2) |
 
 ### `a2a-protocol-types`
 
@@ -259,11 +263,14 @@ and the `with_*` setters.
 | `websocket` | Off | Enables `websocket` in client and server |
 | `sqlite` | Off | Enables `sqlite` in the server |
 | `postgres` | Off | Enables `postgres` in the server |
-| `otel` | Off | Enables `otel` in the server and the client |
+| `otel` | On | Enables `otel` in the server and the client |
+| `otlp` | On | Enables the server's `otlp` (implies `otel`) |
+| `otlp-json` | Off | Enables the server's `otlp-json` (implies `otlp`) |
 | `axum` | Off | Enables `axum` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
 | `encryption` | Off | Enables `encryption` in the server |
 | `audit` | Off | Enables `audit` in the server and in `a2a-protocol-types` |
+| `webhook` | **On** | Enables `webhook` in the client |
 
 ## Environment Variables
 

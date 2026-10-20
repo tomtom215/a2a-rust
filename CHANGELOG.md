@@ -12,6 +12,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`TaskStore::save_appending_history` takes a `HistoryLimit`, not a
+  message count** (server; release audit F2). The limit bounds bytes as well
+  as messages. A store that overrides the method trims with
+  `limit.trim(&mut history)`, and a caller that passed `n` passes
+  `HistoryLimit::new(n, usize::MAX)` to keep the old meaning.
+
+- **OpenTelemetry instrumentation is on by default; export is `otlp`**
+  (server, client, SDK; decided 2026-10-14, the exporter's place settled
+  2026-10-18). The server's `otel` feature is now the instrumentation only
+  (`OtelMetrics`, the spans' OpenTelemetry bridge), through the OpenTelemetry
+  API (`opentelemetry`, `tracing-opentelemetry`), and is a default feature
+  of the server, the client and the SDK: a process that installs a provider
+  gets the SDK's spans and metrics with nothing to enable, and one that
+  installs none records to nothing. `Telemetry`, the `Langfuse` preset and
+  `init_otlp_pipeline` moved to a new `otlp` feature, with the SDK and
+  exporter dependencies; it is default in `a2a-protocol-sdk` only.
+  Migration: a direct dependency on `a2a-protocol-server` that used
+  `Telemetry` asks for `features = ["otlp"]`; on the SDK nothing changes.
+- **The metric catalogue follows the OpenTelemetry conventions** (server,
+  `otel`; decided 2026-10-15). `a2a.server.latency`, deprecated in 0.14.0, is
+  removed: read `a2a.server.request.duration` (Prometheus
+  `a2a_server_request_duration_seconds`), the same histogram under the
+  conventions' name, or `rpc.server.call.duration`. Units are UCUM: a count
+  is brace-annotated (`{request}`, `{connection}`, `{error}`, `{queue}`,
+  `{delivery}`, `{response}`). Rendered through `opentelemetry-prometheus`
+  0.33.1 the other metric names are unchanged (measured 2026-10-18).
+- **`init_otlp_pipeline` and `init_otlp_pipeline_with_endpoint` take
+  `service_name: Option<&str>`** (server, `otel`). The environment now wins:
+  `OTEL_SERVICE_NAME`, or `service.name` in `OTEL_RESOURCE_ATTRIBUTES`, names
+  the service, and the argument only when they do not; `None` leaves it to
+  the environment and the SDK's `unknown_service` default. The `&str`
+  overwrote the environment, against the OpenTelemetry environment-variable
+  specification. Migration: wrap the name in `Some`. Tests:
+  `otel::pipeline::tests`.
+- **`ConvertError` and `SseParseError` are `#[non_exhaustive]`** (types,
+  client; release audit F26). A match on `SseParseError` needs a wildcard
+  arm, and a `ConvertError` is built with the now-public
+  `ConvertError::new(field, reason)` rather than a struct literal, so a
+  variant or field added later is not a breaking change.
+- **A push config whose `authentication` carries no credentials is
+  refused** (server; spec §4.3.3: a delivery MUST carry the credentials its
+  config specifies). `CreateTaskPushNotificationConfig` answers
+  `InvalidParams` naming `authentication.credentials` when they are absent,
+  empty or whitespace; such a config was stored and every delivery went out
+  with no `Authorization`, or with an empty `Bearer `. Leave
+  `authentication` out for an unauthenticated webhook. Test:
+  `push_config_credentials`.
+- **A card carrying a credential in a URL is refused when published**
+  (server; spec §14 "The Agent Card SHOULD NOT include sensitive
+  credentials", §13.3 an extended card no "unmasked credentials"). `build()`,
+  the static, dynamic and hot-reload card handlers and per-caller extended
+  cards refuse a card any of whose URLs carries user information
+  (`user:pass@host`) or a query parameter named like a secret (`token`,
+  `access_token`, `api_key`, `apikey`, `auth`, `client_secret`, `key`,
+  `password`, `secret`, `sig`, `signature`; case-insensitive), naming the field. New
+  public `agent_card::card_credentials(&card)` lists them. Tests:
+  `file_url_ssrf::build_refuses_a_card_carrying_a_credential`,
+  `agent_card::lint::tests::a_credential_in_any_card_url_is_found_and_refused`.
+- **A card whose OAuth or OpenID Connect URLs are not URLs is refused when
+  published** (types/server; a2a.proto: each OAuth flow URL "MUST be in the
+  form of a URL", and `oauth2_metadata_url` "TLS is required").
+  `validate_security_schemes`, which `build()` and every card handler run,
+  now refuses a flow URL, refresh URL or `openIdConnectUrl` that is not
+  `scheme://authority...`, and an `oauth2MetadataUrl` that is not `https`.
+  The deprecated implicit and password flows' URLs are checked only when
+  given. A client never applies this to a card it fetches. Tests:
+  `security::url_tests`.
+- **A client built from a card refuses to build when the card marks an
+  extension `required` that it does not ask for** (client; a2a.proto
+  `AgentExtension.required`: "the client must understand and comply").
+  `build()` returns `ExtensionSupportRequired` naming the extension; ask for
+  it with `with_extensions`, or call `skip_required_extension_check()` when
+  an interceptor sends the `A2A-Extensions` header. A client built for an
+  endpoint, not a card, is unaffected.
+- **`build()` refuses a card whose declared authentication the
+  interceptors do not enforce** (server; spec §3.3.2 "Servers MUST reject
+  requests with invalid or missing authentication credentials", §7.4 "MUST
+  authenticate every incoming request based on ... its declared
+  authentication requirements", §13.3 "MUST authenticate requests using one
+  of the schemes declared in the public AgentCard"). Two configurations that
+  built now fail with `ServerError::InvalidParams`, naming the fix: a card
+  (or a skill) with `securityRequirements` when no interceptor authenticates,
+  which served every request without the credential the card demanded; and
+  an authenticating interceptor that checks none of the card's declared
+  schemes. `RequestHandlerBuilder::authenticated_upstream()` accepts the
+  first when a gateway in front of the process authenticates. A requirement
+  list containing an empty requirement (`{}`, optional authentication) asks
+  for nothing. New provided trait method
+  `ServerInterceptor::checks_scheme(&SecurityScheme) -> Option<bool>`
+  (default `None`, not checked); the bundled authenticators answer it.
+  Tests: `auth::declared_tests`, and `tests/auth_every_method.rs`, which
+  calls every method in `Method::ALL` on both HTTP bindings without a
+  credential and with a wrong one and requires `401` each time.
 - **A replay longer than `subscribe_replay_limit` is read in pages**
   (server; spec §3.5.2 "each stream MUST receive the same events in the
   same order"). The limit now bounds each read of the event log, not the
@@ -121,6 +214,242 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The originating principal on delegated calls, by RFC 8693 token
+  exchange** (server, client; ADR 0021; OWASP ASI03). `JwtAuthInterceptor`
+  reads the `act` chain of a verified token. The caller identity stays its
+  `sub`, the principal the work is for, and `CallContext::actors` lists the
+  agents acting for it, nearest first (at most `MAX_ACTORS`, 16). A token
+  whose chain cannot be read is refused. With `audit`, a call record
+  carries the chain in `detail.actors`, which audit privacy seals per
+  person, opens on reveal, and erases per person. The client's
+  `token_provider::TokenExchange` performs the exchange at the identity
+  provider (`ExchangeRequest`: subject and actor tokens, audience,
+  resource, scopes), so a delegating agent sends a token naming the
+  principal instead of its own credential.
+- **Leases on delegated tasks: a child whose parent goes quiet stops**
+  (types, server, client; ADR 0020; G1-B in `docs/swarm-orchestration.md`;
+  OWASP ASI08). The extension `https://a2a-rust.com/extensions/lease/v1`
+  carries a grant on the message that starts a task
+  (`a2a_protocol_types::lease::Lease`, `{"ttlMs": n}`). A `GetTask` that
+  activates the extension renews the lease (`A2aClient::renew_lease`). A
+  server with `RequestHandlerBuilder::with_lease_store` (`InMemoryLeaseStore`,
+  `PostgresLeaseStore`) declares the extension, checks a grant against
+  `MIN_LEASE_TTL` (1 s) and `with_max_lease_ttl` (default one hour) before
+  any work, and stops a task whose lease lapses, as a halt does. A store it
+  cannot read counts as a live parent. `Delegation::start_leased` grants
+  the lease and renews it every third of its time to live while the handle
+  lives, so a parent that crashes, hangs or detaches leaves a child that
+  stops within about one time to live (measured in
+  `delegation_lease_tests.rs`).
+- **A mutual-TLS client certificate names the caller, on every binding**
+  (server; ADR 0018; OWASP ASI07). The HTTP `Server`, the WebSocket
+  listener and gRPC carry the leaf certificate a client presented in a
+  mutual-TLS handshake to the interceptors. It is
+  `CallContext::peer_certificate`, through the `PeerCertificate` request
+  extension and the `:peer-certificate` headers-map key. Until now the
+  dispatchers never saw it, so mutual TLS admitted a connection without
+  naming who made it. `auth::MutualTlsAuthInterceptor` (`tls-rustls` or
+  `grpc-tls`) names the caller `mtls:sha256:<fingerprint>`, or
+  `mtls:<name>` through `with_names`, and refuses a call without a
+  certificate (`401`, `WWW-Authenticate: MutualTLS`; gRPC
+  `UNAUTHENTICATED`). No new dependency: `tls-rustls` and `grpc-tls` now
+  name `ring`, which rustls already linked.
+- **`CombinedDispatcher`: JSON-RPC and HTTP+JSON on one listener**
+  (server). Serving both bindings on one port took a hand-written hyper
+  accept loop; four examples each carried one, outside `Server`'s timeouts,
+  connection limit and graceful shutdown. `CombinedDispatcher` is a
+  `Dispatcher` like the others. A `POST` to the JSON-RPC path (default `/`,
+  or one segment set with `with_jsonrpc_path`), and its preflight, go to
+  JSON-RPC; everything else goes to REST. `echo-agent`, `genai-agent`,
+  `rig-agent` and `multi-lang-team` now use it.
+- **A server span and `rpc.server.call.duration` on every binding,
+  SLIMRPC included** (server, client, `a2a-protocol-slimrpc`; ADR 0013,
+  decision 2). `BindingSpan` and `CustomBinding` let a binding outside
+  `a2a-protocol-server` open the span and record the metric the in-crate
+  bindings do: same name, A2A attributes, trace policy and remote parent,
+  with its own `rpc.system.name` and status mapping. `a2a-protocol-slimrpc`
+  now records all eleven methods as `slimrpc`, with its gRPC-style status
+  codes and `OK`; before, its calls recorded neither. On the client,
+  `Transport::rpc_system` (defaulted to `None`) names a custom transport's
+  system on its calls' `CLIENT` spans: `jsonrpc` for `WebSocketTransport`,
+  `slimrpc` for `SlimRpcTransport`. A custom transport's spans now also keep
+  the agent's name, description and version from the card, which they
+  dropped before.
+- **Mutual TLS to the OTLP collector, and OTLP/HTTP with JSON bodies**
+  (server). `TelemetryBuilder::with_client_certificate_pem(chain, key)`, or
+  `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and `OTEL_EXPORTER_OTLP_CLIENT_KEY`
+  (and their per-signal forms; the files win over code), present a client
+  certificate on gRPC and OTLP/HTTP alike; half a pair, or a file that is not
+  PEM, fails `build`. `OtlpProtocol::HttpJson` and
+  `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` are a new `otlp-json` feature (server
+  and SDK), off by default: `opentelemetry-otlp`'s `http-json` feature makes
+  JSON the default of every exporter built without a protocol, which Cargo
+  would impose on an application's own. Without the feature `http/json` is
+  still refused, now naming the feature. Each is tested end to end against a
+  stand-in collector, with a counter-test that the collector refuses a client
+  without the certificate.
+- **`A2aClient::follow_task(id, poll_every)`** (client; spec §7.6.2: a
+  client without an open stream "SHOULD perform one of the following:
+  Subscribe to Task ... Register a webhook ... Begin polling the Task").
+  Returns a `TaskFollow` whose `next()` yields the task's updates until it
+  ends: from `SubscribeToTask` when the agent can stream, and from `GetTask`
+  every `poll_every`, reporting each status change once, when its card does
+  not declare streaming or it refuses the subscription
+  (`UnsupportedOperation`, as for a task already ended). Test:
+  `follow_task_e2e`.
+- **`erase_caller(identity)` on every tenant-aware store** (server; spec
+  §13.4 "Agents SHOULD provide mechanisms for users to request deletion of
+  their data"). The in-memory, SQLite and PostgreSQL task stores remove the
+  caller's partitions in every tenant with their tasks, logged events and
+  idempotency keys; the push-config stores remove its webhooks; the SQL
+  stores do it in one transaction. Reports a new
+  `store::caller_keys::CallerErasure` (partitions, rows). New
+  `RequestHandlerBuilder::with_push_config_store_arc`, to keep a handle to a
+  push-config store as `with_task_store_arc` does for a task store. Test:
+  `erase_caller`, on all three backends.
+- **A card-signing key past its `exp` is not used** (types; spec §8.4.3
+  "Expired or revoked keys MUST NOT be used for verification"). `Jwk` gains
+  an `exp` member (seconds since the epoch, the JWT `NumericDate`), which
+  some key sets publish though RFC 7517 defines none, and
+  `Jwk::with_expiry` to publish it; `Jwks::candidates` skips a key at or
+  past it. A revoked key is one the set no longer lists, and nothing in the
+  SDK caches a set. Test: `signing::keys::tests::an_expired_key_is_not_used`.
+- **`auth::CredentialSet`: rotating and revoking static credentials while
+  serving** (server; spec §13.4 "Credentials SHOULD be rotated periodically",
+  agents "SHOULD implement credential revocation mechanisms").
+  `BearerTokenAuthInterceptor::credentials()` and
+  `ApiKeyAuthInterceptor::credentials()` return a handle to the set the
+  interceptor checks; `add`, `add_labelled` and `revoke` apply from the next
+  request on. Until now the lists were fixed at construction. Test:
+  `credential_rotation`.
+- **`ClientBuilder::require_https_credentials()`** (client; spec §13.4
+  "Credentials SHOULD be transmitted only over encrypted connections"). A
+  call carrying a credential (`Authorization`, `Proxy-Authorization`,
+  `Cookie`, or where an `AuthInterceptor::api_key` puts its key) to an
+  `http://` or `ws://` endpoint on a non-loopback host is logged once by
+  default, and with this option refused before sending with the new
+  `ClientError::InsecureTransport`, which names the header and the origin
+  only. Tests: `credentials_plaintext`, `plaintext::tests`.
+- **A push config sending credentials to an `http://` webhook is logged**
+  (server; spec §13.4). It is stored and delivered as asked, as before;
+  `HttpPushSender::https_only()` still refuses it. The warning names the
+  webhook's origin, never its path, token or credentials. Test:
+  `push_plaintext_credentials`.
+- **`CallContext::task_id()`** (server; spec §13.1 "Servers MUST implement
+  authorization checks on every A2A Protocol Operations request"). The task a
+  request names (the `id` of `GetTask`, `CancelTask` and `SubscribeToTask`,
+  the `taskId` of a push-config operation or of a message continuing a task)
+  is on the context before the interceptor chain runs, so an authorizer can
+  decide per task; `None` for a request that names none. New
+  `CallContext::with_task_id` for a context built by hand. Test:
+  `authorization_per_task`, every method on both HTTP bindings.
+- **`A2aError::insufficient_scope(message, scopes)`** (types; spec §3.3.2
+  "Servers SHOULD indicate what permission or scope is missing"). A `403` /
+  `PERMISSION_DENIED` like `permission_denied`, carrying the RFC 6750 §3
+  challenge `Bearer error="insufficient_scope", scope="..."`, which every
+  binding sends as it sends a `401`'s (header, gRPC metadata, WebSocket
+  `ErrorInfo` metadata). A scope that is not an RFC 6749 `scope-token` is
+  left out.
+- **`JwtValidator::require_scope(scope)`** (server, `auth-jwt`). A token that
+  verifies but does not grant the scope in its `scope` claim (space-separated
+  string or array) is refused with `insufficient_scope`, naming only the
+  scopes it lacks; a token that fails any other check is still `401`, before
+  its scopes are read. Test: `jwt_required_scope`.
+- **`webhook::WebhookReceiver`: the receiving side of push notifications**
+  (client, feature `webhook`, on by default in the client and the SDK; spec
+  §4.3.3, §13.2). Register the config `set_push_config` returned, then hand
+  each webhook request's headers and body to `receive()`; the outcome's
+  `status()` is the HTTP status to answer. It checks the notification token
+  (either header spelling, looked up by SHA-256 and compared in constant
+  time), the config's `Authorization` scheme and credentials (401), the body
+  as a `StreamResponse` (400) and its task against the registered task
+  (403); it answers a byte-identical replay as `Duplicate` with 200 (a
+  bounded cache, on by default) and, with `with_rate_limit`, more than the
+  config's allowance with 429. `new_notification_token()` makes a 244-bit
+  token, and `register` refuses a token another config already uses. The
+  feature adds `ring`, which the default `tls-rustls` build already links.
+  Tests: `webhook_receiver`, and the SDK's `webhook_receiver_e2e`, in which
+  the server's `HttpPushSender` retries after a lost acknowledgement.
+- **`ClientBuilder::require_https_webhooks()`** (client; spec §13.2 "Clients
+  SHOULD use HTTPS endpoints for webhook URLs"). `set_push_config`, and a
+  send carrying an inline push config, warn on an `http://` webhook to a
+  non-loopback host; with this option they refuse it before sending, with
+  the new `ClientError::InsecureWebhook` (the URL's origin only). Tests:
+  `webhook_https_tests`.
+- **`url_guard::check_public_url` and `url_guard::resolve_public_url`**
+  (server; spec §14 "File references within A2A messages MUST be validated
+  to prevent SSRF"). The checks the push sender has applied to webhook URLs,
+  now public so an executor that fetches a `Part`'s URL can apply them:
+  loopback, private, link-local, CGNAT, ULA and IPv4-mapped addresses,
+  numeric IPv4 spellings (`0x7f.1`, `2130706433`) and internal names are
+  refused; `resolve_public_url` also resolves the host (bounded by a
+  timeout) and refuses it if any address it resolves to is private.
+- **`RequestHandlerBuilder::refuse_private_file_urls()`** (server; spec §14).
+  Off by default, since the SDK never fetches a `Part`'s URL itself; when
+  set, a message whose file part points at a private or internal address is
+  refused with `InvalidField` (`InvalidParams` on the wire) naming the
+  part, before the executor sees it. Tests:
+  `file_url_ssrf`.
+- **`agent_card::card_warnings(&card)`, logged by `build()`** (server). The
+  problems a card likely has but the specification allows: an interface URL
+  that is not absolute, or not `https` off loopback (a2a.proto
+  `AgentInterface.url`, spec §7.1); a custom binding that is not a URI
+  (§5.8); an HTTP authentication scheme not in the IANA registry (read
+  2026-10-18); an extension URI with no version (§4.6.3); a URL naming an
+  internal host (a private, link-local or CGNAT address, or a name under
+  `.internal`, `.local`, `.lan`, `.corp` or `.intranet`; loopback is a
+  local test and is not reported), which spec §13.3 and §14 say a card
+  should not disclose.
+- **A listener warns when its binding is not on the card** (server; spec
+  §5.2 "Agents MUST declare all supported protocols in their AgentCard").
+  `Server`, the WebSocket listener and the gRPC listener check the handler's
+  static card when they start. New provided method
+  `Dispatcher::protocol_binding()` (default `None`); `JsonRpcDispatcher`
+  and `RestDispatcher` answer it.
+- **`EventEmitter::auth_required(explanation)` and
+  `relay_auth_required(&downstream_status)`** (server; spec §7.6.1 "MUST
+  transition the TaskState to `TASK_STATE_AUTH_REQUIRED`" and "MUST include
+  a TaskStatus message explaining the required authorization"; §7.6.2). The
+  first parks the task with the explanation as its status message; the
+  second passes a downstream agent's request on as this task's own. A
+  streamed task that parks at `AUTH_REQUIRED`, gets its credential out of
+  band and finishes stays on one stream (§7.6.1 SHOULD), now pinned by
+  `tests/auth_required_in_task.rs`.
+- **`RequestContext::referenced_tasks()`** (server; spec §3.4.3 "Agents
+  SHOULD use referenced tasks to understand the context and intent of
+  follow-up requests"). The handler resolves a message's `referenceTaskIds`
+  before the executor runs: in the caller's own partition, unknown ids
+  skipped, duplicates once, at most 16. `with_referenced_tasks` sets them
+  for a context built by hand. Tests: `tests/referenced_tasks.rs`.
+- **An opt-in total task cap across tenant partitions** (server; the
+  maintainer's 2026-10-18 decision). The default tenant store's bound was
+  `max_tenants × max_capacity` (ten million tasks at the defaults).
+  `TenantStoreConfig::with_max_total_tasks(n)` caps the sum: a new task at
+  the total first evicts its own partition's oldest finished task, and is
+  otherwise refused as temporary (HTTP `503`, gRPC `UNAVAILABLE`); an update
+  is never refused and no other tenant's task is evicted for it.
+  `TenantAwareInMemoryTaskStore::total_tasks()` reports the count. Tests:
+  `store::tenant::store::total_cap_tests`.
+- **`wss://` from the WebSocket listener itself** (server, feature
+  `tls-rustls`; spec §7.1 "Production deployments MUST use encrypted
+  communication", §13.4). `WebSocketDispatcher::with_tls(rustls::ServerConfig)`
+  and `with_tls_pem(cert_chain, key)` make the listener TLS only, offering
+  ALPN `http/1.1`, with the TLS handshake bound by the handshake timeout. The
+  agent card (§8.1) is served over the same session: a TLS stream cannot be
+  peeked at, so the start of the first request is read and replayed to the
+  card responder or the WebSocket handshake. With `Server::with_tls` and
+  `GrpcDispatcher::with_tls`, every listener the SDK starts can now terminate
+  TLS; the acceptor and PEM handling `Server` had are shared, not copied.
+  Tests: `tests/websocket_tls_origin.rs` (a request over `wss://`, the card
+  over the same TLS listener, a plaintext client refused).
+- **An opt-in `Origin` allowlist on the WebSocket listener** (server; the
+  maintainer's 2026-10-18 decision; WebSocket binding §7, cross-site
+  WebSocket hijacking). `WebSocketDispatcher::with_allowed_origins([...])`
+  refuses an upgrade whose `Origin` is not listed with `403` and the
+  `PERMISSION_DENIED` error body, before the version check;
+  `require_origin()` also refuses an upgrade with no `Origin`. Origins are
+  compared whole, ignoring ASCII case. Default unchanged: any origin, and
+  none, is accepted.
 - **Audit records protect who and what they name, and a person can be
   erased** (server, `audit` and `encryption`; GDPR Art. 25(1), 32(1)(a),
   17; ADR 0015 amended 2026-10-16). With `AuditLog::with_privacy`, each
@@ -529,8 +858,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `canceled`, as on shutdown. Reads and cancels are still served. A send
   racing the halt is either refused or stopped; with the second check
   removed, the race test failed. With `audit`, each halt and resume is a
-  `halt` record naming the operator and the tasks stopped. A halt holds in
-  one process and is not persisted.
+  `halt` record naming the operator and the tasks stopped. `resume` returns
+  `ServerResult<bool>`.
+  - **Across replicas and restarts** (ADR 0019): with
+    `RequestHandlerBuilder::with_halt_store` a halt is also written to a
+    `HaltStore` (`InMemoryHaltStore`, `SqliteHaltStore`,
+    `PostgresHaltStore`), which each replica reads before admitting its
+    first send and then every `with_halt_poll_interval` (one second by
+    default). A halt given to any replica stops every replica's tasks
+    within one interval, and a restarted process comes back halted. A halt
+    the store cannot take still holds where it was given
+    (`HaltReport::persisted` is `Some(false)`) and is written again on each
+    poll. Without a store, a halt holds in one process, as before.
 - **The approval extension, and `approval::ApprovalGate`** (types and
   server; `https://a2a-rust.com/extensions/approval/v1`; book, "Human
   Oversight"). An executor asks with `EventEmitter::request_approval`,
@@ -651,6 +990,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **An agent message on a task status, or in a snapshot's history, is
+  given the task's ids when it carries none** (server; a2a.proto `Message`:
+  "For server messages, `context_id` must be provided"). Only a direct
+  reply was stamped; a status message an executor wrote without ids went
+  out without them. Ids an executor set are kept, and user messages are
+  untouched. An `AUTH_REQUIRED` status with no message is now logged as a
+  warning (§7.6.1), not refused, since the details may have been negotiated
+  out of band.
+- **`RateLimitInterceptor` keys an unidentified caller by its peer address,
+  and every key names its kind** (server; the maintainer's 2026-10-18
+  decision; release audit F10, F11). A caller no interceptor identified
+  shared one `"anonymous"` bucket, so one client could spend every other's
+  budget. With `trusted_proxy_hops == 0` it is now keyed by the connection's
+  peer address, which every built-in listener records; an IPv6 address
+  spends its `/64`'s budget, since one host is routinely given a whole
+  `/64`. Behind trusted proxies a short forwarded chain still falls back to
+  the shared bucket, since the peer there is the proxy. Keys now carry a
+  prefix (`id:<identity>`, `ip:<address>`, `tenant:<id>`, `anon`): an
+  identity was the bare key, so one spelled `anonymous` or `tenant:acme`
+  spent that bucket. A `RateLimitCounter` table sees the new key spellings;
+  rows keyed the old way age out with their window. Size `max_buckets` for
+  the distinct client addresses one window sees. Tests:
+  `rate_limit::keying_tests`.
+- **`serve` and `serve_with_addr` run on `Server`, so their connections
+  get its default timeouts** (server). Both ran their own accept loop, which
+  installed no hyper timer and wrapped no socket in an idle timer, so a peer
+  that sent its request headers a byte at a time, or nothing, held a task
+  indefinitely (release audit F1). They now bind a `Server` under
+  `ServeConfig::default()`: a 30-second header-read timeout and a 75-second
+  idle timeout (counting traffic in either direction, so an SSE stream with
+  its 30-second keep-alive stays open), with connections still unbounded.
+  Their signatures are unchanged; for a ceiling, TLS or a graceful drain,
+  use `Server` directly. Regression test:
+  `serve::tests::serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers`,
+  which fails against the old loop.
 - **The HTTP+JSON client sends an array query parameter by repeating it**
   (client; spec §11.5 "Multiple values MAY be passed by repeating the
   parameter name"). `ids=1&ids=2` where it sent one JSON-encoded value,
@@ -1293,6 +1667,184 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Go SDK interop's secured-card leg enforces the key it publishes**
+  (`examples/echo-agent`, `itk/interop/go-sdk-client`). The handler build
+  now refuses a card whose `securityRequirements` no interceptor checks, so
+  echo-agent's `A2A_INTEROP_CARD=1` mode stopped starting and leg 1b of
+  `scripts/go_sdk_interop.sh` failed. In that mode echo-agent now registers
+  an `ApiKeyAuthInterceptor` on the card's `X-API-Key` header, with
+  tenant-aware stores for the caller isolation that implies. The a2a-go
+  client presents the key through a2a-go's own `AuthInterceptor`, which
+  reads the scheme from our card, and first checks that a call without the
+  key is refused.
+- **The agent card's path answers every method other than `GET` and `HEAD`
+  with `405` and `Allow: GET, HEAD`, on every listener** (server). RFC 9110
+  §15.5.6 says a `405` MUST carry `Allow`. Measured before the fix, a
+  `POST`, `PUT`, `DELETE` or `PATCH` of `/.well-known/agent-card.json` got
+  the card (`200`) from the JSON-RPC dispatcher, `404` from REST and gRPC,
+  and no response at all from WebSocket, which handed it to the WebSocket
+  handshake. Only the axum router answered `405`, and only when the request
+  carried `A2A-Version`. `StaticAgentCardHandler::handle` and
+  `DynamicAgentCardHandler::handle` now answer `405` themselves, and the
+  dynamic handler no longer produces a card for such a request. A matching
+  `If-None-Match` does not turn the answer into `412`: RFC 9110 §13.2.1 has
+  a server ignore preconditions when the answer without them would not be
+  `2xx`. `tests/agent_card_methods.rs` probes all five listeners.
+- **`EncryptedTaskStore` seals what a write stores, and the seal budget is
+  enforced** (server; release audit F7). Every write sealed every part of
+  the task, so an artifact streamed in 100 chunks cost 5,250 seals
+  (measured), against a per-key budget of 2^32 random-nonce seals that was
+  counted and never enforced. An artifact or status delta now goes first to
+  the wrapped store's new `try_save_artifact_delta` or
+  `try_save_status_delta`. Only the parts that write stores are sealed:
+  the appended tail or pushed artifact, and the status message. Every other
+  part is a placeholder that never opens, so a store that wrote it anyway
+  fails the read rather than returning anything. Only when the store cannot
+  apply the delta in place is the whole task sealed. The same 100 chunks now
+  cost 100 seals on the in-memory, tenant-aware, SQLite and PostgreSQL
+  stores. `Aes256GcmCipher::with_seal_limit` (default `DEFAULT_SEAL_LIMIT`,
+  2^32) refuses a seal past the limit, failing the write, and warns at half
+  and at nine tenths. The design notes' alternative, reusing ciphertext
+  keyed by a digest of each part, was rejected on measurement: HMAC-SHA256
+  ran at 0.20–0.37 GB/s here against 1.6–3.3 GB/s for AES-256-GCM, so it
+  would have cost more than re-sealing. The tenant-aware in-memory store now
+  forwards both delta writes to its partition, where it used to fall back to
+  a whole-record `save`. `scripts/check_store_delta_forwarding.py`, a new CI
+  gate, fails when a store overrides a delta write without its `try_` half.
+
+- **The SQL stores' artifact appends are compare-and-append** (server;
+  release audit F5). A replica whose snapshot predated another's write
+  appended after parts or artifacts it had not seen. Under
+  `EncryptedTaskStore`, whose parts are sealed to their positions, the
+  record then failed to decrypt ("a stored value could not be opened",
+  reproduced on PostgreSQL before this fix). PostgreSQL's part append now
+  matches only when the stored artifact at that index has the expected id
+  and part count, and its push only when the array has the expected length.
+  SQLite's push gets the same length check. SQLite's journalled part append
+  was already safe for a stale append of the same artifact, because its
+  journal records positions, but it appended to whatever artifact had
+  replaced it at that index. It now checks the artifact id. A mismatch
+  falls back to a whole-record `save`: a lost update at worst, never a
+  misplaced part. `tests/artifact_compare_and_append.rs` runs each case on
+  PostgreSQL, SQLite and the in-memory store, which needed no change.
+
+- **`CancelTask` no longer erases what another replica wrote meanwhile**
+  (server; release audit F6). Cancel re-read the task, set `Canceled` and
+  wrote the whole snapshot back with `save`, so a history message or artifact
+  part appended between its read and its write was lost. It now writes the
+  status alone with `save_status_delta`. Every shipped store applies that in
+  place and still refuses to move a terminal task, so a task that finished
+  meanwhile is still reported not cancelable. A new test forces the
+  interleaving on the in-memory, SQLite and PostgreSQL stores; before the
+  fix it fails on all three.
+
+- **A send dropped mid-commit leaves no task behind** (server; release audit
+  F9). A new task's row is saved before its inline push config is
+  registered, and a client that went away during that registration left the
+  row `Submitted` for good. No executor ran it, the retention sweeps delete
+  only terminal tasks, and `GetTask` and `ListTasks` showed it. Its released
+  idempotency key also let the retry create a second task for one send. The
+  send's `CommitGuard` now deletes such a row, along with the push configs
+  registered for it. It holds the per-context lock until the rollback is
+  done, so a concurrent send for the same context waits instead of finding
+  the doomed task. The approval's audit record is written before the save,
+  so a continuation has nothing awaited between its save and its executor.
+  Found on the way: the guard's release ran in a spawned task outside the
+  request's tenant scope, so a dropped keyed send under a tenant released
+  its key in the empty tenant's partition and kept it held in its own. The
+  release now runs in the captured tenant and caller scope.
+
+- **Task history is bounded in bytes** (server; release audit F2). It was
+  capped at 1,024 messages and nothing else, so at the 4 MiB request body one
+  task could hold 4 GiB of remote input. Every place a history grows now
+  applies `TASK_HISTORY_LIMIT`: 1,024 messages and `MAX_TASK_HISTORY_BYTES`,
+  16 MiB of serialized messages, oldest first, always keeping the newest.
+  Those places are a send's turn appended by the store, and an agent's
+  messages appended by the background processor and the blocking-send
+  collector. The four copies of the count-only trim are now one,
+  `HistoryLimit::trim`. That function measures nothing when a cheap upper
+  bound shows the history fits, so a long conversation's turn costs a median
+  of 10 µs, not 108 µs (measured; see its docs). Two defects were fixed on
+  the way:
+  - A refused agent-message save at the cap left the message in the
+    in-memory task; it now restores exactly what the trim dropped.
+  - No test reached the blocking-send collector's trim; one does now.
+
+- **The in-memory idempotency index is bounded by count, not only by age**
+  (server; release audit F8). Its 24-hour TTL let a client add one key per
+  send for a day. `TaskStoreConfig::max_idempotency_keys` (default 100,000,
+  about 230 MB at worst with the default id limit) caps it. A new key past
+  the cap first expires old keys, then is refused with `503` /
+  `RESOURCE_EXHAUSTED`, and the send runs nothing. A held key still replays,
+  and no key is ever evicted to make room. The end-to-end test found that
+  the send path rewrote any temporary store refusal at the claim to
+  `INTERNAL`, which tells a client not to retry. The claim is the send's
+  first side effect, so such a refusal is now `Overloaded`.
+
+- **docs.rs shows which feature each item needs** (all four crates; release
+  audit F27). Each manifest asked docs.rs for `--cfg docsrs`, and nothing
+  used it. Each `lib.rs` now enables `doc_cfg` under it, so every
+  feature-gated item carries an "Available on crate feature …" badge. The
+  book's `/api/` build moves to nightly, as docs.rs uses, since stable
+  refuses the attribute. The nightly CI job builds the same way and checks
+  that a badge renders.
+
+- **A PostgreSQL-only build no longer compiles SQLite** (server; release
+  audit F25). The workspace's `sqlx` entry enabled its `sqlite` driver for
+  every crate, so `--features postgres` linked `libsqlite3-sys`; each store
+  feature now adds its own driver. `scripts/check_sql_driver_isolation.sh`,
+  a new CI step, checks both directions against a control.
+
+- **Push delivery with `max_attempts` set to 0** (server; release audit
+  F19). The field is public, and the backoff guard computed
+  `max_attempts - 1`: a panic in a debug build, and in release a backoff
+  sleep after the only attempt. The loop already made one attempt; the guard
+  now uses the same count. Test:
+  `push_sender_tests::a_zero_attempt_policy_makes_one_attempt_and_no_backoff`,
+  which fails with "attempt to subtract with overflow" on the old guard.
+- **A stored push config with empty credentials sends no `Authorization`**
+  (server), rather than `Bearer ` with nothing after it; for configs stored
+  before creation refused them. Test:
+  `push_sender_tests::empty_credentials_send_no_authorization_header`.
+- **A task answered at `AUTH_REQUIRED` by a blocking send now records the
+  rest of its run** (server; spec §7.6.1 "The agent MAY immediately continue
+  Task processing after receiving the credential"). Once a blocking
+  `SendMessage` answered at an interrupted state, nothing read the task's
+  event queue: every event the executor emitted afterwards failed with "event
+  queue: no active receivers", and the stored task stayed at `AUTH_REQUIRED`
+  (or `INPUT_REQUIRED`) for good, so `GetTask` never saw it finish. Only a
+  client holding a stream saw the rest. The collection now answers at the
+  interrupted state and goes on storing the executor's events until the task
+  ends or the queue closes. Found by the `follow_task` end-to-end test.
+  Regression test: `auth_required_in_task::a_blocking_send_answered_at_auth_required_still_records_the_rest`.
+- **An unauthenticated push-config call is refused for its credential, not
+  told the agent lacks push** (server; spec §3.3.2). `Get`, `List` and
+  `DeleteTaskPushNotificationConfig` checked the card's push capability
+  before authenticating, so a caller with no credential got
+  `PushNotificationNotSupported` where `CreateTaskPushNotificationConfig`
+  gave `401`; a paged list also decoded its page token first. Found by
+  `tests/auth_every_method.rs`, which failed on it.
+- **The gRPC client keeps a rate-limit refusal's retry delay** (client).
+  `RESOURCE_EXHAUSTED` carrying `google.rpc.RetryInfo` (which this SDK's
+  server always attaches) became a 429 with no `retry_after`, so a gRPC
+  client retried on its own backoff while the HTTP ones waited as asked.
+  Clamped to the hour `Retry-After` is.
+- **The client refuses a message with an empty `messageId` or no parts
+  before sending it** (client; a2a.proto REQUIRED fields, spec §5.7), with
+  `InvalidParams`, instead of spending a round trip on the server's refusal.
+- **`with_connection_timeout`'s documentation said it covered DNS**
+  (client). It bounds the TCP connect only, after name resolution, divided
+  across the resolved addresses (hyper-util 0.1.21's `HttpConnector`). Its
+  behaviour is now tested (`tests/connection_timeout.rs`), where before only
+  its default and setter were.
+- **A tenant partition no longer reserves room for its whole capacity on
+  creation** (server; release audit F4). Each partition of
+  `TenantAwareInMemoryTaskStore` pre-allocated its map for `max_capacity`
+  tasks (10,000 at the default), and a partition is created for every
+  tenant id a request names, so a run of junk tenant ids reserved that much
+  per id before storing anything. A partition now starts at 256 and grows.
+  `run_eviction_all` also sweeps a snapshot of the partitions instead of
+  holding the tenant map's lock across every sweep (F24).
 - **A subscription on another replica no longer loses the event being
   stored** (server; spec §3.5.2, "Each stream MUST receive the same events
   in the same order"; audit register R69). A `SubscribeToTask` on a replica
@@ -1761,6 +2313,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **A send's context lookup copies one history, not ten** (server; ADR
+  0017). `find_task_by_context` listed up to ten tasks of the context
+  whole, to choose one. It now lists them with `history_length: Some(0)`,
+  which `InMemoryTaskStore` honours while copying (`TaskStore::list` now
+  documents that a store may), and reads the chosen task whole by id. A
+  store that ignores `history_length` lists whole tasks; one of those is
+  used as it is, with no second read. `RequestContext::stored_task` is
+  unchanged: still the stored task, history included. Measured with
+  `context_lookup_cost` (release build, shared 4-vCPU Xeon, medians of 201,
+  three runs each). For ten tasks of 1,024 messages in one context the
+  lookup went from 3.21–3.73 ms to 364–552 µs. For one task it is unchanged
+  within noise: 132–146 µs before, 135–277 µs after.
 - **A streaming send's background processor and SSE forwarder are boxed
   before they are spawned**, so the span, tenant-scope and tracker
   wrappers and tokio's task cell move a pointer rather than ~5.6 KB and
@@ -1977,6 +2541,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The spec ledger's `SUPPORTED` answers only a MAY.**
+  `check_spec_ledger.py` now refuses `SUPPORTED` or `NOT_SUPPORTED` on an
+  entry whose keyword is not MAY or OPTIONAL, as the ledger's own status key
+  says. 23 entries broke it: 12 are now `TESTED` (two with tests added for
+  them: the WebSocket binding's data types on the wire, and a client passing
+  an opaque `contextId` through unaltered) and 11 `APPLICATION`, each naming
+  the hook the SDK gives. The check fails on a seeded violation.
 - **`check_advisory_floors.py` retries a transient fetch.** One connection
   reset from crates.io failed the gate on a pull request that touched none
   of its inputs. A reset, a timeout, a 429 or a 5xx is now retried up to

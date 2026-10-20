@@ -13,10 +13,16 @@
 name: CI
 
 on:
+  # Pushes to `main` only. A branch with an open PR is built by the
+  # `pull_request` event; pushing `claude/**` as well ran every job twice per
+  # push (the two runs land in different concurrency groups, `CI-claude/x` and
+  # `CI-refs/heads/claude/x`, so neither cancelled the other). A branch with
+  # no PR yet can be built on demand with `workflow_dispatch`.
   push:
-    branches: ["main", "claude/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same branch/PR — saves CI minutes when
 # multiple commits are pushed in quick succession.  Main-branch pushes
@@ -63,9 +69,10 @@ jobs:
   static-checks:
     name: Static checks (formatting, sources, docs, gate inventory)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
           components: rustfmt
@@ -207,6 +214,12 @@ jobs:
       - name: OTel exporter covers every Metrics callback
         run: python3 scripts/check_otel_metrics_coverage.py
 
+      # The same rule for `TaskStore`: a store that writes a delta in place
+      # must also say so through `try_save_*_delta`, or `EncryptedTaskStore`
+      # seals every part of the task on every event (release audit F7).
+      - name: TaskStore delta writes are visible to wrappers
+        run: python3 -I scripts/check_store_delta_forwarding.py
+
       # The packaging `--exclude` list is duplicated across this file,
       # release.yml and RELEASING.md, with nothing tying it to the workspace.
       # A new `publish = false` example therefore breaks `cargo package
@@ -233,6 +246,11 @@ jobs:
       # adopter audit found 17 disagreements across them (S12, K3, T8).
       - name: Feature tables agree with the manifests
         run: python3 scripts/check_feature_tables.py
+
+      # Each SQL store feature compiles only its own driver (release audit
+      # F25): `postgres` alone linked SQLite until 2026-10-18.
+      - name: SQL store features link only their own driver
+        run: scripts/check_sql_driver_isolation.sh
 
       # Each crate's README is compiled as a doctest by `cargo test`; this is
       # the guard that the include doing it is still there.
@@ -417,6 +435,7 @@ jobs:
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     # One platform's failure must not cancel the other five. A macOS-only flake
     # cancelled every other leg of this matrix once, and the cancelled logs —
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
@@ -438,7 +457,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy
@@ -490,7 +509,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
           components: clippy
@@ -504,6 +523,7 @@ jobs:
   test:
     name: Test (${{ matrix.rust }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
     # One platform's failure must not cancel the other five. A macOS-only flake
     # cancelled every other leg of this matrix once, and the cancelled logs —
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
@@ -516,7 +536,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -563,6 +583,7 @@ jobs:
   test-postgres:
     name: Test (postgres integration)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -579,7 +600,7 @@ jobs:
       A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -649,13 +670,17 @@ jobs:
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
     name: Nightly (informational)
+    # Not on PRs: a canary for upcoming toolchain breakage says the same
+    # thing for every PR, and main gets it on every merge.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Deliberately un-pinned: this informational canary exists to surface
       # upcoming toolchain breakage early, so it must float with nightly.
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: nightly
           components: clippy
@@ -678,13 +703,32 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      # docs.rs builds with nightly and `--cfg docsrs` (each manifest's
+      # `[package.metadata.docs.rs]`), which turns on `feature(doc_cfg)` in
+      # every lib.rs (release audit F27). Build the same way, and check that a
+      # feature-gated item carries its badge, so a docs.rs failure or a lost
+      # badge shows here rather than on the published crate.
+      - name: docs.rs build (nightly, --cfg docsrs)
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo doc --no-deps --all-features \
+            -p a2a-protocol-types -p a2a-protocol-client \
+            -p a2a-protocol-server -p a2a-protocol-sdk
+          grep -q 'Available on <strong>crate feature <code>otel</code>' \
+            target/doc/a2a_protocol_server/otel/struct.OtelMetrics.html \
+            || { echo "OtelMetrics lost its feature badge"; exit 1; }
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
+
   # ── Documentation ────────────────────────────────────────────────────────
   doc:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -720,6 +764,7 @@ jobs:
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Named, and not left as a bare `- uses:`, because
@@ -728,7 +773,7 @@ jobs:
       # cannot be named in a failure message. See
       # scripts/action_gate_exemptions.txt.
       - name: cargo-deny (the workspace dependency tree)
-        uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
 
@@ -778,9 +823,10 @@ jobs:
   semver:
     name: cargo-semver-checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -800,9 +846,10 @@ jobs:
   package:
     name: Package validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -860,7 +907,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -913,7 +960,7 @@ jobs:
     # node or network is needed here.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
           components: clippy, rustfmt
@@ -940,11 +987,14 @@ jobs:
       # rather than skipping it, so an older binary reports a clean run it did
       # not perform.
       - name: cargo-deny (the binding's own dependency tree)
-        uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
           manifest-path: bindings/a2a-protocol-slimrpc/Cargo.toml
-          command-arguments: "--config bindings/a2a-protocol-slimrpc/deny.toml"
+          # `--config` is a top-level option since cargo-deny 0.20, so it goes
+          # before `check` (`arguments`), not after it (`command-arguments`);
+          # `--all-features` is the input's default, kept.
+          arguments: "--all-features --config bindings/a2a-protocol-slimrpc/deny.toml"
 
       # `cargo package --workspace` in the `package` job cannot see this crate
       # either, so nothing checked that a `publish = true` crate actually
@@ -1059,7 +1109,7 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -1137,7 +1187,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

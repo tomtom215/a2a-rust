@@ -205,6 +205,14 @@ impl TaskStore for DeltaRecordingStore {
         self.deltas.lock().expect("delta log").push(delta);
         self.inner.save_artifact_delta(task, delta)
     }
+
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        self.inner.try_save_artifact_delta(task, delta)
+    }
 }
 
 /// An executor that pushes `count` distinct artifacts, then completes.

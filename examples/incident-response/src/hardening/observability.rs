@@ -320,7 +320,7 @@ pub(super) async fn otlp_pipeline() -> Check {
     // `OTEL_EXPORTER_OTLP_ENDPOINT`: writing the environment is `unsafe` in
     // edition 2024 because other threads of this process may be reading it.
     let provider = match a2a_protocol_server::otel::init_otlp_pipeline_with_endpoint(
-        "incident-response",
+        Some("incident-response"),
         &endpoint,
     ) {
         Ok(provider) => provider,

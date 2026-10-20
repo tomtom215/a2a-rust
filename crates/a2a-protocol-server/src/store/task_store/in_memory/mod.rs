@@ -24,8 +24,16 @@
 //! |---|---|
 //! | (this file) | Core CRUD operations and `TaskStore` trait impl |
 //! | [`eviction`] | TTL and capacity-based eviction logic |
+//! | [`listing`] | A listed task's copy, with only the history asked for |
 
+mod budget;
+mod erase;
 mod eviction;
+mod listing;
+
+use listing::listed;
+
+pub use budget::TaskBudget;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
@@ -141,6 +149,12 @@ pub(super) struct StoreData {
     /// shrank: a key is removed when its send fails, and otherwise stayed for
     /// the life of the process.
     pub(super) idempotency_index: HashMap<String, (MessageId, TaskId, Instant)>,
+    /// The budget this store's tasks count against beside its own
+    /// `max_capacity`, when it is one partition of a tenant-aware store with
+    /// a total cap. A slot is taken when a new task id is inserted
+    /// ([`admit`](Self::admit)) and given back in [`remove`](Self::remove),
+    /// which every eviction, expiry and delete goes through.
+    pub(super) budget: Option<std::sync::Arc<TaskBudget>>,
 }
 
 impl StoreData {
@@ -153,7 +167,35 @@ impl StoreData {
             expiry_index: BTreeMap::new(),
             next_seq: 0,
             idempotency_index: HashMap::new(),
+            budget: None,
         }
+    }
+
+    /// Whether a write of `id` may go ahead under the shared budget: always
+    /// for a task already held, and for a new one when a slot is free or can
+    /// be freed by evicting this store's own oldest terminal task. Another
+    /// partition's tasks are never evicted for it, and a running task never
+    /// is.
+    pub(super) fn admit(&mut self, id: &TaskId) -> bool {
+        let Some(budget) = self.budget.clone() else {
+            return true;
+        };
+        if self.entries.contains_key(id) || budget.reserve() {
+            return true;
+        }
+        let oldest_terminal = self
+            .order_index
+            .values()
+            .find(|candidate| {
+                self.entries
+                    .get(*candidate)
+                    .is_some_and(|e| e.task.status.state.is_terminal())
+            })
+            .cloned();
+        oldest_terminal.is_some_and(|victim| {
+            self.remove(&victim);
+            budget.reserve()
+        })
     }
 
     /// The refusal a write of `task` would meet, if the stored copy is
@@ -311,7 +353,7 @@ impl StoreData {
         &mut self,
         task: &Task,
         messages: &[Message],
-        max_history: usize,
+        limit: crate::store::HistoryLimit,
         last_updated: Instant,
     ) -> bool {
         // Re-keys the indexes for the new status timestamp, which §3.1.4
@@ -324,9 +366,7 @@ impl StoreData {
         };
         let mut history = entry.task.history.take().unwrap_or_default();
         history.extend_from_slice(messages);
-        // `drain(..0)` skips its memmove, so this is O(1) under the cap.
-        let excess = history.len().saturating_sub(max_history);
-        history.drain(..excess);
+        limit.trim(&mut history);
         entry.task.history = Some(history);
         entry.task.context_id.clone_from(&task.context_id);
         entry.task.artifacts.clone_from(&task.artifacts);
@@ -354,6 +394,9 @@ impl StoreData {
     /// Removes a task by ID, maintaining all indexes.
     pub(super) fn remove(&mut self, id: &TaskId) -> Option<TaskEntry> {
         if let Some(entry) = self.entries.remove(id) {
+            if let Some(budget) = &self.budget {
+                budget.release();
+            }
             self.expiry_index
                 .remove(&(entry.last_updated, entry.order_key.1));
             self.order_index.remove(&entry.order_key);
@@ -467,6 +510,24 @@ impl Default for InMemoryTaskStore {
 /// Default pre-allocation capacity when no `max_capacity` is configured.
 const DEFAULT_INITIAL_CAPACITY: usize = 256;
 
+/// The refusal of a new task when the shared budget has no slot and this
+/// store holds no finished task to make room with: temporary, so HTTP `503`
+/// and gRPC `UNAVAILABLE`.
+fn budget_exhausted() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::unavailable(
+        "task store full: the total task cap across tenants is reached",
+    )
+}
+
+/// The refusal of a new idempotency key when the index is at
+/// [`TaskStoreConfig::max_idempotency_keys`] after expiring what it could:
+/// temporary, so HTTP `503` and gRPC `UNAVAILABLE`, and nothing runs.
+fn idempotency_index_full() -> a2a_protocol_types::error::A2aError {
+    a2a_protocol_types::error::A2aError::unavailable(
+        "idempotency index full: no new idempotency key can be accepted until held keys expire",
+    )
+}
+
 /// Current wall-clock time in Unix milliseconds — the order-key fallback for
 /// tasks whose status carries no parseable timestamp.
 #[allow(clippy::cast_possible_truncation)]
@@ -564,6 +625,39 @@ impl InMemoryTaskStore {
             write_count: std::sync::atomic::AtomicU64::new(0),
             eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// One partition of a tenant-aware store: `config`, counted against
+    /// `budget` when there is one, and pre-allocated for
+    /// `DEFAULT_INITIAL_CAPACITY` tasks rather than `max_capacity`.
+    ///
+    /// A partition is created for every tenant id the store sees, and tenant
+    /// ids come from the request, so pre-allocating each one for its
+    /// `max_capacity` (10,000 at the default) let a run of junk tenant ids
+    /// reserve that much memory per id before storing anything (release
+    /// audit F4). A partition that fills grows as any map does.
+    pub(crate) fn partition(
+        config: TaskStoreConfig,
+        budget: Option<std::sync::Arc<TaskBudget>>,
+    ) -> Self {
+        let capacity = config.max_capacity.map_or(DEFAULT_INITIAL_CAPACITY, |max| {
+            max.min(DEFAULT_INITIAL_CAPACITY)
+        });
+        let mut data = StoreData::with_capacity(capacity);
+        data.budget = budget;
+        Self {
+            data: RwLock::new(data),
+            config,
+            metrics: MetricsHandle::default(),
+            write_count: std::sync::atomic::AtomicU64::new(0),
+            eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// How many tasks the primary map has room for without growing.
+    #[cfg(test)]
+    pub(crate) async fn reserved_capacity(&self) -> usize {
+        self.data.read().await.entries.capacity()
     }
 
     /// Sets where this store reports an event it could not record.
@@ -696,6 +790,9 @@ impl TaskStore for InMemoryTaskStore {
                     held_by: held_by.clone(),
                 },
                 None => {
+                    if !self.room_for_a_key(&mut data) {
+                        return Err(idempotency_index_full());
+                    }
                     // The claim time is the insert's, and a replay does not
                     // refresh it: the window a key guards runs from the send
                     // it was first presented with, so a client retrying on a
@@ -856,6 +953,10 @@ impl TaskStore for InMemoryTaskStore {
                     drop(store);
                     return Err(conflict.into_error());
                 }
+                if !store.admit(&task.id) {
+                    drop(store);
+                    return Err(budget_exhausted());
+                }
                 store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
                 drop(store);
@@ -886,6 +987,20 @@ impl TaskStore for InMemoryTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.try_save_status_delta(task).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_status_delta`](Self::save_status_delta):
+    /// reads only `task.status`.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
                 if let Some(conflict) = store.refusal(task) {
@@ -898,7 +1013,7 @@ impl TaskStore for InMemoryTaskStore {
                 applied.then(|| self.should_evict(len))
             };
             let Some(passes) = outcome else {
-                return self.save(task).await;
+                return Ok(false);
             };
             trace_debug!(task_id = %task.id, "applied status delta in place");
             // `should_evict` is called for its side effect as much as its
@@ -911,7 +1026,7 @@ impl TaskStore for InMemoryTaskStore {
             if passes.any() {
                 self.maybe_evict(passes).await;
             }
-            Ok(())
+            Ok(true)
         })
     }
 
@@ -932,6 +1047,23 @@ impl TaskStore for InMemoryTaskStore {
         task: &'a Task,
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !self.try_save_artifact_delta(task, delta).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_artifact_delta`](Self::save_artifact_delta).
+    /// Reads from `task` only the appended parts or pushed artifact, the
+    /// artifact's id and metadata, and the task's status and metadata (see
+    /// `apply_delta`).
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let outcome = {
                 let mut store = self.data.write().await;
@@ -957,7 +1089,7 @@ impl TaskStore for InMemoryTaskStore {
             };
 
             let Some(passes) = outcome else {
-                return self.save(task).await;
+                return Ok(false);
             };
             trace_debug!(task_id = %task.id, "applied artifact delta in place");
             // `should_evict` is called for its side effect as much as its
@@ -981,7 +1113,7 @@ impl TaskStore for InMemoryTaskStore {
             if passes.any() {
                 self.maybe_evict(passes).await;
             }
-            Ok(())
+            Ok(true)
         })
     }
 
@@ -998,7 +1130,7 @@ impl TaskStore for InMemoryTaskStore {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        limit: crate::store::HistoryLimit,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let outcome = {
@@ -1007,7 +1139,7 @@ impl TaskStore for InMemoryTaskStore {
                     drop(store);
                     return Err(conflict.into_error());
                 }
-                let applied = store.append_history(task, messages, max_history, Instant::now());
+                let applied = store.append_history(task, messages, limit, Instant::now());
                 let len = store.len();
                 drop(store);
                 applied.then(|| self.should_evict(len))
@@ -1118,7 +1250,7 @@ impl TaskStore for InMemoryTaskStore {
                         {
                             return None;
                         }
-                        Some((*key, entry.task.clone()))
+                        Some((*key, listed(&entry.task, params.history_length)))
                     })
                     .take(take)
                     .collect()
@@ -1186,6 +1318,10 @@ impl TaskStore for InMemoryTaskStore {
                 let mut store = self.data.write().await;
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
+                }
+                if !store.admit(&task.id) {
+                    drop(store);
+                    return Err(budget_exhausted());
                 }
                 store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
@@ -1373,6 +1509,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         });
         store
             .save(&make_task("expired", TaskState::Completed))
@@ -2071,6 +2208,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2110,6 +2248,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2146,6 +2285,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         });
 
         for i in 0..4 {
@@ -2176,6 +2316,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2223,6 +2364,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2265,6 +2407,7 @@ mod tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         };
         let store = InMemoryTaskStore::with_config(config);
 
@@ -2690,6 +2833,7 @@ mod artifact_delta_tests {
             max_page_size: 100,
             max_events_per_task: Some(8),
             idempotency_key_ttl: None,
+            max_idempotency_keys: None,
         });
 
         let mut expired = task_with("expired", None);

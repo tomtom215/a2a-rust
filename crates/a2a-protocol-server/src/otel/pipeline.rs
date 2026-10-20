@@ -22,13 +22,19 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 ///
 /// # Arguments
 ///
-/// * `service_name` — value for the `service.name` resource attribute.
+/// * `service_name` — the `service.name` resource attribute when the
+///   environment names none. `OTEL_SERVICE_NAME`, or `service.name` in
+///   `OTEL_RESOURCE_ATTRIBUTES`, wins over it, as the OpenTelemetry
+///   environment-variable specification prescribes; `None` leaves the name to
+///   the environment, and to the SDK's `unknown_service` default without
+///   one. Until 0.15 the argument was a `&str` that overwrote the
+///   environment.
 ///
-/// # This is gRPC only, and `service_name` overrides the environment
+/// # This is gRPC only
 ///
-/// Two behaviours that surprise anyone arriving with an OpenTelemetry
-/// deployment already configured. Both are current limitations, not
-/// decisions the specification supports:
+/// A behaviour that surprises anyone arriving with an OpenTelemetry
+/// deployment already configured; a current limitation, not a decision the
+/// specification supports:
 ///
 /// * **The transport is gRPC (OTLP/gRPC, port 4317) and cannot be changed.**
 ///   `MetricExporter::builder().with_tonic()` is hard-coded, and this crate
@@ -38,13 +44,6 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 ///   Setting it to `http/protobuf` and pointing `OTEL_EXPORTER_OTLP_ENDPOINT`
 ///   at a collector's `:4318` produces gRPC spoken at an HTTP port, and
 ///   silence.
-/// * **`OTEL_SERVICE_NAME` is overridden by the `service_name` argument.**
-///   `Resource::builder()` installs `EnvResourceDetector`, which reads
-///   `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES`; the
-///   `.with_attributes([service.name])` call below then overwrites what it
-///   found. The argument therefore always wins, which is the opposite of
-///   what the OpenTelemetry environment-variable specification
-///   prescribes. Pass the value your environment would have supplied.
 ///
 /// Only the endpoint, headers and timeout variables reach the exporter.
 ///
@@ -99,7 +98,7 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 ///
 /// [`MeterProvider`]: opentelemetry::metrics::MeterProvider
 pub fn init_otlp_pipeline(
-    service_name: &str,
+    service_name: Option<&str>,
 ) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
     build_pipeline(service_name, None)
 }
@@ -121,19 +120,36 @@ pub fn init_otlp_pipeline(
 ///
 /// As [`init_otlp_pipeline`].
 pub fn init_otlp_pipeline_with_endpoint(
-    service_name: &str,
+    service_name: Option<&str>,
     endpoint: &str,
 ) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
     build_pipeline(service_name, Some(endpoint))
 }
 
+/// The pipeline's resource: what the environment detectors find, with
+/// `fallback` as `service.name` only when they found none of their own (the
+/// SDK's default for that case starts `unknown_service`).
+fn resource(fallback: Option<&str>) -> opentelemetry_sdk::Resource {
+    use opentelemetry::KeyValue as Kv;
+    use opentelemetry_sdk::Resource;
+
+    let detected = Resource::builder().build();
+    let named_by_environment = detected
+        .get(&opentelemetry::Key::from_static_str("service.name"))
+        .is_some_and(|name| !name.as_str().starts_with("unknown_service"));
+    match fallback {
+        Some(name) if !named_by_environment => Resource::builder()
+            .with_attributes([Kv::new("service.name", name.to_owned())])
+            .build(),
+        _ => detected,
+    }
+}
+
 fn build_pipeline(
-    service_name: &str,
+    service_name: Option<&str>,
     endpoint: Option<&str>,
 ) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
-    use opentelemetry::KeyValue as Kv;
     use opentelemetry_otlp::{MetricExporter, WithExportConfig as _};
-    use opentelemetry_sdk::Resource;
     use opentelemetry_sdk::metrics::PeriodicReader;
 
     let builder = MetricExporter::builder().with_tonic();
@@ -144,9 +160,7 @@ fn build_pipeline(
 
     let reader = PeriodicReader::builder(exporter).build();
 
-    let resource = Resource::builder()
-        .with_attributes([Kv::new("service.name", service_name.to_owned())])
-        .build();
+    let resource = resource(service_name);
 
     let provider = SdkMeterProvider::builder()
         .with_reader(reader)
@@ -162,6 +176,72 @@ fn build_pipeline(
 
 #[cfg(test)]
 mod tests {
+    /// The `service.name` a resource carries.
+    fn service_name(resource: &opentelemetry_sdk::Resource) -> String {
+        resource
+            .get(&opentelemetry::Key::from_static_str("service.name"))
+            .map(|v| v.as_str().into_owned())
+            .unwrap_or_default()
+    }
+
+    /// With the environment silent, the argument names the service, and
+    /// `None` leaves the SDK's default. Run in a child with the variables
+    /// removed, so a developer's own `OTEL_SERVICE_NAME` cannot decide it.
+    #[test]
+    fn the_argument_names_the_service_when_the_environment_does_not() {
+        if std::env::var_os("A2A_PIPELINE_CHILD").is_some() {
+            assert_eq!(service_name(&super::resource(Some("from-arg"))), "from-arg");
+            assert!(
+                service_name(&super::resource(None)).starts_with("unknown_service"),
+                "{}",
+                service_name(&super::resource(None))
+            );
+            return;
+        }
+        run_child(
+            "otel::pipeline::tests::the_argument_names_the_service_when_the_environment_does_not",
+            &[],
+        );
+    }
+
+    /// The OpenTelemetry environment-variable specification puts
+    /// `OTEL_SERVICE_NAME` first; the argument used to overwrite it. Writing
+    /// the environment is `unsafe` in edition 2024, so the check runs in a
+    /// child process started with the variable set.
+    #[test]
+    fn the_environment_names_the_service_before_the_argument() {
+        if std::env::var_os("A2A_PIPELINE_CHILD").is_some() {
+            assert_eq!(service_name(&super::resource(Some("from-arg"))), "from-env");
+            assert_eq!(service_name(&super::resource(None)), "from-env");
+            return;
+        }
+        run_child(
+            "otel::pipeline::tests::the_environment_names_the_service_before_the_argument",
+            &[("OTEL_SERVICE_NAME", "from-env")],
+        );
+    }
+
+    /// Re-runs one test of this binary in a child with `vars` set and the
+    /// OpenTelemetry variables otherwise cleared, and asserts it passed.
+    fn run_child(test: &str, vars: &[(&str, &str)]) {
+        let mut child = std::process::Command::new(std::env::current_exe().expect("exe"));
+        child
+            .args([test, "--exact", "--nocapture"])
+            .env("A2A_PIPELINE_CHILD", "1")
+            .env_remove("OTEL_SERVICE_NAME")
+            .env_remove("OTEL_RESOURCE_ATTRIBUTES");
+        for (k, v) in vars {
+            child.env(k, v);
+        }
+        let out = child.output().expect("child runs");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "child failed: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
     use super::init_otlp_pipeline_with_endpoint;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -225,7 +305,7 @@ mod tests {
         // The endpoint is passed explicitly: writing the environment is
         // `unsafe` in edition 2024 (another test thread may be reading it),
         // and this crate forbids `unsafe`.
-        let provider = init_otlp_pipeline_with_endpoint("a2a-pipeline-test", &endpoint)
+        let provider = init_otlp_pipeline_with_endpoint(Some("a2a-pipeline-test"), &endpoint)
             .expect("pipeline builds");
 
         // Record through the *global* meter, not the returned provider: the

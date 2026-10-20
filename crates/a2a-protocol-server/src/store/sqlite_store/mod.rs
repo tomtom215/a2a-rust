@@ -226,7 +226,25 @@ impl SqliteTaskStore {
     /// is inserted — the guard refused, or every row was a replayed position —
     /// `save` decides: it refuses with the conflict, or rewrites a record that
     /// the replay already describes.
-    async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<()> {
+    /// Journals an append's rows; `false` when nothing was written and the
+    /// caller must write the task whole.
+    async fn journal_append(&self, task: &Task, rows: Vec<journal::Row>) -> A2aResult<bool> {
+        // Every row of one append is for one artifact, and the stored
+        // document must hold *that* artifact at its index: another replica
+        // may have replaced it with a different one since this writer's
+        // snapshot (release audit F5). The journal's positions already make a
+        // stale append of the same artifact harmless; only its id tells a
+        // replaced one apart.
+        let target = rows.first().and_then(|(index, ..)| {
+            let artifact = task
+                .artifacts
+                .as_ref()?
+                .get(usize::try_from(*index).ok()?)?;
+            Some((*index, artifact.id.0.clone()))
+        });
+        let Some((artifact_index, artifact_id)) = target else {
+            return Ok(false);
+        };
         let mut query_builder = sqlx::QueryBuilder::new(
             "INSERT INTO task_artifact_appends (task_id, artifact, seq, part, applied_seq) \
              SELECT * FROM (",
@@ -247,16 +265,23 @@ impl SqliteTaskStore {
         query_builder.push(" AND ");
         query_builder.push(crate::store::terminal::SQL_STATE_NOT_TERMINAL_OR_EQUALS);
         query_builder.push_bind(task.status.state.to_string());
-        query_builder.push("))");
+        query_builder.push(") AND json_extract(data, '$.artifacts[' || ");
+        query_builder.push_bind(artifact_index);
+        query_builder.push(" || '].artifactId') = ");
+        query_builder.push_bind(artifact_id);
+        query_builder.push(")");
         // Replay of an already-journalled append is a no-op rather than a
         // duplicate-key failure, because `seq` is the part's position: the same
         // append twice names the same slot with the same bytes.
         query_builder.push(" ON CONFLICT(task_id, artifact, seq) DO NOTHING");
 
-        match query_builder.build().execute(&self.pool).await {
-            Ok(done) if done.rows_affected() > 0 => Ok(()),
-            _ => self.save(task).await,
-        }
+        // A failure is answered as "not applied", so the caller's whole
+        // write decides: it inserts a task not yet stored, reports a terminal
+        // refusal, and surfaces an error the database repeats.
+        Ok(matches!(
+            query_builder.build().execute(&self.pool).await,
+            Ok(done) if done.rows_affected() > 0
+        ))
     }
 
     /// Deletes terminal tasks that have outlived `policy`.
@@ -403,10 +428,12 @@ fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<Del
             };
             let payload = serde_json::to_string(std::slice::from_ref(artifact))
                 .map_err(|e| A2aError::internal(format!("failed to serialize artifact: {e}")))?;
+            // Bound as the length the stored array must have: the push is
+            // compare-and-append (release audit F5).
             Ok(Some(DeltaStatement {
                 sql: PUSH_ARTIFACT_SQL,
                 payload,
-                index: None,
+                index: Some(index),
             }))
         }
     }
@@ -445,12 +472,19 @@ const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "?4"
 ));
 
-/// Append a whole artifact at the end of the array.
+/// Append a whole artifact at the end of the array, if the array holds
+/// exactly the artifacts before it (`?3`, the push's index).
+///
+/// Compare-and-append (release audit F5): a writer whose snapshot predates
+/// another replica's push appended after an artifact it had not seen, so the
+/// stored array held artifacts neither writer's snapshot did. Zero rows sends
+/// the caller to `save`, a lost update at worst.
 const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
     "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')), \
-     applied_seq = COALESCE(?4, applied_seq) WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
+     applied_seq = COALESCE(?5, applied_seq) WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' \
+     AND json_array_length(data, '$.artifacts') = ?3 AND ",
     "state",
-    "?3"
+    "?4"
 ));
 
 /// The terminal guard for the several-parts append, whose statement text is
@@ -701,19 +735,35 @@ impl TaskStore for SqliteTaskStore {
         delta: ArtifactDelta,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.try_save_artifact_delta(task, delta).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_artifact_delta`](Self::save_artifact_delta):
+    /// reads only the appended parts or the pushed artifact, and the status
+    /// state its terminal guard compares.
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
             // The append path, and the reason this method is worth having:
             // rows whose cost does not grow with the stream. `Pushed` keeps the
             // `json_set` path below — it happens once per artifact rather than
             // once per event, so it is not what the measurement was about.
             if let ArtifactDelta::AppendedParts { index, count } = delta {
                 let Some(rows) = journal::rows_for_append(task, index, count)? else {
-                    return self.save(task).await;
+                    return Ok(false);
                 };
                 return self.journal_append(task, rows).await;
             }
 
             let Some(stmt) = artifact_delta_sql(task, delta)? else {
-                return self.save(task).await;
+                return Ok(false);
             };
 
             let mut query = sqlx::query(stmt.sql.as_ref())
@@ -737,13 +787,9 @@ impl TaskStore for SqliteTaskStore {
                 .rows_affected();
 
             // No row matched: the task is not stored yet and the append had
-            // nothing to append to, or the terminal guard refused it. `save`
-            // makes it exist, or reports the refusal.
-            if affected == 0 {
-                return self.save(task).await;
-            }
-
-            Ok(())
+            // nothing to append to, or the terminal guard refused it. The
+            // caller's `save` makes it exist, or reports the refusal.
+            Ok(affected > 0)
         })
     }
 
@@ -774,6 +820,20 @@ impl TaskStore for SqliteTaskStore {
         task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            if !self.try_save_status_delta(task).await? {
+                return self.save(task).await;
+            }
+            Ok(())
+        })
+    }
+
+    /// The in-place half of [`save_status_delta`](Self::save_status_delta):
+    /// reads only `task.status`.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
             let status = serde_json::to_string(&task.status)
                 .map_err(|e| A2aError::internal(format!("failed to serialize status: {e}")))?;
             let state = task.status.state.to_string();
@@ -802,11 +862,7 @@ impl TaskStore for SqliteTaskStore {
             .map_err(to_a2a_error)?
             .rows_affected();
 
-            if affected == 0 {
-                return self.save(task).await;
-            }
-
-            Ok(())
+            Ok(affected > 0)
         })
     }
 

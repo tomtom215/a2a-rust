@@ -69,6 +69,11 @@ impl PostgresTaskStore {
         let Ok(idx) = i32::try_from(index) else {
             return Ok(None);
         };
+        // How many parts the stored artifact must hold for this tail to be
+        // its continuation.
+        let Ok(prior) = i32::try_from(artifact.parts.len() - count) else {
+            return Ok(None);
+        };
 
         // `||` concatenates two jsonb arrays, so any number of parts lands in
         // one statement with constant SQL text — no per-part path expressions,
@@ -78,6 +83,14 @@ impl PostgresTaskStore {
         // than merely likely: if the stored document has no such parts array,
         // no row matches, zero rows are reported, and the caller rewrites the
         // record whole.
+        //
+        // Compare-and-append (release audit F5): the stored artifact at
+        // `index` must be this one and hold exactly the parts this tail
+        // follows. Without it, a writer whose snapshot was stale appended
+        // after parts it had not seen — under `EncryptedTaskStore`, whose
+        // parts are sealed to their positions, that left the record
+        // unreadable. Zero rows sends the caller to `save`: a lost update at
+        // worst, never a misplaced part.
         //
         // The last condition is the terminal guard (see
         // `crate::store::terminal`), on the writer's state: zero rows sends
@@ -90,6 +103,8 @@ impl PostgresTaskStore {
              WHERE id = $2 \
                AND jsonb_typeof(data->'artifacts') = 'array' \
                AND jsonb_typeof(data->'artifacts'->($3::int)->'parts') = 'array' \
+               AND jsonb_array_length(data->'artifacts'->($3::int)->'parts') = $6 \
+               AND data->'artifacts'->($3::int)->>'artifactId' = $7 \
                AND ",
             "state",
             "$4"
@@ -99,6 +114,8 @@ impl PostgresTaskStore {
         .bind(idx)
         .bind(task.status.state.to_string())
         .bind(crate::store::applied::current_for_sql())
+        .bind(prior)
+        .bind(artifact.id.0.as_str())
         .execute(&self.pool)
         .await
         .map_err(to_a2a_error)?
@@ -124,12 +141,19 @@ impl PostgresTaskStore {
         // A one-element array, so `||` appends exactly one artifact.
         let payload = serde_json::to_value(std::slice::from_ref(artifact))
             .map_err(|e| A2aError::internal(format!("failed to serialize artifact: {e}")))?;
+        // It lands at `index` only if the stored array holds exactly the
+        // artifacts before it (release audit F5): a stale snapshot falls back
+        // to `save` rather than appending at the wrong position.
+        let Ok(prior) = i32::try_from(index) else {
+            return Ok(None);
+        };
 
         let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
             "UPDATE tasks SET data = jsonb_set(\
                  data, ARRAY['artifacts'], (data->'artifacts') || $1::jsonb), \
                  applied_seq = COALESCE($4, applied_seq) \
-             WHERE id = $2 AND jsonb_typeof(data->'artifacts') = 'array' AND ",
+             WHERE id = $2 AND jsonb_typeof(data->'artifacts') = 'array' \
+               AND jsonb_array_length(data->'artifacts') = $5 AND ",
             "state",
             "$3"
         ))
@@ -137,6 +161,7 @@ impl PostgresTaskStore {
         .bind(task.id.0.as_str())
         .bind(task.status.state.to_string())
         .bind(crate::store::applied::current_for_sql())
+        .bind(prior)
         .execute(&self.pool)
         .await
         .map_err(to_a2a_error)?

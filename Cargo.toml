@@ -82,11 +82,13 @@ protoc-bin-vendored = { version = "3" }
 # (google.protobuf.Timestamp ⇄ ISO 8601 strings). Optional, `proto` feature only.
 time = { version = "0.3.47", default-features = false, features = ["parsing", "formatting"] }
 
-# SQLite (optional — behind `sqlite` feature flag)
+# The SQL stores (optional). The driver is chosen by the crate that uses it:
+# `a2a-protocol-server`'s `sqlite` and `postgres` features each add their own,
+# so a PostgreSQL-only build does not compile SQLite (release audit F25).
 [workspace.dependencies.sqlx]
 version = "0.8.1"
 default-features = false
-features = ["runtime-tokio", "sqlite"]
+features = ["runtime-tokio"]
 
 [workspace.dependencies.criterion]
 version = "0.8"

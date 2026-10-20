@@ -390,6 +390,27 @@ impl A2aError {
         err
     }
 
+    /// [`permission_denied`](Self::permission_denied) for a credential that
+    /// lacks a scope the operation needs, naming the scopes. Spec §3.3.2:
+    /// servers SHOULD indicate what permission or scope is missing. Every
+    /// binding carries the RFC 6750 §3 challenge it builds,
+    /// `Bearer error="insufficient_scope", scope="tasks:write"`: a
+    /// `WWW-Authenticate` header beside the HTTP `403`, `www-authenticate`
+    /// metadata beside gRPC `PERMISSION_DENIED`.
+    ///
+    /// Name only scopes the caller may know it needs, such as those the
+    /// card's `securityRequirements` declare: the challenge reaches whoever
+    /// sent the request.
+    #[must_use]
+    pub fn insufficient_scope<S: AsRef<str>>(
+        message: impl Into<String>,
+        scopes: impl IntoIterator<Item = S>,
+    ) -> Self {
+        let mut err = Self::new(ErrorCode::InvalidRequest, message);
+        err.auth_rejection = Some(AuthRejection::insufficient_scope(scopes));
+        err
+    }
+
     /// Refuses a request because its caller exceeded a rate limit, and may
     /// try again after `retry_after`. Spec §13.4: an agent SHOULD return an
     /// appropriate error when a rate limit is exceeded, and §3.3.2 SHOULD

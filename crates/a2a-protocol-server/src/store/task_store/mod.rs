@@ -23,14 +23,17 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 
 pub use in_memory::InMemoryTaskStore;
+pub(crate) use in_memory::TaskBudget;
 
 mod config;
+mod history;
 mod records;
 
 pub use config::{
-    DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE,
-    TaskStoreConfig,
+    DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_IDEMPOTENCY_KEYS,
+    DEFAULT_MAX_PAGE_SIZE, TaskStoreConfig,
 };
+pub use history::HistoryLimit;
 pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 
 /// Trait for persisting and retrieving [`Task`] objects.
@@ -149,6 +152,13 @@ pub trait TaskStore: Send + Sync + 'static {
     }
 
     /// Lists tasks matching the given filter parameters.
+    ///
+    /// A store may return each task with only the last `history_length`
+    /// messages of its history (none for `0`), saving the copy of the rest;
+    /// the caller trims to the same length either way, so a store that
+    /// returns whole tasks is correct too. The in-memory stores do this
+    /// since 2026-10-18 (ADR 0017). `include_artifacts` is the caller's to
+    /// apply.
     ///
     /// # Errors
     ///
@@ -461,6 +471,63 @@ pub trait TaskStore: Send + Sync + 'static {
         self.save(task)
     }
 
+    /// Applies an artifact delta in place if this store can, and writes
+    /// nothing if it cannot: `Ok(true)` when applied, `Ok(false)` when the
+    /// caller must write the task whole.
+    ///
+    /// [`save_artifact_delta`](TaskStore::save_artifact_delta) is this
+    /// followed by `save` on `false`. The split exists for a wrapper that
+    /// transforms parts before storing them —
+    /// `EncryptedTaskStore` (the `encryption` feature) seals each one — so that it can transform only what an in-place write
+    /// stores, and everything only when the write is whole.
+    ///
+    /// # What an implementation may read from `task`
+    ///
+    /// Only what the delta writes: the appended parts (the last `count` of
+    /// `artifacts[index]`) or the pushed artifact, that artifact's id and
+    /// metadata, and the task's `status` and `metadata`. Every other part may
+    /// be a placeholder that cannot be opened. An implementation that reads
+    /// more must return `false` instead.
+    ///
+    /// # What not overriding it costs
+    ///
+    /// The default writes nothing and returns `false`, which is always
+    /// correct: the caller writes the task whole. Behind
+    /// `EncryptedTaskStore` that means sealing every part of the task on
+    /// every artifact event, so a stream of `n` chunks costs about `n²/2`
+    /// seals instead of `n` (release audit F7). Override it with exactly the
+    /// in-place path of `save_artifact_delta`.
+    ///
+    /// # Errors
+    ///
+    /// The store's error, and the terminal-state refusal `save` would report.
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        _task: &'a Task,
+        _delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move { Ok(false) })
+    }
+
+    /// [`try_save_artifact_delta`](TaskStore::try_save_artifact_delta) for
+    /// [`save_status_delta`](TaskStore::save_status_delta): writes the status
+    /// in place and returns `true`, or writes nothing and returns `false`.
+    ///
+    /// An implementation may read only `task.status` (and the id). Not
+    /// overriding it costs what the artifact one does, per status event: behind
+    /// `EncryptedTaskStore`, every part of the task is sealed on every
+    /// status transition.
+    ///
+    /// # Errors
+    ///
+    /// The store's error, and the terminal-state refusal `save` would report.
+    fn try_save_status_delta<'a>(
+        &'a self,
+        _task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move { Ok(false) })
+    }
+
     /// Persists a task whose history grew by `messages`, without the caller
     /// shipping the history it has already stored.
     ///
@@ -475,11 +542,11 @@ pub trait TaskStore: Send + Sync + 'static {
     /// Every other field of `task` is the new snapshot and replaces what is
     /// stored, exactly as `save` would.
     ///
-    /// `max_history` is the cap the merged history is trimmed to, oldest
-    /// first. It is a parameter rather than a constant here because retention
-    /// is the handler's policy, not the store's; a store that invented its own
-    /// cap would silently disagree with the one the rest of the server
-    /// enforces.
+    /// `limit` is what the merged history is trimmed to, oldest first, by
+    /// message count and by bytes ([`HistoryLimit::trim`]). It is a parameter
+    /// rather than a constant here because retention is the handler's policy,
+    /// not the store's; a store that invented its own cap would silently
+    /// disagree with the one the rest of the server enforces.
     ///
     /// # Implementing this
     ///
@@ -502,16 +569,13 @@ pub trait TaskStore: Send + Sync + 'static {
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        limit: HistoryLimit,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let stored = self.get(&task.id).await?;
             let mut history = stored.and_then(|s| s.history).unwrap_or_default();
             history.extend_from_slice(messages);
-            // `drain(..0)` is a no-op rather than a shift, so this is O(1)
-            // whenever the history is at or under the cap.
-            let excess = history.len().saturating_sub(max_history);
-            history.drain(..excess);
+            limit.trim(&mut history);
             let mut merged = task.clone();
             merged.history = Some(history);
             self.save(&merged).await

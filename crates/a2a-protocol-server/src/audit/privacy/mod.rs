@@ -44,6 +44,16 @@ const SID_LEN: usize = 16;
 
 /// The detail fields that name a person, sealed under that person's key.
 const PERSON_FIELDS: [&str; 1] = ["requestedBy"];
+/// The detail field listing the agents that acted for the actor (RFC 8693,
+/// ADR 0021): each element names a person or agent and is sealed under its
+/// own key, in the context `actors/<index>`.
+pub(super) const ACTORS_FIELD: &str = "actors";
+
+/// The sealing context of element `i` of [`ACTORS_FIELD`].
+pub(super) fn actors_element(i: usize) -> String {
+    format!("{ACTORS_FIELD}/{i}")
+}
+
 /// The detail fields that are free text, sealed under the actor's key.
 const TEXT_FIELDS: [&str; 1] = ["reason"];
 
@@ -418,6 +428,23 @@ impl AuditPrivacy {
                 let sealed = self.seal_value(&dek, &chain, &sid, field, seq, &person)?;
                 record.detail.insert(field.to_owned(), sealed.into());
             }
+        }
+        if let Some(serde_json::Value::Array(actors)) = record.detail.get(ACTORS_FIELD).cloned() {
+            let mut sealed = Vec::with_capacity(actors.len());
+            for (i, actor) in actors.iter().enumerate() {
+                let serde_json::Value::String(actor) = actor else {
+                    return Err(refused());
+                };
+                let (sid, dek) = self.subject_key(store, &chain, actor).await?;
+                let field = actors_element(i);
+                sealed.push(
+                    self.seal_value(&dek, &chain, &sid, &field, seq, actor)?
+                        .into(),
+                );
+            }
+            record
+                .detail
+                .insert(ACTORS_FIELD.to_owned(), serde_json::Value::Array(sealed));
         }
         for field in TEXT_FIELDS {
             if let Some(serde_json::Value::String(text)) = record.detail.get(field).cloned() {

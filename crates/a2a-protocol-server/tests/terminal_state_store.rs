@@ -147,7 +147,11 @@ async fn terminal_is_sticky(store: &dyn TaskStore) {
     );
     assert_refused(
         store
-            .save_appending_history(&working(vec![]), &[message("m-late")], 16)
+            .save_appending_history(
+                &working(vec![]),
+                &[message("m-late")],
+                a2a_protocol_server::store::HistoryLimit::new(16, usize::MAX),
+            )
             .await,
         TaskState::Canceled,
         TaskState::Working,

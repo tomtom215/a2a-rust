@@ -184,7 +184,12 @@ impl AuditLog {
             let in_detail = PERSON_FIELDS
                 .iter()
                 .any(|f| r.detail.get(*f).and_then(serde_json::Value::as_str) == Some(subject));
-            if as_actor || in_detail {
+            let in_actors = r
+                .detail
+                .get(super::ACTORS_FIELD)
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(subject)));
+            if as_actor || in_detail || in_actors {
                 seqs.push(r.seq);
             }
         })
@@ -207,7 +212,13 @@ impl AuditLog {
         let mut named: HashSet<String> = HashSet::new();
         self.scan(chain, |r| {
             let actor = r.actor.as_ref().map(|a| a.subject.as_str());
-            let detail = r.detail.values().filter_map(serde_json::Value::as_str);
+            // Strings, and the strings inside arrays (`actors`).
+            let detail = r.detail.values().flat_map(|v| match v {
+                serde_json::Value::Array(items) => {
+                    items.iter().filter_map(serde_json::Value::as_str).collect()
+                }
+                v => v.as_str().into_iter().collect::<Vec<_>>(),
+            });
             for sid in actor.into_iter().chain(detail).filter_map(sid_of) {
                 named.insert(sid.to_owned());
             }

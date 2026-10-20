@@ -30,6 +30,7 @@ pub struct SseFrame {
 
 /// Errors that can occur during SSE parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SseParseError {
     /// A single event exceeded the configured maximum size.
     EventTooLarge {

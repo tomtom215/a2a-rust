@@ -5,16 +5,18 @@
 
 //! `Delegation` outcomes this repository's server never produces, against a
 //! scripted peer: a stream that is only a message, a stream that names no
-//! task, a cancel accepted but not yet done, a cancel refused. The server
-//! cases are in `delegation_tests.rs`.
+//! task, a cancel accepted but not yet done, a cancel refused, a stream that
+//! names its task first by a status update. The server cases are in
+//! `delegation_tests.rs`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_client::delegation::{Delegation, Outcome};
 use a2a_protocol_types::{
-    Message, MessageRole, MessageSendParams, Part, StreamResponse, TaskState,
+    ContextId, Message, MessageRole, MessageSendParams, Part, StreamResponse, TaskId, TaskState,
+    TaskStatus, TaskStatusUpdateEvent,
 };
 
 const GUARD: Duration = Duration::from_secs(20);
@@ -45,6 +47,17 @@ async fn fake_peer(
     hold: bool,
     cancel: serde_json::Value,
 ) -> String {
+    fake_peer_logged(frames, hold, cancel, Arc::default()).await
+}
+
+/// [`fake_peer`], also answering `GetTask` with `cancel`, and recording each
+/// call's method and `A2A-Extensions` header in `log`.
+async fn fake_peer_logged(
+    frames: Vec<serde_json::Value>,
+    hold: bool,
+    cancel: serde_json::Value,
+    log: Arc<Mutex<Vec<(String, String)>>>,
+) -> String {
     use http_body_util::{BodyExt, StreamBody};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -53,18 +66,27 @@ async fn fake_peer(
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             let io = hyper_util::rt::TokioIo::new(stream);
-            let (frames, cancel) = (frames.clone(), cancel.clone());
+            let (frames, cancel, log) = (frames.clone(), cancel.clone(), Arc::clone(&log));
             tokio::spawn(async move {
                 let service = hyper::service::service_fn(
                     move |req: hyper::Request<hyper::body::Incoming>| {
-                        let (frames, cancel) = (frames.clone(), cancel.clone());
+                        let (frames, cancel, log) =
+                            (frames.clone(), cancel.clone(), Arc::clone(&log));
                         async move {
+                            let extensions = req
+                                .headers()
+                                .get("a2a-extensions")
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or_default()
+                                .to_owned();
                             let body = req.into_body().collect().await?.to_bytes();
                             let call: serde_json::Value =
                                 serde_json::from_slice(&body).expect("json");
+                            let method = call["method"].as_str().unwrap_or_default().to_owned();
+                            log.lock().expect("log").push((method.clone(), extensions));
                             let (tx, rx) = tokio::sync::mpsc::channel::<Chunk>(16);
                             let builder = hyper::Response::builder();
-                            let builder = if call["method"] == "CancelTask" {
+                            let builder = if method == "CancelTask" || method == "GetTask" {
                                 let key = if cancel.get("code").is_some() {
                                     "error"
                                 } else {
@@ -189,4 +211,106 @@ async fn a_refused_cancel_is_reported() {
     let done = d.cancel().await;
     assert!(matches!(done.outcome, Outcome::CancelFailed(_)), "{done:?}");
     assert_eq!(done.task_id.as_deref(), Some("child-1"));
+}
+
+/// ADR 0020: a peer may name the child first by a status update, not a task
+/// snapshot (§3.1.2 allows either). The lease is renewed from that event's id.
+#[tokio::test]
+async fn a_lease_is_renewed_when_a_status_update_names_the_child_first() {
+    let update = serde_json::to_value(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+        task_id: TaskId::new("child-1"),
+        context_id: ContextId::new("ctx-1"),
+        status: TaskStatus::new(TaskState::Working),
+        metadata: None,
+    }))
+    .expect("json");
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let url = fake_peer_logged(
+        vec![update],
+        true,
+        snapshot("TASK_STATE_WORKING")["task"].clone(),
+        Arc::clone(&log),
+    )
+    .await;
+    let client = Arc::new(ClientBuilder::new(url).build().expect("client"));
+    let mut d = Delegation::start_leased(client, job("anything"), Duration::from_millis(300))
+        .await
+        .expect("start");
+    assert_eq!(until_named(&mut d).await, "child-1");
+    let renewed = || {
+        log.lock().expect("log").iter().any(|(method, extensions)| {
+            method == "GetTask"
+                && extensions.contains(a2a_protocol_types::lease::LEASE_EXTENSION_URI)
+        })
+    };
+    tokio::time::timeout(GUARD, async {
+        while !renewed() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("a renewal naming the lease extension");
+}
+
+/// A renewal from a client that asks for no other extension names the lease
+/// extension alone: no empty entry before it.
+#[tokio::test]
+async fn a_renewal_asks_for_the_lease_extension_alone() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let url = fake_peer_logged(
+        vec![],
+        false,
+        snapshot("TASK_STATE_WORKING")["task"].clone(),
+        Arc::clone(&log),
+    )
+    .await;
+    let client = ClientBuilder::new(url).build().expect("client");
+    client
+        .renew_lease(a2a_protocol_types::TaskQueryParams::new("child-1"))
+        .await
+        .expect("renewed");
+    let calls = log.lock().expect("log").clone();
+    assert_eq!(
+        calls,
+        [(
+            "GetTask".to_owned(),
+            a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned()
+        )]
+    );
+}
+
+/// A message after the child has a task id is part of that task's stream,
+/// not the answer: the handle stays unsettled, and dropping or cancelling
+/// it still reaches the running child.
+#[tokio::test]
+async fn a_message_after_the_task_does_not_settle_the_handle() {
+    let note = serde_json::to_value(StreamResponse::Message(Message::new(
+        "note",
+        MessageRole::Agent,
+        vec![Part::text("working on it")],
+    )))
+    .expect("json");
+    let url = fake_peer(
+        vec![snapshot("TASK_STATE_WORKING"), note],
+        true,
+        serde_json::Value::Null,
+    )
+    .await;
+    let client = Arc::new(ClientBuilder::new(url).build().expect("client"));
+    let mut d = Delegation::start(client, job("anything"))
+        .await
+        .expect("start");
+    for _ in 0..2 {
+        tokio::time::timeout(GUARD, d.next_event())
+            .await
+            .expect("bounded")
+            .expect("stream open")
+            .expect("event");
+    }
+    assert_eq!(d.task_id(), Some("child-1"));
+    assert!(
+        !d.is_settled(),
+        "a running child is not settled by a message"
+    );
+    let _ = d.detach();
 }

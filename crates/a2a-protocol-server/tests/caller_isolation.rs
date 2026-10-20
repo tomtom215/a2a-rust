@@ -26,8 +26,8 @@ use a2a_protocol_server::handler::{RequestHandler, SendMessageResult};
 use a2a_protocol_server::store::{InMemoryTaskStore, TenantAwareInMemoryTaskStore};
 use a2a_protocol_server::{BearerTokenAuthInterceptor, EventEmitter, agent_executor};
 use a2a_protocol_types::params::{
-    CancelTaskParams, ListTasksParams, MessageSendParams, SendMessageConfiguration, TaskIdParams,
-    TaskQueryParams,
+    CancelTaskParams, DeletePushConfigParams, GetPushConfigParams, ListTasksParams,
+    MessageSendParams, SendMessageConfiguration, TaskIdParams, TaskQueryParams,
 };
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
@@ -371,4 +371,48 @@ async fn isolation_holds_on_the_sqlite_stores() {
         .await
         .expect("Bob lists");
     assert!(bobs.tasks.is_empty(), "{bobs:?}");
+}
+
+/// Spec §3.1.8 (Get), §3.1.10 (Delete) and §13.1: a push config another
+/// caller registered is not found, by id, and Bob's delete leaves Alice's
+/// config in place.
+#[tokio::test]
+async fn another_callers_push_config_cannot_be_read_or_deleted() {
+    for callers in ISOLATED {
+        let h = handler(callers);
+        let id = alice_starts(&h, "work").await;
+        let alice = as_caller("alice-token");
+        let bob = as_caller("bob-token");
+        let mut config =
+            TaskPushNotificationConfig::new(id.as_str(), "https://alice.example.com/hook");
+        config.id = Some("alices-hook".into());
+        h.on_set_push_config(config, Some(&alice))
+            .await
+            .expect("Alice registers a webhook");
+        let get = || GetPushConfigParams {
+            tenant: None,
+            task_id: id.clone(),
+            id: "alices-hook".into(),
+        };
+        h.on_get_push_config(get(), Some(&alice))
+            .await
+            .expect("Alice reads her config");
+        not_found(
+            h.on_get_push_config(get(), Some(&bob)).await,
+            "GetTaskPushNotificationConfig",
+        );
+        let _ = h
+            .on_delete_push_config(
+                DeletePushConfigParams {
+                    tenant: None,
+                    task_id: id.clone(),
+                    id: "alices-hook".into(),
+                },
+                Some(&bob),
+            )
+            .await;
+        h.on_get_push_config(get(), Some(&alice))
+            .await
+            .unwrap_or_else(|e| panic!("{callers:?}: Bob's delete removed Alice's config: {e}"));
+    }
 }

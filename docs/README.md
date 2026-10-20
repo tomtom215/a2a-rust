@@ -46,6 +46,11 @@ is on docs.rs.
 | [0014](adr/0014-auth-rejection-status.md) | Auth Rejection Status | A refused credential answers `401`/`403` and gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED`; supersedes ADR 0010's `400` mapping |
 | [0015](adr/0015-audit-trail.md) | Audit Trail | Every call, run, task event and cancel request in a hash chain per tenant, content by digest, signed checkpoints, six-month retention floor, legal holds |
 | [0016](adr/0016-types-generated-from-the-proto.md) | Types Generated from the Proto | The public types are generated from `a2a.proto`, and CI fails on drift |
+| [0017](adr/0017-context-lookup-and-stored-task.md) | Context Lookup and Stored Task | The send's context lookup lists without history and reads the chosen task whole; `RequestContext::stored_task` keeps its meaning |
+| [0018](adr/0018-mutual-tls-caller-identity.md) | Mutual-TLS Caller Identity | Every listener passes the client certificate to the interceptors; `MutualTlsAuthInterceptor` names the caller by fingerprint or a deployment's mapping, with no X.509 parser in the SDK |
+| [0019](adr/0019-shared-halt-store.md) | Shared Halt Store | Halts written through to a store every replica polls and reads before its first send; a halt the store refuses holds locally and is retried |
+| [0020](adr/0020-delegation-lease.md) | Delegation Lease | A delegated child carries a lease renewed by a `GetTask` that activates the extension; the deadline lives in a shared store, and a lapsed child is stopped |
+| [0021](adr/0021-originating-principal.md) | Originating Principal | Delegated calls carry the principal by RFC 8693 token exchange; the server reads the `act` chain into `CallContext::actors` and the audit record |
 
 ## Audits, measurements and design notes
 

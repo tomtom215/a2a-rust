@@ -10,15 +10,18 @@
 //! endpoint and protocol in code, which wins over the process environment,
 //! so a developer's own `OTEL_EXPORTER_OTLP_*` cannot redirect them.
 
-#![cfg(feature = "otel")]
+#![cfg(feature = "otlp")]
 
 mod agent_spans;
+mod certs;
 mod collector;
+mod tls_and_json;
 
 use std::time::{Duration, Instant};
 
 use a2a_protocol_server::otel::{Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder};
-use collector::{Collector, attr, test_certs, unreachable};
+use certs::test_certs;
+use collector::{Collector, attr, unreachable};
 use opentelemetry::metrics::MeterProvider as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 

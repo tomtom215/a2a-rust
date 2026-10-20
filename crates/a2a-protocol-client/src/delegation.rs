@@ -26,9 +26,13 @@
 //! (`input-required`, `auth-required`): then it is waiting for the parent,
 //! not running, and the parent decides what happens next.
 //!
-//! It does **not** cover a parent that crashes: the handle dies with the
-//! process. That needs the child to stop on its own when its parent goes
-//! quiet (G1-B in the same document).
+//! On its own it does **not** cover a parent that crashes: the handle dies
+//! with the process. [`start_leased`](Delegation::start_leased) does. It
+//! grants the child a lease (`a2a_protocol_types::lease`, ADR 0020) and
+//! renews it every third of its time to live while the handle lives, and
+//! an agent that grants leases stops a child whose lease lapses. A parent
+//! that crashes, hangs, is partitioned away, or [`detach`](Delegation::detach)es
+//! stops renewing, and its child stops within the time to live.
 //!
 //! ```rust,no_run
 //! use std::sync::Arc;
@@ -141,6 +145,23 @@ pub struct Delegation {
     settled: Option<Outcome>,
     armed: bool,
     id_wait: Duration,
+    /// Renews the child's lease, when it was granted one; stops when this is
+    /// dropped.
+    renewal: Option<Renewal>,
+}
+
+/// The task renewing a child's lease, aborted when this is dropped.
+#[derive(Debug)]
+struct Renewal {
+    /// The child's id, once an event names it.
+    id: Arc<std::sync::Mutex<Option<String>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for Renewal {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
 }
 
 impl Delegation {
@@ -162,7 +183,55 @@ impl Delegation {
             settled: None,
             armed: true,
             id_wait: DEFAULT_ID_WAIT,
+            renewal: None,
         })
+    }
+
+    /// [`start`](Self::start), granting the child a lease of `ttl` and
+    /// renewing it every third of `ttl` until this handle settles, is
+    /// cancelled, is detached or is dropped (see the [module docs](self)).
+    /// The agent must grant leases (its card declares
+    /// `a2a_protocol_types::lease::LEASE_EXTENSION_URI`); one that does not
+    /// ignores the grant, and the child runs as with [`start`](Self::start).
+    ///
+    /// # Errors
+    ///
+    /// As [`start`](Self::start); an agent that grants leases also refuses
+    /// a `ttl` outside its bounds.
+    pub async fn start_leased(
+        client: Arc<A2aClient>,
+        mut params: MessageSendParams,
+        ttl: Duration,
+    ) -> ClientResult<Self> {
+        a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
+        let tenant = params.tenant.clone();
+        let mut this = Self::start(Arc::clone(&client), params).await?;
+        let id = Arc::new(std::sync::Mutex::new(None::<String>));
+        let slot = Arc::clone(&id);
+        let task = tokio::spawn(async move {
+            let every = ttl / 3;
+            loop {
+                tokio::time::sleep(every).await;
+                let known = slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                let Some(id) = known else { continue };
+                let mut query = a2a_protocol_types::TaskQueryParams::new(id);
+                query.tenant.clone_from(&tenant);
+                match client.renew_lease(query).await {
+                    Ok(task) if task.status.state.is_terminal() => return,
+                    Ok(_) => {}
+                    // Missed renewals are what the lease is for; a later one
+                    // may land.
+                    Err(_e) => {
+                        trace_debug!(error = %_e, "lease renewal failed");
+                    }
+                }
+            }
+        });
+        this.renewal = Some(Renewal { id, task });
+        Ok(this)
     }
 
     /// Sets how long a cancel waits for the child's id when none has been
@@ -201,6 +270,12 @@ impl Delegation {
     }
 
     fn observe(&mut self, ev: &StreamResponse) {
+        if let (None, Some(id), Some(renewal)) = (&self.task_id, task_id_of(ev), &self.renewal) {
+            *renewal
+                .id
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(id.to_owned());
+        }
         let status = match ev {
             StreamResponse::Task(t) => {
                 self.task_id.get_or_insert_with(|| t.id.to_string());
@@ -300,6 +375,15 @@ impl Delegation {
     }
 }
 
+/// The task id an event names, if it names one.
+fn task_id_of(ev: &StreamResponse) -> Option<&str> {
+    match ev {
+        StreamResponse::Task(t) => Some(&t.id.0),
+        StreamResponse::StatusUpdate(u) => Some(&u.task_id.0),
+        _ => None,
+    }
+}
+
 impl Drop for Delegation {
     /// Cancels an unsettled child in the background, on the current Tokio
     /// runtime. Outside a runtime nothing can be sent, and the drop is only
@@ -323,6 +407,7 @@ impl Drop for Delegation {
             settled: None,
             armed: false,
             id_wait: self.id_wait,
+            renewal: None,
         };
         rt.spawn(async move {
             let done = rest.cancel().await;

@@ -36,7 +36,8 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                let call_ctx = build_call_context("GetTask", headers, self.inbound_trace_policy);
+                let call_ctx = build_call_context("GetTask", headers, self.inbound_trace_policy)
+                    .with_task_id(params.id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
@@ -49,7 +50,10 @@ impl RequestHandler {
                         .task_store
                         .get(&task_id)
                         .await?
-                        .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
+                        .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+                    // A read that activates the lease extension renews the
+                    // task's lease (`lease`, ADR 0020).
+                    self.renew_lease_if_asked(&call_ctx, &task_id.0).await;
 
                     // Apply historyLength: truncate history to the requested number
                     // of most recent messages. A value of 0 means "no history".

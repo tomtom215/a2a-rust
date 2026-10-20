@@ -1685,6 +1685,15 @@ that was ours to close.
 
 ---
 
+### Update, 2026-10-18
+
+The decision stands, with one addition inside it: a JWK carrying an `exp`
+member (seconds since the epoch, the JWT `NumericDate` some key sets publish;
+RFC 7517 defines no expiry) is no longer a candidate at or after it
+(`Jwks::candidates`; `signing::keys::tests::an_expired_key_is_not_used`).
+That needs no network and no trust store, so it belongs in the types crate;
+everything else above stays the caller's.
+
 ## 20. `GRPC-ERR-002` and `HTTP_JSON-STATUS-001`: the suite's vendored specification is stale
 
 Two MUST checks began failing when this SDK corrected its §5.4 error mappings
@@ -2103,4 +2112,46 @@ unexpected passes and the gate fails until the entries are removed.
 81 `PASS` and 7 `FAIL`; the minimal profile 60 `PASS` and 6 `FAIL` of 66.
 Across the three profiles the figure to quote is **85 of 114 passing and 7
 failing**: the four §20/§21 entries, §22's, and these two.
+
+## 24. Re-run on 2026-10-18, and this repository's evidence for the 21 `NOT TESTED` MUSTs
+
+*Measured: both profiles run locally against `a2a-tck` `main` at `263b9cf`
+(2026-09-01, still its newest commit), from the working branch.*
+
+The gate counts failing *pairs* (a requirement on one binding), so its 9 is
+§23's 7 failing requirements counted per binding, not two more failures.
+
+| Profile | MUST graded | Floor | Known failing pairs | Observed failing pairs | Gate |
+|---|---|---|---|---|---|
+| full | 88 | 88 | 9 | 9 | OK, no regressions |
+| minimal | 66 | 66 | 9 | 8 | OK; `STREAM-SUB-003` not graded by this profile |
+
+The 21 MUSTs §16 lists still have no test in that revision (a grep of
+`tests/` for each ID finds none). The suite cannot grade them, so the
+evidence that this SDK meets each is its own tests, named here so a reader
+can run them; the spec ledger cites the same tests against the spec lines.
+
+| TCK ID | Requirement | This repository's tests |
+|---|---|---|
+| CARD-SIGN-001 | JCS canonicalization before signing | `rfc8785_vectors.rs` (RFC 8785 vectors); `signing/presence/tests.rs` |
+| CARD-SIGN-002 | `signatures` excluded from signed content | `signing.rs` `sign_and_verify_card_in_wire_shape` |
+| CARD-SIGN-003 | protected header parameters | `signing_tests.rs` `protected_header_carries_alg_typ_and_kid` |
+| CARD-SIGN-004 | expired or revoked keys not used | `signing/keys/tests.rs` `an_expired_key_is_not_used`, `removing_a_key_from_the_set_revokes_it` (§19) |
+| AUTH-TLS-001 | encrypted communication in production | `serve_tls.rs`, `websocket_tls_origin.rs` `a_request_is_served_over_wss`; turning it on is the deployer's |
+| GRPC-SVC-003 | gRPC over HTTP/2 with TLS | SDK `grpc_server_tls_e2e.rs` |
+| VER-CLIENT-001 | clients send `A2A-Version` | client `grpc.rs` `add_metadata_injects_a2a_version`, `version_query.rs`, `discovery.rs` card fetch |
+| VER-CLIENT-002 | patch versions not negotiated | server `dispatch/version.rs` `version_metadata_accepts_this_major_minor_with_any_patch`; client `selection_tests.rs` |
+| VER-SERVER-001 | requested version's semantics | `dispatch_tests` `*_version_request_parameter_is_honoured`; 0.3 refused `VersionNotSupported` |
+| AUTH-SERVER-002 | authenticate every request | `auth_every_method.rs` (every method, both HTTP bindings, no and wrong credential) |
+| AUTH-INTASK-001 to 003 | a Task, `AUTH_REQUIRED`, an explanation | `auth_required_in_task.rs` `auth_required_parks_the_task_with_its_explanation` |
+| AUTH-INTASK-004 | credentials out of band | `auth_required_in_task.rs` (the stream, and since 2026-10-18 a blocking send, carry the task to its end after the credential arrives); `follow_task_e2e.rs` |
+| AUTH-SCOPE-001 | authorization on every operation | `authorization_per_task.rs` (every method sees and can refuse the task it names) |
+| AUTH-SCOPE-002 | results scoped to the caller | `caller_isolation.rs` |
+| AUTH-SCOPE-003 | unauthorized resources not revealed | `caller_isolation.rs` `isolated_another_callers_task_is_not_found_by_any_operation` (answered as an unknown id) |
+| BIND-EQUIV-001 to 004 | equivalence across bindings | `tck/src/equivalence.rs` `bind_equiv_001` to `004`, `bind_equiv_004_enforcement` |
+
+Writing the AUTH-INTASK-004 evidence found a defect: after a blocking
+`SendMessage` answered at `AUTH_REQUIRED`, nothing stored what the executor
+emitted once the credential arrived, so `GetTask` never saw the task finish.
+Fixed the same day (`CHANGELOG.md`, Fixed).
 

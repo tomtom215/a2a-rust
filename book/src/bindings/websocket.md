@@ -9,7 +9,7 @@ covers setup.
 
 ```text
 protocolBinding: https://a2a-rust.com/bindings/websocket/v1
-url:             ws://host:port/   (wss:// behind a TLS terminator)
+url:             ws://host:port/   (wss:// with with_tls, or behind a TLS terminator)
 constant:        a2a_protocol_types::WEBSOCKET_BINDING_URI
 ```
 
@@ -22,10 +22,13 @@ The server answers `101 Switching Protocols`, or refuses the upgrade:
 |---|---|
 | `A2A-Version` absent or empty (read as 0.3, §3.6.2) | `400`, unless the server was built with `accept_missing_version_header()` |
 | `A2A-Version` names a version other than 1.0 (a patch number is ignored) | `400` |
+| `Origin` not on the allowlist, when one is set; or absent, when `require_origin()` is set (§7) | `403`, checked before the version |
 | Handshake not finished within the handshake timeout (default 10 s) | connection closed |
 
 A refused upgrade carries the HTTP+JSON binding's error body (§11.6):
 `{"error":{"code":400,"status":"FAILED_PRECONDITION","message":…,"details":[ErrorInfo]}}`.
+The `Origin` refusal carries the same shape with `"code":403`,
+`"status":"PERMISSION_DENIED"` and no `details`.
 
 ## 2. Service parameters (§3.2.6, §12.3)
 
@@ -177,15 +180,27 @@ that accepts its cookie or ticket and forwards a header.
 
 ## 7. Security considerations (§13.4)
 
-- **Transport.** The dispatcher listens on plain `ws://`. Production
-  deployments put a TLS terminator in front and publish `wss://` in the card.
-  The SDK's client connects to `wss://` with the roots its HTTPS transports
-  use (feature `tls-rustls`, on by default), or a configuration given to
+- **Transport.** The dispatcher listens on plain `ws://` unless given a
+  certificate: `WebSocketDispatcher::with_tls` (a `rustls::ServerConfig`) or
+  `with_tls_pem` (feature `tls-rustls`) makes the listener `wss://` only,
+  offering ALPN `http/1.1`, with the TLS handshake bound by the handshake
+  timeout. The agent card is served over the same TLS session. Production
+  deployments (spec §7.1) either do that or put a TLS terminator in front,
+  and publish `wss://` in the card. The SDK's client connects to `wss://`
+  with the roots its HTTPS transports use (feature `tls-rustls`, on by
+  default), or a configuration given to
   `WebSocketTransportConfig::with_tls_config`.
-- **Origin.** The server does not check the upgrade's `Origin` header. Where
-  credentials are ambient (a cookie a gateway turns into a header), a page on
-  another site could open an authenticated connection (cross-site WebSocket
-  hijacking); such a gateway must check `Origin`.
+- **Origin.** By default the server accepts an upgrade from any `Origin`.
+  Where credentials are ambient (a cookie a gateway turns into a header), a
+  page on another site could open an authenticated connection (cross-site
+  WebSocket hijacking). `WebSocketDispatcher::with_allowed_origins` names the
+  origins a browser may connect from; any other is refused with `403` and
+  the error body of §1 (`PERMISSION_DENIED`) at the handshake. Origins are
+  compared whole, ignoring ASCII case. An upgrade with no `Origin` (every
+  non-browser client, this SDK's included) is still accepted unless
+  `require_origin` is set. The check stops browsers only: any other client
+  can send whatever `Origin` it likes, so it does not replace
+  authentication.
 - **One identity per connection.** Credentials are read from the upgrade, so
   every request on a connection acts as one caller. The interceptors check
   them on every request, so a token that expires is refused from then on,

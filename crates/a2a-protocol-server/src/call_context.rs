@@ -48,6 +48,28 @@
 //!
 //! Behind a reverse proxy this is the proxy's address. The client's is in
 //! `x-forwarded-for`, which only the deployment knows how far to trust.
+//!
+//! # The peer's certificate
+//!
+//! [`peer_certificate`](CallContext::peer_certificate) is the certificate
+//! the client presented in a mutual-TLS handshake on the listener itself,
+//! the leaf of its chain, DER-encoded. The TLS configuration's client
+//! verifier has already checked it against the CAs it trusts; this is the
+//! certificate it accepted. It travels under [`PEER_CERTIFICATE_KEY`],
+//! base64, for the same reason the address does, and is set from:
+//!
+//! - JSON-RPC and REST: the [`PeerCertificate`] request extension, which
+//!   [`Server::with_tls`](crate::Server) inserts on a connection whose
+//!   client presented one.
+//! - The axum router: [`PeerCertificate`], when the server it runs on
+//!   inserts it.
+//! - WebSocket: its TLS listener's handshake. gRPC: tonic's, under
+//!   `grpc-tls`.
+//!
+//! `MutualTlsAuthInterceptor` (`tls-rustls` or `grpc-tls`) names the
+//! caller from it. A TLS-terminating proxy in front of the listener
+//! means there is none: the proxy's own handshake is the one the listener
+//! sees.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -71,6 +93,17 @@ pub const PEER_ADDR_KEY: &str = ":peer-addr";
 /// [module docs](self).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PeerAddr(pub SocketAddr);
+
+/// The headers-map key under which a binding records the client's
+/// mutual-TLS certificate, standard base64 of its DER encoding; see
+/// [`CallContext::peer_certificate`].
+pub const PEER_CERTIFICATE_KEY: &str = ":peer-certificate";
+
+/// The certificate a client presented in the TLS handshake of the
+/// connection a request arrived on, DER-encoded, as an HTTP request
+/// extension; see the [module docs](self).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PeerCertificate(pub std::sync::Arc<[u8]>);
 
 /// Metadata about the current server-side method call.
 ///
@@ -101,6 +134,10 @@ pub struct CallContext {
     /// write-once for the same reason as `caller_identity`.
     auth_scheme: OnceLock<String>,
 
+    /// The RFC 8693 actors acting for the caller, nearest first; see
+    /// [`actors`](Self::actors). Write-once, as `caller_identity`.
+    actors: OnceLock<Vec<String>>,
+
     /// Extension URIs active for this request.
     extensions: Vec<String>,
 
@@ -128,6 +165,9 @@ pub struct CallContext {
     /// single-tenant case and also the case inside `resolve_tenant` itself,
     /// where the answer does not exist yet.
     tenant: Option<String>,
+
+    /// The task the request names, when it names one.
+    task_id: Option<String>,
 }
 
 /// Hand-written so a caller's credentials cannot reach a log through a
@@ -156,11 +196,13 @@ impl std::fmt::Debug for CallContext {
             .field("method", &self.method)
             .field("caller_identity", &self.caller_identity)
             .field("auth_scheme", &self.auth_scheme)
+            .field("actors", &self.actors)
             .field("extensions", &self.extensions)
             .field("request_id", &self.request_id)
             .field("http_header_names", &names)
             .field("trace_context", &self.trace_context)
             .field("tenant", &self.tenant)
+            .field("task_id", &self.task_id)
             .finish()
     }
 }
@@ -225,6 +267,24 @@ impl CallContext {
         self.auth_scheme.set(scheme.into()).is_ok()
     }
 
+    /// The agents acting for the caller, nearest first, when the caller's
+    /// credential names them: the RFC 8693 `act` chain of a delegated token
+    /// (ADR 0021), each as
+    /// [`caller_id::jwt`](crate::auth::caller_id::jwt). The
+    /// [`caller_identity`](Self::caller_identity) is then the principal the
+    /// work is for. Empty when nothing named an actor.
+    #[must_use]
+    pub fn actors(&self) -> &[String] {
+        self.actors.get().map_or(&[], Vec::as_slice)
+    }
+
+    /// Records the actors, if nothing has yet; returns whether this call
+    /// set them. An authentication interceptor sets them beside the
+    /// identity.
+    pub fn set_actors(&self, actors: Vec<String>) -> bool {
+        self.actors.set(actors).is_ok()
+    }
+
     /// Returns the active extension URIs.
     #[must_use]
     pub fn extensions(&self) -> &[String] {
@@ -275,6 +335,38 @@ impl CallContext {
     pub fn peer_addr(&self) -> Option<SocketAddr> {
         self.http_headers.get(PEER_ADDR_KEY)?.parse().ok()
     }
+
+    /// The DER encoding of the certificate the client presented in a
+    /// mutual-TLS handshake on this listener, when it presented one; see the
+    /// [module docs](self).
+    ///
+    /// Read from the headers map's [`PEER_CERTIFICATE_KEY`] entry; `None`
+    /// when there is none or it is not base64.
+    #[must_use]
+    pub fn peer_certificate(&self) -> Option<Vec<u8>> {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD
+            .decode(self.http_headers.get(PEER_CERTIFICATE_KEY)?)
+            .ok()
+    }
+
+    /// The task this request names, as the caller sent it: the `id` of
+    /// `GetTask`, `CancelTask` and `SubscribeToTask`, the `taskId` of a
+    /// push-config operation, or the `taskId` of a `SendMessage` continuing
+    /// a task. `None` for a request that names no task (`ListTasks`, a
+    /// message starting a new task, `GetExtendedAgentCard`).
+    ///
+    /// Set before the interceptor chain runs, so an authorizer can decide
+    /// per task (spec §13.1: "Servers MUST implement authorization checks
+    /// on every A2A Protocol Operations request") and refuse with
+    /// [`A2aError::permission_denied`](a2a_protocol_types::error::A2aError::permission_denied).
+    /// It is not yet checked: the task may not exist, or may belong to
+    /// another caller, in which case the operation answers `TaskNotFound`
+    /// after the chain admits it.
+    #[must_use]
+    pub fn task_id(&self) -> Option<&str> {
+        self.task_id.as_deref()
+    }
 }
 
 impl CallContext {
@@ -285,11 +377,13 @@ impl CallContext {
             method: method.into(),
             caller_identity: OnceLock::new(),
             auth_scheme: OnceLock::new(),
+            actors: OnceLock::new(),
             extensions: Vec::new(),
             request_id: None,
             http_headers: HashMap::new(),
             trace_context: None,
             tenant: None,
+            task_id: None,
         }
     }
 
@@ -297,6 +391,13 @@ impl CallContext {
     #[must_use]
     pub fn with_trace_context(mut self, trace_context: TraceContext) -> Self {
         self.trace_context = Some(trace_context);
+        self
+    }
+
+    /// Sets the task the request names; see [`task_id`](Self::task_id).
+    #[must_use]
+    pub fn with_task_id(mut self, task_id: impl Into<String>) -> Self {
+        self.task_id = Some(task_id.into());
         self
     }
 
@@ -338,6 +439,17 @@ impl CallContext {
         self.with_http_header(PEER_ADDR_KEY, addr.to_string())
     }
 
+    /// Sets the certificate the client presented (the
+    /// [`PEER_CERTIFICATE_KEY`] entry of the headers map), DER-encoded.
+    #[must_use]
+    pub fn with_peer_certificate(self, der: &[u8]) -> Self {
+        use base64::Engine as _;
+        self.with_http_header(
+            PEER_CERTIFICATE_KEY,
+            base64::engine::general_purpose::STANDARD.encode(der),
+        )
+    }
+
     /// Sets the HTTP headers map (replacing any existing headers).
     ///
     /// Automatically extracts `x-request-id` into [`request_id`](Self::request_id)
@@ -367,129 +479,5 @@ impl CallContext {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn with_http_header_x_request_id_populates_request_id() {
-        let ctx = CallContext::new("test").with_http_header("x-request-id", "req-42");
-        assert_eq!(ctx.request_id(), Some("req-42"));
-        assert_eq!(
-            ctx.http_headers().get("x-request-id").map(String::as_str),
-            Some("req-42")
-        );
-    }
-
-    #[test]
-    fn with_http_header_other_key_does_not_populate_request_id() {
-        let ctx = CallContext::new("test").with_http_header("authorization", "Bearer tok");
-        assert!(ctx.request_id().is_none());
-        assert_eq!(
-            ctx.http_headers().get("authorization").map(String::as_str),
-            Some("Bearer tok")
-        );
-    }
-
-    #[test]
-    fn with_request_id_sets_field() {
-        let ctx = CallContext::new("test").with_request_id("req-99");
-        assert_eq!(ctx.request_id(), Some("req-99"));
-    }
-
-    #[test]
-    fn with_http_headers_extracts_request_id() {
-        let mut headers = HashMap::new();
-        headers.insert("x-request-id".to_owned(), "trace-123".to_owned());
-        headers.insert("content-type".to_owned(), "application/json".to_owned());
-
-        let ctx = CallContext::new("test").with_http_headers(headers);
-        assert_eq!(ctx.request_id(), Some("trace-123"));
-        assert_eq!(
-            ctx.http_headers().get("content-type").map(String::as_str),
-            Some("application/json")
-        );
-    }
-
-    #[test]
-    fn with_http_headers_without_request_id() {
-        let mut headers = HashMap::new();
-        headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
-
-        let ctx = CallContext::new("test").with_http_headers(headers);
-        assert!(ctx.request_id().is_none());
-    }
-
-    #[test]
-    fn with_caller_identity_sets_field() {
-        let ctx = CallContext::new("test").with_caller_identity("user@example.com".into());
-        assert_eq!(ctx.caller_identity(), Some("user@example.com"));
-    }
-
-    #[test]
-    fn with_extensions_sets_field() {
-        let ctx = CallContext::new("test").with_extensions(vec!["ext1".into(), "ext2".into()]);
-        assert_eq!(ctx.extensions(), &["ext1", "ext2"]);
-    }
-
-    #[test]
-    fn peer_addr_round_trips_through_the_headers_map() {
-        for addr in [
-            "203.0.113.7:4711",
-            "[2001:db8::1]:443",
-            "[::ffff:192.0.2.1]:80",
-        ] {
-            let addr: SocketAddr = addr.parse().unwrap();
-            let ctx = CallContext::new("test").with_peer_addr(addr);
-            assert_eq!(ctx.peer_addr(), Some(addr));
-            assert_eq!(
-                ctx.http_headers().get(PEER_ADDR_KEY).map(String::as_str),
-                Some(addr.to_string().as_str())
-            );
-        }
-    }
-
-    #[test]
-    fn peer_addr_is_none_when_absent_or_unparsable() {
-        assert_eq!(CallContext::new("test").peer_addr(), None);
-        let ctx = CallContext::new("test").with_http_header(PEER_ADDR_KEY, "not an address");
-        assert_eq!(ctx.peer_addr(), None);
-    }
-
-    #[test]
-    fn new_defaults_are_empty() {
-        let ctx = CallContext::new("method");
-        assert_eq!(ctx.method(), "method");
-        assert!(ctx.caller_identity().is_none());
-        assert_eq!(ctx.extensions(), [] as [String; 0]);
-        assert!(ctx.request_id().is_none());
-        assert!(ctx.http_headers().is_empty());
-    }
-
-    /// The defect this guards: `CallContext` derived `Debug`, and 0.13.0 put
-    /// it on `RequestContext`, which reaches every executor. A
-    /// `debug!("{ctx:?}")` — a natural line to write, in the component most
-    /// likely to forward its context somewhere else — wrote the caller's
-    /// bearer token to the log.
-    #[test]
-    fn debug_prints_header_names_and_never_their_values() {
-        let ctx = CallContext::new("SendMessage")
-            .with_http_header("Authorization", "Bearer super-secret-token")
-            .with_http_header("Cookie", "session=also-secret")
-            .with_http_header("content-type", "application/json");
-
-        let rendered = format!("{ctx:?}");
-
-        assert!(
-            !rendered.contains("super-secret-token"),
-            "a credential must not reach a debug-print: {rendered}"
-        );
-        assert!(
-            !rendered.contains("also-secret"),
-            "nor any other header value: {rendered}"
-        );
-        assert!(
-            rendered.contains("authorization") && rendered.contains("content-type"),
-            "the names are what a debug-print is usually asking for: {rendered}"
-        );
-    }
-}
+#[path = "call_context_tests.rs"]
+mod tests;

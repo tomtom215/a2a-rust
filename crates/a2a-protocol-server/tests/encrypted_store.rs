@@ -85,7 +85,14 @@ async fn seals_at_rest(inner: Arc<dyn TaskStore>) {
     store.save_status_delta(&t).await.unwrap();
 
     let turn = [Message::user_text("h2", format!("{SECRET} answered"))];
-    store.save_appending_history(&t, &turn, 100).await.unwrap();
+    store
+        .save_appending_history(
+            &t,
+            &turn,
+            a2a_protocol_server::store::HistoryLimit::new(100, usize::MAX),
+        )
+        .await
+        .unwrap();
     t.history.as_mut().unwrap().extend(turn);
 
     let stored = inner.get(&id).await.unwrap().unwrap();

@@ -50,15 +50,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Restore before installing: rust-cache keeps in `~/.cargo/bin` only
+      # the binaries installed after it restores, so with the install first
+      # cargo-fuzz was dropped from every saved cache and compiled again in
+      # every leg. Installed after the restore, it is cached, and `cargo
+      # install` finds it already there.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: fuzz
+
       - name: Install nightly + cargo-fuzz
         run: |
           rustup toolchain install nightly --profile minimal
           rustup component add --toolchain nightly rust-src
           cargo install cargo-fuzz --version '^0.12' --locked
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: fuzz
 
       # Restore the corpus this target accumulated on the most
       # recent previous nightly run (via the restore-keys prefix fallback,

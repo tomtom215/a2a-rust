@@ -50,18 +50,20 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
 impl A2aClient {
     /// A send carrying an inline push-notification config needs the push
     /// capability as much as `CreateTaskPushNotificationConfig` does; a
-    /// conformant agent refuses it with the same error (spec §3.3.4).
+    /// conformant agent refuses it with the same error (spec §3.3.4). Its
+    /// webhook URL gets the same §13.2 check `set_push_config` applies.
     fn require_inline_push_declared(
         &self,
         params: &MessageSendParams,
         method: &str,
     ) -> ClientResult<()> {
-        if params
+        if let Some(push) = params
             .configuration
             .as_ref()
-            .is_some_and(|c| c.task_push_notification_config.is_some())
+            .and_then(|c| c.task_push_notification_config.as_ref())
         {
             self.require_declared(crate::declared::Capability::PushNotifications, method)?;
+            self.check_webhook_url(&push.url)?;
         }
         Ok(())
     }
@@ -104,6 +106,7 @@ impl A2aClient {
         mut params: MessageSendParams,
     ) -> ClientResult<SendMessageResponse> {
         const METHOD: &str = "SendMessage";
+        require_well_formed(&params)?;
         self.require_inline_push_declared(&params, METHOD)?;
 
         apply_client_config(&mut params, &self.config);
@@ -138,6 +141,7 @@ impl A2aClient {
     pub async fn stream_message(&self, mut params: MessageSendParams) -> ClientResult<EventStream> {
         const METHOD: &str = "SendStreamingMessage";
         self.require_declared(crate::declared::Capability::Streaming, METHOD)?;
+        require_well_formed(&params)?;
         self.require_inline_push_declared(&params, METHOD)?;
 
         apply_client_config(&mut params, &self.config);
@@ -171,320 +175,27 @@ impl A2aClient {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use a2a_protocol_types::{Message, MessageId, MessageRole, Part};
+#[path = "send_message_tests.rs"]
+mod tests;
 
-    fn make_params() -> MessageSendParams {
-        MessageSendParams {
-            tenant: None,
-            message: Message {
-                id: MessageId::new("msg-1"),
-                role: MessageRole::User,
-                parts: vec![Part::text("test")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
-            configuration: None,
-            metadata: None,
-        }
-    }
-
-    #[test]
-    fn apply_config_sets_return_immediately_when_absent() {
-        let config = ClientConfig {
-            return_immediately: true,
-            ..ClientConfig::default()
-        };
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.return_immediately, Some(true));
-    }
-
-    #[test]
-    fn apply_config_does_not_override_per_request_return_immediately() {
-        let config = ClientConfig {
-            return_immediately: true,
-            ..ClientConfig::default()
-        };
-
-        let mut params = make_params();
-        params.configuration = Some(SendMessageConfiguration {
-            return_immediately: Some(false),
-            ..Default::default()
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(
-            cfg.return_immediately,
-            Some(false),
-            "per-request value should take precedence"
+/// Refuses, before anything is sent, a message the server would refuse:
+/// an empty or blank `messageId` (a2a.proto `Message.message_id`, REQUIRED)
+/// or no parts (`Message.parts`, REQUIRED; spec §5.7, a required array
+/// "MUST contain at least one element"). Until 2026-10-18 the client sent
+/// either and spent a round trip learning the answer.
+fn require_well_formed(params: &MessageSendParams) -> ClientResult<()> {
+    let refuse = |why: &str| {
+        Err(ClientError::Protocol(
+            a2a_protocol_types::error::A2aError::invalid_params(why),
+        ))
+    };
+    if params.message.id.0.trim().is_empty() {
+        return refuse(
+            "message.messageId is empty; a message needs an id (a2a.proto Message.message_id)",
         );
     }
-
-    #[test]
-    fn apply_config_does_not_set_return_immediately_when_config_false() {
-        let config = ClientConfig::default(); // return_immediately = false
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(
-            cfg.return_immediately, None,
-            "should not set return_immediately when config is false"
-        );
+    if params.message.parts.is_empty() {
+        return refuse("message.parts is empty; a message needs at least one part (spec §5.7)");
     }
-
-    #[test]
-    fn apply_config_sets_history_length_when_absent() {
-        let config = ClientConfig {
-            history_length: Some(10),
-            ..ClientConfig::default()
-        };
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.history_length, Some(10));
-    }
-
-    #[test]
-    fn apply_config_does_not_override_per_request_history_length() {
-        let config = ClientConfig {
-            history_length: Some(10),
-            ..ClientConfig::default()
-        };
-
-        let mut params = make_params();
-        params.configuration = Some(SendMessageConfiguration {
-            history_length: Some(5),
-            ..Default::default()
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.history_length, Some(5));
-    }
-
-    #[test]
-    fn apply_config_sets_accepted_output_modes_when_empty() {
-        let config = ClientConfig {
-            accepted_output_modes: vec!["audio/wav".into()],
-            ..ClientConfig::default()
-        };
-
-        // No configuration of its own: the client's modes, not the
-        // `["text/plain"]` of `SendMessageConfiguration::default()`.
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.accepted_output_modes, vec!["audio/wav"]);
-    }
-
-    #[test]
-    fn apply_config_does_not_override_per_request_output_modes() {
-        let config = ClientConfig {
-            accepted_output_modes: vec!["text/plain".into()],
-            ..ClientConfig::default()
-        };
-
-        let mut params = make_params();
-        params.configuration = Some(SendMessageConfiguration {
-            accepted_output_modes: vec!["application/json".into()],
-            ..Default::default()
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.accepted_output_modes, vec!["application/json"]);
-    }
-
-    #[test]
-    fn apply_config_no_op_when_config_has_no_overrides() {
-        let config = ClientConfig::default();
-        // Default config: return_immediately=false, history_length=None,
-        // accepted_output_modes=["text/plain", "application/json"]
-
-        let mut params = make_params();
-        // Pre-set configuration to empty.
-        params.configuration = Some(SendMessageConfiguration::default());
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        // return_immediately should remain None since config.return_immediately is false.
-        assert_eq!(cfg.return_immediately, None);
-        // history_length should remain None.
-        assert_eq!(cfg.history_length, None);
-    }
-
-    #[tokio::test]
-    async fn stream_message_applies_config_and_calls_transport() {
-        use std::collections::HashMap;
-        use std::future::Future;
-        use std::pin::Pin;
-
-        use crate::ClientBuilder;
-        use crate::error::{ClientError, ClientResult};
-        use crate::streaming::EventStream;
-        use crate::transport::Transport;
-
-        /// A mock transport that captures the streaming request and returns an error
-        /// (since we can't easily construct an `EventStream` in a unit test).
-        struct StreamCapture;
-
-        impl Transport for StreamCapture {
-            fn send_request<'a>(
-                &'a self,
-                _method: &'a str,
-                _params: serde_json::Value,
-                _extra_headers: &'a HashMap<String, String>,
-            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
-            {
-                Box::pin(async move { Ok(serde_json::Value::Null) })
-            }
-
-            fn send_streaming_request<'a>(
-                &'a self,
-                _method: &'a str,
-                _params: serde_json::Value,
-                _extra_headers: &'a HashMap<String, String>,
-            ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
-                Box::pin(
-                    async move { Err(ClientError::Transport("mock: streaming called".into())) },
-                )
-            }
-        }
-
-        let client = ClientBuilder::new("http://localhost:8080")
-            .with_custom_transport(StreamCapture)
-            .with_return_immediately(true)
-            .build()
-            .expect("build");
-
-        let params = make_params();
-        let err = client.stream_message(params).await.unwrap_err();
-        assert!(
-            matches!(err, ClientError::Transport(ref msg) if msg.contains("streaming called")),
-            "expected Transport error, got {err:?}"
-        );
-    }
-
-    /// Test `stream_message` with interceptor (covers lines 115-122).
-    #[allow(clippy::too_many_lines)]
-    // The trait declares `before`/`after` as `async`; this counting mock has
-    // nothing to await, so the signature is the trait's rather than a choice.
-    #[allow(clippy::unused_async_trait_impl)]
-    #[tokio::test]
-    async fn stream_message_calls_after_interceptor() {
-        use std::collections::HashMap;
-        use std::future::Future;
-        use std::pin::Pin;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        use crate::ClientBuilder;
-        use crate::error::ClientResult;
-        use crate::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
-        use crate::streaming::EventStream;
-        use crate::transport::Transport;
-
-        struct StreamingOkTransport;
-
-        impl Transport for StreamingOkTransport {
-            fn send_request<'a>(
-                &'a self,
-                _method: &'a str,
-                _params: serde_json::Value,
-                _extra_headers: &'a HashMap<String, String>,
-            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
-            {
-                Box::pin(async move { Ok(serde_json::Value::Null) })
-            }
-
-            fn send_streaming_request<'a>(
-                &'a self,
-                _method: &'a str,
-                _params: serde_json::Value,
-                _extra_headers: &'a HashMap<String, String>,
-            ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
-                Box::pin(async move {
-                    let (tx, rx) = tokio::sync::mpsc::channel(8);
-                    drop(tx);
-                    Ok(EventStream::new(rx))
-                })
-            }
-        }
-
-        struct CountingInterceptor {
-            before_count: Arc<AtomicUsize>,
-            after_count: Arc<AtomicUsize>,
-        }
-
-        impl CallInterceptor for CountingInterceptor {
-            async fn before<'a>(&'a self, _req: &'a mut ClientRequest) -> ClientResult<()> {
-                self.before_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }
-            async fn after<'a>(&'a self, _resp: &'a ClientResponse) -> ClientResult<()> {
-                self.after_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }
-        }
-
-        let before = Arc::new(AtomicUsize::new(0));
-        let after = Arc::new(AtomicUsize::new(0));
-        let interceptor = CountingInterceptor {
-            before_count: Arc::clone(&before),
-            after_count: Arc::clone(&after),
-        };
-
-        let client = ClientBuilder::new("http://localhost:8080")
-            .with_custom_transport(StreamingOkTransport)
-            .with_interceptor(interceptor)
-            .build()
-            .expect("build");
-
-        let result = client.stream_message(make_params()).await;
-        assert!(result.is_ok(), "stream_message should succeed");
-        assert_eq!(before.load(Ordering::SeqCst), 1, "before should be called");
-        assert_eq!(
-            after.load(Ordering::SeqCst),
-            1,
-            "after should be called for streaming"
-        );
-    }
-
-    #[test]
-    fn apply_config_does_not_set_modes_when_config_modes_empty() {
-        let config = ClientConfig {
-            accepted_output_modes: vec![],
-            ..ClientConfig::default()
-        };
-
-        let mut params = make_params();
-        // Pre-set with empty modes to test that config doesn't override.
-        params.configuration = Some(SendMessageConfiguration {
-            accepted_output_modes: vec![],
-            task_push_notification_config: None,
-            history_length: None,
-            return_immediately: None,
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert!(
-            cfg.accepted_output_modes.is_empty(),
-            "should not set modes when config modes are empty"
-        );
-    }
+    Ok(())
 }

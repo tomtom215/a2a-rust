@@ -8,7 +8,7 @@
 #
 # A Dependabot PR runs the full CI, TCK, mutation and coverage gates like any
 # other. The DCO gate exempts Dependabot's commits by author identity — see
-# dco.yml and PROVENANCE.md §3.3 for why a version bump is not an authored
+# dco.yml and PROVENANCE.md §3.2 for why a version bump is not an authored
 # contribution.
 #
 # Action versions in this repository are pinned to commit SHAs with a

@@ -34,15 +34,14 @@ pub fn card_handler(handler: &RequestHandler) -> Option<Arc<StaticAgentCardHandl
         .map(|card| Arc::new(card.with_max_age(max_age)))
 }
 
-/// The answer to `req`: the card for a `GET` or `HEAD` of [`PATH`], and
-/// `404` otherwise, with the JSON-RPC dispatcher's body when the path is
-/// right and there is no card.
+/// The answer to `req`: the card's for a request of [`PATH`] (`405` for a
+/// method other than `GET` or `HEAD`), and `404` otherwise, with the
+/// JSON-RPC dispatcher's body when the path is right and there is no card.
 pub fn respond<B: hyper::body::Body>(
     card: Option<&StaticAgentCardHandler>,
     req: &hyper::Request<B>,
 ) -> hyper::Response<Full<Bytes>> {
-    let asks = matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD)
-        && req.uri().path() == PATH;
+    let asks = req.uri().path() == PATH;
     match (card, asks) {
         (Some(card), true) => card.handle(req),
         (None, true) => not_found(br#"{"error":"agent card not configured"}"#),

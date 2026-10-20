@@ -31,6 +31,7 @@ are rustdoc's job.
 | `failure` | Why a task failed, as a class a caller can match on |
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
+| `lease` | The lease extension: `Lease`, a delegated task's time to live, granted on the message that starts it and renewed by a `GetTask` that activates the extension |
 | `message` | Message types for the A2A protocol |
 | `method` | The A2A v1.0 service methods, mirrored from the ratified specification |
 | `params` | JSON-RPC method parameter types |
@@ -223,6 +224,7 @@ are rustdoc's job.
 | `tls` | TLS connector via rustls (`tls-rustls` feature) |
 | `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
 | `transport` | Transport abstraction for A2A client requests |
+| `webhook` | The receiving side of push notifications: `WebhookReceiver`, `new_notification_token` (`webhook` feature, default on) |
 
 ### Core Types
 
@@ -258,6 +260,7 @@ are rustdoc's job.
 | `list_tasks(params)` | `TaskListResponse` | Query tasks |
 | `cancel_task(id)` | `Task` | Cancel a running task |
 | `subscribe_to_task(id)` | `EventStream` | Re-subscribe to task events |
+| `follow_task(id, poll_every)` | `TaskFollow` | Follow a task to its end: subscribe when the agent streams, poll `GetTask` when it does not (§7.6.2) |
 | `subscribe_to_task_from(id, last_event_id)` | `EventStream` | Resume a broken stream from its last SSE `id:` (sends `Last-Event-ID`) |
 | `set_push_config(config)` | `TaskPushNotificationConfig` | Create push config |
 | `get_push_config(task_id, id)` | `TaskPushNotificationConfig` | Get push config |
@@ -286,6 +289,14 @@ are rustdoc's job.
 | `StaticTokenProvider` | A `TokenProvider` that always returns the same fixed token |
 | `OAuth2ClientCredentials` | A `TokenProvider` implementing the OAuth 2.0 client credentials grant (RFC 6749 §4.4) with caching and proactive refresh |
 | `BearerAuthInterceptor` | A `CallInterceptor` that injects a bearer token from a `TokenProvider` before every request |
+
+### Webhook Receiver
+
+| Type | Description |
+|------|-------------|
+| `WebhookReceiver` | Checks a push notification's token, `Authorization`, body and task; suppresses duplicates; optional per-config rate limit |
+| `WebhookOutcome` | `Accepted`, `Duplicate` or `Rejected`, with the HTTP status to answer |
+| `WebhookRejection` | Why a notification was refused: 401, 400, 403 or 429 |
 
 ### Transport
 
@@ -319,7 +330,7 @@ are rustdoc's job.
 | `handler` | Core request handler — protocol logic layer |
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
-| `otel` | `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset) and `OtelMetrics` (`otel` feature) |
+| `otel` | `OtelMetrics` (`otel` feature, on by default) and `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset; `otlp` feature) |
 | `profile` | `Profile::Auditable`: one call that turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature) |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
@@ -329,6 +340,7 @@ are rustdoc's job.
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
+| `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url` |
 
 ### Constants
 
@@ -337,6 +349,7 @@ are rustdoc's job.
 | `CORS_ALLOW_ALL` | CORS Access-Control-Allow-Origin header value for public agent cards |
 | `A2A_VERSION_METADATA_KEY` | The service parameter naming the A2A protocol version, spelled the way a non-HTTP binding carries it |
 | `PEER_ADDR_KEY` | The headers-map key (`":peer-addr"`) under which a binding records the connection's address for `CallContext::peer_addr` |
+| `PEER_CERTIFICATE_KEY` | The headers-map key (`":peer-certificate"`) under which a binding records the client's mutual-TLS certificate, base64 DER, for `CallContext::peer_certificate` |
 
 ### Core Types
 
@@ -357,6 +370,8 @@ are rustdoc's job.
 | `HaltReport` | What a halt stopped: the ids of the tasks whose token it fired |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
+| `BindingSpan` | The per-call server span and `rpc.server.call.duration` for a binding outside this crate, as the in-crate bindings record theirs (ADR 0013) |
+| `CustomBinding` | How such a binding names itself: its `rpc.system.name`, its status for each `ServerError`, and optionally the status of a success |
 
 ### Traits
 
@@ -382,6 +397,7 @@ are rustdoc's job.
 |------|-------------|
 | `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher (implements `Dispatcher`) |
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
+| `CombinedDispatcher` | JSON-RPC and REST on one listener: a `POST` to the JSON-RPC path is JSON-RPC, the rest is REST (implements `Dispatcher`) |
 | `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
 | `GrpcDispatcher` | gRPC dispatcher (`grpc` feature) |
 | `A2aRouter` | Axum framework adapter (`axum` feature) |
@@ -438,13 +454,14 @@ are rustdoc's job.
 | `BearerTokenAuthInterceptor` | Rejects requests whose bearer token is absent or not in the allowed set |
 | `AuthFailureThrottle` | Refuses a peer whose credentials were refused too often, until its window ends |
 | `PeerAddr` | Request extension carrying the connection's address, which the dispatchers copy to `CallContext::peer_addr` |
+| `PeerCertificate` | Request extension carrying the client's mutual-TLS certificate (DER), which the dispatchers pass to `CallContext::peer_certificate` |
 | `ServerInterceptorChain` | An ordered chain of `ServerInterceptor` instances |
 | `CallOutcome` | How a call ended — succeeded, failed with the error sent, or cancelled — as `ServerInterceptor::on_complete` is told |
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |
 | `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
 | `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |
 | `NoopMetrics` | No-op metrics implementation (default) |
-| `OtelMetrics` | OpenTelemetry metrics (`otel` feature) |
+| `OtelMetrics` | OpenTelemetry metrics (`otel` feature, on by default) |
 
 ### Streaming
 

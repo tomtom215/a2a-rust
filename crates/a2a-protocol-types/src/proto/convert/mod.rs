@@ -41,7 +41,10 @@ use base64::Engine as _;
 
 /// Error produced when a value cannot be converted between protobuf and
 /// domain representations.
+///
+/// `#[non_exhaustive]` (since 0.15): build one with [`ConvertError::new`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ConvertError {
     /// Dotted path to the offending field (e.g. `task.status`).
     pub field: &'static str,
@@ -50,7 +53,9 @@ pub struct ConvertError {
 }
 
 impl ConvertError {
-    pub(crate) fn new(field: &'static str, reason: impl Into<String>) -> Self {
+    /// A conversion of `field` refused for `reason`.
+    #[must_use]
+    pub fn new(field: &'static str, reason: impl Into<String>) -> Self {
         Self {
             field,
             reason: reason.into(),

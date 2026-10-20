@@ -17,20 +17,25 @@ and the answer is almost always this page's first section.
 ## Turning them on
 
 ```toml
-a2a-protocol-sdk = { version = "0.15", features = ["otel"] }
+a2a-protocol-sdk = "0.15"   # `tracing`, `otel` and `otlp` are default features
 ```
 
 * **`tracing`** — on by default in all three crates; with
   `default-features = false` the logging calls and spans compile to nothing.
   With it, your binary still has to install a subscriber; the library emits
   events and spans and does not decide where they go.
-* **`otel`** — makes [`Telemetry`](#exporting-with-telemetry) available: OTLP
+* **`otel`** — on by default in the client, the server and the SDK (since
+  0.15): `OtelMetrics`, and each span's OpenTelemetry bridge, so the server's
+  `SERVER` span takes the caller's `traceparent` as its parent and each client
+  call's `traceparent` names the call's own span (see [Spans](#spans)). The
+  OpenTelemetry API only: recorded to the provider your process installs, or
+  to nothing.
+* **`otlp`** — makes [`Telemetry`](#exporting-with-telemetry) available: OTLP
   export of traces, metrics and logs, configured by the standard `OTEL_*`
-  environment. On the SDK it also turns on the client's half: each call's
-  `traceparent` names the call's own span (see [Spans](#spans)).
+  environment. On by default in the SDK only; on `a2a-protocol-server`
+  directly, ask for it (`features = ["otlp"]`).
 
-With the `otel` feature, the whole setup is this, and the rest of the page
-explains it:
+With `otlp`, the whole setup is this, and the rest of the page explains it:
 
 ```rust,no_run
 use a2a_protocol_server::otel::Telemetry;
@@ -88,8 +93,8 @@ Hand it to the builder with `.with_metrics(CountingMetrics)`. If those lines
 appear and your dashboard is still empty, the problem is the exporter, not the
 SDK — which is the distinction this two-minute step buys you.
 
-With the `otel` feature, `OtelMetrics` is the real provider and exports the
-catalogue below over OTLP.
+With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
+`Telemetry` exports it over OTLP.
 
 ## Exporting with `Telemetry`
 
@@ -108,18 +113,29 @@ refuses a value it cannot act on rather than ignoring it:
 |---|---|
 | `OTEL_SDK_DISABLED=true` | Builds nothing; the layer records nothing |
 | `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` or `none` per signal; any other value (`console`, `prometheus`, …) is an error naming it |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc` or `http/protobuf`, the default; `http/json` is an error (not compiled in) |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc`, `http/protobuf` (the default) or, with the `otlp-json` feature, `http/json`; without it `http/json` is an error naming the feature |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` (and per signal) | The collector; OTLP/HTTP appends `/v1/traces`, `/v1/metrics` or `/v1/logs` to the general one |
 | `OTEL_EXPORTER_OTLP_HEADERS` (and per signal) | Sent with every export |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` (and per signal) | Milliseconds; 10 s when unset |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` (and per signal) | A PEM file of CA certificates trusted alongside the bundled Mozilla roots |
+| `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` (and per signal) | PEM files of the client certificate chain and its key, for a collector that requires mutual TLS; one without the other is an error |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name` |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*` | Read by the OpenTelemetry SDK itself |
 
 The builder's `with_otlp_endpoint`, `with_otlp_protocol`, `with_otlp_header`
 and `with_ca_certificate_pem` set the same things in code, and — as in the
-OpenTelemetry SDK — a value set in code wins over the variable. Client
-certificates (mutual TLS to the collector) are not supported yet.
+OpenTelemetry SDK — a value set in code wins over the variable.
+`with_client_certificate_pem` is the exception: client certificate files the
+environment names win over it, as a header variable wins over a header set in
+code. The certificate and key are parsed when the exporters are built, so a
+file that is not PEM, or (on OTLP/HTTP) a key that is not the certificate's,
+fails `build` rather than every export.
+
+JSON bodies (`http/json`) are the `otlp-json` feature, off by default even in
+`a2a-protocol-sdk`: `opentelemetry-otlp`'s `http-json` feature also makes JSON
+the protocol of every exporter in the process that is built without one, and
+Cargo's feature unification would impose that on an application's own
+exporters.
 
 Things it gets right that hand-wiring tends not to, each covered by a test in
 `crates/a2a-protocol-server/tests/telemetry_export/`:
@@ -160,8 +176,10 @@ Things it gets right that hand-wiring tends not to, each covered by a test in
 **gRPC only** (`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect on them), must be
 called from inside a Tokio runtime — outside one they panic with `there is no
 reactor running`, which release builds' `panic = "abort"` turns into a process
-abort — and their `service_name` argument overwrites `OTEL_SERVICE_NAME`,
-the opposite of what the environment specification prescribes. Calling one
+abort — and their `service_name` argument, an `Option<&str>` since 0.15, names
+the service only when `OTEL_SERVICE_NAME` (or `service.name` in
+`OTEL_RESOURCE_ATTRIBUTES`) does not, as the environment specification
+prescribes; before 0.15 it overwrote them. Calling one
 twice replaces the first provider and silently orphans it. New code should use
 `Telemetry`.
 
@@ -176,27 +194,27 @@ treat them as the contract.
 | Metric | Type | Unit | Meaning |
 |---|---|---|---|
 | `rpc.server.call.duration` | histogram | s | Every inbound call, on every binding, by method and outcome |
-| `a2a.server.requests` | counter | request | Inbound A2A requests |
-| `a2a.server.responses` | counter | response | Outbound A2A responses |
-| `a2a.server.errors` | counter | error | Request errors |
-| `a2a.server.latency` | histogram | s | Request latency |
-| `a2a.server.queue_depth` | gauge | queue | Active event queues |
-| `a2a.server.persistence_errors` | counter | error | Store writes that failed |
-| `a2a.server.push_deliveries` | counter | delivery | Push attempts, by `outcome` |
-| `a2a.server.pool.active` | gauge | connection | In-use HTTP connections |
-| `a2a.server.pool.idle` | gauge | connection | Idle HTTP connections |
-| `a2a.server.pool.created` | counter | connection | Connections created since start |
-| `a2a.server.pool.closed` | counter | connection | Connections closed on error or timeout |
+| `a2a.server.requests` | counter | `{request}` | Inbound A2A requests |
+| `a2a.server.responses` | counter | `{response}` | Outbound A2A responses |
+| `a2a.server.errors` | counter | `{error}` | Request errors |
+| `a2a.server.request.duration` | histogram | s | Request duration (named `a2a.server.latency` before 0.15) |
+| `a2a.server.queue_depth` | gauge | `{queue}` | Active event queues |
+| `a2a.server.persistence_errors` | counter | `{error}` | Store writes that failed |
+| `a2a.server.push_deliveries` | counter | `{delivery}` | Push attempts, by `outcome` |
+| `a2a.server.pool.active` | gauge | `{connection}` | In-use HTTP connections |
+| `a2a.server.pool.idle` | gauge | `{connection}` | Idle HTTP connections |
+| `a2a.server.pool.created` | counter | `{connection}` | Connections created since start |
+| `a2a.server.pool.closed` | counter | `{connection}` | Connections closed on error or timeout |
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
 instrument, with their advisory buckets (5 ms to 10 s) and attributes:
-`rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`, or
-`grpc`); `rpc.method`, the fully qualified method
+`rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`,
+`grpc`, or `slimrpc` for `a2a-protocol-slimrpc`); `rpc.method`, the fully qualified method
 (`lf.a2a.v1.A2AService/SendMessage`) or `_OTHER` for one the server does not
 serve; `rpc.status_code`; and, only when the call failed, `error.type`. Both
 are the status the binding answered with — the JSON-RPC error code (`-32001`),
-the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC also
-reports `OK`) — or `cancelled` for a call whose peer went away first. It
+the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC and
+SLIMRPC, which uses gRPC's status codes, also report `OK`) — or `cancelled` for a call whose peer went away first. It
 records calls the handler never sees: on JSON-RPC, a body that is not a
 request (no `rpc.method`), an unknown method, a batch over the limit; on
 HTTP+JSON, a request refused on its body or parameters, under the route's
@@ -204,10 +222,10 @@ method. For a streaming method it times the call up to the stream being
 established, not the stream.
 The same values reach a custom `Metrics` as `on_rpc_call`.
 
-`a2a.server.latency` is deprecated in its favour and stays until at least the
-next minor release, per `STABILITY.md` §3. It now uses the same buckets; it
-used the SDK's defaults, sized for milliseconds, which put every call under
-5 s in one bucket.
+`a2a.server.request.duration` times the same calls by A2A method, with the
+same buckets. Before 0.15 it was `a2a.server.latency`, deprecated in 0.14.0
+and removed in 0.15.0 per `STABILITY.md` §3; OpenTelemetry names a duration
+histogram `.duration`, so a dashboard built for the conventions finds it.
 
 The `pool` instruments are reported by the servers this crate runs — `serve`,
 `serve_with_addr` and `Server::serve_with_shutdown`. A connection is *active*
@@ -228,7 +246,8 @@ The dots are correct: OpenTelemetry names metrics this way
 But you should not have to guess the translated name, so here it is,
 measured rather than derived — rendered through `opentelemetry-prometheus`
 0.33.1, the version matching this crate's `opentelemetry_sdk` (re-measured
-2026-10-12 after the move from 0.32.0; every name is unchanged):
+2026-10-18 after the 0.15 rename and the move to UCUM units: the duration
+histogram's name follows the rename, and every other name is unchanged):
 
 | Instrument | Prometheus name |
 |---|---|
@@ -236,7 +255,7 @@ measured rather than derived — rendered through `opentelemetry-prometheus`
 | `a2a.server.requests` | `a2a_server_requests_total` |
 | `a2a.server.responses` | `a2a_server_responses_total` |
 | `a2a.server.errors` | `a2a_server_errors_total` |
-| `a2a.server.latency` | `a2a_server_latency_seconds` |
+| `a2a.server.request.duration` | `a2a_server_request_duration_seconds` |
 | `a2a.server.queue_depth` | `a2a_server_queue_depth` |
 | `a2a.server.persistence_errors` | `a2a_server_persistence_errors_total` |
 | `a2a.server.push_deliveries` | `a2a_server_push_deliveries_total` |
@@ -249,27 +268,16 @@ Counters gain `_total`, the histograms gain `_seconds` from their `s` unit,
 and gauges gain nothing. Every series also carries
 `otel_scope_name="a2a.server"` — the default meter name, changeable with
 `OtelMetricsBuilder::meter_name`. Alongside them the exporter emits
-`target_info`, a gauge whose `service_name` label is the `service_name` you
-passed to `init_otlp_pipeline`; that is where it lands, and the section
-above is why the environment cannot set it.
+`target_info`, a gauge whose `service_name` label is the service name:
+`OTEL_SERVICE_NAME` when set, otherwise the name passed to
+`init_otlp_pipeline`.
 
-**One known deviation, and a measurement that bounds it.** The Unit column
-above is not UCUM: the specification brace-annotates dimensionless counts
-(`{request}`, not `request`). Re-rendering the whole catalogue with UCUM
-units produces a **byte-identical** exposition — same names, same metadata,
-same SHA-256 — because this exporter only suffixes units it can translate,
-and `{request}` and `request` both translate to nothing. So the deviation is
-a metadata-correctness issue, not a cause of wrong metric names here; other
-exporters may treat it differently.
-
-The deviation that was visible — a duration histogram not named for the
-conventions, so a dashboard template built for OpenTelemetry RPC metrics
-found nothing — is answered by adding `rpc.server.call.duration`, the name
-such a template looks for, rather than renaming `a2a.server.latency`: the
-catalogue is published as a contract (see the line under *The catalogue*
-above), so the old name is deprecated first and removed in a later release
-with its own upgrade note. The UCUM units are left as they are, for the same
-reason and because the measurement above shows they change nothing here.
+**Units are UCUM since 0.15.** A dimensionless count is brace-annotated
+(`{request}`, `{connection}`), as the specification asks; before 0.15 they
+were bare words (`request`). Rendering the catalogue both ways through this
+exporter produces the same metric names, because it suffixes only units it
+can translate and translates neither form; the change corrects the metadata
+other exporters and backends read.
 
 ## The four signals worth alerting on
 
@@ -365,6 +373,14 @@ names may still change:
 
 The draft asks HTTP server spans to be renamed `{a2a.method.name}`; this SDK
 keeps one name per call on every binding (ADR 0013), as its gRPC rule does.
+
+**A binding outside `a2a-protocol-server`** records the same span and metric
+through `BindingSpan`: it names itself with a `CustomBinding` — its own
+`rpc.system.name` and the function that turns a `ServerError` into the status
+it sends — and runs each `RequestHandler` call inside
+`BindingSpan::open(..).run(..)`. `a2a-protocol-slimrpc` does this for all
+eleven methods, as `slimrpc`. Its `tests/telemetry.rs` checks the span and
+the metric over a real in-process SLIM fabric.
 
 Work spawned for the call runs in `INTERNAL` children of that span:
 `a2a.process_events`, `a2a.deliver_push`, `a2a.sse`, and the executor's run.
@@ -470,7 +486,10 @@ executor, under the executor's span; from anywhere else, under whatever span
 is current. `ClientBuilder::with_trace_propagation(false)` turns that off for
 a client calling agents that should not learn your trace ids. It applies to
 the transports the client builds for JSON-RPC, HTTP+JSON and gRPC, not to one
-supplied through `with_custom_transport`.
+supplied through `with_custom_transport`. Such a transport names the
+`rpc.system.name` its calls' spans carry through `Transport::rpc_system`
+(`jsonrpc` for `WebSocketTransport`, `slimrpc` for `SlimRpcTransport`); the
+span keeps the agent from the card either way.
 
 Without a recording layer, add `TracePropagationInterceptor` to the client and
 it writes the ambient `CurrentTrace` onto every request over JSON-RPC, REST or

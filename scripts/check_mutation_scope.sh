@@ -72,8 +72,30 @@ fi
 # pathspec, so this side of the comparison cannot inherit the same bug.
 INTENDED=$(git ls-files -- crates | grep -E '^crates/[^/]+/src/.+\.rs$' | sort)
 
-# What it actually covers.
-ACTUAL=$(git ls-files -- "$PATHSPEC" | sort)
+# What it actually covers. Since the job was split by crate (2026-10-18) the
+# pathspec names `${{ matrix.crate }}`, and git would read that literally and
+# match nothing; the shards between them cover the pathspec once for each
+# `crate:` in the job's matrix, so that union is what is compared.
+CRATE_EXPR='${{ matrix.crate }}'
+case $PATHSPEC in
+*"$CRATE_EXPR"*)
+    CRATES=$(awk '/^  mutants-incremental-shard:$/ {in_job = 1; next}
+                  in_job && /^  [A-Za-z0-9_-]+:$/ {exit}
+                  in_job && match($0, /crate: [A-Za-z0-9_-]+/) {
+                      print substr($0, RSTART + 7, RLENGTH - 7)
+                  }' "$WORKFLOW" | sort -u)
+    if [ -z "$CRATES" ]; then
+        printf 'check_mutation_scope: the pathspec names %s but no `crate:` entry was found\n' \
+            "$CRATE_EXPR" >&2
+        printf '  in the mutants-incremental-shard matrix of %s.\n' "$WORKFLOW" >&2
+        exit 2
+    fi
+    ACTUAL=$(for c in $CRATES; do git ls-files -- "${PATHSPEC//"$CRATE_EXPR"/$c}"; done | sort -u)
+    ;;
+*)
+    ACTUAL=$(git ls-files -- "$PATHSPEC" | sort)
+    ;;
+esac
 
 MISSING=$(comm -23 <(printf '%s\n' "$INTENDED") <(printf '%s\n' "$ACTUAL"))
 EXTRA=$(comm -13 <(printf '%s\n' "$INTENDED") <(printf '%s\n' "$ACTUAL"))

@@ -36,15 +36,17 @@ pub fn spawn_connection(
     let header_read_timeout = config.header_read_timeout;
 
     tokio::spawn(async move {
-        let service = super::super::service(
-            dispatcher,
-            connection.as_ref().map(connections::Connection::requests),
-            peer,
-        );
+        let requests = connection.as_ref().map(connections::Connection::requests);
         #[cfg(feature = "tls-rustls")]
         if let Some(tls) = accepted.tls {
             let result = match tls.handshake(io, header_read_timeout).await {
-                Ok(io) => serve_io(io, service, watcher, header_read_timeout).await,
+                Ok(io) => {
+                    // The leaf of the chain the client verifier accepted, so
+                    // the dispatchers can name the caller from it.
+                    let certificate = crate::tls::peer_certificate(io.get_ref().1);
+                    let service = super::super::service(dispatcher, requests, peer, certificate);
+                    serve_io(io, service, watcher, header_read_timeout).await
+                }
                 Err(_e) => {
                     trace_warn!(error = %_e, "TLS handshake failed");
                     Err(())
@@ -56,6 +58,7 @@ pub fn spawn_connection(
             drop(permit);
             return;
         }
+        let service = super::super::service(dispatcher, requests, peer, None);
         let result = serve_io(io, service, watcher, header_read_timeout).await;
         if let Some(connection) = connection {
             connection.close(result.is_err());
@@ -99,15 +102,16 @@ where
     // Installing the timer is what makes `header_read_timeout` real. Hyper
     // defaults it to 30s but silently drops it without one — `Time::check`
     // logs "has default, but no timer set" and returns `None` — so every
-    // server built this way, including `serve`, has been running with no
-    // header timeout at all while appearing to have hyper's.
+    // server built this way, including `serve` until it moved onto
+    // `Server` (2026-10-18), ran with no header timeout at all while
+    // appearing to have hyper's.
     builder
         .http1()
         .timer(hyper_util::rt::TokioTimer::new())
         .header_read_timeout(header_read_timeout);
     builder.http2().timer(hyper_util::rt::TokioTimer::new());
     let conn = builder.serve_connection(io, service);
-    // Unlike `serve`, the outcome is not discarded: a connection that died
+    // Unlike `serve`'s old accept loop, the outcome is not discarded: a connection that died
     // before serving anything is a fact an operator can act on, and
     // dropping it makes the two cases indistinguishable.
     // `_e` because `trace_warn!` compiles to nothing without the `tracing`

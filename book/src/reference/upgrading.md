@@ -140,6 +140,54 @@ These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can
 trip over.
 
+### `save_appending_history` takes a `HistoryLimit`
+
+A `TaskStore` that overrides `save_appending_history` takes
+`limit: HistoryLimit` where it took `max_history: usize`, and trims with
+`limit.trim(&mut history)`, which bounds bytes as well as messages (release
+audit F2). A caller that passed a count passes
+`HistoryLimit::new(count, usize::MAX)` for the old behaviour; the handler
+passes `TASK_HISTORY_LIMIT`, 1,024 messages and 16 MiB.
+
+### `a2a.server.latency` is gone; units are UCUM
+
+Dashboards and alerts on `a2a.server.latency` (Prometheus
+`a2a_server_latency_seconds`) read `a2a.server.request.duration`
+(`a2a_server_request_duration_seconds`) instead: the same histogram, same
+buckets, under the conventions' name. It was deprecated in 0.14.0. Units of
+counts are brace-annotated (`{request}`); the other Prometheus names are
+unchanged.
+
+### `Telemetry` is the `otlp` feature; `otel` is on by default
+
+On `a2a-protocol-server` directly, `Telemetry`, the `Langfuse` preset and
+`init_otlp_pipeline` need `features = ["otlp"]`; `otel` now means the
+instrumentation alone (`OtelMetrics`, the span bridge) and is a default
+feature of the server and the client. On `a2a-protocol-sdk` both are default
+and nothing changes. A build that must not link the OpenTelemetry API sets
+`default-features = false`.
+
+### `init_otlp_pipeline` takes `Option<&str>`
+
+Wrap the service name in `Some`. It now names the service only when
+`OTEL_SERVICE_NAME` (or `service.name` in `OTEL_RESOURCE_ATTRIBUTES`) does
+not; a deployment that set both used to get the argument and now gets the
+environment's value.
+
+### Cards and push configs that would leak or drop a credential are refused
+
+`build()` and every card handler refuse a card with a credential in one of its
+URLs (user information, or a query parameter named like a secret such as
+`token` or `api_key`); move it out of the card. Creating a push config whose
+`authentication` names a scheme but carries no credentials is refused with
+`InvalidParams` on `authentication.credentials`; leave `authentication` out
+for an unauthenticated webhook.
+
+### `ConvertError` and `SseParseError` are `#[non_exhaustive]`
+
+Build a `ConvertError` with `ConvertError::new(field, reason)`, and give a
+`match` on `SseParseError` a wildcard arm.
+
 ### HTTP+JSON answers `application/a2a+json` unless asked otherwise
 
 A response to a request that names no JSON type in `Accept` and sends no

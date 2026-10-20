@@ -94,6 +94,17 @@ pub enum OtlpProtocol {
     /// OTLP/HTTP with protobuf bodies, conventionally on port 4318 — the
     /// specification's default, and the one Langfuse accepts.
     HttpProtobuf,
+    /// OTLP/HTTP with JSON bodies, on the same port as protobuf. Needs the
+    /// `otlp-json` feature.
+    #[cfg(feature = "otlp-json")]
+    HttpJson,
+}
+
+impl OtlpProtocol {
+    /// Whether the transport is OTLP/HTTP, whose endpoint is per signal.
+    pub(super) const fn is_http(self) -> bool {
+        !matches!(self, Self::Grpc)
+    }
 }
 
 /// `OTEL_SDK_DISABLED=true` turns every signal off.
@@ -150,16 +161,40 @@ pub(super) fn protocol(
     match value.trim() {
         "grpc" => Ok(OtlpProtocol::Grpc),
         "http/protobuf" => Ok(OtlpProtocol::HttpProtobuf),
-        "http/json" => Err(TelemetryError::config(
-            &var,
-            &value,
-            "OTLP/HTTP with JSON bodies is not compiled in; use `http/protobuf`",
-        )),
+        "http/json" => http_json(&var, &value),
         _ => Err(TelemetryError::config(
             &var,
             &value,
-            "expected `grpc` or `http/protobuf`",
+            "expected `grpc`, `http/protobuf` or `http/json`",
         )),
+    }
+}
+
+/// `http/json`, which only the `otlp-json` feature can export.
+///
+/// One function with the feature split inside it rather than two `#[cfg]`
+/// match arms, for the reason `build_jwks_client` gives: under
+/// `--all-features` the `not(otlp-json)` arm is compiled out, so deleting it
+/// builds and passes every test, and the mutation gate reported it as a
+/// survivor no test could reach.
+#[cfg_attr(
+    feature = "otlp-json",
+    allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)
+)]
+fn http_json(var: &str, value: &str) -> Result<OtlpProtocol, TelemetryError> {
+    #[cfg(feature = "otlp-json")]
+    {
+        let _ = (var, value);
+        Ok(OtlpProtocol::HttpJson)
+    }
+    #[cfg(not(feature = "otlp-json"))]
+    {
+        Err(TelemetryError::config(
+            var,
+            value,
+            "OTLP/HTTP with JSON bodies is not compiled in: enable the `otlp-json` feature, \
+             or use `http/protobuf`",
+        ))
     }
 }
 
@@ -181,6 +216,40 @@ pub(super) fn timeout(env: &Env, signal: Signal) -> Result<Duration, TelemetryEr
 /// `OTEL_EXPORTER_OTLP_CERTIFICATE`.
 pub(super) fn certificate_file(env: &Env, signal: Signal) -> Option<(String, String)> {
     signal.otlp_var(env, "CERTIFICATE")
+}
+
+/// The client certificate and key files for mutual TLS with the collector,
+/// if any, each as `(variable, path)`:
+/// `OTEL_EXPORTER_OTLP_{SIGNAL}_CLIENT_CERTIFICATE` and `..._CLIENT_KEY`, each
+/// falling back to its general variable on its own, as the specification
+/// defines them.
+///
+/// # Errors
+///
+/// One without the other: a certificate cannot be presented without its key,
+/// and a key alone names nothing to present, so either is a misconfiguration
+/// that would otherwise connect without a client certificate and say nothing.
+pub(super) fn client_identity_files(
+    env: &Env,
+    signal: Signal,
+) -> Result<Option<[(String, String); 2]>, TelemetryError> {
+    match (
+        signal.otlp_var(env, "CLIENT_CERTIFICATE"),
+        signal.otlp_var(env, "CLIENT_KEY"),
+    ) {
+        (None, None) => Ok(None),
+        (Some(cert), Some(key)) => Ok(Some([cert, key])),
+        (Some((var, value)), None) => Err(TelemetryError::config(
+            &var,
+            &value,
+            "a client certificate needs its key: set OTEL_EXPORTER_OTLP_CLIENT_KEY too",
+        )),
+        (None, Some((var, value))) => Err(TelemetryError::config(
+            &var,
+            &value,
+            "a client key needs its certificate: set OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE too",
+        )),
+    }
 }
 
 /// Whether the environment names the service, in which case it wins over
@@ -267,14 +336,33 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "otlp-json"))]
     #[test]
-    fn protocol_refuses_json_and_garbage_naming_the_variable() {
+    fn protocol_refuses_json_without_the_feature_naming_both() {
         let e = env(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")]);
         let msg = protocol(&*e, Signal::Traces, None).unwrap_err().to_string();
         assert!(
-            msg.contains("OTEL_EXPORTER_OTLP_PROTOCOL") && msg.contains("http/json"),
+            msg.contains("OTEL_EXPORTER_OTLP_PROTOCOL")
+                && msg.contains("http/json")
+                && msg.contains("otlp-json"),
             "{msg}"
         );
+    }
+
+    #[cfg(feature = "otlp-json")]
+    #[test]
+    fn protocol_reads_json_with_the_feature() {
+        let e = env(&[("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")]);
+        assert_eq!(
+            protocol(&*e, Signal::Logs, None).unwrap(),
+            OtlpProtocol::HttpJson
+        );
+        assert!(OtlpProtocol::HttpJson.is_http());
+    }
+
+    #[test]
+    fn protocol_refuses_garbage_naming_the_variable() {
+        assert!(!OtlpProtocol::Grpc.is_http() && OtlpProtocol::HttpProtobuf.is_http());
         let e = env(&[("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "udp")]);
         let msg = protocol(&*e, Signal::Logs, None).unwrap_err().to_string();
         assert!(msg.contains("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"), "{msg}");
@@ -319,6 +407,51 @@ mod tests {
             "service.namespace=x"
         )])));
         assert!(!service_name_from_env(&*env(&[])));
+    }
+
+    #[test]
+    fn a_client_identity_takes_both_files_each_falling_back_on_its_own() {
+        assert!(
+            client_identity_files(&*env(&[]), Signal::Traces)
+                .unwrap()
+                .is_none()
+        );
+        let e = env(&[
+            ("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", "/c.pem"),
+            ("OTEL_EXPORTER_OTLP_CLIENT_KEY", "/k.pem"),
+            ("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", "/tk.pem"),
+        ]);
+        let [cert, key] = client_identity_files(&*e, Signal::Traces).unwrap().unwrap();
+        assert_eq!(cert.1, "/c.pem");
+        assert_eq!(
+            key,
+            (
+                "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY".to_owned(),
+                "/tk.pem".to_owned()
+            )
+        );
+        let [_, key] = client_identity_files(&*e, Signal::Logs).unwrap().unwrap();
+        assert_eq!(key.1, "/k.pem");
+    }
+
+    #[test]
+    fn half_a_client_identity_is_refused_naming_the_variable_set() {
+        let e = env(&[("OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE", "/c.pem")]);
+        let msg = client_identity_files(&*e, Signal::Metrics)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE") && msg.contains("KEY"),
+            "{msg}"
+        );
+        let e = env(&[("OTEL_EXPORTER_OTLP_CLIENT_KEY", "/k.pem")]);
+        let msg = client_identity_files(&*e, Signal::Logs)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("OTEL_EXPORTER_OTLP_CLIENT_KEY") && msg.contains("CERTIFICATE"),
+            "{msg}"
+        );
     }
 
     #[test]

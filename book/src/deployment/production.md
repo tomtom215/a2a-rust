@@ -73,8 +73,8 @@ The built-in `HttpPushSender` includes:
 > `http://` and `https://` webhooks. Without the feature it is plaintext-only
 > and rejects an `https://` webhook with a clear error; supply a TLS-capable
 > `PushSender` implementation via `with_push_sender` in that configuration —
-> `PushSender` is a public, pluggable trait and the SSRF-validation helpers
-> are reusable.
+> `PushSender` is a public, pluggable trait and the SSRF validation is public
+> in `a2a_protocol_server::url_guard`.
 
 ### Path Traversal Protection
 

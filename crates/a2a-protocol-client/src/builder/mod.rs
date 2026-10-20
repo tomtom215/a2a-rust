@@ -115,6 +115,10 @@ pub struct ClientBuilder {
     /// What [`ClientBuilder::with_extensions`] asks for; checked, and sent,
     /// by the build.
     pub(super) extensions: Vec<String>,
+    /// The extensions the card marks `required`, which the build insists
+    /// the client asks for; `None` unless the builder came from a card, and
+    /// cleared by [`ClientBuilder::skip_required_extension_check`].
+    pub(super) required_extensions: Option<Vec<String>>,
 }
 
 impl ClientBuilder {
@@ -140,6 +144,7 @@ impl ClientBuilder {
             agent: None,
             declared: None,
             extensions: Vec::new(),
+            required_extensions: None,
         }
     }
 
@@ -255,6 +260,15 @@ impl ClientBuilder {
                 &card.capabilities,
             )),
             extensions: Vec::new(),
+            required_extensions: Some(
+                card.capabilities
+                    .extensions
+                    .iter()
+                    .flatten()
+                    .filter(|e| e.required == Some(true))
+                    .map(|e| e.uri.clone())
+                    .collect(),
+            ),
         })
     }
 
@@ -302,10 +316,14 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the TCP connection timeout (DNS + handshake).
+    /// Sets the TCP connect timeout.
     ///
     /// Defaults to 10 seconds. Prevents hanging for the OS default (~2 min)
-    /// when the server is unreachable.
+    /// when the server is unreachable. It bounds the TCP handshake only,
+    /// after the name is resolved, and is divided evenly across the
+    /// addresses a name resolves to (hyper-util's `HttpConnector`); name
+    /// resolution and the TLS handshake are bounded by the request timeout.
+    /// Until 2026-10-18 this said it covered DNS too, which it does not.
     #[must_use]
     pub const fn with_connection_timeout(mut self, timeout: Duration) -> Self {
         self.config.connection_timeout = timeout;
@@ -488,6 +506,34 @@ impl ClientBuilder {
         self
     }
 
+    /// Refuses a push-notification config whose webhook URL is `http://`
+    /// to a host other than loopback, before sending it (spec §13.2).
+    ///
+    /// Without this such a config is sent and a warning is logged. See
+    /// [`ClientConfig::require_https_webhooks`].
+    #[must_use]
+    pub const fn require_https_webhooks(mut self) -> Self {
+        self.config.require_https_webhooks = true;
+        self
+    }
+
+    /// Refuses a call that carries a credential to an `http://` or `ws://`
+    /// endpoint on a host other than loopback, before sending it (spec
+    /// §13.4: "Credentials SHOULD be transmitted only over encrypted
+    /// connections").
+    ///
+    /// A credential is an `Authorization`, `Proxy-Authorization` or `Cookie`
+    /// header, whichever interceptor wrote it, or the header or query
+    /// parameter an [`AuthInterceptor::api_key`](crate::auth::AuthInterceptor::api_key)
+    /// writes. Without this such a call is sent and a warning logged, once
+    /// per client. Loopback (`localhost`, `127.0.0.0/8`, `::1`) is allowed
+    /// either way.
+    #[must_use]
+    pub const fn require_https_credentials(mut self) -> Self {
+        self.interceptors.refuse_plaintext_credentials();
+        self
+    }
+
     /// Sends every call, whatever the agent card declares.
     ///
     /// A client built from a card refuses, before sending anything, a call
@@ -586,6 +632,22 @@ impl ClientBuilder {
         self.extensions = uris.into_iter().map(Into::into).collect();
         self
     }
+
+    /// Builds even when the card marks an extension `required` that
+    /// [`with_extensions`](Self::with_extensions) does not ask for.
+    ///
+    /// a2a.proto `AgentExtension.required`: "If true, the client must
+    /// understand and comply with the extension's requirements". A client
+    /// built from a card refuses, at build, with
+    /// `ExtensionSupportRequired`, to talk to an agent whose required
+    /// extension it has not declared, rather than have every call refused
+    /// by the agent. Call this when an interceptor of yours sends the
+    /// `A2A-Extensions` header instead. Since 2026-10-18.
+    #[must_use]
+    pub fn skip_required_extension_check(mut self) -> Self {
+        self.required_extensions = None;
+        self
+    }
 }
 
 impl std::fmt::Debug for ClientBuilder {
@@ -596,6 +658,9 @@ impl std::fmt::Debug for ClientBuilder {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod required_extensions_tests;
 
 #[cfg(test)]
 mod tests {

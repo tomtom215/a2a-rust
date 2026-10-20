@@ -305,5 +305,9 @@ the two-hop runs measured here.
 2. **G3** — decide fail-closed or not. Either answer is small to implement.
 3. **G2** — durable child records plus reattach, exercised by a swarm run
    that kills a supervisor partway through.
-4. **G1-B and G5** — the lease and deadline extension, with a run that kills
-   a supervisor and measures how quickly its children stop.
+4. **G1-B and G5** — ~~G1-B~~ done 2026-10-18 (ADR 0020): the lease
+   extension, `Delegation::start_leased` and the server's lease store.
+   `crates/a2a-protocol-client/tests/delegation_lease_tests.rs` stops a
+   parent renewing and finds its child `canceled` within three times the
+   time to live; a swarm run that kills a supervisor process is not done.
+   G5, the deadline, is not built.

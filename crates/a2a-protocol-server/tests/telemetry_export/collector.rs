@@ -2,7 +2,8 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Stand-in OTLP collectors: plaintext HTTP, HTTPS behind a private CA, and
-//! gRPC. Each records what it receives and decodes it as a real collector
+//! gRPC, each over TLS optionally requiring a client certificate the CA
+//! signed. OTLP/HTTP bodies may be protobuf or JSON. Each records what it receives and decodes it as a real collector
 //! would, so a test asserts on spans, metrics and log records rather than on
 //! bytes having arrived.
 //!
@@ -40,6 +41,8 @@ use opentelemetry_proto::tonic::common::v1::any_value::Value;
 use opentelemetry_proto::tonic::trace::v1::Span;
 use prost::Message as _;
 use tokio::sync::oneshot;
+
+use super::certs::TestCerts;
 
 /// One export request as the collector saw it. gRPC requests are recorded
 /// under the OTLP/HTTP path of their signal, re-encoded, so one decoder
@@ -111,19 +114,41 @@ impl Collector {
         })
     }
 
-    /// OTLP/HTTP over TLS, presenting `chain` for `localhost`.
+    /// OTLP/HTTP over TLS, presenting the `localhost` certificate.
     pub fn https(certs: &TestCerts) -> Self {
-        let config = rustls::ServerConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .expect("protocol versions")
-        .with_no_client_auth()
-        .with_single_cert(
-            vec![certs.server_cert.clone()],
-            certs.server_key.clone_key(),
-        )
-        .expect("server cert");
+        Self::https_with(certs, false)
+    }
+
+    /// OTLP/HTTP over TLS, refusing a client without a certificate the
+    /// private CA signed.
+    pub fn https_requiring_client_cert(certs: &TestCerts) -> Self {
+        Self::https_with(certs, true)
+    }
+
+    fn https_with(certs: &TestCerts, client_auth: bool) -> Self {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let builder = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
+            .with_safe_default_protocol_versions()
+            .expect("protocol versions");
+        let builder = if client_auth {
+            let mut roots = rustls::RootCertStore::empty();
+            roots.add(certs.ca_cert.clone()).expect("CA");
+            let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+                Arc::new(roots),
+                provider,
+            )
+            .build()
+            .expect("client verifier");
+            builder.with_client_cert_verifier(verifier)
+        } else {
+            builder.with_no_client_auth()
+        };
+        let config = builder
+            .with_single_cert(
+                vec![certs.server_cert.clone()],
+                certs.server_key.clone_key(),
+            )
+            .expect("server cert");
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
         Self::start(move |listener, log, stopped| {
             serve_http(listener, log, Some(acceptor), vec![200], stopped)
@@ -137,15 +162,29 @@ impl Collector {
 
     /// OTLP/gRPC over TLS, presenting the `localhost` certificate.
     pub fn grpcs(certs: &TestCerts) -> Self {
+        Self::grpcs_with(certs, false)
+    }
+
+    /// OTLP/gRPC over TLS, refusing a client without a certificate the
+    /// private CA signed.
+    pub fn grpcs_requiring_client_cert(certs: &TestCerts) -> Self {
+        Self::grpcs_with(certs, true)
+    }
+
+    fn grpcs_with(certs: &TestCerts, client_auth: bool) -> Self {
         // tonic's *server* builds its rustls config from the process default
         // provider (`server/service/tls.rs`, tonic 0.14.6), and this test
         // binary links both `ring` and `aws-lc-rs`, so rustls refuses to
         // choose. The client side needs nothing: tonic picks `ring` itself
         // when no default is installed. Installing one twice is harmless.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        Self::grpc_with(Some(tonic::transport::ServerTlsConfig::new().identity(
+        let mut tls = tonic::transport::ServerTlsConfig::new().identity(
             tonic::transport::Identity::from_pem(&certs.server_cert_pem, &certs.server_key_pem),
-        )))
+        );
+        if client_auth {
+            tls = tls.client_ca_root(tonic::transport::Certificate::from_pem(&certs.ca_pem));
+        }
+        Self::grpc_with(Some(tls))
     }
 
     fn grpc_with(tls: Option<tonic::transport::ServerTlsConfig>) -> Self {
@@ -319,12 +358,18 @@ async fn serve_http(
                                 (k.as_str().to_owned(), v.to_str().unwrap_or("").to_owned())
                             })
                             .collect();
+                        let json = headers_say_json(&headers);
                         let body = req
                             .into_body()
                             .collect()
                             .await
                             .map(|b| b.to_bytes().to_vec())
                             .unwrap_or_default();
+                        let body = if json {
+                            json_to_protobuf(&path, &body)
+                        } else {
+                            body
+                        };
                         let status = {
                             let mut log = log.lock().expect("lock");
                             log.push(Received {
@@ -368,6 +413,30 @@ async fn serve_http(
                 }
             }
         });
+    }
+}
+
+fn headers_say_json(headers: &HashMap<String, String>) -> bool {
+    headers
+        .get("content-type")
+        .is_some_and(|t| t.starts_with("application/json"))
+}
+
+/// An OTLP/JSON request body, decoded as a collector does and re-encoded as
+/// protobuf, so one decoder serves both encodings. A body that does not
+/// decode panics the collector's connection, and the export fails.
+fn json_to_protobuf(path: &str, body: &[u8]) -> Vec<u8> {
+    match path {
+        "/v1/traces" => serde_json::from_slice::<ExportTraceServiceRequest>(body)
+            .expect("an OTLP/JSON trace request")
+            .encode_to_vec(),
+        "/v1/metrics" => serde_json::from_slice::<ExportMetricsServiceRequest>(body)
+            .expect("an OTLP/JSON metrics request")
+            .encode_to_vec(),
+        "/v1/logs" => serde_json::from_slice::<ExportLogsServiceRequest>(body)
+            .expect("an OTLP/JSON logs request")
+            .encode_to_vec(),
+        other => panic!("no OTLP signal at {other}"),
     }
 }
 
@@ -422,38 +491,5 @@ impl LogsService for Grpc {
     ) -> Result<tonic::Response<ExportLogsServiceResponse>, tonic::Status> {
         self.record("/v1/logs", req);
         Ok(tonic::Response::new(ExportLogsServiceResponse::default()))
-    }
-}
-
-/// A private CA and a `localhost` certificate it signed.
-pub struct TestCerts {
-    pub ca_pem: String,
-    pub server_cert_pem: String,
-    pub server_key_pem: String,
-    pub server_cert: rustls_pki_types::CertificateDer<'static>,
-    pub server_key: rustls_pki_types::PrivateKeyDer<'static>,
-}
-
-pub fn test_certs() -> TestCerts {
-    let mut ca_params = rcgen::CertificateParams::new(vec![]).unwrap();
-    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    ca_params
-        .distinguished_name
-        .push(rcgen::DnType::CommonName, "Telemetry Test CA");
-    let ca_key = rcgen::KeyPair::generate().unwrap();
-    let ca_cert = ca_params.self_signed(&ca_key).unwrap();
-    let issuer = rcgen::Issuer::new(ca_params, ca_key);
-    let mut server_params = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
-    server_params
-        .distinguished_name
-        .push(rcgen::DnType::CommonName, "localhost");
-    let server_key = rcgen::KeyPair::generate().unwrap();
-    let server_cert = server_params.signed_by(&server_key, &issuer).unwrap();
-    TestCerts {
-        ca_pem: ca_cert.pem(),
-        server_cert_pem: server_cert.pem(),
-        server_key_pem: server_key.serialize_pem(),
-        server_cert: server_cert.der().clone(),
-        server_key: rustls_pki_types::PrivateKeyDer::try_from(server_key.serialize_der()).unwrap(),
     }
 }

@@ -66,11 +66,20 @@ pub trait ContentCipher: Send + Sync + 'static {
 /// plaintexts' XOR and lets an attacker forge values, is no longer
 /// negligible. The budget is per key, so it is shared by every process
 /// holding the key and by push configs sealed with the same ring.
-/// [`EncryptedTaskStore`](super::EncryptedTaskStore) seals every part of a
-/// task on each write, so the count grows with the size of tasks: an
-/// artifact streamed in `n` chunks costs about `n²/2` seals.
-/// [`seal_count`](Self::seal_count) says how many this cipher has made;
-/// rotate the active key well before the sum across processes nears 2^32.
+/// [`EncryptedTaskStore`](super::EncryptedTaskStore) seals the parts a write
+/// stores: on an in-place artifact or status write, only the new ones, so an
+/// artifact streamed in `n` chunks costs about `n` seals (until 2026-10-18,
+/// about `n²/2`; release audit F7).
+/// [`seal_count`](Self::seal_count) says how many this cipher has made.
+///
+/// The budget is enforced per cipher: past [`DEFAULT_SEAL_LIMIT`] (2^32),
+/// or the limit set with [`with_seal_limit`](Self::with_seal_limit), a seal
+/// fails, and with it the store's write, rather than risk a repeated nonce.
+/// A warning is logged at half the limit and at nine tenths. The count starts
+/// at zero with each cipher, and the true budget is per key across every
+/// process and restart that seals with it, so a deployment of several
+/// replicas, or one that restarts, should set the limit to its share of
+/// 2^32 and rotate the active key well before any process reaches it.
 ///
 /// With the `sqlite` or `postgres` feature, also a `PushConfigCipher`, so
 /// the SQL push-config stores' `with_cipher` can take the same ring.
@@ -88,7 +97,12 @@ pub struct Aes256GcmCipher {
     keys: HashMap<String, LessSafeKey>,
     random: SystemRandom,
     seals: AtomicU64,
+    limit: u64,
 }
+
+/// The most values one [`Aes256GcmCipher`] seals before refusing: 2^32, the
+/// bound SP 800-38D §8.3 sets for a key used with random 96-bit nonces.
+pub const DEFAULT_SEAL_LIMIT: u64 = 1 << 32;
 
 impl std::fmt::Debug for Aes256GcmCipher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -98,6 +112,7 @@ impl std::fmt::Debug for Aes256GcmCipher {
             .field("active", &self.active)
             .field("key_ids", &ids)
             .field("seals", &self.seal_count())
+            .field("limit", &self.limit)
             .finish_non_exhaustive()
     }
 }
@@ -126,7 +141,17 @@ impl Aes256GcmCipher {
             keys,
             random: SystemRandom::new(),
             seals: AtomicU64::new(0),
+            limit: DEFAULT_SEAL_LIMIT,
         })
+    }
+
+    /// Refuses to seal past `limit` values (default [`DEFAULT_SEAL_LIMIT`]):
+    /// this process's share of the active key's budget. See the nonce budget
+    /// above.
+    #[must_use]
+    pub const fn with_seal_limit(mut self, limit: u64) -> Self {
+        self.limit = limit;
+        self
     }
 
     /// Adds `key` under `key_id`, for opening values sealed with it; the
@@ -174,6 +199,27 @@ impl Aes256GcmCipher {
     }
 
     fn seal_now(&self, mut plaintext: Vec<u8>, context: &[u8]) -> A2aResult<Vec<u8>> {
+        // Counted before sealing, so that two concurrent seals can never both
+        // be the one past the limit; a seal that then fails still counts,
+        // which errs toward the budget.
+        let n = self.seals.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+        if n > self.limit {
+            self.seals.fetch_sub(1, Ordering::Relaxed);
+            return Err(A2aError::internal(format!(
+                "the active key {:?} has sealed this cipher's limit of {} values; rotate it: \
+                 build the cipher with a new active key and keep this one in the ring to open \
+                 what it sealed",
+                self.active, self.limit
+            )));
+        }
+        if n == self.limit / 2 || n == self.limit / 10 * 9 {
+            trace_warn!(
+                key_id = %self.active,
+                sealed = n,
+                limit = self.limit,
+                "the active key is consuming its seal budget; rotate it before the limit"
+            );
+        }
         let key = &self.keys[&self.active];
         let mut nonce = [0_u8; NONCE_LEN];
         self.random
@@ -185,7 +231,6 @@ impl Aes256GcmCipher {
             &mut plaintext,
         )
         .map_err(|_| A2aError::internal("sealing failed"))?;
-        self.seals.fetch_add(1, Ordering::Relaxed);
         let id = self.active.as_bytes();
         let mut sealed = Vec::with_capacity(1 + id.len() + NONCE_LEN + plaintext.len());
         // `expand` refused any id longer than one byte can count.

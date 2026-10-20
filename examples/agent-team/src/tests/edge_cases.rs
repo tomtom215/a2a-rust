@@ -415,8 +415,8 @@ pub async fn test_error_metrics_tracked(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 30: Error metrics tracked");
     let err_before = ctx.analyzer_metrics.error_count();
-    // Send empty parts to trigger error.
-    let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
+    // Empty parts, which the server refuses. Sent raw: the client refuses
+    // empty parts itself, before anything reaches the server.
     let params = MessageSendParams {
         tenant: None,
         message: Message {
@@ -432,10 +432,18 @@ pub async fn test_error_metrics_tracked(ctx: &TestContext) -> TestResult {
         configuration: None,
         metadata: None,
     };
-    let _ = client.send_message(params).await;
+    let body = super::coverage_gaps::jsonrpc_request(
+        serde_json::json!(1),
+        "SendMessage",
+        serde_json::to_value(&params).unwrap(),
+    );
+    let refused = match super::coverage_gaps::post_raw(&ctx.analyzer_url, &body).await {
+        Ok((_, resp)) => resp.contains("\"error\""),
+        Err(_) => false,
+    };
     let err_after = ctx.analyzer_metrics.error_count();
-    println!("  Errors before={err_before} after={err_after}");
-    if err_after > err_before {
+    println!("  Errors before={err_before} after={err_after} refused={refused}");
+    if refused && err_after > err_before {
         TestResult::pass(
             "error-metrics-tracked",
             start.elapsed().as_millis(),

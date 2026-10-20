@@ -22,58 +22,71 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Merged:** pull request #171 (`claude/funny-heisenberg-e6tl83`) merged as
-  `c9035931` on 2026-10-15. Work continues on `claude/lucid-edison-4hn5kb`,
-  started from that merge; no pull request is open for it yet.
+- **Working branch:** `claude/charming-lamport-yp20d6`, started 2026-10-18
+  from `main` at `86c8fac` (pull request #172 merged). Pull request #173
+  is open for it (2026-10-19). `git log 86c8fac..` lists its commits; each message says what
+  it changed and how it was verified.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. No entry is NOT_SUPPORTED since 2026-10-15. The
-  five PARTIAL entries each wait on something outside this repository:
-  §3.5.2 MUST (an explicit `streamLagged` only where the log no longer
-  holds the events), §5.7 MUST (the spec contradicts itself), §12.4 MUST
-  and §5.4 SHOULD (agntcy-slim-rpc carries no error details; the SLIMRPC
-  table lacks three rows), §11.1 SHOULD (a2a-go reads only
-  `application/json` errors). The reports are in `docs/upstream/`, held.
+  authority on the counts. Since 2026-10-18 it also refuses `SUPPORTED` or
+  `NOT_SUPPORTED` on anything but a MAY or OPTIONAL: 23 entries had used it
+  for a MUST or SHOULD, 12 of them now `TESTED` and 11 `APPLICATION` (each
+  note says which hook the SDK gives). Three entries stay PARTIAL, each
+  short of a MUST for a reason outside this repository: §3.5.2 (a lag
+  beyond the in-memory log's 512 events), §5.7 (the specification
+  contradicts itself on an empty `ListTasksResponse.tasks`) and §12.4
+  (agntcy-slim-rpc carries no error details). §5.4 and §11.1 closed on
+  2026-10-18: the SLIMRPC README has the full error table, and §11.1's one
+  exception is a stated, valid reason to set aside a SHOULD (a2a-go). Every
+  NOT_APPLICABLE and APPLICATION entry records a 2026-10-18 review.
 - **Ledger citations drift:** the checker verifies test names, not line
   text, so any edit above a cited line moves its citation silently. After
   editing a cited file, re-derive test lines by name and map
-  `impl_evidence` lines through a line diff from the last commit (this
-  branch's commits did both; 52, then 63 citations had drifted).
+  `impl_evidence` lines through a line diff from the last commit.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
-  no other trailers. `CONTRIBUTING.md` and `PROVENANCE.md` §3.2 say the same
-  since 2026-10-15.
+  no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
 
 ## Next, in order
 
-The session plan the maintainer set on 2026-10-14 numbers its steps 0 to 6.
-Steps 0 to 2 are done (red workflows, the v1.0.1 re-anchor and the approved
-audit-register items, the EU AI Act control map), as are the PARTIAL MUSTs
-that code could close and R69.
-
-1. **Step 3 — the unfinished items.**
-   - **Split the incremental mutation job by crate.** Its slowest shard had
-     about ten minutes of headroom when measured on 2026-10-14
-     (`handoff-history.md`, tender-cray item 107).
-   - **Freshness:** record the first 24-shard weekly mutation sweep in
-     `book/src/reference/mutation-history.md` after it runs (Monday
-     2026-10-19); after the next release, check the versioned docs deploy
-     (`docs.yml` runs on `workflow_run: [Release]` and has not yet fired).
-   - The plan also named "rustdoc links"; nothing open matches it, so it is
-     dropped unless the maintainer says what was meant.
-2. **Step 4 — OpenTelemetry on by default** (decided 2026-10-14):
-   instrumentation on by default in every crate; the OTLP exporter default-on
-   in `a2a-protocol-sdk` only. Not started: the SDK's `default` is
-   `["tls-rustls", "tracing"]`.
-3. **Steps 5 and 6 — a release-readiness audit for 0.15.0, then debt.** The
-   release itself follows `RELEASING.md` and needs the signing key below.
-   Debt is *Open engineering* below, by the maintainer's priority.
-4. **The 2026-10-15 decisions** (*Decisions the maintainer made*): the idle
-   bound, lag paging, `application/a2a+json`, card freshness, R13 and the
-   part-level at-rest cipher (`EncryptedTaskStore`, `encryption` feature)
-   are built (this branch's commits); the three metric changes go with
-   Step 4. On 2026-10-16 the maintainer approved audit-record protection
-   with crypto-shredding (`AuditLog::with_privacy`, ADR 0015 amended); with
-   it GDPR-25-1 and GDPR-32-1a are `supported` and GDPR-5-1e stays
-   `partial`. What is left is in *Open engineering* under **Privacy**.
+1. **Mutation testing of this branch's diff.** CI's incremental job
+   (split by crate on this branch: types 2, client 2, sdk 1, server 10
+   shards) grades it once a pull request is open. A local run with `lld`
+   and `-j 2` takes roughly a minute a mutant; survivors found so far were
+   fixed in the branch, and the last local results are in the session
+   report, not here.
+2. **APPLICATION entries (35).** 22 were re-examined and kept on
+   2026-10-18 (each note says why); 11 are card-content, deployment or
+   agent-reasoning requirements the SDK only warns about or hands the agent
+   (moved from a mistaken `SUPPORTED`). What could still become SDK work:
+   §3.1.11 423 (a client preflight that the credentials it attaches match
+   a declared scheme), §8.4.3 x5c certificate expiry, a JWT revocation list
+   (`jti`).
+3. **Official TCK.** Re-run against the newest a2a-tck before a pull request
+   that changes wire behaviour (`--min-graded 88` full, 66 minimal).
+   Re-run 2026-10-19 on this branch at `8aef50d` (a2a-tck `263b9cf`, debug
+   SUT): the full gate graded 88 with the 9 baselined failures, the minimal
+   gate 66; both exit 0. Re-run it after any further wire change.
+4. **Step 4 — OpenTelemetry on by default**, with the exporter staying in
+   `a2a-protocol-sdk` only (decided 2026-10-18). Done 2026-10-18: UCUM
+   units, `a2a.server.latency` removed for `a2a.server.request.duration`,
+   `init_otlp_pipeline(Option<&str>)` with the environment first, ADR 0013
+   Accepted, and the split: `otel` (instrumentation, the API only) is a
+   default feature of the server, client and SDK, and `otlp` (`Telemetry`,
+   the exporters) is default in the SDK only. Also done 2026-10-18: mTLS
+   to the collector and `http/json` (the opt-in `otlp-json` feature; see the
+   CHANGELOG for why it is not in `otlp`), and the server span and
+   `rpc.server.call.duration` on SLIMRPC through the new public
+   `BindingSpan` (ADR 0013, 2026-10-18 section), with
+   `Transport::rpc_system` naming custom transports on client spans. The
+   RPC semantic conventions were re-read on upstream `main` that day and
+   match every name used. Step 4 is complete.
+5. **Freshness:** the 2026-10-19 sweep is recorded in
+   `book/src/reference/mutation-history.md`, from the shards' logs (the
+   artifacts could not be downloaded here). It is incomplete: three of the
+   24 `a2a-server` shards hit the 240-minute limit, so the shard count or
+   the timeout needs raising again before a sweep is whole. Its three
+   survivors have tests on this branch (the row names them). After the next release,
+   check the versioned docs deploy.
+6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 
 ## Waiting on the maintainer
 
@@ -81,26 +94,17 @@ that code could close and R69.
   `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
   tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
-  each with its status): among them the SLIMRPC error-mapping disagreement
-  (§12 / §5.4) and §5.7's non-empty required arrays against an empty
-  `ListTasksResponse.tasks`. On 2026-10-15 the maintainer asked for those two
-  to be re-verified and held, not filed. The a2a-go draft for R19 is
-  deliberately not committed: it was never checked against a2a-go's source.
+  each with its status), held on 2026-10-15 for re-verification. The a2a-go
+  draft for R19 is deliberately not committed: it was never checked against
+  a2a-go's source. Nothing is filed upstream without asking.
 - **A private advisory to a2a-python** (GHSA, filed by the maintainer; see
-  `handoff-history.md`, `claude/nifty-fermat-roj04f`). Do not file a public
-  issue while it is open.
+  `handoff-history.md`, `claude/nifty-fermat-roj04f`). Do not file anything
+  public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
-- **Publishing:** the SLIMRPC binding has never been published (0.7.0;
-  `RELEASING.md`'s binding step has never run). `tck/sut` and
-  `examples/mcp-bridge` are `publish = false`; CLI binaries wait on
-  `vars.PUBLISH_CLI_BINARIES` (`packaging/README.md`).
-- **Decisions never asked**, each documented as current behaviour:
-  the default tenant store caps tenants but not the total across partitions
-  (`book/src/deployment/multi-tenancy.md`); the approval-gate refusal under
-  caller isolation; `RateLimitInterceptor` keys an unidentified caller as
-  `"anonymous"`, not by peer address; a WebSocket `Origin` allowlist (the
-  ledger's §13.4 note).
+- **Publishing:** the SLIMRPC binding has never been published (0.7.0).
+  `tck/sut` and `examples/mcp-bridge` are `publish = false`; CLI binaries
+  wait on `vars.PUBLISH_CLI_BINARIES` (`packaging/README.md`).
 
 ## In flight outside this repository
 
@@ -117,60 +121,42 @@ that code could close and R69.
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
-  `tests/multi_replica.rs` that is ignored by default); a halt across replicas and G1-B
-  (`ROADMAP.md`); a stale unscoped write from another replica keeps a stored
-  position whose effect it overwrote (`store/applied.rs`).
-- **Client:** the gRPC transport drops `RetryInfo` on `RESOURCE_EXHAUSTED`
-  (`transport/grpc.rs`, `retry_after: None`); no check for an empty
-  `messageId` or empty parts before sending; no behavioural test of
-  `connection_timeout`.
-- **Server:** empty push credentials are sent as a bare `Bearer` prefix with nothing after it (`push/sender.rs`);
-  no `412` for a non-GET request with a matching `If-None-Match`
-  (`agent_card/caching.rs`); TLS on `serve`, `serve_with_addr` and the
-  WebSocket listener (only `Server::with_tls` has it); JSON-RPC and REST on
-  one socket without a hand-written accept loop; `find_task_by_context`
-  clones full history and `RequestContext::stored_task` is `pub` (an API
-  decision, `handler/helpers.rs`).
-- **Privacy:** audit protection (`AuditLog::with_privacy`, ADR 0015 amended
-  2026-10-16, independently reviewed the same day) leaves what its module
-  docs list: an erased person's records stay linkable, keys survive in
-  backups and logs, erasure is not serialised across replicas.
-  `EncryptedTaskStore`
-  (independently reviewed 2026-10-15; its module docs list what it does not
-  protect) leaves ids, states, timestamps, `metadata` and the order of
-  messages and artifacts unprotected; it re-seals every part on every
-  write, which costs about `n²/2` seals for an artifact streamed in `n`
-  chunks against a 2^32 per-key budget and has not been timed; two
-  concurrent writers can leave a PostgreSQL record unreadable until its
-  next full write, because `postgres_store/artifact_delta.rs` appends
-  without checking the stored length. The task store has no notion of a
-  data subject (GDPR-5-1e).
-- **Observability:** the metric changes decided on 2026-10-15 are not built;
-  the single outcome counter was declined. ADR 0013 still says "Proposed"
-  though its decision (`otel::Telemetry`) has shipped; mTLS to the collector
-  and `http/json` OTLP are unsupported.
+  `tests/multi_replica.rs` that is ignored by default); a stale unscoped write from another
+  replica keeps a stored position whose effect it overwrote
+  (`store/applied.rs`).
+- **Server:** JSON-RPC parses a request's params
+  before the interceptor chain authenticates it (a malformed body is
+  refused `-32602` before `401`).
+- **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
+  module docs list: an erased person's records stay linkable, keys survive
+  in backups and logs, erasure is not serialised across replicas.
+  `erase_caller` (2026-10-18) removes a caller's partitions but not what a
+  caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
+  ids, states, timestamps, `metadata` and order unprotected, and its seal
+  limit is per process while the true budget is per key across processes
+  (F7 made deltas seal only what they store). Two concurrent writers no longer leave a record
+  unreadable: the SQL appends are compare-and-append (F5, 2026-10-18).
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
-  WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`,
-  suggested by a two-round run and not yet measured with the pinned-core
-  method (`handoff-history.md`, funny-heisenberg item 3); the
-  unexplained 0.9–1.8 µs `ListTasks` gap at 10K tasks.
-- **Interop:** `itk/interop/card_signature_interop.py` checks Python only;
-  a2a-go and @a2a-js are not covered. A Python agent in one cross-language
-  trace has not been run.
+  WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
+  measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
+  10K tasks.
+- **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
+  `scripts/go_sdk_interop.sh` re-run 2026-10-19 (debug build, a2a-go
+  v2.6.0): both directions pass. Leg 1, 52 checks; leg 1b (secured card),
+  38, now with the key enforced and a keyless call refused; leg 2, every
+  method on all three bindings. The first run failed leg 1b: this branch's
+  build check refused echo-agent's secured card, which nothing enforced.
+- **Control map (2026-10-18 review):** of the 13 `partial` rows, four
+  had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
+  caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
+  new dependency); AIA-14-4e's and ASI10's, a halt that persists and crosses replicas, is
+  closed too (ADR 0019), ASI08's, G1-B's lease (ADR 0020), and ASI03's,
+  the originating principal on delegated calls (ADR 0021, RFC 8693; it
+  needs an identity provider that supports token exchange). The rest, and all 19 `integrator` rows, are split
+  by nature (reviewed, unchanged).
 - **Gates:** a mutation shard that starts after its PR merges grades
-  nothing (low); the Windows stress-test connect failure, cause unknown
-  (`tests/stress_tests.rs`'s accept loop breaks on the first error); the
+  nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness still pins `=0.14.1`.
-- **Housekeeping:** found by the 2026-10-15 README review and not fixed:
-  `benches/sdk-comparison/scripts/run_itk.sh`'s usage header names
-  `run_acts.sh`, and both advertise a third argument neither reads;
-  `benches/scripts/run_benchmarks.sh` writes `"version": "0.5.0"` into its
-  summary; `benches/benches/cross_language.rs`'s doc comment describes ten
-  stream events and a cross-language payload the code does not have;
-  `alloc_count.rs` names an `ALLOC_REPORT_MS` that does not exist;
-  `.github/dependabot.yml` cites PROVENANCE §3.3 for the exemption in §3.2;
-  the SDK's `Cargo.toml` says the client verifies nothing under `signing`,
-  though card discovery can verify signatures.
 
 ## Waivers and their removal tests
 
@@ -218,6 +204,12 @@ it.
 - **2026-10-16:** the audit trail protects who and what its records name,
   with per-person keys that can be destroyed (crypto-shredding), amending
   ADR 0015 — chosen over keyed digests alone and over deferring it.
+- **2026-10-18:** the OTLP exporter stays in `a2a-protocol-sdk` only; the
+  WebSocket listener gets an opt-in `Origin` allowlist (built,
+  `with_allowed_origins`); an unidentified caller is rate-limited by its
+  peer address (built); a total-task cap across tenant partitions is an
+  option (built, `TenantStoreConfig::with_max_total_tasks`), and the
+  approval-gate refusal under caller isolation stays.
 - **Earlier, still standing:** tool calling stays in the examples, not the
   crates (`examples/rig-agent`); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
@@ -249,8 +241,7 @@ it.
 
 ## Branches
 
-Only two kinds matter: the working branch (`claude/lucid-edison-4hn5kb`,
-above) and the storage branches (`claude/adk-rust-0.12-patch`,
+Only two kinds matter: the working branch (*Now*, above) and the storage branches (`claude/adk-rust-0.12-patch`,
 `claude/a2a-rig-held`), both built against 0.12. Every other `claude/*` branch is merged or a pre-0.12 session branch;
 deleting them is the maintainer's call. To check one:
 
@@ -266,7 +257,10 @@ into this file: the commit that records it changes it.
 
 - **Disk** is a fixed allowance: `CARGO_INCREMENTAL=0`, and delete
   `target/semver-checks` and the incremental directories when space runs
-  low. A linker "bus error" (signal 7) means the disk is full.
+  low. A linker "bus error" (signal 7), or `linking with cc failed`,
+  means the disk is full. `bindings/a2a-protocol-slimrpc/target` reaches
+  12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
+  and delete it afterwards.
 - **PostgreSQL 16** is installed: `pg_ctlcluster 16 main start`, then
   `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`
   (password `postgres`).
@@ -296,6 +290,24 @@ into this file: the commit that records it changes it.
 - An independent review before committing found two defects in R69 that the
   change's own tests and 23 hand mutants did not; budget for one on any
   change to the stream or store contract.
+- Run every clippy invocation CI runs, not only `--all-features`: a type
+  used by an always-compiled store from a module gated on `sqlite` built
+  with all features and nowhere else (2026-10-18).
+- An end-to-end test of a new client helper found a server bug the
+  server's own tests missed: after a blocking send answered at
+  `AUTH_REQUIRED`, nothing stored the rest of the run. Test the path a
+  client takes, not only the one a handler test takes.
+- A cargo-mutants run spends almost all its time building: link with `lld`
+  (`RUSTFLAGS="-C link-arg=-fuse-ld=lld"`), pass `--test` filters through
+  `--`, run it detached from a pinned worktree, and resume with
+  `--iterate`.
+- An `--in-place` mutation run, or a hand mutant, interrupted by a
+  container restart leaves the mutant in the source (2026-10-19): diff
+  against `HEAD` before anything else, and never commit while one runs.
+- A change to a crate's default features changes what `itk/` and `fuzz/`
+  resolve, though neither manifest changes: run `scripts/check_lockfiles.sh`
+  before a pull request. On 2026-10-19 `otel` by default left both stale,
+  and the ITK harness's `cargo build --locked` failed every scenario.
 
 ## History
 

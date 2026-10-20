@@ -162,6 +162,28 @@ break; every use site now gets a compiler warning naming the replacement.
 
 If you set `max_stored_tasks` and wondered why nothing was capped: that is why.
 
+### A total across every tenant
+
+Each partition's `max_capacity` bounds that tenant, so the default store's
+bound overall is `max_tenants × max_capacity`: ten million tasks at the
+defaults. `TenantStoreConfig::with_max_total_tasks(n)` (since 0.15) caps the
+sum. A write that would add a new task at the total first evicts the
+writer's own partition's oldest finished task; when that partition holds
+none, the write is refused as temporary (HTTP `503`, gRPC `UNAVAILABLE`). A
+write to a task already held is never refused, another tenant's tasks are
+never evicted to make room, and a running task never is.
+`TenantAwareInMemoryTaskStore::total_tasks()` reports the count. The SQL
+tenant stores have no total; size their tables with the database.
+
+```rust
+use a2a_protocol_server::{TenantAwareInMemoryTaskStore, TenantStoreConfig};
+
+let store = TenantAwareInMemoryTaskStore::with_config(
+    TenantStoreConfig::default().with_max_total_tasks(100_000),
+);
+assert_eq!(store.total_tasks(), Some(0));
+```
+
 ## Callers within one tenant
 
 A tenant is a boundary between organisations, not between the people in one.
@@ -209,6 +231,40 @@ subscribe to Alice's, and register a webhook on them):
   so other groups stay out.
 * A handler with no authenticating interceptor has no identities to keep apart
   and shares, as before.
+
+### Erasing a caller
+
+Spec §13.4 says agents SHOULD let users ask for their data to be deleted.
+With callers isolated, a caller's data is exactly its partitions, so every
+tenant-aware store has `erase_caller(identity)`: it removes that caller's
+partitions in every tenant, with their tasks, logged events and idempotency
+keys (task stores) or webhooks (push-config stores), in one transaction on
+the SQL stores, and reports how many partitions and rows went. The identity
+is the one the interceptor set, such as `bearer:alice` or
+`jwt:<issuer>:<sub>` (`auth::caller_id` builds them). Keep a handle to each
+store (`with_task_store_arc`, `with_push_config_store_arc`) to call it.
+
+```rust
+# async fn run() {
+use std::sync::Arc;
+use a2a_protocol_server::push::TenantAwareInMemoryPushConfigStore;
+use a2a_protocol_server::store::TenantAwareInMemoryTaskStore;
+
+let tasks = Arc::new(TenantAwareInMemoryTaskStore::new());
+let webhooks = Arc::new(TenantAwareInMemoryPushConfigStore::new());
+// ... builder.with_task_store_arc(tasks.clone()).with_push_config_store_arc(webhooks.clone())
+
+let caller = a2a_protocol_server::auth::caller_id::bearer("alice");
+let removed = tasks.erase_caller(&caller).await;
+let _ = webhooks.erase_caller(&caller).await;
+println!("{} partitions, {} rows", removed.partitions, removed.rows);
+# }
+```
+
+It does not reach records the caller left in the tenant's shared partition
+(an unlabelled credential, or `share_tasks_across_callers`), which name no
+one; audit records, which `AuditLog::erase_subject` handles; or copies in
+backups and logs.
 
 ## What is not isolated
 

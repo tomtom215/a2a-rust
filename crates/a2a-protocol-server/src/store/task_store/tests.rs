@@ -123,6 +123,15 @@ fn task_store_config_default_values() {
         config.idempotency_key_ttl,
         Some(super::DEFAULT_IDEMPOTENCY_KEY_TTL)
     );
+    assert_eq!(
+        config.max_idempotency_keys,
+        Some(super::DEFAULT_MAX_IDEMPOTENCY_KEYS)
+    );
+    assert_eq!(
+        super::DEFAULT_MAX_IDEMPOTENCY_KEYS,
+        100_000,
+        "documented as about 230 MB at the cap in the worst case"
+    );
     // Spelled `24 * 3600` at the definition, so the arithmetic is pinned to
     // the day it documents rather than to whatever that expression evaluates
     // to. A key kept for an hour instead of a day would expire inside a
@@ -149,6 +158,7 @@ fn task_store_config_clone_and_debug() {
         max_page_size: 100,
         max_events_per_task: Some(8),
         idempotency_key_ttl: None,
+        max_idempotency_keys: None,
     };
     let cloned = config;
     assert_eq!(cloned.max_capacity, Some(500));

@@ -50,10 +50,11 @@ yanked    = "deny"
 # it runs at compile time and is not linked into any binary. It reaches the
 # graph only through `genai` 0.6, which only the two example agents
 # (`genai-a2a-agent`, `incident-response`) depend on; none of the four
-# published crates does (`cargo tree -i paste`). genai 0.7.0-beta.24 still
-# depends on it. Remove this entry when genai drops `paste`, for instance
-# for the `pastey` fork the advisory suggests, or when the examples leave
-# genai.
+# published crates does (`cargo tree -i paste`). Re-checked 2026-10-18:
+# genai's latest stable release, 0.6.5, still depends on it; its 0.7.0
+# release candidates (0.7.0-rc.8, 2026-10-16) depend on the `pastey` fork
+# the advisory suggests instead. Remove this entry when genai 0.7.0 is
+# released and the examples move to it, or when the examples leave genai.
 ignore    = [
     { id = "RUSTSEC-2024-0436", reason = "paste (unmaintained, informational) is a compile-time proc-macro reached only via genai 0.6 in the two example agents; no published crate depends on it. See the note above." },
 ]
@@ -104,6 +105,12 @@ ignore    = [
 #     return their input unchanged. Present so three proved-equivalent mutants
 #     can be marked `#[mutants::skip]` in source (ADR 0006). It introduces no
 #     duplicate version and no new license.
+#   * `ring` 0.17 in `a2a-protocol-client`, optional under the `webhook`
+#     feature (2026-10-18), for SHA-256 in the webhook receiver. Not a new
+#     crate: the default `tls-rustls` build already links ring 0.17.14
+#     through rustls and hyper-rustls (`cargo tree -p a2a-protocol-client
+#     -i ring`, same day). License `Apache-2.0 AND ISC`, both on the allow
+#     list. No new duplicate version.
 multiple-versions = "deny"
 wildcards         = "warn"
 

@@ -205,7 +205,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 
 | Feature | Location |
 |---|---|
-| **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+| **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder` (`otel` feature), `init_otlp_pipeline` (`otlp` feature) |
 | **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics/mod.rs` — `ConnectionPoolStats`, `on_connection_pool_stats` |
 | **Hot-reload agent cards** | `crates/a2a-protocol-server/src/agent_card/hot_reload.rs` — file polling + SIGHUP reload |
 | **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration/` — `MigrationRunner`, V1–V8 migrations |

@@ -25,9 +25,10 @@ use a2a_example_harness::Binding;
 use a2a_example_harness::{Endpoints, interfaces};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
-use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
+use a2a_protocol_server::dispatch::{CombinedDispatcher, JsonRpcDispatcher};
 use a2a_protocol_server::handler::RequestHandler;
 use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
+use a2a_protocol_server::serve::Server;
 use a2a_protocol_types::agent_card::AgentCapabilities;
 
 use crate::{RigAgent, RigAgentExecutor, make_agent_card};
@@ -97,40 +98,13 @@ where
     Ok(ep)
 }
 
-/// JSON-RPC and REST on one socket, routed by request shape.
+/// JSON-RPC and REST on one socket: a `POST` to `/` is JSON-RPC, everything
+/// else is REST (`CombinedDispatcher`).
 fn serve_combined(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) {
-    let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
-    let rest = Arc::new(RestDispatcher::new(handler));
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let jsonrpc = Arc::clone(&jsonrpc);
-            let rest = Arc::clone(&rest);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
-                    let jsonrpc = Arc::clone(&jsonrpc);
-                    let rest = Arc::clone(&rest);
-                    async move {
-                        let is_jsonrpc = req.method() == hyper::Method::POST
-                            && (req.uri().path() == "/" || req.uri().path().is_empty());
-                        if is_jsonrpc {
-                            Ok::<_, std::convert::Infallible>(jsonrpc.dispatch(req).await)
-                        } else {
-                            Ok::<_, std::convert::Infallible>(rest.dispatch(req).await)
-                        }
-                    }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
-    });
+    tokio::spawn(
+        Server::from_listener(listener)
+            .serve_with_shutdown(CombinedDispatcher::new(handler), std::future::pending()),
+    );
 }
 
 /// An agent advertising no optional capabilities, for the counter-tests.

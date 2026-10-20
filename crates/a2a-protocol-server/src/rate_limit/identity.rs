@@ -18,14 +18,45 @@ use crate::call_context::CallContext;
 /// Extracts the caller key from the call context.
 ///
 /// See the module docs ("Caller identity") for the derivation order and
-/// the `x-forwarded-for` trust model.
+/// the `x-forwarded-for` trust model. Each kind of key carries its own
+/// prefix (`id:`, `ip:`, and `anon` alone), and the per-tenant bucket is
+/// `tenant:`, so no caller identity can name another kind's bucket: until
+/// 2026-10-18 an identity was the bare key, and one spelled `anonymous` or
+/// `tenant:acme` spent that bucket's budget (release audit F11).
 pub fn caller_key(ctx: &CallContext, trusted_proxy_hops: usize) -> String {
     if let Some(identity) = ctx.caller_identity() {
-        return identity.to_owned();
+        return format!("id:{identity}");
     }
-    // Without a forwarded client address (no trusted hops, no header, or
-    // fewer entries than trusted hops), the shared anonymous bucket.
-    forwarded_client(ctx, trusted_proxy_hops).unwrap_or_else(|| "anonymous".to_string())
+    if let Some(client) = forwarded_client(ctx, trusted_proxy_hops) {
+        return format!("ip:{}", network_of(&client));
+    }
+    // With no trusted proxy, the connection's own peer is the client: one
+    // budget per address (the maintainer's 2026-10-18 decision) rather than
+    // one shared by every unidentified caller. Behind trusted proxies the
+    // peer is the last proxy, so a request whose forwarded chain was too
+    // short keeps the shared bucket rather than the proxy's.
+    if trusted_proxy_hops == 0
+        && let Some(peer) = ctx.peer_addr()
+    {
+        return format!("ip:{}", network_of(&peer.ip().to_canonical().to_string()));
+    }
+    "anon".to_owned()
+}
+
+/// The budget an address spends: an IPv4 address alone, an IPv6 address's
+/// `/64`. A single host is routinely given a whole `/64`, so keying by the
+/// full address would let it mint 2^64 buckets, and fill the bounded bucket
+/// map against everyone else, from one machine. A value that is not an
+/// address is returned unchanged.
+fn network_of(canonical: &str) -> String {
+    match canonical.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V6(v6)) => {
+            let s = v6.segments();
+            let net = std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0);
+            format!("{net}/64")
+        }
+        _ => canonical.to_owned(),
+    }
 }
 
 /// The client address `hops` trusted reverse proxies appended to

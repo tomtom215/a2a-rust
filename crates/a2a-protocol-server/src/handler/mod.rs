@@ -22,10 +22,11 @@
 mod capability;
 mod concurrency;
 mod event_processing;
-mod halt;
+pub(crate) mod halt;
 pub(crate) mod helpers;
 pub(crate) mod input_modes;
 mod introspection;
+pub(crate) mod lease;
 mod lifecycle;
 mod limits;
 /// Per-key locks shared by the messaging and push-config paths.
@@ -34,9 +35,12 @@ mod messaging;
 mod push_config;
 mod push_config_page;
 mod shutdown;
+mod undeclared_binding;
 
-pub use halt::{HaltReport, HaltScope};
+pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
+pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
+pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
 pub use shutdown::{InFlightReport, ShutdownReport};
 
@@ -94,6 +98,10 @@ pub struct RequestHandler {
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
+    /// Whether a message's file references must point outside private
+    /// networks; see
+    /// [`refuse_private_file_urls`](crate::builder::RequestHandlerBuilder::refuse_private_file_urls).
+    pub(crate) file_urls: crate::handler::FileUrls,
     pub(crate) tenant_resolver: Option<Arc<dyn TenantResolver>>,
     pub(crate) tenant_config: Option<PerTenantConfig>,
     /// When `true`, a configured resolver that returns `None` (no tenant could
@@ -155,8 +163,13 @@ pub struct RequestHandler {
     /// every executor and background processor is spawned on. See
     /// [`RequestHandler::cancel_in_flight`].
     pub(crate) in_flight: shutdown::InFlight,
-    /// The halts in force; see [`RequestHandler::halt`].
-    pub(crate) halts: std::sync::RwLock<halt::Halts>,
+    /// The halts in force; see [`RequestHandler::halt`]. Shared, so a halt
+    /// store's poller can hold it weakly.
+    pub(crate) halts: Arc<std::sync::RwLock<halt::Halts>>,
+    /// The halt store this handler follows, if any; see [`halt::sync`].
+    pub(crate) halt_sync: Option<Arc<halt::sync::HaltSync>>,
+    /// The leases this handler grants and watches, if any; see [`lease`].
+    pub(crate) leases: Option<lease::Leases>,
     /// Checks approval decisions on continuations; see [`crate::approval`].
     pub(crate) approval_gate: Option<crate::approval::ApprovalGate>,
     /// The audit log, when the handler was built with one.
@@ -471,8 +484,14 @@ pub enum SendMessageResult {
 }
 
 #[cfg(test)]
+mod context_lookup_cost;
+#[cfg(test)]
+mod context_lookup_tests;
+#[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]
 mod tenant_limits_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod undeclared_binding_tests;

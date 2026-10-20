@@ -10,9 +10,11 @@ name: Coverage
 
 on:
   push:
-    # `claude/**` as in ci.yml: a branch's coverage is uploaded under its
-    # own name, so the number can be read back before a PR exists.
-    branches: ["main", "claude/**"]
+    # `main` only, as in ci.yml: a PR branch is covered by the
+    # `pull_request` event, and pushing `claude/**` too ran the job twice per
+    # push. A branch's coverage can still be read back before a PR exists by
+    # running this workflow on it with `workflow_dispatch`.
+    branches: ["main"]
   pull_request:
     branches: [main]
   # On demand as well, so a change to the upload step can be proven without
@@ -72,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-10-08
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
           toolchain: stable
           components: llvm-tools-preview

@@ -29,7 +29,7 @@
 //! exporter performs no I/O against the endpoint. Each test shuts its
 //! provider down so the periodic export task does not outlive it.
 
-#![cfg(feature = "otel")]
+#![cfg(feature = "otlp")]
 
 use a2a_protocol_server::otel::init_otlp_pipeline;
 
@@ -37,7 +37,7 @@ use a2a_protocol_server::otel::init_otlp_pipeline;
 /// listening, and the returned provider shuts down cleanly.
 #[tokio::test]
 async fn init_otlp_pipeline_builds_and_shuts_down() {
-    let provider = init_otlp_pipeline("a2a-otel-pipeline-test")
+    let provider = init_otlp_pipeline(Some("a2a-otel-pipeline-test"))
         .expect("pipeline should build without a reachable collector");
 
     // Shutdown is the documented contract for graceful termination, and it
@@ -63,7 +63,8 @@ async fn init_otlp_pipeline_builds_and_shuts_down() {
 async fn pipeline_provider_produces_usable_instruments() {
     use opentelemetry::metrics::MeterProvider as _;
 
-    let provider = init_otlp_pipeline("a2a-otel-instrument-test").expect("pipeline should build");
+    let provider =
+        init_otlp_pipeline(Some("a2a-otel-instrument-test")).expect("pipeline should build");
 
     let meter = provider.meter("a2a-otel-instrument-test");
     let counter = meter.u64_counter("test.requests").build();
@@ -84,7 +85,7 @@ async fn pipeline_provider_produces_usable_instruments() {
 async fn init_otlp_pipeline_accepts_arbitrary_service_names() {
     let long = "a".repeat(256);
     for name in ["", "with spaces", "unicode-éè", long.as_str()] {
-        let provider = init_otlp_pipeline(name)
+        let provider = init_otlp_pipeline(Some(name))
             .unwrap_or_else(|e| panic!("service_name {name:?} should be accepted, got {e}"));
         provider
             .shutdown()
@@ -98,8 +99,8 @@ async fn init_otlp_pipeline_accepts_arbitrary_service_names() {
 /// twice silently discards the first pipeline.
 #[tokio::test]
 async fn init_otlp_pipeline_is_callable_twice_last_write_wins() {
-    let first = init_otlp_pipeline("a2a-otel-first").expect("first pipeline should build");
-    let second = init_otlp_pipeline("a2a-otel-second").expect("second pipeline should build");
+    let first = init_otlp_pipeline(Some("a2a-otel-first")).expect("first pipeline should build");
+    let second = init_otlp_pipeline(Some("a2a-otel-second")).expect("second pipeline should build");
 
     first.shutdown().expect("first should shut down cleanly");
     second.shutdown().expect("second should shut down cleanly");

@@ -74,9 +74,25 @@
 //!    client-controlled, so by default (`trusted_proxy_hops == 0`) it is
 //!    ignored entirely — otherwise a caller could evade the limit by forging
 //!    a fresh address on every request.
-//! 3. A shared `"anonymous"` key. All remaining callers share one budget,
-//!    which keeps the limit enforceable (fail-closed) at the cost of
-//!    granularity.
+//! 3. The connection's peer address, when `trusted_proxy_hops` is zero and
+//!    the binding records one (every built-in listener does: `serve`,
+//!    `Server`, axum with `ConnectInfo` or `PeerAddr`, gRPC, WebSocket).
+//!    An IPv4 address is one budget; an IPv6 address spends its `/64`'s,
+//!    since one host is routinely given a whole `/64`. Behind trusted
+//!    proxies the peer is the proxy, so it is not used. Until 2026-10-18
+//!    this step did not exist and every such caller shared step 4's budget
+//!    (the maintainer's decision of that day).
+//! 4. A shared `anon` key. The remaining callers (a forwarded chain shorter
+//!    than `trusted_proxy_hops`, or a transport that records no peer)
+//!    share one budget, which keeps the limit enforceable (fail-closed) at
+//!    the cost of granularity.
+//!
+//! Keys carry their kind as a prefix (`id:`, `ip:`, `tenant:`, `anon`), so
+//! a caller identity can never name another kind's bucket.
+//!
+//! Size [`RateLimitConfig::max_buckets`] for the distinct client addresses
+//! one window can see: once it is full of live buckets, a new address is
+//! refused (fail-closed).
 //!
 //! # Design
 //!
@@ -137,7 +153,9 @@ struct CallerBucket {
 ///    them *before* this interceptor, or it runs first and sees none)
 /// 2. Client IP from `x-forwarded-for`, only when
 ///    [`RateLimitConfig::trusted_proxy_hops`] is non-zero
-/// 3. `"anonymous"` fallback (shared bucket)
+/// 3. The connection's peer address (IPv6 by `/64`), when
+///    `trusted_proxy_hops` is zero
+/// 4. `anon` fallback (shared bucket)
 pub struct RateLimitInterceptor {
     config: RateLimitConfig,
     buckets: RwLock<HashMap<String, CallerBucket>>,
@@ -330,6 +348,8 @@ impl ServerInterceptor for RateLimitInterceptor {
     }
 }
 
+#[cfg(test)]
+mod keying_tests;
 #[cfg(test)]
 mod shared_tests;
 #[cfg(test)]

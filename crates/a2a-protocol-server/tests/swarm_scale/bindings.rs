@@ -86,6 +86,11 @@ mod websocket {
         let handler = Arc::new(
             RequestHandlerBuilder::new(crate::harness::ChannelExec)
                 .with_agent_card(swarm_card())
+                // The card declares push notifications, and the builder
+                // refuses a card whose push-config operations could only
+                // answer PushNotificationNotSupported (spec §3.3.4). The
+                // harness wires the same sender; this arm never pushes.
+                .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
                 .build()
                 .expect("handler builds"),
         );

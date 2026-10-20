@@ -29,6 +29,10 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+// docs.rs builds with `--cfg docsrs` (each manifest's
+// `[package.metadata.docs.rs]`): show which feature each item needs (release
+// audit F27). Nightly-only, so stable builds never see it.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
@@ -120,6 +124,7 @@ pub mod extensions;
 pub mod failure;
 pub mod idempotency;
 pub mod jsonrpc;
+pub mod lease;
 pub mod message;
 pub mod method;
 mod oneof;

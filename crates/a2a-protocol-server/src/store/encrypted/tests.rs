@@ -109,7 +109,10 @@ async fn every_write_seals() {
     assert_sealed(&json(&held(&inner, "t1").await));
 
     let turn = vec![Message::user_text("h3", format!("{SECRET} next"))];
-    store.save_appending_history(&t, &turn, 10).await.unwrap();
+    store
+        .save_appending_history(&t, &turn, crate::store::HistoryLimit::new(10, usize::MAX))
+        .await
+        .unwrap();
     let stored = held(&inner, "t1").await;
     assert_sealed(&json(&stored));
     assert_eq!(stored.history.as_ref().map(Vec::len), Some(3));
@@ -128,7 +131,10 @@ async fn every_write_seals() {
 async fn an_append_with_no_record_seals_the_task_it_inserts() {
     let (store, inner) = wrapped(cipher("k1", 1));
     let t = task("t1");
-    store.save_appending_history(&t, &[], 10).await.unwrap();
+    store
+        .save_appending_history(&t, &[], crate::store::HistoryLimit::new(10, usize::MAX))
+        .await
+        .unwrap();
     assert_sealed(&json(&held(&inner, "t1").await));
     assert_eq!(json(&store.get(&t.id).await.unwrap().unwrap()), json(&t));
 }

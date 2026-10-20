@@ -58,13 +58,24 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use crate::call_context::CallContext;
 use crate::interceptor::ServerInterceptor;
 
+#[cfg(feature = "auth-jwt")]
+mod actors;
 pub mod caller_id;
+mod credentials;
+pub(crate) mod declared;
 #[cfg(feature = "auth-jwt")]
 pub mod jwt;
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+mod mtls;
 pub mod throttle;
 
 #[cfg(feature = "auth-jwt")]
+pub use actors::MAX_ACTORS;
+pub use credentials::CredentialSet;
+#[cfg(feature = "auth-jwt")]
 pub use jwt::{Jwks, JwtAuthInterceptor, JwtValidator, MIN_HS256_SECRET_LEN};
+#[cfg(any(feature = "tls-rustls", feature = "grpc-tls"))]
+pub use mtls::MutualTlsAuthInterceptor;
 pub use throttle::{AuthFailureThrottle, AuthFailureThrottleConfig};
 
 /// The challenge the bearer-token interceptors send with a `401`.
@@ -168,7 +179,7 @@ fn labelled_constant_time_match<'a>(
 /// [`with_header`](Self::with_header).
 pub struct ApiKeyAuthInterceptor {
     header_name: String,
-    allowed: Vec<LabelledCredential>,
+    allowed: CredentialSet,
 }
 
 impl ApiKeyAuthInterceptor {
@@ -182,10 +193,11 @@ impl ApiKeyAuthInterceptor {
     {
         Self {
             header_name: "x-api-key".to_owned(),
-            allowed: keys
-                .into_iter()
-                .map(|k| (k.into().into_bytes(), None))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                keys.into_iter()
+                    .map(|k| (k.into().into_bytes(), None))
+                    .collect(),
+            ),
         }
     }
 
@@ -193,9 +205,10 @@ impl ApiKeyAuthInterceptor {
     ///
     /// The label becomes [`CallContext::caller_identity`], which is what
     /// [`RateLimitInterceptor`](crate::RateLimitInterceptor) keys a budget on.
-    /// Without labels every holder of a valid key shares the `"anonymous"`
-    /// bucket, so one noisy client spends everyone's budget — per-caller rate
-    /// limiting that is not per-caller.
+    /// Without labels a holder of a valid key is keyed by its address
+    /// instead, so every client behind one proxy, or with no recorded
+    /// address, shares a budget: rate limiting by where a request came from,
+    /// not by whose key it carried.
     ///
     /// The label is deliberately *not* derived from the key. A caller key is
     /// written to a rate-limit table that may be shared across replicas, and
@@ -222,10 +235,12 @@ impl ApiKeyAuthInterceptor {
     {
         Self {
             header_name: "x-api-key".to_owned(),
-            allowed: entries
-                .into_iter()
-                .map(|(k, label)| (k.into().into_bytes(), Some(label.into())))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                entries
+                    .into_iter()
+                    .map(|(k, label)| (k.into().into_bytes(), Some(label.into())))
+                    .collect(),
+            ),
         }
     }
 
@@ -234,6 +249,13 @@ impl ApiKeyAuthInterceptor {
     pub fn with_header(mut self, header_name: impl Into<String>) -> Self {
         self.header_name = header_name.into().to_ascii_lowercase();
         self
+    }
+
+    /// A handle to the keys this interceptor accepts, to add or revoke one
+    /// while it runs (spec §13.4: rotation and revocation).
+    #[must_use]
+    pub fn credentials(&self) -> CredentialSet {
+        self.allowed.clone()
     }
 }
 
@@ -259,7 +281,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                 .http_headers()
                 .get(&self.header_name)
                 .ok_or_else(|| auth_rejected(&challenge))?;
-            match labelled_constant_time_match(key.as_bytes(), &self.allowed) {
+            self.allowed.matching(key.as_bytes(), |found| match found {
                 CredentialMatch::NoMatch => Err(auth_rejected(&challenge)),
                 CredentialMatch::Unnamed => {
                     ctx.set_auth_scheme("api-key");
@@ -270,7 +292,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                     ctx.set_auth_scheme("api-key");
                     Ok(())
                 }
-            }
+            })
         })
     }
 
@@ -284,6 +306,17 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
     fn authenticates(&self) -> bool {
         true
     }
+
+    /// An API key in the header this interceptor reads.
+    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
+        use a2a_protocol_types::security::{ApiKeyLocation, SecurityScheme};
+        Some(matches!(
+            scheme,
+            SecurityScheme::ApiKey(key)
+                if key.location == ApiKeyLocation::Header
+                    && key.name.eq_ignore_ascii_case(&self.header_name)
+        ))
+    }
 }
 
 // ── BearerTokenAuthInterceptor ────────────────────────────────────────────────
@@ -294,7 +327,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
 /// For tokens that are *validated* rather than *enumerated* (signed JWTs), use
 /// `JwtAuthInterceptor` (the `auth-jwt` feature).
 pub struct BearerTokenAuthInterceptor {
-    allowed: Vec<LabelledCredential>,
+    allowed: CredentialSet,
 }
 
 impl BearerTokenAuthInterceptor {
@@ -306,10 +339,12 @@ impl BearerTokenAuthInterceptor {
         S: Into<String>,
     {
         Self {
-            allowed: tokens
-                .into_iter()
-                .map(|t| (t.into().into_bytes(), None))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                tokens
+                    .into_iter()
+                    .map(|t| (t.into().into_bytes(), None))
+                    .collect(),
+            ),
         }
     }
 
@@ -325,11 +360,20 @@ impl BearerTokenAuthInterceptor {
         L: Into<String>,
     {
         Self {
-            allowed: entries
-                .into_iter()
-                .map(|(t, label)| (t.into().into_bytes(), Some(label.into())))
-                .collect(),
+            allowed: CredentialSet::from_entries(
+                entries
+                    .into_iter()
+                    .map(|(t, label)| (t.into().into_bytes(), Some(label.into())))
+                    .collect(),
+            ),
         }
+    }
+
+    /// A handle to the tokens this interceptor accepts, to add or revoke one
+    /// while it runs (spec §13.4: rotation and revocation).
+    #[must_use]
+    pub fn credentials(&self) -> CredentialSet {
+        self.allowed.clone()
     }
 }
 
@@ -367,18 +411,19 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
                 .get("authorization")
                 .ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
             let token = extract_bearer(header).ok_or_else(|| auth_rejected(BEARER_CHALLENGE))?;
-            match labelled_constant_time_match(token.as_bytes(), &self.allowed) {
-                CredentialMatch::NoMatch => Err(auth_rejected(BEARER_CHALLENGE)),
-                CredentialMatch::Unnamed => {
-                    ctx.set_auth_scheme("bearer");
-                    Ok(())
-                }
-                CredentialMatch::Named(label) => {
-                    ctx.set_caller_identity(caller_id::bearer(label));
-                    ctx.set_auth_scheme("bearer");
-                    Ok(())
-                }
-            }
+            self.allowed
+                .matching(token.as_bytes(), |found| match found {
+                    CredentialMatch::NoMatch => Err(auth_rejected(BEARER_CHALLENGE)),
+                    CredentialMatch::Unnamed => {
+                        ctx.set_auth_scheme("bearer");
+                        Ok(())
+                    }
+                    CredentialMatch::Named(label) => {
+                        ctx.set_caller_identity(caller_id::bearer(label));
+                        ctx.set_auth_scheme("bearer");
+                        Ok(())
+                    }
+                })
         })
     }
 
@@ -391,6 +436,12 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
 
     fn authenticates(&self) -> bool {
         true
+    }
+
+    /// A bearer token: the HTTP `bearer` scheme, or the access token of an
+    /// OAuth 2.0 or `OpenID` Connect scheme, which is presented the same way.
+    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
+        Some(declared::is_bearer(scheme))
     }
 }
 
@@ -408,6 +459,9 @@ pub struct AuthenticatedPrincipal {
     pub subject: Option<String>,
     /// The token issuer (`iss` claim), when present.
     pub issuer: Option<String>,
+    /// The RFC 8693 `act` chain: the agents acting for the subject, nearest
+    /// first, each as [`caller_id::jwt`]; empty for a token that names none.
+    pub actors: Vec<String>,
 }
 
 /// Convenience alias for a shared principal.
@@ -415,6 +469,8 @@ pub type SharedPrincipal = Arc<AuthenticatedPrincipal>;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod declared_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]

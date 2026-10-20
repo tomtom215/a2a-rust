@@ -74,7 +74,7 @@ isn't mistaken for carelessness.
 
 On GitHub-hosted runners we have observed **tight-CI regressions of
 ~25-30 % appear on benchmarks whose production-code path did not
-change at all** in the PR. Two plausible mechanisms:
+change at all** in the PR. Three mechanisms, the third measured:
 
 1. **Runner heterogeneity.** GitHub rotates pool VMs with different
    CPU frequencies, cache sizes, and thermal budgets. Two consecutive
@@ -112,6 +112,25 @@ change at all** in the PR. Two plausible mechanisms:
    than LTO layout roulette. The full `main`-only suite that feeds the
    [dashboard][dashboard] still runs under the real fat-LTO shipping
    profile, so the published absolute numbers stay faithful to what ships.
+
+3. **Branch alignment, even without LTO.** "Compiled independently" did
+   not hold for serde_json's serializer: it is generic, so
+   `serde_json::to_vec::<Message>` is instantiated in the bench binary
+   itself, and its hot loop moves whenever the set of linked crates
+   changes. On 2026-10-19 a commit that changed only `Cargo.toml` feature
+   lists (`ce719b0`, `otel` on by default) reproduced the same
+   signature — `payload_scaling` serialize +58..89 % with tight CIs,
+   deserialize flat — under the gate's no-LTO build. Bisected locally on
+   an Intel Xeon @ 2.80 GHz to that one commit, the medians at
+   102 400 bytes were `to_vec` 60..71 µs before and 96..124 µs after.
+   Built with `-C llvm-args=-x86-branches-within-32B-boundaries` on both
+   sides, they were 54..55 µs and 50..61 µs: the gap is where a branch
+   lands relative to a 32-byte boundary (Intel's JCC erratum), not work
+   done per byte. **The gate therefore builds both sides with that flag**
+   (`RUSTFLAGS` on the `bench-regression` job). It constrains branch
+   placement only, so what the gate measures is the code without that
+   luck; the shipping build is not aligned this way, which is one more
+   reason the gate's absolute numbers are not the dashboard's.
 
 A threshold of 25 % was therefore unreliable: it failed PRs whose
 code demonstrably could not have caused a regression. Lifting the

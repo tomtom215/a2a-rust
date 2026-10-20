@@ -100,6 +100,10 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+// docs.rs builds with `--cfg docsrs` (each manifest's
+// `[package.metadata.docs.rs]`): show which feature each item needs (release
+// audit F27). Nightly-only, so stable builds never see it.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 // See `crates/a2a-protocol-server/src/lib.rs` for the full rationale behind this
@@ -123,6 +127,8 @@ mod call_span;
 mod declared;
 mod extensions;
 mod legacy_card;
+mod loopback;
+mod plaintext;
 mod redact;
 
 pub mod auth;
@@ -144,6 +150,8 @@ pub mod token_provider;
 pub mod trace_propagation;
 pub mod transport;
 pub mod version_query;
+#[cfg(feature = "webhook")]
+pub mod webhook;
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -172,3 +180,5 @@ pub use transport::GrpcTransport;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};
 #[cfg(feature = "websocket")]
 pub use transport::{WebSocketTransport, WebSocketTransportConfig};
+#[cfg(feature = "webhook")]
+pub use webhook::{WebhookOutcome, WebhookReceiver, WebhookRejection};

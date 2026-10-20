@@ -43,8 +43,10 @@ The server terminates TLS on its own listener with `tls-rustls`:
 `Server::with_tls_pem` takes a certificate chain and key, and `Server::with_tls`
 takes a `rustls::ServerConfig` as built, so a configuration that requires
 client certificates gives mutual TLS on the HTTP bindings as it does on gRPC
-(`GrpcDispatcher::with_tls`). The dispatchers do not see the client
-certificate; authenticate the caller with an interceptor as well. See
+(`GrpcDispatcher::with_tls`). The client certificate reaches the
+interceptors on every binding, and `MutualTlsAuthInterceptor` names the
+caller from it ([Authentication](../building-agents/authentication.md#mutual-tls-the-client-certificate-names-the-caller));
+until 2026-10-18 the HTTP dispatchers did not see it. See
 [Production](./production.md) for the setup. A reverse proxy in front remains
 a fine choice when it already manages your certificates.
 
@@ -77,8 +79,30 @@ something stops it. The bundled `HttpPushSender` does:
   securely).
 
 If you replace the sender, you inherit all of that as your responsibility. The
-validation helpers are public and reusable — use them rather than reimplementing
-the list above.
+validation is public in `a2a_protocol_server::url_guard`: `check_public_url`
+applies the address checks above to a URL, and `resolve_public_url` also
+resolves its host and refuses it if any address is private. Use them rather
+than reimplementing the list above.
+
+The same applies to file references in messages (spec §14: they "MUST be
+validated to prevent SSRF"). The SDK never fetches a `Part`'s URL, so this
+falls to an executor that does: call `resolve_public_url` before fetching and
+connect to the address it returns (`None` means the URL already names an
+address, which it has checked), so a second lookup cannot answer differently. To refuse such messages before the
+executor runs, call `RequestHandlerBuilder::refuse_private_file_urls()`; it
+checks the URL's form only, without DNS, so an executor that fetches still
+has to resolve.
+
+## What a card discloses
+
+A card is served to whoever asks, so `build()` and every card handler refuse a
+card, public or extended, that carries a credential in one of its URLs: user
+information (`user:pass@host`) or a query parameter named like a secret
+(`token`, `api_key`, `signature` and similar). `agent_card::card_credentials`
+lists the offending fields. A URL naming an internal host (a private address,
+`.internal`, `.local`) is reported by `agent_card::card_warnings`, which
+`build()` logs, but not refused (spec §13.3 and §14: the card SHOULD NOT carry
+credentials or internal details).
 
 That "the two moments can disagree" is not hypothetical: the numeric-IPv4 line
 above was added after an [adversarial run](./security-testing.md) found the

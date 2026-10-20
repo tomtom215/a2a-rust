@@ -18,10 +18,13 @@ keywords               = ["a2a", "agent2agent", "agent", "protocol", "server"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
-## `tracing` is on by default: a default build logs through, and records
-## spans with, whatever `tracing` subscriber the application installs, and
-## costs a level check when none is. Opt out with `default-features = false`.
-default = ["tracing"]
+## `tracing` and `otel` are on by default: a default build logs through, and
+## records spans with, whatever `tracing` subscriber the application installs,
+## and costs a level check when none is; `otel` adds the OpenTelemetry API, so
+## a process that installs a provider gets this crate's spans and metrics
+## without enabling anything here (decided 2026-10-14). Exporting them is
+## `otlp`. Opt out with `default-features = false`.
+default = ["tracing", "otel"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
 ## A forwarding feature: this crate contains no `#[cfg(feature = "signing")]`
@@ -36,10 +39,12 @@ tracing = ["dep:tracing"]
 ## (no OpenSSL system dependency). Without this feature the bundled
 ## `HttpPushSender` speaks plaintext HTTP only and fails fast on `https://`.
 ## It also gives `serve::Server` HTTPS on its own listener
-## (`Server::with_tls`, `Server::with_tls_pem`; spec §14).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
+## (`Server::with_tls`, `Server::with_tls_pem`; spec §14), and
+## `auth::MutualTlsAuthInterceptor`, which names a caller from its client
+## certificate (`ring`, already in the graph through rustls).
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
-sqlite = ["dep:sqlx"]
+sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
 postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
@@ -57,19 +62,33 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## installed as the default (an application that wants `aws-lc-rs` installs
 ## it first). Without this feature the listener is plaintext and TLS is
 ## terminated in front of it.
-grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls"]
-## OpenTelemetry: `OtelMetrics`, the spans' OpenTelemetry bridge, and
-## `Telemetry` — one entry point that exports traces, metrics and logs over
-## OTLP/gRPC or OTLP/HTTP (protobuf), configured from the standard `OTEL_*`
-## environment. HTTP export runs on this crate's hyper and rustls (ring)
-## stack, not reqwest, on a private export thread.
-otel = [
-    "tracing",
-    "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry",
+grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls", "dep:ring"]
+## OpenTelemetry instrumentation, on by default: `OtelMetrics`, and the bridge
+## that gives each call's span the caller's `traceparent` as its parent. The
+## OpenTelemetry API only (`opentelemetry`, `tracing-opentelemetry`): what is
+## recorded goes to whatever provider the process installs, and to nothing
+## when it installs none.
+otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry"]
+## OTLP export: `Telemetry` — one entry point that exports traces, metrics and
+## logs over OTLP/gRPC or OTLP/HTTP (protobuf), configured from the standard
+## `OTEL_*` environment — the `Langfuse` preset, and `init_otlp_pipeline`.
+## HTTP export runs on this crate's hyper and rustls (ring) stack, not
+## reqwest, on a private export thread. Off by default here;
+## `a2a-protocol-sdk` turns it on.
+otlp = [
+    "otel",
+    "dep:opentelemetry_sdk", "dep:opentelemetry-otlp",
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
     "dep:http",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
 ]
+## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`,
+## `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`), for a collector or proxy that
+## takes only JSON. Off by default, here and in `a2a-protocol-sdk`:
+## `opentelemetry-otlp`'s `http-json` feature also makes JSON the protocol
+## of any exporter in the process built without one, and Cargo would impose
+## that on an application's own exporters.
+otlp-json = ["otlp", "opentelemetry-otlp/http-json"]
 ## A harness that grades an `AgentExecutor` against the protocol invariants
 ## that hold for any agent — terminal states, legal transitions, cooperative
 ## cancellation, parking. Intended as a dev-dependency: the TCK grades
@@ -178,6 +197,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
+# The instrument tests read what `OtelMetrics` records through a
+# `ManualReader`, which needs the SDK `otel` itself no longer pulls in.
+opentelemetry_sdk = { version = "0.33", features = ["metrics", "trace", "logs", "experimental_metrics_custom_reader"] }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time", "test-util"] }
 hyper = { workspace = true }
@@ -187,7 +209,7 @@ bytes = "1.11.1"
 serde_json = { workspace = true }
 a2a-protocol-types = { version = "0.15.0", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
-sqlx      = { workspace = true }
+sqlx      = { workspace = true, features = ["sqlite"] }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }
 # For the live-TLS end-to-end push-sender test (gated on `tls-rustls`): generate
 # a throwaway CA + server cert and run a real rustls HTTPS server on loopback.
@@ -207,8 +229,9 @@ ring = "0.17.12"
 rustls = { version = ">=0.23.46, <0.24" }
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 # Stand-in OTLP collectors for `tests/telemetry_export/`: decode what
-# `Telemetry` exports over HTTP, and serve the OTLP gRPC services.
-opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs"] }
+# `Telemetry` exports over HTTP, as protobuf or (`with-serde`) JSON, and
+# serve the OTLP gRPC services.
+opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs", "with-serde"] }
 prost = { workspace = true }
 tonic = { workspace = true }
 tokio-stream = { workspace = true, features = ["net"] }

@@ -295,7 +295,11 @@ mod tests {
         let result = dyn_transport
             .send_request("SendMessage", serde_json::json!({}), &HashMap::new())
             .await;
-        assert!(result.is_ok(), "send_request via trait should succeed");
+        // The body the server sent, not merely some success.
+        assert_eq!(
+            result.expect("send_request via trait should succeed"),
+            serde_json::json!({"status": "ok", "data": 42})
+        );
     }
 
     /// `stream_connect_timeout` is one budget for the headers and, when the

@@ -111,6 +111,16 @@ enum CardSetting {
     Without,
 }
 
+/// The authentication checks a builder was told to waive, each because
+/// something outside this handler covers it.
+#[derive(Debug, Clone, Copy)]
+struct AuthWaivers {
+    /// [`RequestHandlerBuilder::allow_unauthenticated_extended_card`].
+    extended_card: bool,
+    /// [`RequestHandlerBuilder::authenticated_upstream`].
+    upstream: bool,
+}
+
 /// Fluent builder for [`RequestHandler`].
 ///
 /// # Required
@@ -171,9 +181,14 @@ pub struct RequestHandlerBuilder {
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     span_settings: crate::rpc_span::SpanSettings,
-    allow_unauthenticated_extended_card: bool,
+    auth_waivers: AuthWaivers,
     allow_undeclared_input_modes: bool,
+    refuse_private_file_urls: bool,
     approval_gate: Option<crate::approval::ApprovalGate>,
+    halt_store: Option<Arc<dyn crate::store::HaltStore>>,
+    halt_poll_interval: std::time::Duration,
+    lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
+    max_lease_ttl: std::time::Duration,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
     /// The profile applied, if any; `build()` checks what it needs.
@@ -213,9 +228,17 @@ impl RequestHandlerBuilder {
                 agent: true,
                 content: false,
             },
-            allow_unauthenticated_extended_card: false,
+            auth_waivers: AuthWaivers {
+                extended_card: false,
+                upstream: false,
+            },
             allow_undeclared_input_modes: false,
+            refuse_private_file_urls: false,
             approval_gate: None,
+            halt_store: None,
+            halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
+            lease_store: None,
+            max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
             #[cfg(feature = "audit")]
             audit: None,
             #[cfg(feature = "audit")]
@@ -274,6 +297,15 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sets a push-config store from an existing `Arc`, to keep a handle for
+    /// work outside requests, such as a tenant-aware store's
+    /// `erase_caller`.
+    #[must_use]
+    pub fn with_push_config_store_arc(mut self, store: Arc<dyn PushConfigStore>) -> Self {
+        self.push_config_store = Some(store);
+        self
+    }
+
     /// Sets a push notification sender.
     #[must_use]
     pub fn with_push_sender(mut self, sender: impl PushSender + 'static) -> Self {
@@ -318,6 +350,62 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_approval_gate(mut self, gate: crate::approval::ApprovalGate) -> Self {
         self.approval_gate = Some(gate);
+        self
+    }
+
+    /// Keeps [`halt`](RequestHandler::halt)s in `store` as well as in this
+    /// process (ADR 0019): every handler sharing it follows a halt or resume
+    /// given to any of them, and a restarted process comes back halted.
+    ///
+    /// The handler reads the store before it admits its first send, refusing
+    /// sends while it cannot, then every
+    /// [`with_halt_poll_interval`](Self::with_halt_poll_interval). A halt
+    /// given elsewhere therefore stops this process's running tasks and
+    /// refuses its sends within one interval; one given here acts at once.
+    /// Use `PostgresHaltStore` (the `postgres` feature) across replicas,
+    /// `SqliteHaltStore` (the `sqlite` feature) for one process that
+    /// restarts.
+    #[must_use]
+    pub fn with_halt_store(mut self, store: impl crate::store::HaltStore) -> Self {
+        self.halt_store = Some(Arc::new(store));
+        self
+    }
+
+    /// How often a handler with a halt store reads it; default
+    /// [`DEFAULT_HALT_POLL_INTERVAL`](crate::handler::DEFAULT_HALT_POLL_INTERVAL)
+    /// (one second). It bounds how long a halt given on another replica
+    /// takes to stop this one. `build` refuses zero.
+    #[must_use]
+    pub const fn with_halt_poll_interval(mut self, interval: std::time::Duration) -> Self {
+        self.halt_poll_interval = interval;
+        self
+    }
+
+    /// Grants leases on delegated tasks and stops a task whose lease lapses
+    /// (ADR 0020; the lease extension, which the agent card then declares).
+    ///
+    /// A send whose message carries a grant
+    /// ([`Lease::attach`](a2a_protocol_types::lease::Lease::attach)) has it
+    /// stored here; a `GetTask` that activates the extension renews it, on
+    /// any handler sharing the store; a task whose deadline passes is
+    /// stopped as a [`halt`](RequestHandler::halt) stops it. Use
+    /// [`InMemoryLeaseStore`](crate::store::InMemoryLeaseStore) for one
+    /// process and `PostgresLeaseStore` (the `postgres` feature) across
+    /// replicas.
+    #[must_use]
+    pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {
+        self.lease_store = Some(Arc::new(store));
+        self
+    }
+
+    /// The longest lease a send may ask for; default
+    /// [`DEFAULT_MAX_LEASE_TTL`](crate::handler::DEFAULT_MAX_LEASE_TTL)
+    /// (an hour). A longer one is refused, as is one shorter than
+    /// [`MIN_LEASE_TTL`](crate::handler::MIN_LEASE_TTL); `build` refuses a
+    /// bound below that.
+    #[must_use]
+    pub const fn with_max_lease_ttl(mut self, ttl: std::time::Duration) -> Self {
+        self.max_lease_ttl = ttl;
         self
     }
 
@@ -692,7 +780,24 @@ impl RequestHandlerBuilder {
     /// service mesh, mTLS sidecar).
     #[must_use]
     pub const fn allow_unauthenticated_extended_card(mut self) -> Self {
-        self.allow_unauthenticated_extended_card = true;
+        self.auth_waivers.extended_card = true;
+        self
+    }
+
+    /// Builds a handler whose agent card requires authentication although no
+    /// interceptor here authenticates, because something in front of this
+    /// process does (an API gateway, a service mesh, an mTLS sidecar).
+    ///
+    /// By default [`build`](Self::build) refuses a card whose
+    /// `securityRequirements` (or a skill's) ask for a credential when no
+    /// registered interceptor
+    /// [`authenticates`](crate::interceptor::ServerInterceptor::authenticates):
+    /// every request would otherwise be served without the credential the
+    /// card demands (spec §3.3.2, §7.4). Call this only when that credential
+    /// is checked before a request reaches this handler. Since 2026-10-18.
+    #[must_use]
+    pub const fn authenticated_upstream(mut self) -> Self {
+        self.auth_waivers.upstream = true;
         self
     }
 
@@ -708,6 +813,25 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub const fn allow_undeclared_input_modes(mut self) -> Self {
         self.allow_undeclared_input_modes = true;
+        self
+    }
+
+    /// Refuses a message carrying a file reference (a part whose content is
+    /// a `url`) that points into a private, loopback, link-local or internal
+    /// network, with `InvalidParams` naming the part. Default: accepted.
+    ///
+    /// Spec §14: "File references within A2A messages MUST be validated to
+    /// prevent SSRF". The SDK never fetches a file reference; an agent that
+    /// does fetches whatever a caller names, from inside the deployment's
+    /// network. This applies [`url_guard::check_public_url`](crate::url_guard::check_public_url)
+    /// to every one on arrival, with no DNS lookup: an agent should still
+    /// connect through [`url_guard::resolve_public_url`](crate::url_guard::resolve_public_url),
+    /// since a public name can resolve inward. Off by default because an
+    /// agent on a private network may be meant to read internal files.
+    /// Since 2026-10-18.
+    #[must_use]
+    pub const fn refuse_private_file_urls(mut self) -> Self {
+        self.refuse_private_file_urls = true;
         self
     }
 
@@ -742,6 +866,11 @@ impl RequestHandlerBuilder {
     ///   have to edit to declare an extension;
     /// - no agent card, unless [`without_agent_card`](Self::without_agent_card)
     ///   (spec §8.1);
+    /// - an agent card whose `securityRequirements` ask for a credential when
+    ///   no interceptor authenticates, unless
+    ///   [`authenticated_upstream`](Self::authenticated_upstream); or an
+    ///   authenticating interceptor that checks none of the schemes the card
+    ///   declares (spec §3.3.2, §7.4, §13.3);
     /// - an agent card that declares `pushNotifications` with no
     ///   [`push sender`](Self::with_push_sender) (spec §3.3.4);
     /// - a zero executor timeout, `max_id_length`, `max_metadata_size` or
@@ -754,6 +883,17 @@ impl RequestHandlerBuilder {
     ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
+        if self.lease_store.is_some() && self.max_lease_ttl < crate::handler::MIN_LEASE_TTL {
+            return Err(crate::error::ServerError::InvalidParams(format!(
+                "the longest lease must be at least {} ms",
+                crate::handler::MIN_LEASE_TTL.as_millis()
+            )));
+        }
+        if self.halt_store.is_some() && self.halt_poll_interval.is_zero() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "the halt poll interval must be greater than zero".to_owned(),
+            ));
+        }
         // A card this server would publish must be valid: a name, and every
         // repeated field the proto marks REQUIRED non-empty (spec §5.7).
         // Until 2026-10-11 only the interface list was checked, so a card
@@ -789,6 +929,33 @@ impl RequestHandlerBuilder {
                      PushNotificationNotSupported (spec §3.3.4): call with_push_sender(sender), \
                      or declare pushNotifications false"
                 )));
+            }
+        }
+        // Spec §3.3.2, §7.4, §13.3: the authentication the cards declare is
+        // the authentication the chain enforces.
+        let cards: Vec<&AgentCard> = public_card
+            .into_iter()
+            .chain(extended_card)
+            .map(|(_, card)| card)
+            .collect();
+        crate::auth::declared::check(&cards, &self.interceptors, self.auth_waivers.upstream)
+            .map_err(crate::error::ServerError::InvalidParams)?;
+        // Spec §14, §13.3: a credential in a published card is disclosed.
+        for (which, card) in public_card.into_iter().chain(extended_card) {
+            let leaked = crate::agent_card::card_credentials(card);
+            if !leaked.is_empty() {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "the {which} carries a credential in a URL ({}): a card is served to \
+                     whoever asks, so it would be disclosed (spec §14: the card SHOULD NOT \
+                     include sensitive credentials); move it out of the card",
+                    leaked.join(", ")
+                )));
+            }
+        }
+        // Legal, but likely wrong: reported, not refused (`agent_card::lint`).
+        for card in &cards {
+            for _warning in crate::agent_card::card_warnings(card) {
+                trace_warn!(warning = %_warning, "agent card");
             }
         }
         if self.extended_card_provider.is_some() && extended_card.is_none() {
@@ -915,6 +1082,18 @@ impl RequestHandlerBuilder {
                         "Client-supplied idempotency keys on message/send: a \
                          retried send returns the task the first one created \
                          instead of starting a second."
+                            .to_owned(),
+                    ),
+                    required: Some(false),
+                    params: None,
+                });
+            }
+            if self.lease_store.is_some() {
+                wanted.push(AgentExtension {
+                    uri: a2a_protocol_types::lease::LEASE_EXTENSION_URI.to_owned(),
+                    description: Some(
+                        "A delegated task is stopped when its parent stops renewing \
+                         its lease; a GetTask activating this extension renews it."
                             .to_owned(),
                     ),
                     required: Some(false),
@@ -1066,13 +1245,18 @@ impl RequestHandlerBuilder {
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
             limits: self.handler_limits,
+            file_urls: if self.refuse_private_file_urls {
+                crate::handler::FileUrls::PublicOnly
+            } else {
+                crate::handler::FileUrls::Any
+            },
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
             refuse_unisolated_tenants,
             caller_isolation,
             inbound_trace_policy: self.inbound_trace_policy,
             span_settings: self.span_settings,
-            allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
+            allow_unauthenticated_extended_card: self.auth_waivers.extended_card,
             accepted_input_modes,
             required_extensions,
             declared_extensions,
@@ -1083,7 +1267,17 @@ impl RequestHandlerBuilder {
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             in_flight: crate::handler::InFlight::default(),
-            halts: std::sync::RwLock::default(),
+            halts: Arc::default(),
+            leases: self.lease_store.map(|store| crate::handler::lease::Leases {
+                store,
+                max_ttl: self.max_lease_ttl,
+            }),
+            halt_sync: self.halt_store.map(|store| {
+                Arc::new(crate::handler::halt::sync::HaltSync::new(
+                    store,
+                    self.halt_poll_interval,
+                ))
+            }),
             approval_gate: self.approval_gate,
             #[cfg(feature = "audit")]
             audit: self.audit,
@@ -1157,15 +1351,17 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("caller_isolation", &self.caller_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)
             .field("span_settings", &self.span_settings)
-            .field(
-                "allow_unauthenticated_extended_card",
-                &self.allow_unauthenticated_extended_card,
-            )
+            .field("auth_waivers", &self.auth_waivers)
             .field(
                 "allow_undeclared_input_modes",
                 &self.allow_undeclared_input_modes,
             )
-            .field("approval_gate", &self.approval_gate);
+            .field("refuse_private_file_urls", &self.refuse_private_file_urls)
+            .field("approval_gate", &self.approval_gate)
+            .field("halt_store", &self.halt_store.is_some())
+            .field("halt_poll_interval", &self.halt_poll_interval)
+            .field("lease_store", &self.lease_store.is_some())
+            .field("max_lease_ttl", &self.max_lease_ttl);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some())
             .field("profile", &self.profile);

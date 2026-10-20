@@ -78,11 +78,43 @@ impl TaskStore for Observed {
             result
         })
     }
+
+    fn try_save_status_delta<'a>(&'a self, task: &'a Task) -> Fut<'a, bool> {
+        Box::pin(async move {
+            let result = self.inner.try_save_status_delta(task).await;
+            if !matches!(result, Ok(false)) {
+                self.record(
+                    "save_status_delta",
+                    task,
+                    &result.as_ref().map(|_| ()).map_err(Clone::clone),
+                );
+            }
+            result
+        })
+    }
+
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Fut<'a, bool> {
+        Box::pin(async move {
+            let result = self.inner.try_save_artifact_delta(task, delta).await;
+            if !matches!(result, Ok(false)) {
+                self.record(
+                    "save_artifact_delta",
+                    task,
+                    &result.as_ref().map(|_| ()).map_err(Clone::clone),
+                );
+            }
+            result
+        })
+    }
     fn save_appending_history<'a>(
         &'a self,
         task: &'a Task,
         messages: &'a [Message],
-        max_history: usize,
+        max_history: a2a_protocol_server::store::HistoryLimit,
     ) -> Fut<'a, ()> {
         Box::pin(async move {
             let result = self

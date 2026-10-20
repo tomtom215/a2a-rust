@@ -160,6 +160,34 @@ fn removing_a_key_from_the_set_revokes_it() {
     assert!(verify_agent_card_with_jwks(&card(), &sig, &set).is_err());
 }
 
+/// Spec §8.4.3: an expired key MUST NOT be used. A key whose `exp` has
+/// passed is no candidate; one before it, or with none, is.
+#[test]
+fn an_expired_key_is_not_used() {
+    let (_, es, _) = jwks();
+    let at = |exp: Option<u64>, now: u64| {
+        let mut key = Jwk::from_verifying_key(&es, Some("es-1"));
+        key.exp = exp;
+        Jwks::new(vec![key])
+            .candidates_at(Some("es-1"), "ES256", now)
+            .len()
+    };
+    assert_eq!(at(None, 2_000_000_000), 1);
+    assert_eq!(at(Some(1_000), 999), 1, "before exp");
+    assert_eq!(at(Some(1_000), 1_000), 0, "at exp");
+    assert_eq!(at(Some(1_000), 1_001), 0, "after exp");
+
+    let sig = sign_card_es256(&card(), &hex(P256_PKCS8), "es-1").unwrap();
+    let expired = Jwks::new(vec![
+        Jwk::from_verifying_key(&es, Some("es-1")).with_expiry(1),
+    ]);
+    assert!(verify_agent_card_with_jwks(&card(), &sig, &expired).is_err());
+    let json = serde_json::to_value(&expired).unwrap();
+    assert_eq!(json["keys"][0]["exp"], 1);
+    let back: Jwks = serde_json::from_value(json).unwrap();
+    assert_eq!(back, expired);
+}
+
 #[test]
 fn jwks_entries_that_must_not_be_used_are_skipped_or_refused() {
     let (set, es, _) = jwks();

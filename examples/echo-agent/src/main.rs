@@ -320,15 +320,35 @@ async fn server_only(bind_addr: &str) {
             "GRPC" => grpc_addr.is_some(),
             _ => true,
         });
-    if std::env::var("A2A_INTEROP_CARD").as_deref() == Ok("1") {
+    let secured = std::env::var("A2A_INTEROP_CARD").as_deref() == Ok("1");
+    if secured {
         advertise_security(&mut card);
     }
 
+    let mut builder = RequestHandlerBuilder::new(EchoExecutor);
+    if secured {
+        // The card's requirement is enforced, not only published: the build
+        // refuses a card whose securityRequirements nothing checks.
+        let key =
+            std::env::var("A2A_INTEROP_API_KEY").unwrap_or_else(|_| "interop-api-key".to_owned());
+        // An authenticated caller's tasks are isolated from other callers'
+        // (spec §13.1), which takes stores that partition.
+        builder = builder
+            .with_interceptor(
+                a2a_protocol_server::ApiKeyAuthInterceptor::new([key]).with_header("X-API-Key"),
+            )
+            .with_task_store(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new())
+            .with_push_config_store(
+                a2a_protocol_server::push::TenantAwareInMemoryPushConfigStore::new(),
+            );
+    } else {
+        builder = builder
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new());
+    }
     let handler = Arc::new(
-        RequestHandlerBuilder::new(EchoExecutor)
+        builder
             .with_agent_card(card.clone())
             .with_extended_agent_card(card)
-            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
             .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
             .allow_unauthenticated_extended_card()
             .build()

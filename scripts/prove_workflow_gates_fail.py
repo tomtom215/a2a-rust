@@ -413,9 +413,13 @@ def sweep_shard_count() -> int:
     raise KeyError("mutants.yml: no 'Require every shard to have completed' step")
 
 
+# The aggregator's label test, verbatim, as `substitute` looks it up.
+MUTATION_LABELLED = "contains(github.event.pull_request.labels.*.name, 'mutation-test')"
+
+
 def incremental_shards(root: Path, n: int, *, missed_in: int = 0) -> None:
     for i in range(n):
-        d = root / "shards" / f"mutation-report-incremental-shard-{i}"
+        d = root / "shards" / f"mutation-report-incremental-shard-a2a-protocol-server-{i}"
         d.mkdir(parents=True, exist_ok=True)
         (d / "missed.txt").write_text("src/lib.rs:2: replace bar\n" * (missed_in if i == 0 else 0))
 
@@ -1161,7 +1165,12 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "none graded",
             ),
         ],
-        context={"steps.mutants.outputs.exit_code": "0", "matrix.shard": "0"},
+        context={
+            "steps.mutants.outputs.exit_code": "0",
+            "matrix.shard": "0",
+            "matrix.of": "10",
+            "matrix.crate": "a2a-protocol-server",
+        },
     )
     reg["mutants.yml::mutants-incremental-shard::Generate mutation report"] = Probe(
         healthy=lambda d: mutants_out(d, caught=3, missed=0),
@@ -1172,7 +1181,7 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "survived",
             )
         ],
-        context={"matrix.shard": "0"},
+        context={"matrix.shard": "0", "matrix.of": "10", "matrix.crate": "a2a-protocol-server"},
     )
     reg["mutants.yml::mutants-incremental::Aggregate shard results and gate"] = Probe(
         healthy=lambda d: incremental_shards(d, 4),
@@ -1181,9 +1190,19 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "a survivor slipped through a 'successful' shard",
                 lambda d: incremental_shards(d, 4, missed_in=1),
                 "survived in changed files",
-            )
+            ),
+            # The shards are skipped on an unlabelled PR, and a skipped
+            # required check counts as passing; this step must fail instead.
+            Defect(
+                "a PR without the mutation-test label",
+                lambda d: (incremental_shards(d, 0), {MUTATION_LABELLED: "false"})[1],
+                "no 'mutation-test' label",
+            ),
         ],
-        context={"needs.mutants-incremental-shard.result": "success"},
+        context={
+            "needs.mutants-incremental-shard.result": "success",
+            MUTATION_LABELLED: "true",
+        },
     )
 
     # ── dco.yml ──────────────────────────────────────────────────────────────

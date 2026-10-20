@@ -129,8 +129,11 @@ registration order over one context, so a limiter registered first reads an
 identity nothing has set yet and buckets every caller together. Nothing rejects
 that ordering — it just quietly stops being per-caller.
 
-Without any of this every caller falls back to a shared `"anonymous"` bucket,
-so the limit still holds but one noisy client spends everyone's budget.
+Without any of this an unidentified caller is keyed by its peer address (an
+IPv6 client by its `/64`) when `trusted_proxy_hops` is zero, and otherwise
+falls back to a shared `anon` bucket, so the limit still holds but every
+caller behind one proxy, or with no recorded address, spends one budget.
+Since 2026-10-18; before, every unidentified caller shared one bucket.
 
 ### What it costs
 

@@ -69,7 +69,7 @@ async fn a_halted_server_refuses_sends_on_both_http_bindings() {
     let (_, body) = post(rpc, "/", list).await;
     assert!(body.get("result").is_some(), "{body}");
 
-    assert!(handler.resume(HaltScope::All, "oncall").await);
+    assert!(handler.resume(HaltScope::All, "oncall").await.unwrap());
     let (status, body) = post(rest, "/message:send", SEND.to_owned()).await;
     assert_eq!(status, 200, "{body}");
 }

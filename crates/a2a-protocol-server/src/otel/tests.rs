@@ -230,7 +230,7 @@ fn on_latency_records_histogram() {
     let mut found = false;
     for scope in rm.scope_metrics() {
         for metric in scope.metrics() {
-            if metric.name() == "a2a.server.latency"
+            if metric.name() == "a2a.server.request.duration"
                 && let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data()
             {
                 let count: u64 = hist.data_points().map(HistogramDataPoint::count).sum();

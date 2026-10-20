@@ -63,6 +63,16 @@ impl TaskStore for StaleReads {
     fn save_artifact_delta<'a>(&'a self, task: &'a Task, delta: ArtifactDelta) -> Fut<'a, ()> {
         self.inner.save_artifact_delta(task, delta)
     }
+    fn try_save_status_delta<'a>(&'a self, task: &'a Task) -> Fut<'a, bool> {
+        self.inner.try_save_status_delta(task)
+    }
+    fn try_save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Fut<'a, bool> {
+        self.inner.try_save_artifact_delta(task, delta)
+    }
     fn get<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<Task>> {
         Box::pin(async move {
             let mut task = self.inner.get(id).await?;

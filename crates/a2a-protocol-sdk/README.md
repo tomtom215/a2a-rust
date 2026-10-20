@@ -59,9 +59,9 @@ let _client = ClientBuilder::new("http://localhost:3000").build()?;
 
 ## Features
 
-Each feature forwards to the constituent crates named; `tls-rustls` and
-`tracing` are the defaults. The SDK takes those crates without their own
-defaults, so `default-features = false` here removes both.
+Each feature forwards to the constituent crates named; `tls-rustls`,
+`tracing` and `webhook` are the defaults. The SDK takes those crates without
+their own defaults, so `default-features = false` here removes all three.
 
 | Feature | Default | Forwards to |
 |---------|---------|-------------|
@@ -70,7 +70,9 @@ defaults, so `default-features = false` here removes both.
 | `tracing` | Yes | `a2a-protocol-client`, `a2a-protocol-server` |
 | `grpc` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `grpc-tls` | No | `a2a-protocol-client`, `a2a-protocol-server` (and turns on `grpc`, `tls-rustls`) |
-| `otel` | No | `a2a-protocol-server`, `a2a-protocol-client` |
+| `otel` | Yes | `a2a-protocol-server`, `a2a-protocol-client` |
+| `otlp` | Yes | `a2a-protocol-server` (implies `otel`) |
+| `otlp-json` | No | `a2a-protocol-server` (implies `otlp`) |
 | `websocket` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `sqlite` | No | `a2a-protocol-server` |
 | `postgres` | No | `a2a-protocol-server` |
@@ -78,6 +80,7 @@ defaults, so `default-features = false` here removes both.
 | `auth-jwt` | No | `a2a-protocol-server` |
 | `encryption` | No | `a2a-protocol-server` |
 | `audit` | No | `a2a-protocol-types`, `a2a-protocol-server` |
+| `webhook` | Yes | `a2a-protocol-client` |
 
 The server's `conformance` feature, the client's `testing` feature and the
 types crate's `proto` feature are not forwarded; depend on those crates directly to enable them.

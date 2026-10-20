@@ -44,9 +44,7 @@ impl StaticAgentCardHandler {
     /// this handler directly was served unchecked. Another
     /// [`ServerError`](crate::error::ServerError) if serialization fails.
     pub fn new(card: &AgentCard) -> ServerResult<Self> {
-        card.validate()
-            .and_then(|()| card.validate_security_schemes())
-            .map_err(|why| crate::error::ServerError::InvalidParams(why.into()))?;
+        super::lint::publishable(card).map_err(crate::error::ServerError::InvalidParams)?;
         let (json, etag) = card_body_and_etag(card)?;
         Ok(Self {
             card_json: Bytes::from(json),
@@ -66,12 +64,18 @@ impl StaticAgentCardHandler {
     /// Handles an agent card request, returning a cached response.
     ///
     /// Supports conditional requests via `If-None-Match` and `If-Modified-Since`
-    /// headers, returning `304 Not Modified` when appropriate.
+    /// headers, returning `304 Not Modified` when appropriate. A method other
+    /// than `GET` or `HEAD` is `405 Method Not Allowed` with
+    /// `Allow: GET, HEAD`, never `412`, whatever its preconditions
+    /// (RFC 9110 §13.2.1).
     #[must_use]
     pub fn handle(
         &self,
         req: &hyper::Request<impl hyper::body::Body>,
     ) -> hyper::Response<Full<Bytes>> {
+        if !super::performs(req.method()) {
+            return super::method_not_allowed();
+        }
         let result = check_conditional(req, &self.etag, &self.last_modified);
         match result {
             ConditionalResult::NotModified => self.not_modified_response(),
@@ -197,6 +201,28 @@ mod tests {
             .unwrap();
         let resp = handler.handle(&req);
         assert_eq!(resp.status(), 200);
+    }
+
+    /// Any other method is `405` with `Allow: GET, HEAD` (RFC 9110
+    /// §15.5.6), never `412` (§13.2.1) and never the card; until 2026-10-18
+    /// it was the card.
+    #[test]
+    fn another_method_is_405_with_allow() {
+        let handler = StaticAgentCardHandler::new(&minimal_agent_card()).unwrap();
+        for method in ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"] {
+            for inm in [None, Some("*")] {
+                let mut req = hyper::Request::builder()
+                    .method(method)
+                    .uri("/.well-known/agent-card.json");
+                if let Some(inm) = inm {
+                    req = req.header("if-none-match", inm);
+                }
+                let resp = handler.handle(&req.body(Full::new(Bytes::new())).unwrap());
+                assert_eq!(resp.status(), 405, "{method} {inm:?}");
+                assert_eq!(resp.headers()["allow"], "GET, HEAD", "{method} {inm:?}");
+                assert!(!resp.headers().contains_key("etag"), "{method} {inm:?}");
+            }
+        }
     }
 
     /// Covers lines 75-77 (`handle_unconditional`).

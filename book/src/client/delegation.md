@@ -72,12 +72,56 @@ not the client's default.
 id. Use it to hand the child over, for instance to a supervisor that records
 the id durably and later reattaches with `subscribe_to_task_from`.
 
+## A crashed parent: leases
+
+The handle dies with its process, so on its own it cannot cancel the child
+of a parent that crashed, hung or was partitioned away. A lease can
+(ADR 0020): `Delegation::start_leased` grants the child a time to live and
+renews it every third of that while the handle lives. An agent built with
+`RequestHandlerBuilder::with_lease_store` stops a child whose lease lapses,
+so a parent that goes quiet leaves a child that stops within about one
+time to live.
+
+```rust,no_run
+use std::sync::Arc;
+use std::time::Duration;
+use a2a_protocol_client::{ClientBuilder, delegation::Delegation};
+use a2a_protocol_types::{Message, MessageSendParams, Part};
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
+let worker = Arc::new(ClientBuilder::new("http://worker:8080").build()?);
+let params = MessageSendParams::new(Message::user("m-1", vec![Part::text("summarise")]));
+let child = Delegation::start_leased(worker, params, Duration::from_secs(30)).await?;
+# let _ = child;
+# Ok(())
+# }
+```
+
+The agent side, sharing one store across replicas:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# async fn agent(pool: sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+use a2a_protocol_server::store::PostgresLeaseStore;
+
+let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_lease_store(PostgresLeaseStore::from_pool(pool).await?)
+    .build()?;
+# let _ = handler;
+# Ok(())
+# }
+```
+
+A renewal is a `GetTask` that activates the lease extension
+(`A2aClient::renew_lease`); a plain read renews nothing. Over WebSocket
+the extension header is sent only with the upgrade, so ask for the
+extension when connecting. An agent that grants no leases ignores the
+grant. `detach()` stops the renewals too: a detached leased child stops
+once its lease lapses.
+
 ## What it does not cover
 
-- **A crashed parent.** The handle dies with the process, so nothing
-  cancels the child. Covering that needs the child to stop on its own when
-  its parent goes quiet, for example with a lease. That is gap G1-B in
-  [`docs/swarm-orchestration.md`](https://github.com/tomtom215/a2a-rust/blob/main/docs/swarm-orchestration.md).
 - **A drop outside a Tokio runtime.** A drop-time cancel is sent from a
   task spawned on the current runtime. Without a runtime nothing is sent; the
   drop is logged when the `tracing` feature is on.

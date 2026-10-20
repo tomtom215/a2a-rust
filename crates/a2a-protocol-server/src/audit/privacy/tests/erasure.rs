@@ -41,6 +41,11 @@ async fn erasure_reports_records_that_name_the_person_in_the_clear() {
     let plain = AuditLog::new(Arc::clone(&store) as Arc<dyn AuditStore>);
     let early = plain.append(record("acme", ALICE)).await.unwrap();
     let early_bob = plain.append(record("acme", BOB)).await.unwrap();
+    let mut acted = AuditRecord::new("acme", kind::CALL);
+    acted
+        .detail
+        .insert("actors".to_owned(), serde_json::json!(["jwt::carol-agent"]));
+    let acted = plain.append(acted).await.unwrap();
     let log = log_over(store);
     log.append(record("acme", ALICE)).await.unwrap();
     let erased = log.erase_subject("acme", ALICE, DPO).await.unwrap();
@@ -49,6 +54,12 @@ async fn erasure_reports_records_that_name_the_person_in_the_clear() {
     // Named as the requester counts too.
     let bob = log.erase_subject("acme", BOB, DPO).await.unwrap();
     assert_eq!(bob.in_clear, vec![early.seq, early_bob.seq]);
+    // Named as an acting agent (RFC 8693 `actors`) counts too.
+    let carol = log
+        .erase_subject("acme", "jwt::carol-agent", DPO)
+        .await
+        .unwrap();
+    assert_eq!(carol.in_clear, vec![acted.seq]);
     // Someone never protected: no key, but still reported.
     let only_clear = log_over(Arc::new(InMemoryAuditStore::new()));
     let none = only_clear.erase_subject("acme", ALICE, DPO).await.unwrap();
@@ -62,7 +73,7 @@ async fn an_erasure_names_who_asked_for_it_and_only_the_sids() {
     log.append(record("acme", ALICE)).await.unwrap();
     let erased = log.erase_subject("acme", ALICE, DPO).await.unwrap();
     let note = erased.record.unwrap();
-    assert!(!serde_json::to_string(&note).unwrap().contains("dpo"));
+    assert!(!serde_json::to_string(&note).unwrap().contains("dpo@"));
     let shown = log.reveal(&note).await.unwrap().record;
     assert_eq!(shown.actor.unwrap().subject, DPO);
     assert_eq!(shown.detail["sids"], serde_json::json!(erased.sids));

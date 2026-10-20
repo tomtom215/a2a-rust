@@ -61,6 +61,12 @@ pub const DEFAULT_MAX_EVENTS_PER_TASK: usize = 512;
 /// [`TaskStoreConfig::idempotency_key_ttl`] for what expiring a key costs.
 pub const DEFAULT_IDEMPOTENCY_KEY_TTL: Duration = Duration::from_secs(24 * 3600);
 
+/// How many idempotency keys the in-memory store holds at most by default.
+///
+/// See [`TaskStoreConfig::max_idempotency_keys`] for why the TTL alone is no
+/// bound and how this number was chosen.
+pub const DEFAULT_MAX_IDEMPOTENCY_KEYS: usize = 100_000;
+
 /// Configuration for [`InMemoryTaskStore`].
 ///
 /// `#[non_exhaustive]`: build it with [`Default`] and the `with_*` setters,
@@ -127,6 +133,41 @@ pub struct TaskStoreConfig {
     /// alongside the first.
     pub idempotency_key_ttl: Option<Duration>,
 
+    /// How many idempotency keys the store holds at once. `None` means no
+    /// limit. Default: `Some(100_000)`.
+    ///
+    /// # Why the TTL is not enough
+    ///
+    /// [`idempotency_key_ttl`](Self::idempotency_key_ttl) bounds how *long* a
+    /// key is kept, not how *many* there are: a client sending keyed messages
+    /// as fast as the server accepts them adds one entry per send for a whole
+    /// day before the first expires (release audit F8). Keys are kept apart
+    /// from tasks on purpose, so [`max_capacity`](Self::max_capacity) does not
+    /// bound them either.
+    ///
+    /// # What happens when it is reached
+    ///
+    /// A send presenting a key the store already holds is answered as always
+    /// — a replay or a conflict — whatever the count. A send presenting a new
+    /// key first expires keys past their TTL; if the store is still full, it
+    /// is refused as temporarily unavailable (HTTP `503`, gRPC `UNAVAILABLE`)
+    /// and runs nothing. No key is evicted to make room: dropping a live key
+    /// re-opens the double execution it was claimed to prevent, which is worse
+    /// than a retryable refusal. A send without a key is not affected.
+    ///
+    /// # Why 100,000
+    ///
+    /// One entry holds the key (at most 255 bytes), the claiming message id
+    /// and the task id (each at most [`HandlerLimits::max_id_length`], 1,024
+    /// bytes by default) and a timestamp: at most about 2.3 KB, so about
+    /// 230 MB at the cap in the worst case and about 20 MB with UUID-sized ids.
+    /// It is ten times the default [`max_capacity`](Self::max_capacity), since
+    /// a key outlives its task by design (a day against an hour). The cap is
+    /// per store, so per tenant partition in a tenant-aware store.
+    ///
+    /// [`HandlerLimits::max_id_length`]: crate::handler::HandlerLimits::max_id_length
+    pub max_idempotency_keys: Option<usize>,
+
     /// How many events one task's log may hold before the oldest are dropped.
     /// `None` means no limit. Default: `Some(512)`.
     ///
@@ -177,6 +218,7 @@ impl Default for TaskStoreConfig {
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
             max_events_per_task: Some(DEFAULT_MAX_EVENTS_PER_TASK),
             idempotency_key_ttl: Some(DEFAULT_IDEMPOTENCY_KEY_TTL),
+            max_idempotency_keys: Some(DEFAULT_MAX_IDEMPOTENCY_KEYS),
         }
     }
 }
@@ -191,6 +233,15 @@ impl TaskStoreConfig {
     #[must_use]
     pub const fn with_idempotency_key_ttl(mut self, ttl: Option<Duration>) -> Self {
         self.idempotency_key_ttl = ttl;
+        self
+    }
+
+    /// Sets how many idempotency keys the store holds at once; `None` is no
+    /// limit. See [`max_idempotency_keys`](Self::max_idempotency_keys) for
+    /// what a send with a new key gets once it is reached.
+    #[must_use]
+    pub const fn with_max_idempotency_keys(mut self, max: Option<usize>) -> Self {
+        self.max_idempotency_keys = max;
         self
     }
 

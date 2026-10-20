@@ -357,8 +357,8 @@ async fn full_map_evicts_stale_buckets_before_rejecting() {
     );
     let buckets = limiter.buckets.read().await;
     assert!(!buckets.contains_key("ancient"));
-    assert!(buckets.contains_key("live"));
-    assert!(buckets.contains_key("newcomer"));
+    assert!(buckets.contains_key("id:live"));
+    assert!(buckets.contains_key("id:newcomer"));
     drop(buckets);
 }
 

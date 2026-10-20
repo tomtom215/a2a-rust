@@ -184,3 +184,17 @@ async fn boxed_interceptor_delegates_on_error() {
         .await;
     assert_eq!(*log.lock().expect("log"), [7]);
 }
+
+/// The chain's `Debug` names how many interceptors it holds and its
+/// plaintext check, never a credential.
+#[test]
+fn chain_debug_shows_its_count_and_plaintext_check() {
+    let mut chain = InterceptorChain::new();
+    chain.push(CountingInterceptor(Arc::default()));
+    chain.arm_plaintext_check("http://agent.example/a2a?key=secret");
+    let shown = format!("{chain:?}");
+    assert!(shown.starts_with("InterceptorChain"), "{shown}");
+    assert!(shown.contains("count: 1"), "{shown}");
+    assert!(shown.contains("http://agent.example"), "{shown}");
+    assert!(!shown.contains("secret"), "{shown}");
+}

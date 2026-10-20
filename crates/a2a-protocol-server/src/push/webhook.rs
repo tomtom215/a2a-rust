@@ -23,6 +23,10 @@
 //! [`HttpPushSender`](super::HttpPushSender) sends both — the same value
 //! twice, which costs one header line and cannot confuse a receiver that
 //! reads either — and [`notification_token`] accepts both.
+//!
+//! The client crate's `webhook` module (`WebhookReceiver`) reads the token
+//! with a copy of [`notification_token`]: neither crate depends on the
+//! other. Change one, change both.
 
 /// The `X-A2A-Notification-Token` spelling, which a2a-sdk (Python) sends and
 /// reads.

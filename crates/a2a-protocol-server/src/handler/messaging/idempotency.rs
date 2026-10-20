@@ -69,11 +69,23 @@ impl RequestHandler {
             )));
         }
 
-        match self
+        let claim = match self
             .task_store
             .claim_idempotency_key(key, &message.id, task_id)
-            .await?
+            .await
         {
+            Ok(claim) => claim,
+            // The claim is the send's first side effect, so a temporary
+            // refusal here (an index at `max_idempotency_keys`, a database
+            // that cannot answer) ran nothing and holds no key: retrying is
+            // safe. `Overloaded` says so on the wire (503, gRPC
+            // `RESOURCE_EXHAUSTED`) and is not rewritten to `INTERNAL` by
+            // `not_retry_safe`, which applies to failures after work began
+            // (release audit F8).
+            Err(e) if e.is_unavailable() => return Err(ServerError::Overloaded(e.message)),
+            Err(e) => return Err(e.into()),
+        };
+        match claim {
             IdempotencyClaim::Claimed => Ok(SendKey::Claimed(key.to_owned())),
             IdempotencyClaim::Replay(existing) => {
                 let task = self.await_claimed_task(&existing).await?;

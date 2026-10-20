@@ -41,38 +41,17 @@ mod eviction;
 mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
+mod mode;
 mod respond;
 mod start;
 use start::{ExecutorStart, runtime_has_one_worker};
 pub(super) mod terminal;
 mod validation;
 
+#[cfg(test)]
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
-
-/// How the send is driven and shaped, read once from the request.
-#[derive(Clone, Copy)]
-struct SendMode {
-    /// Both streaming and fire-and-forget (`return_immediately`) drive the
-    /// task asynchronously and therefore need the background event processor
-    /// to persist state transitions and fire push notifications. Only the
-    /// default blocking mode collects events in the foreground.
-    use_background: bool,
-    /// `SendMessageConfiguration.historyLength`, applied to the response.
-    response_history_length: Option<u32>,
-}
-
-impl SendMode {
-    fn of(params: &MessageSendParams, streaming: bool) -> Self {
-        let configuration = params.configuration.as_ref();
-        let return_immediately = configuration
-            .and_then(|c| c.return_immediately)
-            .unwrap_or(false);
-        Self {
-            use_background: streaming || return_immediately,
-            response_history_length: configuration.and_then(|c| c.history_length),
-        }
-    }
-}
+pub use decisions::TASK_HISTORY_LIMIT;
+use mode::SendMode;
 
 /// A task whose executor is running: what `commit_task` hands the response
 /// phase.
@@ -111,6 +90,17 @@ enum Committed {
     Replay(Box<Task>),
 }
 
+/// Which file references a message may carry; see
+/// [`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileUrls {
+    /// Any, unchecked: the default.
+    Any,
+    /// Only those [`check_public_url`](crate::url_guard::check_public_url)
+    /// accepts.
+    PublicOnly,
+}
+
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
@@ -141,9 +131,10 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant(method_name, headers, params.tenant.as_deref())
             .await?;
+        // Boxed: the send path's state is larger than clippy's
+        // `large_futures` bound, and every binding awaits this.
         let result = crate::store::tenant::TenantContext::scope_request(tenant, async {
-            self.send_message_inner(params, streaming, method_name, headers)
-                .await
+            Box::pin(self.send_message_inner(params, streaming, method_name, headers)).await
         })
         .await
         .map_err(crate::error::ServerError::not_retry_safe);
@@ -179,7 +170,10 @@ impl RequestHandler {
         method_name: &str,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<SendMessageResult> {
-        let call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
+        let mut call_ctx = build_call_context(method_name, headers, self.inbound_trace_policy);
+        if let Some(task_id) = &params.message.task_id {
+            call_ctx = call_ctx.with_task_id(task_id.as_ref());
+        }
         let mut call = self.interceptors.begin(&call_ctx);
         let result = async {
             self.admit(&mut call, &call_ctx).await?;
@@ -271,7 +265,12 @@ impl RequestHandler {
     // and splitting it would separate the per-context lock from the work it
     // is held across, which is the one thing this function exists to keep
     // together.
-    #[allow(clippy::too_many_lines)]
+    //
+    // `significant_drop_tightening` (nursery) reads the per-context lock as
+    // held to the end of the function; it is moved into the `CommitGuard`,
+    // which releases it at the point the lock stops being needed, and the
+    // lint does not follow moves into a struct.
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
     async fn commit_task(
         &self,
         params: MessageSendParams,
@@ -285,7 +284,9 @@ impl RequestHandler {
         // context_id, so two concurrent sends cannot both create a new task
         // for it. Held until the task is saved.
         let context_lock = self.keyed_lock(&context_id).await;
-        let context_guard = context_lock.lock().await;
+        // Owned, so a send dropped mid-commit can hold it until its rollback
+        // is done (see `commit_guard`).
+        let context_guard = context_lock.lock_owned().await;
 
         let stored_task = self.find_task_by_context(&context_id).await?;
         let resolution = self
@@ -328,7 +329,9 @@ impl RequestHandler {
             self.event_queue_manager.clone(),
             std::sync::Arc::clone(&self.cancellation_tokens),
             std::sync::Arc::clone(&self.task_store),
+            std::sync::Arc::clone(&self.push_config_store),
             claimed_key.clone(),
+            context_guard,
         );
         let guard_ref = &mut guard;
 
@@ -339,7 +342,10 @@ impl RequestHandler {
         let started = Box::pin(async move {
             // A halted tenant takes no new work (`halt`); a halt that lands
             // after this check is caught once the token is registered.
-            self.refuse_if_halted()?;
+            self.refuse_if_halted().await?;
+            // A lease is checked before any work, and stored once the turn
+            // has its token (`lease`).
+            let lease = self.requested_lease(&params.message)?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;
@@ -372,6 +378,8 @@ impl RequestHandler {
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
             }
+            let referenced = self.resolve_references(&ctx.message).await?;
+            ctx = ctx.with_referenced_tasks(referenced);
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.
@@ -390,19 +398,23 @@ impl RequestHandler {
             // tokens before this one was inserted; it has set its flag by
             // now, so stop this turn the way the walk would have (`halt`).
             self.stop_if_halted(&turn, &ctx.cancellation_token);
+            if let Some(lease) = lease {
+                self.start_lease(&task_id.0, lease, &turn, &ctx.cancellation_token)
+                    .await?;
+            }
+            // Before the save, so that nothing is awaited between a
+            // continuation's save and its executor starting: a drop there
+            // would leave the turn saved with nothing to run it, and the
+            // guard rolls back only a new row (see `commit_guard`). The
+            // record states a decision the gate admitted, which is as true
+            // before the row exists as after.
+            #[cfg(feature = "audit")]
+            Box::pin(self.audit_approval(call_ctx, &task_id, ctx.approval.as_ref())).await;
             // A continuation's inline push config is registered here, before
             // its turn is saved; a new task's below (see `save_turn`).
             Box::pin(self.save_turn(&task, params.configuration.as_ref(), continues)).await?;
-            #[cfg(feature = "audit")]
-            if let (Some(log), Some(approval)) = (&self.audit, ctx.approval.as_ref()) {
-                Box::pin(crate::audit::record_approval(
-                    log,
-                    &*self.metrics,
-                    call_ctx,
-                    &task_id,
-                    approval,
-                ))
-                .await;
+            if !continues {
+                guard_ref.created_row();
             }
 
             // Boxed, and with every local confined to the helper, so this cold
@@ -418,9 +430,11 @@ impl RequestHandler {
             let inline = params.configuration.as_ref().filter(|_| !continues);
             Box::pin(self.register_inline_push_config(inline, &task_id, true)).await?;
 
-            // Subsequent requests for this context_id will now find the task via
-            // find_task_by_context.
-            drop(context_guard);
+            // The context lock is released when the guard is dropped after
+            // this block, in the same poll: nothing below awaits. From then
+            // on a send for this context_id finds the task by
+            // `find_task_by_context`. An explicit release here was removed:
+            // with no await before that drop, nothing could tell them apart.
 
             let cancel = ctx.cancellation_token.clone();
             let gate = writer.terminal_gate();
@@ -447,6 +461,7 @@ impl RequestHandler {
         })
         .await;
         guard.disarm();
+        drop(guard);
 
         match started {
             Ok(started) => Ok(Committed::Started(Box::new(started))),

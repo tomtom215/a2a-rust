@@ -194,6 +194,7 @@ fn with_max_event_size_rejects_oversized_event() {
             assert_eq!(limit, 64);
             assert!(actual > 64);
         }
+        other => panic!("expected EventTooLarge, got {other:?}"),
     }
 }
 

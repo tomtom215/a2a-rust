@@ -205,10 +205,14 @@ async fn validate_a2a_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = req.uri().path();
-    let versionless = matches!(
-        *req.method(),
-        axum::http::Method::GET | axum::http::Method::HEAD
-    ) && matches!(path, "/.well-known/agent-card.json" | "/health" | "/ready");
+    // The card's path is versionless for every method, so a method it does
+    // not perform is its `405` with `Allow`, as on the other listeners, not a
+    // version or media-type error.
+    let versionless = path == "/.well-known/agent-card.json"
+        || matches!(
+            *req.method(),
+            axum::http::Method::GET | axum::http::Method::HEAD
+        ) && matches!(path, "/health" | "/ready");
     if !versionless {
         if let Err(err) = super::check_request_content_type(req.method(), req.headers()) {
             return handler_error_to_response(&crate::error::ServerError::Protocol(err));
@@ -329,6 +333,7 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for CallHeaders {
                 .map(|info| info.0)
         });
         super::record_peer_addr(&mut headers, peer);
+        super::record_peer_certificate(&mut headers, super::certificate_of(&parts.extensions));
         std::future::ready(Ok(Self(headers)))
     }
 }

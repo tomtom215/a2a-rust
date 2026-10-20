@@ -295,6 +295,8 @@ pub struct JwtValidator {
     audiences: HashSet<String>,
     leeway: Duration,
     require_exp: bool,
+    /// Scopes every token must grant; see [`JwtValidator::require_scope`].
+    required_scopes: Vec<String>,
     /// Wiped on drop. `ring` copies it into each HMAC key it builds, and
     /// those copies are not; the long-lived one is.
     hs256_secret: Option<Arc<zeroize::Zeroizing<Vec<u8>>>>,
@@ -307,6 +309,7 @@ impl std::fmt::Debug for JwtValidator {
             .field("audiences", &self.audiences)
             .field("leeway", &self.leeway)
             .field("require_exp", &self.require_exp)
+            .field("required_scopes", &self.required_scopes)
             .field(
                 "hs256_secret",
                 &self.hs256_secret.as_ref().map(|_| "<redacted>"),
@@ -330,8 +333,31 @@ impl JwtValidator {
             audiences: HashSet::new(),
             leeway: DEFAULT_LEEWAY,
             require_exp: true,
+            required_scopes: Vec::new(),
             hs256_secret: None,
         }
+    }
+
+    /// Requires every token to grant `scope` in its `scope` claim (RFC 9068
+    /// §2.2.3: space-separated; an array is accepted too). A valid token
+    /// without it is refused with
+    /// [`A2aError::insufficient_scope`](a2a_protocol_types::error::A2aError::insufficient_scope),
+    /// `403` naming the scopes it lacks (spec §3.3.2: servers SHOULD
+    /// indicate what scope is missing), not `401`: the credential is good,
+    /// it does not permit the call. A token that fails any other check is
+    /// refused with `401` before its scopes are looked at, so nothing about
+    /// the required scopes reaches a caller without a valid token.
+    ///
+    /// Applies to every operation. For a scope per operation or per task,
+    /// write an interceptor that reads the method and
+    /// [`CallContext::task_id`](crate::CallContext::task_id).
+    #[must_use]
+    pub fn require_scope(mut self, scope: impl Into<String>) -> Self {
+        let scope = scope.into();
+        if !self.required_scopes.contains(&scope) {
+            self.required_scopes.push(scope);
+        }
+        self
     }
 
     /// Requires the token's `iss` to equal one of the accepted issuers.
@@ -415,8 +441,11 @@ impl JwtValidator {
     ///
     /// # Errors
     ///
-    /// Returns the generic [`auth_rejected`] error on any failure, so nothing
-    /// about *why* a token was rejected leaks to the caller.
+    /// [`ValidateOutcome::Rejected`] (or `KeyMiss`) on any failure, which the
+    /// caller turns into the generic [`auth_rejected`] error, so nothing about
+    /// *why* a token was rejected leaks to the caller.
+    /// [`ValidateOutcome::InsufficientScope`] only for a token that passed
+    /// every other check.
     pub(crate) fn validate(
         &self,
         token: &str,
@@ -473,11 +502,27 @@ impl JwtValidator {
         let claims: JwtClaims = decode_json(claims_b64).map_err(|()| ValidateOutcome::Rejected)?;
         self.check_claims(&claims)
             .map_err(|()| ValidateOutcome::Rejected)?;
+        let missing = self.missing_scopes(claims.scope.as_deref().unwrap_or_default());
+        if !missing.is_empty() {
+            return Err(ValidateOutcome::InsufficientScope(missing));
+        }
 
+        let actors = super::actors::actors_of(claims.act.as_ref(), claims.iss.as_deref())
+            .map_err(|()| ValidateOutcome::Rejected)?;
         Ok(AuthenticatedPrincipal {
             subject: claims.sub,
             issuer: claims.iss,
+            actors,
         })
+    }
+
+    /// The required scopes `granted` lacks.
+    fn missing_scopes(&self, granted: &[String]) -> Vec<String> {
+        self.required_scopes
+            .iter()
+            .filter(|s| !granted.contains(s))
+            .cloned()
+            .collect()
     }
 
     fn check_claims(&self, claims: &JwtClaims) -> Result<(), ()> {
@@ -539,6 +584,21 @@ pub(crate) enum ValidateOutcome {
     /// The signing key wasn't found — a remote JWKS may have rotated; the
     /// interceptor may refetch and retry once.
     KeyMiss,
+    /// A valid token that lacks these required scopes.
+    InsufficientScope(Vec<String>),
+}
+
+impl ValidateOutcome {
+    /// The error the caller gets: `401` with the bearer challenge, or `403`
+    /// naming the missing scopes.
+    fn into_error(self) -> A2aError {
+        match self {
+            Self::InsufficientScope(missing) => {
+                A2aError::insufficient_scope("insufficient scope", missing)
+            }
+            Self::Rejected | Self::KeyMiss => auth_rejected(BEARER_CHALLENGE),
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -560,6 +620,40 @@ struct JwtClaims {
     exp: Option<u64>,
     #[serde(default)]
     nbf: Option<u64>,
+    #[serde(default, deserialize_with = "de_scope")]
+    scope: Option<Vec<String>>,
+    /// RFC 8693 §4.1 actor chain, read by [`super::actors`].
+    #[serde(default)]
+    act: Option<serde_json::Value>,
+}
+
+/// `scope` is a space-separated string (RFC 9068 §2.2.3, RFC 8693 §4.2);
+/// some issuers send an array, which is accepted too. Any other shape
+/// grants nothing rather than failing the token: before `require_scope`
+/// existed the claim was not read, and a token that verified then still
+/// verifies.
+fn de_scope<'de, D>(de: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Scope {
+        Spaced(String),
+        Many(Vec<String>),
+        Other(serde::de::IgnoredAny),
+    }
+    Ok(
+        <Option<Scope> as serde::Deserialize>::deserialize(de)?.map(|s| match s {
+            Scope::Spaced(s) => s
+                .split(' ')
+                .filter(|t| !t.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            Scope::Many(v) => v,
+            Scope::Other(_) => Vec::new(),
+        }),
+    )
 }
 
 /// `aud` is either a string or an array of strings (RFC 7519 §4.1.3).
@@ -723,7 +817,7 @@ impl JwtAuthInterceptor {
             KeySource::Static(jwks) => self
                 .validator
                 .validate(token, jwks)
-                .map_err(|_| auth_rejected(BEARER_CHALLENGE)),
+                .map_err(ValidateOutcome::into_error),
             KeySource::Remote(remote) => {
                 let jwks = remote.get(false).await?;
                 match self.validator.validate(token, &jwks) {
@@ -733,9 +827,9 @@ impl JwtAuthInterceptor {
                         let fresh = remote.get(true).await?;
                         self.validator
                             .validate(token, &fresh)
-                            .map_err(|_| auth_rejected(BEARER_CHALLENGE))
+                            .map_err(ValidateOutcome::into_error)
                     }
-                    Err(ValidateOutcome::Rejected) => Err(auth_rejected(BEARER_CHALLENGE)),
+                    Err(other) => Err(other.into_error()),
                 }
             }
         }
@@ -766,6 +860,10 @@ impl ServerInterceptor for JwtAuthInterceptor {
                     subject,
                 ));
             }
+            // RFC 8693: the agents acting for the subject (ADR 0021).
+            if !principal.actors.is_empty() {
+                ctx.set_actors(principal.actors);
+            }
             ctx.set_auth_scheme("jwt");
             Ok(())
         })
@@ -780,6 +878,12 @@ impl ServerInterceptor for JwtAuthInterceptor {
 
     fn authenticates(&self) -> bool {
         true
+    }
+
+    /// A bearer JWT: the HTTP `bearer` scheme, or an OAuth 2.0 or `OpenID`
+    /// Connect scheme, whose access tokens this validates.
+    fn checks_scheme(&self, scheme: &a2a_protocol_types::security::SecurityScheme) -> Option<bool> {
+        Some(super::declared::is_bearer(scheme))
     }
 }
 
@@ -1381,7 +1485,86 @@ mod tests {
             aud: None,
             exp,
             nbf,
+            scope: None,
+            act: None,
         }
+    }
+
+    /// An HS256 token for `base_validator`'s issuer and audience, valid for
+    /// an hour, with `extra` (a JSON object's members) among its claims.
+    fn hs256_token_with(secret: &[u8], extra: &str) -> String {
+        let exp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600;
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+        let claims = URL_SAFE_NO_PAD.encode(format!(
+            r#"{{"iss":"https://issuer.test","aud":"a2a-agent","sub":"alice","exp":{exp},{extra}}}"#
+        ));
+        let input = format!("{header}.{claims}");
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+        let sig = URL_SAFE_NO_PAD.encode(ring::hmac::sign(&key, input.as_bytes()).as_ref());
+        format!("{input}.{sig}")
+    }
+
+    /// RFC 8693 (ADR 0021): a delegated token names the principal in `sub`
+    /// and the agents acting for it in `act`. The identity stays the
+    /// principal; the actors are recorded beside it, nearest first. A token
+    /// whose chain cannot be read is refused.
+    #[tokio::test]
+    async fn a_delegated_token_names_its_principal_and_its_actors() {
+        let secret = [9u8; MIN_HS256_SECRET_LEN];
+        let i = JwtAuthInterceptor::new(base_validator().with_hs256_secret(secret), Jwks::new());
+
+        let ctx = ctx_bearer(&hs256_token_with(
+            &secret,
+            r#""act":{"sub":"planner","act":{"sub":"gateway","iss":"https://gw.test"}}"#,
+        ));
+        i.before(&ctx).await.unwrap();
+        assert_eq!(
+            ctx.caller_identity(),
+            Some(super::super::caller_id::jwt(Some("https://issuer.test"), "alice").as_str())
+        );
+        assert_eq!(
+            ctx.actors(),
+            [
+                super::super::caller_id::jwt(Some("https://issuer.test"), "planner"),
+                super::super::caller_id::jwt(Some("https://gw.test"), "gateway"),
+            ]
+        );
+
+        let plain = ctx_bearer(&hs256_token_with(&secret, r#""x":1"#));
+        i.before(&plain).await.unwrap();
+        assert_eq!(plain.actors(), [] as [String; 0]);
+
+        let unreadable = ctx_bearer(&hs256_token_with(&secret, r#""act":"planner""#));
+        assert!(i.before(&unreadable).await.is_err());
+        assert_eq!(unreadable.caller_identity(), None);
+    }
+
+    /// `scope` as RFC 9068 writes it, as an array, and in a shape neither
+    /// expects: the last grants nothing but does not fail the token, which
+    /// verified before the claim was read.
+    #[test]
+    fn the_scope_claim_is_read_leniently() {
+        let scope = |json: &str| {
+            serde_json::from_str::<JwtClaims>(json)
+                .expect("claims")
+                .scope
+        };
+        assert_eq!(
+            scope(r#"{"scope": " a  b "}"#),
+            Some(vec!["a".to_owned(), "b".to_owned()])
+        );
+        assert_eq!(
+            scope(r#"{"scope": ["a", "b c"]}"#),
+            Some(vec!["a".to_owned(), "b c".to_owned()])
+        );
+        assert_eq!(scope(r#"{"scope": 7}"#), Some(Vec::new()));
+        assert_eq!(scope(r#"{"scope": {"a": 1}}"#), Some(Vec::new()));
+        assert_eq!(scope(r#"{"scope": null}"#), None);
+        assert_eq!(scope("{}"), None);
     }
 
     #[test]

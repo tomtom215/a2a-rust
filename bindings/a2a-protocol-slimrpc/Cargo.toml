@@ -82,7 +82,13 @@ name = "slim-node"
 path = "src/bin/slim_node.rs"
 
 [dev-dependencies]
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+# `tests/telemetry.rs`: the server's `tracing` feature, so the span each call
+# opens is compiled in and a test subscriber can read it, and `tracing` for
+# that subscriber. The server is the one in `[dependencies]` above; this adds
+# a feature to it in test builds only.
+a2a-protocol-server = { version = "0.15", path = "../../crates/a2a-protocol-server", default-features = false, features = ["tracing"] }
+tracing            = "0.1"
 rcgen              = "0.14"
 
 tokio       = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

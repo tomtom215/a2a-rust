@@ -12,7 +12,7 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use super::super::RequestHandler;
-use super::decisions::MAX_TASK_HISTORY_MESSAGES;
+use super::decisions::TASK_HISTORY_LIMIT;
 use crate::error::ServerResult;
 use crate::request_context::RequestContext;
 
@@ -92,7 +92,40 @@ pub(super) fn build_request_context(
     ctx
 }
 
+/// Most referenced tasks resolved for one message. `referenceTaskIds` is
+/// client input, so without a bound one message could make the handler read
+/// and hold any number of tasks.
+pub(super) const MAX_RESOLVED_REFERENCES: usize = 16;
+
 impl RequestHandler {
+    /// The tasks `message.referenceTaskIds` names, read in the caller's own
+    /// partition, so a task another caller or tenant holds is not found;
+    /// unknown ids are skipped, duplicates read once, and at most
+    /// [`MAX_RESOLVED_REFERENCES`] are read (spec §3.4.3: "Agents SHOULD use
+    /// referenced tasks to understand the context and intent of follow-up
+    /// requests").
+    ///
+    /// # Errors
+    ///
+    /// The store's error, converted.
+    pub(super) async fn resolve_references(&self, message: &Message) -> ServerResult<Vec<Task>> {
+        let mut seen: Vec<&TaskId> = Vec::new();
+        let mut found = Vec::new();
+        for id in message.reference_task_ids.iter().flatten() {
+            if seen.len() == MAX_RESOLVED_REFERENCES {
+                break;
+            }
+            if seen.contains(&id) {
+                continue;
+            }
+            seen.push(id);
+            if let Some(task) = self.task_store.get(id).await? {
+                found.push(task);
+            }
+        }
+        Ok(found)
+    }
+
     /// Persists the initial task. If the store refuses it, the queue and
     /// token admitted for it are released, so a store error leaks neither.
     ///
@@ -106,7 +139,7 @@ impl RequestHandler {
         let appended = task.history.clone().unwrap_or_default();
         if let Err(e) = self
             .task_store
-            .save_appending_history(task, &appended, MAX_TASK_HISTORY_MESSAGES)
+            .save_appending_history(task, &appended, TASK_HISTORY_LIMIT)
             .await
         {
             self.release_admission(&task.id).await;
@@ -223,6 +256,20 @@ impl RequestHandler {
             return Err(e);
         }
         Ok(())
+    }
+
+    /// Records the approval the gate admitted for this send, if any, in the
+    /// audit log, if there is one.
+    #[cfg(feature = "audit")]
+    pub(super) async fn audit_approval(
+        &self,
+        call_ctx: &crate::call_context::CallContext,
+        task_id: &TaskId,
+        approval: Option<&crate::approval::VerifiedApproval>,
+    ) {
+        if let (Some(log), Some(approval)) = (&self.audit, approval) {
+            crate::audit::record_approval(log, &*self.metrics, call_ctx, task_id, approval).await;
+        }
     }
 
     /// Withdraws the config a continuation registered when its turn then

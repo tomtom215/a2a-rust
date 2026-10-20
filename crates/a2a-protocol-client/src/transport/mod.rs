@@ -294,6 +294,17 @@ pub trait Transport: Send + Sync + 'static {
         }
         Box::pin(async { Err(query_unsupported()) })
     }
+
+    /// The `rpc.system.name` of this transport's calls, which each call's
+    /// `CLIENT` span carries when the transport was given to
+    /// [`ClientBuilder::with_custom_transport`](crate::ClientBuilder::with_custom_transport)
+    /// (ADR 0013). The default, `None`, records none. The semantic
+    /// conventions name `jsonrpc` and `grpc`; a binding they do not list
+    /// uses its own name in lower case (`slimrpc`). A transport the builder
+    /// makes for a card's binding is named by the builder, not by this.
+    fn rpc_system(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// The refusal of a transport that cannot put parameters in a query string.

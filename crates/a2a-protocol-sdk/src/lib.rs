@@ -27,6 +27,10 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+// docs.rs builds with `--cfg docsrs` (each manifest's
+// `[package.metadata.docs.rs]`): show which feature each item needs (release
+// audit F27). Nightly-only, so stable builds never see it.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
@@ -67,6 +71,8 @@ pub mod server {
 /// - **Params**: `MessageSendParams`, `TaskQueryParams`, `ListTasksParams`
 /// - **Responses**: `SendMessageResponse`, `TaskListResponse`
 /// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`, `resolve_agent_card`
+/// - **Webhooks** (feature `webhook`, on by default): `WebhookReceiver`,
+///   `WebhookOutcome`, for receiving push notifications
 /// - **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`,
 ///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`
 /// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`
@@ -96,6 +102,9 @@ pub mod prelude {
         OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider,
         resolve_agent_card,
     };
+
+    #[cfg(feature = "webhook")]
+    pub use a2a_protocol_client::{WebhookOutcome, WebhookReceiver};
 
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{

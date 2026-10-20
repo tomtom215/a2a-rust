@@ -8,6 +8,8 @@
 pub mod applied;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
+pub mod halt;
+pub mod lease;
 pub mod retention;
 pub mod task_store;
 pub mod tenant;
@@ -20,7 +22,6 @@ pub(crate) mod cursor;
 /// Shared page-boundary arithmetic used by every task store.
 pub(crate) mod pagination;
 
-#[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub mod caller_keys;
 #[cfg(feature = "sqlite")]
 pub mod migration;
@@ -49,6 +50,8 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
+pub use halt::{HaltStore, InMemoryHaltStore, StoredHalt};
+pub use lease::{InMemoryLeaseStore, LeaseStore};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an
 // out-of-tree store has to name it. It was reachable only at
@@ -56,8 +59,9 @@ pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // here, which made the obvious import line fail to compile for exactly the
 // audience this module exists to serve.
 pub use task_store::{
-    ArtifactDelta, DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK, DEFAULT_MAX_PAGE_SIZE,
-    IdempotencyClaim, InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
+    ArtifactDelta, DEFAULT_IDEMPOTENCY_KEY_TTL, DEFAULT_MAX_EVENTS_PER_TASK,
+    DEFAULT_MAX_IDEMPOTENCY_KEYS, DEFAULT_MAX_PAGE_SIZE, HistoryLimit, IdempotencyClaim,
+    InMemoryTaskStore, RecordedEvent, TaskStore, TaskStoreConfig,
 };
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 pub use terminal::{TERMINAL_STATE_CONFLICT_MARKER, TerminalStateConflict, refuses_write};
@@ -93,12 +97,18 @@ pub(crate) fn status_timestamp_rfc3339(ts: Option<&str>) -> Option<String> {
 }
 
 #[cfg(feature = "sqlite")]
+pub use halt::SqliteHaltStore;
+#[cfg(feature = "sqlite")]
 pub use migration::{Migration, MigrationRunner};
 #[cfg(feature = "sqlite")]
 pub use sqlite_store::SqliteTaskStore;
 #[cfg(feature = "sqlite")]
 pub use tenant_sqlite_store::TenantAwareSqliteTaskStore;
 
+#[cfg(feature = "postgres")]
+pub use halt::PostgresHaltStore;
+#[cfg(feature = "postgres")]
+pub use lease::PostgresLeaseStore;
 #[cfg(feature = "postgres")]
 pub use pg_migration::{BUILTIN_PG_MIGRATIONS, PgMigration, PgMigrationRunner};
 #[cfg(feature = "postgres")]

@@ -71,6 +71,7 @@ and no logging.
 | `grpc` | gRPC transport via `tonic` (plaintext) |
 | `grpc-tls` | gRPC over TLS — `grpc` + tonic's rustls connector (independent of `tls-rustls`); needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
 | `testing` | A scripted hostile peer (`testing::ScriptedPeer`) that stalls, cuts off, mis-frames or refuses on each binding, for testing code that calls agents |
+| `webhook` | The push-notification webhook receiver (`webhook::WebhookReceiver`): token and `Authorization` checks, task-id check, duplicate suppression, optional rate limit (spec §4.3.3, §13.2); on by default |
 
 ### `a2a-protocol-server`
 
@@ -84,7 +85,9 @@ and no logging.
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
 | `grpc-tls` | TLS on the gRPC listener (`GrpcDispatcher::with_tls`); implies `grpc` |
-| `otel` | `Telemetry`: OTLP export of traces, metrics and logs, gRPC or HTTP/protobuf, with a Langfuse preset |
+| `otel` | `OtelMetrics` and the spans' OpenTelemetry bridge, through the API only (on by default) |
+| `otlp` | `Telemetry`: OTLP export of traces, metrics and logs, gRPC or HTTP/protobuf, with a Langfuse preset (implies `otel`) |
+| `otlp-json` | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default because it would also make JSON the default of an application's own `opentelemetry-otlp` exporters (implies `otlp`) |
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
 | `auth-jwt` | JWT bearer-token authentication (`JwtAuthInterceptor`) |
@@ -103,11 +106,14 @@ and no logging.
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
 | `postgres` | Enables PostgreSQL stores in the server |
-| `otel` | Enables `otel` in the server and the client |
+| `otel` | Enables `otel` in the server and the client (on by default) |
+| `otlp` | Enables the server's `otlp`: `Telemetry` and OTLP export (on by default) |
+| `otlp-json` | Enables the server's `otlp-json`: OTLP/HTTP with JSON bodies (off by default) |
 | `axum` | Enables Axum integration in the server |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |
 | `encryption` | Enables encryption at rest for task content in the server |
 | `audit` | Enables the audit trail in the server and its record types in `a2a-protocol-types` |
+| `webhook` | Enables the webhook receiver in the client (on by default) |
 
 Enable features in your `Cargo.toml`:
 

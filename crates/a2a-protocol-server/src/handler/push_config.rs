@@ -192,11 +192,14 @@ impl RequestHandler {
                     });
                 }
 
-                let call_ctx = build_call_context(
+                let mut call_ctx = build_call_context(
                     "CreateTaskPushNotificationConfig",
                     headers,
                     self.inbound_trace_policy,
                 );
+                if let Some(task_id) = config.task_id.as_deref() {
+                    call_ctx = call_ctx.with_task_id(task_id);
+                }
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
@@ -257,19 +260,23 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                // SPEC §3.3.4: reject when the agent card does not advertise push support.
-                self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
                     "GetTaskPushNotificationConfig",
                     headers,
                     self.inbound_trace_policy,
-                );
+                )
+                .with_task_id(params.task_id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.3.4: reject when the agent card does not advertise
+                    // push support. After authentication, as for Create: an
+                    // unauthenticated caller is refused for its credential, not
+                    // told what the agent supports (spec §3.3.2).
+                    self.ensure_push_supported()?;
 
                     require_field("taskId", &params.task_id)?;
                     require_field("id", &params.id)?;
@@ -329,19 +336,23 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant_owned, async {
-                // SPEC §3.3.4: reject when the agent card does not advertise push support.
-                self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
                     "ListTaskPushNotificationConfigs",
                     headers,
                     self.inbound_trace_policy,
-                );
+                )
+                .with_task_id(task_id);
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.3.4: reject when the agent card does not advertise
+                    // push support. After authentication, as for Create: an
+                    // unauthenticated caller is refused for its credential, not
+                    // told what the agent supports (spec §3.3.2).
+                    self.ensure_push_supported()?;
                     // SPEC §3.1.9: TaskNotFoundError when "the task ID does not
                     // exist or is not accessible". An unknown task answered an
                     // empty list until 2026-10-10, which a peer cannot tell
@@ -400,19 +411,23 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                // SPEC §3.3.4: reject when the agent card does not advertise push support.
-                self.ensure_push_supported()?;
                 let call_ctx = build_call_context(
                     "DeleteTaskPushNotificationConfig",
                     headers,
                     self.inbound_trace_policy,
-                );
+                )
+                .with_task_id(params.task_id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
                 let result = async {
                     self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
+                    // SPEC §3.3.4: reject when the agent card does not advertise
+                    // push support. After authentication, as for Create: an
+                    // unauthenticated caller is refused for its credential, not
+                    // told what the agent supports (spec §3.3.2).
+                    self.ensure_push_supported()?;
                     // SPEC §3.1.10: TaskNotFoundError when the task does not
                     // exist; deleting a config that is already gone still
                     // succeeds, since the operation MUST be idempotent.
@@ -444,6 +459,24 @@ impl RequestHandler {
             }
         }
         result
+    }
+}
+
+/// Spec §13.4: credentials SHOULD travel only over encrypted connections.
+/// Without `https_only` a config sending its token or credentials to an
+/// `http://` webhook is kept and delivered as asked, so the operator is
+/// told, once per config, naming the origin only.
+fn warn_if_plaintext_credentials(config: &TaskPushNotificationConfig) {
+    if !crate::push::sender::is_https_url(&config.url)
+        && (config.authentication.is_some()
+            || config.token.as_deref().is_some_and(|t| !t.is_empty()))
+    {
+        trace_warn!(
+            webhook = %crate::push::webhook::origin_for_log(&config.url),
+            "push config sends its token or credentials to a plaintext http:// webhook; \
+             spec §13.4 says credentials SHOULD travel only over encrypted connections \
+             (HttpPushSender::https_only refuses such configs)"
+        );
     }
 }
 
@@ -479,6 +512,7 @@ fn refuse_an_unservable_config(
                 .into(),
         });
     }
+    warn_if_plaintext_credentials(config);
     if !sender.allows_webhook_url(&config.url) {
         return Err(ServerError::InvalidField {
             field: "url".into(),
@@ -504,6 +538,29 @@ fn refuse_an_unservable_config(
                  this server can send Bearer or Basic",
                 auth.scheme
             ),
+        });
+    }
+    refuse_unsendable_credentials(config)
+}
+
+/// Refuses credentials a delivery could not send: none, or none but
+/// whitespace, under an `authentication` block, and a token or credentials a
+/// header cannot carry.
+fn refuse_unsendable_credentials(config: &TaskPushNotificationConfig) -> ServerResult<()> {
+    // §4.3.3: a delivery MUST carry the credentials its config specifies,
+    // so an authentication block with none could only ever be delivered
+    // without them; it was stored, and every delivery then went out with no
+    // `Authorization`, or with an empty `Bearer ` (release audit, 2026-10-18).
+    if config.authentication.as_ref().is_some_and(|auth| {
+        auth.credentials
+            .as_deref()
+            .is_none_or(|c| c.trim().is_empty())
+    }) {
+        return Err(ServerError::InvalidField {
+            field: "authentication.credentials".into(),
+            message: "push notification authentication names a scheme but carries no \
+                      credentials; give the credentials, or leave authentication out"
+                .into(),
         });
     }
     // The token and the credentials travel as header values. One a header
