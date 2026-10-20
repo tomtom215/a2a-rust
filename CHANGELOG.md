@@ -1084,6 +1084,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A malformed request without a credential is refused as
+  unauthenticated, on every binding** (server; spec §7.4, §3.3.2;
+  `docs/handoff.md` "Open engineering"). **A caller the interceptor chain
+  does not admit now gets `401` (HTTP+JSON), `UNAUTHENTICATED` (gRPC) or the
+  refusal frame (`-32600` with its `UNAUTHENTICATED` detail, WebSocket)
+  where it got `400`, `INVALID_ARGUMENT` or `-32602` naming the field it got
+  wrong.** HTTP+JSON (`RestDispatcher` and the axum router) read the body,
+  its JSON and its shape, and the query values that must parse
+  (`historyLength`, `ListTasks`' filters, `pageSize`), before the handler
+  saw the call; gRPC converted the request; WebSocket parsed each frame's
+  params. A request the binding cannot read is now admitted first
+  (`RequestHandler::admit_unreadable`, the JSON-RPC fix of the same
+  morning): one the chain refuses gets the refusal with its challenge, and
+  one it admits gets the answer it always got, byte for byte. Likewise
+  `ListTasks`' `pageSize` and `statusTimestampAfter` and
+  `CreateTaskPushNotificationConfig`'s `taskId`, which the handler checked
+  before admission on every binding, JSON-RPC included, are checked after
+  it. Interceptors now see these calls (no task id; `on_complete` `Failed`
+  with the validation error), so a rate limiter counts them and an audit
+  interceptor records them. Still answered before admission, because they
+  refuse a well-formed request alike and say nothing about its fields: the
+  `A2A-Version` check (§3.6.2: the version names the semantics the request
+  is read with), the request media type, the body's size cap (`413`) and
+  read timeout (`408`) (§13.4 asks for size limits), the query-string
+  length cap, routing (`404`/`405`), a gRPC message tonic cannot decode, and
+  a WebSocket frame that is not JSON (`-32700`) or not a request
+  (`-32600`), which names no method to admit it as, as over JSON-RPC. Tests:
+  `auth_before_params` (one module per binding, and the handler checks over
+  JSON-RPC and HTTP+JSON).
 - **Two names the semantic conventions spell differently** (server and
   client; checked against `open-telemetry/semantic-conventions@55c98cf` and
   `semantic-conventions-genai@547934a`). The executor span's finish reason
@@ -2684,7 +2713,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gets the `-32602` it always got. Interceptors now see these calls, with no
   task id, and `on_complete` reports them `Failed` with the `-32602`; a rate
   limiter counts them and an audit interceptor records them. HTTP+JSON, gRPC
-  and WebSocket still read params first. Test: `jsonrpc_auth_before_params`.
+  and WebSocket followed the same day (Behaviour Changes, "A malformed
+  request without a credential is refused as unauthenticated"). Test:
+  `jsonrpc_auth_before_params`.
 - **A card-signing key whose `x5c` certificate has expired is not used**
   (types, `signing`; spec §8.4.3 "Expired or revoked keys MUST NOT be used
   for verification"; RFC 7517 §4.7). `Jwk` had no `x5c` member, so serde

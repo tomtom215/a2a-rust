@@ -59,10 +59,12 @@ use crate::rpc_span::StreamEnd;
 mod card;
 mod io;
 mod origin;
+mod params;
 mod shutdown;
 mod stream;
 
 use io::WsIo;
+use params::{Unread, parse_params};
 use stream::stream_events;
 
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
@@ -1038,7 +1040,7 @@ async fn process_ws_message(
         "GetTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::TaskQueryParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::TaskQueryParams = p.read().await?;
                     h.on_get_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1050,7 +1052,7 @@ async fn process_ws_message(
         "ListTasks" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::ListTasksParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::ListTasksParams = p.read().await?;
                     h.on_list_tasks(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1062,7 +1064,7 @@ async fn process_ws_message(
         "CancelTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::CancelTaskParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::CancelTaskParams = p.read().await?;
                     h.on_cancel_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1073,9 +1075,7 @@ async fn process_ws_message(
         }
         "SubscribeToTask" => {
             let call = async {
-                let params = parse_params::<a2a_protocol_types::params::TaskIdParams>(
-                    rpc_req.params.as_ref(),
-                )?;
+                let params = parse_params(handler, &rpc_req, headers).await?;
                 handler.on_resubscribe(params, Some(headers)).await
             };
             // The stream claims the call, which then ends with it.
@@ -1094,7 +1094,7 @@ async fn process_ws_message(
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::push::TaskPushNotificationConfig =
-                        ws_params(&p)?;
+                        p.read().await?;
                     h.on_set_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1106,7 +1106,7 @@ async fn process_ws_message(
         "GetTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::GetPushConfigParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::GetPushConfigParams = p.read().await?;
                     h.on_get_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1118,7 +1118,8 @@ async fn process_ws_message(
         "ListTaskPushNotificationConfigs" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::ListPushConfigsParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::ListPushConfigsParams =
+                        p.read().await?;
                     h.on_list_push_configs_page(&params, Some(hdr))
                         .await
                         .map(|resp| serde_json::to_value(&resp).unwrap_or_default())
@@ -1130,7 +1131,8 @@ async fn process_ws_message(
         "DeleteTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::DeletePushConfigParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::DeletePushConfigParams =
+                        p.read().await?;
                     h.on_delete_push_config(params, Some(hdr))
                         .await
                         .map(|()| serde_json::json!({}))
@@ -1193,8 +1195,7 @@ async fn dispatch_send_message(
     writer: Option<&WsSink>,
 ) {
     let call = async {
-        let params =
-            parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req.params.as_ref())?;
+        let params = parse_params(handler, rpc_req, headers).await?;
         handler
             .on_send_message(params, streaming, Some(headers))
             .await
@@ -1227,7 +1228,7 @@ async fn dispatch_send_message(
 /// Generic dispatcher for simple (non-streaming) methods.
 async fn dispatch_simple<'a, F>(
     handler: &'a RequestHandler,
-    rpc_req: &JsonRpcRequest,
+    rpc_req: &'a JsonRpcRequest,
     id: JsonRpcId,
     headers: &'a HashMap<String, String>,
     writer: Option<&WsSink>,
@@ -1235,7 +1236,7 @@ async fn dispatch_simple<'a, F>(
 ) where
     F: FnOnce(
         &'a RequestHandler,
-        serde_json::Value,
+        Unread<'a>,
         &'a HashMap<String, String>,
     ) -> std::pin::Pin<
         Box<
@@ -1246,7 +1247,7 @@ async fn dispatch_simple<'a, F>(
         >,
     >,
 {
-    let params = rpc_req.params.clone().unwrap_or_else(empty_params);
+    let params = Unread::new(handler, rpc_req, headers);
     let outcome = ws_span(handler, rpc_req, headers)
         .run(f(handler, params, headers))
         .await;
@@ -1343,55 +1344,9 @@ fn busy_response(text: &str) -> JsonRpcErrorResponse {
     )
 }
 
-/// Parses one method's params; a shape error is `InvalidParams` with a
-/// `google.rpc.BadRequest` naming the field (§9.5), as on the HTTP binding.
-fn ws_params<T: serde::de::DeserializeOwned>(
-    p: &serde_json::Value,
-) -> Result<T, a2a_protocol_types::error::A2aError> {
-    T::deserialize(p)
-        .map_err(|e| crate::streaming::sse::invalid_params_for::<T>(p, &e).to_a2a_error())
-}
-
-/// Parses params from an optional JSON value, absent read as `{}` (JSON-RPC
-/// 2.0 §4.2: `params` "MAY be omitted"), as over HTTP.
-fn parse_params<T: serde::de::DeserializeOwned>(
-    params: Option<&serde_json::Value>,
-) -> Result<T, ServerError> {
-    let value = params.cloned().unwrap_or_else(empty_params);
-    T::deserialize(&value).map_err(|e| crate::streaming::sse::invalid_params_for::<T>(&value, &e))
-}
-
-/// The `params` an omitted member stands for: `{}`.
-fn empty_params() -> serde_json::Value {
-    serde_json::Value::Object(serde_json::Map::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_params_with_valid_json() {
-        let value = Some(serde_json::json!({"id": "task-1"}));
-        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> =
-            parse_params(value.as_ref());
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().id, "task-1");
-    }
-
-    #[test]
-    fn parse_params_with_none_returns_error() {
-        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> = parse_params(None);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_params_with_wrong_type_returns_error() {
-        let value = Some(serde_json::json!("not an object"));
-        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> =
-            parse_params(value.as_ref());
-        assert!(result.is_err());
-    }
 
     // WsError Display
     #[test]

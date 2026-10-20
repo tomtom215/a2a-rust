@@ -182,17 +182,6 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                // taskId is optional on the wire (a config nested in
-                // SendMessageConfiguration omits it), but a standalone create has
-                // no task context to infer it from — reject explicitly instead of
-                // storing an unroutable config.
-                if config.task_id.as_deref().unwrap_or("").is_empty() {
-                    return Err(ServerError::InvalidField {
-                        field: "taskId".into(),
-                        message: "taskId is required for CreateTaskPushNotificationConfig".into(),
-                    });
-                }
-
                 let mut call_ctx = build_call_context(
                     "CreateTaskPushNotificationConfig",
                     headers,
@@ -207,7 +196,18 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
-
+                    // taskId is optional on the wire (a config nested in
+                    // SendMessageConfiguration omits it), but a standalone
+                    // create has no task to infer it from, so it is refused,
+                    // after admission: until 2026-10-20 before it, to callers
+                    // with no credential too.
+                    if config.task_id.as_deref().unwrap_or("").is_empty() {
+                        return Err(ServerError::InvalidField {
+                            field: "taskId".into(),
+                            message: "taskId is required for CreateTaskPushNotificationConfig"
+                                .into(),
+                        });
+                    }
                     self.validate_and_store_push_config(config).await
                 }
                 .await;

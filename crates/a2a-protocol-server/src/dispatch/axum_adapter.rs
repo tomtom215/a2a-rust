@@ -95,7 +95,9 @@ use bytes::Bytes;
 
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
+use unreadable::{refuse_unreadable, send_method};
 
+mod unreadable;
 mod validate;
 
 // ── A2aRouter ────────────────────────────────────────────────────────────────
@@ -334,12 +336,6 @@ async fn method_not_allowed() -> axum::response::Response {
     plain_error(405, "method not allowed")
 }
 
-/// A request body this adapter could not read, answered as `RestDispatcher`
-/// answers one.
-fn bad_body(err: &serde_json::Error) -> axum::response::Response {
-    plain_error(400, &err.to_string())
-}
-
 // ── Helper: convert SSE hyper response to axum response ──────────────────────
 
 /// Converts a hyper `Response<BoxBody<Bytes, Infallible>>` (from SSE builder)
@@ -402,7 +398,7 @@ async fn handle_tasks_catchall(
             let history_length =
                 match super::rest::query::parse_query_param_u32(query, "historyLength") {
                     Ok(history_length) => history_length,
-                    Err(e) => return handler_error_to_response(&e),
+                    Err(e) => return refuse_unreadable(&state, "GetTask", &hdrs, e).await,
                 };
             rpc_call(
                 &state.handler,
@@ -569,7 +565,7 @@ async fn handle_list_tasks(
     let params =
         match super::rest::query::parse_list_tasks_query(&query, query_tenant(&query).as_deref()) {
             Ok(params) => params,
-            Err(e) => return handler_error_to_response(&e),
+            Err(e) => return refuse_unreadable(&state, "ListTasks", &hdrs, e).await,
         };
     rpc_call(
         &state.handler,
@@ -666,10 +662,11 @@ async fn handle_send_inner(
     hdrs: &HashMap<String, String>,
     body: Bytes,
 ) -> axum::response::Response {
+    let method = send_method(streaming);
     let params: a2a_protocol_types::params::MessageSendParams =
         match crate::dispatch::rest::params_from_slice(&body) {
             Ok(p) => p,
-            Err(resp) => return hyper_to_axum(resp),
+            Err(e) => return refuse_unreadable(state, method, hdrs, e).await,
         };
     match state
         .handler
@@ -715,21 +712,21 @@ async fn handle_get_task_inner(
 /// path's `id` set over whatever the body says. Until 2026-10-13 the
 /// `:cancel` and `:subscribe` routes never read theirs, so a malformed body
 /// was served, and its `metadata` and `tenant` were dropped.
-// The `Err` is the finished response, returned as-is by both callers.
+// The `Err` holds the finished response, answered after admission.
 #[allow(clippy::result_large_err)]
 fn body_with_path_id<T: serde::de::DeserializeOwned>(
     body: &Bytes,
     id: &str,
-) -> Result<T, axum::response::Response> {
+) -> Result<T, crate::dispatch::rest::Unreadable> {
     let mut value: serde_json::Value = if body.iter().all(u8::is_ascii_whitespace) {
         serde_json::Value::Object(serde_json::Map::new())
     } else {
-        serde_json::from_slice(body).map_err(|e| bad_body(&e))?
+        serde_json::from_slice(body)?
     };
     if let Some(obj) = value.as_object_mut() {
         obj.insert("id".to_owned(), serde_json::Value::String(id.to_owned()));
     }
-    crate::dispatch::rest::params_from_value(value).map_err(hyper_to_axum)
+    crate::dispatch::rest::params_from_value(value)
 }
 
 async fn handle_cancel_task_inner(
@@ -740,7 +737,7 @@ async fn handle_cancel_task_inner(
 ) -> axum::response::Response {
     let params: a2a_protocol_types::params::CancelTaskParams = match body_with_path_id(body, id) {
         Ok(params) => params,
-        Err(resp) => return resp,
+        Err(e) => return refuse_unreadable(state, "CancelTask", hdrs, e).await,
     };
     match state.handler.on_cancel_task(params, Some(hdrs)).await {
         Ok(task) => a2a_json(&task),
@@ -758,7 +755,7 @@ async fn handle_subscribe_inner(
     // A POST's body may name the tenant; a GET's `?tenant=` names it.
     let mut params: a2a_protocol_types::params::TaskIdParams = match body_with_path_id(body, id) {
         Ok(params) => params,
-        Err(resp) => return resp,
+        Err(e) => return refuse_unreadable(state, "SubscribeToTask", hdrs, e).await,
     };
     if params.tenant.is_none() {
         params.tenant = tenant;
@@ -780,9 +777,10 @@ async fn handle_create_push_config_inner(
     hdrs: &HashMap<String, String>,
     body: Bytes,
 ) -> axum::response::Response {
+    let method = "CreateTaskPushNotificationConfig";
     let mut value: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return bad_body(&e),
+        Err(e) => return refuse_unreadable(state, method, hdrs, e).await,
     };
     // The path's id is the request's (`google.api.http`), as on the REST
     // dispatcher; until 2026-10-13 a `taskId` in the body replaced it.
@@ -795,7 +793,7 @@ async fn handle_create_push_config_inner(
     let config: a2a_protocol_types::push::TaskPushNotificationConfig =
         match crate::dispatch::rest::params_from_value(value) {
             Ok(c) => c,
-            Err(resp) => return hyper_to_axum(resp),
+            Err(e) => return refuse_unreadable(state, method, hdrs, e).await,
         };
     match state.handler.on_set_push_config(config, Some(hdrs)).await {
         Ok(result) => a2a_json(&result),
@@ -831,7 +829,9 @@ async fn handle_list_push_configs_inner(
     let params =
         match super::rest::query::list_push_configs_params(task_id, query, tenant.as_deref()) {
             Ok(params) => params,
-            Err(e) => return handler_error_to_response(&e),
+            Err(e) => {
+                return refuse_unreadable(state, "ListTaskPushNotificationConfigs", hdrs, e).await;
+            }
         };
     match state
         .handler

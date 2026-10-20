@@ -8,6 +8,16 @@
 //! answered with, as the JSON-RPC binding records the requests it refuses
 //! before routing (ADR 0013). Until 2026-10-20 these refusals were recorded
 //! nowhere.
+//!
+//! A request that does not convert is admitted before it is refused: until
+//! 2026-10-20 it was answered `INVALID_ARGUMENT` naming the field to a
+//! caller with no credential, where a well-formed request was refused
+//! `UNAUTHENTICATED` (`docs/handoff.md`, "Open engineering"). It now gets
+//! the interceptor chain's refusal, and `INVALID_ARGUMENT` only when the
+//! chain admits it (`RequestHandler::admit_unreadable`). The version check
+//! still comes first: §3.6.2 makes the version the semantics the request is
+//! read with, and it refuses a well-formed request alike. So does a message
+//! tonic cannot decode at all, which never reaches this service.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -15,23 +25,29 @@ use std::time::Instant;
 use a2a_protocol_types::proto::convert::ConvertError;
 use tonic::{Request, Status};
 
-use super::helpers::{code_name, request_headers};
+use super::helpers::{code_name, request_headers, server_error_to_status};
 use super::native::A2aServiceImpl;
+use crate::error::ServerError;
 use crate::rpc_span::{RpcSystem, record_refused};
 
 impl A2aServiceImpl {
     /// The call's headers and its request as `decode` converts it, or the
     /// status it is refused with — recorded as a call of `method`.
     #[allow(clippy::result_large_err)]
-    pub(super) fn admit<T, P>(
+    pub(super) async fn admit<T, P>(
         &self,
         method: &str,
         request: Request<T>,
-        decode: impl FnOnce(T) -> Result<P, Status>,
+        decode: impl FnOnce(T) -> Result<P, ConvertError>,
     ) -> Result<(HashMap<String, String>, P), Status> {
         let started = Instant::now();
-        let admitted = request_headers(&request, self.config.require_version_header)
-            .and_then(|headers| Ok((headers, decode(request.into_inner())?)));
+        let admitted = match request_headers(&request, self.config.require_version_header) {
+            Err(status) => Err(status),
+            Ok(headers) => match decode(request.into_inner()) {
+                Ok(params) => Ok((headers, params)),
+                Err(unreadable) => Err(self.refuse_unreadable(method, &headers, unreadable).await),
+            },
+        };
         if let Err(status) = &admitted {
             record_refused(
                 &self.handler,
@@ -43,15 +59,38 @@ impl A2aServiceImpl {
         }
         admitted
     }
+
+    /// The status a `method` call that did not convert is refused with: the
+    /// interceptor chain's refusal when it does not admit the caller, and
+    /// [`bad_request`] when it does.
+    async fn refuse_unreadable(
+        &self,
+        method: &str,
+        headers: &HashMap<String, String>,
+        unreadable: ConvertError,
+    ) -> Status {
+        let error = ServerError::InvalidField {
+            field: unreadable.field.to_owned(),
+            message: unreadable.to_string(),
+        };
+        match self
+            .handler
+            .admit_unreadable(method, Some(headers), error)
+            .await
+        {
+            Ok(_) => bad_request(unreadable),
+            Err(refused) => server_error_to_status(&refused),
+        }
+    }
 }
 
-/// Converts a request whose conversion can fail: [`bad_request`] if it does.
-#[allow(clippy::result_large_err)]
-pub(super) fn convert<T, P>(request: T) -> Result<P, Status>
+/// Converts a request whose conversion can fail, answered [`bad_request`]
+/// once the caller is admitted if it does.
+pub(super) fn convert<T, P>(request: T) -> Result<P, ConvertError>
 where
     T: TryInto<P, Error = ConvertError>,
 {
-    request.try_into().map_err(bad_request)
+    request.try_into()
 }
 
 /// Maps a request-side conversion failure to `INVALID_ARGUMENT`, with a
@@ -75,6 +114,26 @@ mod tests {
     use super::super::native::A2aServiceImpl;
     use super::super::pb::a2a_service_server::A2aService as _;
     use crate::{Metrics, RpcCall};
+
+    #[test]
+    fn bad_request_maps_to_invalid_argument() {
+        use tonic_types::StatusExt as _;
+        let status = super::bad_request(a2a_protocol_types::proto::convert::ConvertError::new(
+            "message.role",
+            "unknown Role number 9",
+        ));
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("message.role"));
+        let violations = status
+            .get_error_details()
+            .bad_request()
+            .cloned()
+            .expect("a BadRequest detail")
+            .field_violations;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].field, "message.role");
+        assert_eq!(violations[0].description, "unknown Role number 9");
+    }
 
     /// `(method, status_code, error_type)` of each recorded call.
     type Seen = Arc<Mutex<Vec<(Option<String>, Option<String>, Option<String>)>>>;

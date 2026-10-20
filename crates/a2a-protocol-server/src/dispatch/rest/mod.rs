@@ -11,15 +11,18 @@
 
 mod error_response;
 pub(crate) mod media_type;
+mod params;
 pub(crate) mod query;
 mod response;
 mod span;
 
 // The axum adapter answers errors through these, so the two HTTP+JSON
 // dispatchers send one error shape (audit N37).
+pub(crate) use error_response::{error_json_response, server_error_to_response};
 #[cfg(feature = "axum")]
-pub(crate) use error_response::params_from_slice;
-pub(crate) use error_response::{error_json_response, params_from_value, server_error_to_response};
+pub(crate) use error_response::{params_from_slice, params_from_value};
+#[cfg(feature = "axum")]
+pub(crate) use params::Unreadable;
 pub(crate) use response::{extended_card_response, json_ok_response};
 
 use std::collections::HashMap;
@@ -40,7 +43,7 @@ use query::{
     contains_path_traversal, list_push_configs_params, parse_list_tasks_query, parse_query_param,
     parse_query_param_u32, percent_decode_path, strip_tenant_prefix,
 };
-use response::{health_response, read_body_limited, set_path_field};
+use response::health_response;
 use span::HttpRoute;
 
 use crate::rpc_span::{RpcSystem, record_if_refused, refused};
@@ -484,54 +487,6 @@ impl RestDispatcher {
 
     // ── Route handlers ───────────────────────────────────────────────────
 
-    /// Reads a bounded POST body as JSON and fills in fields the client put
-    /// in the URL instead: the path tenant (when the prefix form was used)
-    /// and any other path variable the route bound. An empty body is the
-    /// empty object, so a bodiless `POST /tasks/{id}:cancel` still parses.
-    ///
-    /// `Err` carries the response to return: 413 for an oversized body, 408
-    /// for one not received in time, 400 for one that is not JSON or could
-    /// not be read.
-    // The `Err` is the finished response, sent as-is by the one caller of
-    // each route; boxing it would only add an allocation on the error path.
-    #[allow(clippy::result_large_err)]
-    async fn read_body_with_path_fields(
-        &self,
-        req: hyper::Request<Incoming>,
-        tenant: Option<&str>,
-        path_fields: &[(&str, &str)],
-    ) -> Result<serde_json::Value, hyper::Response<BoxBody<Bytes, Infallible>>> {
-        let body_bytes = read_body_limited(
-            req.into_body(),
-            self.config.max_request_body_size,
-            self.config.body_read_timeout,
-        )
-        .await
-        .map_err(|(status, msg)| error_json_response(status, &msg))?;
-        let mut value: serde_json::Value = if body_bytes.iter().all(u8::is_ascii_whitespace) {
-            serde_json::Value::Object(serde_json::Map::new())
-        } else {
-            serde_json::from_slice(&body_bytes)
-                .map_err(|e| error_json_response(400, &e.to_string()))?
-        };
-        for &(field, path_value) in path_fields {
-            value = set_path_field(value, field, path_value);
-        }
-        // The path form is authoritative: under `google.api.http` a variable
-        // bound from the path is the field's value, whatever the body says.
-        // (A body-only tenant was already applied by the caller, so `tenant`
-        // here is either the path's or the body's own.)
-        if let Some(tenant) = tenant
-            && let Some(obj) = value.as_object_mut()
-        {
-            obj.insert(
-                "tenant".to_owned(),
-                serde_json::Value::String(tenant.to_owned()),
-            );
-        }
-        Ok(value)
-    }
-
     async fn handle_send(
         &self,
         req: hyper::Request<Incoming>,
@@ -539,12 +494,13 @@ impl RestDispatcher {
         tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_value = match self.read_body_with_path_fields(req, tenant, &[]).await {
-            Ok(v) => v,
-            Err(resp) => return resp,
+        let method = if streaming {
+            "SendStreamingMessage"
+        } else {
+            "SendMessage"
         };
         let params: a2a_protocol_types::params::MessageSendParams =
-            match params_from_value(body_value) {
+            match self.read_params(req, method, tenant, &[], headers).await {
                 Ok(p) => p,
                 Err(resp) => return resp,
             };
@@ -575,7 +531,7 @@ impl RestDispatcher {
         let id = id.as_str();
         let history_length = match parse_query_param_u32(query, "historyLength") {
             Ok(history_length) => history_length,
-            Err(e) => return server_error_to_response(&e),
+            Err(e) => return self.refuse_unreadable("GetTask", headers, e).await,
         };
         let params = a2a_protocol_types::params::TaskQueryParams {
             tenant: tenant.map(str::to_owned),
@@ -596,7 +552,7 @@ impl RestDispatcher {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = match parse_list_tasks_query(query, tenant) {
             Ok(params) => params,
-            Err(e) => return server_error_to_response(&e),
+            Err(e) => return self.refuse_unreadable("ListTasks", headers, e).await,
         };
         match self.handler.on_list_tasks(params, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
@@ -616,18 +572,13 @@ impl RestDispatcher {
         // `CancelTaskRequest` is `body: "*"`: the body may carry `metadata`,
         // and — under the primary binding — the `tenant`. Until 2026-09-09
         // the body was never read, so both were dropped on this binding.
-        let body_value = match self
-            .read_body_with_path_fields(req, tenant, &[("id", id)])
+        let params: a2a_protocol_types::params::CancelTaskParams = match self
+            .read_params(req, "CancelTask", tenant, &[("id", id)], headers)
             .await
         {
-            Ok(v) => v,
+            Ok(p) => p,
             Err(resp) => return resp,
         };
-        let params: a2a_protocol_types::params::CancelTaskParams =
-            match params_from_value(body_value) {
-                Ok(p) => p,
-                Err(resp) => return resp,
-            };
         match self.handler.on_cancel_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
             Err(e) => server_error_to_response(&e),
@@ -646,14 +597,10 @@ impl RestDispatcher {
         // A POST body, when present, may name the tenant (`SubscribeToTask
         // Request` under the primary binding); a GET has none and its
         // `?tenant=` was read by the caller.
-        let body_value = match self
-            .read_body_with_path_fields(req, tenant, &[("id", id)])
+        let params: a2a_protocol_types::params::TaskIdParams = match self
+            .read_params(req, "SubscribeToTask", tenant, &[("id", id)], headers)
             .await
         {
-            Ok(v) => v,
-            Err(resp) => return resp,
-        };
-        let params: a2a_protocol_types::params::TaskIdParams = match params_from_value(body_value) {
             Ok(p) => p,
             Err(resp) => return resp,
         };
@@ -681,18 +628,14 @@ impl RestDispatcher {
         // URL path), and the tenant may only be in the path prefix. Inject
         // both before deserializing so the required field is always present
         // and the config lands in the caller's partition.
-        let body_value = match self
-            .read_body_with_path_fields(req, tenant, &[("taskId", task_id)])
+        let method = "CreateTaskPushNotificationConfig";
+        let config: a2a_protocol_types::push::TaskPushNotificationConfig = match self
+            .read_params(req, method, tenant, &[("taskId", task_id)], headers)
             .await
         {
-            Ok(v) => v,
+            Ok(c) => c,
             Err(resp) => return resp,
         };
-        let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-            match params_from_value(body_value) {
-                Ok(c) => c,
-                Err(resp) => return resp,
-            };
         match self.handler.on_set_push_config(config, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),
@@ -730,7 +673,11 @@ impl RestDispatcher {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = match list_push_configs_params(task_id, query, tenant) {
             Ok(params) => params,
-            Err(e) => return server_error_to_response(&e),
+            Err(e) => {
+                return self
+                    .refuse_unreadable("ListTaskPushNotificationConfigs", headers, e)
+                    .await;
+            }
         };
         match self
             .handler

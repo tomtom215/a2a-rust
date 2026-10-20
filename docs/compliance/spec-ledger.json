@@ -1644,19 +1644,27 @@
     "crates/a2a-protocol-server/src/auth/declared.rs check",
     "crates/a2a-protocol-server/src/auth/mod.rs:1",
     "crates/a2a-protocol-types/src/auth_rejection.rs:14",
-    "crates/a2a-protocol-server/src/error/mod.rs:176"
+    "crates/a2a-protocol-server/src/error/mod.rs:176",
+    "crates/a2a-protocol-server/src/handler/unreadable.rs admit_unreadable"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_every_method.rs every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
     "crates/a2a-protocol-server/src/auth/declared_tests.rs a_card_requiring_credentials_needs_an_authenticator",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:156 json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged",
-    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:225 the_axum_adapter_answers_a_missing_bearer_token_401_with_its_challenge"
+    "crates/a2a-protocol-server/tests/auth_rejection_status.rs:225 the_axum_adapter_answers_a_missing_bearer_token_401_with_its_challenge",
+    "crates/a2a-protocol-server/tests/jsonrpc_auth_before_params.rs jsonrpc_malformed_params_without_credential_is_refused_401",
+    "crates/a2a-protocol-server/tests/auth_before_params/http_json.rs rest_malformed_request_is_refused_401_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/http_json.rs axum_malformed_request_is_refused_401_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/grpc.rs grpc_malformed_request_is_refused_unauthenticated_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/websocket.rs websocket_malformed_frame_is_refused_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/main.rs jsonrpc_handler_checks_run_after_admission",
+    "crates/a2a-protocol-server/tests/auth_before_params/main.rs rest_handler_checks_run_after_admission"
    ],
-   "notes": "The bundled ApiKey/Bearer/JWT interceptors refuse a missing or invalid credential with 401/UNAUTHENTICATED on every binding. Since 2026-10-18 build() refuses a card whose securityRequirements (top-level or a skill's, with no empty {} requirement making it optional) ask for a credential when no interceptor authenticates, unless authenticated_upstream() says a gateway in front checks it; so a handler can no longer serve a secured card unauthenticated by omission. tests/auth_every_method.rs calls every method in Method::ALL on JSON-RPC and HTTP+JSON with no credential and a wrong one and requires 401 each time, with the valid token as the control (the official TCK has no test for this, findings §16 AUTH-SERVER-002).",
+   "notes": "The bundled ApiKey/Bearer/JWT interceptors refuse a missing or invalid credential with 401/UNAUTHENTICATED on every binding. Since 2026-10-18 build() refuses a card whose securityRequirements (top-level or a skill's, with no empty {} requirement making it optional) ask for a credential when no interceptor authenticates, unless authenticated_upstream() says a gateway in front checks it; so a handler can no longer serve a secured card unauthenticated by omission. tests/auth_every_method.rs calls every method in Method::ALL on JSON-RPC and HTTP+JSON with no credential and a wrong one and requires 401 each time, with the valid token as the control (the official TCK has no test for this, findings §16 AUTH-SERVER-002). Since 2026-10-20 that holds for a malformed request too: every binding read a request's params before the chain ran (JSON-RPC until that morning, HTTP+JSON, gRPC and WebSocket until the afternoon), and ListTasks checked pageSize and statusTimestampAfter, and CreateTaskPushNotificationConfig its taskId, before admission, so a caller with no credential got 400 / INVALID_ARGUMENT / -32602 naming the field where a well-formed request got the refusal. A request whose params cannot be read is now admitted first (RequestHandler::admit_unreadable) and the handler checks run after admission; the binding's version check, the body's size cap and read timeout, and routing still come first, since they refuse a well-formed request alike. The auth_before_params tests send each malformed request on every binding with no credential, a wrong one and the right one.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 506,
@@ -4815,19 +4823,27 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/declared.rs check",
     "crates/a2a-protocol-server/src/auth/mod.rs:6",
-    "crates/a2a-protocol-server/src/interceptor/mod.rs:147"
+    "crates/a2a-protocol-server/src/interceptor/mod.rs:147",
+    "crates/a2a-protocol-server/src/handler/unreadable.rs admit_unreadable"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_every_method.rs every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
     "crates/a2a-protocol-server/src/auth/declared_tests.rs a_card_requiring_credentials_needs_an_authenticator",
     "crates/a2a-protocol-server/src/auth/declared_tests.rs an_authenticator_checking_an_undeclared_scheme_is_refused",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs",
-    "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:114 a_refused_token_is_dropped_over_grpc"
+    "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:114 a_refused_token_is_dropped_over_grpc",
+    "crates/a2a-protocol-server/tests/jsonrpc_auth_before_params.rs jsonrpc_malformed_params_without_credential_is_refused_401",
+    "crates/a2a-protocol-server/tests/auth_before_params/http_json.rs rest_malformed_request_is_refused_401_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/http_json.rs axum_malformed_request_is_refused_401_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/grpc.rs grpc_malformed_request_is_refused_unauthenticated_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/websocket.rs websocket_malformed_frame_is_refused_without_credential",
+    "crates/a2a-protocol-server/tests/auth_before_params/main.rs jsonrpc_handler_checks_run_after_admission",
+    "crates/a2a-protocol-server/tests/auth_before_params/main.rs rest_handler_checks_run_after_admission"
    ],
-   "notes": "Interceptors run before every method on every binding (WebSocket per message). Since 2026-10-18 the card's declared requirements are tied to the chain: build() refuses a card requiring credentials with no authenticating interceptor (opt-out authenticated_upstream() for a gateway), and an authenticating interceptor that checks none of the declared schemes (ServerInterceptor::checks_scheme, answered by the bundled authenticators). Every method is shown refused without a credential on both HTTP bindings (auth_every_method.rs). The note that WebSocket per-message auth had no test was stale: websocket_binding_spec.rs and sdk auth_rejection_e2e.rs cover it.",
+   "notes": "Interceptors run before every method on every binding (WebSocket per message). Since 2026-10-18 the card's declared requirements are tied to the chain: build() refuses a card requiring credentials with no authenticating interceptor (opt-out authenticated_upstream() for a gateway), and an authenticating interceptor that checks none of the declared schemes (ServerInterceptor::checks_scheme, answered by the bundled authenticators). Every method is shown refused without a credential on both HTTP bindings (auth_every_method.rs). The note that WebSocket per-message auth had no test was stale: websocket_binding_spec.rs and sdk auth_rejection_e2e.rs cover it. Since 2026-10-20 that holds for a malformed request too: every binding read a request's params before the chain ran (JSON-RPC until that morning, HTTP+JSON, gRPC and WebSocket until the afternoon), and ListTasks checked pageSize and statusTimestampAfter, and CreateTaskPushNotificationConfig its taskId, before admission, so a caller with no credential got 400 / INVALID_ARGUMENT / -32602 naming the field where a well-formed request got the refusal. A request whose params cannot be read is now admitted first (RequestHandler::admit_unreadable) and the handler checks run after admission; the binding's version check, the body's size cap and read timeout, and routing still come first, since they refuse a well-formed request alike. The auth_before_params tests send each malformed request on every binding with no credential, a wrong one and the right one.",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1896,
@@ -6340,7 +6356,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs jsonrpc_invalid_params_name_the_field",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_invalid_params_name_the_field",
     "crates/a2a-protocol-server/tests/bad_request_details.rs the_rest_dispatcher_names_the_bad_field",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs bad_request_maps_to_invalid_argument"
+    "crates/a2a-protocol-server/src/dispatch/grpc/admit.rs bad_request_maps_to_invalid_argument"
    ],
    "notes": "A2A errors carry ErrorInfo. Params that do not deserialize answer InvalidParams with a google.rpc.BadRequest naming the field path, on JSON-RPC (HTTP and WebSocket), HTTP+JSON and gRPC (from ConvertError's field).",
    "auditor": "E",
@@ -7185,7 +7201,7 @@
    "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs jsonrpc_error_from",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs send_error / ws_params / busy_response; dispatch/websocket/stream.rs stream_events"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs send_error / busy_response; dispatch/websocket/params.rs Unread; dispatch/websocket/stream.rs stream_events"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs ws_unary_error_carries_error_info",

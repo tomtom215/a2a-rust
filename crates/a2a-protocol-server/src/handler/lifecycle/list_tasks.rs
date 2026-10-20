@@ -12,7 +12,7 @@ use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::TaskState;
 
-use crate::error::ServerResult;
+use crate::error::{ServerError, ServerResult};
 
 use super::super::RequestHandler;
 use super::super::helpers::{build_call_context, truncate_history, unset_if_empty};
@@ -37,20 +37,6 @@ impl RequestHandler {
             .resolve_tenant("ListTasks", headers, params.tenant.as_deref())
             .await?;
         let mut params = params;
-        // a2a.proto: page_size's "minimum value is 1" and its "maximum value
-        // is 100"; the spec's validation example answers pageSize=150 with a
-        // 400. Out-of-range sizes were clamped to 1000, and 0 read as 50.
-        if let Some(ps) = params.page_size
-            && !(1..=100).contains(&ps)
-        {
-            let err = crate::error::ServerError::InvalidField {
-                field: "pageSize".into(),
-                message: format!("pageSize must be between 1 and 100 inclusive, got {ps}"),
-            };
-            self.metrics.on_error("ListTasks", err.metric_label());
-            self.metrics.on_latency("ListTasks", start.elapsed());
-            return Err(err);
-        }
         // a2a.proto: `contextId`, `status` and `pageToken` have no presence,
         // so their defaults mean "no filter" and "first page", as the gRPC
         // conversion reads them. Read as values, each alone listed nothing:
@@ -60,22 +46,6 @@ impl RequestHandler {
         unset_if_empty(&mut params.page_token);
         if params.status == Some(TaskState::Unspecified) {
             params.status = None;
-        }
-        // Validate statusTimestampAfter up front so every store backend sees
-        // a well-formed value; a malformed timestamp is a client error, not
-        // an empty result set.
-        if let Some(ref after) = params.status_timestamp_after
-            && a2a_protocol_types::parse_iso8601_to_unix_millis(after).is_none()
-        {
-            let err = crate::error::ServerError::InvalidField {
-                field: "statusTimestampAfter".into(),
-                message: format!(
-                    "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
-                ),
-            };
-            self.metrics.on_error("ListTasks", err.metric_label());
-            self.metrics.on_latency("ListTasks", start.elapsed());
-            return Err(err);
         }
         let history_length = params.history_length;
         let include_artifacts = params.include_artifacts;
@@ -87,6 +57,7 @@ impl RequestHandler {
                     self.admit(&mut call, &call_ctx).await?;
                     // SPEC §3.3.4: refuse a client not declaring a required extension.
                     self.ensure_required_extensions(&call_ctx)?;
+                    refuse_unlistable(&params)?;
                     super::super::ids::refuse_control_chars_in_filter(&params)?;
                     let mut result = self.task_store.list(&params).await?;
 
@@ -125,6 +96,35 @@ impl RequestHandler {
             }
         }
         result
+    }
+}
+
+/// a2a.proto: `page_size`'s "minimum value is 1" and its "maximum value is
+/// 100"; the spec's validation example answers pageSize=150 with a 400.
+/// Out-of-range sizes were clamped to 1000, and 0 read as 50. And
+/// `statusTimestampAfter`, checked here so every store backend sees a
+/// well-formed value: a malformed one is a client error, not an empty list.
+/// Checked after admission: until 2026-10-20 it ran before, so a caller with
+/// no credential learned both bounds where a well-formed call got a 401.
+fn refuse_unlistable(params: &ListTasksParams) -> ServerResult<()> {
+    if let Some(ps) = params.page_size
+        && !(1..=100).contains(&ps)
+    {
+        return Err(ServerError::InvalidField {
+            field: "pageSize".into(),
+            message: format!("pageSize must be between 1 and 100 inclusive, got {ps}"),
+        });
+    }
+    match params.status_timestamp_after.as_deref() {
+        Some(after) if a2a_protocol_types::parse_iso8601_to_unix_millis(after).is_none() => {
+            Err(ServerError::InvalidField {
+                field: "statusTimestampAfter".into(),
+                message: format!(
+                    "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
+                ),
+            })
+        }
+        _ => Ok(()),
     }
 }
 

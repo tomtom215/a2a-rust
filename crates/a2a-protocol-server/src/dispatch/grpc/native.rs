@@ -140,7 +140,7 @@ impl A2aService for A2aServiceImpl {
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<apb::SendMessageResponse>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::MessageSendParams) =
-            self.admit("SendMessage", request, convert)?;
+            self.admit("SendMessage", request, convert).await?;
         match self
             .rpc_span("SendMessage", &headers)
             .run(self.handler.on_send_message(params, false, Some(&headers)))
@@ -163,7 +163,7 @@ impl A2aService for A2aServiceImpl {
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::MessageSendParams) =
-            self.admit("SendStreamingMessage", request, convert)?;
+            self.admit("SendStreamingMessage", request, convert).await?;
         let capacity = self.config.stream_channel_capacity;
         let call = self.handler.on_send_message(params, true, Some(&headers));
         let then = |out| match out {
@@ -190,7 +190,7 @@ impl A2aService for A2aServiceImpl {
         request: Request<apb::GetTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::TaskQueryParams) =
-            self.admit("GetTask", request, convert)?;
+            self.admit("GetTask", request, convert).await?;
         match self
             .rpc_span("GetTask", &headers)
             .run(self.handler.on_get_task(params, Some(&headers)))
@@ -206,7 +206,7 @@ impl A2aService for A2aServiceImpl {
         request: Request<apb::ListTasksRequest>,
     ) -> Result<Response<apb::ListTasksResponse>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::ListTasksParams) =
-            self.admit("ListTasks", request, convert)?;
+            self.admit("ListTasks", request, convert).await?;
         match self
             .rpc_span("ListTasks", &headers)
             .run(self.handler.on_list_tasks(params, Some(&headers)))
@@ -222,7 +222,7 @@ impl A2aService for A2aServiceImpl {
         request: Request<apb::CancelTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::CancelTaskParams) =
-            self.admit("CancelTask", request, convert)?;
+            self.admit("CancelTask", request, convert).await?;
         match self
             .rpc_span("CancelTask", &headers)
             .run(self.handler.on_cancel_task(params, Some(&headers)))
@@ -239,8 +239,9 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SubscribeToTaskRequest>,
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
-        let (headers, params): (_, a2a_protocol_types::params::TaskIdParams) =
-            self.admit("SubscribeToTask", request, |r| Ok(r.into()))?;
+        let (headers, params): (_, a2a_protocol_types::params::TaskIdParams) = self
+            .admit("SubscribeToTask", request, |r| Ok(r.into()))
+            .await?;
         let capacity = self.config.stream_channel_capacity;
         self.rpc_span("SubscribeToTask", &headers)
             .run_with(self.handler.on_resubscribe(params, Some(&headers)), |out| {
@@ -261,7 +262,8 @@ impl A2aService for A2aServiceImpl {
                 "CreateTaskPushNotificationConfig",
                 request,
                 |r| Ok(r.into()),
-            )?;
+            )
+            .await?;
         match self
             .rpc_span("CreateTaskPushNotificationConfig", &headers)
             .run(self.handler.on_set_push_config(config, Some(&headers)))
@@ -276,8 +278,9 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskPushNotificationConfigRequest>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let (headers, params): (_, a2a_protocol_types::params::GetPushConfigParams) =
-            self.admit("GetTaskPushNotificationConfig", request, |r| Ok(r.into()))?;
+        let (headers, params): (_, a2a_protocol_types::params::GetPushConfigParams) = self
+            .admit("GetTaskPushNotificationConfig", request, |r| Ok(r.into()))
+            .await?;
         match self
             .rpc_span("GetTaskPushNotificationConfig", &headers)
             .run(self.handler.on_get_push_config(params, Some(&headers)))
@@ -292,8 +295,9 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTaskPushNotificationConfigsRequest>,
     ) -> Result<Response<apb::ListTaskPushNotificationConfigsResponse>, Status> {
-        let (headers, params): (_, a2a_protocol_types::params::ListPushConfigsParams) =
-            self.admit("ListTaskPushNotificationConfigs", request, convert)?;
+        let (headers, params): (_, a2a_protocol_types::params::ListPushConfigsParams) = self
+            .admit("ListTaskPushNotificationConfigs", request, convert)
+            .await?;
         match self
             .rpc_span("ListTaskPushNotificationConfigs", &headers)
             .run(
@@ -321,7 +325,8 @@ impl A2aService for A2aServiceImpl {
                 "DeleteTaskPushNotificationConfig",
                 request,
                 |r| Ok(r.into()),
-            )?;
+            )
+            .await?;
         match self
             .rpc_span("DeleteTaskPushNotificationConfig", &headers)
             .run(self.handler.on_delete_push_config(params, Some(&headers)))
@@ -338,7 +343,9 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetExtendedAgentCardRequest>,
     ) -> Result<Response<apb::AgentCard>, Status> {
-        let (headers, ()) = self.admit("GetExtendedAgentCard", request, |_| Ok(()))?;
+        let (headers, ()) = self
+            .admit("GetExtendedAgentCard", request, |_| Ok(()))
+            .await?;
         match self
             .rpc_span("GetExtendedAgentCard", &headers)
             .run(self.handler.on_get_extended_agent_card(Some(&headers)))
@@ -352,7 +359,6 @@ impl A2aService for A2aServiceImpl {
 
 #[cfg(test)]
 mod tests {
-    use super::super::admit::bad_request;
     use super::*;
     use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
     use a2a_protocol_types::responses::SendMessageResponse;
@@ -432,23 +438,6 @@ mod tests {
             writer.write(event).await.is_err(),
             "a reader for a cancelled gRPC stream was still attached to the queue"
         );
-    }
-
-    #[test]
-    fn bad_request_maps_to_invalid_argument() {
-        use tonic_types::StatusExt as _;
-        let status = bad_request(ConvertError::new("message.role", "unknown Role number 9"));
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("message.role"));
-        let violations = status
-            .get_error_details()
-            .bad_request()
-            .cloned()
-            .expect("a BadRequest detail")
-            .field_violations;
-        assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].field, "message.role");
-        assert_eq!(violations[0].description, "unknown Role number 9");
     }
 
     #[test]

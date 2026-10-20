@@ -135,12 +135,6 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   `tests/multi_replica.rs` that is ignored by default); a stale unscoped
   write from another replica keeps a stored position whose effect it
   overwrote (`store/applied.rs`).
-- **Server:** HTTP+JSON, gRPC and WebSocket parse a request's params before
-  the interceptor chain authenticates it (a malformed body is refused `400`
-  / `INVALID_ARGUMENT` / `-32602` before `401`). JSON-RPC was fixed
-  2026-10-20 (`RequestHandler::refuse_unreadable`); `ListTasks` still
-  checks `pageSize` and `statusTimestampAfter`, and
-  `CreateTaskPushNotificationConfig` its `taskId`, before admission.
 - **Holds (§3.5.2):** the subscription's setup hold
   (`handler/lifecycle/subscribe/hold.rs`) has no test that fails without
   it; with the in-memory processor the window it guards cannot open past
