@@ -1073,6 +1073,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **SLIMRPC: a streaming call's span and duration cover its stream**
+  (`a2a-protocol-slimrpc`), as on the server crate's bindings (the entry
+  on streaming calls below): `SendStreamingMessage` and `SubscribeToTask`
+  are recorded when the event stream ends — `OK`, the error it ended on,
+  or `cancelled` when the stream is dropped first — through
+  `BindingSpan::run_with` and `StreamEnd`.
 - **SLIMRPC: a client-side status is not a server error**
   (`a2a-protocol-slimrpc`). The binding sends gRPC's status codes and its
   server span now counts them as a gRPC server span does

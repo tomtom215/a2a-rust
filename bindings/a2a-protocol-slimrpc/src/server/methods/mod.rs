@@ -16,7 +16,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use a2a_protocol_server::streaming::EventQueueReader as _;
-use a2a_protocol_server::{BindingSpan, CustomBinding, RequestHandler, SendMessageResult};
+use a2a_protocol_server::{
+    BindingSpan, CustomBinding, RequestHandler, SendMessageResult, StreamEnd, StreamOutcome,
+};
 use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
 use slim_rpc::{Context, RpcError, Server};
@@ -132,18 +134,25 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let result = BindingSpan::open(
+                // A stream claims the call, which then ends with it.
+                let (result, end) = BindingSpan::open(
                     &h.handler,
                     SLIMRPC,
                     method::SEND_STREAMING_MESSAGE,
                     Some(&headers),
                 )
-                .run(h.handler.on_send_message(params, true, Some(&headers)))
-                .await
-                .map_err(|e| server_error_to_rpc_error(&e))?;
+                .run_with(
+                    h.handler.on_send_message(params, true, Some(&headers)),
+                    |out| {
+                        let streams = matches!(out, Ok(SendMessageResult::Stream(_)));
+                        (out, streams.then(StreamEnd::claim).flatten())
+                    },
+                )
+                .await;
+                let result = result.map_err(|e| server_error_to_rpc_error(&e))?;
 
                 match result {
-                    SendMessageResult::Stream(reader) => Ok(event_stream(reader)),
+                    SendMessageResult::Stream(reader) => Ok(event_stream(reader, end)),
                     // A streaming send that produced a single response still
                     // has to reach the client as a stream, so it becomes a
                     // one-event one.
@@ -243,16 +252,18 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     tenant: non_empty(inner.tenant),
                     id: inner.id,
                 };
-                let reader = BindingSpan::open(
+                let (reader, end) = BindingSpan::open(
                     &h.handler,
                     SLIMRPC,
                     method::SUBSCRIBE_TO_TASK,
                     Some(&headers),
                 )
-                .run(h.handler.on_resubscribe(params, Some(&headers)))
+                .run_with(h.handler.on_resubscribe(params, Some(&headers)), |out| {
+                    out.map(|reader| (reader, StreamEnd::claim()))
+                })
                 .await
                 .map_err(|e| server_error_to_rpc_error(&e))?;
-                Ok(event_stream(reader))
+                Ok(event_stream(reader, end))
             }
         },
     );
@@ -415,16 +426,33 @@ type EventStream = futures::stream::BoxStream<'static, Result<Pb<pb::StreamRespo
 /// binding drops. Resumption is the SSE binding's `id:`/`Last-Event-ID` pair;
 /// putting the position on a SLIM frame would be a protocol extension this
 /// binding invented, and there is nothing on this wire that sends one back.
-fn event_stream(reader: a2a_protocol_server::InMemoryQueueReader) -> EventStream {
-    futures::stream::unfold(reader, |mut reader| async move {
-        let event = reader.read().await?;
-        let item = match event.map(|e| e.event) {
-            Ok(domain) => pb::StreamResponse::try_from(domain)
-                .map(Pb)
-                .map_err(|e| RpcError::internal(format!("InternalError: {e}"))),
-            Err(e) => Err(RpcError::internal(format!("InternalError: {e}"))),
+///
+/// `end` is the call the stream answers, which ends with it: completed when
+/// the reader is, failed with the first error sent, and cancelled if the
+/// stream is dropped first (`a2a_protocol_server::StreamEnd`).
+fn event_stream(
+    reader: a2a_protocol_server::InMemoryQueueReader,
+    end: Option<StreamEnd>,
+) -> EventStream {
+    futures::stream::unfold((reader, end), |(mut reader, mut end)| async move {
+        let Some(event) = reader.read().await else {
+            if let Some(end) = end.take() {
+                end.end(StreamOutcome::Completed);
+            }
+            return None;
         };
-        Some((item, reader))
+        let failed = match event.map(|e| e.event) {
+            Ok(domain) => match pb::StreamResponse::try_from(domain) {
+                Ok(item) => return Some((Ok(Pb(item)), (reader, end))),
+                Err(e) => a2a_protocol_types::error::A2aError::internal(e.to_string()),
+            },
+            Err(e) => e,
+        };
+        let item = Err(RpcError::internal(format!("InternalError: {failed}")));
+        if let Some(end) = end.take() {
+            end.end(StreamOutcome::Failed(failed));
+        }
+        Some((item, (reader, end)))
     })
     .boxed()
 }

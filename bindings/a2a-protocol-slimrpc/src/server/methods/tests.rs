@@ -317,3 +317,41 @@ async fn only_server_side_statuses_are_errors() {
         ]
     );
 }
+
+/// A streaming call ends with its stream: recorded when the reader ends, not
+/// when the handler returned it, and as cancelled when the stream is dropped
+/// unfinished (ADR 0013; `rpc-spans.md`, "the span SHOULD cover the full
+/// lifetime of the request and/or response streams").
+#[tokio::test]
+async fn a_streaming_call_is_recorded_when_its_stream_ends() {
+    use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
+    let recorded = Recorded::default();
+    let handler = recorded_handler(&recorded);
+    let open = |reader| {
+        BindingSpan::open(&handler, SLIMRPC, method::SUBSCRIBE_TO_TASK, None).run_with(
+            async { Ok::<_, a2a_protocol_server::ServerError>(reader) },
+            |out| {
+                let reader = out.unwrap();
+                event_stream(reader, StreamEnd::claim())
+            },
+        )
+    };
+
+    let (writer, reader) = new_in_memory_queue();
+    let mut stream = open(reader).await;
+    assert!(
+        recorded.lock().unwrap().is_empty(),
+        "recorded at the handshake"
+    );
+    drop(writer);
+    while stream.next().await.is_some() {}
+    assert_eq!(*recorded.lock().unwrap(), [(Some("OK".to_owned()), None)]);
+
+    let (_writer, reader) = new_in_memory_queue();
+    drop(open(reader).await);
+    let cancelled = Some("cancelled".to_owned());
+    assert_eq!(
+        recorded.lock().unwrap()[1..],
+        [(cancelled.clone(), cancelled)]
+    );
+}
