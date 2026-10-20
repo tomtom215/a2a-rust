@@ -99,6 +99,15 @@ which disagree on some of them; check against the published standard.
 # ── EU AI Act ────────────────────────────────────────────────────────────────
 
 [[control]]
+id = "AIA-2-12"
+source = "ai-act"
+provision = "Art. 2(12)"
+requirement = "This Regulation does not apply to AI systems released under free and open-source licences, unless they are placed on the market or put into service as high-risk AI systems or as an AI system that falls under Article 5 or 50. Text read 2026-10-20 in the Official Journal edition of Regulation (EU) 2024/1689 (OJ L, 2024/1689, 12.7.2024, from the Publications Office); whether Regulation (EU) 2026/1744 amends this paragraph was not checked that day."
+sdk = "Nothing is needed: the SDK is neither an AI system nor a provider of one (Art. 3(1), 3(3)), so it is outside the Regulation for that reason, not under this paragraph. It is published under Apache-2.0, which an integrator releasing an agent built on it can keep."
+status = "integrator"
+gap = "The exemption is the integrator's to claim for an AI system it releases, and it does not hold for a system placed on the market or put into service as high-risk, or one that falls under Article 5 or Article 50, so an open-source agent that must mark its output (AIA-50-2) or disclose itself (AIA-50-1) owes that whatever its licence."
+
+[[control]]
 id = "AIA-4"
 source = "ai-act"
 provision = "Art. 4 (as replaced by Regulation (EU) 2026/1744)"
@@ -249,6 +258,15 @@ tests = [
 ]
 evidence = ["docs/adr/0015-audit-trail.md", "docs/adr/0013-observability.md"]
 [[control]]
+id = "AIA-12-3"
+source = "ai-act"
+provision = "Art. 12(3)"
+requirement = "For high-risk AI systems referred to in point 1(a) of Annex III (remote biometric identification), the logging capabilities provide, at a minimum: the period of each use (start and end date and time); the reference database against which input data has been checked; the input data for which the search has led to a match; and the identification of the natural persons involved in verifying the results, as referred to in Article 14(5). Text read 2026-10-20 in the Official Journal edition of Regulation (EU) 2024/1689 (OJ L, 2024/1689, 12.7.2024, from the Publications Office); whether Regulation (EU) 2026/1744 amends this paragraph was not checked that day."
+sdk = "The audit trail (AIA-12-1) records each call and run with its time, caller and outcome, and each admitted approval with its approver; `AuditRecord::detail` carries kind-specific fields an executor adds, so a reference database or a matched input's digest can be recorded in the same chain."
+status = "integrator"
+gap = "The SDK has no biometric capability and no notion of a reference database or a match: which fields a remote biometric identification system must log, and recording them, are its provider's. The two-person verification (d) refers to is row AIA-14-5."
+
+[[control]]
 id = "AIA-13-3f"
 source = "ai-act"
 provision = "Art. 13(3)(f)"
@@ -327,6 +345,22 @@ tests = [
 remainder = "Which actions wait for a person is the executor's decision: the gate checks and records decisions, and cannot make an executor ask, or stop one that acts without asking (re-examined 2026-10-20: every part of 14(4)(d) a library can carry is built and tested)."
 
 [[control]]
+id = "AIA-14-5"
+source = "ai-act"
+provision = "Art. 14(5)"
+requirement = "For high-risk AI systems referred to in point 1(a) of Annex III, the oversight measures ensure that no action or decision is taken by the deployer on the basis of the identification resulting from the system unless that identification has been separately verified and confirmed by at least two natural persons with the necessary competence, training and authority; this does not apply to systems used for law enforcement, migration, border control or asylum where Union or national law considers it disproportionate. Text read 2026-10-20 in the Official Journal edition of Regulation (EU) 2024/1689 (OJ L, 2024/1689, 12.7.2024, from the Publications Office); whether Regulation (EU) 2026/1744 amends this paragraph was not checked that day."
+sdk = "The approval extension holds a task at `input-required` until an authenticated approver the `ApprovalGate` allows confirms the digest of the exact action, and audits who confirmed it (AIA-14-4d)."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/approval.rs::ApprovalGate",
+]
+tests = [
+  "crates/a2a-protocol-server/src/approval/tests.rs::who_may_approve",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
+]
+gap = "Not built: the gate admits one approver's decision, so 'separately verified and confirmed by at least two natural persons' needs the executor to ask twice and compare. A quorum on the gate (n distinct allowed approvers on the same digest before the decision reaches the executor, each audited) is SDK work. Who is competent and authorised to verify stays the deployer's."
+
+[[control]]
 id = "AIA-14-4e"
 source = "ai-act"
 provision = "Art. 14(4)(e)"
@@ -354,7 +388,7 @@ tests = [
   "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_halt_the_store_refused_holds_and_is_written_later",
 ]
 evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md", "docs/adr/0019-shared-halt-store.md"]
-gap = "Without a halt store a halt holds in one process; with one, another replica follows within its poll interval rather than at once. A cancel on one replica makes the task's state final in a shared store, but an executor on another replica is not signalled: it stops only when its next write is refused. An executor that ignores its token keeps running. A parent that crashes leaves its delegated children running (G1-B in swarm-orchestration.md)."
+gap = "Without a halt store a halt holds in one process; with one, another replica follows within its poll interval rather than at once. A cancel on one replica makes the task's state final in a shared store, but an executor on another replica is not signalled: it stops only when its next write is refused. An executor that ignores its token keeps running: nothing forces it to stop (a bounded cancel deadline that drops its future, as the executor timeout does, is not built). A crashed parent's delegated children stop only if it started them with a lease (ADR 0020, `Delegation::start_leased`); leases are opt-in."
 
 [[control]]
 id = "AIA-15-4"
@@ -372,13 +406,14 @@ code = [
 tests = [
   "crates/a2a-protocol-server/tests/audit_tests/public_api.rs::executor_timeout_causes_failure",
   "crates/a2a-protocol-server/tests/validation_edge_tests.rs::shutdown_with_timeout",
+  "crates/a2a-protocol-server/tests/shutdown_in_flight_tests.rs::an_executor_that_ignores_its_token_is_reported_not_waited_for_forever",
   "crates/a2a-protocol-server/tests/push_sender_tests.rs::retries_on_server_error_and_eventually_fails",
   "crates/a2a-protocol-server/tests/push_sender_tests.rs::non_retryable_client_error_fails_without_retry",
   "crates/a2a-protocol-server/tests/executor_event_fields.rs::an_executor_event_missing_a_required_field_is_refused",
   "crates/a2a-protocol-server/tests/multi_replica.rs::a_task_created_on_one_replica_is_readable_on_the_other",
   "crates/a2a-protocol-server/tests/multi_replica.rs::the_single_writer_refusal_does_not_cross_replicas",
 ]
-gap = "Resilience of the model itself (errors in outputs, feedback loops in a system that keeps learning) and the redundancy plan of a deployment are the provider's. An in-memory store keeps no state across a restart, and a halt is per process. Admission is per replica: two replicas behind one store both admit a continuation of the same task and both run it, their writes interleaving until the first terminal state, which is final (a test pins this; it needs a live database)."
+gap = "Resilience of the model itself (errors in outputs, feedback loops in a system that keeps learning) and the redundancy plan of a deployment are the provider's. An in-memory store keeps no state across a restart, and a halt is per process unless a halt store is configured (ADR 0019). Admission is per replica: two replicas behind one store both admit a continuation of the same task and both run it, their writes interleaving until the first terminal state, which is final (a test pins this; it needs a live database)."
 
 [[control]]
 id = "AIA-15-5"
@@ -458,6 +493,15 @@ tests = [
 gap = "The agent must call the marker; the SDK cannot tell generated content from any other. The marker is in A2A metadata, so it does not travel with a file once saved: marking inside the content itself (a watermark, a C2PA manifest) is the generator's. It is an a2a-rust extension (`https://a2a-rust.com/extensions/provenance/v1`), not part of A2A v1.0: another implementation carries it as metadata without reading it, and content it extended with fields these types do not model does not verify after a round trip through them."
 
 [[control]]
+id = "AIA-53"
+source = "ai-act"
+provision = "Art. 53(1)–(2)"
+requirement = "Providers of general-purpose AI models draw up and keep up to date the model's technical documentation (Annex XI), information for providers integrating it (Annex XII), a copyright policy, and a public summary of the training content; points (a) and (b) do not apply to models released under a free and open-source licence with their parameters, including weights, published, unless the model has systemic risk. Text read 2026-10-20 in the Official Journal edition of Regulation (EU) 2024/1689 (OJ L, 2024/1689, 12.7.2024, from the Publications Office); whether Regulation (EU) 2026/1744 amends this paragraph was not checked that day."
+sdk = "Nothing: the SDK is not a general-purpose AI model and contains none; it carries messages to and from agents, which may call one."
+status = "integrator"
+gap = "Applies only to whoever provides a general-purpose AI model, which an agent built with the SDK may call; listed so the article is seen to have been considered."
+
+[[control]]
 id = "AIA-72-2"
 source = "ai-act"
 provision = "Art. 72(2), 72(3) (as replaced by Regulation (EU) 2026/1744)"
@@ -465,6 +509,7 @@ requirement = "The post-market monitoring system shall include an analysis of th
 sdk = "W3C trace context end to end: the client sends a `traceparent` naming its own span and the server continues it, and every audit record keeps the trace and span id, so one request's records can be joined across every audited agent it reached, long after the trace backend has expired the spans."
 status = "supported"
 code = [
+  "crates/a2a-protocol-server/src/handler/helpers.rs::parse_trace_context",
   "crates/a2a-protocol-server/src/metrics/mod.rs::Metrics",
   "crates/a2a-protocol-server/src/otel/mod.rs::OtelMetrics",
 ]
