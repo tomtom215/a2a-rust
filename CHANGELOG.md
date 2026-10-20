@@ -214,6 +214,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ClientBuilder::with_credential_preflight(CredentialPreflight)`**
+  (client; spec §3.1.11 "The client MUST authenticate the request using one
+  of the schemes declared in the public `AgentCard.securitySchemes` and
+  `AgentCard.security` fields"). A client built from a card keeps the card's
+  security schemes and requirements and checks each call after its
+  interceptors run, where the §13.4 plaintext check runs, so streaming calls
+  and every transport are covered: at least one requirement must be met,
+  each of its schemes by `Authorization` with the declared HTTP scheme (no
+  case), `Bearer` for OAuth 2.0 and OpenID Connect, or the header, query
+  parameter or cookie an API-key scheme names; a mutual-TLS scheme counts as
+  met. `Warn`, the default, sends the call and logs once per client for a
+  call with no credential and once for one with an undeclared credential;
+  `Refuse` returns `ClientError::InvalidAuthScheme` before anything is sent;
+  `Off` does not look. Neither names a credential value. A client built for
+  a bare endpoint, or from a card without `securityRequirements`, checks
+  nothing; fetching the extended card replaces the requirements, as it does
+  the capabilities. Tests: `declared_credentials`,
+  `credential_preflight::tests`.
 - **The originating principal on delegated calls, by RFC 8693 token
   exchange** (server, client; ADR 0021; OWASP ASI03). `JwtAuthInterceptor`
   reads the `act` chain of a verified token. The caller identity stays its

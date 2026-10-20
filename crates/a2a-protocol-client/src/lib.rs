@@ -124,6 +124,7 @@ struct ReadmeDoctests;
 mod trace;
 
 mod call_span;
+mod credential_preflight;
 mod declared;
 mod extensions;
 mod legacy_card;
@@ -166,6 +167,7 @@ pub use auth::{AuthInterceptor, CredentialsStore, InMemoryCredentialsStore, Sess
 pub use builder::ClientBuilder;
 pub use client::A2aClient;
 pub use config::{ClientConfig, GrpcBareAddressScheme};
+pub use credential_preflight::CredentialPreflight;
 pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};

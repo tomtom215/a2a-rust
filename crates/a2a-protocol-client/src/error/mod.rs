@@ -117,7 +117,12 @@ pub enum ClientError {
 
     /// An agent's security scheme this client cannot send a credential with:
     /// an `APIKeySecurityScheme` that places the key in the query string, or
-    /// names a header or cookie no request can carry.
+    /// names a header or cookie no request can carry. Also a call not sent
+    /// because its credentials satisfy none of the agent card's security
+    /// requirements, from a client built with
+    /// [`CredentialPreflight::Refuse`](crate::CredentialPreflight::Refuse)
+    /// (spec §3.1.11); the message names schemes, headers, cookies and
+    /// parameters, never a credential. Not retryable.
     InvalidAuthScheme(String),
 
     /// Not sent: a push-notification config's webhook URL is `http://` to a

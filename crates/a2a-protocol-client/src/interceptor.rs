@@ -276,6 +276,9 @@ pub struct InterceptorChain {
     /// Spec §13.4: what counts as a credential, and whether the endpoint
     /// is plaintext; checked after the `before` hooks.
     plaintext: crate::plaintext::Guard,
+    /// Spec §3.1.11: the card's security requirements, checked after the
+    /// `before` hooks too.
+    preflight: crate::credential_preflight::Preflight,
 }
 
 impl InterceptorChain {
@@ -309,6 +312,29 @@ impl InterceptorChain {
         self.plaintext.refuse();
     }
 
+    /// An empty chain that checks each request's credentials against the
+    /// security requirements `card` declares (spec §3.1.11).
+    pub(crate) fn declaring(card: &a2a_protocol_types::AgentCard) -> Self {
+        let mut chain = Self::new();
+        chain.preflight.declare(card);
+        chain
+    }
+
+    /// Checks against what `card` declares from now on, when this chain
+    /// checks against a card at all; see
+    /// [`with_credential_preflight`](crate::ClientBuilder::with_credential_preflight).
+    pub(crate) fn adopt_security(&self, card: &a2a_protocol_types::AgentCard) {
+        self.preflight.adopt(card);
+    }
+
+    /// Sets what the spec §3.1.11 check does with a mismatch.
+    pub(crate) const fn set_credential_preflight(
+        &mut self,
+        mode: crate::credential_preflight::CredentialPreflight,
+    ) {
+        self.preflight.set_mode(mode);
+    }
+
     /// Returns `true` if no interceptors have been registered.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -321,12 +347,16 @@ impl InterceptorChain {
     ///
     /// Returns the first error returned by any interceptor in the chain, or
     /// [`ClientError::InsecureTransport`] for a credential the client would
-    /// send in plaintext and was built to refuse.
+    /// send in plaintext and was built to refuse, or
+    /// [`ClientError::InvalidAuthScheme`] for credentials that satisfy none
+    /// of the agent card's security requirements, when the client was built
+    /// to refuse those.
     pub async fn run_before(&self, req: &mut ClientRequest) -> ClientResult<()> {
         for interceptor in &self.interceptors {
             interceptor.before_boxed(req).await?;
         }
-        self.plaintext.check(req)
+        self.plaintext.check(req)?;
+        self.preflight.check(req)
     }
 
     /// Runs all `after` hooks in reverse registration order.
@@ -354,6 +384,7 @@ impl std::fmt::Debug for InterceptorChain {
         f.debug_struct("InterceptorChain")
             .field("count", &self.interceptors.len())
             .field("plaintext", &self.plaintext)
+            .field("preflight", &self.preflight)
             .finish()
     }
 }

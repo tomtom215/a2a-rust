@@ -236,7 +236,7 @@ impl ClientBuilder {
         Ok(Self {
             endpoint,
             transport_override: None,
-            interceptors: InterceptorChain::new(),
+            interceptors: InterceptorChain::declaring(card),
             peer_honours_idempotency,
             config: ClientConfig {
                 // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
