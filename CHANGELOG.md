@@ -2612,6 +2612,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The 22 TCK MUSTs the official suite does not grade are mapped to this
+  repository's tests.** `tck/untested-musts.toml` names, for each, the tests
+  that assert it; `check_tck_untested_map.py` (CI) fails when an entry cites
+  no test, a missing one or an ignored one, or an ID twice. New tests: a
+  cross-binding suite (`a2a-protocol-sdk/tests/binding_equivalence/`) that
+  drives one agent over JSON-RPC, HTTP+JSON, gRPC and WebSocket for
+  `BIND-EQUIV-001..004`, `VER-CLIENT-001/002`, `VER-SERVER-001` and
+  `CARD-EXT-002`, and `CARD-SIGN-001..003` tests that verify the signature
+  over a signing input the test builds itself. Still not graded by the
+  official suite; `docs/official-tck-findings.md` §16 says what changed.
 - **The spec ledger's `SUPPORTED` answers only a MAY.**
   `check_spec_ledger.py` now refuses `SUPPORTED` or `NOT_SUPPORTED` on an
   entry whose keyword is not MAY or OPTIONAL, as the ledger's own status key

@@ -114,6 +114,19 @@ PACKAGE_CLONE=""
 
 note_touched() { TOUCHED+=("$1"); }
 
+# Renames `fn $2()` in $1 to `$2_renamed`, refusing unless it occurs once.
+rename_test() {
+    note_touched "$1"
+    python3 - "$1" "$2" <<'PY'
+import pathlib, sys
+p, name = pathlib.Path(sys.argv[1]), sys.argv[2]
+s, old = p.read_text(), f"fn {name}()"
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one `{old}` in {p}; found {s.count(old)}")
+p.write_text(s.replace(old, f"fn {name}_renamed()"))
+PY
+}
+
 revert_all() {
     if [ "${#TOUCHED[@]}" -gt 0 ]; then
         # `git checkout HEAD --`, not `git checkout --`. The latter restores
@@ -351,6 +364,8 @@ injection_for() {
             echo "compliance_map" ;;
         *"check_spec_ledger.py"*)
             echo "spec_ledger" ;;
+        *"check_tck_untested_map.py"*)
+            echo "tck_untested_map" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
@@ -519,6 +534,7 @@ expected_marker() {
         fuzz_matrix)      echo "no runner ever executes it" ;;
         compliance_map)   echo "no \`fn verify_rejects_tampered_card\`" ;;
         spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
+        tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
@@ -832,36 +848,17 @@ if s.count(old) != 1:
 p.write_text(s.replace(old, ""))
 PY
             ;;
+        # The three citation registers share one defect, verbatim: a refactor
+        # renames a test, everything still builds and passes, and the register
+        # goes on citing it as evidence. Each register's own test is renamed.
         compliance_map)
-            # Rename a test the control map cites, leaving the map alone. That is
-            # the defect verbatim: a refactor renames a test, everything else
-            # still builds and passes, and the map goes on calling the control
-            # supported on the strength of a test that no longer exists.
-            note_touched "crates/a2a-protocol-types/src/signing.rs"
-            python3 - <<'PY'
-import pathlib, sys
-p = pathlib.Path("crates/a2a-protocol-types/src/signing.rs")
-s = p.read_text()
-old = "fn verify_rejects_tampered_card()"
-if s.count(old) != 1:
-    sys.exit(f"expected exactly one verify_rejects_tampered_card; found {s.count(old)}")
-p.write_text(s.replace(old, "fn verify_rejects_tampered_card_renamed()"))
-PY
-            ;;
+            rename_test crates/a2a-protocol-types/src/signing.rs verify_rejects_tampered_card ;;
         spec_ledger)
-            # Rename a test the spec ledger cites, leaving the ledger alone:
-            # the same defect as compliance_map's, against the other register.
-            note_touched "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs"
-            python3 - <<'PY'
-import pathlib, sys
-p = pathlib.Path("crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs")
-s = p.read_text()
-old = "fn a_message_only_stream_is_exactly_one_message()"
-if s.count(old) != 1:
-    sys.exit(f"expected exactly one a_message_only_stream_is_exactly_one_message; found {s.count(old)}")
-p.write_text(s.replace(old, "fn a_message_only_stream_is_exactly_one_message_renamed()"))
-PY
-            ;;
+            rename_test crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs \
+                a_message_only_stream_is_exactly_one_message ;;
+        tck_untested_map)
+            rename_test crates/a2a-protocol-types/tests/tck_card_signing.rs \
+                card_sign_002_signatures_are_not_part_of_the_signed_payload ;;
         gate_reachability)
             # The defect is the review's "Done when" verbatim: drop ci.yml's
             # `push` trigger, leaving `pull_request` only. Every gate in this

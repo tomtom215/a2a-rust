@@ -205,6 +205,15 @@ jobs:
       - name: Spec ledger covers every requirement and cites only tests that exist
         run: python3 scripts/check_spec_ledger.py
 
+      # The official TCK does not grade 22 of its MUSTs against this SDK: 21
+      # have no test in the suite and CARD-EXT-002's precondition cannot hold
+      # on our SUT (docs/official-tck-findings.md §16). tck/untested-musts.toml
+      # names this repository's tests for each, which is the only evidence
+      # behind them; a renamed, deleted or ignored test would leave an entry
+      # reading as evidence with nothing behind it. This fails on all three.
+      - name: Untested TCK MUSTs cite only tests that exist
+        run: python3 scripts/check_tck_untested_map.py
+
       # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
       # forgets is discarded with no compile error and no failing test — the
       # exporter's own tests run against a noop meter, which a no-op override

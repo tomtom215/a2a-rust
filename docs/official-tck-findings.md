@@ -1054,6 +1054,15 @@ requirement result, and the gate returns 0 on the minimal-profile report.
   directly in `handler/lifecycle/extended_card.rs`), so declaring the
   capability and having no card are mutually exclusive. The requirement is
   structurally inapplicable here rather than unmeasured.
+  **Correction, 2026-10-20:** that mechanism is stale. Since 0.15 the handler
+  no longer serves the public card in the extended card's place: a card that
+  declares `extendedAgentCard` with no `with_extended_agent_card` answers
+  `ExtendedAgentCardNotConfiguredError`. What keeps the suite's test
+  `SKIPPED` is the SUT, which configures the extended card its card declares
+  (`tck/sut/src/main.rs`) because `CARD-EXT-001` needs one; the suite's probe
+  then finds a card and skips. One SUT cannot hold both preconditions. The
+  error itself is tested on all four bindings in this repository
+  (`tck/untested-musts.toml`, §16's update).
 - The 21 `NOT TESTED` MUSTs remain untouchable from here — `a2a-tck` has no
   tests for them.
 
@@ -1405,6 +1414,37 @@ session** — this section is a report of what was found, not an action taken.
 `CORE-CAP-004`, which is `SKIPPED` rather than `NOT TESTED`, looked like the
 one item closeable inside this repository; §12's entry for it now records
 that it is blocked on upstream `a2a-tck` #193 instead.
+
+**Update, 2026-10-20: evidenced in-repo, still not graded by the suite.**
+Everything above about the official suite still holds: at `263b9cf` it has
+no test for any of the 21, so none of them can become `PASS` in its report
+from this repository. What has changed is the evidence on this side.
+[`tck/untested-musts.toml`](../tck/untested-musts.toml) maps each of the 21,
+and `CARD-EXT-002` (§12), requirement ID by requirement ID, to the tests in
+this repository that assert it, with the suite's own title, section and
+level, why the suite does not grade it, and what the cited tests do and do
+not show. `scripts/check_tck_untested_map.py` runs in CI (`ci.yml`, "Untested
+TCK MUSTs cite only tests that exist") and fails when an entry cites no test,
+a cited test does not exist or is `#[ignore]`d, or an ID appears twice;
+`scripts/prove_gates_fail.sh --only check_tck_untested_map` shows it going red
+on a renamed test. Two families gained tests written for the purpose:
+
+- `BIND-EQUIV-001..004`: `crates/a2a-protocol-sdk/tests/binding_equivalence/`
+  serves one handler on JSON-RPC, HTTP+JSON, gRPC and WebSocket and drives
+  this SDK's client over each — every operation on every binding, the same
+  answers to the same requests, the same A2A error for six faults (with the
+  HTTP bindings' §5.4 codes read off the wire), and the card's bearer scheme
+  enforced on every operation on every binding. The same harness carries
+  `VER-CLIENT-001`/`002`, `VER-SERVER-001` on all four bindings, and
+  `CARD-EXT-002` on all four. This complements, and does not replace, the
+  in-repo TCK's black-box `--equivalence` run in `tck.yml`.
+- `CARD-SIGN-001..003`: `crates/a2a-protocol-types/tests/tck_card_signing.rs`
+  verifies the signature with `ring` over a JWS signing input the test builds
+  from the canonical card, which pins what was signed.
+
+The distinction stays exact: these are this repository's tests, run by this
+repository's CI. They are evidence that the SDK meets the requirements, not
+a grade from the official suite, and the README reports them that way.
 
 ## 17. `HTTP_JSON-SSE-001`: fault assigned, with evidence — it is the harness
 
@@ -2149,6 +2189,12 @@ can run them; the spec ledger cites the same tests against the spec lines.
 | AUTH-SCOPE-002 | results scoped to the caller | `caller_isolation.rs` |
 | AUTH-SCOPE-003 | unauthorized resources not revealed | `caller_isolation.rs` `isolated_another_callers_task_is_not_found_by_any_operation` (answered as an unknown id) |
 | BIND-EQUIV-001 to 004 | equivalence across bindings | `tck/src/equivalence.rs` `bind_equiv_001` to `004`, `bind_equiv_004_enforcement` |
+
+Since 2026-10-20 this table is kept, and checked in CI, as
+[`tck/untested-musts.toml`](../tck/untested-musts.toml) (§16's update), which
+also covers `CARD-EXT-002` and cites the cross-binding tests in
+`crates/a2a-protocol-sdk/tests/binding_equivalence/` for `BIND-EQUIV-*`; read
+the file where the two differ.
 
 Writing the AUTH-INTASK-004 evidence found a defect: after a blocking
 `SendMessage` answered at `AUTH_REQUIRED`, nothing stored what the executor
