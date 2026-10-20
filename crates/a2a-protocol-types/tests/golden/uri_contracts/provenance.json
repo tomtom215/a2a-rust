@@ -1,0 +1,62 @@
+{
+  "contract": {
+    "emptyObjectReadsAs": {
+      "aiGenerated": false
+    },
+    "fields": {
+      "ContentSignature": [
+        "protected",
+        "signature"
+      ],
+      "Provenance": [
+        "aiGenerated",
+        "generator",
+        "signature"
+      ]
+    },
+    "markedArtifact": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/provenance/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/provenance": {
+          "aiGenerated": true,
+          "generator": "billing-agent/2.3"
+        }
+      }
+    },
+    "markedMessage": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/provenance/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/provenance": {
+          "aiGenerated": true,
+          "generator": "billing-agent/2.3"
+        }
+      }
+    },
+    "metadataKey": "a2a-rust.com/provenance",
+    "signature": {
+      "algorithms": [
+        "ES256",
+        "EdDSA"
+      ],
+      "form": "JWS (RFC 7515), detached payload; protected and signature are base64url without padding",
+      "protectedHeaderKeys": [
+        "alg",
+        "kid"
+      ],
+      "signingInput": "protected + \".\" + base64url(RFC 8785 JCS of the whole content with provenance.signature removed)"
+    },
+    "value": {
+      "aiGenerated": true,
+      "generator": "billing-agent/2.3",
+      "signature": {
+        "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImsxIn0",
+        "signature": "c2ln"
+      }
+    }
+  },
+  "uri": "https://a2a-rust.com/extensions/provenance/v1"
+}

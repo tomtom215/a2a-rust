@@ -1,0 +1,27 @@
+{
+  "contract": {
+    "fields": {
+      "Lease": [
+        "ttlMs"
+      ]
+    },
+    "grant": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/lease/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/lease": {
+          "ttlMs": 30000
+        }
+      }
+    },
+    "lapse": "the task is stopped and ends TASK_STATE_CANCELED",
+    "metadataKey": "a2a-rust.com/lease",
+    "renewal": {
+      "activatedBy": "the A2A-Extensions service parameter naming the URI",
+      "effect": "the task's deadline moves to now + ttlMs",
+      "method": "GetTask"
+    }
+  },
+  "uri": "https://a2a-rust.com/extensions/lease/v1"
+}

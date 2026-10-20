@@ -1,0 +1,61 @@
+{
+  "contract": {
+    "decision": {
+      "carrier": "the message that continues the task",
+      "message": {
+        "extensions": [
+          "https://a2a-rust.com/extensions/approval/v1"
+        ],
+        "metadata": {
+          "a2a-rust.com/approval": {
+            "comment": "checked the order",
+            "decision": "approve",
+            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "requestId": "req-1"
+          }
+        }
+      }
+    },
+    "decisionTokens": [
+      "approve",
+      "deny"
+    ],
+    "digest": "sha256:<64 lowercase hex> over the RFC 8785 JCS of the action",
+    "fields": {
+      "ApprovalDecision": [
+        "comment",
+        "decision",
+        "digest",
+        "requestId"
+      ],
+      "ApprovalRequest": [
+        "digest",
+        "requestId",
+        "requestedBy",
+        "summary"
+      ],
+      "Decision": [
+        "approve",
+        "deny"
+      ]
+    },
+    "metadataKey": "a2a-rust.com/approval",
+    "request": {
+      "carrier": "status message of the input-required task",
+      "message": {
+        "extensions": [
+          "https://a2a-rust.com/extensions/approval/v1"
+        ],
+        "metadata": {
+          "a2a-rust.com/approval": {
+            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "requestId": "req-1",
+            "requestedBy": "alice",
+            "summary": "Refund EUR 40 to order 1182"
+          }
+        }
+      }
+    }
+  },
+  "uri": "https://a2a-rust.com/extensions/approval/v1"
+}

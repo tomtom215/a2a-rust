@@ -3420,12 +3420,13 @@
     "crates/a2a-protocol-types/src/approval.rs:60",
     "crates/a2a-protocol-types/src/failure.rs:61",
     "crates/a2a-protocol-types/src/idempotency.rs:62",
+    "crates/a2a-protocol-types/src/lease.rs:50",
     "crates/a2a-protocol-types/src/provenance.rs:63"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs an_extension_uri_without_a_version_is_reported"
    ],
-   "notes": "The four extensions the SDK authors carry /v1 in their URIs; since 2026-10-18 build() warns about a card extension URI with no version in it (no digit at all, a deliberately loose test). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's own extensions carry /v1, and build() reports any card extension URI without a version (tested).",
+   "notes": "The five extensions the SDK authors (failure, provenance, idempotency, lease, approval; lease was missing from the count until 2026-10-20) carry /v1 in their URIs; since 2026-10-18 build() warns about a card extension URI with no version in it (no digit at all, a deliberately loose test). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's own extensions carry /v1, and build() reports any card extension URI without a version (tested).",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -3434,19 +3435,32 @@
    "spec_line": 1139,
    "section": "§4.6.3",
    "keyword": "MUST",
-   "binds": "agent-application",
+   "binds": "spec-authors",
    "requirement": "A new URI MUST be created for breaking changes to an extension.",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "RELEASING.md (release checklist: new URI for a breaking change)",
-    "crates/a2a-protocol-types/src/lib.rs:85 WEBSOCKET_BINDING_URI"
+    "RELEASING.md:112-129 (release checklist: the contract tests, then a person decides breaking or not)",
+    "crates/a2a-protocol-types/src/approval.rs:60 APPROVAL_EXTENSION_URI",
+    "crates/a2a-protocol-types/src/failure.rs:61 FAILURE_EXTENSION_URI",
+    "crates/a2a-protocol-types/src/idempotency.rs:62 IDEMPOTENCY_EXTENSION_URI",
+    "crates/a2a-protocol-types/src/lease.rs:50 LEASE_EXTENSION_URI",
+    "crates/a2a-protocol-types/src/provenance.rs:63 PROVENANCE_EXTENSION_URI",
+    "crates/a2a-protocol-types/tests/golden/uri_contracts/"
    ],
-   "test_evidence": [],
-   "notes": "Process requirement on extension authors; not code-testable. Re-examined 2026-10-18, reclassified from NOT_APPLICABLE: the SDK defines four extensions (failure, provenance, idempotency, approval), so this binds its maintainers whenever they revise an extension. A release-process obligation, not code: RELEASING.md's checklist now carries it, with the command that lists the URIs; all are /v1 and none has had a breaking revision.",
+   "test_evidence": [
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:68 failure_extension_contract",
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:110 provenance_extension_contract",
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:161 the_signature_contract_is_what_the_code_signs",
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:222 idempotency_extension_contract",
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:257 lease_extension_contract",
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:279 approval_extension_contract",
+    "crates/a2a-protocol-types/tests/uri_contracts.rs:315 the_digest_format_is_what_the_code_writes"
+   ],
+   "notes": "Process requirement on extension authors. Re-examined 2026-10-18, reclassified from NOT_APPLICABLE to APPLICATION: a release-process obligation carried by RELEASING.md's checklist. Re-examined 2026-10-20, APPLICATION -> TESTED, binds agent-application -> spec-authors: the SDK is itself the author of five extensions (failure, provenance, idempotency, lease, approval; the earlier note listed four), so the obligation is its own, as the entries for the binding it authors (spec lines 479, 1194, 1279, 3214, 3216) already treat theirs. uri_contracts pins each URI to a snapshot of its wire contract (metadata key, field and variant names read from the Deserialize impls, a fully populated sample of each value, tokens and their meaning); a contract change under an unchanged URI fails, as does a bumped URI with the old snapshot. Shown failing 2026-10-20 on a renamed token, an added optional field and a bumped URI. Whether a change is breaking stays a person's call (RELEASING.md): the test makes the question unavoidable, not the answer automatic.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 1141,
@@ -4238,7 +4252,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:85",
+    "crates/a2a-protocol-types/src/lib.rs:89",
     "bindings/a2a-protocol-slimrpc/src/binding.rs:37"
    ],
    "test_evidence": [
@@ -4258,7 +4272,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint.rs card_warnings",
-    "crates/a2a-protocol-types/src/lib.rs:85"
+    "crates/a2a-protocol-types/src/lib.rs:89"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs a_custom_binding_should_be_a_uri"
@@ -4274,17 +4288,20 @@
    "keyword": "MUST",
    "binds": "spec-authors",
    "requirement": "When a breaking change is introduced to a binding, a new URI MUST be used",
-   "status": "APPLICATION",
+   "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "RELEASING.md (release checklist: new URI for a breaking change)",
-    "crates/a2a-protocol-types/src/lib.rs:85 WEBSOCKET_BINDING_URI"
+    "RELEASING.md:112-129 (release checklist: the contract tests, then a person decides breaking or not)",
+    "crates/a2a-protocol-types/src/lib.rs:89 WEBSOCKET_BINDING_URI",
+    "crates/a2a-protocol-server/tests/golden/uri_contracts/websocket.json"
    ],
-   "test_evidence": [],
-   "notes": "Process requirement; both custom-binding URIs carry /v1, no breaking revision exists yet. Re-examined 2026-10-18, reclassified from NOT_APPLICABLE: the SDK defines the WebSocket binding, so this binds its maintainers whenever they revise a binding. A release-process obligation, not code: RELEASING.md's checklist now carries it, with the command that lists the URIs; all are /v1 and none has had a breaking revision.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/uri_contract_websocket.rs:147 websocket_binding_contract"
+   ],
+   "notes": "Process requirement on binding authors; the WebSocket URI carries /v1 and no breaking revision exists yet. Re-examined 2026-10-18, reclassified from NOT_APPLICABLE to APPLICATION: a release-process obligation carried by RELEASING.md's checklist. Re-examined 2026-10-20, APPLICATION -> TESTED: the SDK authors the WebSocket binding, as the entries for spec lines 479, 1194, 1279, 3214 and 3216 already treat it. uri_contract_websocket drives a live WebSocketDispatcher and pins WEBSOCKET_BINDING_URI to the frames its specification defines (handshake refusal and query fallback, the stream_complete terminator, refusals of a binary frame, a batch and a v0.3 name, an A2A error, notifications, both credential refusals); a change under an unchanged URI fails, shown 2026-10-20 on a field added to the terminator. SLIMRPC's URI is upstream's, not this SDK's. Whether a change is breaking stays a person's call (RELEASING.md).",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3238,
@@ -6952,7 +6969,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1-33",
     "bindings/a2a-protocol-slimrpc/src/binding.rs:37-38",
-    "crates/a2a-protocol-types/src/lib.rs:85"
+    "crates/a2a-protocol-types/src/lib.rs:89"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:83 the_data_types_are_the_json_rpc_bindings_proto_json",
@@ -7308,7 +7325,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:85",
+    "crates/a2a-protocol-types/src/lib.rs:89",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs accept_loop",
     "crates/a2a-protocol-server/src/handler/mod.rs undeclared_binding"
    ],
@@ -8814,7 +8831,7 @@
     "book/src/bindings/websocket.md",
     "book/src/concepts/transport-layers.md:197",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:24",
-    "crates/a2a-protocol-types/src/lib.rs:85"
+    "crates/a2a-protocol-types/src/lib.rs:89"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs only_listed_origins_may_upgrade",

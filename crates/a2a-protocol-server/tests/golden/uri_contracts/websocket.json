@@ -1,0 +1,118 @@
+{
+  "contract": {
+    "credentialRefusals": {
+      "permissionDenied": {
+        "error": {
+          "code": -32600,
+          "data": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "domain": "a2a-rust.com",
+              "reason": "PERMISSION_DENIED"
+            }
+          ],
+          "message": "<text>"
+        },
+        "id": "1",
+        "jsonrpc": "2.0"
+      },
+      "unauthenticated": {
+        "error": {
+          "code": -32600,
+          "data": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "domain": "a2a-rust.com",
+              "metadata": {
+                "www-authenticate": "Bearer realm=\"a2a\""
+              },
+              "reason": "UNAUTHENTICATED"
+            }
+          ],
+          "message": "<text>"
+        },
+        "id": "1",
+        "jsonrpc": "2.0"
+      }
+    },
+    "frames": {
+      "a2aError": {
+        "error": {
+          "code": -32001,
+          "data": [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              "domain": "a2a-protocol.org",
+              "reason": "TASK_NOT_FOUND"
+            }
+          ],
+          "message": "<text>"
+        },
+        "id": "1",
+        "jsonrpc": "2.0"
+      },
+      "batch": {
+        "error": {
+          "code": -32600,
+          "message": "<text>"
+        },
+        "id": null,
+        "jsonrpc": "2.0"
+      },
+      "binaryFrame": {
+        "error": {
+          "code": -32700,
+          "message": "<text>"
+        },
+        "id": null,
+        "jsonrpc": "2.0"
+      },
+      "notificationAnswered": false,
+      "v03MethodName": {
+        "error": {
+          "code": -32601,
+          "message": "<text>"
+        },
+        "id": "l",
+        "jsonrpc": "2.0"
+      }
+    },
+    "handshake": {
+      "versionQueryParameterAccepted": true,
+      "withoutVersion": {
+        "body": {
+          "error": {
+            "code": 400,
+            "details": [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "domain": "a2a-protocol.org",
+                "reason": "VERSION_NOT_SUPPORTED"
+              }
+            ],
+            "message": "<text>",
+            "status": "FAILED_PRECONDITION"
+          }
+        },
+        "status": 400
+      }
+    },
+    "stream": {
+      "eventFrames": [
+        {
+          "id": "7",
+          "jsonrpc": "2.0",
+          "result": "<one StreamResponse: task | message | statusUpdate | artifactUpdate>"
+        }
+      ],
+      "terminator": {
+        "id": "7",
+        "jsonrpc": "2.0",
+        "result": {
+          "status": "stream_complete"
+        }
+      }
+    }
+  },
+  "uri": "https://a2a-rust.com/bindings/websocket/v1"
+}

@@ -1,0 +1,23 @@
+{
+  "contract": {
+    "carrier": "Message.metadata of a SendMessage or SendStreamingMessage request",
+    "honouredWithoutDeclaringTheUri": true,
+    "key": {
+      "acceptedAsciiCharacters": "-.0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz",
+      "maxLength": 255,
+      "minLength": 16,
+      "nonAsciiAccepted": false,
+      "type": "string"
+    },
+    "message": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/idempotency/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/idempotency-key": "8f14e45fceea167a5a36dedd4bea2543"
+      }
+    },
+    "metadataKey": "a2a-rust.com/idempotency-key"
+  },
+  "uri": "https://a2a-rust.com/extensions/idempotency/v1"
+}

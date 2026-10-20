@@ -1,0 +1,54 @@
+{
+  "contract": {
+    "carrier": "Message.metadata of the failed task's status message",
+    "classOfAnExecutorErrorByCode": {
+      "-32001": "invalid-request",
+      "-32002": "invalid-request",
+      "-32003": "invalid-request",
+      "-32004": "invalid-request",
+      "-32005": "invalid-request",
+      "-32006": "internal",
+      "-32007": "invalid-request",
+      "-32008": "invalid-request",
+      "-32009": "invalid-request",
+      "-32600": "invalid-request",
+      "-32601": "invalid-request",
+      "-32602": "invalid-request",
+      "-32603": "internal",
+      "-32700": "invalid-request"
+    },
+    "classes": {
+      "budget-exhausted": {
+        "needsHuman": false,
+        "retryable": false
+      },
+      "internal": {
+        "needsHuman": false,
+        "retryable": false
+      },
+      "invalid-request": {
+        "needsHuman": false,
+        "retryable": false
+      },
+      "policy-refusal": {
+        "needsHuman": true,
+        "retryable": false
+      },
+      "transient": {
+        "needsHuman": false,
+        "retryable": true
+      }
+    },
+    "metadataKey": "a2a-rust.com/failure",
+    "statusMessage": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/failure/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/failure": "policy-refusal"
+      }
+    },
+    "unrecognisedClassReadsAs": "internal"
+  },
+  "uri": "https://a2a-rust.com/extensions/failure/v1"
+}

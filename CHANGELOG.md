@@ -2857,6 +2857,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Each extension and binding URI this SDK defines is pinned to its wire
+  contract** (spec §4.6.3: "A new URI MUST be created for breaking changes to
+  an extension"; §5.8, the same for a binding). `uri_contracts` (types)
+  snapshots, for the failure, provenance, idempotency, lease and approval
+  extensions, the metadata key, the field and variant names a peer reads
+  (from the `Deserialize` impls, so a new optional field shows), a fully
+  populated sample of each value as it serializes, and the tokens and what
+  they mean; `uri_contract_websocket` (server) snapshots the WebSocket
+  binding's frames from a live dispatcher. A contract that changes under an
+  unchanged URI fails with the diff and the two ways out (bump the URI, or
+  re-bless with `A2A_BLESS_URI_CONTRACTS=1`), as does a bumped URI with the
+  old snapshot. RELEASING.md's checklist, which asked a person to notice,
+  now points at them; whether a change is breaking stays a person's call.
 - **The 22 TCK MUSTs the official suite does not grade are mapped to this
   repository's tests.** `tck/untested-musts.toml` names, for each, the tests
   that assert it; `check_tck_untested_map.py` (CI) fails when an entry cites
