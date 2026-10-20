@@ -356,9 +356,17 @@ Stated so a green dashboard is not mistaken for a complete one:
 
 * **The executor has a span, not a metric.** Its time is the
   `invoke_agent` span's duration; no histogram records it.
-* **Task-store operations have no latency instrument.** `persistence_errors`
-  counts failures, not slowness — a store degrading toward a timeout shows up
-  in request latency first, without saying it was the store.
+* **Task-store operations have no latency instrument and no span.**
+  `persistence_errors` counts failures, not slowness — a store degrading
+  toward a timeout shows up in request latency first, without saying it was
+  the store. The SQLite and PostgreSQL stores open no `db.*` client span:
+  sqlx 0.8 reports each statement as a `tracing` *event*, not a span
+  (target `sqlx::query`, with the SQL as `db.statement` — placeholders, not
+  the bound values — `rows_affected` and `elapsed_secs`), at `DEBUG`, or at
+  `WARN` when it takes a second or more. Under `Telemetry` those events are
+  log records in the trace of the call or executor that ran them; the slow
+  ones at the default `INFO` log level, every one with
+  `TelemetryBuilder::with_log_level(Level::DEBUG)`.
 * **There is no per-tenant metric dimension.** A tenant hitting
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.
