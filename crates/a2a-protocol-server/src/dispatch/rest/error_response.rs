@@ -59,9 +59,7 @@ pub fn params_from_value<T: serde::de::DeserializeOwned>(
 /// path tracking, on the failure path only, to name the field.
 #[cfg(feature = "axum")]
 #[allow(clippy::result_large_err)] // the error holds the response, as in `RestDispatcher::read_params`
-pub fn params_from_slice<T: serde::de::DeserializeOwned>(
-    body: &[u8],
-) -> Result<T, Unreadable> {
+pub fn params_from_slice<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Unreadable> {
     match serde_json::from_slice(body) {
         Ok(v) => Ok(v),
         Err(e) if e.classify() != serde_json::error::Category::Data => {
