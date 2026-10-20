@@ -4295,14 +4295,24 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:754",
-    "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:173"
+    "crates/a2a-protocol-server/src/push/sender.rs:523",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:180",
+    "crates/a2a-protocol-server/src/handler/ids.rs:29",
+    "crates/a2a-protocol-server/src/handler/ids.rs:60"
    ],
-   "test_evidence": [],
-   "notes": "SDK guards header injection in push creds (validate_header_value) and path traversal in REST; sanitising message content for downstream use is the executor's job. Re-examined 2026-10-18, kept: injection depends on where content ends up, which only the agent knows. The SDK sanitizes what it uses itself: ids (handler/helpers.rs), REST path traversal (dispatch/rest), push header values (push/sender.rs).",
+   "test_evidence": [
+    "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:103 jsonrpc_send_message_id_with_crlf_is_invalid_params",
+    "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:128 jsonrpc_task_id_with_crlf_is_invalid_params",
+    "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:147 jsonrpc_push_config_ids_with_crlf_are_invalid_params",
+    "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:217 jsonrpc_tenant_with_control_character_is_invalid_params",
+    "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:228 rest_message_and_task_ids_with_crlf_are_400",
+    "crates/a2a-protocol-server/src/push/sender.rs:1243 rejects_header_with_crlf",
+    "crates/a2a-protocol-server/src/dispatch/rest/query.rs:380 path_traversal_raw"
+   ],
+   "notes": "What the SDK itself takes from a request and uses is sanitized: push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and, since 2026-10-20, every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs). Until then validate_id refused only empty and over-long ids, so \"a\\r\\nb\" was stored and logged, and push-config ids and the ListTasks filter were not validated at all; the 2026-10-18 note claimed the ids were sanitized, which overstated it (found 2026-10-20; the wire tests fail without the check). Kept APPLICATION: sanitizing message and artifact content for wherever an agent sends it next depends on that destination, which only the agent knows.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
   },
   {
    "spec_line": 3245,
