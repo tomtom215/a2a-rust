@@ -35,6 +35,7 @@
 //! unexercised while `INCIDENT_REQUIRE_ALL` was set.
 
 mod agents;
+mod local_model;
 mod demo;
 mod hardening;
 mod serving;
@@ -182,7 +183,8 @@ fn find_service(text: &str) -> Option<&'static str> {
 }
 
 /// Optional LLM completion via genai. Model names that don't match a hosted
-/// provider route to the local Ollama-compatible endpoint on `:11434`.
+/// provider go to the local OpenAI-compatible API on `:11434/v1/`
+/// (`local_model`).
 /// Returns `None` (rather than failing the task) when no model is reachable,
 /// so the team degrades to mechanical summaries instead of going dark.
 async fn try_llm(client: &genai::Client, model: &str, prompt: &str) -> Option<String> {

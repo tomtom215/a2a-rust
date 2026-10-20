@@ -35,6 +35,7 @@ fn unreachable_client() -> genai::Client {
             Ok(target)
         })
         .build()
+        .expect("genai builds its HTTP client")
 }
 
 fn executor(fallback_on_error: bool) -> GenaiAgentExecutor {

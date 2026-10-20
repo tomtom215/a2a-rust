@@ -18,9 +18,11 @@ the response is returned as an A2A artifact.
 | Groq | `llama3-70b-8192` | `GROQ_API_KEY` |
 | Cohere | `command-r-plus` | `COHERE_API_KEY` |
 
-Model names that don't match a hosted provider's prefix route to genai's
-Ollama adapter at `http://localhost:11434/v1/` — which is also the API that
-llama.cpp's `llama-server` speaks.
+Model names that don't match a hosted provider's prefix go to the
+OpenAI-compatible API at `http://localhost:11434/v1/`, which llama.cpp's
+`llama-server`, vLLM and Ollama all serve (`src/local_model.rs`). genai on
+its own would send them to its Ollama adapter, which calls Ollama's native
+`/api/chat`; llama-server answers that `404`.
 
 ## Running
 

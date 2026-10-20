@@ -71,6 +71,6 @@ rcgen             = { version = "0.14", optional = true }
 opentelemetry     = { version = "0.33", optional = true }
 opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
 
-# genai — multi-provider LLM client; unknown model names route to the local
-# Ollama-compatible endpoint on :11434 (llama-server / Ollama).
+# genai — multi-provider LLM client; unknown model names go to the local
+# OpenAI-compatible API on :11434/v1/ (src/local_model.rs).
 genai = "0.7"

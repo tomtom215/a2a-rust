@@ -185,7 +185,7 @@ async fn log_search_rejects_a_query_naming_no_known_service() {
 #[tokio::test]
 async fn runbook_guidance_is_always_labeled_with_its_provenance() {
     let exec = RunbookExecutor {
-        client: genai::Client::new().expect("genai builds its HTTP client"),
+        client: crate::local_model::client().expect("genai builds its HTTP client"),
         model: incident_model(),
     };
     let service = known_services()[0];
@@ -212,7 +212,7 @@ async fn runbook_guidance_is_always_labeled_with_its_provenance() {
 #[tokio::test]
 async fn runbook_rejects_a_service_it_has_no_section_for() {
     let exec = RunbookExecutor {
-        client: genai::Client::new().expect("genai builds its HTTP client"),
+        client: crate::local_model::client().expect("genai builds its HTTP client"),
         model: incident_model(),
     };
     let ctx = ctx_for("t-runbook-unknown", "please advise");
@@ -227,7 +227,7 @@ async fn runbook_rejects_a_service_it_has_no_section_for() {
 
 fn triage() -> TriageExecutor {
     TriageExecutor {
-        client: genai::Client::new().expect("genai builds its HTTP client"),
+        client: crate::local_model::client().expect("genai builds its HTTP client"),
         model: incident_model(),
         // Unused by the parking path: it returns before delegating. Pointing
         // these at an address nothing serves keeps that honest — a test that

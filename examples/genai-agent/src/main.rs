@@ -8,10 +8,10 @@
 //!
 //! `genai` supports OpenAI, Anthropic, Google Gemini, Ollama, Groq, and
 //! Cohere out of the box. Any model name that doesn't match a hosted
-//! provider's prefix routes to the Ollama adapter at
-//! `http://localhost:11434/v1/`, which is also what llama.cpp's
-//! `llama-server` speaks — so this example runs fully local with no API
-//! key (see the README for a verified walkthrough).
+//! provider's prefix goes to the OpenAI-compatible API at
+//! `http://localhost:11434/v1/` (`local_model`), which llama.cpp's
+//! `llama-server`, vLLM and Ollama all serve — so this example runs fully
+//! local with no API key (see the README for a verified walkthrough).
 //!
 //! # Setup
 //!
@@ -43,6 +43,7 @@ use std::sync::Arc;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
+mod local_model;
 mod surface;
 
 #[cfg(test)]
@@ -78,7 +79,7 @@ impl GenaiAgentExecutor {
     /// Fails only when genai cannot build its HTTP client.
     fn new(model: impl Into<String>) -> genai::Result<Self> {
         Ok(Self {
-            client: genai::Client::new()?,
+            client: local_model::client()?,
             model: model.into(),
             fallback_on_error: false,
         })
