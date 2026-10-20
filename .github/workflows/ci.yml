@@ -1147,7 +1147,8 @@ jobs:
           # printed line and this job would stay green.
           INCIDENT_REQUIRE_ALL: "1"
       # The three examples whose point is an external dependency — an LLM
-      # provider, or worker agents in four other languages. None is available
+      # provider, or worker agents in four other languages (multi-lang-team,
+      # run by `example-surface-ops` below). None is available
       # in CI, and none is needed: the A2A surface these examples serve is the
       # part this SDK owns, and it is measured either way.
       #
@@ -1161,6 +1162,38 @@ jobs:
         run: cargo run -p genai-a2a-agent --release
       - name: rig-agent — every method over every binding
         run: cargo run -p rig-a2a-agent --release
+
+  # Split from `example-surface` on 2026-10-20. One job built eight release
+  # binaries in sequence, each selecting its own feature set (genai turns on
+  # serde_json's `preserve_order`, resilient-agent builds `--all-features`),
+  # so the shared crates were rebuilt per step; on main at 6c90d0b it ran out
+  # of its 20 minutes while still compiling `swarm`, with every earlier step
+  # green. Two jobs in parallel, each well inside the bound, rather than a
+  # longer timeout that would let the next slowdown go unnoticed.
+  example-surface-ops:
+    name: Example surface coverage (durability, scaling, swarm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # resilient-agent's Act 3 runs two replicas over this database; see the
+    # same service on `example-surface`.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: multi-lang-team — coordinator surface over every binding
         run: cargo run -p multi-lang-team --release
       # Durability over a SQLite restart, failure injection, and two replicas

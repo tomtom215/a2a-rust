@@ -22,7 +22,7 @@
 #
 # Every job in ci.yml must be in exactly one of these two. `require_known_jobs`
 # refuses to run if one is in neither.
-GATE_JOBS='^(static-checks|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding|go-sdk-interop)$'
+GATE_JOBS='^(static-checks|clippy|features|test|test-postgres|doc|package|dogfood|example-surface|example-surface-ops|slimrpc-binding|go-sdk-interop)$'
 
 # Why each of these three is not a gate job, because an exemption with no
 # recorded reason is the same shape as an oversight:
