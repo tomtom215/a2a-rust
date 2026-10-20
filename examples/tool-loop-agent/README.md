@@ -25,6 +25,7 @@ TOOL_LOOP_BASE_URL=http://127.0.0.1:8080/v1 cargo run -p tool-loop-agent -- \
 | `TOOL_LOOP_MODEL` | `qwen3:1.7b` |
 | `TOOL_LOOP_API_KEY` | none; sent as `Authorization: Bearer` when set |
 | `TOOL_LOOP_THINKING` | unset: every request carries `"chat_template_kwargs": {"enable_thinking": false}` (`OpenAiChatModel::with_extra_body`); `1` sends nothing extra |
+| `TOOL_LOOP_EXTRA_BODY` | none: a JSON object merged into every request after the line above, for the sampler and seed (`docs/tool-calling-study.md` drives the agent this way) |
 
 With no question on the command line it asks "How is the billing service
 doing?": the inventory has no `billing`, so the model has to read the tool's

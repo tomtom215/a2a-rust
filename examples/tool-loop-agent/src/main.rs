@@ -22,6 +22,7 @@
 //! | `TOOL_LOOP_MODEL` | `qwen3:1.7b` |
 //! | `TOOL_LOOP_API_KEY` | none (local servers need none) |
 //! | `TOOL_LOOP_THINKING` | unset: sends `chat_template_kwargs: {"enable_thinking": false}`; `1` sends nothing |
+//! | `TOOL_LOOP_EXTRA_BODY` | none; a JSON object merged into every request after the above (sampler, seed: `docs/tool-calling-study.md` uses it) |
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -132,12 +133,20 @@ fn model_from_env() -> Result<OpenAiChatModel, Box<dyn std::error::Error>> {
     }
     // Qwen3 thinks before it answers unless told not to, which on a CPU
     // multiplies each turn's time; llama-server reads this per request.
+    let mut extra = serde_json::Map::new();
     if std::env::var("TOOL_LOOP_THINKING").as_deref() != Ok("1") {
-        let mut extra = serde_json::Map::new();
         extra.insert(
             "chat_template_kwargs".to_owned(),
             serde_json::json!({"enable_thinking": false}),
         );
+    }
+    if let Ok(more) = std::env::var("TOOL_LOOP_EXTRA_BODY") {
+        let serde_json::Value::Object(more) = serde_json::from_str(&more)? else {
+            return Err("TOOL_LOOP_EXTRA_BODY must be a JSON object".into());
+        };
+        extra.extend(more);
+    }
+    if !extra.is_empty() {
         model = model.with_extra_body(extra);
     }
     Ok(model)
