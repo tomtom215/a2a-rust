@@ -127,6 +127,7 @@ pub(super) use idle::Serving;
 mod connection;
 use connection::{Accepted, spawn_connection};
 
+mod plaintext;
 #[cfg(feature = "tls-rustls")]
 mod tls;
 
@@ -275,6 +276,13 @@ impl Server {
             (dispatcher.protocol_binding(), dispatcher.request_handler())
         {
             handler.warn_if_undeclared(binding);
+        }
+        #[cfg(feature = "tls-rustls")]
+        let encrypted = tls.is_some();
+        #[cfg(not(feature = "tls-rustls"))]
+        let encrypted = false;
+        if let Ok(addr) = listener.local_addr() {
+            plaintext::warn_if_plaintext(addr, encrypted);
         }
         let connections = connections::Connections::for_dispatcher(&dispatcher);
         let dispatcher = Arc::new(dispatcher);

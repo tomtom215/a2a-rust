@@ -4759,15 +4759,18 @@
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:197",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
-    "crates/a2a-protocol-client/src/tls.rs:60"
+    "crates/a2a-protocol-client/src/tls.rs:60",
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs plaintext_warning"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/serve_tls.rs the_agent_card_is_served_over_https_on_http1_and_http2",
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_request_is_served_over_wss",
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs tls_client_round_trips_through_the_tls_dispatcher",
-    "crates/a2a-protocol-client/tests/ws_tls_tests.rs a_wss_endpoint_is_reached_with_the_configured_roots"
+    "crates/a2a-protocol-client/tests/ws_tls_tests.rs a_wss_endpoint_is_reached_with_the_configured_roots",
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:47 plaintext_beyond_loopback_is_warned_about",
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:60 loopback_or_tls_is_not"
    ],
-   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Not done: the server does not warn when it binds plaintext on a non-loopback address (the client has such a guard for credentials, client/src/plaintext.rs).",
+   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Since 2026-10-20 Server also warns once at start when it serves plaintext on an address that is not loopback (serve/graceful/plaintext.rs plaintext_warning); a warning, because TLS is often terminated in front.",
    "auditor": "D",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
@@ -8320,7 +8323,8 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:197",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:109",
     "crates/a2a-protocol-client/src/tls.rs:60",
-    "crates/a2a-protocol-client/src/transport/websocket.rs:636"
+    "crates/a2a-protocol-client/src/transport/websocket.rs:636",
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs plaintext_warning"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/serve_tls.rs the_agent_card_is_served_over_https_on_http1_and_http2",
@@ -8328,9 +8332,11 @@
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs a_plaintext_client_is_refused",
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs tls_client_round_trips_through_the_tls_dispatcher",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
-    "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused"
+    "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused",
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:47 plaintext_beyond_loopback_is_warned_about",
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:60 loopback_or_tls_is_not"
    ],
-   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Not done: the server does not warn when it binds plaintext on a non-loopback address (the client has such a guard for credentials, client/src/plaintext.rs).",
+   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Since 2026-10-20 Server also warns once at start when it serves plaintext on an address that is not loopback (serve/graceful/plaintext.rs plaintext_warning); a warning, because TLS is often terminated in front.",
    "auditor": "F",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"

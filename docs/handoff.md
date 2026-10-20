@@ -76,8 +76,7 @@ only: when something here is done, delete it rather than annotating it.
    §5.8 1297, URI-contract golden tests for the five extensions and the
    WebSocket binding (in progress). Left as suggestions, not done: a
    startup warning in the axum `A2aRouter` and a public check for bindings
-   outside the crate (§5.2 1156), and a warning when the server binds
-   plaintext off loopback (§7.1). `spec_line` N is line N + 31 of the
+   outside the crate (§5.2 1156),. `spec_line` N is line N + 31 of the
    vendored file (the header ends at line 30, then one blank line).
 2. **The tool-calling study** (`scripts/tool_calling_study/`,
    `docs/tool-calling-study.md` once written): direct and SDK arms over four

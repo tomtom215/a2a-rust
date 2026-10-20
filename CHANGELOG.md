@@ -214,6 +214,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Server` warns when it serves plaintext beyond loopback** (server, spec
+  §7.1: production deployments MUST use encrypted communication). Once, at
+  start, when the listener has no TLS and its address is not loopback,
+  naming `Server::with_tls` or a terminating proxy; a warning, not a
+  refusal, because TLS is often terminated in front. The client has warned
+  about credentials over plaintext since 0.12. Found by the ledger audit of
+  2026-10-20.
+
 - **Tool calling in the SDK: `tool_loop`** (server, feature `tool-loop`,
   off by default; forwarded as `tool-loop` by the SDK; ADR 0022). Two new
   open traits, `ToolModel` (one completion turn: preamble, conversation and
