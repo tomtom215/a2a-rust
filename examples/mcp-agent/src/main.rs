@@ -66,6 +66,7 @@ use rig_core::completion::CompletionModel;
 use rig_core::providers::openai;
 
 mod agent;
+mod leaked;
 mod mcp;
 
 #[cfg(test)]
@@ -298,7 +299,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = McpAgent::new(
         client.completion_model(&model_name),
         "You are a helpful A2A agent. Use the tools available to you to answer \
-         questions about services; do not guess a service's state.",
+         questions about services; do not guess a service's state. Call the tools \
+         yourself; never ask the user to call one. If a tool returns an error that \
+         suggests another tool, call that tool, then answer. Report values exactly \
+         as the tools returned them.",
         tools,
     );
 
@@ -327,7 +331,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. No bind address: drive ourselves over a real A2A client, so the
     //    example demonstrates the whole path rather than describing it.
     println!("Demo — driving the agent over A2A at {url}\n");
-    let a2a = a2a_protocol_client::ClientBuilder::new(&url).build()?;
+    // The client's 30 s default is for a production agent. Here one answer is
+    // up to three model turns on a local CPU model: the billing question timed
+    // out in 4 of 10 runs on a loaded four-core machine (2026-10-20), with
+    // every tool call it had made correct.
+    let a2a = a2a_protocol_client::ClientBuilder::new(&url)
+        .with_timeout(std::time::Duration::from_secs(300))
+        .build()?;
     let mut failures = 0_u8;
     let mut used_tools = 0_u8;
     for question in [
