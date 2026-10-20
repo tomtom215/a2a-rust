@@ -75,21 +75,22 @@ struct GenaiAgentExecutor {
 }
 
 impl GenaiAgentExecutor {
-    fn new(model: impl Into<String>) -> Self {
-        Self {
-            client: genai::Client::default(),
+    /// Fails only when genai cannot build its HTTP client.
+    fn new(model: impl Into<String>) -> genai::Result<Self> {
+        Ok(Self {
+            client: genai::Client::new()?,
             model: model.into(),
             fallback_on_error: false,
-        }
+        })
     }
 
     /// Same agent, but an unreachable model yields a labelled mechanical
     /// reply instead of failing the task.
-    fn with_fallback(model: impl Into<String>) -> Self {
-        Self {
+    fn with_fallback(model: impl Into<String>) -> genai::Result<Self> {
+        Ok(Self {
             fallback_on_error: true,
-            ..Self::new(model)
-        }
+            ..Self::new(model)?
+        })
     }
 }
 
@@ -313,9 +314,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // e.g. under sustained load — without a live model in the loop.
         let allow_fallback = env_flag("A2A_ALLOW_FALLBACK");
         let executor = if allow_fallback {
-            GenaiAgentExecutor::with_fallback(&model)
+            GenaiAgentExecutor::with_fallback(&model)?
         } else {
-            GenaiAgentExecutor::new(&model)
+            GenaiAgentExecutor::new(&model)?
         };
 
         let mut builder = RequestHandlerBuilder::new(executor)

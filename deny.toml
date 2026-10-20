@@ -44,20 +44,12 @@ yanked    = "deny"
 # dependency we can't upgrade yet — with a short justification and an
 # upgrade-path note.
 #
-# RUSTSEC-2024-0436 (added 2026-09-25, the first ignore in this file):
-# `paste` is unmaintained. The advisory is informational, not a
-# vulnerability, and lists no patched version. `paste` is a proc-macro, so
-# it runs at compile time and is not linked into any binary. It reaches the
-# graph only through `genai` 0.6, which only the two example agents
-# (`genai-a2a-agent`, `incident-response`) depend on; none of the four
-# published crates does (`cargo tree -i paste`). Re-checked 2026-10-18:
-# genai's latest stable release, 0.6.5, still depends on it; its 0.7.0
-# release candidates (0.7.0-rc.8, 2026-10-16) depend on the `pastey` fork
-# the advisory suggests instead. Remove this entry when genai 0.7.0 is
-# released and the examples move to it, or when the examples leave genai.
-ignore    = [
-    { id = "RUSTSEC-2024-0436", reason = "paste (unmaintained, informational) is a compile-time proc-macro reached only via genai 0.6 in the two example agents; no published crate depends on it. See the note above." },
-]
+# Empty since 2026-10-20. Its one entry, RUSTSEC-2024-0436 (`paste`,
+# unmaintained, added 2026-09-25), reached the graph only through `genai`
+# 0.6 in the two example agents; genai 0.7.0 (released 2026-10-19) depends
+# on the `pastey` fork instead, the examples moved to it, and `cargo tree -i
+# paste --workspace` matches no package.
+ignore    = []
 
 # ---------------------------------------------------------------------------
 # Banned crates
@@ -172,6 +164,7 @@ skip = [
     { crate = "cpufeatures", reason = "sha1 0.11 and chacha20 0.10 on 0.3; sha2 0.10 still on 0.2" },
     { crate = "syn", reason = "syn 2 -> 3: async-trait 0.1.92 (via tonic) is on 3 while every derive crate is on 2" },
     { crate = "redox_syscall", reason = "parking_lot_core 0.9 pins 0.5; libredox 0.1.23 (via whoami, sqlx-postgres) is on 0.9; only compiled for the redox target" },
+    { crate = "foldhash", reason = "hashbrown 0.15 (sqlx 0.8 via hashlink) is on 0.1; serde_json's preserve_order, which genai 0.7 turns on in the two genai examples, is on 0.2 (2026-10-20)" },
 ]
 # `redox_syscall` used to be deliberately absent from the list: it duplicated
 # only in the `--all-features` graph, which this check does not resolve, and
