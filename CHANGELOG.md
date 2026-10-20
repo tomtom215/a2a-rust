@@ -1787,6 +1787,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The axum `A2aRouter` did not warn about an undeclared binding** (server,
+  spec §5.2). Every other listener warns when it starts if the static card
+  declares no interface for the binding it serves; `A2aRouter::into_router`
+  now does the same for HTTP+JSON. Found by the ledger audit of 2026-10-20.
+
 - **A `wss://` interface was warned as plaintext** (server, the card lint
   `build()` runs). The check behind "is not https; production deployments
   MUST use encrypted communication" accepted only `https://`, so a

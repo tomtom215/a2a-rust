@@ -154,6 +154,7 @@ impl A2aRouter {
         // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
         // works on the JSON-RPC/REST dispatchers would be a no-op here.
         let max_body = self.config.max_request_body_size;
+        self.handler.warn_if_undeclared("HTTP+JSON"); // §5.2, as every other listener does
         let card_handler = card_handler(&self.handler, self.config.agent_card_max_age);
         let state = A2aState {
             handler: self.handler,
@@ -180,9 +181,8 @@ impl A2aRouter {
             // Health check
             .route("/health", get(handle_health))
             .route("/ready", get(handle_ready))
-            // Not a router-wide `fallback`: that would answer every unknown
-            // path of an app this router is merged into, and axum refuses to
-            // merge two routers that both have one.
+            // Not a router-wide `fallback`: that would answer every unknown path of an app
+            // this router is merged into, and axum refuses to merge two routers that both have one.
             .method_not_allowed_fallback(method_not_allowed)
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))

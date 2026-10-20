@@ -3630,13 +3630,15 @@
     "crates/a2a-protocol-server/src/serve/mod.rs protocol_binding",
     "crates/a2a-protocol-server/src/serve/graceful/mod.rs serve_with_shutdown",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs accept_loop",
-    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs build_router"
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs build_router",
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs into_router"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs a_binding_the_card_does_not_declare_is_reported",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs the_http_dispatchers_name_their_bindings"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs the_http_dispatchers_name_their_bindings",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:72 the_axum_router_warns_about_an_undeclared_binding"
    ],
-   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The card is the author's; the SDK's hook is the startup warning for a served binding the card omits (tested), deliberately not a refusal. Re-verified against the code 2026-10-20 (ledger audit): 'every SDK listener' overstated it: the axum adapter (A2aRouter) and the SLIMRPC server do not check, and warn_if_undeclared is pub(crate), so a binding outside the crate cannot call it.",
+   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The card is the author's; the SDK's hook is the startup warning for a served binding the card omits (tested), deliberately not a refusal. Re-verified against the code 2026-10-20 (ledger audit): 'every SDK listener' overstated it: the axum adapter (A2aRouter) did not check, and now warns as the others do (undeclared_binding_tests the_axum_router_warns_about_an_undeclared_binding); the SLIMRPC server still does not, since warn_if_undeclared is pub(crate) and the binding is outside the crate.",
    "auditor": "C",
    "source": "spec",
    "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
