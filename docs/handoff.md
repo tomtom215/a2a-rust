@@ -185,7 +185,10 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
   10K tasks.
 - **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
-  `scripts/go_sdk_interop.sh` last passed both directions 2026-10-19.
+  `scripts/go_sdk_interop.sh` last passed both directions 2026-10-20 at
+  `4101bb55`, after the auth-ordering change: leg 1 52 checks, leg 1b
+  38, leg 2 33 cells exercised (11 WebSocket cells not applicable), 0
+  failures.
 - **Control map:** 13 supported, 2 documented, 11 partial, 22 integrator
   (`python3 scripts/check_compliance_map.py`); the partial rows' remaining
   gaps are in each row's `gap`.
