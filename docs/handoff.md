@@ -96,8 +96,13 @@ only: when something here is done, delete it rather than annotating it.
    re-verified killed on this branch by hand mutants (2026-10-20). Read the
    next scheduled sweep's logs.
 5. **Official TCK** after any wire change: `--min-graded 88` full, 66
-   minimal (last run 2026-10-19 at `8aef50d`). The 2026-10-20 branch changed
-   no wire format, but re-run before the pull request.
+   minimal. Last run 2026-10-20 at `1305674b`, after the auth-ordering,
+   streaming-span and WebSocket trace-context changes, against a2a-tck
+   `5daf014` (the workflow tracks `main`): full 88 graded, 81 passed, the
+   9 baselined (requirement, transport) failures and no other; minimal 66
+   graded, 8 of the 9 baselined failing (STREAM-SUB-003 not graded there);
+   required-extension CORE-CAP-004 passed on JSON-RPC and HTTP+JSON. All
+   three gates exit 0. Re-run after any further wire change.
 6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 
 ## Waiting on the maintainer
