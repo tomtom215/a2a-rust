@@ -72,12 +72,14 @@ only: when something here is done, delete it rather than annotating it.
    claims checked, 8 not verifiable from the repository): 35 kept as they
    were, 16 kept with wrong or stale note claims and citations corrected,
    §14 line 3244 split (what the SDK consumes is TESTED; content an agent
-   forwards stays APPLICATION), and two moved to SDK work: §4.6.3 1139 and
-   §5.8 1297, URI-contract golden tests for the five extensions and the
-   WebSocket binding (in progress). Left as suggestions, not done: a
-   startup warning in the axum `A2aRouter` and a public check for bindings
-   outside the crate (§5.2 1156),. `spec_line` N is line N + 31 of the
-   vendored file (the header ends at line 30, then one blank line).
+   forwards stays APPLICATION), and §4.6.3 1139 and §5.8 1297 moved to
+   TESTED by URI-contract golden tests (`uri_contracts.rs`,
+   `uri_contract_websocket.rs`). Its suggestions were built the same day:
+   the `wss://` lint fix, the axum `A2aRouter` §5.2 warning, and `Server`'s
+   plaintext warning (§7.1). Left: a public form of the §5.2 check for
+   bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
+   `spec_line` N is line N + 31 of the vendored file (the header ends at
+   line 30, then one blank line).
 2. **The tool-calling study** (`scripts/tool_calling_study/`,
    `docs/tool-calling-study.md` once written): direct and SDK arms over four
    GGUFs, n = 30 a cell. Started 2026-10-20; results to be scored, audited
