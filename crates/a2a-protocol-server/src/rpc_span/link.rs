@@ -26,7 +26,12 @@ impl ServerSpan {
     /// the one policy that trusts a peer's trace; without the `otel` feature,
     /// or with no OpenTelemetry layer recording, nothing is linked.
     #[must_use]
-    #[cfg_attr(not(feature = "otel"), allow(unused_variables))]
+    // Without `otel` the body is only `self`, which clippy would make
+    // `const`; with it, the link is added, which cannot be.
+    #[cfg_attr(
+        not(feature = "otel"),
+        allow(unused_variables, clippy::missing_const_for_fn)
+    )]
     #[cfg_attr(not(feature = "websocket"), allow(dead_code))]
     pub fn with_link(
         self,
