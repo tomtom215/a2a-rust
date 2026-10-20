@@ -1781,6 +1781,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A blocking request outlasting the idle timeout lost its answer**
+  (server, `Server` / `serve`). `ServeConfig::idle_timeout` (75s by
+  default) measured silence on the socket, and a blocking `SendMessage`
+  is silent while its executor works, for up to `DEFAULT_EXECUTOR_TIMEOUT`
+  (an hour): the connection was closed at 75s, the client saw a reset, and
+  the task ran on. A request is now counted from the moment the service
+  is called until its response is ready, and the timer gives no verdict
+  while one is; the window restarts when it is answered. A peer stalled
+  mid-body is still bounded by `DispatchConfig::body_read_timeout`.
+  WebSocket (Ping at half the budget) and gRPC (tonic's own server) were
+  not affected. Found 2026-10-20 driving a live model through the tool
+  loop; `serve::graceful::tests::a_request_still_being_served_is_not_idle`.
+
 - **A `message/stream` call is recorded as `_OTHER`** (server). The span and
   metric name mapping still treated the v0.3 spelling as
   `SendStreamingMessage`, though no binding routes it (WebSocket stopped on

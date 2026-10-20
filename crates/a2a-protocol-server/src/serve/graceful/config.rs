@@ -115,7 +115,9 @@ pub struct ServeConfig {
     ///
     /// Covers what the header timeout cannot: a peer that sent its headers
     /// promptly and then stopped mid-body, or one that finished a request and
-    /// kept the connection open doing nothing.
+    /// kept the connection open doing nothing. A request the server is still
+    /// answering is not idle time: a blocking `SendMessage` whose executor
+    /// works for longer than this keeps its connection.
     pub idle_timeout: Option<Duration>,
 }
 

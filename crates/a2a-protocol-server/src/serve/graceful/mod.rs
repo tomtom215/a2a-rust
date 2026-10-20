@@ -122,6 +122,7 @@ use super::{Dispatcher, connections, pause_after_accept_error};
 
 mod idle;
 use idle::IdleTimeout;
+pub(super) use idle::Serving;
 
 mod connection;
 use connection::{Accepted, spawn_connection};
