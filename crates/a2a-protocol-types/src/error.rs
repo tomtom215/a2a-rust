@@ -301,21 +301,18 @@ pub struct A2aError {
     /// Optional structured error details.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
-    /// Set when this error refuses a credential; see
-    /// [`auth_rejection`](Self::auth_rejection). Not on the wire: each
-    /// binding answers it with its own status instead.
+    /// Set when this error refuses a credential; see [`auth_rejection`](Self::auth_rejection).
+    /// Not on the wire: each binding answers it with its own status. Boxed for size.
     #[serde(skip)]
-    auth_rejection: Option<AuthRejection>,
+    auth_rejection: Option<Box<AuthRejection>>,
     /// Set when this error refuses a request for exceeding a rate limit, or
     /// was received carrying a `RetryInfo` detail; see
     /// [`retry_after`](Self::retry_after). Not on the wire as a field: each
     /// binding answers it with its own status and a `RetryInfo` detail.
     ///
-    /// Whole seconds in a `NonZeroU32` rather than a `Duration`: it fits in
-    /// the padding beside the 4-byte `code`, so `A2aError` stays 96 bytes;
-    /// a `Duration` grew it past clippy's `result_large_err` threshold for
-    /// every `Result` that carries one. `Retry-After` counts whole seconds
-    /// anyway.
+    /// Whole seconds in a `NonZeroU32`, not a `Duration`, to fit beside the 4-byte
+    /// `code`: `A2aError`'s size is pinned by `auth_rejection::tests::a2a_error_stays_small`.
+    /// `Retry-After` counts whole seconds anyway.
     #[serde(skip)]
     retry_after_secs: Option<std::num::NonZeroU32>,
     /// Set by [`unavailable`](Self::unavailable); see
@@ -376,7 +373,7 @@ impl A2aError {
     #[must_use]
     pub fn unauthenticated(message: impl Into<String>, challenge: impl Into<String>) -> Self {
         let mut err = Self::new(ErrorCode::InvalidRequest, message);
-        err.auth_rejection = Some(AuthRejection::unauthenticated(challenge.into()));
+        err.auth_rejection = Some(AuthRejection::unauthenticated(challenge.into()).into());
         err
     }
 
@@ -386,7 +383,7 @@ impl A2aError {
     #[must_use]
     pub fn permission_denied(message: impl Into<String>) -> Self {
         let mut err = Self::new(ErrorCode::InvalidRequest, message);
-        err.auth_rejection = Some(AuthRejection::permission_denied());
+        err.auth_rejection = Some(AuthRejection::permission_denied().into());
         err
     }
 
@@ -407,7 +404,7 @@ impl A2aError {
         scopes: impl IntoIterator<Item = S>,
     ) -> Self {
         let mut err = Self::new(ErrorCode::InvalidRequest, message);
-        err.auth_rejection = Some(AuthRejection::insufficient_scope(scopes));
+        err.auth_rejection = Some(AuthRejection::insufficient_scope(scopes).into());
         err
     }
 
@@ -506,7 +503,10 @@ impl A2aError {
     /// the wire.
     #[must_use]
     pub const fn auth_rejection(&self) -> Option<&AuthRejection> {
-        self.auth_rejection.as_ref()
+        match &self.auth_rejection {
+            Some(rejection) => Some(rejection),
+            None => None,
+        }
     }
 
     /// Creates a "Task not found" error for the given task ID string.

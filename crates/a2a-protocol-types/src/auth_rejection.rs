@@ -167,4 +167,19 @@ mod tests {
         let back: A2aError = serde_json::from_value(json).expect("deserializes");
         assert!(back.auth_rejection().is_none());
     }
+
+    /// Every `A2aResult` carries an `A2aError`, so its size is paid on every
+    /// call. clippy's `result_large_err` flags one over 128 bytes, and
+    /// `serde_json`'s `preserve_order` feature, which any crate in a build can
+    /// turn on, grows `data` from 32 bytes to 72. clippy flags 128 and over,
+    /// and the rejection is boxed to stay under it either way; this holds
+    /// whichever way `serde_json` was built.
+    #[test]
+    fn a2a_error_stays_small() {
+        assert!(
+            std::mem::size_of::<A2aError>() < 128,
+            "A2aError is {} bytes",
+            std::mem::size_of::<A2aError>()
+        );
+    }
 }
