@@ -227,8 +227,14 @@ it.
   peer address (built); a total-task cap across tenant partitions is an
   option (built, `TenantStoreConfig::with_max_total_tasks`), and the
   approval-gate refusal under caller isolation stays.
-- **Earlier, still standing:** tool calling stays in the examples, not the
-  crates (`examples/rig-agent`); the rig integration crate is held
+- **2026-10-20:** §3.5.2: build a per-task watermark so the in-memory event
+  log never trims what an attached stream still owes (bounded by a hard
+  ceiling), with an independent review. §12.4: SLIMRPC stays PARTIAL until
+  agntcy-slim-rpc carries error details; no details in the message text.
+  Tool calling moves into the SDK as a feature-gated module (ADR 0022),
+  superseding the earlier examples-only decision below.
+- **Earlier, still standing:** ~~tool calling stays in the examples, not the
+  crates (`examples/rig-agent`)~~ (superseded 2026-10-20, above); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
   upstream (`scripts/cargo-mutants/README.md`); a store that cannot isolate
   refuses a request naming a tenant (G3 option 2); caller isolation is on by
