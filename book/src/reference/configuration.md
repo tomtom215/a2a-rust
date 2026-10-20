@@ -61,7 +61,8 @@ Complete reference of all configuration options across a2a-rust crates.
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
 | `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
-| `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound |
+| `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound. An attached stream that still owes older events holds them past it (spec §3.5.2) |
+| `max_held_events_factor` | `Option<usize>` | 8 | How many times `max_events_per_task` a task's log may keep while a stream still owes its oldest events (4,096 at the defaults); past it the stream ends with `streamLagged`. `None` is no ceiling; `Some(1)` holds nothing past the bound |
 | `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
 | `max_idempotency_keys` | `Option<usize>` | 100,000 | How many keys the index holds at once (per store, so per tenant partition); a send with a new key past it is refused with `503` / `RESOURCE_EXHAUSTED` and runs nothing, and no held key is evicted; `None` is no limit |
 

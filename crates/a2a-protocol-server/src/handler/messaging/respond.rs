@@ -135,8 +135,10 @@ impl RequestHandler {
             // SPEC §3.1.2: a task-lifecycle stream MUST begin with the Task,
             // and a message-only stream MUST be exactly one Message. Which one
             // this is, the executor's first event decides.
-            // §3.5.2: a stream that falls behind catches up from the log.
-            let mut reader = reader
+            // §3.5.2: a stream that falls behind catches up from the log,
+            // which holds what the stream still owes.
+            let mut reader = self
+                .holding_log(reader, &snapshot.id, None)
                 .with_catch_up(self.lag_catch_up_hook(snapshot.id.clone()))
                 .with_final_snapshot(self.final_snapshot_hook(snapshot.id.clone(), move |task| {
                     shape_response_history(task, response_history_length);

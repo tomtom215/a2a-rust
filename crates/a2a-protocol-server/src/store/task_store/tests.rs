@@ -159,6 +159,7 @@ fn task_store_config_clone_and_debug() {
         max_events_per_task: Some(8),
         idempotency_key_ttl: None,
         max_idempotency_keys: None,
+        max_held_events_factor: None,
     };
     let cloned = config;
     assert_eq!(cloned.max_capacity, Some(500));
@@ -238,4 +239,29 @@ fn every_config_setter_sets_its_field() {
             .effective_max_events_per_task(),
         None,
     );
+}
+
+/// The held-events ceiling (2026-10-20): 8 × 512 by default, a multiple of
+/// whatever bound is set, never below it, and none when either is unbounded.
+#[test]
+fn the_held_events_ceiling_is_a_multiple_of_the_bound() {
+    let d = TaskStoreConfig::default();
+    assert_eq!(d.max_held_events_factor, Some(8));
+    assert_eq!(d.effective_max_held_events_per_task(), Some(4096));
+    let ceiling = |max, factor| {
+        TaskStoreConfig::default()
+            .with_max_events_per_task(max)
+            .with_max_held_events_factor(factor)
+            .effective_max_held_events_per_task()
+    };
+    assert_eq!(ceiling(Some(10), Some(3)), Some(30));
+    assert_eq!(
+        ceiling(Some(10), Some(0)),
+        Some(10),
+        "never below the bound"
+    );
+    assert_eq!(ceiling(Some(0), Some(3)), Some(3), "of the bound applied");
+    assert_eq!(ceiling(Some(10), None), None, "no ceiling");
+    assert_eq!(ceiling(None, Some(3)), None, "an unbounded log has none");
+    assert_eq!(ceiling(Some(usize::MAX), Some(2)), Some(usize::MAX));
 }

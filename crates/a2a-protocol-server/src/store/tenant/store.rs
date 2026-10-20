@@ -167,6 +167,12 @@ pub struct TenantAwareInMemoryTaskStore {
     /// The total every partition counts against, when
     /// [`max_total_tasks`](TenantStoreConfig::max_total_tasks) is set.
     budget: Option<Arc<crate::store::task_store::TaskBudget>>,
+    /// Each partition's [`EventHolds`](crate::store::EventHolds), by the same
+    /// key as `stores`, readable without awaiting: a stream takes its hold
+    /// while it is built ([`TaskStore::hold_events`] is synchronous), and the
+    /// partition map's lock is async. Written only under that map's write
+    /// lock, so the two agree on which partitions exist.
+    holds: std::sync::Mutex<HashMap<String, crate::store::EventHolds>>,
 }
 
 impl Default for TenantAwareInMemoryTaskStore {
@@ -193,6 +199,7 @@ impl TenantAwareInMemoryTaskStore {
             config,
             overrides: HashMap::new(),
             metrics: crate::metrics::MetricsHandle::default(),
+            holds: std::sync::Mutex::default(),
         }
     }
 
@@ -296,6 +303,8 @@ impl TenantAwareInMemoryTaskStore {
             )
             .with_metrics(self.metrics.clone()),
         );
+        self.partition_holds()
+            .insert(tenant.clone(), store.holds.clone());
         stores.insert(tenant, Arc::clone(&store));
         drop(stores);
         Ok(store)
@@ -345,6 +354,7 @@ impl TenantAwareInMemoryTaskStore {
         let mut done = crate::store::caller_keys::CallerErasure::default();
         for partition in theirs {
             if let Some(store) = stores.remove(&partition) {
+                self.partition_holds().remove(&partition);
                 done.rows += store.erase_all().await;
                 done.partitions += 1;
             }
@@ -393,8 +403,19 @@ impl TenantAwareInMemoryTaskStore {
             }
         }
         for tenant in empty_tenants {
+            self.partition_holds().remove(&tenant);
             stores.remove(&tenant);
         }
+    }
+
+    /// The partitions' holds, whatever a panic elsewhere left the map as:
+    /// every update to it is one insert or remove.
+    fn partition_holds(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<String, crate::store::EventHolds>> {
+        self.holds
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -589,6 +610,15 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
                 None => Ok(0),
             }
         })
+    }
+
+    /// Held in the current partition, the one the stream's request resolved
+    /// to. `None` when that partition does not exist yet: it holds no log,
+    /// and asking must not create it, as reading the log does not.
+    fn hold_events(&self, task_id: &TaskId, after: u64) -> Option<crate::store::EventHold> {
+        let partition = TenantContext::partition();
+        let holds = self.partition_holds().get(&partition).cloned();
+        holds.map(|holds| holds.hold(task_id, after))
     }
 
     fn earliest_event_seq<'a>(
@@ -1595,148 +1625,8 @@ mod idempotency_isolation_tests {
 }
 
 #[cfg(test)]
-mod event_log_tests {
-    use super::*;
-    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
-
-    fn make_task(id: &str, state: TaskState) -> Task {
-        Task {
-            id: TaskId::new(id),
-            context_id: ContextId::new("ctx-default"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        }
-    }
-
-    fn event(id: &str, state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(id),
-            context_id: ContextId::new("ctx-default"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
-    }
-
-    /// The earliest position still held, from the tenant's own partition:
-    /// `None` for an empty log or an unknown tenant — without creating one —
-    /// and never another tenant's. Untested until mutation testing found it
-    /// (N11); the trait default it overrides answers `None` for everything.
-    #[tokio::test]
-    async fn the_log_reports_its_earliest_position_per_tenant() {
-        let store = TenantAwareInMemoryTaskStore::new();
-        let id = TaskId::new("shared");
-
-        TenantContext::scope("tenant-a", async {
-            store
-                .save(&make_task("shared", TaskState::Working))
-                .await
-                .expect("save a");
-            assert_eq!(store.earliest_event_seq(&id).await.expect("empty"), None);
-            for seq in [5, 6, 7] {
-                store
-                    .append_event(&id, seq, &event("shared", TaskState::Working))
-                    .await
-                    .expect("append a");
-            }
-            assert_eq!(store.earliest_event_seq(&id).await.expect("a"), Some(5));
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            assert_eq!(
-                store.earliest_event_seq(&id).await.expect("unknown"),
-                None,
-                "tenant-a's log is not tenant-b's"
-            );
-        })
-        .await;
-        assert_eq!(
-            store.tenant_count().await,
-            1,
-            "asking for tenant-b's log must not create its partition"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_dispatcher_reports_that_it_keeps_a_log() {
-        assert!(TenantAwareInMemoryTaskStore::new().supports_event_log());
-    }
-
-    /// Each tenant gets its own [`InMemoryTaskStore`], so the partition is the
-    /// scope. Two tenants using the same task id — which they may, ids are
-    /// caller-supplied — must not see each other's events.
-    #[tokio::test]
-    async fn one_tenants_task_id_never_reaches_another_tenants_log() {
-        let store = TenantAwareInMemoryTaskStore::new();
-
-        TenantContext::scope("tenant-a", async {
-            store
-                .save(&make_task("shared", TaskState::Working))
-                .await
-                .unwrap();
-            store
-                .append_event(
-                    &TaskId::new("shared"),
-                    1,
-                    &event("shared", TaskState::Working),
-                )
-                .await
-                .unwrap();
-        })
-        .await;
-
-        TenantContext::scope("tenant-b", async {
-            store
-                .save(&make_task("shared", TaskState::Working))
-                .await
-                .unwrap();
-            assert_eq!(
-                store.last_event_seq(&TaskId::new("shared")).await.unwrap(),
-                0
-            );
-            assert!(
-                store
-                    .read_events(&TaskId::new("shared"), 0, 10)
-                    .await
-                    .unwrap()
-                    .is_empty(),
-                "tenant-b must not be handed tenant-a's events"
-            );
-        })
-        .await;
-
-        TenantContext::scope("tenant-a", async {
-            assert_eq!(
-                store.last_event_seq(&TaskId::new("shared")).await.unwrap(),
-                1
-            );
-        })
-        .await;
-    }
-
-    /// Reading must not be what allocates a tenant partition, for the same
-    /// reason `release_idempotency_key` must not: an unknown tenant would then
-    /// spend a slot against the cap on a read that found nothing.
-    #[tokio::test]
-    async fn reading_under_an_unknown_tenant_creates_no_partition() {
-        let store = TenantAwareInMemoryTaskStore::new();
-        TenantContext::scope("never-seen", async {
-            assert_eq!(store.last_event_seq(&TaskId::new("t1")).await.unwrap(), 0);
-            assert!(
-                store
-                    .read_events(&TaskId::new("t1"), 0, 10)
-                    .await
-                    .unwrap()
-                    .is_empty()
-            );
-        })
-        .await;
-        assert_eq!(store.tenant_count().await, 0);
-    }
-}
+#[path = "event_log_tests.rs"]
+mod event_log_tests;
 
 #[cfg(test)]
 #[path = "total_cap_tests.rs"]

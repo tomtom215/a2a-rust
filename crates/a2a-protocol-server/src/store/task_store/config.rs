@@ -206,7 +206,47 @@ pub struct TaskStoreConfig {
     /// turns that into the question a resubscribe actually asks. Truncation
     /// never empties a log — at least one event is always kept — so the
     /// earliest position stays answerable.
+    ///
+    /// # A stream that still owes the oldest events holds them
+    ///
+    /// Since 2026-10-20 the bound drops an event only once no attached stream
+    /// still owes it ([`EventHolds`](crate::store::EventHolds)), so a stream
+    /// that falls further behind than this catches up from the log rather
+    /// than ending with `streamLagged`. How far a held log may grow past this
+    /// bound is [`max_held_events_factor`](Self::max_held_events_factor).
     pub max_events_per_task: Option<usize>,
+
+    /// How many times [`max_events_per_task`](Self::max_events_per_task) one
+    /// task's log may hold while an attached stream still owes its oldest
+    /// events. `None` is no ceiling: only the streams' holds bound the log.
+    /// Default: `Some(8)`, so 4,096 events at the default bound
+    /// ([`DEFAULT_MAX_HELD_EVENTS_FACTOR`](crate::store::DEFAULT_MAX_HELD_EVENTS_FACTOR)).
+    /// `Some(0)` counts as `Some(1)`, a ceiling at the bound, which holds
+    /// nothing past it: the behaviour before 2026-10-20.
+    ///
+    /// # Why there is a ceiling
+    ///
+    /// A hold lasts as long as its stream. A client that stops reading but
+    /// keeps its connection open would otherwise pin its task's log, an
+    /// event per append, for as long as the connection lasts. Past the
+    /// ceiling the oldest event is dropped anyway, reported as
+    /// [`HOLD_CEILING`](crate::metrics::event_append_error::HOLD_CEILING),
+    /// and the stream that owed it ends with `streamLagged` after what it
+    /// delivered, exactly as a stream past the bound did before.
+    ///
+    /// # Why a multiple of the bound and not a count
+    ///
+    /// The bound is the operator's statement of what one task's events may
+    /// cost; the advice above is to lower it where artifact chunks are large.
+    /// A fixed count would undo that: a store bounded at 64 events of a
+    /// megabyte would hold 4,096 of them behind one slow stream, and one
+    /// bounded above the count would hold nothing past its bound at all. A
+    /// multiple keeps a held log's worst case a stated factor of the cost the
+    /// operator already chose.
+    ///
+    /// A held log shrinks back to the bound on the first append after the
+    /// streams holding it advance or go away, not at the moment they do.
+    pub max_held_events_factor: Option<usize>,
 }
 
 impl Default for TaskStoreConfig {
@@ -217,6 +257,7 @@ impl Default for TaskStoreConfig {
             eviction_interval: 64,
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
             max_events_per_task: Some(DEFAULT_MAX_EVENTS_PER_TASK),
+            max_held_events_factor: Some(crate::store::DEFAULT_MAX_HELD_EVENTS_FACTOR),
             idempotency_key_ttl: Some(DEFAULT_IDEMPOTENCY_KEY_TTL),
             max_idempotency_keys: Some(DEFAULT_MAX_IDEMPOTENCY_KEYS),
         }
@@ -293,6 +334,29 @@ impl TaskStoreConfig {
         match self.max_events_per_task {
             Some(0) => Some(1),
             other => other,
+        }
+    }
+
+    /// Sets how many times `max_events_per_task` a task's log may hold while a
+    /// stream still owes its oldest events; `None` is no ceiling. See
+    /// [`max_held_events_factor`](Self::max_held_events_factor).
+    #[must_use]
+    pub const fn with_max_held_events_factor(mut self, factor: Option<usize>) -> Self {
+        self.max_held_events_factor = factor;
+        self
+    }
+
+    /// The most events a held log keeps: the bound times the factor, never
+    /// below the bound, and `None` when either is unbounded.
+    pub(crate) const fn effective_max_held_events_per_task(&self) -> Option<usize> {
+        match (
+            self.effective_max_events_per_task(),
+            self.max_held_events_factor,
+        ) {
+            (Some(max), Some(factor)) => {
+                Some(max.saturating_mul(if factor == 0 { 1 } else { factor }))
+            }
+            _ => None,
         }
     }
 }

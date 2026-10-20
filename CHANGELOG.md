@@ -1071,6 +1071,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rpc.status_code` instead. `CustomBinding::with_grpc_server_errors` gives
   a binding outside this crate gRPC's rule; without it every failure is
   still an error.
+- **A stream that lags past the in-memory event log's bound is held, not
+  cut off** (server; spec §3.5.2 "each stream MUST receive the same events
+  in the same order"; maintainer decision 2026-10-20). The in-memory stores
+  dropped a task's oldest logged event on every append past
+  `TaskStoreConfig::max_events_per_task` (512 by default), whether or not a
+  stream still owed it, so a stream that fell further behind than that
+  found the head of its catch-up gone and ended with `streamLagged`. A
+  stream now holds the positions it still owes (new `store::EventHolds` /
+  `EventHold`, and the provided trait method
+  `TaskStore::hold_events(&TaskId, after) -> Option<EventHold>`, default
+  `None`: a store without it trims as before, and the SQL stores keep the
+  whole log so need nothing). The log drops an event only once no attached
+  stream owes it, up to a ceiling: new
+  `TaskStoreConfig::max_held_events_factor` (`with_max_held_events_factor`),
+  `Some(8)` by default, so 8 × 512 = 4,096 events a task; `None` is no
+  ceiling, and `Some(1)` holds nothing past the bound, the old behaviour.
+  The ceiling is a multiple of the bound rather than a count, so a
+  deployment that lowered the bound for large artifact chunks keeps its
+  worst case proportional. Past the ceiling the stream still ends with
+  `streamLagged` after what it delivered, and the store reports it as
+  `on_persistence_error("event_append", "hold_ceiling")`
+  (`metrics::event_append_error::HOLD_CEILING`). **Memory:** a task with a
+  slow or stalled stream attached now keeps up to the ceiling in its log
+  instead of the bound, until the stream advances or disconnects and the
+  next append trims it back. The audit, encrypted and tenant-aware wrappers
+  forward the hold (the tenant store to the request's partition). Tests:
+  `tests/stream_lag_holds.rs` (a lag of 62 positions behind a bound of 10
+  now delivers every one, through a send, a subscription and a tenant
+  store; past the ceiling it still ends with `streamLagged`),
+  `store::task_store::in_memory::hold_tests`, `store::holds::tests`,
+  `streaming::event_queue::hold_tests`, and the tenant store's
+  `event_log_tests`.
+
 - **An agent message on a task status, or in a snapshot's history, is
   given the task's ids when it carries none** (server; a2a.proto `Message`:
   "For server messages, `context_id` must be provided"). Only a direct

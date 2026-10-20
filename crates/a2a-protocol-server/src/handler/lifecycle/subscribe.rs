@@ -183,7 +183,7 @@ impl RequestHandler {
         resume_after: Option<u64>,
     ) -> ServerResult<InMemoryQueueReader> {
         let (reader, gap) = self
-            .snapshot_and_live(task_id, stored, shape.clone())
+            .held_snapshot_and_live(task_id, stored, shape.clone(), resume_after)
             .await?;
         let mut reader = self
             .with_stream_hooks(reader, task_id)
@@ -762,6 +762,7 @@ impl LogReplay {
     }
 }
 
+mod hold;
 #[cfg(test)]
 mod log_replay_tests;
 
@@ -1320,7 +1321,6 @@ mod tests {
 
     #[tokio::test]
     async fn resubscribe_error_path_records_error_metrics() {
-        // Triggers the Err branch in the metrics match (lines 60-63, 82).
         use crate::call_context::CallContext;
         use crate::interceptor::ServerInterceptor;
         use std::future::Future;

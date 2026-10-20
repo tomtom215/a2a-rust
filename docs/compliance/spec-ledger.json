@@ -110,7 +110,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:186 implicit",
-    "crates/a2a-protocol-types/src/generated/security.rs:198 password",
+    "crates/a2a-protocol-types/src/generated/security.rs:201 password",
     "crates/a2a-protocol-types/src/security.rs:570 wire_format_password_oauth_flow"
    ],
    "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed.",
@@ -133,7 +133,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:186 implicit",
-    "crates/a2a-protocol-types/src/generated/security.rs:198 password",
+    "crates/a2a-protocol-types/src/generated/security.rs:201 password",
     "crates/a2a-protocol-types/src/security.rs:570 wire_format_password_oauth_flow"
    ],
    "notes": "Both deprecated flows remain in the public enum and on the wire (wire_format_password_oauth_flow round-trips one); removal would be a semver-major change, which cargo-semver-checks gates in CI.",
@@ -223,7 +223,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:220"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:222"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:12 send_message_returns_completed_task",
@@ -243,7 +243,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:214"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:216"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/send_sync_tests.rs:174 message_only_executor_returns_a_message",
@@ -303,7 +303,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:804"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -443,7 +443,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:133",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:707",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:946"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:950"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs a_message_only_stream_is_exactly_one_message",
@@ -485,10 +485,10 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:508",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:565",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:946",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1062",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:950",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1087",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:116",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:124",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:310"
    ],
    "test_evidence": [
@@ -553,7 +553,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:103",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:804"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
@@ -631,12 +631,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1142",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1155",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:943"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1597 list_empty_store_returns_empty (asserts next_page_token == \"\")",
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1805 list_pagination_is_stable_across_pages"
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1748 list_empty_store_returns_empty (asserts next_page_token == \"\")",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1819 list_pagination_is_stable_across_pages"
    ],
    "notes": "",
    "auditor": "A",
@@ -672,13 +672,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1074",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1087",
     "crates/a2a-protocol-server/src/store/cursor.rs:23",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:921",
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:409"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1805 list_pagination_is_stable_across_pages",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1819 list_pagination_is_stable_across_pages",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:716 list_pagination_visits_every_task_once"
    ],
    "notes": "",
@@ -694,13 +694,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:48",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:50",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:943",
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:409",
     "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:491"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1743 list_returns_all_tasks_most_recently_updated_first",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1757 list_returns_all_tasks_most_recently_updated_first",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:566 list_orders_most_recently_updated_first",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:455 task_list_orders_most_recently_updated_first (ignored without PG)"
    ],
@@ -737,11 +737,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:181",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:183",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:585"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1899 list_orders_by_status_timestamp_not_write_order",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1913 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:597 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:524 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
@@ -761,8 +761,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:55"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:248 cancel_task_terminal_state_returns_not_cancelable",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:421 a_task_that_finished_after_the_re_read_is_not_cancelable"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:257 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:430 a_task_that_finished_after_the_re_read_is_not_cancelable"
    ],
    "notes": "",
    "auditor": "A",
@@ -780,7 +780,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:53"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:230 cancel_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:239 cancel_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -819,7 +819,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:412"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:780 resubscribe_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:781 resubscribe_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -837,7 +837,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:416"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:797 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:798 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "",
    "auditor": "A",
@@ -855,12 +855,12 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:110",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:150",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:266",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1208",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1216",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1253",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1261",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:92"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:838 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:839 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:101 by_default_a_parked_subscription_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:109 a_bound_too_large_for_the_clock_is_no_bound",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:119 an_operator_s_bound_still_ends_a_parked_subscription",
@@ -888,12 +888,12 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:316"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:838 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1229 resubscribe_success_returns_reader",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:839 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1230 resubscribe_success_returns_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:223 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:229 a_first_subscribe_beside_a_blocking_send_misses_nothing",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1102 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1171 the_stream_skips_what_its_snapshot_already_holds",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1103 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1172 the_stream_skips_what_its_snapshot_already_holds",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:268 a_first_subscribe_waits_for_the_store_rather_than_the_log"
    ],
    "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
@@ -1368,7 +1368,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:65",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:204",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:242",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:151"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:153"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/inline_executor_tests.rs:162 an_interrupted_send_answers_before_its_executor_returns",
@@ -1388,7 +1388,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:461",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:213"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:215"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs:32 sync_mode_artifact_updates_appended",
@@ -1459,7 +1459,7 @@
     "spec/slimrpc_v1/slimrpc.md:56"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2642 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2637 ws_upgrade_headers_drive_tenant_resolution",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:131 the_version_is_checked_at_the_handshake_with_a_query_fallback"
    ],
    "notes": "WebSocket: the binding specification (book/src/bindings/websocket.md §2) states the mechanism (upgrade headers, once per connection), the A2A-Version query fallback, value constraints, the reserved :path key, and that parameters cannot vary per request. SLIMRPC: slimrpc.md §3. The page's wire claims are pinned by websocket_binding_spec.rs (handshake refusal and query fallback, refusal codes and ErrorInfo, stream frames and marker), which passed against the page as written. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK authors the WebSocket binding, so the obligation is its own, met in its binding specification and pinned by the tests cited.",
@@ -1578,7 +1578,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:48"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:248 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:257 cancel_task_terminal_state_returns_not_cancelable",
     "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:182 duplicate_cancel_after_purge_returns_task_not_found"
    ],
    "notes": "Purged task -> TaskNotFound (store miss). A duplicate cancel of a still-stored Canceled task returns TaskNotCancelableError (cancel_task.rs:48), consistent with that error's definition though not literally 'the same effect' as the first cancel. Asserts a duplicate cancel is TaskNotCancelable while the canceled task is stored and TaskNotFound once TTL eviction purges it; shown able to fail by disabling evict_expired (2026-10-20)",
@@ -1952,7 +1952,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:386"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/rpc_span/tests.rs:117 a_finished_call_is_recorded_once",
+    "crates/a2a-protocol-server/src/rpc_span/tests.rs:120 a_finished_call_is_recorded_once",
     "crates/a2a-protocol-server/tests/executor_failure_logged.rs:57 a_failed_executor_is_logged_at_error_with_its_task_and_cause"
    ],
    "notes": "Failures are recorded on the RPC span (error.type, otel.status_code=ERROR) and in metrics.on_error, and trace_error! logs a system error as an ERROR event at 19 call sites: executor failures and panics, failed task-store and queue writes, JSON-RPC and REST response serialization, failed audit writes, and a too-short HS256 secret. Since 2026-10-12 a test asserts the executor-failure event: an executor returning an internal error is logged at ERROR with the task id and the cause (three hand mutants killed: the call deleted, demoted to WARN, the cause dropped). The other sites use the same macro and are not tested one by one. Behind the `tracing` feature, on by default. Before: no test asserted that an internal error is logged.",
@@ -2000,7 +2000,7 @@
     "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:375 a_lagged_stream_s_error_keeps_its_marker",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:366 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/streaming/sse.rs:1060 an_object_data_is_a_protojson_any_holding_a_struct"
    ],
    "notes": "Every detail carries @type. An A2A error's ErrorInfo (and RetryInfo for a rate limit) comes from error_info_data. A2aError.data follows it as a typed detail (sse::error_details, used by JSON-RPC, HTTP+JSON and WebSocket): as it is when it names its own string @type (a google.rpc.BadRequest), otherwise as a google.protobuf.Struct in the ProtoJSON Any form, {\"@type\": ..., \"value\": {...}}, with a non-object under value (since 2026-10-14, audit register R19; the fields were written beside @type, the form a2a-go writes, which a ProtoJSON Any decoder rejects). The gRPC binding sends the same data as BadRequest field violations or a Struct Any (dispatch/grpc/details.rs).",
@@ -2665,7 +2665,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2803 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2769 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken"
    ],
@@ -2721,19 +2721,34 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1281",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1310",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1340",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1370",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:926",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1113",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1391",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1420",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1323",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1352",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1382",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1412",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:930",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1139",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1433",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1462",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:431",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:725",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:298",
     "crates/a2a-protocol-server/src/store/applied.rs:62",
-    "crates/a2a-protocol-server/src/handler/messaging/admission.rs:239"
+    "crates/a2a-protocol-server/src/handler/messaging/admission.rs:239",
+    "crates/a2a-protocol-server/src/store/holds/mod.rs:107",
+    "crates/a2a-protocol-server/src/store/holds/mod.rs:130",
+    "crates/a2a-protocol-server/src/store/holds/mod.rs:187",
+    "crates/a2a-protocol-server/src/store/holds/mod.rs:209",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/log_bound.rs:33",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:872",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:896",
+    "crates/a2a-protocol-server/src/store/task_store/config.rs:351",
+    "crates/a2a-protocol-server/src/store/task_store/mod.rs:745",
+    "crates/a2a-protocol-server/src/store/tenant/store.rs:618",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1235",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1064",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:31",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:59",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:141"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:107 a_lagged_send_stream_catches_up_from_the_event_log",
@@ -2741,11 +2756,11 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:279 a_second_turn_catches_up_from_its_own_start",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:258 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:140 a_replay_over_the_limit_is_read_in_pages",
-    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:415 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2803 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2547 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:417 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2769 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2589 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2012 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2054 subscribe_creates_independent_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:312 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:200 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:208 a_turn_longer_than_a_poll_keeps_its_first_events",
@@ -2789,9 +2804,30 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/paging_tests.rs:311 a_paged_resume_goes_on_with_the_live_channel",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/log_replay_tests.rs:168 the_hook_answers_a_short_page_rather_than_nothing",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/log_replay_tests.rs:185 a_resume_the_log_cannot_finish_reports_the_rest",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/log_replay_tests.rs:200 a_resume_whose_log_catches_up_delivers_every_position_then_live"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/log_replay_tests.rs:200 a_resume_whose_log_catches_up_delivers_every_position_then_live",
+    "crates/a2a-protocol-server/tests/stream_lag_holds.rs:154 a_lag_past_the_bound_within_the_ceiling_delivers_every_event",
+    "crates/a2a-protocol-server/tests/stream_lag_holds.rs:163 the_default_ceiling_covers_a_lag_of_several_bounds",
+    "crates/a2a-protocol-server/tests/stream_lag_holds.rs:175 a_lag_past_the_ceiling_still_ends_with_stream_lagged",
+    "crates/a2a-protocol-server/tests/stream_lag_holds.rs:194 a_lagged_stream_is_held_in_its_tenant",
+    "crates/a2a-protocol-server/tests/stream_lag_holds.rs:205 a_lagged_subscription_is_held_from_where_it_attached",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:67 a_hold_keeps_every_position_above_it_past_the_bound",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:87 a_released_hold_lets_the_next_append_trim_to_the_bound",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:98 advancing_a_hold_moves_what_the_log_keeps",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:109 two_holds_keep_what_the_lower_owes",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:139 the_ceiling_drops_held_events_and_reports_each_append_that_did",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:169 a_factor_of_one_holds_nothing_past_the_bound",
+    "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:199 holds_taken_and_dropped_beside_appends_leave_nothing_behind",
+    "crates/a2a-protocol-server/src/store/tenant/event_log_tests.rs:156 a_hold_keeps_its_own_tenants_log_and_no_others",
+    "crates/a2a-protocol-server/src/store/tenant/event_log_tests.rs:215 a_hold_creates_no_partition_and_goes_with_a_pruned_one",
+    "crates/a2a-protocol-server/src/streaming/event_queue/hold_tests.rs:65 a_live_stream_raises_its_hold_as_it_delivers",
+    "crates/a2a-protocol-server/src/streaming/event_queue/hold_tests.rs:88 a_stream_that_has_ended_releases_its_hold",
+    "crates/a2a-protocol-server/src/streaming/event_queue/hold_tests.rs:106 a_resume_s_pages_are_held_until_they_are_read",
+    "crates/a2a-protocol-server/src/streaming/event_queue/hold_tests.rs:134 a_fresh_numbered_queue_does_not_lower_the_hold",
+    "crates/a2a-protocol-server/src/streaming/event_queue/hold_tests.rs:161 a_hold_covers_a_turn_s_replay_while_the_reader_waits_for_it",
+    "crates/a2a-protocol-server/src/store/holds/tests.rs:57 advance_raises_the_mark_and_never_lowers_it",
+    "crates/a2a-protocol-server/src/store/holds/tests.rs:93 the_ceiling_drops_held_events_and_counts_them"
    ],
-   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Since 2026-10-15 (maintainer decision) a replay longer than subscribe_replay_limit is read a page at a time, for a lag, a missed turn and a Last-Event-ID resume, and the stream reads the channel again only once the last page is in; before, a lag past the limit ended with streamLagged, and a resume past it skipped the positions between the replay's end and the live receiver's start with no streamLagged at all (event_log_tests pinned [snapshot, 1, 2] for a log of five). A page with a hole, an empty page, or a read cut short by the catch-up deadline never asks for more (log_replay_tests). After an independent review (2026-10-15): a resume whose first read the log had not caught up with skipped the rest silently, and now reads on while the log moves forward, reporting what it cannot supply; the hook answers a gap-free page the log covers even when it trails the writer, rather than nothing; a page the log cannot supply after a lag is reported once. Remaining, why PARTIAL/low, each ending the stream with an explicit streamLagged after what was delivered: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log, so with them this case cannot arise short of a failed append), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Since 2026-10-15 (audit register R69) a subscription with no local queue reads the task with the event-log position it reflects, in one store read (TaskStore::get_with_position), and replays the log after that position. It read the log's end and then the task: another replica's processor logs each event before it stores it, so an event logged before the first read and stored after the second was in neither the snapshot nor the replay and was lost with no streamLagged (reproduced by a test that fails on the old order), and one logged and stored between them arrived twice. Every shipped store records the position atomically with each write the processors make inside AppliedPosition::scope; a custom store that reports none falls back to the old order, which can still lose that one event. A turn after a failed append is numbered after the later of the log's end and the stored position, so its first event no longer takes the failed event's position and is not skipped as already delivered by a subscriber past it (found by an independent review of R69, 2026-10-15; the live-subscriber case predates R69). During a rolling upgrade a replica on an earlier release does not write the position, so a subscriber can receive events twice until every replica is upgraded. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently. Re-examined 2026-10-18, kept PARTIAL/low: a stream that lags beyond what the in-memory log retains (512 events per task by default) ends with streamLagged after what was delivered, so it does not receive every event; the SQL stores keep the whole log. Closing it would take an unbounded in-memory log, which the store cap exists to prevent. Re-examined 2026-10-20: the 512 is TaskStoreConfig::max_events_per_task's default (DEFAULT_MAX_EVENTS_PER_TASK, store/task_store/config.rs) and None removes the bound, and the SQL stores keep the whole log, so a deployment can meet the MUST today by configuration; what stays short of it is the bounded in-memory default, which trades the guarantee for memory. The engineering alternative weighed: trim the in-memory log only below the lowest position an attached stream still owes (a per-task watermark), so a lagging stream loses nothing while memory stays bounded by the slowest attached reader up to a hard ceiling; past the ceiling the stream would still end with streamLagged. It changes the store/stream contract the 2026-10-15 decisions settled, so it is the maintainer's call and is not built.",
+   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Since 2026-10-15 (maintainer decision) a replay longer than subscribe_replay_limit is read a page at a time, for a lag, a missed turn and a Last-Event-ID resume, and the stream reads the channel again only once the last page is in; before, a lag past the limit ended with streamLagged, and a resume past it skipped the positions between the replay's end and the live receiver's start with no streamLagged at all (event_log_tests pinned [snapshot, 1, 2] for a log of five). A page with a hole, an empty page, or a read cut short by the catch-up deadline never asks for more (log_replay_tests). After an independent review (2026-10-15): a resume whose first read the log had not caught up with skipped the rest silently, and now reads on while the log moves forward, reporting what it cannot supply; the hook answers a gap-free page the log covers even when it trails the writer, rather than nothing; a page the log cannot supply after a lag is reported once. Remaining, why PARTIAL/low, each ending the stream with an explicit streamLagged after what was delivered: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log, so with them this case cannot arise short of a failed append), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Since 2026-10-15 (audit register R69) a subscription with no local queue reads the task with the event-log position it reflects, in one store read (TaskStore::get_with_position), and replays the log after that position. It read the log's end and then the task: another replica's processor logs each event before it stores it, so an event logged before the first read and stored after the second was in neither the snapshot nor the replay and was lost with no streamLagged (reproduced by a test that fails on the old order), and one logged and stored between them arrived twice. Every shipped store records the position atomically with each write the processors make inside AppliedPosition::scope; a custom store that reports none falls back to the old order, which can still lose that one event. A turn after a failed append is numbered after the later of the log's end and the stored position, so its first event no longer takes the failed event's position and is not skipped as already delivered by a subscriber past it (found by an independent review of R69, 2026-10-15; the live-subscriber case predates R69). During a rolling upgrade a replica on an earlier release does not write the position, so a subscriber can receive events twice until every replica is upgraded. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently. Re-examined 2026-10-18, kept PARTIAL/low: a stream that lags beyond what the in-memory log retains (512 events per task by default) ends with streamLagged after what was delivered, so it does not receive every event; the SQL stores keep the whole log. Closing it would take an unbounded in-memory log, which the store cap exists to prevent. Re-examined 2026-10-20: the 512 is TaskStoreConfig::max_events_per_task's default (DEFAULT_MAX_EVENTS_PER_TASK, store/task_store/config.rs) and None removes the bound, and the SQL stores keep the whole log, so a deployment can meet the MUST today by configuration; what stays short of it is the bounded in-memory default, which trades the guarantee for memory. The engineering alternative weighed: trim the in-memory log only below the lowest position an attached stream still owes (a per-task watermark), so a lagging stream loses nothing while memory stays bounded by the slowest attached reader up to a hard ceiling; past the ceiling the stream would still end with streamLagged. It changes the store/stream contract the 2026-10-15 decisions settled, so it was the maintainer's call; the maintainer decided on 2026-10-20 to build it. Since 2026-10-20 (maintainer decision) an attached stream holds the positions it still owes in the in-memory log (EventHolds, TaskStore::hold_events, synchronous, default None), taken when the stream is built, inside the request's tenant scope, at the first position it may read from the log (a resume's Last-Event-ID, or a late snapshot's position, when lower; a subscription holds the log from the resume position, or from the start, while its snapshot waits for the store), raised after each read to the lowest position it may still read (a paged resume's page end, not the live receiver's start), never lowered (a fresh-numbered queue's reset to 0 pins nothing: its positions are in no log), kept across turns while the reattach hook and the log are awaited, and released when the stream ends or is dropped. The bound (max_events_per_task, 512) drops an event only once no hold owes it, up to a ceiling of max_held_events_factor times the bound (default 8, so 4,096 events; None is no ceiling; Some(1) is the old behaviour); past the ceiling the oldest is dropped anyway and reported (event_append_error::HOLD_CEILING). The audit, encrypted and tenant-aware wrappers forward it, the tenant store to the request's partition. A stream lagging 62 positions behind a bound of 10 now receives every one (stream_lag_holds; the same configuration ended with streamLagged before, which stream_lag_catch_up pinned). Kept PARTIAL/low: a stream lagging past the ceiling still ends with streamLagged after what it delivered, which the ceiling exists to allow (an unbounded hold would let a client that stops reading pin its task's log for as long as its connection lasts); so does a lag on a custom store that keeps a bounded log without holds.",
    "auditor": "B",
    "source": "spec",
    "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
@@ -2953,7 +2989,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:197 version_metadata_refuses_another_minor_or_no_minor",
     "crates/a2a-protocol-server/src/dispatch/version.rs:181 version_metadata_accepts_this_major_minor_with_any_patch",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2706 ws_version_mismatch_rejects_handshake",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2701 ws_version_mismatch_rejects_handshake",
     "crates/a2a-protocol-server/tests/actionable_errors.rs (the refusal names the supported version)"
    ],
    "notes": "Since 2026-10-12 (maintainer decision) a request is served only when its A2A-Version names this server's Major.Minor, 1.0, with any patch; any other version, 1.1 included, is VersionNotSupportedError naming 1.0, on every binding through one validator (the WebSocket handshake had its own copy). Until then any 1.x was accepted and served with 1.0 semantics, as the official Python SDK still does (_is_version_compatible compares the major only).",
@@ -3001,8 +3037,8 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:843 rest_missing_version_header_rejected_but_card_discovery_versionless",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:691 default_config_rejects_a_versionless_rpc",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2749 ws_missing_version_header_rejected_by_default",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:682 default_config_rejects_a_versionless_rpc",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2744 ws_missing_version_header_rejected_by_default",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs an_empty_version_is_refused_unless_none_is_required",
     "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs an_absent_version_is_refused_as_0_3_unless_none_is_required"
    ],
@@ -3315,9 +3351,9 @@
     "crates/a2a-protocol-server/src/push/sender.rs:1016"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:196 retries_on_server_error_and_eventually_fails",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:275 backoff_is_paid_between_attempts_but_not_after_the_last",
-    "crates/a2a-protocol-server/src/push/sender.rs:890 push_retry_policy_default"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:192 retries_on_server_error_and_eventually_fails",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:271 backoff_is_paid_between_attempts_but_not_after_the_last",
+    "crates/a2a-protocol-server/src/push/sender.rs:829 push_retry_policy_default"
    ],
    "notes": "PushRetryPolicy default 3 attempts, backoff [1s,2s]; only 5xx/408/429/transport errors are retried. Tests assert 3 attempts against a failing webhook, the backoff paid between attempts and not after the last, and the default doubling [1s, 2s] schedule; shown able to fail by fixing attempts at 1 (attempt-count tests fail), removing the backoff sleep (backoff test fails) and changing the default to [1s, 1s] (default-policy test fails) (2026-10-20).",
    "auditor": "C",
@@ -3338,7 +3374,7 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:132"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1090 the_default_schedule_starts_every_attempt_inside_the_default_bound",
+    "crates/a2a-protocol-server/src/push/sender.rs:1029 the_default_schedule_starts_every_attempt_inside_the_default_bound",
     "crates/a2a-protocol-server/src/handler/limits/tests.rs:13 default_values",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:319 deliver_push_bg_logs_delivery_timeout"
    ],
@@ -3360,7 +3396,7 @@
     "crates/a2a-protocol-server/src/push/sender.rs:883"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:196 retries_on_server_error_and_eventually_fails",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:192 retries_on_server_error_and_eventually_fails",
     "crates/a2a-protocol-server/tests/optional_features/push_retry.rs:78 push_delivery_stops_after_the_configured_number_of_failures"
    ],
    "notes": "max_attempts per delivery; non-retryable 4xx stops immediately. push_delivery_stops_after_the_configured_number_of_failures asserts a webhook failing every attempt gets exactly 2, then exactly 5, attempts when that many are configured and the delivery is reported failed; shown able to fail by fixing the retry loop at one attempt (2026-10-20).",
@@ -3483,13 +3519,13 @@
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md",
-    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:888",
+    "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:318",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:139",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:306",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:906"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2361 ws_legacy_method_names_rejected",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2356 ws_legacy_method_names_rejected",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:198 every_spec_method_is_routed",
     "crates/a2a-protocol-server/tests/method_routing_completeness.rs:225 nothing_outside_the_spec_set_is_routed",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:150 refusals_carry_the_documented_codes",
@@ -3549,7 +3585,7 @@
     "tck/src/equivalence.rs:646 bind_equiv_003",
     "crates/a2a-protocol-server/tests/http_json_error_parity.rs:76 rest_and_axum_answer_the_same_failures_identically",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:375 a_lagged_stream_s_error_keeps_its_marker",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:366 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1372 status_to_error_keeps_a_struct_detail_as_data",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1432 status_to_error_keeps_field_violations_as_data"
@@ -4304,7 +4340,7 @@
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:147 jsonrpc_push_config_ids_with_crlf_are_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:217 jsonrpc_tenant_with_control_character_is_invalid_params",
     "crates/a2a-protocol-server/tests/control_chars_in_ids.rs:228 rest_message_and_task_ids_with_crlf_are_400",
-    "crates/a2a-protocol-server/src/push/sender.rs:1243 rejects_header_with_crlf",
+    "crates/a2a-protocol-server/src/push/sender.rs:1182 rejects_header_with_crlf",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:380 path_traversal_raw"
    ],
    "notes": "What the SDK itself takes from a request and uses is sanitized: push credential header values refuse CR/LF (validate_header_value), REST paths refuse traversal (contains_path_traversal), and, since 2026-10-20, every client-supplied identifier the server validates (message, context, task, reference task, push-config and tenant ids, and the ListTasks contextId filter) refuses any control character (handler/ids.rs). Until then validate_id refused only empty and over-long ids, so \"a\\r\\nb\" was stored and logged, and push-config ids and the ListTasks filter were not validated at all; the 2026-10-18 note claimed the ids were sanitized, which overstated it (found 2026-10-20; the wire tests fail without the check). Kept APPLICATION: sanitizing message and artifact content for wherever an agent sends it next depends on that destination, which only the agent knows.",
@@ -5840,8 +5876,8 @@
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:102 a_card_built_per_request_keeps_its_dynamic_etag",
     "crates/a2a-protocol-server/tests/card_etag_determinism.rs:123 the_unconditional_path_keeps_it_too",
     "crates/a2a-protocol-server/src/dispatch/rest/response.rs:185 the_extended_card_s_etag_is_the_same_for_the_same_card",
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:440 an_if_none_match_on_a_second_line_counts",
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:452 conditions_apply_to_get_and_head_only",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:430 an_if_none_match_on_a_second_line_counts",
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:442 conditions_apply_to_get_and_head_only",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/tests.rs:191 if_none_match_counts_every_line_on_get_and_head_only",
     "crates/a2a-protocol-server/tests/card_head.rs:102 rest_answers_head_on_the_card_and_probes",
     "crates/a2a-protocol-server/tests/agent_card_methods.rs:128 every_other_method_is_405_with_allow_and_never_412"
@@ -5868,7 +5904,7 @@
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:147 static_handler_returns_etag_and_cache_headers",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:154 handle_sends_no_last_modified",
     "crates/a2a-protocol-server/tests/dynamic_handler_tests.rs:260 if_modified_since_is_ignored",
-    "crates/a2a-protocol-server/src/agent_card/caching.rs:429 an_unreadable_if_none_match_still_hides_if_modified_since"
+    "crates/a2a-protocol-server/src/agent_card/caching.rs:419 an_unreadable_if_none_match_still_hides_if_modified_since"
    ],
    "notes": "Static handler: set to handler construction time (changes on every restart); If-Modified-Since compared by exact string equality (caching.rs:159), and ignored when If-None-Match is present, readable or not, or the method is not GET or HEAD (RFC 9110 §13.1.3; until 2026-10-13 an unreadable If-None-Match fell through to it). Dynamic handler: sends none since 2026-10-13. It had stamped the current second on every request, claiming the card changed at each one; a card produced per request has no modification date (RFC 9110 §8.8.2.1), so it now ignores If-Modified-Since (§13.1.3) and revalidates by ETag alone. Asserts the static card handler sends Last-Modified; shown able to fail by removing the header from its 200 response (2026-10-20).",
    "auditor": "D",
@@ -6106,7 +6142,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:89 a_refused_batch_gets_one_error_per_request",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:102 a_refused_content_type_is_answered_with_the_id",
     "crates/a2a-protocol-server/tests/jsonrpc_header_refusal_ids.rs:115 a_batch_past_the_limit_gets_one_refusal",
-    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:126 jsonrpc_records_a_version_refusal_per_answer",
+    "crates/a2a-protocol-server/tests/dispatch_tests/rpc_calls.rs:135 jsonrpc_records_a_version_refusal_per_answer",
     "crates/a2a-protocol-types/src/jsonrpc.rs:746 a_request_id_must_be_a_string_a_number_or_null",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:76 an_id_of_another_type_is_an_invalid_request",
     "crates/a2a-protocol-server/tests/jsonrpc_2_0_rules.rs:117 omitted_params_are_read_as_an_empty_object",
@@ -6143,7 +6179,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:244-260"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:797 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:798 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3017).",
    "auditor": "E",
@@ -6292,7 +6328,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:375 a_lagged_stream_s_error_keeps_its_marker"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:366 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "A2aError::data reaches the client as a further detail (a Struct, or as is when it names its @type) on JSON-RPC and HTTP+JSON unary responses, on both bindings' stream frames, and on WebSocket. Since 2026-10-13 gRPC carries it too, unary and stream: a BadRequest as google.rpc.BadRequest, other data as a google.protobuf.Struct Any (dispatch/grpc/details.rs). SLIMRPC carries the message text only.",
    "auditor": "E",
@@ -6384,7 +6420,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:276 validated_metadata_accepts_1_0_with_any_patch",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:691 default_config_rejects_a_versionless_rpc"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:682 default_config_rejects_a_versionless_rpc"
    ],
    "notes": "All 11 RPCs call validated_metadata(request.metadata(), ..) and pass the headers to the handler.",
    "auditor": "E",
@@ -6429,7 +6465,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1451 status_to_error_prefers_error_info_reason",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:375 a_lagged_stream_s_error_keeps_its_marker"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:366 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
    "auditor": "E",
@@ -6844,7 +6880,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:362-376",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:800-950"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:804-954"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
@@ -6865,9 +6901,9 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:247",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:478",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1021",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1217",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:141"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1025",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1262",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:143"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/final_task_snapshot.rs:104 by_default_the_stream_closes_at_the_terminal_status",
@@ -6941,9 +6977,9 @@
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:116-385"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2442 ws_push_config_methods_routed",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2615 ws_get_extended_agent_card_routed",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2203 ws_send_streaming_message_events",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2437 ws_push_config_methods_routed",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2610 ws_get_extended_agent_card_routed",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2198 ws_send_streaming_message_events",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:93 every_spec_method_is_registered"
    ],
    "notes": "Both bindings route all 11 v1.0 methods to the shared RequestHandler. WebSocket also accepts the v0.3 alias `message/stream` (websocket.rs:883). The module rustdoc (websocket.rs:20-23) says v0.3 names are rejected, while the book (dispatchers.md:225-229) documents the alias; the alias is untested (ws_legacy_method_names_rejected covers only message/send, tasks/list, tasks/get).",
@@ -6963,7 +6999,7 @@
     "bindings/a2a-protocol-slimrpc/src/codec.rs:1-130"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1970 ws_send_message_success",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1965 ws_send_message_success",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:126 send_message_round_trips_over_the_fabric"
    ],
    "notes": "WebSocket reuses the JSON-RPC ProtoJSON types. SLIMRPC uses the canonical lf.a2a.v1 protobuf messages.",
@@ -6983,7 +7019,7 @@
     "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:96-108"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1987 ws_get_task_not_found",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1982 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:247 streaming_send_delivers_events_and_terminates"
    ],
    "notes": "Same handler, so the semantics match. Deviations: WebSocket ends every stream with a synthetic success frame `{\"result\":{\"status\":\"stream_complete\"}}` that is not a StreamResponse (documented). SLIMRPC accepts a missing a2a-version (methods/mod.rs:96 `validate_version_metadata(&headers, false)`), unlike the strict default of the other bindings. Its rationale comment (\"the gRPC binding already made exactly this trade\") is stale, since gRPC now enforces it (helpers.rs:42-51).",
@@ -7094,7 +7130,7 @@
     "bindings/a2a-protocol-slimrpc/src/error.rs:96-115"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1987 ws_get_task_not_found",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:1982 ws_get_task_not_found",
     "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:213 a2a_errors_keep_their_identity_across_the_fabric"
    ],
@@ -7182,7 +7218,7 @@
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:247 streaming_send_delivers_events_and_terminates",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2203 ws_send_streaming_message_events",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2198 ws_send_streaming_message_events",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:192 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:426 ws_upgrade_last_event_id_does_not_replay_the_log"
    ],
@@ -7228,7 +7264,7 @@
     "crates/a2a-protocol-client/src/transport/mod.rs:116"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2642 ws_upgrade_headers_drive_tenant_resolution",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2637 ws_upgrade_headers_drive_tenant_resolution",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:316 a_refused_credential_carries_the_refusal_detail",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:366 a_refused_permission_carries_no_challenge",
     "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:141 a_refused_token_is_a_401_over_websocket",
@@ -7299,7 +7335,7 @@
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/out_of_process.rs (suite)",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2116 ws_oversized_message_rejected",
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2111 ws_oversized_message_rejected",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:192 a_stream_is_frames_then_the_marker",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:150 refusals_carry_the_documented_codes",
     "crates/a2a-protocol-server/tests/websocket_tests.rs:332 ws_json_without_a_method_returns_invalid_request"
@@ -7558,8 +7594,8 @@
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:255"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:882 http_push_sender_default",
-    "crates/a2a-protocol-server/src/push/sender.rs:1090 the_default_schedule_starts_every_attempt_inside_the_default_bound"
+    "crates/a2a-protocol-server/src/push/sender.rs:821 http_push_sender_default",
+    "crates/a2a-protocol-server/src/push/sender.rs:1029 the_default_schedule_starts_every_attempt_inside_the_default_bound"
    ],
    "notes": "Per-request timeout 10s, whole-delivery bound 30s by default, both configurable (HttpPushSender::with_timeout, HandlerLimits::with_push_delivery_timeout). The test that used to pin the two defaults contradicting each other now pins that they fit: every attempt starts, two finish.",
    "auditor": "F",
@@ -7581,9 +7617,9 @@
     "crates/a2a-protocol-server/src/push/sender.rs:1007"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:196 retries_on_server_error_and_eventually_fails",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:275 backoff_is_paid_between_attempts_but_not_after_the_last",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:363 retries_on_rate_limit_status"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:192 retries_on_server_error_and_eventually_fails",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:271 backoff_is_paid_between_attempts_but_not_after_the_last",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:359 retries_on_rate_limit_status"
    ],
    "notes": "3 attempts, backoff [1s,2s] (doubling; schedule is an explicit list whose last entry repeats, not computed exponential). Retries 5xx/408/429/transport errors only. Caveat: under the default 5s handler bound a timed-out first attempt leaves no time for retries (see 3110).",
    "auditor": "F",
@@ -7602,7 +7638,7 @@
     "crates/a2a-protocol-server/src/push/sender.rs:874"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:838 push_retry_policy_with_max_attempts",
+    "crates/a2a-protocol-server/src/push/sender.rs:777 push_retry_policy_with_max_attempts",
     "crates/a2a-protocol-server/tests/optional_features/push_retry.rs:78 push_delivery_stops_after_the_configured_number_of_failures"
    ],
    "notes": "Per-event max_attempts only; no cross-event circuit breaker that disables a config after N consecutive failed events. Asserts a webhook failing every attempt gets exactly the configured 2, then 5, attempts and no more; shown able to fail by fixing the retry loop at one attempt; the count is per delivery, with no cross-event circuit breaker (2026-10-20).",
@@ -7625,9 +7661,9 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:71"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:1335 the_resolver_seam_checks_and_pins_what_it_is_given",
-    "crates/a2a-protocol-server/src/push/sender.rs:1543 https_with_tls_feature_still_enforces_ssrf",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:406 https_webhook_enforces_ssrf_with_tls_feature"
+    "crates/a2a-protocol-server/src/push/sender.rs:1274 the_resolver_seam_checks_and_pins_what_it_is_given",
+    "crates/a2a-protocol-server/src/push/sender.rs:1482 https_with_tls_feature_still_enforces_ssrf",
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:402 https_webhook_enforces_ssrf_with_tls_feature"
    ],
    "notes": "Synchronous host check at config creation, DNS-resolve-all + IP pinning at delivery (http), cert validation defeats rebinding for https. Bypassable only by explicit HttpPushSender::allow_private_urls().",
    "auditor": "F",
@@ -7646,11 +7682,11 @@
     "crates/a2a-protocol-server/src/push/sender.rs:472"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:899 rejects_loopback_ipv4",
-    "crates/a2a-protocol-server/src/push/sender.rs:904 rejects_private_10_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:909 rejects_private_172_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:914 rejects_private_192_168_range",
-    "crates/a2a-protocol-server/src/push/sender.rs:1016 rejects_decimal_integer_metadata"
+    "crates/a2a-protocol-server/src/push/sender.rs:838 rejects_loopback_ipv4",
+    "crates/a2a-protocol-server/src/push/sender.rs:843 rejects_private_10_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:848 rejects_private_172_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:853 rejects_private_192_168_range",
+    "crates/a2a-protocol-server/src/push/sender.rs:955 rejects_decimal_integer_metadata"
    ],
    "notes": "Also CGNAT, 0.0.0.0, IPv6 ULA, IPv4-mapped/NAT64 forms and inet_aton numeric encodings.",
    "auditor": "F",
@@ -7669,10 +7705,10 @@
     "crates/a2a-protocol-server/src/push/sender.rs:547"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:919 rejects_link_local",
-    "crates/a2a-protocol-server/src/push/sender.rs:1134 rejects_localhost",
-    "crates/a2a-protocol-server/src/push/sender.rs:1298 rejects_ipv6_link_local",
-    "crates/a2a-protocol-server/src/push/sender.rs:1149 rejects_ipv6_loopback"
+    "crates/a2a-protocol-server/src/push/sender.rs:858 rejects_link_local",
+    "crates/a2a-protocol-server/src/push/sender.rs:1073 rejects_localhost",
+    "crates/a2a-protocol-server/src/push/sender.rs:1237 rejects_ipv6_link_local",
+    "crates/a2a-protocol-server/src/push/sender.rs:1088 rejects_ipv6_loopback"
    ],
    "notes": "localhost, *.local, *.internal hostnames and 169.254/16, fe80::/10 rejected.",
    "auditor": "F",
@@ -7843,7 +7879,7 @@
     "crates/a2a-protocol-server/tests/push_sender_https_e2e.rs:199 https_push_delivered_over_real_tls",
     "crates/a2a-protocol-server/src/handler/push_config.rs:1299 set_push_config_refuses_http_when_the_sender_is_https_only",
     "crates/a2a-protocol-server/src/handler/push_config.rs:1324 set_push_config_accepts_http_from_a_sender_that_does_not_require_https",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:819 an_https_only_sender_refuses_http_before_connecting"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:815 an_https_only_sender_refuses_http_before_connecting"
    ],
    "notes": "HTTPS delivery supported (tls-rustls feature, on by default via sdk) and tested over real TLS. Since 2026-10-12 opt-in HttpPushSender::https_only() refuses an http:// webhook at config creation (InvalidParams naming the reason, via PushSender::requires_https) and again at delivery before any connection, as the opt-in allowlist (line 3116) does for hosts. Off by default: plain http is still accepted unless a deployment sets it. Before: no option enforced https.",
    "auditor": "F",
@@ -8447,7 +8483,7 @@
     "crates/a2a-protocol-client/tests/credentials_plaintext.rs the_call_goes_when_it_is_safe_or_not_refused",
     "crates/a2a-protocol-client/src/plaintext_tests.rs without_refuse_the_call_goes_and_is_logged_once",
     "crates/a2a-protocol-server/tests/push_plaintext_credentials.rs credentials_to_a_plaintext_webhook_are_stored_and_reported",
-    "crates/a2a-protocol-server/tests/push_sender_tests.rs:406 https_webhook_enforces_ssrf_with_tls_feature"
+    "crates/a2a-protocol-server/tests/push_sender_tests.rs:402 https_webhook_enforces_ssrf_with_tls_feature"
    ],
    "notes": "Re-examined 2026-10-18: both directions in which the SDK sends a credential now act on plaintext. Client: a call carrying Authorization, Proxy-Authorization, Cookie or an AuthInterceptor::api_key header or query parameter to an http:// or ws:// endpoint on a non-loopback host is logged once, and refused before sending with ClientBuilder::require_https_credentials() (InsecureTransport, naming the header and origin only). Server: a push config whose token or credentials go to an http:// webhook is logged at creation (origin only), and refused with HttpPushSender::https_only(). Both refusals are opt-in, the SHOULD's latitude: loopback and lab deployments use plaintext. Residual: a gRPC endpoint given as a bare host:port carries no scheme and is not classified.",
    "auditor": "F",
@@ -8778,7 +8814,7 @@
     "crates/a2a-protocol-server/src/auth/mod.rs:9"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2615 ws_get_extended_agent_card_routed"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2610 ws_get_extended_agent_card_routed"
    ],
    "notes": "WebSocket routes through the same RequestHandler, so interceptors (auth, rate limit, audit) and tenant resolution apply identically per message.",
    "auditor": "F",
@@ -8873,8 +8909,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/decisions.rs:34",
-    "crates/a2a-protocol-server/src/handler/helpers.rs:286",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:221"
+    "crates/a2a-protocol-server/src/handler/helpers.rs:258",
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:223"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:474 shape_response_history_covers_every_branch",
@@ -9088,8 +9124,8 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs stamp_ids",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:222",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1227"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:224",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1272"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs agent_messages_on_a_status_or_in_history_get_the_tasks_ids",

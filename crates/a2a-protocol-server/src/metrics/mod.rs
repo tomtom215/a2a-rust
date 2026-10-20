@@ -232,8 +232,10 @@ pub mod event_log_catchup_error {
 /// replica A already wrote, and the row that stays is A's. Until these labels
 /// existed the store returned `Ok(())` and nothing anywhere said so.
 ///
-/// Both kinds mean **an event the agent emitted is not in the log**, which is
-/// what [`Metrics::on_persistence_error`] is for. A retried append of the
+/// The first two kinds mean **an event the agent emitted is not in the log**,
+/// which is what [`Metrics::on_persistence_error`] is for; the third,
+/// [`HOLD_CEILING`](event_append_error::HOLD_CEILING), that a stream lost its
+/// copy of one the log held. A retried append of the
 /// *same* event is not reported here: see
 /// [`POSITION_CONFLICT`](event_append_error::POSITION_CONFLICT).
 pub mod event_append_error {
@@ -260,6 +262,19 @@ pub mod event_append_error {
     /// append stays a success on purpose — failing it would turn a swept task
     /// into a failed agent — and this is the report that it happened.
     pub const TASK_ABSENT: &str = "task_absent";
+
+    /// The append succeeded, and the log, at its held-events ceiling, dropped
+    /// its oldest event though an attached stream still owed it.
+    ///
+    /// Unlike the two above, the event was in the log; what is lost is one
+    /// stream's copy of it. Only the two in-memory stores raise this (since
+    /// 2026-10-20): an attached stream holds the events it owes past
+    /// [`max_events_per_task`](crate::store::TaskStoreConfig::max_events_per_task),
+    /// up to [`max_held_events_factor`](crate::store::TaskStoreConfig::max_held_events_factor)
+    /// times it. That stream ends with `streamLagged` after what it
+    /// delivered. A non-zero rate is a client reading far slower than its
+    /// task writes, or one that stopped reading and kept its connection.
+    pub const HOLD_CEILING: &str = "hold_ceiling";
 }
 
 /// Error kinds passed to [`Metrics::on_persistence_error`] for

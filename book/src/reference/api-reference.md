@@ -443,6 +443,8 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | Type | Description |
 |------|-------------|
 | `InMemoryTaskStore` | In-memory task store with TTL |
+| `EventHolds` | What attached streams still owe from each task's event log, so a bounded log keeps it (`store`; `TaskStore::hold_events`, spec §3.5.2) |
+| `EventHold` | One stream's hold on a task's log, raised as it delivers and released on drop (`store`) |
 | `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
 | `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
