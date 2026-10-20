@@ -102,6 +102,14 @@ agent over JSON-RPC:
 | billing (unknown service: two rounds) | 18 of 20 recovered with `list_services`; 1 wrote its call as text, which the server did not parse, so the caller got raw JSON; 1 told the caller to call the tool | 20 of 20 |
 | checkout (one call) | 10 of 10 called the tool; 2 reported an uptime the tool did not return | 20 of 20 called it; all 20 reported the tool's 259200 s |
 
+Qwen3.5-0.8B-Q4_0 on the same build, after the change, 10 runs of each: it
+now emits tool calls (9 of 10 billing runs made at least one, where the
+2026-09-19 build made none), but answers wrongly too often to rely on.
+Billing was right in 3 of 10: four put `payments-api`'s state under
+"billing", one asked for a `billing_service`, one called nothing. Checkout
+stated the right version in 7 of 10, and one run said the service did not
+exist. For tool calling, use Qwen3-1.7B or larger.
+
 The change: the loop runs a call the model wrote as its whole reply's text,
 when it names a declared tool (`src/leaked.rs`), and the preamble tells the
 model to call tools itself and to report their values as returned
