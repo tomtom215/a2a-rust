@@ -47,6 +47,10 @@ jobs:
           - page_token
           - forwarded_for
           - client_peer_input
+          - sealed_ring_value
+          - sealed_part
+          - sealed_push_config
+          - sealed_audit_value
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

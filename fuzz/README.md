@@ -26,6 +26,10 @@ Fuzz testing validates that every parser of peer input handles arbitrary and mal
 | `webhook_url` | The push-webhook SSRF check (`validate_webhook_url`): URI syntax, bracketed IPv6, C-style numeric IPv4 hosts |
 | `page_token` | The in-memory store's `ListTasks` page token and the `A2A-Extensions` header |
 | `client_peer_input` | What the client parses from a remote agent besides SSE framing and the protocol types: an AIP-193 error body, an error frame met mid-stream, `Retry-After` (asserts it never asks for more than the one-hour ceiling), and the id a WebSocket frame is routed by |
+| `sealed_ring_value` | `Aes256GcmCipher`'s open of a stored value (key-id length and id, nonce, tag); asserts nothing unsealed opens and a sealed value changed in any way is refused |
+| `sealed_part` | `EncryptedTaskStore`'s read of a stored part (media type, `sealedPart` shape, version, base64); same assertions, and an unsealed part passes only under `accept_unsealed_parts` |
+| `sealed_push_config` | The SQL push-config stores' read of a stored config with a cipher (`a2a-sealed:v1:` prefix, base64); same assertions |
+| `sealed_audit_value` | `AuditLog::reveal` and `digest_matches` over a protected record with one value, wrapped key or keyed digest changed; asserts a change is refused, read as erased or as clear text as documented, and never reveals another name or matches |
 
 The server's private parsers are reached through `a2a_protocol_server::fuzzing`,
 and the client's through `a2a_protocol_client::fuzzing`: modules compiled only
@@ -37,7 +41,8 @@ each parser unchanged.
 A parser of peer input is one that reads bytes a remote party chose. The
 2026-09-22 adopter audit found three with no target (escape class 8: JWT, REST
 query, `x-forwarded-for`); this is the inventory that replaced a list nobody
-kept. Add a row, and a target, with every new one.
+kept. Add a row, and a target, with every new one. Whoever can write a store
+is a peer too: the `store → server` rows read what the stores hold.
 
 | Peer | Input | Parser | Target |
 |---|---|---|---|
@@ -58,6 +63,10 @@ kept. Add a row, and a target, with every new one.
 | server → client | an error frame mid-stream | `decode_stream_error_frame` | `client_peer_input` |
 | server → client | `Retry-After` | `parse_retry_after` | `client_peer_input` |
 | server → client | WebSocket frame id | `extract_jsonrpc_id` (`websocket` feature) | `client_peer_input` |
+| store → server | a sealed value at rest | `Aes256GcmCipher::open` (`encryption`) | `sealed_ring_value` |
+| store → server | a sealed task part | `EncryptedTaskStore`'s `open_part` | `sealed_part` |
+| store → server | a sealed push config | `Sealing::decode_text` (`sqlite`, `postgres`) | `sealed_push_config` |
+| store → server | a sealed audit value, wrapped subject key, keyed digest | `AuditPrivacy::reveal`, `unwrap`, `digest_matches` (`audit`) | `sealed_audit_value` |
 
 Not covered: the SQL stores' page tokens are split by
 `store::cursor::decode`, one `split_once` whose halves are bound as query
@@ -92,6 +101,10 @@ cargo +nightly fuzz run forwarded_for
 cargo +nightly fuzz run webhook_url
 cargo +nightly fuzz run page_token
 cargo +nightly fuzz run client_peer_input
+cargo +nightly fuzz run sealed_ring_value
+cargo +nightly fuzz run sealed_part
+cargo +nightly fuzz run sealed_push_config
+cargo +nightly fuzz run sealed_audit_value
 
 # Run with a time limit (e.g., 5 minutes)
 cargo +nightly fuzz run json_deser -- -max_total_time=300

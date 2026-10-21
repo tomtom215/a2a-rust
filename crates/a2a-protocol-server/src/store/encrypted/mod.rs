@@ -107,7 +107,7 @@ pub use cipher::{
 };
 pub use seal::SEALED_MEDIA_TYPE;
 
-use seal::Sealer;
+pub(crate) use seal::Sealer;
 
 use super::tenant::TenantContext;
 use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
