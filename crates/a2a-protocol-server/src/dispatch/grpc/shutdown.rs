@@ -159,6 +159,7 @@ impl GrpcDispatcher {
             drained,
             abandoned: if drained { 0 } else { open.count() },
             tasks: Some(tasks),
+            refused: None,
         })
     }
 }

@@ -4,6 +4,59 @@ A checklist and guide for deploying a2a-rust agents in production.
 
 ## Security
 
+### The Production Profile
+
+Two presets turn the startup warnings and the safety settings a delegated
+deployment needs into refusals (ADR 0025). Neither changes a default.
+`Profile::Production` makes `build()` refuse a handler with no
+authenticating interceptor, no halt store, or no lease store.
+`ServeConfig::production()` makes the server return at once, accepting
+nothing, when it would serve plaintext beyond loopback or a binding the agent
+card does not declare; `ServeReport::refused` says why.
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+use a2a_protocol_server::profile::Profile;
+use a2a_protocol_server::serve::{ServeConfig, Server};
+use a2a_protocol_server::store::{InMemoryHaltStore, InMemoryLeaseStore};
+use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder, agent_executor};
+use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+
+struct Agent;
+agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let card = AgentCard::new("agent", "1.0.0", AgentInterface::jsonrpc("https://agent.example/a2a"))
+        .with_description("an agent other agents delegate to")
+        .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
+    let handler = RequestHandlerBuilder::new(Agent)
+        .with_agent_card(card)
+        .with_profile(Profile::Production)
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("token", "caller")]))
+        .with_halt_store(InMemoryHaltStore::new())
+        .with_lease_store(InMemoryLeaseStore::new())
+        .build()?; // refuses, naming what is missing
+    // TLS ends at the ingress in front of this pod.
+    let config = ServeConfig::production().with_tls_terminated_in_front();
+    let report = Server::bind("0.0.0.0:3000")
+        .await?
+        .with_config(config)
+        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::new(handler)), async {
+            tokio::signal::ctrl_c().await.ok();
+        })
+        .await;
+    if let Some(why) = report.refused {
+        return Err(why.into());
+    }
+    Ok(())
+}
+```
+
+Use durable halt and lease stores (SQLite, PostgreSQL) when more than one
+replica serves the agent. The gRPC and WebSocket dispatchers serve on their
+own listeners, which `ServeConfig` does not reach.
+
 ### HTTPS
 
 Always use HTTPS in production. The **client** (and the server's push sender)
@@ -485,6 +538,7 @@ to copy.
 
 ## Deployment Checklist
 
+- [ ] `Profile::Production` and `ServeConfig::production()` applied, or each refusal they make accounted for
 - [ ] HTTPS termination configured
 - [ ] CORS origins restricted to known clients
 - [ ] Executor timeout set

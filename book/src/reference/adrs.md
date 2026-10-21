@@ -138,6 +138,7 @@ request runs an incremental `--in-diff` mutation gate on the changed lines.
 | 0022 | A tool-calling loop in the SDK: `ToolModel`, `Tool`, `ToolSet` and `ToolLoop` behind the off-by-default `tool-loop` feature, with an OpenAI-compatible model client (Accepted) |
 | 0023 | A budget travels down the delegation chain: a relative deadline and named meters on the message, held by the receiving server, reserved from the parent at grant time and reported on each status update (Accepted) |
 | 0024 | Halts and cancels are pushed to every replica: the PostgreSQL halt store notifies with each write and a listener per replica forwards it, a cancel reaches the replica running the task, and the poll stays behind the push (Accepted) |
+| 0025 | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store, and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged (Accepted) |
 
 Only ADRs 0001–0008 have a section above; the table is the summary for all
 twenty-four.

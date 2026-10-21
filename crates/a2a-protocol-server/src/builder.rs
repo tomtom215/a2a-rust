@@ -191,9 +191,8 @@ pub struct RequestHandlerBuilder {
     max_lease_ttl: std::time::Duration,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
-    /// The profile applied, if any; `build()` checks what it needs.
-    #[cfg(feature = "audit")]
-    profile: Option<crate::profile::ProfileKind>,
+    /// The profiles applied; `build()` checks what each needs.
+    profiles: Vec<crate::profile::ProfileKind>,
 }
 
 impl RequestHandlerBuilder {
@@ -241,8 +240,7 @@ impl RequestHandlerBuilder {
             max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
             #[cfg(feature = "audit")]
             audit: None,
-            #[cfg(feature = "audit")]
-            profile: None,
+            profiles: Vec::new(),
         }
     }
 
@@ -330,16 +328,23 @@ impl RequestHandlerBuilder {
 
     /// Applies a deployment [`Profile`](crate::profile::Profile); see each
     /// profile for what it sets and what `build()` then requires.
-    #[cfg(feature = "audit")]
+    /// Profiles combine: each one applied adds its requirements.
+    // Without `audit`, every profile is a unit variant and none is consumed.
+    #[cfg_attr(not(feature = "audit"), allow(clippy::needless_pass_by_value))]
     #[must_use]
     pub fn with_profile(mut self, profile: crate::profile::Profile) -> Self {
         match profile {
+            #[cfg(feature = "audit")]
             crate::profile::Profile::Auditable(log) => {
-                self.profile = Some(crate::profile::ProfileKind::Auditable);
+                self.profiles.push(crate::profile::ProfileKind::Auditable);
                 if self.approval_gate.is_none() {
                     self.approval_gate = Some(crate::approval::ApprovalGate::new());
                 }
                 self.with_audit(log)
+            }
+            crate::profile::Profile::Production => {
+                self.profiles.push(crate::profile::ProfileKind::Production);
+                self
             }
         }
     }
@@ -882,7 +887,7 @@ impl RequestHandlerBuilder {
     /// - an approval gate whose [quorum](crate::approval::ApprovalGate::with_quorum)
     ///   could never be met: `0`, more than its allowed approvers, or more
     ///   than one with tasks isolated by caller;
-    /// - with the `audit` feature, a `Profile` whose requirements are not
+    /// - a [`Profile`](crate::profile::Profile) whose requirements are not
     ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
@@ -982,8 +987,17 @@ impl RequestHandlerBuilder {
         }
 
         #[cfg(feature = "audit")]
-        if self.profile == Some(crate::profile::ProfileKind::Auditable) {
+        if self
+            .profiles
+            .contains(&crate::profile::ProfileKind::Auditable)
+        {
             self.check_auditable()?;
+        }
+        if self
+            .profiles
+            .contains(&crate::profile::ProfileKind::Production)
+        {
+            self.check_production()?;
         }
 
         // Validate executor timeout is not zero.
@@ -1286,6 +1300,34 @@ impl RequestHandlerBuilder {
     }
 }
 
+impl RequestHandlerBuilder {
+    /// What [`Profile::Production`](crate::profile::Profile::Production)
+    /// requires, each failure naming its fix.
+    fn check_production(&self) -> ServerResult<()> {
+        let refuse = |why: &str| Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+        if !self.interceptors.has_authenticator() {
+            return refuse(
+                "the production profile needs an authenticating interceptor: \
+                 otherwise any caller reaches every method and every task",
+            );
+        }
+        if self.halt_store.is_none() {
+            return refuse(
+                "the production profile needs a halt store (with_halt_store): \
+                 otherwise a halt reaches only this process and a restart forgets it",
+            );
+        }
+        if self.lease_store.is_none() {
+            return refuse(
+                "the production profile needs a lease store (with_lease_store): \
+                 otherwise a task delegated here runs on after the agent that \
+                 delegated it has stopped",
+            );
+        }
+        Ok(())
+    }
+}
+
 #[cfg(feature = "audit")]
 impl RequestHandlerBuilder {
     /// What [`Profile::Auditable`](crate::profile::Profile::Auditable)
@@ -1363,9 +1405,9 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("halt_poll_interval", &self.halt_poll_interval)
             .field("lease_store", &self.lease_store.is_some())
             .field("max_lease_ttl", &self.max_lease_ttl);
+        d.field("profiles", &self.profiles);
         #[cfg(feature = "audit")]
-        d.field("audit", &self.audit.is_some())
-            .field("profile", &self.profile);
+        d.field("audit", &self.audit.is_some());
         d.finish()
     }
 }

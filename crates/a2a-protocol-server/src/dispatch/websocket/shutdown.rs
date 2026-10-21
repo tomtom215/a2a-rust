@@ -76,6 +76,7 @@ impl WebSocketDispatcher {
             drained,
             abandoned,
             tasks: Some(tasks),
+            refused: None,
         }
     }
 }

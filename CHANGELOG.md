@@ -366,6 +366,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **A production profile that refuses to start** (server; ADR 0025).
+  `Profile::Production` makes `build()` refuse a handler with no
+  authenticating interceptor, no halt store or no lease store, naming the
+  call that supplies each. `ServeConfig::production()` makes
+  `Server::serve_with_shutdown` return at once, accepting nothing, when it
+  would serve plaintext beyond loopback (unless
+  `with_tls_terminated_in_front()`) or a binding the agent card does not
+  declare; the new `ServeReport::refused` says why. Profiles now combine,
+  and the `profile` module no longer needs the `audit` feature. Defaults
+  are unchanged.
 - **Halts and cancels are pushed to every replica** (server; ADR 0024;
   EU AI Act Art. 14(4)(e); OWASP ASI10). `HaltStore` gains `signals()` and
   `publish_cancel`, provided methods whose defaults keep a store polling.

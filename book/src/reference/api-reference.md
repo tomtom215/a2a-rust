@@ -333,7 +333,7 @@ are rustdoc's job.
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
 | `otel` | `OtelMetrics` (`otel` feature, on by default) and `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset; `otlp` feature) |
-| `profile` | `Profile::Auditable`: one call that turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature) |
+| `profile` | Deployment profiles, which combine. `Profile::Auditable` turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature). `Profile::Production` refuses a handler with no authenticator, halt store or lease store (ADR 0025) |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |

@@ -48,6 +48,11 @@ only: when something here is done, delete it rather than annotating it.
   included against a local PostgreSQL 16: 170 distinct tests across 50
   targets, all passing. `check_compliance_map.py` only checks that a cited
   test exists, so rerun them after editing a cited file.
+- **Built on this branch (2026-10-21):** ADR 0025's production profile:
+  `Profile::Production` (`profile.rs`) and `ServeConfig::production()`
+  (`serve/graceful/production.rs`, `ServeReport::refused`). Not covered:
+  the gRPC and WebSocket listeners, and a signing key, which waits for
+  provenance to be wired into the server.
 - **Built on this branch (2026-10-21):** ADR 0024's pushed halts and
   cancels (`store/halt/postgres.rs`, `handler/halt/sync.rs`).
 - **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in
@@ -335,9 +340,12 @@ it.
   drafts for deadline propagation and provenance (not filed without the
   maintainer), the three encryption verifications, and the removal of the
   0.10/0.12 deprecations in 0.15.0. Built differently from this record in
-  one respect: ADR 0023's deadline is relative (`remainingMs`, as gRPC's
+  two respects: ADR 0023's deadline is relative (`remainingMs`, as gRPC's
   `grpc-timeout`), not absolute, so clock skew between agents does not
-  move it; each hop's remainder is what its parent reserved.
+  move it; each hop's remainder is what its parent reserved. And the
+  handler preset is `with_profile(Profile::Production)`, not
+  `RequestHandlerBuilder::production()`, because profiles are how the
+  builder already applies presets (ADR 0025).
 - **Earlier, still standing:** ~~tool calling stays in the examples, not the
   crates (`examples/rig-agent`)~~ (superseded 2026-10-20, above); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
