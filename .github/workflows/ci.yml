@@ -287,6 +287,13 @@ jobs:
       - name: Workflow verdict gates can fail
         run: python3 -m pip install --quiet --require-hashes -r .github/requirements/pyyaml.txt && ./scripts/prove_workflow_gates_fail.py
 
+      # What the SDK seals at rest, read by another AES-256-GCM, HKDF and
+      # HMAC (Python's `cryptography`, over OpenSSL) from the layouts the
+      # script states. The other direction, the script's own values opened by
+      # the SDK, is `tests/crypto_interop.rs`.
+      - name: Sealed formats open under an independent implementation
+        run: python3 -m pip install --quiet --require-hashes -r .github/requirements/cryptography.txt && python3 scripts/crypto_interop/check.py
+
       # The two provers above ask whether a gate *can* fail. This asks whether
       # it *runs on the commits that can break it* — the question that had a
       # bad answer twice, and both times a human found it by reading `on:`
