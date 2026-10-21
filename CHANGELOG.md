@@ -2741,6 +2741,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`webpki-roots` requires 1.0.10** (client, server; RUSTSEC-2026-0381,
+  affecting 1.0.0 to 1.0.9). The lockfiles already resolved 1.0.10, except
+  the SDK-comparison bench harness, which is updated; the manifests admitted
+  the affected versions to a downstream build that resolves its own.
+  `check_advisory_floors.py` found it.
+
 - **A control character in a client's id is refused** (server; spec §14
   "MUST sanitize user-provided content"). `validate_id` refused only empty
   and over-long ids, so `"a\r\nb"` as a message, context, task or reference

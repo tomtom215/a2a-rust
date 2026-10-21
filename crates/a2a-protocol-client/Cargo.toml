@@ -106,7 +106,7 @@ futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-featu
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
 rustls         = { version = ">=0.23.46, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
-webpki-roots   = { version = ">=1.0, <2", optional = true }
+webpki-roots   = { version = ">=1.0.10, <2", optional = true }
 tonic          = { workspace = true, optional = true }
 tonic-prost    = { workspace = true, optional = true }
 tonic-types    = { workspace = true, optional = true }

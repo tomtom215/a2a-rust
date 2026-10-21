@@ -150,7 +150,7 @@ rustls         = { version = ">=0.23.46, <0.24", optional = true, default-featur
 rustls-pki-types = { version = ">=1.9, <2", optional = true, features = ["std"] }
 # `Server::with_tls` (`tls-rustls`). Already in the graph through hyper-rustls.
 tokio-rustls   = { version = ">=0.26, <0.27", optional = true, default-features = false, features = ["ring"] }
-webpki-roots   = { version = ">=1.0, <2", optional = true }
+webpki-roots   = { version = ">=1.0.10, <2", optional = true }
 # JWT verification (auth-jwt feature). `ring` is the same crypto backend the
 # types crate's `signing` feature already uses.
 ring           = { version = "0.17.12", optional = true }
