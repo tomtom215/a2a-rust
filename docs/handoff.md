@@ -43,6 +43,11 @@ only: when something here is done, delete it rather than annotating it.
   mutation sweep of the crypto modules (210 mutants, the 2 missed rewritten
   so they are killed). `book/src/deployment/security.md`, "How this is
   verified".
+- **Control map (2026-10-21):** 88 rows after the GDPR and CRA pass
+  (`63418d93`). Every test it cites was run that day, Postgres-ignored ones
+  included against a local PostgreSQL 16: 170 distinct tests across 50
+  targets, all passing. `check_compliance_map.py` only checks that a cited
+  test exists, so rerun them after editing a cited file.
 - **Built on this branch (2026-10-21):** ADR 0024's pushed halts and
   cancels (`store/halt/postgres.rs`, `handler/halt/sync.rs`).
 - **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in
