@@ -220,6 +220,15 @@ fn settling_refunds_the_unspent_part() {
 }
 
 #[test]
+fn releasing_returns_the_whole_reservation() {
+    let parent = BudgetHandle::start(&tokens(1000));
+    let g = parent.grant(&tokens(400)).unwrap();
+    assert_eq!(parent.remaining("tokens"), Some(600));
+    g.release();
+    assert_eq!(parent.remaining("tokens"), Some(1000));
+}
+
+#[test]
 fn the_status_reports_what_is_left_and_spent() {
     let h = BudgetHandle::start(&tokens(10).with_time(Duration::from_secs(60)));
     h.charge("tokens", 3).unwrap();

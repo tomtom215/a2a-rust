@@ -158,6 +158,14 @@ buckets, under the conventions' name. It was deprecated in 0.14.0. Units of
 counts are brace-annotated (`{request}`); the other Prometheus names are
 unchanged.
 
+### A signed agent card declares the budget extension
+
+The builder adds `https://a2a-rust.com/extensions/budget/v1` to every card,
+as it adds the failure taxonomy, and a signed card cannot be edited without
+breaking its signature, so `build()` refuses a signed card that does not
+declare it. Add it to `capabilities.extensions` (`required: false`) before
+signing. An unsigned card needs nothing.
+
 ### `TenantLimits::max_stored_tasks` is gone
 
 The field, `TenantLimits::with_max_stored_tasks` and

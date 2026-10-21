@@ -5,6 +5,7 @@
 
 use std::fmt;
 
+use a2a_protocol_types::budget::{BudgetHandle, Exhausted, TOKENS_METER};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -49,6 +50,9 @@ pub enum LoopError {
     TurnLimit(usize),
     /// The cancellation token fired.
     Cancelled,
+    /// The caller's budget ran out: its deadline passed, or the model's
+    /// reported usage spent the [`TOKENS_METER`] (ADR 0023).
+    Budget(Exhausted),
 }
 
 impl fmt::Display for LoopError {
@@ -61,6 +65,7 @@ impl fmt::Display for LoopError {
                 "the model asked for tools on all {turns} turns without answering"
             ),
             Self::Cancelled => f.write_str("cancelled"),
+            Self::Budget(e) => e.fmt(f),
         }
     }
 }
@@ -153,6 +158,25 @@ impl ToolLoop {
         user_text: &str,
         cancel: &CancellationToken,
     ) -> Result<Answer, LoopError> {
+        self.run_within(user_text, cancel, None).await
+    }
+
+    /// [`run`](Self::run), held to `budget` when there is one: no turn
+    /// starts once its deadline has passed, and each reply's reported token
+    /// usage (input plus output) is charged to its [`TOKENS_METER`], the run
+    /// ending once that is spent. A provider that reports no usage charges
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// As [`run`](Self::run), and [`LoopError::Budget`] when the budget runs
+    /// out.
+    pub async fn run_within(
+        &self,
+        user_text: &str,
+        cancel: &CancellationToken,
+        budget: Option<&BudgetHandle>,
+    ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
         let mut messages = vec![ChatMessage::User(user_text.to_owned())];
@@ -162,9 +186,11 @@ impl ToolLoop {
             if cancel.is_cancelled() {
                 return Err(LoopError::Cancelled);
             }
+            out_of_time(budget)?;
             let reply = self
                 .turn(ChatRequest::new(&self.preamble, &messages, &specs), cancel)
                 .await?;
+            charge_usage(budget, &reply)?;
 
             let mut text = reply.text;
             let mut calls = reply.tool_calls;
@@ -282,6 +308,32 @@ impl ToolLoop {
             }
         }
     }
+}
+
+/// [`LoopError::Budget`] once `budget`'s deadline has passed.
+fn out_of_time(budget: Option<&BudgetHandle>) -> Result<(), LoopError> {
+    if budget.and_then(BudgetHandle::remaining_time) == Some(std::time::Duration::ZERO) {
+        return Err(LoopError::Budget(Exhausted::Time));
+    }
+    Ok(())
+}
+
+/// Charges `reply`'s reported usage, input plus output, to `budget`'s
+/// [`TOKENS_METER`]; [`LoopError::Budget`] once that is spent.
+fn charge_usage(
+    budget: Option<&BudgetHandle>,
+    reply: &super::model::ModelTurn,
+) -> Result<(), LoopError> {
+    if let (Some(budget), Some(usage)) = (budget, reply.usage) {
+        let used = usage
+            .input_tokens
+            .unwrap_or(0)
+            .saturating_add(usage.output_tokens.unwrap_or(0));
+        budget
+            .charge(TOKENS_METER, used)
+            .map_err(LoopError::Budget)?;
+    }
+    Ok(())
 }
 
 /// A call's arguments as the object a [`Tool`](super::Tool) is given. Empty

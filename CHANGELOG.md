@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **Every agent card declares the budget extension** (server; ADR 0023).
+  `https://a2a-rust.com/extensions/budget/v1` joins the failure taxonomy
+  as an extension the builder adds to every card, never as required. A
+  card that carries a signature but does not declare it is refused at
+  `build()`, as for any extension the builder would have to add to signed
+  bytes. Migration: declare it on the card, then sign the result.
+
 - **`TenantLimits::max_stored_tasks` is removed** (server), with
   `TenantLimits::with_max_stored_tasks` and
   `TenantLimitsBuilder::max_stored_tasks`. Deprecated since 0.10.0 and
@@ -359,6 +366,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **A budget travels down the delegation chain** (types, server, client; ADR 0023;
+  G5 in `docs/swarm-orchestration.md`; OWASP ASI08). A message carries
+  `{"remainingMs": n, "meters": {"tokens": n}}` under `a2a-rust.com/budget`
+  (`a2a_protocol_types::budget::Budget`). Every server honours it, with no
+  switch. Before any work it refuses a malformed budget, or one with no
+  time left, as invalid params. The turn's executor timeout becomes the
+  smaller of the server's and the caller's, and a turn the caller's
+  deadline stops ends `failed`, classed `budget-exhausted`, saying so.
+  `RequestContext::budget()` is the turn's `BudgetHandle`: what is left,
+  `charge` for real spend (lock-free, never refused), and `grant`, which
+  carves a child's budget out of the parent's, reserving each meter so
+  ten children cannot each be given the whole. Each status update carries
+  what is left and spent (`BudgetStatus`). `Delegation::start_budgeted`
+  sends a grant and, when the child settles, charges the parent what the
+  child reported spending in place of the reservation; a failed start
+  returns the reservation. `ToolLoop::run_within` (and `ToolLoopExecutor`)
+  charges each reply's reported usage to the `tokens` meter and stops once
+  it is spent. A wire contract test pins the shape
+  (`tests/golden/uri_contracts/budget.json`), and
+  `delegation_budget_tests.rs` runs it two hops deep against real servers.
 - **Leases on delegated tasks: a child whose parent goes quiet stops**
   (types, server, client; ADR 0020; G1-B in `docs/swarm-orchestration.md`;
   OWASP ASI08). The extension `https://a2a-rust.com/extensions/lease/v1`

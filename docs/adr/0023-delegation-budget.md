@@ -54,9 +54,13 @@ Option 2.
 - **Receipt.** A server always honours a budget, and its card declares the
   extension, not as required. There is no switch, because a caller's
   deadline that is silently ignored is the gap itself.
-  - Before any work, the handler refuses a malformed budget as
-    `InvalidParams`. It refuses a `remainingMs` of 0 as failure class
-    `budget-exhausted`.
+  - Before any work, the handler refuses a malformed budget, and one with
+    a `remainingMs` of 0, as `InvalidParams`. A failure class rides only on
+    a failed task's status, and a request refused before work creates no
+    task. A deadline that passes while the turn waits for admission fails
+    the turn as `budget-exhausted` without running the executor. A zero
+    timeout is not used for that, because tokio polls the future once
+    before it checks the deadline.
   - The deadline is the receipt time plus `remainingMs`. The turn's executor
     timeout becomes `min(handler or tenant timeout, time to the deadline)`.
   - A turn stopped by the inherited deadline ends `failed`, with failure
@@ -101,11 +105,14 @@ Option 2.
     the parent is refunded the unspent part, granted minus spent. If the
     child reports no spend, nothing is refunded, which is the conservative
     direction.
-- **Reporting spend.** On every status update, the server writes
-  `{"remainingMs", "meters", "spent"}` under `a2a-rust.com/budget` in the
-  task's `metadata`. A parent, a dashboard or the caller can therefore see
-  the remaining budget while the task runs, and the delegation reads
-  `spent` to refund.
+- **Reporting spend.** On every status update of the turn, the server
+  writes `{"remainingMs", "meters", "spent"}` under `a2a-rust.com/budget`
+  in the update's `metadata`. A streaming caller, a push receiver or a
+  parent therefore sees the remaining budget while the task runs, and the
+  delegation reads `spent` from the terminal update to refund. The stored
+  task's `metadata` does not carry it: status-update metadata is not merged
+  into the task, and changing that would change the store contract. A
+  `GetTask` poller does not see the figure.
 - **Tool loop.** When the context has a budget, `ToolLoop` charges the
   `tokens` meter with each model reply's reported usage and stops with
   `budget-exhausted` when it is spent. It also stops at the deadline. A

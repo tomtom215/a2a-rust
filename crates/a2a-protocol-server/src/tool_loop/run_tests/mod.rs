@@ -200,6 +200,7 @@ fn results(seen: &[Seen], turn: usize) -> Vec<(String, String)> {
         .collect()
 }
 
+mod budget;
 mod cancel;
 mod recovery;
 mod turns;

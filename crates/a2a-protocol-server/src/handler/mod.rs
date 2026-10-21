@@ -19,6 +19,7 @@
 //! | `event_processing` | Event collection, state transitions, push delivery |
 //! | `shutdown` | Ending in-flight work, then graceful shutdown with optional timeout |
 
+pub(crate) mod budget;
 mod capability;
 mod concurrency;
 mod event_processing;

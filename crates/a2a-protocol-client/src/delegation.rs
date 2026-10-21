@@ -34,6 +34,12 @@
 //! that crashes, hangs, is partitioned away, or [`detach`](Delegation::detach)es
 //! stops renewing, and its child stops within the time to live.
 //!
+//! [`start_budgeted`](Delegation::start_budgeted) sends the child a budget
+//! carved out of the parent's (`a2a_protocol_types::budget`, ADR 0023): a
+//! deadline inside the parent's and meters reserved from it. When the child
+//! settles, the parent is charged what the child reported spending instead
+//! of the reservation; a handle detached or dropped refunds nothing.
+//!
 //! ```rust,no_run
 //! use std::sync::Arc;
 //! use a2a_protocol_client::{ClientBuilder, delegation::{Delegation, Outcome}};
@@ -57,6 +63,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use a2a_protocol_types::budget::{BudgetStatus, ChildGrant};
 use a2a_protocol_types::failure::{FailureClass, class_of};
 use a2a_protocol_types::{Message, MessageSendParams, StreamResponse, TaskState, TaskStatus};
 
@@ -148,6 +155,8 @@ pub struct Delegation {
     /// Renews the child's lease, when it was granted one; stops when this is
     /// dropped.
     renewal: Option<Renewal>,
+    /// The child's budget, settled against its last report when it settles.
+    budget: Option<(ChildGrant, Option<BudgetStatus>)>,
 }
 
 /// The task renewing a child's lease, aborted when this is dropped.
@@ -156,6 +165,38 @@ struct Renewal {
     /// The child's id, once an event names it.
     id: Arc<std::sync::Mutex<Option<String>>>,
     task: tokio::task::JoinHandle<()>,
+}
+
+impl Renewal {
+    /// Renews the child's lease every third of `ttl`, once an event has
+    /// named the child, until the child is terminal or this is dropped.
+    fn spawn(client: Arc<A2aClient>, tenant: Option<String>, ttl: Duration) -> Self {
+        let id = Arc::new(std::sync::Mutex::new(None::<String>));
+        let slot = Arc::clone(&id);
+        let task = tokio::spawn(async move {
+            let every = ttl / 3;
+            loop {
+                tokio::time::sleep(every).await;
+                let known = slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                let Some(id) = known else { continue };
+                let mut query = a2a_protocol_types::TaskQueryParams::new(id);
+                query.tenant.clone_from(&tenant);
+                match client.renew_lease(query).await {
+                    Ok(task) if task.status.state.is_terminal() => return,
+                    Ok(_) => {}
+                    // Missed renewals are what the lease is for; a later one
+                    // may land.
+                    Err(_e) => {
+                        trace_debug!(error = %_e, "lease renewal failed");
+                    }
+                }
+            }
+        });
+        Self { id, task }
+    }
 }
 
 impl Drop for Renewal {
@@ -184,6 +225,7 @@ impl Delegation {
             armed: true,
             id_wait: DEFAULT_ID_WAIT,
             renewal: None,
+            budget: None,
         })
     }
 
@@ -206,31 +248,45 @@ impl Delegation {
         a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
         let tenant = params.tenant.clone();
         let mut this = Self::start(Arc::clone(&client), params).await?;
-        let id = Arc::new(std::sync::Mutex::new(None::<String>));
-        let slot = Arc::clone(&id);
-        let task = tokio::spawn(async move {
-            let every = ttl / 3;
-            loop {
-                tokio::time::sleep(every).await;
-                let known = slot
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone();
-                let Some(id) = known else { continue };
-                let mut query = a2a_protocol_types::TaskQueryParams::new(id);
-                query.tenant.clone_from(&tenant);
-                match client.renew_lease(query).await {
-                    Ok(task) if task.status.state.is_terminal() => return,
-                    Ok(_) => {}
-                    // Missed renewals are what the lease is for; a later one
-                    // may land.
-                    Err(_e) => {
-                        trace_debug!(error = %_e, "lease renewal failed");
-                    }
-                }
+        this.renewal = Some(Renewal::spawn(client, tenant, ttl));
+        Ok(this)
+    }
+
+    /// [`start`](Self::start) with `grant`, a budget carved out of the
+    /// parent's by `BudgetHandle::grant`, and a lease of `lease` as
+    /// [`start_leased`](Self::start_leased) grants one when it is `Some`.
+    ///
+    /// When the child settles, is cancelled or its stream is lost, the
+    /// grant is settled with the last budget the child reported on a status
+    /// update: the parent is charged that instead of the reservation. A
+    /// child that reported none, or a handle detached or dropped, refunds
+    /// nothing. An agent that does not implement the extension ignores the
+    /// budget and reports none.
+    ///
+    /// # Errors
+    ///
+    /// As [`start`](Self::start). No child was started then, and the whole
+    /// reservation is returned to the parent.
+    pub async fn start_budgeted(
+        client: Arc<A2aClient>,
+        mut params: MessageSendParams,
+        grant: ChildGrant,
+        lease: Option<Duration>,
+    ) -> ClientResult<Self> {
+        grant.budget().attach(&mut params.message);
+        if let Some(ttl) = lease {
+            a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
+        }
+        let tenant = params.tenant.clone();
+        let mut this = match Self::start(Arc::clone(&client), params).await {
+            Ok(this) => this,
+            Err(e) => {
+                grant.release();
+                return Err(e);
             }
-        });
-        this.renewal = Some(Renewal { id, task });
+        };
+        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl));
+        this.budget = Some((grant, None));
         Ok(this)
     }
 
@@ -283,6 +339,12 @@ impl Delegation {
             }
             StreamResponse::StatusUpdate(u) => {
                 self.task_id.get_or_insert_with(|| u.task_id.to_string());
+                if let (Some((_, last)), Ok(Some(report))) = (
+                    self.budget.as_mut(),
+                    BudgetStatus::read_from(u.metadata.as_ref()),
+                ) {
+                    *last = Some(report);
+                }
                 &u.status
             }
             StreamResponse::Message(m) => {
@@ -368,6 +430,9 @@ impl Delegation {
 
     fn finish(mut self, outcome: Outcome) -> Delegated {
         self.armed = false;
+        if let Some((grant, last)) = self.budget.take() {
+            grant.settle(last.as_ref());
+        }
         Delegated {
             task_id: self.task_id.take(),
             outcome,
@@ -408,6 +473,7 @@ impl Drop for Delegation {
             armed: false,
             id_wait: self.id_wait,
             renewal: None,
+            budget: None,
         };
         rt.spawn(async move {
             let done = rest.cancel().await;

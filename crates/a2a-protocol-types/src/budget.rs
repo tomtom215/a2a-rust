@@ -69,6 +69,11 @@ pub const MAX_METERS: usize = 16;
 /// The longest meter name, in bytes.
 pub const MAX_METER_NAME_LEN: usize = 64;
 
+/// The meter a model's token usage is charged to, by the SDK's tool loop
+/// and by convention: input plus output tokens, as the provider reports
+/// them.
+pub const TOKENS_METER: &str = "tokens";
+
 /// A grant: the time and the amount of each named meter the receiver may
 /// spend on one turn.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

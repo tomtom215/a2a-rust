@@ -1115,16 +1115,7 @@ impl RequestHandlerBuilder {
                     params: None,
                 });
             }
-            wanted.push(AgentExtension {
-                uri: a2a_protocol_types::failure::FAILURE_EXTENSION_URI.to_owned(),
-                description: Some(
-                    "A failed task says why in a form a caller can match on, \
-                     rather than only in prose."
-                        .to_owned(),
-                ),
-                required: Some(false),
-                params: None,
-            });
+            wanted.extend(crate::handler::budget::always_declared());
 
             if let Some(card) = agent_card.as_mut() {
                 advertise("agent card", card, &wanted)?;
@@ -1902,6 +1893,7 @@ mod tests {
         card.capabilities.extensions = Some(vec![
             AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI),
             AgentExtension::new(a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
+            AgentExtension::new(a2a_protocol_types::budget::BUDGET_EXTENSION_URI),
         ]);
         card.signatures = Some(vec![a_signature()]);
 

@@ -351,9 +351,10 @@ impl RequestHandler {
             // A halted tenant takes no new work (`halt`); a halt that lands
             // after this check is caught once the token is registered.
             self.refuse_if_halted().await?;
-            // A lease is checked before any work, and stored once the turn
-            // has its token (`lease`).
+            // A lease and a budget are checked before any work; the lease is
+            // stored once the turn has its token (`lease`, `budget`).
             let lease = self.requested_lease(&params.message)?;
+            let budget = super::budget::requested(&params.message)?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;
@@ -383,6 +384,7 @@ impl RequestHandler {
             // task too — even if it began a moment ago (`cancel_in_flight`).
             ctx.cancellation_token = self.in_flight.task_token();
             ctx.approval = approval;
+            ctx.budget = budget;
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
             }

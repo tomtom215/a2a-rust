@@ -310,4 +310,8 @@ the two-hop runs measured here.
    `crates/a2a-protocol-client/tests/delegation_lease_tests.rs` stops a
    parent renewing and finds its child `canceled` within three times the
    time to live; a swarm run that kills a supervisor process is not done.
-   G5, the deadline, is not built.
+   ~~G5~~ done 2026-10-21 (ADR 0023): a relative deadline and named
+   meters on the message, held by every receiving server, reserved from
+   the parent by `BudgetHandle::grant` and refunded from the child's
+   reported spend. `crates/a2a-protocol-client/tests/delegation_budget_tests.rs`
+   runs two hops and finds the grandchild's deadline inside the parent's.

@@ -33,6 +33,13 @@ only: when something here is done, delete it rather than annotating it.
   timeout cutting a blocking request still being answered
   (`serve::graceful::idle::Serving`); the dependency refresh (genai 0.7,
   tokio 1.54, no `deny.toml` waiver left at the root).
+- **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in
+  `docs/swarm-orchestration.md`: `a2a_protocol_types::budget` (`Budget`,
+  `BudgetStatus`, `BudgetHandle`), every server holding a turn to the
+  caller's deadline (`handler/budget.rs`), `Delegation::start_budgeted`,
+  and the tool loop charging the `tokens` meter. The 0.10/0.12
+  `max_stored_tasks` deprecations are removed. `webpki-roots` requires
+  1.0.10 (RUSTSEC-2026-0381).
 - **Trailers on `main` (for the maintainer):** 36 of the 86 non-merge
   commits pull request #173 merged (`86c8fac..6c90d0b^2`) carry
   `Co-Authored-By` and `Claude-Session` trailers, against `CONTRIBUTING.md`'s
@@ -40,8 +47,8 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-20: TESTED 453, APPLICATION 34,
-  NOT_APPLICABLE 20, PARTIAL 3, SUPPORTED 0; 510 entries). The three PARTIAL entries,
+  authority on the counts (2026-10-21: TESTED 455, APPLICATION 32,
+  NOT_APPLICABLE 20, PARTIAL 3; 510 entries). The three PARTIAL entries,
   each short of a MUST for a stated reason: §3.5.2, a stream lagging past
   the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
@@ -283,7 +290,10 @@ it.
   tool-calling study published, kill-switch conformance tests, upstream
   drafts for deadline propagation and provenance (not filed without the
   maintainer), the three encryption verifications, and the removal of the
-  0.10/0.12 deprecations in 0.15.0.
+  0.10/0.12 deprecations in 0.15.0. Built differently from this record in
+  one respect: ADR 0023's deadline is relative (`remainingMs`, as gRPC's
+  `grpc-timeout`), not absolute, so clock skew between agents does not
+  move it; each hop's remainder is what its parent reserved.
 - **Earlier, still standing:** ~~tool calling stays in the examples, not the
   crates (`examples/rig-agent`)~~ (superseded 2026-10-20, above); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed

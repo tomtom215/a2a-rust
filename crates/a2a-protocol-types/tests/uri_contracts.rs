@@ -40,6 +40,7 @@ use a2a_protocol_types::approval::{
     APPROVAL_EXTENSION_URI, APPROVAL_METADATA_KEY, ApprovalDecision, ApprovalRequest, Decision,
 };
 use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::budget::{BUDGET_EXTENSION_URI, BUDGET_METADATA_KEY, Budget, BudgetStatus};
 use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::failure::{
     FAILURE_EXTENSION_URI, FAILURE_METADATA_KEY, FailureClass, class_of, set_class,
@@ -271,6 +272,43 @@ fn lease_extension_contract() {
                 "effect": "the task's deadline moves to now + ttlMs",
             },
             "lapse": "the task is stopped and ends TASK_STATE_CANCELED",
+        }),
+    );
+}
+
+#[test]
+fn budget_extension_contract() {
+    let mut message = Message::user_text("m1", "summarise these");
+    Budget::new()
+        .with_time(Duration::from_millis(30_000))
+        .with_meter("tokens", 50_000)
+        .expect("a valid meter")
+        .attach(&mut message);
+    let mut update_metadata = None;
+    BudgetStatus::new(
+        Some(12_000),
+        [("tokens".to_owned(), 41_000)].into(),
+        [("tokens".to_owned(), 9_000)].into(),
+    )
+    .attach_to(&mut update_metadata);
+
+    golden::check(
+        "budget",
+        BUDGET_EXTENSION_URI,
+        json!({
+            "metadataKey": BUDGET_METADATA_KEY,
+            "fields": {
+                "Budget": wire_names::<Budget>(),
+                "BudgetStatus": wire_names::<BudgetStatus>(),
+            },
+            "grant": carried(&message),
+            "status": {
+                "carrier": "TaskStatusUpdateEvent.metadata of every status update in the turn",
+                "metadata": update_metadata,
+            },
+            "meterName": "1 to 64 of [a-z0-9._-]; at most 16 meters",
+            "receipt": "deadline = admission time + remainingMs; remainingMs 0 is refused as invalid params",
+            "deadlinePassed": "the turn ends TASK_STATE_FAILED with failure class budget-exhausted",
         }),
     );
 }

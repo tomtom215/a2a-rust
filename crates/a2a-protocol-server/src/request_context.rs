@@ -73,6 +73,9 @@ pub struct RequestContext {
     /// [`ApprovalGate`](crate::approval::ApprovalGate) has checked it.
     pub(crate) approval: Option<crate::approval::VerifiedApproval>,
 
+    /// See [`budget`](Self::budget).
+    pub(crate) budget: Option<a2a_protocol_types::budget::BudgetHandle>,
+
     /// See [`accepted_output_modes`](Self::accepted_output_modes).
     accepted_output_modes: Vec<String>,
 
@@ -93,6 +96,7 @@ impl RequestContext {
             cancellation_token: CancellationToken::new(),
             call_context: None,
             approval: None,
+            budget: None,
             accepted_output_modes: Vec::new(),
             referenced_tasks: Vec::new(),
         }
@@ -131,6 +135,29 @@ impl RequestContext {
     #[must_use]
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
+        self
+    }
+
+    /// The caller's budget for this turn (ADR 0023), its account started
+    /// when the send was admitted; `None` when the message carried none.
+    ///
+    /// [`remaining_time`](a2a_protocol_types::budget::BudgetHandle::remaining_time)
+    /// and [`remaining`](a2a_protocol_types::budget::BudgetHandle::remaining)
+    /// say how much more the turn may spend;
+    /// [`charge`](a2a_protocol_types::budget::BudgetHandle::charge) records
+    /// spend; [`grant`](a2a_protocol_types::budget::BudgetHandle::grant)
+    /// carves a delegated child's budget out of it. The handler holds the
+    /// turn to the deadline itself; meters are the executor's to charge.
+    #[must_use]
+    pub const fn budget(&self) -> Option<&a2a_protocol_types::budget::BudgetHandle> {
+        self.budget.as_ref()
+    }
+
+    /// Sets the turn's budget, as the handler does for a message that
+    /// carries one; for an executor driven directly, as in a test.
+    #[must_use]
+    pub fn with_budget(mut self, budget: a2a_protocol_types::budget::BudgetHandle) -> Self {
+        self.budget = Some(budget);
         self
     }
 

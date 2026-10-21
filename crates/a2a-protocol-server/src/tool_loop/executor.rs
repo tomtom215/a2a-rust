@@ -39,7 +39,9 @@ pub const TRACE_ARTIFACT_ID: &str = "tool-trace";
 /// extension (`a2a_protocol_types::failure`): `internal` when the model
 /// provider failed or a tool returned [`ToolError::Fatal`], and
 /// `budget-exhausted` when the model was still calling tools at the turn
-/// bound. The status message says which, in words. Cancellation ends the run
+/// bound or the caller's budget (`RequestContext::budget`, ADR 0023) ran
+/// out, its token usage charged to the `tokens` meter. The status message
+/// says which, in words. Cancellation ends the run
 /// at the next turn or call, with nothing written: the cancel path writes
 /// `Canceled`.
 ///
@@ -77,7 +79,11 @@ impl AgentExecutor for ToolLoopExecutor {
             let emit = EventEmitter::new(ctx, queue);
             emit.status(TaskState::Working).await?;
 
-            match self.tool_loop.run(&prompt, cancel).await {
+            match self
+                .tool_loop
+                .run_within(&prompt, cancel, ctx.budget())
+                .await
+            {
                 Ok(answer) => {
                     emit.artifact(
                         ANSWER_ARTIFACT_ID,
@@ -98,7 +104,7 @@ impl AgentExecutor for ToolLoopExecutor {
                     emit.status(TaskState::Completed).await
                 }
                 Err(LoopError::Cancelled) => Ok(()),
-                Err(e @ LoopError::TurnLimit(_)) => {
+                Err(e @ (LoopError::TurnLimit(_) | LoopError::Budget(_))) => {
                     emit.fail(FailureClass::BudgetExhausted, e.to_string())
                         .await
                 }

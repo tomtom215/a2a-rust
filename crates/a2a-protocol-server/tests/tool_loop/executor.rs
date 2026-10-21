@@ -188,6 +188,38 @@ async fn the_turn_bound_fails_the_task_as_budget_exhausted() {
     assert!(reason(&task).contains("all 2 turns"), "{}", reason(&task));
 }
 
+/// The caller sent 50 tokens; each turn reports 40. The second turn spends
+/// them, and the task fails `budget-exhausted` saying which meter.
+#[tokio::test]
+async fn a_spent_token_budget_fails_the_task_as_budget_exhausted() {
+    use a2a_protocol_server::tool_loop::TokenUsage;
+    use a2a_protocol_types::budget::{Budget, TOKENS_METER};
+
+    let costly = || {
+        asks("service_status", r#"{"service":"checkout"}"#)
+            .map(|t| t.with_usage(TokenUsage::new(Some(30), Some(10))))
+    };
+    let handler = handler(scripted(vec![costly(), costly(), costly()]));
+    let mut message = Message::user_text("m1", "go");
+    Budget::new()
+        .with_meter(TOKENS_METER, 50)
+        .unwrap()
+        .attach(&mut message);
+    let task = match handler
+        .on_send_message(MessageSendParams::new(message), false, None)
+        .await
+    {
+        Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) => task,
+        other => panic!("expected a task, got {other:?}"),
+    };
+    assert_eq!(task.status.state, TaskState::Failed);
+    assert_eq!(task.failure_class(), Some(FailureClass::BudgetExhausted));
+    assert_eq!(
+        reason(&task),
+        "the budget's meter \"tokens\" is spent (30 over)"
+    );
+}
+
 #[tokio::test]
 async fn a_message_without_text_is_refused_as_an_invalid_request() {
     let handler = handler(scripted(vec![says("unused")]));

@@ -300,6 +300,12 @@ impl ChildGrant {
         &self.budget
     }
 
+    /// Returns the whole reservation: no child was started (the send
+    /// failed), so nothing of it was spent.
+    pub fn release(self) {
+        self.parent.refund_all(&self.reserved);
+    }
+
     /// Settles the grant with what the child reported spending.
     ///
     /// For each reserved meter the parent is charged the child's reported
