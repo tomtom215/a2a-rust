@@ -19,6 +19,7 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `tracing-opentelemetry-duplicate-attributes-report.md` | `tokio-rs/tracing-opentelemetry` | Draft, not sent |
 | `langfuse-docs-a2a-rust-page.md` | `langfuse/langfuse-docs` | Draft, not sent |
 | `a2a-oversight-provenance-extensions-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent |
+| `a2a-deadline-budget-propagation-draft.md` | `a2aproject/A2A` (discussion) | Draft, not sent |
 | `a2a-itk-dashboard-enrolment-draft.md` | `a2aproject/a2a-itk` | Draft, not sent |
 | `a2a-required-empty-array-report.md` | `a2aproject/A2A` | Draft, held; re-verified 2026-10-15 |
 | `slimrpc-a2a-error-mapping-report.md` | `a2aproject/experimental-cpb-slimrpc`, or `a2aproject/A2A` | Draft, held; re-verified 2026-10-15 |
