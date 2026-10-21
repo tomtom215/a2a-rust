@@ -184,8 +184,11 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) {
         return None;
     }
+    // `16 * hi + lo` rather than `hi << 4 | lo`: the same value, but `|`
+    // and `^` agree on these operands, so that spelling left a mutant no
+    // test could kill.
     s.chunks_exact(2)
-        .map(|pair| Some((nibble(pair[0])? << 4) | nibble(pair[1])?))
+        .map(|pair| Some(nibble(pair[0])? * 16 + nibble(pair[1])?))
         .collect()
 }
 

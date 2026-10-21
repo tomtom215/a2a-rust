@@ -123,6 +123,9 @@ pub const AES_256_KEY_LEN: usize = 32;
 /// The longest key id, in bytes: its length is stored in one byte.
 pub const MAX_KEY_ID_LEN: usize = 255;
 
+/// AES-GCM's tag, 128 bits, at the end of every sealed value.
+const TAG_LEN: usize = 16;
+
 impl Aes256GcmCipher {
     /// A cipher sealing with `key` under the id `key_id`.
     ///
@@ -248,7 +251,9 @@ impl Aes256GcmCipher {
         let refused = || A2aError::internal("a stored value could not be opened");
         let (&id_len, rest) = sealed.split_first().ok_or_else(refused)?;
         let id_len = usize::from(id_len);
-        if rest.len() < id_len + NONCE_LEN {
+        // Room for the key id, the nonce and the tag; only the plaintext
+        // may be empty.
+        if rest.len() < id_len + NONCE_LEN + TAG_LEN {
             return Err(refused());
         }
         let id = std::str::from_utf8(&rest[..id_len]).map_err(|_| refused())?;
