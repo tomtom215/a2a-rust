@@ -168,13 +168,24 @@ fn hex(bytes: &[u8]) -> String {
         })
 }
 
+/// What [`hex`] wrote, and nothing else: lowercase digits only. A keyed
+/// digest has one spelling, so a changed one never matches; until
+/// 2026-10-21 `u8::from_str_radix` also took uppercase and a leading `+`
+/// (found by the `sealed_audit_value` fuzz target).
 fn unhex(s: &str) -> Option<Vec<u8>> {
+    fn nibble(c: u8) -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            _ => None,
+        }
+    }
+    let s = s.as_bytes();
     if !s.len().is_multiple_of(2) {
         return None;
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+    s.chunks_exact(2)
+        .map(|pair| Some((nibble(pair[0])? << 4) | nibble(pair[1])?))
         .collect()
 }
 

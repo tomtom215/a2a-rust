@@ -380,6 +380,14 @@ fn hex_round_trips_and_refuses_what_is_not_hex() {
     assert_eq!(unhex("abc"), None);
     assert_eq!(unhex("zz"), None);
     assert_eq!(unhex(""), Some(vec![]));
+    assert_eq!(unhex("09af"), Some(vec![0x09, 0xaf]));
+    // One spelling: no uppercase, no sign, no other digit (fuzz finding,
+    // 2026-10-21: an uppercased keyed digest matched).
+    for other in [
+        "AB", "aB", "Ab", "+f", "-1", "0g", "g0", "/0", ":0", "`0", "0 ",
+    ] {
+        assert_eq!(unhex(other), None, "{other}");
+    }
 }
 
 /// RFC 8693 actors (ADR 0021): each name in `detail.actors` is sealed under
