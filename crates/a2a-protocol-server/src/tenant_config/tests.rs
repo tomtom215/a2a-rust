@@ -92,18 +92,15 @@ fn per_tenant_config_builder_returns_functional_builder() {
 /// Every `TenantLimits` setter writes its own field (all default to
 /// `None`), and every `PerTenantConfig` setter writes its own.
 #[test]
-#[allow(deprecated)]
 fn every_setter_sets_its_field() {
     let limits = TenantLimits::default()
         .with_max_concurrent_tasks(Some(1))
         .with_executor_timeout(Some(Duration::from_secs(2)))
         .with_event_queue_capacity(Some(3))
-        .with_max_stored_tasks(Some(4))
         .with_rate_limit_rps(Some(5));
     assert_eq!(limits.max_concurrent_tasks, Some(1));
     assert_eq!(limits.executor_timeout, Some(Duration::from_secs(2)));
     assert_eq!(limits.event_queue_capacity, Some(3));
-    assert_eq!(limits.max_stored_tasks, Some(4));
     assert_eq!(limits.rate_limit_rps, Some(5));
 
     let mut overrides = HashMap::new();

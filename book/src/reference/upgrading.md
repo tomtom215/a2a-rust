@@ -158,6 +158,15 @@ buckets, under the conventions' name. It was deprecated in 0.14.0. Units of
 counts are brace-annotated (`{request}`); the other Prometheus names are
 unchanged.
 
+### `TenantLimits::max_stored_tasks` is gone
+
+The field, `TenantLimits::with_max_stored_tasks` and
+`TenantLimitsBuilder::max_stored_tasks` are removed. Nothing ever read them
+(see [0.9 → 0.10](#tenantlimitsmax_stored_tasks-is-deprecated)); a build that
+used them stops compiling where it used to warn. Give the tenant its own
+`TaskStoreConfig` with `TenantAwareInMemoryTaskStore::with_tenant_override`
+instead.
+
 ### `Telemetry` is the `otlp` feature; `otel` is on by default
 
 On `a2a-protocol-server` directly, `Telemetry`, the `Langfuse` preset and
@@ -1459,8 +1468,8 @@ let store = TenantAwareInMemoryTaskStore::new().with_tenant_override(
 ```
 
 The override applies to a partition created after the store is built; a
-tenant that already has one keeps it. The field is deprecated rather than
-removed and is still present as of 0.12.
+tenant that already has one keeps it. The field was deprecated rather than
+removed until 0.15.0, which removes it.
 
 The same release corrected two pieces of documentation that read as if
 something was enforced when it was not: `PerTenantConfig` and `TenantLimits`

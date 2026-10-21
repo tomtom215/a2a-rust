@@ -231,8 +231,8 @@ impl TenantAwareInMemoryTaskStore {
     ///
     /// This is the per-tenant store bound that
     /// `TenantLimits::max_stored_tasks` claimed to be and could not: that field
-    /// sits on [`PerTenantConfig`](crate::PerTenantConfig), which the handler
-    /// holds and a store never sees. Here the store owns the map and reads it
+    /// sat on [`PerTenantConfig`](crate::PerTenantConfig), which the handler
+    /// holds and a store never sees, and was removed in 0.15.0. Here the store owns the map and reads it
     /// as it creates the partition.
     ///
     /// Every field of `TaskStoreConfig` is overridden, not just capacity — a

@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`TenantLimits::max_stored_tasks` is removed** (server), with
+  `TenantLimits::with_max_stored_tasks` and
+  `TenantLimitsBuilder::max_stored_tasks`. Deprecated since 0.10.0 and
+  0.12.0 as "never enforced": the field sat on `PerTenantConfig`, which a
+  store never sees, so nothing read it. Migration: give the tenant its own
+  `TaskStoreConfig::max_capacity` with
+  `TenantAwareInMemoryTaskStore::with_tenant_override`. The deprecations
+  made in 0.15.0 stay until 0.16.
+
 - **`TaskStore::save_appending_history` takes a `HistoryLimit`, not a
   message count** (server; release audit F2). The limit bounds bytes as well
   as messages. A store that overrides the method trims with

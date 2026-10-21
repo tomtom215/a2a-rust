@@ -155,12 +155,9 @@ its own `TaskStoreConfig` and so its own `max_capacity`, `task_ttl`,
 
 It has to live there for a structural reason: a store is constructed
 independently and handed to the builder, so it never sees a `PerTenantConfig`.
-`TenantLimits::max_stored_tasks` is the **deprecated** field that tried to be
-this limit from the config side and that nothing could ever read. It is
-deprecated rather than removed because removing a public field is a semver
-break; every use site now gets a compiler warning naming the replacement.
-
-If you set `max_stored_tasks` and wondered why nothing was capped: that is why.
+`TenantLimits::max_stored_tasks` was the field that tried to be this limit
+from the config side and that nothing could ever read. It was deprecated in
+0.10.0 and removed in 0.15.0.
 
 ### A total across every tenant
 
