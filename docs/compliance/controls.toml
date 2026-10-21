@@ -62,10 +62,18 @@ title = "Cyber Resilience Act — Regulation (EU) 2024/2847"
 url = "https://eur-lex.europa.eu/eli/reg/2024/2847/oj/eng"
 verification = "primary"
 note = """
-Article text read on EUR-Lex on 2026-10-08. Article 14 applies from 11
-September 2026 and the rest from 11 December 2027 (Article 71(2)).
-Non-monetised open-source software is outside the Act (Recital 18); these
-rows serve the manufacturers who integrate it (Article 13(5)).
+Article text read in the Official Journal edition (OJ L, 2024/2847,
+20.11.2024) on 2026-10-21, fetched from the Publications Office (EUR-Lex
+answered with a challenge page). Application, Article 71(2): Article 14 from
+11 September 2026, also for products placed on the market before 11 December
+2027 (Article 69(3)); Chapter IV (Articles 35-51) from 11 June 2026; the rest
+from 11 December 2027. The Act applies to products made available on the
+market, that is supplied in the course of a commercial activity (Articles
+2(1), 3(22)); free and open-source software that its manufacturer does not
+monetise is not (Recital 18), and an open-source software steward is a legal
+person (Article 3(14)), which this project's individual maintainer is not
+(CRA-24). These rows serve the manufacturers who integrate the crates, who
+must exercise due diligence on them (Article 13(5)).
 """
 
 [[sources]]
@@ -73,6 +81,12 @@ id = "gdpr"
 title = "GDPR — Regulation (EU) 2016/679"
 url = "https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng"
 verification = "primary"
+note = """
+Article text read in the Official Journal edition (OJ L 119, 4.5.2016, p. 1)
+on 2026-10-21, fetched from the Publications Office (EUR-Lex answered with a
+challenge page). The controller's and processor's obligations are theirs: the
+SDK is neither, and each row says what it offers toward one.
+"""
 
 [[sources]]
 id = "owasp-asi"
@@ -430,7 +444,7 @@ id = "AIA-15-5"
 source = "ai-act"
 provision = "Art. 15(5)"
 requirement = "High-risk AI systems shall be resilient against attempts by unauthorised third parties to alter their use, outputs or performance by exploiting system vulnerabilities. A high-risk system within the scope of the Cyber Resilience Act that meets the conditions of its Art. 12(1) is deemed to comply with Art. 15's cybersecurity requirements (Art. 42(3), added by Regulation (EU) 2026/1744); the CRA rows below are what the SDK carries toward that."
-sdk = "Authentication (API key in constant time, bearer, JWT with a fixed algorithm list and HS256 secrets of at least 32 bytes, wiped from memory on drop), signed agent cards (ES256 or EdDSA, verified against a JWK Set), signed messages and artifacts, an SSRF guard on push delivery, body and rate limits, refusal of tenants the stores cannot isolate, 13 fuzz targets. TLS on the server's own HTTP and gRPC listeners; with the `encryption` feature, a stored part that was altered, moved or planted unsealed fails the read (GDPR-32-1a)."
+sdk = "Authentication (API key in constant time, bearer, JWT with a fixed algorithm list and HS256 secrets of at least 32 bytes, wiped from memory on drop), signed agent cards (ES256 or EdDSA, verified against a JWK Set), signed messages and artifacts, an SSRF guard on push delivery, body and rate limits, refusal of tenants the stores cannot isolate, 17 fuzz targets. TLS on the server's own HTTP and gRPC listeners; with the `encryption` feature, a stored part that was altered, moved or planted unsealed fails the read (GDPR-32-1a)."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/auth/jwt.rs::JwtAuthInterceptor",
@@ -543,11 +557,12 @@ gap = "Deciding that an incident is serious, and reporting it, is the provider's
 id = "CRA-13-5"
 source = "cra"
 provision = "Art. 13(5)"
-requirement = "Manufacturers exercise due diligence when integrating components sourced from third parties, free and open-source software included."
-sdk = "Per-crate CycloneDX SBOMs and SLSA build-provenance attestations on every release; release tags signed and verified; OSV-Scanner and cargo-deny on every pull request; the OpenSSF Best Practices evidence."
+requirement = "Manufacturers exercise due diligence when integrating components sourced from third parties so that those components do not compromise the cybersecurity of the product, including free and open-source components not made available in the course of a commercial activity."
+sdk = "Per-crate CycloneDX SBOMs (every release since v0.7.0) and SLSA build-provenance attestations on every release, with `SHA256SUMS`; OSV-Scanner and cargo-deny on every pull request; SECURITY.md's section for manufacturers; how the code was produced and certified (PROVENANCE.md); the OpenSSF Best Practices evidence."
 status = "supported"
-ci = ["Generate CycloneDX SBOMs", "actions/attest-build-provenance", "scripts/verify_tag_signature.sh --self-test", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml"]
-evidence = ["PROVENANCE.md", "SECURITY.md", "docs/openssf-best-practices.md"]
+ci = ["Generate CycloneDX SBOMs", "Attest build provenance (SLSA)", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml", "cargo-deny (the workspace dependency tree)"]
+evidence = ["SECURITY.md", "PROVENANCE.md", "RELEASING.md", "docs/openssf-best-practices.md"]
+remainder = "The due diligence is the manufacturer's act: verifying the attestations (`gh attestation verify`), folding the SBOM into its own, and scanning its own lockfile, which, not this repository's, decides the versions it builds. Release-tag signing is required but no release has been signed yet (CRA-AI-II-7)."
 
 [[control]]
 id = "CRA-13-6"
@@ -562,48 +577,397 @@ evidence = ["SECURITY.md"]
 id = "CRA-AI-II-1"
 source = "cra"
 provision = "Annex I, Part II(1)"
-requirement = "Manufacturers draw up a software bill of materials in a commonly used, machine-readable format covering at least the top-level dependencies."
-sdk = "A CycloneDX SBOM per published crate, attached to every GitHub release and attested."
+requirement = "Manufacturers identify and document vulnerabilities and components contained in products, including by drawing up a software bill of materials in a commonly used, machine-readable format covering at least the top-level dependencies."
+sdk = "A CycloneDX 1.5 SBOM per published crate, listing every dependency (optional ones included) at the version this repository's lockfile resolved, with the dependency graph, attached to every GitHub release since v0.7.0 and attested against that crate's `.crate`. Releases v0.2.0 to v0.6.0 carry none."
 status = "supported"
 ci = ["Generate CycloneDX SBOMs", "actions/attest-sbom"]
+remainder = "The manufacturer's SBOM covers its product; versions in the SDK's SBOMs are those of this repository's lockfile at release, not those the integrator's lockfile resolves."
 
 [[control]]
 id = "CRA-AI-I-2a"
 source = "cra"
 provision = "Annex I, Part I(2)(a)"
-requirement = "Products are made available without known exploitable vulnerabilities."
-sdk = "cargo-deny advisories on every pull request and release; OSV-Scanner over all seven Cargo lockfiles; no published manifest admits a version with a RustSec advisory."
-status = "supported"
-ci = ["EmbarkStudios/cargo-deny-action", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml", "scripts/check_advisory_floors.py"]
+requirement = "Products are made available on the market without known exploitable vulnerabilities."
+sdk = "cargo-deny over the workspace's resolved dependency tree on every pull request and push to `main` and in the release workflow, with no advisory waived; OSV-Scanner over all nine tracked Cargo lockfiles on every pull request and push and daily, blocking; no published manifest admits a dependency version with a RustSec advisory. The one vulnerability reported in the crates themselves, GHSA-hr9h-6jvf-wvg6, was fixed in 0.14.1."
+status = "partial"
+ci = ["cargo-deny (the workspace dependency tree)", "Rust lockfiles", "No published manifest admits a version with a RustSec advisory"]
+evidence = ["deny.toml", "SECURITY.md"]
+gap = "GHSA-hr9h-6jvf-wvg6 is not in the RustSec or OSV databases (checked 2026-10-21), so an integrator's scanners do not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. The checks cover this repository's lockfiles when they run; the integrator's lockfile decides what it builds, and advisories published after a release reach it only through its own scanning."
 
-# ── GDPR ─────────────────────────────────────────────────────────────────────
+[[control]]
+id = "CRA-AI-I-1"
+source = "cra"
+provision = "Annex I, Part I(1); Art. 13(2)–(4)"
+requirement = "Products are designed, developed and produced to ensure an appropriate level of cybersecurity based on the risks. The manufacturer assesses the cybersecurity risks, documents the assessment and keeps it updated during the support period, says in it whether and how each point of Annex I, Part I(2) applies, and includes it in the technical documentation, with a clear justification for any requirement it finds not applicable."
+sdk = "Material for the assessment of a product built on the SDK: the security chapter of the book, which states what holds by construction, what is left to the operator and the known gaps; the production-hardening chapter; the ADRs; and the rows below, which say point by point what the SDK carries."
+status = "integrator"
+evidence = ["book/src/deployment/security.md", "book/src/deployment/production.md", "docs/adr"]
+gap = "The risk assessment is of the product, its intended purpose and its operating environment, which only its manufacturer knows. The SDK publishes no threat model of its own to start one from: the security chapter lists properties and gaps, not threats, assets and attackers."
+
+[[control]]
+id = "CRA-AI-I-2b"
+source = "cra"
+provision = "Annex I, Part I(2)(b)"
+requirement = "Products are made available with a secure by default configuration, including the possibility to reset the product to its original state."
+sdk = "Client: TLS through rustls is on by default (`tls-rustls` is a default feature of the client and the SDK) and refuses a server certificate no trusted root issued; a credential bound for `http://` or `ws://` on a host other than loopback is logged, and refused with `require_https_credentials`. Server: `build()` refuses an agent card whose `securityRequirements` no interceptor checks, and a card carrying a credential in a URL; every binding checks credentials before it reads a request's parameters; request bodies are capped at 4 MiB and concurrent streams at 1,024 by default, and an executor run at an hour; a request naming a tenant the stores cannot isolate is refused; once an interceptor authenticates, each identified caller's tasks are its own; the push sender refuses private and loopback webhook addresses unless told otherwise."
+status = "partial"
+code = [
+  "crates/a2a-protocol-client/src/plaintext.rs::Guard::check",
+  "crates/a2a-protocol-server/src/auth/declared.rs::check",
+  "crates/a2a-protocol-server/src/push/sender.rs::validate_webhook_url",
+]
+tests = [
+  "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
+  "crates/a2a-protocol-client/src/plaintext_tests.rs::without_refuse_the_call_goes_and_is_logged_once",
+  "crates/a2a-protocol-client/src/plaintext_tests.rs::a_credential_to_a_plaintext_remote_endpoint_is_refused",
+  "crates/a2a-protocol-server/src/auth/declared_tests.rs::a_card_requiring_credentials_needs_an_authenticator",
+  "crates/a2a-protocol-server/tests/file_url_ssrf.rs::build_refuses_a_card_carrying_a_credential",
+  "crates/a2a-protocol-server/tests/auth_before_params/main.rs::jsonrpc_handler_checks_run_after_admission",
+  "crates/a2a-protocol-server/tests/auth_before_params/http_json.rs::rest_malformed_request_is_refused_401_without_credential",
+  "crates/a2a-protocol-server/tests/auth_before_params/grpc.rs::grpc_malformed_request_is_refused_unauthenticated_without_credential",
+  "crates/a2a-protocol-server/tests/auth_before_params/websocket.rs::websocket_malformed_frame_is_refused_without_credential",
+  "crates/a2a-protocol-server/src/dispatch/mod.rs::default_values",
+  "crates/a2a-protocol-server/src/builder.rs::builder_default_caps_concurrent_streams",
+  "crates/a2a-protocol-server/src/handler/tenant_isolation_tests.rs::the_default_store_refuses_a_client_named_tenant",
+  "crates/a2a-protocol-server/tests/caller_isolation_default.rs::by_default_only_identified_callers_are_isolated",
+  "crates/a2a-protocol-server/src/push/sender.rs::http_push_sender_default",
+  "crates/a2a-protocol-server/src/push/sender.rs::rejects_loopback_ipv4",
+]
+gap = "Several defaults are not the secure choice. An agent whose card declares no security requirement serves every caller. A credential to a plaintext remote endpoint is only logged unless the client is built to refuse it. Rate limits and the failed-credential throttle apply only when their interceptors are installed. `tls-rustls` is off in a direct dependency on `a2a-protocol-server`, so the server's own listeners and the push sender have no TLS until it is enabled. Plain-HTTP webhooks are accepted unless `https_only()` is set, and file URLs in messages are not checked unless `refuse_private_file_urls()` is called. Encryption at rest and the audit trail are off until configured. Resetting a product to its original state means its stores and configuration, which the integrator owns."
+
+[[control]]
+id = "CRA-AI-I-2c"
+source = "cra"
+provision = "Annex I, Part I(2)(c); Annex II(8)(c), (8)(e)"
+requirement = "Vulnerabilities can be addressed through security updates, where applicable automatic ones installed within an appropriate timeframe and on by default with a clear opt-out, with notification of available updates and the option to postpone them; users are told how to install security-relevant updates and how to turn automatic installation off."
+sdk = "A fix ships as a patch release of the current minor line (0.14.1 for GHSA-hr9h-6jvf-wvg6, whose release contains the fix and internal changes only), which a semver-compatible dependency picks up with `cargo update`. From 0.14.0 no published manifest admits a dependency version with a RustSec advisory, so upgrading the crates also moves an integrator off every advisory known at release in their direct dependencies. SECURITY.md says how to update dependencies the crates do not pin."
+status = "integrator"
+ci = ["No published manifest admits a version with a RustSec advisory"]
+evidence = ["SECURITY.md", "CHANGELOG.md"]
+gap = "A library is compiled into the product and has no update channel of its own; delivering updates, automatically or not, with notification and postponement, is the product's mechanism. An integrator learns of a fix from GitHub advisories and the changelog; GHSA-hr9h-6jvf-wvg6 is not in the RustSec or OSV databases (checked 2026-10-21), so `cargo audit` and `cargo deny` do not tell them (CRA-AI-II-2-4-8)."
+
+[[control]]
+id = "CRA-AI-I-2d"
+source = "cra"
+provision = "Annex I, Part I(2)(d)"
+requirement = "Products ensure protection from unauthorised access by appropriate control mechanisms, including authentication, identity or access management systems, and report on possible unauthorised access."
+sdk = "Interceptors authenticate by API key (constant-time), bearer token, JWT (fixed algorithm list, `alg: none` and algorithm confusion refused, HS256 secrets of at least 32 bytes) or client certificate, and every method on both HTTP bindings is refused without a valid credential. An authenticated caller's tasks and push configs are its own; a per-task authorizer can refuse any method. `AuthFailureThrottle` slows a peer that keeps presenting bad credentials. With the audit trail on, a refused call is recorded with its outcome and no identity, in a hash chain."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/auth/mod.rs::ApiKeyAuthInterceptor",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::JwtAuthInterceptor",
+  "crates/a2a-protocol-server/src/auth/mtls.rs::MutualTlsAuthInterceptor",
+  "crates/a2a-protocol-server/src/auth/throttle.rs::AuthFailureThrottle",
+  "crates/a2a-protocol-server/src/audit/interceptor.rs::AuditInterceptor",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/auth_every_method.rs::every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::alg_none_is_rejected",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::algorithm_confusion_rejected",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::hs256_secret_shorter_than_32_bytes_fails_closed",
+  "crates/a2a-protocol-server/tests/mtls_caller_identity.rs::the_client_certificate_names_the_caller_over_https",
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::isolated_another_callers_task_is_not_found_by_any_operation",
+  "crates/a2a-protocol-server/tests/authorization_per_task.rs::an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
+  "crates/a2a-protocol-server/tests/auth_failure_throttle.rs::json_rpc_throttles_a_peer_after_its_failed_credentials",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+]
+gap = "None of it applies until the integrator installs it (CRA-AI-I-2b). Reporting is a record, not a report: refused calls reach the audit chain only when the handler is built with `with_audit`, and nothing raises an alert on them. Who may do what beyond tenant, caller and the per-task authorizer, and access to the stores outside the protocol, are the integrator's."
+
+[[control]]
+id = "CRA-AI-I-2e"
+source = "cra"
+provision = "Annex I, Part I(2)(e)"
+requirement = "Products protect the confidentiality of stored, transmitted or otherwise processed data, personal or other, such as by encrypting relevant data at rest or in transit by state of the art mechanisms."
+sdk = "In transit: rustls with certificate validation on the client, TLS and mutual TLS on the server's HTTP, WebSocket and gRPC listeners, and an `https_only()` push sender. At rest, with the `encryption` feature: `EncryptedTaskStore` seals every part of a task and its event log with AES-256-GCM, bound to where it is stored; the SQL push-config stores seal each config, credentials included; `AuditLog::with_privacy` seals who each audit record names. Secrets are kept out of debug output. The sealed formats are checked against an independent implementation (Python's `cryptography`) in CI, and the cipher against NIST CAVP AES-256-GCM vectors in the test suite."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/serve/graceful/tls.rs::Server::with_tls",
+  "crates/a2a-protocol-server/src/store/encrypted/mod.rs::EncryptedTaskStore",
+  "crates/a2a-protocol-server/src/audit/privacy/log.rs::AuditLog::with_privacy",
+]
+tests = [
+  "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::the_agent_card_is_served_over_https_on_http1_and_http2",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::a_listener_requiring_client_certificates_serves_only_clients_with_one",
+  "crates/a2a-protocol-server/tests/push_sender_tests.rs::an_https_only_sender_refuses_http_before_connecting",
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole",
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::the_same_ring_seals_push_configs",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_protected_record_names_no_one_and_still_verifies",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
+  "crates/a2a-protocol-server/tests/crypto_nist_gcm.rs::nist_decrypt_cases_open_or_are_refused_as_nist_says",
+]
+ci = ["Sealed formats open under an independent implementation"]
+gap = "What the stores query stays in the clear: ids, roles, states, timestamps, artifact names, `metadata`, and the number and size of parts. Encryption at rest is off until the integrator enables it, and the in-memory stores hold plaintext in process memory. TLS on the server is off by default (CRA-AI-I-2b), and a plaintext credential is only logged by default. Key management is the integrator's (`ContentCipher` is the hook for a KMS)."
+
+[[control]]
+id = "CRA-AI-I-2f"
+source = "cra"
+provision = "Annex I, Part I(2)(f)"
+requirement = "Products protect the integrity of stored, transmitted or otherwise processed data, personal or other, commands, programs and configuration against manipulation or modification not authorised by the user, and report on corruptions."
+sdk = "Agent cards can be signed and verified (ES256 or EdDSA, against a key or a JWK Set); messages and artifacts can be signed end to end (provenance extension); a sealed store value that was altered, moved or planted unsealed fails the read; the audit log is a hash chain with signed checkpoints, and `verify_chain` reports an edited, resealed or truncated chain; TLS protects data in transit. Executor events missing a required field are refused before they are stored."
+status = "partial"
+code = [
+  "crates/a2a-protocol-types/src/signing.rs::verify_agent_card",
+  "crates/a2a-protocol-types/src/provenance/sign.rs::verify_content",
+  "crates/a2a-protocol-types/src/audit/chain.rs::verify_chain",
+  "crates/a2a-protocol-server/src/store/encrypted/mod.rs::EncryptedTaskStore",
+]
+tests = [
+  "crates/a2a-protocol-types/src/signing.rs::verify_rejects_tampered_card",
+  "crates/a2a-protocol-types/src/provenance/sign/tests.rs::any_change_after_signing_breaks_it",
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::an_altered_value_is_refused",
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::a_value_moved_within_its_task_is_refused",
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_resealed_edit_breaks_the_next_link",
+  "crates/a2a-protocol-types/src/audit/tests.rs::truncating_the_tail_past_a_checkpoint_is_found",
+  "crates/a2a-protocol-server/tests/executor_event_fields.rs::an_executor_event_missing_a_required_field_is_refused",
+]
+gap = "Each is opt-in: the server never signs the card it serves, content signing and its verification are the agents', sealing needs the `encryption` feature and the audit chain needs `with_audit`. The sealed store does not detect messages or artifacts reordered or removed, parts dropped from the end of one, or a store rolled back to an earlier record. A failed open or a broken chain is returned as an error to whoever asked; nothing alerts on it. The integrity of the product's own programs and configuration is the integrator's."
+
+[[control]]
+id = "CRA-AI-I-2g"
+source = "cra"
+provision = "Annex I, Part I(2)(g)"
+requirement = "Products process only data, personal or other, that are adequate, relevant and limited to what is necessary in relation to their intended purpose (data minimisation)."
+sdk = "Audit records hold message content only as digests; the executor span carries no message content unless the operator opts in; debug output of the JWT validator, push configuration and call context names fields without their secret values; with `AuditLog::with_privacy` a record carries a random handle in place of the person it names. The in-memory task store evicts terminal tasks after an hour by default."
+status = "supported"
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
+  "crates/a2a-protocol-server/tests/audit_privacy.rs::a_served_call_is_recorded_naming_no_one_and_erasable",
+  "crates/a2a-protocol-server/src/store/task_store/tests.rs::task_store_config_default_values",
+]
+remainder = "What a task carries is what the agents exchange, and the SQL stores keep it until the integrator's retention removes it (`purge_expired`, CRA-AI-I-2m); deciding what is necessary for the product's purpose, and keeping personal data out of the fields the stores query, is the integrator's."
+
+[[control]]
+id = "CRA-AI-I-2h-2i"
+source = "cra"
+provision = "Annex I, Part I(2)(h), (2)(i)"
+requirement = "Products protect the availability of essential and basic functions, also after an incident, including through resilience and mitigation measures against denial-of-service attacks; and minimise their own negative impact on the availability of services provided by other devices or networks."
+sdk = "Inbound: request bodies capped (4 MiB by default) and refused from their declared length before they are read, concurrent streams capped (1,024), an executor timeout (an hour), per-tenant concurrency limits, per-caller rate limits, a throttle on peers presenting bad credentials, and graceful shutdown; with a SQL store and a halt store, tasks and a halt survive a restart. Outbound: push delivery refuses private and loopback addresses, caps each attempt at 30 seconds and backs off between a bounded number of retries; the client's opt-in retry policy backs off exponentially with jitter, honours `Retry-After` and is capped."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/rate_limit/mod.rs::RateLimitInterceptor",
+  "crates/a2a-protocol-server/src/auth/throttle.rs::AuthFailureThrottle",
+  "crates/a2a-protocol-server/src/push/sender.rs::HttpPushSender",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs::oversized_body_is_refused_before_reading_and_names_the_size",
+  "crates/a2a-protocol-server/src/builder.rs::builder_default_caps_concurrent_streams",
+  "crates/a2a-protocol-server/src/handler/messaging/tests.rs::executor_timeout_returns_failed_task",
+  "crates/a2a-protocol-server/src/handler/tenant_limits_tests.rs::a_tenant_at_its_concurrency_limit_is_refused",
+  "crates/a2a-protocol-server/src/rate_limit/tests.rs::fast_path_rate_limit_exceeded",
+  "crates/a2a-protocol-server/tests/auth_failure_throttle.rs::json_rpc_throttles_a_peer_after_its_failed_credentials",
+  "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_restarted_process_comes_back_halted",
+  "crates/a2a-protocol-server/tests/push_sender_tests.rs::backoff_is_paid_between_attempts_but_not_after_the_last",
+  "crates/a2a-protocol-server/src/push/sender.rs::rejects_loopback_ipv4",
+  "crates/a2a-protocol-client/src/retry.rs::jittered_backoff_in_expected_range",
+]
+gap = "Rate limits and the credential throttle are off until their interceptors are installed, and both count per process unless given a shared counter. Network-level denial of service (floods below HTTP, connection exhaustion) is for the deployment's proxy or load balancer. An in-memory store loses every task on restart. Redundancy and recovery after an incident are the integrator's."
+
+[[control]]
+id = "CRA-AI-I-2j"
+source = "cra"
+provision = "Annex I, Part I(2)(j)"
+requirement = "Products are designed, developed and produced to limit attack surfaces, including external interfaces."
+sdk = "Every optional transport, store and integration is behind a Cargo feature: gRPC, WebSocket, the Axum adapter, the SQL stores, JWT, signing and encryption are off unless enabled, and the server's default features are tracing and OpenTelemetry only. The extended card is refused to an unauthenticated caller; a card carrying a credential in a URL is refused, and one naming an internal host is reported; the REST dispatcher refuses path traversal; `refuse_private_file_urls` refuses messages whose file references point inward; the URL guard used for webhooks is public for executors that fetch."
+status = "partial"
+tests = [
+  "crates/a2a-protocol-server/tests/extended_card_per_caller.rs::an_unauthenticated_request_is_refused_before_the_provider",
+  "crates/a2a-protocol-server/tests/file_url_ssrf.rs::build_refuses_a_card_carrying_a_credential",
+  "crates/a2a-protocol-server/tests/dispatch_tests/hardening.rs::rest_rejects_path_traversal",
+  "crates/a2a-protocol-server/tests/file_url_ssrf.rs::refuse_private_file_urls_refuses_a_message_pointing_inward",
+]
+ci = ["Clippy (each feature of every published crate)", "Test (no default features)"]
+gap = "File references are not checked unless `refuse_private_file_urls()` is called, and the SDK cannot know whether an executor fetches them. Which bindings, listeners, ports and health endpoints a product exposes, and to whom, is the integrator's choice. The client's and the SDK facade's default features include TLS, tracing, OpenTelemetry and the webhook receiver."
+
+[[control]]
+id = "CRA-AI-I-2k"
+source = "cra"
+provision = "Annex I, Part I(2)(k)"
+requirement = "Products are designed, developed and produced to reduce the impact of an incident using appropriate exploitation mitigation mechanisms and techniques."
+sdk = "The four published crates are `#![forbid(unsafe_code)]`, so memory-safety bugs cannot be introduced in their own code; a CI ratchet fails when the panic surface of the published crates grows; 17 fuzz targets, including the parsers of untrusted input and the readers of sealed values, run on every pull request and nightly."
+status = "partial"
+ci = ["Panic surface of the published crates is unchanged", "cargo +nightly fuzz run", "Every fuzz target is both built and run"]
+gap = "The crates' dependencies (tokio, hyper, rustls, ring, sqlx and others) contain unsafe code, and ring contains C and assembly; their mitigations are their authors'. Process-level mitigation (least privilege, sandboxing, compiler hardening flags, `panic = \"abort\"`, which this workspace's release profile sets only for its own binaries) is set where the product is built and run."
+
+[[control]]
+id = "CRA-AI-I-2l"
+source = "cra"
+provision = "Annex I, Part I(2)(l)"
+requirement = "Products provide security related information by recording and monitoring relevant internal activity, including the access to or modification of data, services or functions, with an opt-out mechanism for the user."
+sdk = "With `RequestHandlerBuilder::with_audit`, every call (refused ones included) and every task event is recorded with its caller, outcome and trace id in a per-tenant hash chain; a log can be required, so a call it cannot record is refused. Spans and metrics for every call, OpenTelemetry export, and a typed failure for every executor error. Not configuring the audit log, or not installing a metrics or tracing subscriber, turns each off."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/builder.rs::RequestHandlerBuilder::with_audit",
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog",
+  "crates/a2a-protocol-server/src/metrics/mod.rs::Metrics",
+  "crates/a2a-protocol-server/src/otel/mod.rs::OtelMetrics",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::a_required_log_refuses_calls_it_cannot_record_and_an_optional_one_does_not",
+  "crates/a2a-protocol-server/tests/interceptor_on_complete.rs::every_handler_method_reports_its_outcome",
+  "crates/a2a-protocol-sdk/tests/observability_e2e/main.rs::one_server_three_bindings_what_an_operator_sees",
+]
+gap = "The audit trail is opt-in, where the point reads as recording on by default with an opt-out. Monitoring, meaning someone or something watching the records and acting on them, is the integrator's. Access to the stores outside the protocol (a database console, a backup) is not recorded."
+
+[[control]]
+id = "CRA-AI-I-2m"
+source = "cra"
+provision = "Annex I, Part I(2)(m); Annex II(8)(d)"
+requirement = "Products give users the possibility to securely and easily remove on a permanent basis all data and settings, and ensure that data transferable to other products or systems is transferred securely; users are told how to decommission the product securely and remove user data."
+sdk = "`TaskStore::delete` erases a task with its event log and artifact journal; `purge_expired` removes terminal tasks past an age; under caller isolation `erase_caller` removes everything one caller's partitions hold (tasks, events, idempotency keys, webhooks) on the in-memory and SQL stores; `AuditLog::purge` removes audit records past the retention floor, refused under a legal hold; `erase_subject` erases one person from an audit chain by destroying their key, the SQLite audit store overwriting the freed page; `AuditLog::export` exports a chain that verifies on its own."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/store/tenant/store.rs::TenantAwareInMemoryTaskStore::erase_caller",
+  "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs::SqliteTaskStore::purge_expired",
+  "crates/a2a-protocol-server/src/audit/retention.rs::AuditLog::purge",
+  "crates/a2a-protocol-server/src/audit/privacy/log.rs::AuditLog::erase_subject",
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::export",
+]
+tests = [
+  "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::deleting_a_task_removes_its_log",
+  "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else",
+  "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_in_memory_stores",
+  "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_sqlite_stores",
+  "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_destroys_one_persons_key_and_leaves_the_chain_whole",
+]
+gap = "Deleting from the SQL task and push-config stores is an ordinary `DELETE`: the bytes can stay in free pages, the write-ahead log, dead tuples and backups until overwritten or vacuumed (only the audit subject-key table sets SQLite's `secure_delete`), unless the data was sealed with `EncryptedTaskStore` and its key is destroyed. Tasks in a tenant's shared partition belong to no caller and are found only by id. There is no export of tasks or push configs. Removing all of a product's data and settings, and its decommissioning instructions, are the integrator's."
+
+[[control]]
+id = "CRA-AI-II-2-4-8"
+source = "cra"
+provision = "Annex I, Part II(2), (4), (8)"
+requirement = "Manufacturers address and remediate vulnerabilities without delay, including by security updates provided, where technically feasible, separately from functionality updates; once an update is available, publicly disclose the fixed vulnerability with a description, the affected product, its impact and severity and how to remediate; and disseminate security updates without delay, free of charge, with advisory messages telling users what to do."
+sdk = "The project's own practice, on its one precedent: GHSA-hr9h-6jvf-wvg6 (high, CVSS 8.1, tenant isolation bypass) was fixed in 0.14.1, a patch release whose changelog holds the fix and internal changes only; the advisory was published with the fix (2026-09-30) and states the impact, the affected crates and version ranges, the patched version, workarounds and references; the changelog's Security section repeats it with the migration and what to do before upgrading. The crates are Apache-2.0 and free of charge. SECURITY.md commits to patch releases of the current line and a 90-day disclosure ceiling."
+status = "partial"
+evidence = ["SECURITY.md", "CHANGELOG.md", "docs/openssf-best-practices.md"]
+gap = "The advisory exists only on GitHub: checked 2026-10-21, the RustSec database (cached copy of 2026-10-17) has no entry for it and OSV has no record, so an integrator scanning their lockfile with cargo-audit, cargo-deny or OSV-Scanner is not told; filing it with RustSec would close that. Only the latest minor line receives fixes, so for an integrator on an older line a security fix arrives together with a minor release's functionality and, before 1.0, its breaking changes. No time to fix is stated beyond the 90-day disclosure ceiling. For the product, remediating, disclosing and shipping the update is the manufacturer's."
+
+[[control]]
+id = "CRA-AI-II-3"
+source = "cra"
+provision = "Annex I, Part II(3)"
+requirement = "Manufacturers apply effective and regular tests and reviews of the security of the product."
+sdk = "Fuzzing of 17 targets on every pull request and for ten minutes each nightly; mutation testing of the lines a pull request changes, whose gate fails the pull request until the run has been made, and of every crate weekly; CodeQL on every pull request and weekly; OSV-Scanner daily; the test suite on Linux, macOS and Windows with every feature; dated adversarial runs against a live agent, recorded in the book's security-testing chapter."
+status = "supported"
+ci = ["cargo +nightly fuzz run", "Run incremental mutation testing", "Run mutation tests", "github/codeql-action/analyze", "Test (all features)"]
+evidence = ["book/src/deployment/security-testing.md", "docs/openssf-best-practices.md"]
+remainder = "The SDK's tests are of the SDK; the manufacturer tests and reviews the product it builds, including the executor and the configuration. The adversarial runs are manual and dated, not run in CI."
+
+[[control]]
+id = "CRA-AI-II-5-6"
+source = "cra"
+provision = "Annex I, Part II(5), (6); Art. 13(17); Annex II(2)"
+requirement = "Manufacturers put in place and enforce a coordinated vulnerability disclosure policy, facilitate the sharing of information about vulnerabilities in the product and its third-party components, provide a contact address for reporting vulnerabilities, and designate a single point of contact that lets users choose their means of communication and is not limited to automated tools."
+sdk = "SECURITY.md is the policy for every crate published from the repository, the unpublished SLIMRPC binding included: two private channels (a GitHub draft security advisory, preferred, and email to the maintainer), acknowledgement within three business days, triage within 14 days, a 90-day coordinated-disclosure timeline, credit to reporters, and a section for manufacturers that accepts Article 13(6) reports and shared fixes and defers to their statutory deadlines."
+status = "documented"
+evidence = ["SECURITY.md", "book/src/deployment/security.md"]
+remainder = "The manufacturer's own policy and point of contact cover its product, and point at this one for reports about the crates. There is no PGP key, so email cannot be encrypted end to end; SECURITY.md says so and prefers the advisory channel."
+
+[[control]]
+id = "CRA-AI-II-7"
+source = "cra"
+provision = "Annex I, Part II(7); Annex VII(2)(b)"
+requirement = "Manufacturers provide mechanisms to securely distribute updates so that vulnerabilities are fixed or mitigated in a timely manner, where applicable automatically; the technical documentation describes the technical solutions chosen."
+sdk = "A release is built from a tag on `main`, from the tagged commit (checked from each `.crate`), with SHA-256 checksums, SLSA build-provenance and per-crate SBOM attestations, and a conformance attestation; crates are published to crates.io over HTTPS with a short-lived token from Trusted Publishing, and cargo verifies each download's checksum. Since 2026-10-08 the release workflow refuses a tag not signed by a key listed in `.github/release-signers/`, and its self-test proves it refuses an unsigned, lightweight or wrongly signed tag."
+status = "partial"
+ci = [
+  "Packaged crates were built from the tagged commit",
+  "Generate SHA-256 checksums",
+  "Attest build provenance (SLSA)",
+  "Tag is on main and signed by a release key",
+  "Obtain a crates.io token via Trusted Publishing",
+]
+evidence = ["RELEASING.md", ".github/release-signers/README.md"]
+gap = "No release key is configured yet: `.github/release-signers/allowed_signers` and `gpg-fingerprints.txt` hold only comments (checked 2026-10-21), so no release has passed the signature gate and the next cannot until a key is added. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
+
+[[control]]
+id = "CRA-13-8"
+source = "cra"
+provision = "Art. 13(8), (9), (19); Annex II(7); Annex VII(4)"
+requirement = "Manufacturers handle vulnerabilities effectively for a support period reflecting the expected use time, of at least five years unless the product is expected in use for less, taking into account among other things the support periods of integrated components providing core functions; keep each security update available for at least ten years or the rest of the support period; state the end date of support (at least month and year) at the time of purchase; and record in the technical documentation what was taken into account."
+sdk = "SECURITY.md states the component's support: fixes, security fixes included, go to the latest minor line only, for exactly as long as it is the latest, with no overlap and no long-term line; it tells manufacturers to pin and carry fixes in their own fork if they need longer. Every release's `.crate` files, checksums and SBOMs are attached to its GitHub release, and the release workflow refuses a tag whose line SECURITY.md does not mark supported."
+status = "integrator"
+ci = ["Verify CITATION.cff and SECURITY.md match the release"]
+evidence = ["SECURITY.md", "STABILITY.md", "SUPPORT.md"]
+gap = "The support period is the product's and its manufacturer's to set. The component offers far less than five years, and no end date can be known in advance, since a line's support ends the day the next minor release is published; a manufacturer relying on these crates for a core function must plan to backport fixes itself or follow each minor release. Article 13(10) lets a manufacturer support only the latest version only where users can move to it without cost to adjust their environment, which a pre-1.0 minor with breaking changes or a raised minimum Rust version may not allow."
+
+[[control]]
+id = "CRA-13-16-18"
+source = "cra"
+provision = "Art. 13(16)–(18); Annex II"
+requirement = "Products are accompanied by the manufacturer's name and contact details, the single point of contact for vulnerabilities and where the disclosure policy is, identification of the product, its intended purpose and security properties, foreseeable circumstances leading to significant risks, the type of support and its end date, instructions for secure commissioning, use, update and decommissioning, where the SBOM is, and, for a product meant for integration, the information an integrator needs to meet Annex I and Annex VII; kept available for ten years or the support period."
+sdk = "For the integrator (Annex II(8)(f)): the book's security chapter (what holds, what is left to the operator, known gaps), the production-hardening chapter, the audit, multi-tenancy and provenance chapters, this control map, and SECURITY.md's section for manufacturers. Contact, disclosure policy and supported versions are in SECURITY.md; each release's SBOMs are on its GitHub release."
+status = "partial"
+evidence = ["SECURITY.md", "book/src/deployment/security.md", "book/src/deployment/production.md", "docs/compliance/control-map.md"]
+gap = "There is no support end date to give (CRA-13-8). The product's own Annex II information is the manufacturer's."
+
+[[control]]
+id = "CRA-14"
+source = "cra"
+provision = "Art. 14, 69(3), 71(2)"
+requirement = "From 11 September 2026, and for products placed on the market before 11 December 2027 as well, a manufacturer notifies an actively exploited vulnerability in its product, and a severe incident having an impact on its security, to the coordinating CSIRT and ENISA through the single reporting platform: an early warning within 24 hours, a notification within 72 hours and a final report; and informs the impacted users, where appropriate in a structured, machine-readable format."
+sdk = "SECURITY.md tells a manufacturer that its legal deadlines win over the project's embargo, to notify on the law's timetable and tell the project at the same time. The project's own advisories carry the impact, affected versions, fix and workarounds a notification and a user message need. Spans, metrics, typed failures and the audit trail are the signals a manufacturer can detect an incident from."
+status = "integrator"
+evidence = ["SECURITY.md"]
+gap = "Notifying is the manufacturer's act and applies now: Article 14 has applied since 11 September 2026. The project has no channel to tell integrators of an actively exploited vulnerability beyond a GitHub advisory and the changelog, and its advisory is not in RustSec or OSV, the machine-readable feeds integrators scan (CRA-AI-II-2-4-8)."
+
+[[control]]
+id = "CRA-24"
+source = "cra"
+provision = "Art. 24, 3(14)"
+requirement = "An open-source software steward, a legal person other than a manufacturer that systematically supports on a sustained basis free and open-source software intended for commercial activities, puts in place and documents in a verifiable manner a cybersecurity policy covering the documenting, addressing and remediating of vulnerabilities and the sharing of information about them; cooperates with market surveillance authorities; and is subject to Article 14(1), and to 14(3) and (8) for incidents in the infrastructure it provides for development."
+sdk = "The maintainer's position, in SECURITY.md: the crates are published by an individual and not monetised, and a steward is a legal person, so the project is no steward. SECURITY.md is nonetheless such a policy: how vulnerabilities are reported, acknowledged, triaged, fixed, disclosed and credited, and how information is shared through advisories and the changelog."
+status = "documented"
+evidence = ["SECURITY.md", "SUPPORT.md", "MAINTAINERS.md"]
+remainder = "If a legal person, such as a foundation hosting the project, takes on its sustained support, Article 24 binds that person: its policy must be documented verifiably, it must cooperate with market surveillance authorities on request, and Article 14(1) notifications apply to the extent it is involved in development."
+
+[[control]]
+id = "CRA-AVII"
+source = "cra"
+provision = "Art. 13(7), 13(12), 31; Annex VII"
+requirement = "Before placing a product on the market the manufacturer draws up technical documentation: a general description and intended purpose, software versions affecting compliance, the design and architecture showing how software components build on each other, the vulnerability handling processes (SBOM, disclosure policy, contact address, secure update distribution), the risk assessment, what determined the support period, the standards or other solutions applied, test reports, and the EU declaration of conformity."
+sdk = "Material for the parts that concern the component: the ADRs and the book's architecture and deployment chapters (design), per-crate SBOMs and SECURITY.md (vulnerability handling), RELEASING.md (secure distribution), the spec ledger (protocol behaviour requirement by requirement, each tied to a test), this control map, and the release workflow's attested conformance results."
+status = "integrator"
+evidence = ["docs/adr", "docs/compliance/spec-ledger.md", "RELEASING.md", "SECURITY.md"]
+gap = "The technical documentation, its risk assessment and the declaration of conformity are the manufacturer's, for its product. CI results other than the attested conformance run are kept only as long as GitHub keeps workflow logs, so a manufacturer who wants the SDK's test reports in its file must keep its own copy."
 
 [[control]]
 id = "GDPR-25-1"
 source = "gdpr"
 provision = "Art. 25(1), 5(1)(c)"
 requirement = "Data protection by design: measures such as pseudonymisation, implementing data minimisation."
-sdk = "Minimisation: audit records hold content only as digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output. Pseudonymisation, with the `encryption` feature: `AuditLog::with_privacy` seals each person an audit record names under a key of their own, records carry only a random handle, and each digest is an HMAC bound to its record that confirms no guess without the key (ADR 0015, amended 2026-10-16); `EncryptedTaskStore` seals every part of a task and of its event log; the SQL push-config stores seal each config. What the stores query (ids, states, timestamps, `metadata`) stays readable to them, so personal data belongs out of those fields; and the measures are the operator's to switch on."
+sdk = "Minimisation: audit records hold content only as digests; message content is kept out of spans unless the operator opts in; `CallContext` debug output names headers but never prints their values; the JWT validator, push configuration and token provider redact their secrets in debug output. Pseudonymisation, with the `encryption` feature: `AuditLog::with_privacy` seals each person an audit record names under a key of their own, records carry only a random handle, and each digest is an HMAC bound to its record that confirms no guess without the key (ADR 0015, amended 2026-10-16); `EncryptedTaskStore` seals every part of a task and of its event log; the SQL push-config stores seal each config."
 status = "supported"
 tests = [
   "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
   "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
+  "crates/a2a-protocol-server/src/call_context_tests.rs::debug_prints_header_names_and_never_their_values",
   "crates/a2a-protocol-server/src/auth/jwt.rs::debug_impls_render_type_and_redact_secrets",
+  "crates/a2a-protocol-types/src/push.rs::debug_redacts_secrets_but_keeps_presence",
+  "crates/a2a-protocol-client/src/token_provider.rs::debug_redacts_secrets",
   "crates/a2a-protocol-server/tests/encrypted_store.rs::a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole",
   "crates/a2a-protocol-server/src/push/cipher_tests.rs::with_a_cipher_no_secret_is_stored_and_the_config_reads_back",
   "crates/a2a-protocol-server/tests/audit_privacy.rs::a_served_call_is_recorded_naming_no_one_and_erasable",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_digest_is_checked_with_the_key_and_cannot_be_confirmed_without_it",
   "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::one_content_in_two_records_carries_two_tags",
 ]
+remainder = "What the stores query (ids, states, timestamps, `metadata`) stays readable to them, so personal data belongs out of those fields; and the measures are the operator's to switch on (what is on by default is GDPR-25-2)."
+
 [[control]]
 id = "GDPR-32-1a"
 source = "gdpr"
 provision = "Art. 32(1)(a)"
 requirement = "Security of processing, including pseudonymisation and encryption of personal data."
-sdk = "In transit: the client speaks TLS through rustls with certificate validation, and the HTTP listener (`Server::with_tls`) and the gRPC listener terminate TLS, mutual TLS included. At rest, with the `encryption` feature: `EncryptedTaskStore` seals every part of a task and its event log with AES-256-GCM (or a cipher of the operator's), each bound to its tenant partition, task, record or log position, container and index, so an altered, moved or unsealed part fails the read; the SQL push-config stores seal each config, token and credentials included; `AuditLog::with_privacy` seals who each audit record names and keys its digests, the chain still verifying without a key. What the stores query (ids, states, timestamps, `metadata`, the order of messages and artifacts) stays unencrypted, and encryption at rest is the operator's to switch on."
+sdk = "In transit: the client speaks TLS through rustls with certificate validation, and the HTTP listener (`Server::with_tls`) and the gRPC listener terminate TLS, mutual TLS included. At rest, with the `encryption` feature: `EncryptedTaskStore` seals every part of a task and its event log with AES-256-GCM (or a cipher of the operator's), each bound to its tenant partition, task, record or log position, container and index, so an altered, moved or unsealed part fails the read; the SQL push-config stores seal each config, token and credentials included; `AuditLog::with_privacy` seals who each audit record names and keys its digests, the chain still verifying without a key."
 status = "supported"
 tests = [
   "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_rejects_unknown_ca",
   "crates/a2a-protocol-client/tests/grpc_tls_apply_tests.rs::https_endpoint_completes_a_tls_handshake_with_the_pinned_ca",
+  "crates/a2a-protocol-sdk/tests/grpc_mtls_caller_e2e.rs::the_client_certificate_names_the_caller_over_grpc",
   "crates/a2a-protocol-server/tests/serve_tls.rs::the_agent_card_is_served_over_https_on_http1_and_http2",
   "crates/a2a-protocol-server/tests/serve_tls.rs::a_listener_requiring_client_certificates_serves_only_clients_with_one",
   "crates/a2a-protocol-server/tests/encrypted_store.rs::the_postgres_stores_hold_only_sealed_parts",
@@ -612,16 +976,20 @@ tests = [
   "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_protected_record_names_no_one_and_still_verifies",
   "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_sealed_value_altered_or_moved_does_not_open",
 ]
+remainder = "What the stores query (ids, states, timestamps, `metadata`, the order of messages and artifacts) stays unencrypted, and the binding covers each part, not the set of them: whole messages or artifacts removed or reordered, or a store rolled back to an earlier record, still open. Encryption at rest is the operator's to switch on."
 
 [[control]]
 id = "GDPR-5-1e"
 source = "gdpr"
 provision = "Art. 5(1)(e), 17"
 requirement = "Storage limitation, and erasure on request."
-sdk = "`purge_expired` removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's. Under caller isolation, `erase_caller` on the tenant-aware task and push-config stores removes everything one authenticated caller's partitions hold, in every tenant: tasks, their events, idempotency keys and webhooks. With `AuditLog::with_privacy`, `erase_subject` erases one person from a tenant's audit chain by destroying their key, refused under a legal hold (Art. 17(3)(e)), and the chain still verifies; retention drops the keys no remaining record names."
+sdk = "The in-memory task store evicts terminal tasks an hour after their last write by default (GDPR-25-2). `purge_expired` on the SQL stores removes terminal tasks past an age, with their events and artifact journal, and expires idempotency keys; audit purge removes records past the configured floor. `TaskStore::delete` erases one task by id, with its event log and artifact journal, and in a tenant store touches no other tenant's. Under caller isolation, `erase_caller` on the tenant-aware task and push-config stores removes everything one authenticated caller's partitions hold, in every tenant: tasks, their events, idempotency keys and webhooks. With `AuditLog::with_privacy`, `erase_subject` erases one person from a tenant's audit chain by destroying their key, refused under a legal hold (Art. 17(3)(e)), and the chain still verifies; retention drops the keys no remaining record names."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::purges_terminal_tasks_past_the_age_and_nothing_else",
+  "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::orphan_journal_rows_go_with_their_task",
+  "crates/a2a-protocol-server/src/store/sqlite_store/retention_tests.rs::event_log_orphans_are_reclaimed_when_the_cascade_does_not_fire",
+  "crates/a2a-protocol-server/src/store/sqlite_store/retention_key_tests.rs::the_sweep_expires_old_keys_and_keeps_recent_ones",
   "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
   "crates/a2a-protocol-server/src/store/sqlite_store/event_log_tests.rs::deleting_a_task_removes_its_log",
   "crates/a2a-protocol-server/src/store/sqlite_store/artifact_delta_tests.rs::deleting_a_task_discards_its_journalled_parts",
@@ -629,10 +997,332 @@ tests = [
   "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_in_memory_stores",
   "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_sqlite_stores",
   "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_destroys_one_persons_key_and_leaves_the_chain_whole",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_is_refused_under_a_legal_hold_and_stays_in_its_chain",
   "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::retention_drops_the_keys_no_record_names_any_longer",
 ]
-gap = "The task store knows a task by the caller who made it, not by the people it concerns: `erase_caller` erases one caller's data, but a task about someone else is found only by id, and tasks in a tenant's shared partition (`share_tasks_across_callers`, or written before caller isolation) are attributed to no one. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them); copies of a key in backups or logs survive until they expire."
-# ── OWASP agentic Top 10 ─────────────────────────────────────────────────────
+gap = "Erasure is the operator's to start: the A2A protocol has no method a caller can use to delete a task. The task store knows a task by the caller who made it, not by the people it concerns: `erase_caller` erases one caller's data, but a task about someone else is found only by id, and tasks in a tenant's shared partition (`share_tasks_across_callers`, unlabelled credentials, or written before caller isolation) are attributed to no one. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them). A legal hold covers a tenant's whole chain, so it refuses every erasure there; across replicas an erasure, a hold and an append are not serialised (ADR 0015). Copies in backups and logs survive until they expire or are overwritten, and restoring a backup taken before an erasure brings the data back. Task-store erasures leave no audit record (GDPR-5-2), and copies sent to other agents or webhooks are not reached (GDPR-17-2-19)."
+
+[[control]]
+id = "GDPR-5-1a-6"
+source = "gdpr"
+provision = "Art. 5(1)(a) (lawfulness, fairness), 6, 7, 8"
+requirement = "Personal data are processed lawfully and fairly: only where at least one legal basis in Art. 6(1) applies; where the basis is consent, the controller can demonstrate it, it can be withdrawn as easily as given (Art. 7), and a child's consent to an information society service is given or authorised by the holder of parental responsibility below the age Art. 8 sets."
+sdk = "The identity an authenticating interceptor establishes reaches the executor (`RequestContext`), and an interceptor that returns an error refuses the call before anything else runs, so a deployment can check its own record of a legal basis or a consent per caller before an agent acts. Nothing in the SDK records, checks or withdraws consent."
+status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/request_context_tests.rs::an_executor_sees_the_caller_identity_the_interceptor_established",
+  "crates/a2a-protocol-server/tests/interceptor_tests.rs::error_in_before_stops_chain",
+]
+gap = "Choosing and documenting a legal basis, collecting and withdrawing consent, and verifying a child's age or a parent's authorisation are the controller's decisions about its purposes. A library carrying messages between agents does not know why a message is sent or whom its content concerns."
+
+[[control]]
+id = "GDPR-5-1b"
+source = "gdpr"
+provision = "Art. 5(1)(b)"
+requirement = "Personal data are collected for specified, explicit and legitimate purposes and not further processed in a manner incompatible with those purposes ('purpose limitation')."
+sdk = "Separation a deployment can map its purposes onto: tenant-aware stores keep each tenant's tasks and webhooks apart, and the default stores refuse a tenant they cannot keep apart; with an authenticating interceptor that names callers, each caller's tasks are a partition of their own by default."
+status = "integrator"
+code = [
+  "crates/a2a-protocol-server/src/store/tenant/store.rs::TenantAwareInMemoryTaskStore",
+  "crates/a2a-protocol-server/src/builder.rs::RequestHandlerBuilder::isolate_tasks_by_caller",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/tenant_store_tests.rs::tenant_task_store_isolation",
+  "crates/a2a-protocol-server/src/handler/tenant_isolation_tests.rs::the_default_store_refuses_a_client_named_tenant",
+  "crates/a2a-protocol-server/tests/caller_isolation_default.rs::by_default_only_identified_callers_are_isolated",
+]
+gap = "Purposes are the controller's to specify, and whether a later use is compatible with them is its judgement (Art. 6(4)). Partitions keep one tenant's or caller's data from another; they do not stop an executor, or an integrator's own code, from using data in one partition for a new purpose."
+
+[[control]]
+id = "GDPR-5-1d-16"
+source = "gdpr"
+provision = "Art. 5(1)(d), 16"
+requirement = "Personal data are accurate and, where necessary, kept up to date, and inaccurate data are erased or rectified without delay; the data subject may obtain rectification of inaccurate data, and completion of incomplete data, including by a supplementary statement."
+sdk = "What is stored is what was sent: with the `encryption` feature a stored part that was altered fails the read; a message or artifact signed with the provenance extension fails verification after any change; audit records keep a digest that confirms the content a record names. Inaccurate data can be erased (`TaskStore::delete`, `erase_caller`, `erase_subject`; GDPR-5-1e). A statement supplementing the audit trail is a new record the operator appends with `AuditLog::append`, after which the chain still verifies."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::append",
+  "crates/a2a-protocol-types/src/provenance/sign.rs::verify_content",
+]
+tests = [
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::an_altered_value_is_refused",
+  "crates/a2a-protocol-types/src/provenance/sign/tests.rs::any_change_after_signing_breaks_it",
+  "crates/a2a-protocol-server/src/audit/tests.rs::appends_form_a_verifiable_chain_per_tenant",
+]
+gap = "No operation corrects a stored task. The protocol has no method that edits a message or an artifact; a terminal state is final in every shipped store; an operator can write a corrected task through `TaskStore::save` in the same state, but the task's event log keeps the events as first written (`the_log_survives_a_snapshot_rewrite`), so the inaccurate copy survives there until the task is deleted. Audit records cannot be changed without breaking the chain, so they are supplemented, not rectified. Whether data are accurate is the controller's judgement."
+
+[[control]]
+id = "GDPR-5-1f-32-1b"
+source = "gdpr"
+provision = "Art. 5(1)(f), 32(1)(b), 32(2)"
+requirement = "Security appropriate to the risk, including protection against unauthorised or unlawful processing and against accidental loss, destruction or damage; the ability to ensure the ongoing confidentiality, integrity, availability and resilience of processing systems and services, weighing in particular the risks of destruction, loss, alteration, unauthorised disclosure of, or access to, data transmitted, stored or otherwise processed."
+sdk = "Confidentiality: TLS and encryption at rest (GDPR-32-1a); authentication, with credentials rotated and revoked while serving; under caller isolation another caller's task and webhooks are not found by any operation; tenant-aware stores keep tenants apart. Integrity: with the `encryption` feature an altered stored part fails the read; signed messages and artifacts fail verification after any change; the audit chain shows an edited, deleted or reordered record. Availability and resilience: request bodies past the configured cap are refused before they are read; `RateLimitInterceptor` answers 429 with a retry delay; executor timeouts, graceful shutdown and halts are in AIA-15-4 and AIA-14-4e."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/builder.rs::RequestHandlerBuilder::isolate_tasks_by_caller",
+  "crates/a2a-protocol-server/src/store/encrypted/mod.rs::EncryptedTaskStore",
+  "crates/a2a-protocol-types/src/provenance/sign.rs::verify_content",
+  "crates/a2a-protocol-types/src/audit/chain.rs::verify_chain",
+  "crates/a2a-protocol-server/src/rate_limit/mod.rs::RateLimitInterceptor",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::isolated_another_callers_task_is_not_found_by_any_operation",
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::another_callers_push_config_cannot_be_read_or_deleted",
+  "crates/a2a-protocol-server/tests/tenant_store_tests.rs::tenant_task_store_isolation",
+  "crates/a2a-protocol-server/tests/credential_rotation.rs::a_bearer_token_is_rotated_and_revoked_while_serving",
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::an_altered_value_is_refused",
+  "crates/a2a-protocol-types/src/provenance/sign/tests.rs::any_change_after_signing_breaks_it",
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_resealed_edit_breaks_the_next_link",
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_deleted_record_is_a_gap",
+  "crates/a2a-protocol-server/tests/dispatch_rest_coverage.rs::oversized_body_is_refused_before_reading_and_names_the_size",
+  "crates/a2a-protocol-server/tests/rate_limit_wire.rs::a_throttled_rest_call_is_429_with_retry_after",
+]
+gap = "Several measures are off until the operator turns them on: rate limiting and the failed-credential throttle need their interceptors installed, encryption at rest needs the wrapper, and push delivery goes to `http://` webhooks unless the sender is `https_only`. Encryption leaves the structure the stores query readable and does not detect whole messages or artifacts removed or reordered, or a store rolled back to an earlier record. Callers an interceptor does not name share the tenant's tasks. The in-memory stores lose everything on a restart, and two replicas sharing a store can both run one continuation (AIA-15-4). Restoring after an incident is GDPR-32-1c."
+
+[[control]]
+id = "GDPR-5-2"
+source = "gdpr"
+provision = "Art. 5(2), 24(1)"
+requirement = "The controller is responsible for, and able to demonstrate, compliance with the principles of Art. 5(1), implementing technical and organisational measures to ensure and demonstrate that processing is performed in accordance with the Regulation."
+sdk = "With the `audit` feature, evidence of what the server did: every call (refused ones included), run, task event and cancel request, each admitted approval with its approver, each halt and resume with the operator and reason, and each `erase_subject` with who asked for it, written before the key is deleted so a failure part way is still on record. Records are in a hash chain per tenant with signed checkpoints that an auditor verifies offline, with a key obtained independently, through `verify_chain` or `a2a audit verify`."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::append",
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::verify",
+  "crates/a2a-protocol-types/src/audit/chain.rs::verify_chain",
+  "crates/a2a-protocol-server/src/audit/privacy/log.rs::AuditLog::erase_subject",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
+  "crates/a2a-protocol-server/src/handler/halt/tests.rs::a_halt_and_a_resume_are_recorded_with_the_operator",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::an_erasure_names_who_asked_for_it_and_only_the_sids",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::an_erasure_that_fails_part_way_is_on_record_and_can_be_retried",
+  "tools/a2a-cli/tests/offline.rs::an_exported_chain_verifies_and_an_edited_one_names_where_it_breaks",
+]
+evidence = ["docs/adr/0015-audit-trail.md", "book/src/deployment/audit.md"]
+gap = "Deletions in the task and push-config stores leave no audit record: `TaskStore::delete`, `purge_expired` and `erase_caller` are not recorded (the audited task store forwards `delete` unrecorded), so the SDK gives no evidence that a task-store erasure was carried out. A legal hold is stored with its reason and time but not who placed it, and placing or releasing one is not a chain record. Record times come from the server's clock. Demonstrating compliance with Art. 5(1) as a whole is the controller's: the records show what the server did, not why."
+
+[[control]]
+id = "GDPR-9-10"
+source = "gdpr"
+provision = "Art. 9, 10"
+requirement = "Processing of special categories of personal data (racial or ethnic origin, political opinions, religious or philosophical beliefs, trade union membership, genetic data, biometric data for unique identification, health, sex life or sexual orientation) is prohibited unless an exception in Art. 9(2) applies; data on criminal convictions and offences are processed only under official authority or as Union or Member State law authorises."
+sdk = "The SDK neither detects nor treats specially any category of data. What it offers applies to all content: with the `encryption` feature the task store seals every part (GDPR-32-1a), audit records hold content only as digests, keyed with `AuditLog::with_privacy` (GDPR-25-1), and message content stays out of spans unless the operator opts in."
+status = "integrator"
+gap = "Whether an Art. 9(2) exception or an Art. 10 authorisation applies is the controller's to establish. `EncryptedTaskStore` leaves ids, `metadata`, artifact names and descriptions readable to the store, so special-category data belongs in parts if it is routed through tasks at all."
+
+[[control]]
+id = "GDPR-12-14"
+source = "gdpr"
+provision = "Art. 5(1)(a) (transparency), 12, 13, 14"
+requirement = "The controller provides the data subject, in concise, intelligible and easily accessible form, the information Art. 13 and 14 list (identity of the controller, purposes and legal basis, recipients, transfers, storage period, the data subject's rights, the existence of automated decision-making with meaningful information about its logic), and facilitates the exercise of the rights in Art. 15 to 22, acting on a request within one month (Art. 12(3))."
+sdk = "The agent card tells a calling agent what an agent is: its provider, skills and interfaces, and the extensions it uses; the approval extension is declared only when an approval gate is installed. Cards can be signed. With the provenance extension, content an agent signs carries an `aiGenerated` mark a receiver can verify. The rows below say what the SDK offers toward each right."
+status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/src/approval/tests.rs::the_card_declares_the_extension_only_with_a_gate",
+]
+gap = "The notices of Art. 13 and 14, and the process and deadlines of Art. 12, are addressed to people by the controller. The agent card describes an agent to other software; it is not a privacy notice, and a data subject who is not the caller never sees it."
+
+[[control]]
+id = "GDPR-15-20"
+source = "gdpr"
+provision = "Art. 15, 20"
+requirement = "The data subject can obtain confirmation of whether their personal data are processed, access to them and a copy (Art. 15(1), (3)), and receive the data they provided in a structured, commonly used and machine-readable format and have them transmitted to another controller (Art. 20(1)–(2)), without adversely affecting the rights and freedoms of others (Art. 15(4), 20(4))."
+sdk = "Under caller isolation, an authenticated caller lists and reads exactly its own tasks over the protocol, as JSON or protobuf, with their artifacts when `includeArtifacts` is asked for, and its own webhooks; another caller's are not found. The operator exports a tenant's audit chain with `AuditLog::export`, and with `AuditLog::with_privacy` opens each record with `reveal`."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs::RequestHandler::on_list_tasks",
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::export",
+  "crates/a2a-protocol-server/src/audit/privacy/log.rs::AuditLog::reveal",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::isolated_another_callers_task_is_not_found_by_any_operation",
+  "crates/a2a-protocol-server/tests/list_tasks_artifacts.rs::artifacts_are_omitted_unless_asked_for",
+  "crates/a2a-protocol-server/src/audit/tests.rs::an_export_returns_every_record_across_pages",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::reveal_gives_back_what_was_written",
+]
+gap = "Nothing gathers what the server holds about one person. The task store finds a caller's tasks only through that caller's own credential: unlike `erase_caller`, the operator has no call that exports one caller's partitions, and a task about someone other than its caller is found only by its id. The audit log finds a person's records only by revealing every record of the chain, one tenant at a time. Tasks in a tenant's shared partition are attributed to no one. The information Art. 15(1)(a)–(h) lists, the format of a copy, and the weighing of others' rights are the controller's."
+
+[[control]]
+id = "GDPR-17-2-19"
+source = "gdpr"
+provision = "Art. 17(2), 19"
+requirement = "A controller that made personal data public and must erase them takes reasonable steps, including technical measures, to inform other controllers processing them of the erasure request (Art. 17(2)); rectification, erasure or restriction is communicated to each recipient to whom the data were disclosed, unless impossible or disproportionate (Art. 19)."
+sdk = "None toward recipients. The A2A protocol has no method that deletes a task, so an erasure reaches only this server's stores (GDPR-5-1e). The client's `Delegation` cancels the tasks a task delegated to other agents; it does not erase them."
+status = "integrator"
+gap = "Telling recipients is the controller's act toward the parties it disclosed data to: peer agents a task was delegated to, webhook receivers, telemetry back ends. The SDK keeps no list of what was sent where, beyond the audit trail's records of calls received and the trace id that joins one request's records across agents that are both audited."
+
+[[control]]
+id = "GDPR-18-21"
+source = "gdpr"
+provision = "Art. 18, 21"
+requirement = "The data subject can obtain restriction of processing (the marking of stored personal data to limit their future processing, Art. 4(3)), after which the data are, except for storage, processed only with consent or for legal claims, others' rights or important public interest; and can object to processing based on Art. 6(1)(e) or (f), after which the controller stops unless it shows compelling legitimate grounds, and to direct marketing at any time."
+sdk = "Ways to stop processing without deleting: an interceptor that returns an error refuses a call before the handler runs, so a deployment can refuse a restricted or objecting caller; a bearer token or API key can be revoked while serving; `RequestHandler::halt` refuses a tenant's sends and stops its running tasks while its stored tasks stay readable. A legal hold keeps a tenant's audit chain from purge and from `erase_subject`, which serves retention for legal claims (Art. 18(1)(c))."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/handler/halt.rs::RequestHandler::halt",
+  "crates/a2a-protocol-server/src/audit/retention.rs::AuditLog::place_hold",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/interceptor_tests.rs::error_in_before_stops_chain",
+  "crates/a2a-protocol-server/tests/credential_rotation.rs::a_bearer_token_is_rotated_and_revoked_while_serving",
+  "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_a_tenant_cancels_its_tasks_and_refuses_its_sends",
+  "crates/a2a-protocol-server/src/audit/tests.rs::a_legal_hold_stops_purge_until_released",
+]
+gap = "No store can mark a task, a caller's partition or a person's data as restricted, so the SDK cannot keep data stored while refusing every other use of them: a refusal has to be built per caller in an interceptor, and a halt acts on a whole tenant. A legal hold covers a whole audit chain, not one person's records. Weighing an objection against the controller's grounds, and informing the data subject before a restriction is lifted (Art. 18(3)), are the controller's."
+
+[[control]]
+id = "GDPR-22"
+source = "gdpr"
+provision = "Art. 22"
+requirement = "The data subject has the right not to be subject to a decision based solely on automated processing, including profiling, that produces legal effects or similarly significantly affects them; where such a decision is allowed for a contract or by explicit consent, the controller implements suitable safeguards, at least the right to obtain human intervention on the part of the controller, to express a point of view and to contest the decision (Art. 22(3))."
+sdk = "The approval extension puts a person between an agent and an action: an executor asks with `EventEmitter::request_approval`, naming the action by the digest of its canonical JSON, and the task waits at `input-required`. With an `ApprovalGate`, an answer reaches the executor only if it answers the pending request, echoes its digest, and comes from an authenticated approver the gate allows, by default not the caller whose run asked; `with_quorum(n)` waits for n distinct approvers (AIA-14-5). Without a gate a decision is never reported as checked. With the audit trail each admitted decision is a record naming the approver."
+status = "integrator"
+code = [
+  "crates/a2a-protocol-server/src/approval.rs::ApprovalGate",
+  "crates/a2a-protocol-server/src/executor_helpers.rs::EventEmitter::request_approval",
+]
+tests = [
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_approval_flows_through_the_gate_to_the_executor",
+  "crates/a2a-protocol-server/src/approval/tests.rs::a_decision_for_another_request_or_action_is_refused",
+  "crates/a2a-protocol-server/src/approval/tests.rs::without_a_gate_a_decision_is_never_reported_as_checked",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
+]
+gap = "Which decisions produce legal or similarly significant effects, and so must not be left to the agent alone, is the controller's to judge; the gate checks the decisions an executor asks for and cannot make one ask. Letting the data subject express a point of view and contest a decision after it is made is a process the controller runs; the approver is whoever the gate allows, not necessarily the person the decision concerns."
+
+[[control]]
+id = "GDPR-25-2"
+source = "gdpr"
+provision = "Art. 25(2)"
+requirement = "By default, only personal data necessary for each specific purpose are processed, as to the amount collected, the extent of processing, the period of storage and accessibility; in particular, by default personal data are not made accessible without the individual's intervention to an indefinite number of natural persons."
+sdk = "On by default: message content is kept out of spans (`with_span_content_capture` turns it on); audit records hold content only as digests; `ListTasks` leaves artifacts out unless asked; the in-memory task store evicts, at its periodic sweep, each terminal task last written more than an hour before, and holds at most 10,000 tasks; with an authenticating interceptor that names callers, each caller's tasks are isolated from every other caller's, and a store that cannot partition is refused rather than shared; the default store refuses a tenant it cannot keep apart."
+status = "partial"
+code = [
+  "crates/a2a-protocol-server/src/builder.rs::RequestHandlerBuilder::with_span_content_capture",
+  "crates/a2a-protocol-server/src/store/task_store/config.rs::TaskStoreConfig",
+  "crates/a2a-protocol-server/src/builder.rs::RequestHandlerBuilder::share_tasks_across_callers",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/tests/list_tasks_artifacts.rs::artifacts_are_omitted_unless_asked_for",
+  "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs::default_config_has_expected_values",
+  "crates/a2a-protocol-server/src/store/task_store/in_memory/eviction/expiry_tests.rs::a_terminal_task_expires_exactly_at_ttl_and_not_a_tick_before",
+  "crates/a2a-protocol-server/tests/caller_isolation_default.rs::by_default_only_identified_callers_are_isolated",
+  "crates/a2a-protocol-server/tests/caller_isolation_default.rs::by_default_a_store_that_cannot_partition_is_refused",
+  "crates/a2a-protocol-server/src/handler/tenant_isolation_tests.rs::the_default_store_refuses_a_client_named_tenant",
+]
+gap = "Off by default: the SQLite and PostgreSQL task stores and the audit store keep everything until the operator calls a purge (a settled decision, `store/retention/mod.rs`); encryption at rest and `AuditLog::with_privacy` must be switched on, so by default audit records name each caller in the clear; push delivery accepts `http://` webhooks. Accessibility: without an authenticating interceptor every caller shares every task, and the bundled interceptors name nobody for an unlabelled credential, so its holders share the tenant's tasks (`by_default_unlabelled_tokens_keep_sharing`). Which data are necessary for a purpose is the controller's to decide."
+
+[[control]]
+id = "GDPR-28"
+source = "gdpr"
+provision = "Art. 28"
+requirement = "A controller uses only processors giving sufficient guarantees; processing by a processor is governed by a binding contract that, among other things, requires it to act only on documented instructions, take the measures of Art. 32, assist with data subjects' requests, delete or return all personal data at the end of the service (28(3)(g)), and make available the information needed to demonstrate compliance and allow audits (28(3)(h))."
+sdk = "Mechanisms an integrator can point to: push delivery can be limited to listed hosts (`HttpPushSender::with_allowed_hosts`), refused before any connection and when a config is created; `erase_caller` removes one caller's tasks, events, idempotency keys and webhooks from the tenant-aware stores (28(3)(g), GDPR-5-1e); the audit trail and its offline verification supply records for an audit (28(3)(h), GDPR-5-2)."
+status = "integrator"
+code = [
+  "crates/a2a-protocol-server/src/push/sender.rs::HttpPushSender::with_allowed_hosts",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/push_sender_tests.rs::the_host_allowlist_refuses_other_hosts_before_connecting",
+  "crates/a2a-protocol-server/src/handler/push_config.rs::set_push_config_refuses_a_host_outside_the_allowlist",
+  "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_in_memory_stores",
+]
+gap = "Art. 28 governs the relationship between a controller and a processor: the contract, sub-processor authorisation, and the processor's conduct. The SDK is software either of them runs, not a party (see the preamble). Whether a peer agent, a webhook receiver or a telemetry back end is a processor, and what the contract with it says, is the integrator's to settle."
+
+[[control]]
+id = "GDPR-30"
+source = "gdpr"
+provision = "Art. 30"
+requirement = "Each controller and processor keeps a written record of processing activities: purposes, categories of data subjects and data, recipients, third-country transfers, envisaged time limits for erasure and, where possible, a general description of the security measures of Art. 32(1); it is made available to the supervisory authority on request."
+sdk = "The audit trail is a log of processing operations (who called, which task ran, what it emitted), not the record of processing activities Art. 30 describes. Toward the general description of security measures (30(1)(g), 30(2)(d)), the SDK's documents state what it protects and what it does not: the security chapter, ADR 0015 and this control map."
+status = "integrator"
+evidence = [
+  "book/src/deployment/security.md",
+  "docs/adr/0015-audit-trail.md",
+]
+gap = "The record names the controller's purposes, categories, recipients and time limits, which only the controller knows; it is a document it keeps, not something a library produces."
+
+[[control]]
+id = "GDPR-32-1c"
+source = "gdpr"
+provision = "Art. 32(1)(c)"
+requirement = "The ability to restore the availability and access to personal data in a timely manner in the event of a physical or technical incident."
+sdk = "Durable state the operator can back up and restore: the SQLite and PostgreSQL task, push-config, audit and halt stores; replicas sharing a PostgreSQL task store each serve a task the other created; a process restarted against a shared halt store comes back halted. An encryption key ring keeps old keys alongside the active one, so values sealed under a rotated key still open."
+status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/multi_replica.rs::a_task_created_on_one_replica_is_readable_on_the_other",
+  "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_restarted_process_comes_back_halted",
+  "crates/a2a-protocol-server/src/store/encrypted/tests.rs::a_rotated_ring_opens_old_values_and_seals_with_the_new_key",
+]
+gap = "The SDK has no backup or restore of its own; backups, replication and recovery are the database's and the operator's. Two consequences to plan for: data sealed by `EncryptedTaskStore` or `AuditLog::with_privacy` opens only with every key that sealed it, so losing a key loses the data; and restoring a backup taken before an `erase_subject`, `erase_caller` or purge brings back what was erased. The in-memory stores keep nothing across a restart."
+
+[[control]]
+id = "GDPR-32-1d"
+source = "gdpr"
+provision = "Art. 32(1)(d)"
+requirement = "A process for regularly testing, assessing and evaluating the effectiveness of technical and organisational measures for ensuring the security of the processing."
+sdk = "The SDK's own measures are tested on every pull request and on a schedule: fuzz targets over the parsers and over every reader of sealed values at rest, nightly; mutation testing, incremental on pull requests and a full sweep weekly; the sealed formats decrypted by an independent implementation, and AES-256-GCM checked against NIST test vectors; CodeQL and OSV-Scanner; and this map's citations checked to exist."
+status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/crypto_nist_gcm.rs::nist_decrypt_cases_open_or_are_refused_as_nist_says",
+]
+ci = [
+  "cargo +nightly fuzz run",
+  "cargo mutants -p ${{ matrix.crate }}",
+  "scripts/crypto_interop/check.py",
+  "github/codeql-action/analyze",
+  "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml",
+  "scripts/check_compliance_map.py --check",
+]
+evidence = ["book/src/deployment/security-testing.md"]
+gap = "The process the article asks for tests the measures of a processing operation: its configuration, keys, access control and infrastructure, which are the controller's and processor's. The SDK's CI covers the library's code only, not how a deployment uses it."
+
+[[control]]
+id = "GDPR-33-34"
+source = "gdpr"
+provision = "Art. 33, 34"
+requirement = "A personal data breach (a breach of security leading to the destruction, loss, alteration, unauthorised disclosure of, or access to personal data, Art. 4(12)) is notified to the supervisory authority without undue delay and where feasible within 72 hours, and documented; a processor notifies the controller; where the breach is likely to result in a high risk, it is communicated to the data subjects, unless, among other conditions, the data were rendered unintelligible to unauthorised persons, such as by encryption (Art. 34(3)(a))."
+sdk = "Evidence for detecting and documenting one: the audit chain, verified with `log.verify` or offline with `a2a audit verify`, names the first record edited, deleted or reordered, and a tail cut past a signed checkpoint; refused calls are recorded with their outcome. Toward Art. 34(3)(a), `EncryptedTaskStore` and `AuditLog::with_privacy` leave content and the people records name unintelligible without the keys (GDPR-32-1a)."
+status = "integrator"
+tests = [
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_resealed_edit_breaks_the_next_link",
+  "crates/a2a-protocol-types/src/audit/tests.rs::a_deleted_record_is_a_gap",
+  "crates/a2a-protocol-types/src/audit/tests.rs::truncating_the_tail_past_a_checkpoint_is_found",
+  "tools/a2a-cli/tests/offline.rs::an_exported_chain_verifies_and_an_edited_one_names_where_it_breaks",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+]
+gap = "Detecting a breach, assessing its risk, and notifying the authority and the people concerned are the controller's acts, and a processor's notice to the controller is the processor's. The SDK verifies a chain only when asked and raises no alert. Encryption leaves ids, states, timestamps and `metadata` readable, so whether a breach of an encrypted store left the personal data unintelligible depends on what the integrator put in those fields."
+
+[[control]]
+id = "GDPR-35"
+source = "gdpr"
+provision = "Art. 35"
+requirement = "Where a type of processing, in particular using new technologies, is likely to result in a high risk to the rights and freedoms of natural persons, the controller assesses the impact of the envisaged processing on the protection of personal data before processing; the assessment describes the processing and its purposes, assesses necessity, proportionality and risks, and states the measures envisaged to address them."
+sdk = "Inputs to the description of measures (35(7)(d)): this control map; the security chapter, which lists what encryption at rest does and does not protect and the SDK's known gaps; ADR 0015, which states what the audit trail records, the threats it answers and what erasure does not reach. AIA-26-27 notes that a fundamental rights impact assessment under the AI Act may draw on a DPIA."
+status = "integrator"
+evidence = [
+  "book/src/deployment/security.md",
+  "docs/adr/0015-audit-trail.md",
+]
+gap = "The assessment concerns the controller's processing, purposes and risks to the people affected, and is carried out by the controller; a library can describe its own measures but not a deployment's necessity, proportionality or risk."
+
+[[control]]
+id = "GDPR-44-49"
+source = "gdpr"
+provision = "Art. 44–49"
+requirement = "A transfer of personal data to a third country or an international organisation, onward transfers included, takes place only under the conditions of Chapter V: an adequacy decision (Art. 45), appropriate safeguards with enforceable rights and remedies (Art. 46, 47), or a derogation for a specific situation (Art. 49)."
+sdk = "Where personal data go is set by configuration: the agents the client is told to call, the webhook URLs callers register, which `HttpPushSender::with_allowed_hosts` limits to listed hosts, and the telemetry exporter's endpoint. The SDK records no destination's location."
+status = "integrator"
+code = [
+  "crates/a2a-protocol-server/src/push/sender.rs::HttpPushSender::with_allowed_hosts",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/push_sender_tests.rs::the_host_allowlist_refuses_other_hosts_before_connecting",
+]
+gap = "Whether a destination is in a third country, and the legal ground for sending data there, are the controller's and processor's to establish; a host name says nothing about where data are processed. Peer agents and webhook receivers may transfer onward."
 
 [[control]]
 id = "ASI03"

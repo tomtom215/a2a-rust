@@ -12,7 +12,7 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 ## 1. Where the project is
 
-The crates are at `0.13` (prepared 2026-09-20). Between `0.7.0` (2026-07-24) and `0.11.0`
+The crates are at `0.15.0`, unreleased; `0.14.1` (2026-09-30) is the newest release. The account below was written at `0.13` (2026-09-20) and is not yet brought up to `0.14` and `0.15`, whose breaking changes are in `CHANGELOG.md`. Between `0.7.0` (2026-07-24) and `0.11.0`
 (2026-08-30) there were four minor releases in five weeks, and the changelog
 for that span names nine breaking changes. That cadence was appropriate while
 the A2A `v1.0` wire contract, the tenant model and the four bindings were

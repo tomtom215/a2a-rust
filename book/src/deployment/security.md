@@ -270,11 +270,14 @@ Stated because a security page that lists only strengths is not one.
   encrypted end-to-end. Use [GitHub Security
   Advisories](https://github.com/tomtom215/a2a-rust/security/advisories/new)
   instead, which keeps a report private without needing a key.
-* **Release tags are not signed.** Since `v0.8.0` they are annotated — they
-  carry a tagger and a date, and the release workflow refuses a lightweight tag
-  — but nothing is GPG/SSH-signed, so `git tag -v` cannot verify a release. For
-  a cryptographic link from a published version to this repository, use the
-  build provenance attestations described in `PROVENANCE.md`, not the tag.
+* **No released tag is signed yet.** Tags since `v0.8.0` are annotated, and
+  `release.yml` refuses a lightweight tag. Since 2026-10-08 it also refuses a
+  tag not signed by a key in `.github/release-signers/`, but no key is listed
+  there yet, so no release has passed that gate and the next one cannot until
+  one is. Until then `git tag -v` verifies no release. For a cryptographic
+  link from a published version to this repository, use the build provenance
+  attestations (`gh attestation verify`, step 3 of `RELEASING.md`), not the
+  tag.
 * **No rate limiting is applied unless you wire it.** `rate_limit_rps` is
   counted in an interceptor; setting the field without installing
   `RateLimitInterceptor` does nothing. Failed credentials are throttled only

@@ -209,8 +209,9 @@ there has the commands.
 > * A tag alone does not attest who cut the release, or when.
 > * Nothing here is GPG/SSH-signed, so `git tag -v` cannot verify any release.
 > * Adopters needing a verifiable link from a version to this repository must
->   use the build provenance attestations in [`PROVENANCE.md`](PROVENANCE.md),
->   which *are* signed, rather than the tag.
+>   use the build provenance attestations the release workflow attaches
+>   (`gh attestation verify`, step 3 below), which *are* signed, rather than
+>   the tag.
 >
 > Using `-a` as written fixes this for future releases; it does not
 > retroactively fix the ten existing tags, and re-tagging published releases

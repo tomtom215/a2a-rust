@@ -53,7 +53,7 @@ each of those:
 
 | You need | This project provides |
 |---|---|
-| Due diligence on the component (Art. 13(5)) | Per-crate CycloneDX SBOMs and SLSA build-provenance attestations on every GitHub release (`PROVENANCE.md`); `SHA256SUMS`; the conformance and audit record under `docs/`; this policy; the OpenSSF Best Practices evidence in `docs/openssf-best-practices.md` |
+| Due diligence on the component (Art. 13(5)) | Per-crate CycloneDX SBOMs and SLSA build-provenance attestations on every GitHub release (`RELEASING.md` step 3); `SHA256SUMS`; the conformance and audit record under `docs/`; this policy; the OpenSSF Best Practices evidence in `docs/openssf-best-practices.md` |
 | Your SBOM (Annex I, Part II(1)) | The release SBOMs list each crate's own dependency tree, to merge into yours |
 | Vulnerability monitoring | `cargo-deny` and OSV-Scanner run on every pull request and daily (`osv.yml`); GitHub security advisories for this repository |
 | A place to report a vulnerability you found in these crates (Art. 13(6)) | The two channels under **Reporting a Vulnerability** below. Say in the report that it is an Article 13(6) report; it gets the same 3-business-day acknowledgement as any other. If you have a fix, send it — Article 13(6) asks you to share it, and we will credit it |
@@ -131,12 +131,12 @@ Know what you can and cannot verify about a release:
 | Git tags `v0.2.0` … `v0.7.0` | **No** | Nothing to verify. These ten are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. |
 | Git tags after `v0.14.1` | **Signed** | `release.yml` refuses a release whose tag is not signed by a key in `.github/release-signers/` on `main`. Check one yourself with `scripts/verify_tag_signature.sh <tag>`. |
 | Git tags `v0.8.0` … `v0.14.1` | **Not signed, but annotated** | `git cat-file -t v0.9.0` prints `tag`, and `git for-each-ref` shows a tagger and a date. That establishes *who cut the release and when*; it does not establish authenticity, because nothing is GPG/SSH-signed, so `git tag -v` still cannot verify any release. `release.yml` refuses a lightweight tag, so this holds for every future release. |
-| Release binaries / SBOMs | Yes | Attested in the release workflow; see [`PROVENANCE.md`](PROVENANCE.md). |
+| Release binaries / SBOMs | Yes | Attested in the release workflow; verify with `gh attestation verify` as [`RELEASING.md`](RELEASING.md) step 3 shows. |
 | Published crates | **No** — integrity only | crates.io records a SHA-256 checksum per `.crate`, which cargo verifies on download. A checksum proves the bytes are the ones crates.io holds, not who published them; this file said "signed" until 2026-09-24. The release's `SHA256SUMS` asset and build attestation are what tie a `.crate` to this repository. |
 
 If you need a cryptographic link between a published version and this
-repository, use the build provenance attestations described in
-`PROVENANCE.md`. Annotation was adopted at `v0.8.0` and is enforced. Signing
+repository, use the build provenance attestations the release workflow
+attaches (`gh attestation verify`, `RELEASING.md` step 3). Annotation was adopted at `v0.8.0` and is enforced. Signing
 is enforced from the first release after `v0.14.1`: the trusted keys are the
 files in `.github/release-signers/`, which is also how an adopter obtains
 them.
