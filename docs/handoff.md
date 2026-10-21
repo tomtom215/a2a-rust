@@ -263,6 +263,27 @@ it.
   agntcy-slim-rpc carries error details; no details in the message text.
   Tool calling moves into the SDK as a feature-gated module (ADR 0022),
   superseding the earlier examples-only decision below.
+- **2026-10-21:** production-grade safety work for delegation at scale,
+  each built with an ADR, tests that fail without it, and an independent
+  review where it touches the store/stream contract. Provenance: receivers
+  verify present signatures by default and refuse altered content, signing
+  turns on when a key is configured, unsigned peers still interoperate
+  (marked unverified), and the production profile requires a key.
+  Deadlines and budgets: an extension carrying an absolute deadline and
+  named meters (tokens, tool calls, cost in a named currency), decremented
+  per hop, with the remainder visible before expensive work. Production
+  profile: builder presets (`RequestHandlerBuilder::production()`,
+  `ServeConfig::production()`) that refuse to start on plaintext off
+  loopback, an undeclared binding, no authenticating interceptor, or
+  delegation without leases and a halt store; defaults unchanged. Instant
+  halt: the Postgres halt store pushes halts and cross-replica cancels
+  with LISTEN/NOTIFY; SQLite and in-memory keep polling. Also: narrower
+  credentials per hop through RFC 8693/8707, idempotency keys for tool
+  side effects by default, a multi-agent prompt-injection harness, the
+  tool-calling study published, kill-switch conformance tests, upstream
+  drafts for deadline propagation and provenance (not filed without the
+  maintainer), the three encryption verifications, and the removal of the
+  0.10/0.12 deprecations in 0.15.0.
 - **Earlier, still standing:** ~~tool calling stays in the examples, not the
   crates (`examples/rig-agent`)~~ (superseded 2026-10-20, above); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
