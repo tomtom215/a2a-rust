@@ -29,7 +29,7 @@ import time
 # run.py beside this file, by path: `python3 -I` leaves the script's own
 # directory off sys.path, and the prompts and sampler must be run.py's own.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from run import PROMPTS, SAMPLER  # noqa: E402
+from run import PROMPTS, SAMPLER, TURN_TIMEOUT_SECS  # noqa: E402
 
 TRACE_LINE = re.compile(r"^(?P<name>[A-Za-z_][\w-]*)\((?P<args>.*)\) -> (?P<result>.*)$")
 
@@ -79,14 +79,20 @@ def main():
         binary = hashlib.sha256(f.read()).hexdigest()
     out = {"arm": "sdk", "label": a.label, "thinking": a.thinking, "n": a.n,
            "seed_base": a.seed_base, "max_tokens": a.max_tokens, "sampler": SAMPLER,
-           "harness_sha256": harness, "binary_sha256": binary, "runs": []}
+           "harness_sha256": harness, "binary_sha256": binary,
+           "turn_timeout_secs": TURN_TIMEOUT_SECS, "runs": []}
     for k, kind in enumerate(PROMPTS):
         for i in range(a.n):
             seed = a.seed_base + 1000 * k + i
             extra = {"chat_template_kwargs": {"enable_thinking": a.thinking == "on"},
                      "seed": seed, "max_tokens": a.max_tokens, "cache_prompt": False, **SAMPLER}
+            # The direct arm's urlopen waits 1800 s for a turn; OpenAiChatModel's
+            # default is 120 s, and on a loaded machine a slow thinking turn
+            # failed the SDK arm alone (2 runs on 2026-10-20), a skew the
+            # study exists to rule out. Both arms now wait the same.
             env = dict(os.environ, TOOL_LOOP_BASE_URL=f"http://127.0.0.1:{a.port}/v1",
                        TOOL_LOOP_MODEL=a.label, TOOL_LOOP_THINKING="1",
+                       TOOL_LOOP_MODEL_TIMEOUT_SECS=str(TURN_TIMEOUT_SECS),
                        TOOL_LOOP_EXTRA_BODY=json.dumps(extra))
             t0 = time.monotonic()
             proc = subprocess.run([a.bin, PROMPTS[kind]], env=env, capture_output=True,

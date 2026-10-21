@@ -57,6 +57,8 @@ PROMPTS = {
 # llama.cpp's own defaults (GET /props, build 8466395), named on every
 # request so that a server started with other defaults does not change them.
 SAMPLER = {"temperature": 0.8, "top_k": 40, "top_p": 0.95, "min_p": 0.05}
+# How long one model turn may take, in both arms (sdk_arm.py passes it on).
+TURN_TIMEOUT_SECS = 1800
 
 
 def invoke(name, args):
@@ -80,7 +82,7 @@ def post(port, path, body=None):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data,
                                  {"content-type": "application/json"})
-    with urllib.request.urlopen(req, timeout=1800) as resp:
+    with urllib.request.urlopen(req, timeout=TURN_TIMEOUT_SECS) as resp:
         return json.load(resp)
 
 
@@ -147,7 +149,7 @@ def main():
     out = {
         "label": a.label, "thinking": a.thinking, "n": a.n, "seed_base": a.seed_base,
         "max_tokens": a.max_tokens, "sampler": SAMPLER, "max_turns": MAX_TURNS,
-        "harness_sha256": harness,
+        "harness_sha256": harness, "turn_timeout_secs": TURN_TIMEOUT_SECS,
         "server": {"model_path": props.get("model_path"), "build_info": props.get("build_info"),
                    "chat_template_sha256": hashlib.sha256(props.get("chat_template", "").encode()).hexdigest()},
         "runs": [],

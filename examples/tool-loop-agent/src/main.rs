@@ -22,6 +22,7 @@
 //! | `TOOL_LOOP_MODEL` | `qwen3:1.7b` |
 //! | `TOOL_LOOP_API_KEY` | none (local servers need none) |
 //! | `TOOL_LOOP_THINKING` | unset: sends `chat_template_kwargs: {"enable_thinking": false}`; `1` sends nothing |
+//! | `TOOL_LOOP_MODEL_TIMEOUT_SECS` | 120 (`OpenAiChatModel`'s default): how long one model turn may take |
 //! | `TOOL_LOOP_EXTRA_BODY` | none; a JSON object merged into every request after the above (sampler, seed: `docs/tool-calling-study.md` uses it) |
 
 use std::process::ExitCode;
@@ -130,6 +131,9 @@ fn model_from_env() -> Result<OpenAiChatModel, Box<dyn std::error::Error>> {
     let mut model = OpenAiChatModel::new(&base, name)?;
     if let Ok(key) = std::env::var("TOOL_LOOP_API_KEY") {
         model = model.with_api_key(key);
+    }
+    if let Ok(secs) = std::env::var("TOOL_LOOP_MODEL_TIMEOUT_SECS") {
+        model = model.with_timeout(Duration::from_secs(secs.parse()?));
     }
     // Qwen3 thinks before it answers unless told not to, which on a CPU
     // multiplies each turn's time; llama-server reads this per request.
