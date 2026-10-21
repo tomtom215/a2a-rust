@@ -14,6 +14,12 @@
 //! one process; `SqliteHaltStore` (the `sqlite` feature) keeps them across
 //! a restart of one process; `PostgresHaltStore` (the `postgres` feature)
 //! does both across replicas.
+//!
+//! A store may also push ([`HaltStore::signals`], ADR 0024): the in-memory
+//! and PostgreSQL stores tell every handler sharing them the moment a halt
+//! is written or removed, and carry a cancel to the replica running the
+//! task. The poll stays behind the push, so a lost signal costs at most one
+//! interval.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -35,6 +41,26 @@ mod tests;
 pub use postgres::PostgresHaltStore;
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteHaltStore;
+
+/// How many signals a subscriber may fall behind before it lags; a lagging
+/// subscriber reads the store instead, so nothing is lost but latency.
+pub(crate) const SIGNAL_CAPACITY: usize = 256;
+
+/// What a pushing [`HaltStore`] tells the handlers sharing it (ADR 0024).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum HaltSignal {
+    /// A halt was written or removed somewhere: read the store now.
+    Changed,
+    /// `task` in `tenant` was cancelled on another replica: stop it here if
+    /// it runs here.
+    Cancel {
+        /// The task's tenant, `""` for none.
+        tenant: String,
+        /// The task's id.
+        task: String,
+    },
+}
 
 /// A halt as a [`HaltStore`] keeps it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,14 +131,49 @@ pub trait HaltStore: Send + Sync + 'static {
         &'a self,
         scope: &'a HaltScope,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
+
+    /// A subscription to this store's pushed signals, or `None` (the
+    /// default) for a store that cannot push; the handler then polls only.
+    fn signals(&self) -> Option<tokio::sync::broadcast::Receiver<HaltSignal>> {
+        None
+    }
+
+    /// Tells every handler sharing this store that `task` in `tenant` was
+    /// cancelled. The default does nothing: without a push, the executor
+    /// running the task learns of it at its next refused write.
+    ///
+    /// # Errors
+    ///
+    /// When the signal cannot be sent.
+    fn publish_cancel<'a>(
+        &'a self,
+        tenant: &'a str,
+        task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        let _ = (tenant, task);
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Halts kept in memory, shared by every handler holding a clone: one
 /// process's replicas in a test, or a stand-in where nothing must survive a
 /// restart.
-#[derive(Debug, Clone, Default)]
+///
+/// It pushes: every write, removal and cancel is broadcast to every handler
+/// holding a clone.
+#[derive(Debug, Clone)]
 pub struct InMemoryHaltStore {
     halts: Arc<Mutex<HashMap<HaltScope, StoredHalt>>>,
+    signals: tokio::sync::broadcast::Sender<HaltSignal>,
+}
+
+impl Default for InMemoryHaltStore {
+    fn default() -> Self {
+        Self {
+            halts: Arc::default(),
+            signals: tokio::sync::broadcast::channel(SIGNAL_CAPACITY).0,
+        }
+    }
 }
 
 impl InMemoryHaltStore {
@@ -120,6 +181,11 @@ impl InMemoryHaltStore {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn signal(&self, signal: HaltSignal) {
+        // No subscriber is not an error: no handler shares the store yet.
+        let _ = self.signals.send(signal);
     }
 }
 
@@ -143,6 +209,7 @@ impl HaltStore for InMemoryHaltStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(halt.scope.clone(), halt.clone());
+        self.signal(HaltSignal::Changed);
         Box::pin(async { Ok(()) })
     }
 
@@ -156,7 +223,24 @@ impl HaltStore for InMemoryHaltStore {
             .unwrap_or_else(PoisonError::into_inner)
             .remove(scope)
             .is_some();
+        self.signal(HaltSignal::Changed);
         Box::pin(async move { Ok(was) })
+    }
+
+    fn signals(&self) -> Option<tokio::sync::broadcast::Receiver<HaltSignal>> {
+        Some(self.signals.subscribe())
+    }
+
+    fn publish_cancel<'a>(
+        &'a self,
+        tenant: &'a str,
+        task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.signal(HaltSignal::Cancel {
+            tenant: tenant.to_owned(),
+            task: task.to_owned(),
+        });
+        Box::pin(async { Ok(()) })
     }
 }
 

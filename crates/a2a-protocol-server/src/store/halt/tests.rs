@@ -98,6 +98,72 @@ async fn postgres_keeps_the_contract() {
     contract(&store).await;
 }
 
+/// What one replica's store writes, another's subscriber is told (ADR
+/// 0024). `listening` is a signal the subscriber's store sends once it is
+/// listening, consumed first; `None` for a store that listens at once.
+async fn signals_contract(
+    writer: &dyn HaltStore,
+    reader: &dyn HaltStore,
+    listening: Option<HaltSignal>,
+) {
+    use std::time::Duration;
+    let mut rx = reader.signals().expect("a pushing store");
+    if let Some(first) = listening {
+        let got = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
+        assert_eq!(got.expect("listening in time").unwrap(), first);
+    }
+    let scope = HaltScope::Tenant(format!("signals-{}", uuid::Uuid::new_v4()));
+    writer
+        .put(&StoredHalt::new(scope.clone(), "r", "by"))
+        .await
+        .unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
+    assert_eq!(got.expect("a put is pushed").unwrap(), HaltSignal::Changed);
+    assert!(writer.remove(&scope).await.unwrap());
+    let got = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
+    assert_eq!(
+        got.expect("a remove is pushed").unwrap(),
+        HaltSignal::Changed
+    );
+    writer.publish_cancel("t1", "task-9").await.unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
+    assert_eq!(
+        got.expect("a cancel is pushed").unwrap(),
+        HaltSignal::Cancel {
+            tenant: "t1".to_owned(),
+            task: "task-9".to_owned()
+        }
+    );
+}
+
+#[tokio::test]
+async fn in_memory_pushes_to_every_clone() {
+    let store = InMemoryHaltStore::new();
+    signals_contract(&store, &store.clone(), None).await;
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_does_not_push() {
+    let store = SqliteHaltStore::new("sqlite::memory:").await.unwrap();
+    assert!(store.signals().is_none());
+    store.publish_cancel("t", "x").await.unwrap();
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn postgres_pushes_between_replicas() {
+    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let a = PostgresHaltStore::from_pool(sqlx::postgres::PgPool::connect(&url).await.unwrap())
+        .await
+        .unwrap();
+    let b = PostgresHaltStore::from_pool(sqlx::postgres::PgPool::connect(&url).await.unwrap())
+        .await
+        .unwrap();
+    signals_contract(&a, &b, Some(HaltSignal::Changed)).await;
+}
+
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 #[test]
 fn scope_keys_round_trip_and_do_not_collide() {

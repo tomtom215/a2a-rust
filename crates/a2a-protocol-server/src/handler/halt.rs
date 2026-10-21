@@ -268,6 +268,21 @@ impl RequestHandler {
 
     /// Stops a turn whose token was just registered, if a halt of its
     /// tenant landed while it was being admitted. See the module docs.
+    /// Tells the replicas sharing the halt store that `task` in the current
+    /// tenant was cancelled, so the one running it stops it (ADR 0024). A
+    /// failed publish is logged, not returned: the store already says
+    /// `Canceled`, and the executor's next write is refused regardless.
+    pub(crate) async fn publish_cancel(&self, task: &a2a_protocol_types::task::TaskId) {
+        let Some(sync) = &self.halt_sync else { return };
+        if let Err(_e) = sync
+            .store
+            .publish_cancel(&TenantContext::current(), &task.0)
+            .await
+        {
+            trace_warn!(task = %task, error = %_e, "cancel not published to other replicas");
+        }
+    }
+
     pub(crate) fn stop_if_halted(&self, turn: &ExecutorTurn, token: &CancellationToken) {
         if self.halt_reason(&TenantContext::current()).is_some() {
             stop(turn, token);
@@ -321,6 +336,8 @@ pub(super) fn stop(turn: &ExecutorTurn, token: &CancellationToken) {
     token.cancel();
 }
 
+#[cfg(test)]
+mod push_tests;
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]

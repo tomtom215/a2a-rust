@@ -366,6 +366,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **Halts and cancels are pushed to every replica** (server; ADR 0024;
+  EU AI Act Art. 14(4)(e); OWASP ASI10). `HaltStore` gains `signals()` and
+  `publish_cancel`, provided methods whose defaults keep a store polling.
+  `PostgresHaltStore` notifies `a2a_halts` in the transaction of each write
+  and removal, and `a2a_cancels` for a cancel; one listener per store
+  forwards both, and sends `Changed` after a reconnect so nothing missed
+  stays missed. `InMemoryHaltStore` broadcasts the same. The handler's
+  poller reads the store at once on a signal, and fires the token of a task
+  a cancel on another replica names; the poll stays behind the push.
+  `push_tests.rs` sets the interval to an hour and still sees the other
+  replica stop at once; `postgres_pushes_between_replicas` runs two stores
+  on PostgreSQL.
 - **A budget travels down the delegation chain** (types, server, client; ADR 0023;
   G5 in `docs/swarm-orchestration.md`; OWASP ASI08). A message carries
   `{"remainingMs": n, "meters": {"tokens": n}}` under `a2a-rust.com/budget`

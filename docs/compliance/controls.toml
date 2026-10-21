@@ -372,7 +372,7 @@ id = "AIA-14-4e"
 source = "ai-act"
 provision = "Art. 14(4)(e)"
 requirement = "Natural persons can intervene in or interrupt the system through a 'stop' button or similar procedure that brings it to a halt in a safe state."
-sdk = "`CancelTask` on every binding signals the executor's cancellation token. `RequestHandler::halt` stops one tenant or the whole server: new sends are refused (HTTP 503, gRPC UNAVAILABLE) and every running task's token fires, until `resume`; each is an audit record naming the operator. With a halt store (`with_halt_store`, ADR 0019) a halt reaches every replica sharing it within its poll interval and survives a restart. A `Delegation` in the client cancels the tasks a task delegated to other agents when it is cancelled, so a stop reaches the whole tree. Graceful shutdown cancels in-flight work and reports what ignored cancellation."
+sdk = "`CancelTask` on every binding signals the executor's cancellation token. `RequestHandler::halt` stops one tenant or the whole server: new sends are refused (HTTP 503, gRPC UNAVAILABLE) and every running task's token fires, until `resume`; each is an audit record naming the operator. With a halt store (`with_halt_store`, ADR 0019) a halt reaches every replica sharing it and survives a restart; the PostgreSQL and in-memory stores push it with the write (ADR 0024), so it arrives about one notification round trip after it commits, with the poll interval as the bound when a notification is lost. A cancel on a replica that does not run the task is pushed to the one that does, whose executor's token fires. A `Delegation` in the client cancels the tasks a task delegated to other agents when it is cancelled, so a stop reaches the whole tree. Graceful shutdown cancels in-flight work and reports what ignored cancellation."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs::RequestHandler::on_cancel_task",
@@ -393,9 +393,12 @@ tests = [
   "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_halt_on_one_replica_stops_and_refuses_on_the_other",
   "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_restarted_process_comes_back_halted",
   "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_halt_the_store_refused_holds_and_is_written_later",
+  "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_halt_is_pushed_to_the_other_replica",
+  "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_cancel_is_pushed_to_the_replica_running_the_task",
+  "crates/a2a-protocol-server/src/store/halt/tests.rs::postgres_pushes_between_replicas",
 ]
-evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md", "docs/adr/0019-shared-halt-store.md"]
-gap = "Without a halt store a halt holds in one process; with one, another replica follows within its poll interval rather than at once. A cancel on one replica makes the task's state final in a shared store, but an executor on another replica is not signalled: it stops only when its next write is refused. An executor that ignores its token keeps running: nothing forces it to stop (a bounded cancel deadline that drops its future, as the executor timeout does, is not built). A crashed parent's delegated children stop only if it started them with a lease (ADR 0020, `Delegation::start_leased`); leases are opt-in."
+evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md", "docs/adr/0019-shared-halt-store.md", "docs/adr/0024-pushed-halts-and-cancels.md"]
+gap = "Without a halt store a halt holds in one process; with a SQLite store, or a custom one that does not push, another replica follows within its poll interval rather than at once. A cancel pushed to the replica running the task fires its token, but streams open there end without the `Canceled` frame (ADR 0024). An executor that ignores its token keeps running: nothing forces it to stop (a bounded cancel deadline that drops its future, as the executor timeout does, is not built). A crashed parent's delegated children stop only if it started them with a lease (ADR 0020, `Delegation::start_leased`); leases are opt-in."
 
 [[control]]
 id = "AIA-15-4"
@@ -732,14 +735,16 @@ id = "ASI10"
 source = "owasp-asi"
 provision = "ASI10 Rogue Agents"
 requirement = "Agents acting outside their intended behaviour are detected and stopped."
-sdk = "Spans and metrics for every call; cancellation of a task; `RequestHandler::halt`, which stops every task of a tenant or of the server and refuses new ones until resumed, on every replica sharing a halt store and across restarts (ADR 0019)."
+sdk = "Spans and metrics for every call; cancellation of a task; `RequestHandler::halt`, which stops every task of a tenant or of the server and refuses new ones until resumed, on every replica sharing a halt store and across restarts (ADR 0019), pushed with the write by the PostgreSQL and in-memory stores (ADR 0024); a cancel is pushed to the replica running the task."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
   "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_all_cancels_every_tenant",
   "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_halt_on_one_replica_stops_and_refuses_on_the_other",
+  "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_halt_is_pushed_to_the_other_replica",
+  "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_cancel_is_pushed_to_the_replica_running_the_task",
 ]
-gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt reaches other replicas only through a halt store, within its poll interval. A cancel on one replica makes the task's state final in a shared store, but an executor on another replica is not signalled: it stops only when its next write is refused, and one that does not write runs on."
+gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt reaches other replicas only through a halt store; one that does not push (SQLite, a custom store) is followed within its poll interval. A pushed cancel fires the running executor's token, and an executor that ignores its token runs on."
 
 [[control]]
 id = "ASI-MODEL"

@@ -21,6 +21,11 @@
 //! gave. Polls, halts and resumes take [`lock`](HaltSync::lock) for their
 //! store round trips, so a poll that read the store before a resume cannot
 //! apply what it read after it and halt again on stale data.
+//!
+//! A store that pushes ([`HaltStore::signals`], ADR 0024) wakes the poller
+//! early: a [`HaltSignal::Changed`] reads the store at once, and a
+//! [`HaltSignal::Cancel`] fires the token of that task if it runs here. The
+//! tick stays behind the push, so a lost signal costs at most an interval.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError, RwLock, Weak};
@@ -31,7 +36,7 @@ use a2a_protocol_types::task::TaskId;
 
 use super::{HaltScope, Halts, stop};
 use crate::handler::CancellationEntry;
-use crate::store::{HaltStore, StoredHalt};
+use crate::store::{HaltSignal, HaltStore, StoredHalt};
 
 /// How often a handler with a halt store polls it, unless
 /// [`with_halt_poll_interval`](crate::builder::RequestHandlerBuilder::with_halt_poll_interval)
@@ -136,23 +141,65 @@ impl HaltSync {
     }
 }
 
-/// Polls `sync`'s store into `halts` every interval until the handler that
-/// owns `halts` and `tokens` is dropped.
+/// Polls `sync`'s store into `halts` every interval, and at once on a
+/// pushed signal, until the handler that owns `halts` and `tokens` is
+/// dropped.
 pub fn spawn_poller(sync: Arc<HaltSync>, halts: Weak<RwLock<Halts>>, tokens: Weak<Tokens>) {
+    let mut signals = sync.store.signals();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(sync.interval);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         // The first tick is immediate, and the first load has just run.
         tick.tick().await;
         loop {
-            tick.tick().await;
+            let cancel = tokio::select! {
+                _ = tick.tick() => None,
+                signal = next_signal(&mut signals) => signal,
+            };
             let (Some(halts), Some(tokens)) = (halts.upgrade(), tokens.upgrade()) else {
                 return;
             };
+            if let Some((tenant, task)) = cancel {
+                cancel_here(&tokens, &tenant, &task).await;
+                continue;
+            }
             let _held = sync.lock.lock().await;
             if let Err(_e) = sync.apply(&halts, &tokens).await {
                 trace_warn!(error = %_e, "halt store poll failed; keeping the halts last read");
             }
         }
     });
+}
+
+/// Waits for the next pushed signal: `Some` with a cancel's tenant and task,
+/// `None` when the store should be read. Never ready without a push; a
+/// closed channel stops the waiting, leaving the tick.
+async fn next_signal(
+    signals: &mut Option<tokio::sync::broadcast::Receiver<HaltSignal>>,
+) -> Option<(String, String)> {
+    use tokio::sync::broadcast::error::RecvError;
+    let Some(rx) = signals.as_mut() else {
+        return std::future::pending().await;
+    };
+    match rx.recv().await {
+        Ok(HaltSignal::Cancel { tenant, task }) => Some((tenant, task)),
+        // Changed, a signal kind a newer store sends, or a lag: read.
+        Ok(_) | Err(RecvError::Lagged(_)) => None,
+        Err(RecvError::Closed) => {
+            *signals = None;
+            std::future::pending().await
+        }
+    }
+}
+
+/// Fires the token of `task` if it runs here in `tenant`. The token only:
+/// the replica that took the cancel wrote `Canceled`, and a second terminal
+/// write from here would be refused (ADR 0024).
+async fn cancel_here(tokens: &Tokens, tenant: &str, task: &str) {
+    if let Some(entry) = tokens.read().await.get(&TaskId::new(task))
+        && entry.tenant == tenant
+    {
+        trace_info!(task, "cancelled on another replica; stopping it here");
+        entry.token.cancel();
+    }
 }

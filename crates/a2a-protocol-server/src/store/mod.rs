@@ -51,7 +51,7 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
-pub use halt::{HaltStore, InMemoryHaltStore, StoredHalt};
+pub use halt::{HaltSignal, HaltStore, InMemoryHaltStore, StoredHalt};
 pub use holds::{DEFAULT_MAX_HELD_EVENTS_FACTOR, EventHold, EventHolds};
 pub use lease::{InMemoryLeaseStore, LeaseStore};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};

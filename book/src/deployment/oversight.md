@@ -61,9 +61,15 @@ watcher, so that who may halt is your access control's decision.
 - **Without a halt store, a halt holds in one process.** It is then not
   persisted: halt every replica, and halt again after a restart. With one
   (`RequestHandlerBuilder::with_halt_store`, ADR 0019), a halt given to any
-  replica stops every replica sharing the store within its poll interval
-  (`with_halt_poll_interval`, one second by default), and a restarted
-  process comes back halted. Use `PostgresHaltStore` across replicas and
+  replica stops every replica sharing the store, and a restarted process
+  comes back halted. `PostgresHaltStore` and `InMemoryHaltStore` push the
+  halt with the write (`LISTEN`/`NOTIFY` for PostgreSQL, ADR 0024), so it
+  arrives about one notification round trip after it commits; a store that
+  does not push, and a lost notification, fall back to the poll
+  (`with_halt_poll_interval`, one second by default). A `CancelTask` on a
+  replica that does not run the task is pushed the same way to the one that
+  does, whose executor's token fires; streams open there end without the
+  `Canceled` frame, and a `GetTask` reads `canceled`. Use `PostgresHaltStore` across replicas and
   `SqliteHaltStore` for one process. A halt the store cannot take still
   holds where it was given (`HaltReport::persisted` is `Some(false)`) and
   is written again on every poll; a resume it cannot take lifts nothing

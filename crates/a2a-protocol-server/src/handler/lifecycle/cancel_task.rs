@@ -67,13 +67,17 @@ impl RequestHandler {
                         return Err(ServerError::TaskNotCancelable(task_id));
                     }
 
-                    // Signal the cancellation token so the executor can observe the cancellation.
-                    {
+                    // Signal the cancellation token so the executor can observe the
+                    // cancellation. Without one here the task runs on another
+                    // replica, or nowhere; it is told below, once the store says
+                    // `Canceled` (ADR 0024).
+                    let runs_here = {
                         let tokens = self.cancellation_tokens.read().await;
-                        if let Some(entry) = tokens.get(&task_id) {
-                            entry.token.cancel();
-                        }
-                    }
+                        tokens
+                            .get(&task_id)
+                            .map(|entry| entry.token.cancel())
+                            .is_some()
+                    };
 
                     #[cfg(feature = "audit")]
                     if let Some(log) = &self.audit {
@@ -159,6 +163,9 @@ impl RequestHandler {
                             Some(_) => ServerError::TaskNotCancelable(task_id),
                             None => e.into(),
                         });
+                    }
+                    if !runs_here {
+                        self.publish_cancel(&task_id).await;
                     }
                     // Re-read to return the authoritative final state.
                     let final_task = self
