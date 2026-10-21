@@ -37,8 +37,8 @@
 //! [`start_budgeted`](Delegation::start_budgeted) sends the child a budget
 //! carved out of the parent's (`a2a_protocol_types::budget`, ADR 0023): a
 //! deadline inside the parent's and meters reserved from it. When the child
-//! settles, the parent is charged what the child reported spending instead
-//! of the reservation; a handle detached or dropped refunds nothing.
+//! settles on a status update that reports its spend, the parent is charged
+//! that instead of the reservation; every other ending refunds nothing.
 //!
 //! ```rust,no_run
 //! use std::sync::Arc;
@@ -70,6 +70,9 @@ use a2a_protocol_types::{Message, MessageSendParams, StreamResponse, TaskState, 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
+
+mod renewal;
+use renewal::Renewal;
 
 /// How long a cancel waits for the child's id, when it is asked for before
 /// the first event named the child.
@@ -155,54 +158,9 @@ pub struct Delegation {
     /// Renews the child's lease, when it was granted one; stops when this is
     /// dropped.
     renewal: Option<Renewal>,
-    /// The child's budget, settled against its last report when it settles.
+    /// The child's budget, and the report the event that settled the child
+    /// carried, if it carried one.
     budget: Option<(ChildGrant, Option<BudgetStatus>)>,
-}
-
-/// The task renewing a child's lease, aborted when this is dropped.
-#[derive(Debug)]
-struct Renewal {
-    /// The child's id, once an event names it.
-    id: Arc<std::sync::Mutex<Option<String>>>,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl Renewal {
-    /// Renews the child's lease every third of `ttl`, once an event has
-    /// named the child, until the child is terminal or this is dropped.
-    fn spawn(client: Arc<A2aClient>, tenant: Option<String>, ttl: Duration) -> Self {
-        let id = Arc::new(std::sync::Mutex::new(None::<String>));
-        let slot = Arc::clone(&id);
-        let task = tokio::spawn(async move {
-            let every = ttl / 3;
-            loop {
-                tokio::time::sleep(every).await;
-                let known = slot
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone();
-                let Some(id) = known else { continue };
-                let mut query = a2a_protocol_types::TaskQueryParams::new(id);
-                query.tenant.clone_from(&tenant);
-                match client.renew_lease(query).await {
-                    Ok(task) if task.status.state.is_terminal() => return,
-                    Ok(_) => {}
-                    // Missed renewals are what the lease is for; a later one
-                    // may land.
-                    Err(_e) => {
-                        trace_debug!(error = %_e, "lease renewal failed");
-                    }
-                }
-            }
-        });
-        Self { id, task }
-    }
-}
-
-impl Drop for Renewal {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
 }
 
 impl Delegation {
@@ -256,17 +214,21 @@ impl Delegation {
     /// parent's by `BudgetHandle::grant`, and a lease of `lease` as
     /// [`start_leased`](Self::start_leased) grants one when it is `Some`.
     ///
-    /// When the child settles, is cancelled or its stream is lost, the
-    /// grant is settled with the last budget the child reported on a status
-    /// update: the parent is charged that instead of the reservation. A
-    /// child that reported none, or a handle detached or dropped, refunds
-    /// nothing. An agent that does not implement the extension ignores the
-    /// budget and reports none.
+    /// When the handle ends, the grant is settled. If the status update
+    /// that settled the child (terminal or interrupted) carried a budget
+    /// report, the parent is charged that spend instead of the reservation.
+    /// Any other ending (a lost stream, a cancel answered by `CancelTask`,
+    /// an unreachable child), a report-less update, or a handle detached or
+    /// dropped keeps the whole reservation as spent. An agent that does not
+    /// implement the extension reports nothing.
     ///
     /// # Errors
     ///
-    /// As [`start`](Self::start). No child was started then, and the whole
-    /// reservation is returned to the parent.
+    /// As [`start`](Self::start). The reservation is returned only when the
+    /// error shows the agent refused the request, so no child exists: an
+    /// A2A error, an HTTP error status, or an authentication challenge.
+    /// After a transport error or a timeout a child may be running, and the
+    /// reservation is kept.
     pub async fn start_budgeted(
         client: Arc<A2aClient>,
         mut params: MessageSendParams,
@@ -281,7 +243,9 @@ impl Delegation {
         let mut this = match Self::start(Arc::clone(&client), params).await {
             Ok(this) => this,
             Err(e) => {
-                grant.release();
+                if refused(&e) {
+                    grant.release();
+                }
                 return Err(e);
             }
         };
@@ -326,6 +290,7 @@ impl Delegation {
     }
 
     fn observe(&mut self, ev: &StreamResponse) {
+        let mut report = None;
         if let (None, Some(id), Some(renewal)) = (&self.task_id, task_id_of(ev), &self.renewal) {
             *renewal
                 .id
@@ -339,12 +304,7 @@ impl Delegation {
             }
             StreamResponse::StatusUpdate(u) => {
                 self.task_id.get_or_insert_with(|| u.task_id.to_string());
-                if let (Some((_, last)), Ok(Some(report))) = (
-                    self.budget.as_mut(),
-                    BudgetStatus::read_from(u.metadata.as_ref()),
-                ) {
-                    *last = Some(report);
-                }
+                report = BudgetStatus::read_from(u.metadata.as_ref()).ok().flatten();
                 &u.status
             }
             StreamResponse::Message(m) => {
@@ -358,6 +318,14 @@ impl Delegation {
         };
         if self.settled.is_none() {
             self.settled = Outcome::of(status.clone());
+            // Only the report on the event that settled the child is its
+            // whole spend; an earlier one is not, and settling with it would
+            // refund what the child spent afterwards.
+            if self.settled.is_some()
+                && let Some((_, last)) = self.budget.as_mut()
+            {
+                *last = report;
+            }
         }
     }
 
@@ -438,6 +406,18 @@ impl Delegation {
             outcome,
         }
     }
+}
+
+/// Whether `e` shows the agent answered and refused, so that no child was
+/// created. Anything else may have reached the agent.
+const fn refused(e: &ClientError) -> bool {
+    matches!(
+        e,
+        ClientError::Protocol(_)
+            | ClientError::UnexpectedStatus { .. }
+            | ClientError::AuthRequired { .. }
+            | ClientError::InvalidEndpoint(_)
+    )
 }
 
 /// The task id an event names, if it names one.

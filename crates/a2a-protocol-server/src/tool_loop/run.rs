@@ -310,10 +310,18 @@ impl ToolLoop {
     }
 }
 
-/// [`LoopError::Budget`] once `budget`'s deadline has passed.
+/// [`LoopError::Budget`] once `budget`'s deadline has passed or its
+/// [`TOKENS_METER`] has nothing left: a turn would only overdraw it.
 fn out_of_time(budget: Option<&BudgetHandle>) -> Result<(), LoopError> {
-    if budget.and_then(BudgetHandle::remaining_time) == Some(std::time::Duration::ZERO) {
+    let Some(budget) = budget else { return Ok(()) };
+    if budget.remaining_time() == Some(std::time::Duration::ZERO) {
         return Err(LoopError::Budget(Exhausted::Time));
+    }
+    if budget.remaining(TOKENS_METER) == Some(0) {
+        return Err(LoopError::Budget(Exhausted::Meter {
+            name: TOKENS_METER.to_owned(),
+            overdraft: 0,
+        }));
     }
     Ok(())
 }

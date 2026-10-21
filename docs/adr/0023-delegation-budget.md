@@ -61,7 +61,9 @@ Option 2.
     the turn as `budget-exhausted` without running the executor. A zero
     timeout is not used for that, because tokio polls the future once
     before it checks the deadline.
-  - The deadline is the receipt time plus `remainingMs`. The turn's executor
+  - The deadline is the receipt time plus `remainingMs`, receipt being when
+    the handler built the call's context, before interceptors, the
+    per-context lock and any wait for a parked turn. The turn's executor
     timeout becomes `min(handler or tenant timeout, time to the deadline)`.
   - A turn stopped by the inherited deadline ends `failed`, with failure
     class `budget-exhausted`. That separates it from a lease lapse
@@ -75,7 +77,7 @@ Option 2.
   - `remaining_time()` and `remaining(meter)` are the "how much more can I
     spend" signal.
   - `charge(meter, amount)` records real spend. It saturates at zero and
-    returns `Err(BudgetExhausted)` once the meter is overdrawn, with the
+    returns `Err(Exhausted::Meter)` once the meter is overdrawn, with the
     overdraft recorded. Spend that already happened is never refused,
     because refusing it would lose the record.
   - A meter the budget does not name is unlimited, and charging it is a
@@ -99,12 +101,19 @@ Option 2.
     without the server depending on the client. Its atomics use a
     compare-exchange loop: `fetch_update` is deprecated on current
     toolchains, and its replacement is newer than the MSRV.
-  - A grant when no time is left, or for an exhausted meter, is
-    `Err(BudgetExhausted)`, and no child is started.
-  - `Delegation::start_budgeted` attaches the grant. When the child settles,
-    the parent is refunded the unspent part, granted minus spent. If the
-    child reports no spend, nothing is refunded, which is the conservative
-    direction.
+  - A grant with less than a millisecond left, or naming a meter with a
+    non-zero amount that is exhausted, is `Err(Exhausted)`, and no child is
+    started. A request naming no meter succeeds on an exhausted budget and
+    grants its meters as 0. A child is never granted more than 16 meters:
+    the request's pass-through meters beyond that are left out.
+  - `Delegation::start_budgeted` attaches the grant. When the status update
+    that settles the child (terminal or interrupted) reports its spend, the
+    parent is charged that in place of the reservation. Every other ending
+    keeps the whole reservation as spent, the conservative direction: a
+    lost stream, a cancel answered by `CancelTask` (whose `Canceled` update
+    carries no report), an unreachable child, a detached or dropped handle.
+    A failed start returns the reservation only when the agent's answer
+    shows it refused the send; after a transport error a child may run.
 - **Reporting spend.** On every status update of the turn, the server
   writes `{"remainingMs", "meters", "spent"}` under `a2a-rust.com/budget`
   in the update's `metadata`. A streaming caller, a push receiver or a
@@ -114,8 +123,9 @@ Option 2.
   into the task, and changing that would change the store contract. A
   `GetTask` poller does not see the figure.
 - **Tool loop.** When the context has a budget, `ToolLoop` charges the
-  `tokens` meter with each model reply's reported usage and stops with
-  `budget-exhausted` when it is spent. It also stops at the deadline. A
+  `tokens` meter with each model reply's reported usage, starts no turn
+  once the meter is at zero, and stops with `budget-exhausted` when it is
+  spent or overdrawn. It also stops at the deadline. A
   model that reports no usage charges nothing, and the docs say so.
 
 ## Consequences
@@ -128,6 +138,12 @@ Option 2.
   - A peer that does not implement the extension ignores the budget, as
     with the lease.
   - Units mean only what the agents agree on.
+  - The server stamps each status update with its own turn's figures, so
+    an agent that forwards a child's status updates through its own writer
+    reports its own budget, not the child's. A parent that forwards its
+    inbound message to a child with plain `Delegation::start` passes the
+    original `remainingMs` on unchanged; `start_budgeted` with a grant is
+    the way to delegate within a budget.
   - A child that under-reports its spend gets a larger refund. Accounting
     is only as honest as the child, so a parent that cannot trust its child
     should not rely on refunds.
@@ -140,7 +156,9 @@ Option 2.
   - lock-free charging under concurrent charges;
   - reservation across ten children;
   - the refund on settle;
-  - the remaining figure on the task;
+  - the remaining figure on each status update;
+  - settling only from the settling update's report (a cancelled child keeps
+    the reservation);
   - the tool loop stopping on tokens;
   - a two-hop end-to-end run in which the grandchild's deadline is inside
     the parent's.

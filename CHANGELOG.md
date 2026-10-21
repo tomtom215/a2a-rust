@@ -392,8 +392,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ten children cannot each be given the whole. Each status update carries
   what is left and spent (`BudgetStatus`). `Delegation::start_budgeted`
   sends a grant and, when the child settles, charges the parent what the
-  child reported spending in place of the reservation; a failed start
-  returns the reservation. `ToolLoop::run_within` (and `ToolLoopExecutor`)
+  child reported spending on the update that settled it in place of the
+  reservation, and keeps the whole reservation on any other ending; a start
+  the agent refused returns it. `ToolLoop::run_within` (and `ToolLoopExecutor`)
   charges each reply's reported usage to the `tokens` meter and stops once
   it is spent. A wire contract test pins the shape
   (`tests/golden/uri_contracts/budget.json`), and

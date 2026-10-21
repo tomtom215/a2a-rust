@@ -95,6 +95,38 @@ async fn unreported_usage_or_no_tokens_meter_charges_nothing() {
     );
 }
 
+/// A meter spent exactly is spent: no further turn is asked for.
+#[tokio::test]
+async fn no_turn_starts_with_no_tokens_left() {
+    let (status, _) = status_tool();
+    let reply = costing(
+        calls(vec![call(
+            "c",
+            "service_status",
+            r#"{"service":"checkout"}"#,
+        )]),
+        30,
+        20,
+    );
+    let (model, seen) = Scripted::forever(reply.unwrap());
+    let budget = tokens(50);
+    let err = run_in(&ToolLoop::new(model, tools(vec![status])), &budget)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        LoopError::Budget(Exhausted::Meter {
+            name: TOKENS_METER.to_owned(),
+            overdraft: 0
+        })
+    );
+    assert_eq!(
+        seen.lock().unwrap().len(),
+        1,
+        "one turn spent it; none overdrew it"
+    );
+}
+
 /// No turn starts once the deadline has passed.
 #[tokio::test]
 async fn no_turn_starts_past_the_deadline() {

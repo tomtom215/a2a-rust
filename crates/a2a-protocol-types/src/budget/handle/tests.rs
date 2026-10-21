@@ -220,6 +220,34 @@ fn settling_refunds_the_unspent_part() {
 }
 
 #[test]
+fn under_a_millisecond_is_refused_here() {
+    let parent = BudgetHandle::start(&Budget::new().with_time(Duration::from_secs(10)));
+    let tiny = Budget::new().with_time(Duration::from_micros(600));
+    assert_eq!(parent.grant(&tiny).unwrap_err(), Exhausted::Time);
+    let no_deadline = BudgetHandle::start(&tokens(5));
+    assert_eq!(no_deadline.grant(&tiny).unwrap_err(), Exhausted::Time);
+}
+
+#[test]
+fn a_grant_never_names_more_than_the_child_accepts() {
+    let mut parent_budget = Budget::new();
+    for i in 0..10 {
+        parent_budget = parent_budget.with_meter(format!("p{i}"), 5).unwrap();
+    }
+    let mut request = Budget::new();
+    for i in 0..10 {
+        request = request.with_meter(format!("r{i}"), 1).unwrap();
+    }
+    let g = BudgetHandle::start(&parent_budget).grant(&request).unwrap();
+    assert_eq!(g.budget().meters.len(), super::super::MAX_METERS);
+    assert!(g.budget().validate().is_ok());
+    assert!(
+        (0..10).all(|i| g.budget().meters.contains_key(&format!("p{i}"))),
+        "the parent's are kept"
+    );
+}
+
+#[test]
 fn releasing_returns_the_whole_reservation() {
     let parent = BudgetHandle::start(&tokens(1000));
     let g = parent.grant(&tokens(400)).unwrap();

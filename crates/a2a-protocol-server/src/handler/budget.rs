@@ -14,11 +14,12 @@
 //! deadline ends `failed` with failure class `budget-exhausted`. Each status
 //! update the turn writes carries what is left and spent.
 //!
-//! The account starts when the send is admitted, not when its bytes were
-//! read; the difference, the handler's admission time, is time the caller
-//! granted that the child gets on top.
+//! The account is timed from when the request arrived
+//! ([`CallContext::received_at`](crate::CallContext::received_at)), before
+//! interceptors, the per-context lock and any wait for a parked turn, so
+//! those waits count against the caller's deadline.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use a2a_protocol_types::budget::{BUDGET_EXTENSION_URI, Budget, BudgetHandle};
 use a2a_protocol_types::error::A2aError;
@@ -30,14 +31,15 @@ use a2a_protocol_types::message::Message;
 use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 
-/// The budget `message` grants, its account started now; `None` without one.
+/// The budget `message` grants, its account started at `received`; `None`
+/// without one.
 ///
 /// # Errors
 ///
 /// [`ServerError::Protocol`] (invalid params) for a malformed budget, and
 /// [`ServerError::InvalidParams`] for one whose time is already spent:
 /// refused before any work rather than run for no time.
-pub fn requested(message: &Message) -> ServerResult<Option<BudgetHandle>> {
+pub fn requested(message: &Message, received: Instant) -> ServerResult<Option<BudgetHandle>> {
     let Some(budget) = Budget::read(message).map_err(ServerError::Protocol)? else {
         return Ok(None);
     };
@@ -46,7 +48,7 @@ pub fn requested(message: &Message) -> ServerResult<Option<BudgetHandle>> {
             "the budget's deadline has already passed (remainingMs is 0)".to_owned(),
         ));
     }
-    Ok(Some(BudgetHandle::start(&budget)))
+    Ok(Some(BudgetHandle::start_at(&budget, received)))
 }
 
 /// The extensions every card declares, whatever the handler is built with:

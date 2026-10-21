@@ -195,13 +195,16 @@ impl BudgetHandle {
     ///   once, so many children cannot each be given the whole. One the
     ///   request does not name goes as 0: a child cannot spend outside this
     ///   budget by omission. One only the request names passes through, as
-    ///   this budget does not limit it.
+    ///   this budget does not limit it, while the child has fewer than
+    ///   [`MAX_METERS`](super::MAX_METERS); beyond that it is left out,
+    ///   since a child's server refuses more.
     ///
     /// # Errors
     ///
-    /// [`Exhausted`] when no time is left after the reserve, or a meter the
-    /// request names (with a non-zero amount) is empty here. Nothing is
-    /// reserved then.
+    /// [`Exhausted`] when less than a millisecond is left after the reserve
+    /// (or asked for), or a meter the request names with a non-zero amount
+    /// is empty here. Nothing is reserved then. A request that names no
+    /// meter succeeds on an exhausted budget, granting its meters as 0.
     pub fn grant(&self, request: &Budget) -> Result<ChildGrant, Exhausted> {
         let mut child = Budget::new();
         if let Some(left) = self.remaining_time() {
@@ -210,11 +213,16 @@ impl BudgetHandle {
             if let Some(asked) = request.remaining_time() {
                 time = time.min(asked);
             }
-            if time.is_zero() {
+            // Under a millisecond goes out as `remainingMs: 0`, which the
+            // child refuses; refused here instead.
+            if time < Duration::from_millis(1) {
                 return Err(Exhausted::Time);
             }
             child = child.with_time(time);
         } else if let Some(asked) = request.remaining_time() {
+            if asked < Duration::from_millis(1) {
+                return Err(Exhausted::Time);
+            }
             child = child.with_time(asked);
         }
         let mut reserved = BTreeMap::new();
@@ -231,6 +239,9 @@ impl BudgetHandle {
             child.meters.insert(name.clone(), taken);
         }
         for (name, &asked) in &request.meters {
+            if child.meters.len() >= super::MAX_METERS {
+                break;
+            }
             child.meters.entry(name.clone()).or_insert(asked);
         }
         Ok(ChildGrant {

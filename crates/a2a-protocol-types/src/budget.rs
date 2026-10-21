@@ -23,9 +23,10 @@
 //!   `{"remainingMs": <ms>, "meters": {"tokens": 50000}}` in
 //!   `Message.metadata` under `a2a-rust.com/budget`, and the URI in
 //!   `Message.extensions`. Either part may be absent, not both.
-//! * The **status** rides on the task's and each status update's `metadata`
-//!   under the same key: `{"remainingMs", "meters", "spent"}`, so whoever
-//!   watches the task sees what is left and the parent learns what was spent.
+//! * The **status** rides on each status update's `metadata` under the same
+//!   key: `{"remainingMs", "meters", "spent"}`, so whoever watches the stream
+//!   sees what is left and the parent learns what was spent. The stored task
+//!   does not carry it.
 //!
 //! The time is relative, as gRPC's `grpc-timeout` is, so clock skew between
 //! agents does not move it. A meter's unit is whatever the agents agree its

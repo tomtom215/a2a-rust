@@ -379,7 +379,7 @@ code = [
   "crates/a2a-protocol-server/src/handler/halt.rs::RequestHandler::halt",
   "crates/a2a-protocol-server/src/handler/halt.rs::RequestHandler::resume",
   "crates/a2a-protocol-server/src/store/halt/mod.rs::HaltStore",
-  "crates/a2a-protocol-client/src/delegation.rs::Delegation",
+  "crates/a2a-protocol-client/src/delegation/mod.rs::Delegation",
 ]
 tests = [
   "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
@@ -694,7 +694,7 @@ id = "ASI08"
 source = "owasp-asi"
 provision = "ASI08 Cascading Failures"
 requirement = "A failure in one agent or tool does not propagate unchecked through the agents that depend on it."
-sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores. A `Delegation` cancels a task's children on other agents when the task is cancelled, its stream to a child is lost, or its handle is dropped; with a lease (`Delegation::start_leased`, ADR 0020) a child whose parent crashes or goes quiet is stopped by its own server. A budget (ADR 0023) carries the parent's deadline and named meters to the child: every server holds a turn to the caller's deadline, and `BudgetHandle::grant` reserves each meter from the parent, so a deadline cannot be outlived down the chain and a meter cannot be granted twice over."
+sdk = "Per-caller rate limits, per-tenant concurrency limits, an executor timeout, bounded queues and stores. A `Delegation` cancels a task's children on other agents when the task is cancelled, its stream to a child is lost, or its handle is dropped; with a lease (`Delegation::start_leased`, ADR 0020) a child whose parent crashes or goes quiet is stopped by its own server. A budget (ADR 0023) carries the parent's deadline and named meters to the child: every server holds a turn to the caller's deadline, and `BudgetHandle::grant` reserves each meter from the parent and refunds only on the settling report, so a child's deadline sits inside its parent's (timed from receipt) and a meter cannot be granted twice over."
 status = "partial"
 tests = [
   "crates/a2a-protocol-server/src/rate_limit/tests.rs::fast_path_rate_limit_exceeded",

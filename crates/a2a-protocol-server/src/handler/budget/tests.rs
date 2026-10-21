@@ -310,9 +310,29 @@ fn report_writes_only_on_status_updates_and_keeps_other_metadata() {
 
 #[test]
 fn requested_reads_and_starts_the_account() {
-    assert!(requested(&message(None)).unwrap().is_none());
-    let h = requested(&message(Some(serde_json::json!({"meters": {"tokens": 3}}))))
-        .unwrap()
-        .unwrap();
+    assert!(requested(&message(None), Instant::now()).unwrap().is_none());
+    let h = requested(
+        &message(Some(serde_json::json!({"meters": {"tokens": 3}}))),
+        Instant::now(),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(h.remaining("tokens"), Some(3));
+}
+
+/// The deadline runs from when the request arrived, so time it waited
+/// before admission counts against it.
+#[test]
+fn the_deadline_runs_from_receipt() {
+    let arrived = Instant::now()
+        .checked_sub(Duration::from_millis(800))
+        .unwrap();
+    let h = requested(
+        &message(Some(serde_json::json!({"remainingMs": 1000}))),
+        arrived,
+    )
+    .unwrap()
+    .unwrap();
+    let left = h.remaining_time().unwrap();
+    assert!(left <= Duration::from_millis(200), "{left:?}");
 }

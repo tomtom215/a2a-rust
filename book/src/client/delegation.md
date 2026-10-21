@@ -153,9 +153,9 @@ cannot each be given the whole. A meter the request does not name goes to
 the child as 0, so a child cannot spend outside the parent's budget by
 leaving it out. Each status update the child's agent writes carries what is
 left and spent, under `a2a-rust.com/budget` in its `metadata`. When the
-child settles, the parent is charged that spend in place of the
-reservation. A child that reports nothing, or a handle detached or dropped,
-refunds nothing. Pass `Some(ttl)` as the last argument to grant a lease as
+update that settles the child reports its spend, the parent is charged that
+in place of the reservation. Any other ending (a lost stream, a cancel, a
+detached or dropped handle) refunds nothing. Pass `Some(ttl)` as the last argument to grant a lease as
 well.
 
 The SDK's tool loop charges each model reply's reported token usage to the

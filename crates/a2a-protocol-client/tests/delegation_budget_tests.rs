@@ -226,9 +226,47 @@ async fn a_grandchilds_deadline_is_inside_its_parents() {
     assert!(took < Duration::from_secs(4), "{took:?}");
 }
 
-/// A send that fails starts no child, and the reservation comes back.
+/// An agent that refuses the send (here, halted) starts no child, and the
+/// reservation comes back.
 #[tokio::test]
-async fn a_failed_start_returns_the_reservation() {
+async fn a_refused_start_returns_the_reservation() {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(Leaf {
+            seen: Arc::default(),
+            spend: 0,
+            sleep: false,
+        })
+        .without_agent_card()
+        .build()
+        .expect("handler"),
+    );
+    handler
+        .halt(a2a_protocol_server::HaltScope::All, "oncall", "maintenance")
+        .await;
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        .await
+        .expect("serve");
+    let halted = Arc::new(
+        ClientBuilder::new(format!("http://{addr}"))
+            .build()
+            .expect("client"),
+    );
+    let budget = parent(Duration::from_secs(30), 1000);
+    let grant = budget
+        .grant(&Budget::new().with_meter("tokens", 400).unwrap())
+        .unwrap();
+    assert!(
+        Delegation::start_budgeted(halted, job(), grant, None)
+            .await
+            .is_err()
+    );
+    assert_eq!(budget.remaining("tokens"), Some(1000));
+}
+
+/// A send whose fate is unknown (the connection failed) may have started a
+/// child, so the reservation is kept.
+#[tokio::test]
+async fn an_unknown_start_keeps_the_reservation() {
     let nowhere = Arc::new(
         ClientBuilder::new("http://127.0.0.1:9")
             .build()
@@ -243,5 +281,76 @@ async fn a_failed_start_returns_the_reservation() {
             .await
             .is_err()
     );
-    assert_eq!(budget.remaining("tokens"), Some(1000));
+    assert_eq!(budget.remaining("tokens"), Some(600));
+}
+
+/// The child reports 0 while working, then spends 30 and completes on an
+/// update that reports 30: the parent is charged the settling report's 30.
+#[tokio::test]
+async fn the_settling_reports_spend_is_charged() {
+    let leaf = serve(SpendsAfterWorking).await;
+    let budget = parent(Duration::from_secs(30), 1000);
+    let grant = budget
+        .grant(&Budget::new().with_meter("tokens", 100).unwrap())
+        .unwrap();
+    let child = Delegation::start_budgeted(leaf, job(), grant, None)
+        .await
+        .expect("start");
+    let done = child.wait(std::future::pending()).await;
+    assert!(
+        matches!(done.outcome, Outcome::Completed(_)),
+        "{:?}",
+        done.outcome
+    );
+    assert_eq!(budget.remaining("tokens"), Some(970));
+}
+
+/// A child cancelled by its parent settles from `CancelTask`'s answer,
+/// which carries no report: the parent keeps the whole reservation as spent.
+/// The child's `working` update reported 0 spent; settling with that earlier
+/// report would refund all 100 (the review's stale-report finding).
+#[tokio::test]
+async fn a_cancelled_child_keeps_the_reservation() {
+    let leaf = serve(Leaf {
+        seen: Arc::default(),
+        spend: 0,
+        sleep: true,
+    })
+    .await;
+    let budget = parent(Duration::from_secs(30), 1000);
+    let grant = budget
+        .grant(&Budget::new().with_meter("tokens", 100).unwrap())
+        .unwrap();
+    let mut child = Delegation::start_budgeted(leaf, job(), grant, None)
+        .await
+        .expect("start");
+    // Read up to the `working` update, whose report says 0 spent.
+    loop {
+        let ev = child.next_event().await.expect("an event").expect("ok");
+        if let a2a_protocol_types::StreamResponse::StatusUpdate(u) = &ev
+            && u.status.state == TaskState::Working
+        {
+            assert!(u.metadata.is_some(), "the working update carries a report");
+            break;
+        }
+    }
+    let _ = child.cancel().await;
+    assert_eq!(budget.remaining("tokens"), Some(900));
+}
+
+/// Writes `working` (its report then says 0 spent), charges 30 tokens, and
+/// completes (its report then says 30).
+struct SpendsAfterWorking;
+
+impl AgentExecutor for SpendsAfterWorking {
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Fut<'a> {
+        Box::pin(async move {
+            let emit = EventEmitter::new(ctx, queue);
+            emit.status(TaskState::Working).await?;
+            if let Some(b) = ctx.budget() {
+                let _ = b.charge("tokens", 30);
+            }
+            emit.status(TaskState::Completed).await
+        })
+    }
 }

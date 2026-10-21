@@ -354,7 +354,7 @@ impl RequestHandler {
             // A lease and a budget are checked before any work; the lease is
             // stored once the turn has its token (`lease`, `budget`).
             let lease = self.requested_lease(&params.message)?;
-            let budget = super::budget::requested(&params.message)?;
+            let budget = super::budget::requested(&params.message, call_ctx.received_at())?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;
