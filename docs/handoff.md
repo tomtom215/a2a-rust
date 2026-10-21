@@ -33,6 +33,18 @@ only: when something here is done, delete it rather than annotating it.
   timeout cutting a blocking request still being answered
   (`serve::graceful::idle::Serving`); the dependency refresh (genai 0.7,
   tokio 1.54, no `deny.toml` waiver left at the root).
+- **Encryption, verified three ways (2026-10-21):** the sealed formats
+  read by Python's `cryptography` in both directions
+  (`scripts/crypto_interop/check.py`, `tests/crypto_interop.rs`, a CI
+  step); 37 NIST CAVP AES-256-GCM cases (the zip's SHA-256 and every case
+  re-checked against the download, and every case re-decrypted
+  independently); four fuzz targets on the unseal parsers, 600 s each, which
+  found that a keyed audit digest accepted uppercase hex (fixed); and a
+  mutation sweep of the crypto modules (210 mutants, the 2 missed rewritten
+  so they are killed). `book/src/deployment/security.md`, "How this is
+  verified".
+- **Built on this branch (2026-10-21):** ADR 0024's pushed halts and
+  cancels (`store/halt/postgres.rs`, `handler/halt/sync.rs`).
 - **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in
   `docs/swarm-orchestration.md`: `a2a_protocol_types::budget` (`Budget`,
   `BudgetStatus`, `BudgetHandle`), every server holding a turn to the
@@ -175,6 +187,23 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   snapshot and the attach point if the log cannot cover them, with no
   `streamLagged` (independent review, 2026-10-20, finding 6): rarer now,
   not closed.
+- **AES-GCM nonce budget is per process** (encryption verification,
+  2026-10-21, medium, design). The 2^32-seal limit per key is counted per
+  process and resets on restart, so R replicas can seal R × 2^32 under one
+  key: a repeat probability R² times the NIST target (R = 10: 1.2e-8). The
+  proposed fix seals each value under an HKDF-derived key with a random
+  salt, marked by a leading `0x00` byte no current value can start with;
+  it is a format change that needs a two-step rollout (readers first,
+  then writers behind a flag), so it waits. The book tells deployers to
+  give each replica its share of the limit meanwhile.
+- **An intermittent test:** `push_delivery::tests::log_redaction::
+  a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` misses
+  its timeout warning about once in 20 parallel runs of `--lib -- audit
+  store::encrypted push` (2 of 40, 2026-10-21; never alone, 0 of 6). The
+  event is emitted (the timeout path's result is asserted) but not
+  captured. `rebuild_interest_cache` after the install and again before
+  the second delivery did not stop it (still 2 of 40), so the callsite
+  cache is not the whole cause. Not skipped; cause unknown.
 - **Tool loop:** spans record no content, because the handler's
   content-capture setting does not reach an executor; a `Failed` status
   carries up to 512 bytes of the provider's error body to the A2A caller;
