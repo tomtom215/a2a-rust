@@ -136,9 +136,14 @@ let store = EncryptedTaskStore::new(InMemoryTaskStore::new(), ring.into_arc());
 nonce per value; one key seals and every key in the ring opens. NIST SP
 800-38D §8.3 bounds a key used with random nonces to 2^32 seals, counted
 across every process holding the key and every push config sealed with the
-ring. Every write seals every part of the task, so an artifact streamed in
-`n` chunks costs about `n²/2` seals. `seal_count()` reports this process's
-count; rotate the active key well before the total nears the bound. To keep
+ring. A write seals the parts it stores, so an artifact streamed in `n`
+chunks costs `n` seals on the shipped stores (about `n²/2` before
+2026-10-18). `seal_count()` reports this process's count, and a seal past
+`with_seal_limit` (2^32 by default) fails. That count starts at zero in every
+process and after every restart, so with `R` replicas holding one key the
+default lets them seal `R` times the bound between them: set each one's
+limit to its share, and rotate the active key well before the total nears
+the bound. To keep
 keys in a key-management service instead, implement `ContentCipher`. The
 same ring is a `PushConfigCipher`, so the SQL push-config stores can share
 it.
@@ -164,9 +169,32 @@ replay included, so keep every key that sealed a stored value in the ring
 for as long as the value is stored. A store holding data from before the
 wrapper was installed is refused until `accept_unsealed_parts()` is set;
 while it is, an unsealed part planted in the store is read as genuine, so
-remove it once every record has been rewritten. Sealing every part on every
-write costs time in proportion to the task's size; this has not been
-measured.
+remove it once every record has been rewritten. `save` and
+`save_appending_history` still seal every part of the task, so they cost
+time in proportion to its size.
+
+### How this is verified
+
+* **Against another implementation.** `scripts/crypto_interop/check.py`
+  (CI) states the byte layout of every sealed form (the cipher's value, a
+  sealed part, a sealed push config, the audit log's wrapped keys, sealed
+  values and keyed digests) and decrypts what the SDK wrote, checked in as
+  `tests/fixtures/crypto/rust_sealed.json`, with Python's `cryptography`;
+  `tests/crypto_interop.rs` opens what that script sealed with its own
+  nonces through the SDK's ordinary read paths. This shows the formats are
+  standard AES-256-GCM, HKDF-SHA-256 and HMAC-SHA-256 over the stated
+  associated data; it says nothing about nonce uniqueness or key handling.
+* **Against NIST.** `tests/crypto_nist_gcm.rs` runs 37 AES-256-GCM cases
+  from NIST CAVP (`gcmEncryptExtIV256.rsp`, `gcmDecrypt256.rsp`; 96-bit IV,
+  128-bit tag, six that must fail) through the cipher's open path and the
+  `ring` calls its seal makes.
+* **Fuzzing.** `sealed_ring_value`, `sealed_part`, `sealed_push_config` and
+  `sealed_audit_value` (`fuzz/`) feed what a store holds to each reader:
+  nothing may panic, nothing unsealed may open, and a sealed value changed
+  in any way must be refused.
+* **Mutation testing** of the cipher, sealing and audit-privacy modules
+  (2026-10-21: 210 mutants, none missed once two equivalent spellings were
+  rewritten), alongside the weekly sweep of the whole crate.
 
 ## Input handling
 

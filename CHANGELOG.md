@@ -2796,6 +2796,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the affected versions to a downstream build that resolves its own.
   `check_advisory_floors.py` found it.
 
+- **A keyed audit digest has one spelling** (server, `audit` and
+  `encryption`). `AuditLog::digest_matches` decoded the hex of a stored
+  `hmac-sha256:<kid>:<hex>` with `u8::from_str_radix`, which also takes
+  uppercase digits and a leading `+`, so a record whose digest had a digit
+  uppercased (or `0f` written `+f`) still matched. Nothing could be forged
+  this way, since the tag bytes compared were the same, but a changed record
+  matched. It now takes lowercase digits only, which is all the SDK writes.
+  Found by the new `sealed_audit_value` fuzz target. Test:
+  `hex_round_trips_and_refuses_what_is_not_hex`.
 - **A control character in a client's id is refused** (server; spec §14
   "MUST sanitize user-provided content"). `validate_id` refused only empty
   and over-long ids, so `"a\r\nb"` as a message, context, task or reference
@@ -2996,6 +3005,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **What the SDK seals at rest is checked four ways** (server, `encryption`).
+  Against another implementation: `scripts/crypto_interop/check.py` (CI,
+  `ci.yml`, from a hash-locked `cryptography`) states the byte layout and
+  associated data of every sealed form (the `Aes256GcmCipher` value, a
+  sealed part in a record and in the log, a sealed push config, the audit
+  log's wrapped subject keys, sealed values and keyed digests) and decrypts
+  the 21 values the SDK wrote into `tests/fixtures/crypto/rust_sealed.json`;
+  `tests/crypto_interop.rs` opens the 22 the script sealed with its own
+  nonces through `EncryptedTaskStore`, the SQLite push-config store and
+  `AuditLog::reveal`. Against NIST: `tests/crypto_nist_gcm.rs` runs 37 CAVP
+  AES-256-GCM cases (`gcmEncryptExtIV256.rsp`, `gcmDecrypt256.rsp`, quoted
+  with their source and hashes) through the cipher's open path and the
+  `ring` calls its seal makes. Fuzzing: four targets (`sealed_ring_value`,
+  `sealed_part`, `sealed_push_config`, `sealed_audit_value`) feed what a
+  store holds to each reader; ten minutes each, 0.7 to 2.1 million runs, one
+  finding (Security, "A keyed audit digest has one spelling"). Mutation
+  testing of `cipher.rs`, `seal.rs`, `push/cipher.rs` and `audit/privacy/`:
+  210 mutants, 2 missed, both equivalent as written and both removed by
+  rewriting the expression (an `Aes256GcmCipher` value too short for its tag
+  is now refused before the cipher is asked).
 - **Each extension and binding URI this SDK defines is pinned to its wire
   contract** (spec §4.6.3: "A new URI MUST be created for breaking changes to
   an extension"; §5.8, the same for a binding). `uri_contracts` (types)
