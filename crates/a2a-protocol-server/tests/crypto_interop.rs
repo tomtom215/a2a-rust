@@ -227,11 +227,14 @@ async fn a_fresh_value_is_the_stated_layout() {
 /// once, when the stored format changes on purpose:
 /// `A2A_CRYPTO_FIXTURES_OUT=crates/a2a-protocol-server/tests/fixtures/crypto/rust_sealed.json
 /// cargo test -p a2a-protocol-server --features encryption,audit,sqlite --test crypto_interop
-/// -- --ignored generate`.
+/// -- --ignored generate`. Without the variable it does nothing, so a run of
+/// every ignored test (the mutation sweep's `--run-ignored all`) passes it.
 #[tokio::test]
 #[ignore = "writes the fixture; run by hand"]
 async fn generate() {
-    let out = std::env::var("A2A_CRYPTO_FIXTURES_OUT").expect("A2A_CRYPTO_FIXTURES_OUT");
+    let Ok(out) = std::env::var("A2A_CRYPTO_FIXTURES_OUT") else {
+        return;
+    };
     let fx = fixtures::generate().await;
     let text = serde_json::to_string_pretty(&fx).expect("json") + "\n";
     std::fs::write(out, text).expect("write");
