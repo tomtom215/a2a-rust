@@ -248,7 +248,7 @@ mod tests {
     fn forwards_the_audit_log() {
         let fx = audit_fixture().expect("fixture");
         let (record, erased) = audit_reveal(&fx.keys, &fx.record).expect("reveals");
-        assert!(erased.is_empty());
+        assert_eq!(erased, Vec::<String>::new());
         assert_eq!(record.actor.expect("actor").subject, "alice");
         assert_eq!(
             record.detail["actors"],
