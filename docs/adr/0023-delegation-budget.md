@@ -86,6 +86,15 @@ Option 2.
   - Each meter is the smaller of the amount requested and the amount left,
     and it is *reserved*, which means deducted from the parent at grant
     time. Ten children cannot each be given the whole.
+  - A parent's meter that the request does not name goes to the child as
+    0, so a child cannot spend outside the parent's budget by omission. A
+    meter only the request names passes through, because the parent does
+    not limit it.
+  - `BudgetHandle` lives in `a2a_protocol_types::budget`, so the server's
+    `RequestContext` and the client's `Delegation` share one account
+    without the server depending on the client. Its atomics use a
+    compare-exchange loop: `fetch_update` is deprecated on current
+    toolchains, and its replacement is newer than the MSRV.
   - A grant when no time is left, or for an exhausted meter, is
     `Err(BudgetExhausted)`, and no child is started.
   - `Delegation::start_budgeted` attaches the grant. When the child settles,

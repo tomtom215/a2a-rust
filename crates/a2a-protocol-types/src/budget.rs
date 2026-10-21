@@ -53,6 +53,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{A2aError, A2aResult};
 use crate::message::Message;
 
+mod handle;
+pub use handle::{BudgetHandle, ChildGrant, Exhausted, MAX_GRANT_RESERVE, MIN_GRANT_RESERVE};
+
 /// The extension URI a card declares and a message names in `extensions`.
 pub const BUDGET_EXTENSION_URI: &str = "https://a2a-rust.com/extensions/budget/v1";
 
