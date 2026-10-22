@@ -372,6 +372,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **The server signs what it serves** (server, feature `signing`; ADR
+  0027). `RequestHandlerBuilder::with_content_signer` signs every agent
+  message and artifact on a stream, a push, and in what `SendMessage`,
+  `GetTask`, `ListTasks`, `CancelTask` and `SubscribeToTask` return, over
+  exactly what is sent; content already signed is passed on as it is. The
+  queue writer now refuses an event whose provenance value is malformed.
+  `with_content_keys` verifies each message sent to the agent, refusing one
+  whose signature fails with `InvalidParams`; the executor reads the result
+  from `RequestContext::content_check` (`ContentCheck`), and
+  `require_signed_content` refuses unsigned messages too.
+- **The client verifies what it receives** (client, feature `signing`; ADR
+  0027). `ClientBuilder::with_content_keys` checks every artifact and agent
+  message in streams and in what `send_message`, `get_task`, `list_tasks`
+  and `cancel_task` return; one whose signature fails ends the call or the
+  stream with the new `ClientError::ContentNotVerified`.
+  `require_signed_content` refuses unsigned content too.
 - **Delegation keys its sends** (client; ADR 0026). `Delegation::start`,
   and so `start_leased` and `start_budgeted`, gives the child's message a
   fresh idempotency key (64 hex digits from two version-4 UUIDs) when it
@@ -381,8 +397,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the extension (or the builder was told it does).
 - **A production profile that refuses to start** (server; ADR 0025).
   `Profile::Production` makes `build()` refuse a handler with no
-  authenticating interceptor, no halt store or no lease store, naming the
-  call that supplies each. `ServeConfig::production()` makes
+  authenticating interceptor, no halt store, no lease store or no content
+  signer (ADR 0027; feature `signing`), naming the call that supplies each. `ServeConfig::production()` makes
   `Server::serve_with_shutdown` return at once, accepting nothing, when it
   would serve plaintext beyond loopback (unless
   `with_tls_terminated_in_front()`) or a binding the agent card does not

@@ -741,6 +741,8 @@ pub struct InMemoryQueueReader {
     /// Consulted once, when the stream reaches its terminal state, just
     /// before it closes; see [`Self::with_final_snapshot`].
     final_snapshot: Option<FinalSnapshotFn>,
+    /// Signs each frame's content as it is read (ADR 0027).
+    outbound: crate::provenance::Outbound,
     /// The final-snapshot hook's answer while it is awaited, kept here for
     /// the same cancel-safety reason as `reattaching`.
     snapshotting: std::sync::Mutex<Option<FinalSnapshotFuture>>,
@@ -1082,6 +1084,7 @@ impl InMemoryQueueReader {
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
+            outbound: crate::provenance::Outbound::default(),
             replayed_through: 0,
             provisional: None,
             finished: false,
@@ -1165,6 +1168,7 @@ impl InMemoryQueueReader {
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
+            outbound: crate::provenance::Outbound::default(),
             replayed_through: 0,
             provisional: None,
             finished: false,
@@ -1195,6 +1199,7 @@ impl InMemoryQueueReader {
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
+            outbound: crate::provenance::Outbound::default(),
             replayed_through: 0,
             provisional: None,
             finished: false,
@@ -1225,7 +1230,12 @@ impl EventQueueReader for InMemoryQueueReader {
         &mut self,
     ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamEvent>>> + Send + '_>> {
         Box::pin(async move {
-            let next = self.next_frame().await;
+            let mut next = self.next_frame().await;
+            if let Some(Ok(frame)) = &mut next
+                && let Err(e) = self.outbound.sign_event(&mut frame.event)
+            {
+                next = Some(Err(e));
+            }
             // After every read rather than at each place the mark moves: a
             // read dropped midway leaves the hold lower, which only keeps an
             // event longer. A stream that has ended owes nothing.
@@ -1240,6 +1250,15 @@ impl EventQueueReader for InMemoryQueueReader {
 }
 
 impl InMemoryQueueReader {
+    /// Signs each frame's content as it is read (ADR 0027).
+    #[must_use]
+    // Without `signing`, `Outbound` is empty and this could be `const`.
+    #[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+    pub(crate) fn with_outbound(mut self, outbound: crate::provenance::Outbound) -> Self {
+        self.outbound = outbound;
+        self
+    }
+
     /// The next frame for [`EventQueueReader::read`].
     async fn next_frame(&mut self) -> Option<A2aResult<StreamEvent>> {
         if self.finished {

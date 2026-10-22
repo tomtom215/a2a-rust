@@ -94,7 +94,8 @@ impl ClientBuilder {
         Ok(A2aClient::new(transport, self.interceptors, self.config)
             .with_peer(peer)
             .with_declared(self.declared)
-            .with_peer_honouring_idempotency(self.peer_honours_idempotency))
+            .with_peer_honouring_idempotency(self.peer_honours_idempotency)
+            .with_content_keys(self.content))
     }
 
     /// Checks what [`ClientBuilder::with_extensions`] asks for and adds the
@@ -243,7 +244,8 @@ impl ClientBuilder {
         Ok(A2aClient::new(transport, self.interceptors, self.config)
             .with_peer(peer)
             .with_declared(self.declared)
-            .with_peer_honouring_idempotency(self.peer_honours_idempotency))
+            .with_peer_honouring_idempotency(self.peer_honours_idempotency)
+            .with_content_keys(self.content))
     }
 }
 

@@ -15,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::call_context::CallContext;
 
+pub use crate::content_check::ContentCheck;
+
 /// Context for a single agent execution request.
 ///
 /// Built by the [`RequestHandler`](crate::RequestHandler) and passed to
@@ -81,6 +83,9 @@ pub struct RequestContext {
 
     /// See [`referenced_tasks`](Self::referenced_tasks).
     referenced_tasks: Vec<Task>,
+
+    /// See [`content_check`](Self::content_check).
+    pub(crate) content_check: ContentCheck,
 }
 
 impl RequestContext {
@@ -99,6 +104,7 @@ impl RequestContext {
             budget: None,
             accepted_output_modes: Vec::new(),
             referenced_tasks: Vec::new(),
+            content_check: ContentCheck::NotChecked,
         }
     }
 
@@ -114,6 +120,17 @@ impl RequestContext {
     #[must_use]
     pub fn referenced_tasks(&self) -> &[Task] {
         &self.referenced_tasks
+    }
+
+    /// What the server found when it checked the message's provenance
+    /// signature (ADR 0027): [`ContentCheck::NotChecked`] unless the handler
+    /// has keys (`RequestHandlerBuilder::with_content_keys`, feature
+    /// `signing`). A signature that does not verify is refused before the
+    /// executor runs, so an executor sees only `Verified`, `Unsigned` or
+    /// `NotChecked`.
+    #[must_use]
+    pub const fn content_check(&self) -> &ContentCheck {
+        &self.content_check
     }
 
     /// Sets the resolved referenced tasks; see

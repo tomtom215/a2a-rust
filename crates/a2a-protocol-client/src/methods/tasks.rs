@@ -82,7 +82,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)
+        let task =
+            serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)?;
+        self.content.task(&task)?;
+        Ok(task)
     }
 
     /// Lists tasks visible to the caller.
@@ -111,7 +114,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<TaskListResponse>(resp.result).map_err(ClientError::Serialization)
+        let page = serde_json::from_value::<TaskListResponse>(resp.result)
+            .map_err(ClientError::Serialization)?;
+        self.content.page(&page)?;
+        Ok(page)
     }
 
     /// Requests cancellation of a running task.
@@ -157,7 +163,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)
+        let task =
+            serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)?;
+        self.content.task(&task)?;
+        Ok(task)
     }
 
     /// Subscribes to the SSE stream for an in-progress task.

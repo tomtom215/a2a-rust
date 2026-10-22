@@ -157,10 +157,18 @@ pub fn verify_content<C: Content + Clone>(content: &C, jwks: &Jwks) -> A2aResult
         )));
     }
 
+    // The content as it was signed is the content as received, less the
+    // signature member and nothing else. Rebuilding the provenance from the
+    // typed value instead dropped any member it does not model, and `set`
+    // added the extension URI if it was missing, so both edits verified.
     let mut unsigned = content.clone();
-    let mut bare = provenance.clone();
-    bare.signature = None;
-    set(&mut unsigned, &bare);
+    if let Some(serde_json::Value::Object(p)) = unsigned
+        .metadata_mut()
+        .as_mut()
+        .and_then(|m| m.get_mut(super::PROVENANCE_METADATA_KEY))
+    {
+        p.remove("signature");
+    }
     let input = signing_input(&unsigned, &sig.protected)?;
     let sig_bytes = URL_SAFE_NO_PAD
         .decode(&sig.signature)

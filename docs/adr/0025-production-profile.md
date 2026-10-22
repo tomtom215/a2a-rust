@@ -81,9 +81,9 @@ Alternatives not taken:
   - The gRPC and WebSocket dispatchers serve on their own listeners, not
     `Server`, so `ServeConfig::production()` does not reach them; they keep
     the §5.2 warning.
-  - Provenance signing is not wired into the server yet, so the profile
-    cannot require a signing key. The requirement belongs to the change that
-    wires it.
+  - Provenance signing was not wired into the server when this was
+    written. ADR 0027 wired it (2026-10-22), and the profile now also
+    requires a content signer.
   - A deployment can still call `serve` or a default `ServeConfig`; the
     presets are opt-in.
 - Tests that fail without the checks: `profile::production_tests` (each

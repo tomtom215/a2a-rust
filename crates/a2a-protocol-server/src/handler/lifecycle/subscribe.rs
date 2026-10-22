@@ -591,6 +591,9 @@ impl RequestHandler {
         )
         .await;
 
+        // Signed frame by frame as it is read (ADR 0027).
+        let result = result.map(|reader| reader.with_outbound(self.outbound.clone()));
+
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {

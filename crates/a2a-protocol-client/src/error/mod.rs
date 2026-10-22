@@ -139,6 +139,14 @@ pub enum ClientError {
     /// (spec §13.4). Holds the name and the endpoint's origin, never the
     /// credential. Not retryable.
     InsecureTransport(String),
+
+    /// Content the agent sent failed its provenance check (ADR 0027): an
+    /// artifact or agent message whose signature does not verify against
+    /// the client's content keys, because it was altered or signed by a key
+    /// not in the set, or one carrying no signature when the client requires
+    /// one ([`ClientBuilder::with_content_keys`](crate::ClientBuilder::with_content_keys)).
+    /// Not retryable: the same content fails the same way.
+    ContentNotVerified(String),
 }
 
 impl fmt::Display for ClientError {
@@ -186,6 +194,12 @@ impl fmt::Display for ClientError {
                  connection to a non-loopback host, and this client requires an \
                  encrypted one"
             ),
+            Self::ContentNotVerified(why) => {
+                write!(
+                    f,
+                    "content from the agent failed its provenance check: {why}"
+                )
+            }
             Self::InsecureWebhook(origin) => write!(
                 f,
                 "push config not sent: webhook {origin} is plaintext http:// to a \

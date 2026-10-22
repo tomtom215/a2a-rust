@@ -50,6 +50,7 @@ mod start;
 use start::{ExecutorStart, runtime_has_one_worker};
 pub(super) mod terminal;
 mod validation;
+pub use validation::FileUrls;
 
 #[cfg(test)]
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
@@ -96,17 +97,6 @@ enum Committed {
     Waiting(Box<Task>),
 }
 
-/// Which file references a message may carry; see
-/// [`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileUrls {
-    /// Any, unchecked: the default.
-    Any,
-    /// Only those [`check_public_url`](crate::url_guard::check_public_url)
-    /// accepts.
-    PublicOnly,
-}
-
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
@@ -143,7 +133,8 @@ impl RequestHandler {
             Box::pin(self.send_message_inner(params, streaming, method_name, headers)).await
         })
         .await
-        .map_err(crate::error::ServerError::not_retry_safe);
+        .map_err(crate::error::ServerError::not_retry_safe)
+        .and_then(|sent| self.outbound.sign_sent(sent));
         #[cfg(feature = "tracing")]
         if let Ok(SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),
@@ -255,12 +246,19 @@ impl RequestHandler {
             self.ensure_streaming_supported()?;
         }
 
-        self.validate_send_params(&mut params)?;
+        // Before an approval is counted or a send key's replay answered.
+        let content_check = self.validate_send_params(&mut params)?;
 
         let mode = SendMode::of(&params, streaming);
-        self.commit_task(params, mode.use_background, tenant_slot, call_ctx)
-            .await
-            .map(|started| (mode, started))
+        self.commit_task(
+            params,
+            mode.use_background,
+            tenant_slot,
+            call_ctx,
+            content_check,
+        )
+        .await
+        .map(|started| (mode, started))
     }
 
     /// Resolves the task the message belongs to and commits it: the queue
@@ -284,6 +282,7 @@ impl RequestHandler {
         use_background: bool,
         tenant_slot: Option<OwnedSemaphorePermit>,
         call_ctx: &CallContext,
+        content_check: crate::request_context::ContentCheck,
     ) -> ServerResult<Committed> {
         let context_id = self.resolve_context_id(&params.message).await?;
 
@@ -385,6 +384,7 @@ impl RequestHandler {
             ctx.cancellation_token = self.in_flight.task_token();
             ctx.approval = approval;
             ctx.budget = budget;
+            ctx.content_check = content_check;
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
             }

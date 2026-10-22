@@ -140,6 +140,7 @@ request runs an incremental `--in-diff` mutation gate on the changed lines.
 | 0024 | Halts and cancels are pushed to every replica: the PostgreSQL halt store notifies with each write and a listener per replica forwards it, a cancel reaches the replica running the task, and the poll stays behind the push (Accepted) |
 | 0025 | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store, and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged (Accepted) |
 | 0026 | Tool calls carry idempotency keys, HMAC-SHA256 under the loop's secret of the task and message, the tool and its canonical arguments; a repeated call to a tool not declared read-only is answered from the first; `Delegation` keys its sends to agents that honour keys (Accepted) |
+| 0027 | Content is signed when served and verified when received: `with_content_signer` signs every agent message and artifact a server sends, over exactly what is sent; `with_content_keys` on the server and the client refuses altered content and marks unsigned content unverified; the production profile requires a signer (Accepted) |
 
 Only ADRs 0001–0008 have a section above; the table is the summary for all
 twenty-four.

@@ -48,6 +48,17 @@ only: when something here is done, delete it rather than annotating it.
   included against a local PostgreSQL 16: 170 distinct tests across 50
   targets, all passing. `check_compliance_map.py` only checks that a cited
   test exists, so rerun them after editing a cited file.
+- **Built on this branch (2026-10-22):** ADR 0027's provenance wiring:
+  `with_content_signer` signs what the server serves (`src/provenance.rs`,
+  the stream reader, push, the unary handlers), `with_content_keys` on the
+  server (`RequestContext::content_check`) and the client
+  (`src/content.rs`, `ClientError::ContentNotVerified`), and
+  `Profile::Production` requiring a signer. An independent review found 12
+  problems; the 9 fixed and the limits left are in ADR 0027 (including an
+  unreleased flaw in `verify_content`). Found on the way, not fixed:
+  metadata on an artifact append chunk is kept by the in-memory store and
+  dropped by the SQLite and PostgreSQL append deltas (read, not yet
+  reproduced by a test).
 - **Built on this branch (2026-10-22):** ADR 0026's tool-call idempotency:
   `ToolInvocation::idempotency_key`, `Tool::read_only`, and a repeated call
   to a side-effecting tool answered from the first
@@ -56,8 +67,8 @@ only: when something here is done, delete it rather than annotating it.
 - **Built on this branch (2026-10-21):** ADR 0025's production profile:
   `Profile::Production` (`profile.rs`) and `ServeConfig::production()`
   (`serve/graceful/production.rs`, `ServeReport::refused`). Not covered:
-  the gRPC and WebSocket listeners, and a signing key, which waits for
-  provenance to be wired into the server.
+  the gRPC and WebSocket listeners. Since ADR 0027 the profile also
+  requires a content signer.
 - **Built on this branch (2026-10-21):** ADR 0024's pushed halts and
   cancels (`store/halt/postgres.rs`, `handler/halt/sync.rs`).
 - **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in

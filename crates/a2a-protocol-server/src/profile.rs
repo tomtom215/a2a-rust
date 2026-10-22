@@ -60,7 +60,11 @@ pub enum Profile {
     /// * a lease store is set
     ///   ([`with_lease_store`](crate::RequestHandlerBuilder::with_lease_store)):
     ///   otherwise a task delegated here runs on after the agent that
-    ///   delegated it has stopped (ADR 0020).
+    ///   delegated it has stopped (ADR 0020);
+    /// * a content signer is set (`with_content_signer`, feature `signing`):
+    ///   otherwise nothing the agent sends says it made it, and an
+    ///   intermediary can alter it unseen (ADR 0027). Without the feature
+    ///   the profile cannot be met, and `build()` says to enable it.
     ///
     /// The listener has its own half,
     /// [`ServeConfig::production`](crate::serve::ServeConfig::production),
@@ -104,16 +108,33 @@ mod production_tests {
         BearerTokenAuthInterceptor::with_labelled_tokens([("t", "alice")])
     }
 
-    #[test]
-    fn a_complete_production_configuration_builds() {
-        let h = base()
+    /// Everything but the signer.
+    fn unsigned() -> RequestHandlerBuilder {
+        base()
             .with_interceptor(authenticated())
             .with_halt_store(InMemoryHaltStore::new())
             .with_lease_store(InMemoryLeaseStore::new())
+    }
+
+    #[cfg(feature = "signing")]
+    fn signer() -> a2a_protocol_types::provenance::ContentSigner {
+        let pkcs8 =
+            ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new())
+                .expect("a key");
+        a2a_protocol_types::provenance::ContentSigner::ed25519("k", pkcs8.as_ref())
+            .expect("a signer")
+    }
+
+    #[cfg(feature = "signing")]
+    #[test]
+    fn a_complete_production_configuration_builds() {
+        let h = unsigned()
+            .with_content_signer(signer())
             .build()
             .expect("everything it needs is there");
         assert!(h.leases.is_some());
         assert!(h.halt_sync.is_some());
+        assert!(h.outbound.signs());
     }
 
     #[test]
@@ -132,6 +153,15 @@ mod production_tests {
             .with_interceptor(authenticated())
             .with_halt_store(InMemoryHaltStore::new());
         assert!(refusal(unleased).contains("with_lease_store"));
+
+        let why = refusal(unsigned());
+        assert!(why.contains("content signer"), "{why}");
+        // Without the feature, the refusal says how to get one.
+        assert_eq!(
+            why.contains("`signing` feature"),
+            cfg!(not(feature = "signing")),
+            "{why}"
+        );
     }
 
     #[test]

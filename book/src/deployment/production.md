@@ -9,7 +9,8 @@ A checklist and guide for deploying a2a-rust agents in production.
 Two presets turn the startup warnings and the safety settings a delegated
 deployment needs into refusals (ADR 0025). Neither changes a default.
 `Profile::Production` makes `build()` refuse a handler with no
-authenticating interceptor, no halt store, or no lease store.
+authenticating interceptor, no halt store, no lease store, or no content
+signer (ADR 0027, feature `signing`).
 `ServeConfig::production()` makes the server return at once, accepting
 nothing, when it would serve plaintext beyond loopback or a binding the agent
 card does not declare; `ServeReport::refused` says why.
@@ -22,11 +23,12 @@ use a2a_protocol_server::serve::{ServeConfig, Server};
 use a2a_protocol_server::store::{InMemoryHaltStore, InMemoryLeaseStore};
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::provenance::ContentSigner;
 
 struct Agent;
 agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run(signing_key_pkcs8: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let card = AgentCard::new("agent", "1.0.0", AgentInterface::jsonrpc("https://agent.example/a2a"))
         .with_description("an agent other agents delegate to")
         .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
@@ -36,6 +38,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("token", "caller")]))
         .with_halt_store(InMemoryHaltStore::new())
         .with_lease_store(InMemoryLeaseStore::new())
+        .with_content_signer(ContentSigner::ed25519("agent-2026-10", signing_key_pkcs8)?)
         .build()?; // refuses, naming what is missing
     // TLS ends at the ingress in front of this pod.
     let config = ServeConfig::production().with_tls_terminated_in_front();

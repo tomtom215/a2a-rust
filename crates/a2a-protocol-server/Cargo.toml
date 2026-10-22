@@ -27,10 +27,10 @@ categories             = ["network-programming", "web-programming"]
 default = ["tracing", "otel"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
-## A forwarding feature: this crate contains no `#[cfg(feature = "signing")]`
-## code and never signs the card it serves. Sign your card with
-## `sign_agent_card` before handing it to `RequestHandlerBuilder`, as
-## `examples/incident-response` does.
+## Also `RequestHandlerBuilder::with_content_signer`, which signs every agent
+## message and artifact the server serves (ADR 0027). The server never signs
+## the card it serves: sign it with `sign_agent_card` before handing it to
+## `RequestHandlerBuilder`, as `examples/incident-response` does.
 signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out
 ## when disabled).

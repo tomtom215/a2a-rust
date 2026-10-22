@@ -17,6 +17,17 @@ use super::decisions::json_byte_len;
 use crate::error::{ServerError, ServerResult};
 use crate::portable::{inexact_number, standard_base64};
 
+/// Which file references a message may carry; see
+/// [`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileUrls {
+    /// Any, unchecked: the default.
+    Any,
+    /// Only those [`check_public_url`](crate::url_guard::check_public_url)
+    /// accepts.
+    PublicOnly,
+}
+
 impl RequestHandler {
     /// Validates the request in place: proto3 defaults are unset, then ids,
     /// parts and every `metadata` field are checked against the handler's
@@ -29,7 +40,7 @@ impl RequestHandler {
     /// prevent SSRF", when the builder asked for it
     /// (`refuse_private_file_urls`).
     fn check_file_urls(&self, message: &a2a_protocol_types::Message) -> ServerResult<()> {
-        if self.file_urls == super::FileUrls::Any {
+        if self.file_urls == FileUrls::Any {
             return Ok(());
         }
         for (i, part) in message.parts.iter().enumerate() {
@@ -45,7 +56,14 @@ impl RequestHandler {
         Ok(())
     }
 
-    pub(super) fn validate_send_params(&self, params: &mut MessageSendParams) -> ServerResult<()> {
+    pub(super) fn validate_send_params(
+        &self,
+        params: &mut MessageSendParams,
+    ) -> ServerResult<crate::request_context::ContentCheck> {
+        // The signature covers the message as it was sent, so it is checked
+        // before anything below rewrites it (empty strings unset, base64
+        // re-padded); ADR 0027.
+        let content_check = self.inbound.check(&params.message)?;
         unset_proto3_defaults(params);
         self.validate_send_ids(params)?;
 
@@ -101,7 +119,8 @@ impl RequestHandler {
             "message.metadata",
             max_meta,
         )?;
-        check_metadata_size(params.metadata.as_ref(), "request", "metadata", max_meta)
+        check_metadata_size(params.metadata.as_ref(), "request", "metadata", max_meta)?;
+        Ok(content_check)
     }
 
     /// The ids of a `SendMessage`: the message's, each checked by

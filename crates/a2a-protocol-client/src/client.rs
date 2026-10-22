@@ -66,6 +66,8 @@ pub struct A2aClient {
     /// the checks were turned off. Behind a lock because fetching the
     /// extended card replaces them ([`Self::adopt_capabilities`]).
     pub(crate) declared: RwLock<Option<DeclaredCapabilities>>,
+    /// What received content is checked against (ADR 0027).
+    pub(crate) content: crate::content::ContentKeys,
     /// Whether the agent is known to honour an idempotency key.
     pub(crate) honours_idempotency: bool,
 }
@@ -97,11 +99,12 @@ impl A2aClient {
     /// transport supplied through
     /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
     /// which never sees the config.
-    pub(crate) const fn configure_stream(&self, stream: EventStream) -> EventStream {
+    pub(crate) fn configure_stream(&self, stream: EventStream) -> EventStream {
         stream
             .with_first_event_timeout(self.config.stream_first_event_timeout)
             .with_idle_timeout(self.config.stream_idle_timeout)
             .with_max_event_size(self.config.max_event_size)
+            .with_content_keys(self.content.clone())
     }
 
     /// Creates a new [`A2aClient`] from its constituent parts.
@@ -122,8 +125,17 @@ impl A2aClient {
             #[cfg(feature = "otel")]
             metric: crate::call_metric::CallMetric::global(),
             declared: RwLock::new(None),
+            content: crate::content::ContentKeys::default(),
             honours_idempotency: false,
         }
+    }
+
+    /// Sets what received content is checked against.
+    // Without `signing`, `ContentKeys` is empty and this could be `const`.
+    #[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+    pub(crate) fn with_content_keys(mut self, content: crate::content::ContentKeys) -> Self {
+        self.content = content;
+        self
     }
 
     /// Records whether the agent is known to honour an idempotency key.

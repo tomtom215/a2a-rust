@@ -181,6 +181,8 @@ pub struct RequestHandlerBuilder {
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     span_settings: crate::rpc_span::SpanSettings,
+    outbound: crate::provenance::Outbound,
+    inbound: crate::provenance::Inbound,
     auth_waivers: AuthWaivers,
     allow_undeclared_input_modes: bool,
     refuse_private_file_urls: bool,
@@ -227,6 +229,8 @@ impl RequestHandlerBuilder {
                 agent: true,
                 content: false,
             },
+            outbound: crate::provenance::Outbound::default(),
+            inbound: crate::provenance::Inbound::default(),
             auth_waivers: AuthWaivers {
                 extended_card: false,
                 upstream: false,
@@ -301,6 +305,52 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_push_config_store_arc(mut self, store: Arc<dyn PushConfigStore>) -> Self {
         self.push_config_store = Some(store);
+        self
+    }
+
+    /// Signs every artifact, status message and direct reply the server
+    /// sends with `signer` (ADR 0027): stream events, pushes, and the tasks
+    /// and messages `SendMessage`, `GetTask`, `ListTasks`, `CancelTask` and
+    /// `SubscribeToTask` return. Each is signed over exactly what is sent, so
+    /// an artifact streamed in chunks verifies chunk by chunk on the stream
+    /// and whole from `GetTask`. A task's history is not signed: it holds the
+    /// caller's messages as they arrived. Content already signed, such as
+    /// another agent's artifact forwarded unchanged, is left as it is.
+    /// Publish `signer.public_jwk()` where callers fetch keys.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_content_signer(
+        mut self,
+        signer: a2a_protocol_types::provenance::ContentSigner,
+    ) -> Self {
+        self.outbound = crate::provenance::Outbound::signing(signer);
+        self
+    }
+
+    /// Verifies the provenance signature of every message sent to this
+    /// agent against `keys` (ADR 0027): a message whose signature does not
+    /// verify, because it was altered or signed by a key not in the set, is
+    /// refused with `InvalidParams` before the executor runs. An unsigned
+    /// message is accepted, and the executor reads
+    /// [`ContentCheck::Unsigned`](crate::request_context::ContentCheck::Unsigned)
+    /// from [`RequestContext::content_check`](crate::RequestContext::content_check);
+    /// [`require_signed_content`](Self::require_signed_content) refuses it
+    /// too.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_content_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.inbound = crate::provenance::Inbound::verifying(keys);
+        self
+    }
+
+    /// Refuses unsigned messages as well as altered ones. Anyone able to
+    /// alter a message can also remove its signature, so a deployment that
+    /// acts only on content from known agents requires one. Needs
+    /// [`with_content_keys`](Self::with_content_keys), called before this.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn require_signed_content(mut self) -> Self {
+        self.inbound = self.inbound.requiring_signatures();
         self
     }
 
@@ -1237,7 +1287,7 @@ impl RequestHandlerBuilder {
             executor: self.executor,
             task_store,
             push_config_store,
-            push_sender: self.push_sender,
+            push_sender: signing_push(self.push_sender, &self.outbound),
             event_queue_manager: {
                 let mut mgr = self
                     .event_queue_capacity
@@ -1271,6 +1321,8 @@ impl RequestHandlerBuilder {
             caller_isolation,
             inbound_trace_policy: self.inbound_trace_policy,
             span_settings: self.span_settings,
+            outbound: self.outbound,
+            inbound: self.inbound,
             allow_unauthenticated_extended_card: self.auth_waivers.extended_card,
             accepted_input_modes,
             required_extensions,
@@ -1323,6 +1375,16 @@ impl RequestHandlerBuilder {
                  otherwise a task delegated here runs on after the agent that \
                  delegated it has stopped",
             );
+        }
+        if !self.outbound.signs() {
+            return refuse(if cfg!(feature = "signing") {
+                "the production profile needs a content signer (with_content_signer): \
+                 otherwise nothing this agent sends says it made it, and an \
+                 intermediary can alter it unseen (ADR 0027)"
+            } else {
+                "the production profile needs a content signer, which needs the \
+                 `signing` feature: enable it and call with_content_signer (ADR 0027)"
+            });
         }
         Ok(())
     }
@@ -1394,6 +1456,8 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("caller_isolation", &self.caller_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)
             .field("span_settings", &self.span_settings)
+            .field("outbound", &self.outbound)
+            .field("inbound", &self.inbound)
             .field("auth_waivers", &self.auth_waivers)
             .field(
                 "allow_undeclared_input_modes",
@@ -1459,6 +1523,26 @@ pub(crate) fn advertise(
             .extend(missing);
     }
     Ok(())
+}
+
+/// `sender`, signing each event first when `outbound` signs (ADR 0027).
+#[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+fn signing_push(
+    sender: Option<Arc<dyn PushSender>>,
+    outbound: &crate::provenance::Outbound,
+) -> Option<Arc<dyn PushSender>> {
+    #[cfg(feature = "signing")]
+    if outbound.signs() {
+        return sender.map(|inner| -> Arc<dyn PushSender> {
+            Arc::new(crate::provenance::SigningPushSender {
+                inner,
+                outbound: outbound.clone(),
+            })
+        });
+    }
+    #[cfg(not(feature = "signing"))]
+    let _ = outbound;
+    sender
 }
 
 #[cfg(test)]

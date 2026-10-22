@@ -22,7 +22,8 @@ use crate::portable::{inexact_number, standard_base64};
 /// Refuses `event` when a REQUIRED field is unset: a message's `message_id`,
 /// `role` or `parts`, an artifact's `artifact_id` or `parts` (an appended
 /// chunk's included), or a status's `state`, in the event itself or in a
-/// task snapshot's status, artifacts and history.
+/// task snapshot's status, artifacts and history; or when a message or
+/// artifact carries malformed provenance.
 ///
 /// # Errors
 ///
@@ -84,14 +85,21 @@ fn check_message(message: &Message, which: &str) -> A2aResult<()> {
             "{which} must contain at least one part"
         )));
     }
-    Ok(())
+    check_provenance(message)
+}
+
+/// Refuses content whose provenance key (`a2a-rust.com/provenance`) holds
+/// something that is not provenance: a server that signs what it serves
+/// (ADR 0027) could sign it on no read, so the task would be unreadable.
+fn check_provenance<C: a2a_protocol_types::provenance::Content>(content: &C) -> A2aResult<()> {
+    a2a_protocol_types::provenance::provenance_of(content).map(drop)
 }
 
 fn check_artifact_id(artifact: &Artifact) -> A2aResult<()> {
     if artifact.id.0.is_empty() {
         return Err(A2aError::invalid_params("artifactId is required"));
     }
-    Ok(())
+    check_provenance(artifact)
 }
 
 /// Refuses `event` when it holds what the gRPC binding cannot carry (spec §4:
@@ -138,18 +146,50 @@ fn portable_status(status: &mut TaskStatus) -> A2aResult<()> {
 
 fn portable_message(message: &mut Message, at: &str) -> A2aResult<()> {
     portable_metadata(message.metadata.as_ref(), &format!("{at}.metadata"))?;
+    // gRPC cannot tell an empty string or list from an absent one, and its
+    // conversion reads both as absent. Unset here, every binding serves the
+    // same content, and a signature made over it verifies on each (ADR 0027).
+    if message.task_id.as_ref().is_some_and(|id| id.0.is_empty()) {
+        message.task_id = None;
+    }
+    if message
+        .context_id
+        .as_ref()
+        .is_some_and(|id| id.0.is_empty())
+    {
+        message.context_id = None;
+    }
+    unset_if_empty_list(&mut message.reference_task_ids);
+    unset_if_empty_list(&mut message.extensions);
     portable_parts(&mut message.parts, at)
 }
 
 fn portable_artifact(artifact: &mut Artifact, at: &str) -> A2aResult<()> {
     portable_metadata(artifact.metadata.as_ref(), &format!("{at}.metadata"))?;
+    unset_if_empty(&mut artifact.name);
+    unset_if_empty(&mut artifact.description);
+    unset_if_empty_list(&mut artifact.extensions);
     portable_parts(&mut artifact.parts, at)
+}
+
+fn unset_if_empty(field: &mut Option<String>) {
+    if field.as_deref() == Some("") {
+        *field = None;
+    }
+}
+
+fn unset_if_empty_list<T>(field: &mut Option<Vec<T>>) {
+    if field.as_ref().is_some_and(Vec::is_empty) {
+        *field = None;
+    }
 }
 
 fn portable_parts(parts: &mut [Part], at: &str) -> A2aResult<()> {
     for (i, part) in parts.iter_mut().enumerate() {
         let field = format!("{at}.parts[{i}]");
         portable_metadata(part.metadata.as_ref(), &format!("{field}.metadata"))?;
+        unset_if_empty(&mut part.filename);
+        unset_if_empty(&mut part.media_type);
         match &mut part.content {
             PartContent::Raw(raw) => {
                 *raw = standard_base64(raw).map_err(|e| {

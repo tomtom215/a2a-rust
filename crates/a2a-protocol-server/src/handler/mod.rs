@@ -135,6 +135,10 @@ pub struct RequestHandler {
     /// What the executor's span records: the `GenAI` `invoke_agent`
     /// conventions, and whether messages are captured.
     pub(crate) span_settings: crate::rpc_span::SpanSettings,
+    /// What content the server serves is signed with (ADR 0027).
+    pub(crate) outbound: crate::provenance::Outbound,
+    /// What an arriving message's signature is checked against (ADR 0027).
+    pub(crate) inbound: crate::provenance::Inbound,
     /// When `true`, `GetExtendedAgentCard` is served even though no
     /// authenticating interceptor guards the chain. Spec §13.3 says the
     /// operation MUST require authentication, so the default is `false`:

@@ -125,6 +125,73 @@ if provenance.ai_generated {
 # }
 ```
 
+### Signing everything a server sends
+
+`RequestHandlerBuilder::with_content_signer` signs every agent message and
+every artifact the server sends (ADR 0027): stream frames, pushes, and what
+`SendMessage`, `GetTask`, `ListTasks`, `CancelTask` and `SubscribeToTask`
+return. Each is signed as it is sent, so a chunk on a stream verifies as that
+chunk and the merged artifact `GetTask` returns verifies as the whole.
+Content that already carries a signature, such as another agent's artifact
+you forward, keeps it, and messages in the caller's role are not signed.
+
+```rust,no_run
+use a2a_protocol_server::{RequestHandlerBuilder, agent_executor};
+use a2a_protocol_types::provenance::ContentSigner;
+# fn run(pkcs8: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+struct Agent;
+agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
+
+let handler = RequestHandlerBuilder::new(Agent)
+    .without_agent_card()
+    .with_content_signer(ContentSigner::ed25519("agent-2026-10", pkcs8)?)
+    .build()?;
+# drop(handler); Ok(())
+# }
+```
+
+An executor's event whose provenance value is malformed is refused when it is
+written, so a stored task can always be signed when it is read.
+
+### Verifying what arrives
+
+Both ends take the key set of the agents you trust. On the server,
+`with_content_keys` refuses a message whose signature fails before the
+executor runs, and tells the executor what it found:
+
+```rust,no_run
+use a2a_protocol_server::RequestHandlerBuilder;
+use a2a_protocol_server::request_context::ContentCheck;
+use a2a_protocol_server::{EventEmitter, agent_executor};
+use a2a_protocol_types::signing::Jwks;
+use a2a_protocol_types::task::TaskState;
+# fn run(trusted: Jwks) -> Result<(), Box<dyn std::error::Error>> {
+struct Agent;
+agent_executor!(Agent, |ctx, queue| async {
+    match ctx.content_check() {
+        ContentCheck::Verified(p) => println!("from {:?}", p.generator),
+        // Unsigned content is unverified, whoever sent it.
+        _ => println!("unverified"),
+    }
+    EventEmitter::new(ctx, queue).status(TaskState::Completed).await
+});
+
+let handler = RequestHandlerBuilder::new(Agent)
+    .without_agent_card()
+    .with_content_keys(trusted)
+    .build()?;
+# drop(handler); Ok(())
+# }
+```
+
+On the client, `ClientBuilder::with_content_keys(keys)` checks every artifact
+and agent message it receives; one whose signature fails ends the call or
+the stream with `ClientError::ContentNotVerified`. On either side,
+`require_signed_content()` refuses unsigned content as well, for a
+deployment that acts only on content from agents it knows. A2A has no way to
+learn a peer's content keys, so you supply them: the same JWK Set you trust
+for its card, or one its operator publishes.
+
 `verify_content` fails in these cases:
 
 - the content was changed after signing, marker included;

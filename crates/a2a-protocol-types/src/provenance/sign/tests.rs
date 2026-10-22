@@ -69,6 +69,22 @@ fn any_change_after_signing_breaks_it() {
     let mut other_meta = m.clone();
     other_meta.metadata.as_mut().unwrap()["note"] = serde_json::json!("added later");
     assert!(verify_content(&other_meta, &set()).is_err());
+    // A member added inside the provenance object is a change too: until
+    // 2026-10-22 verification rebuilt the object from the typed value, which
+    // dropped it (found by review).
+    let mut inner = m.clone();
+    inner.metadata.as_mut().unwrap()[PROVENANCE_METADATA_KEY]["approvedBy"] =
+        serde_json::json!("finance");
+    assert!(verify_content(&inner, &set()).is_err());
+
+    // As is dropping the extension URI, which verification used to put back.
+    let mut undeclared = m.clone();
+    undeclared.extensions = None;
+    assert!(verify_content(&undeclared, &set()).is_err());
+
+    // And the untouched content still verifies, after a JSON round trip.
+    let wire: Message = serde_json::from_value(serde_json::to_value(&m).unwrap()).unwrap();
+    assert!(verify_content(&wire, &set()).is_ok());
 }
 
 #[test]
