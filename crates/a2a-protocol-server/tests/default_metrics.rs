@@ -74,7 +74,10 @@ async fn a_handler_records_to_the_global_provider_by_default() {
     socket.write_all(request.as_bytes()).await.expect("write");
     let mut response = String::new();
     socket.read_to_string(&mut response).await.expect("read");
-    assert!(response.contains("-32001"), "{response}");
+    assert!(
+        response.contains("-32001"),
+        "the server did not answer TaskNotFound (-32001)"
+    );
 
     let mut collected = ResourceMetrics::default();
     reader.collect(&mut collected).expect("collect");

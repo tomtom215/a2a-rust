@@ -334,5 +334,8 @@ fn the_deadline_runs_from_receipt() {
     .unwrap()
     .unwrap();
     let left = h.remaining_time().unwrap();
-    assert!(left <= Duration::from_millis(200), "{left:?}");
+    assert!(
+        left <= Duration::from_millis(200),
+        "more than 200 ms left of 1000 after 800 elapsed"
+    );
 }

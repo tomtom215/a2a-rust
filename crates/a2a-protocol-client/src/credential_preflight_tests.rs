@@ -189,8 +189,11 @@ fn preflight_refusal_names_schemes_and_never_a_credential() {
     ] {
         assert!(text.contains(expected), "{expected}: {text}");
     }
-    for secret in ["s3cr3t", "c00kie", "qv4lue", "Bearer"] {
-        assert!(!text.contains(secret), "{secret}: {text}");
+    for (i, secret) in ["s3cr3t", "c00kie", "qv4lue", "Bearer"].iter().enumerate() {
+        assert!(
+            !text.contains(secret),
+            "credential fixture {i} is in the error text"
+        );
     }
     assert!(!err.is_retryable());
 }

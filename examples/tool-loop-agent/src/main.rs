@@ -166,7 +166,7 @@ async fn main() -> ExitCode {
     };
     let run = async {
         let model = model_from_env()?;
-        println!("model: {model:?}");
+        println!("model: {}", model.model_name());
         let url = serve_agent(model).await?;
         println!("agent: {url}");
         println!("asked: {prompt}");

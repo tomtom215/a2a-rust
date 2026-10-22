@@ -477,7 +477,13 @@ mod tests {
             .expect("valid")
             .with_api_key("sk-secret");
         let debug = format!("{model:?}");
-        assert!(!debug.contains("sk-secret"), "{debug}");
-        assert!(debug.contains("[redacted]"), "{debug}");
+        assert!(
+            !debug.contains("sk-secret"),
+            "Debug output carries the API key"
+        );
+        assert!(
+            debug.contains("[redacted]"),
+            "Debug output does not mark the key redacted"
+        );
     }
 }
