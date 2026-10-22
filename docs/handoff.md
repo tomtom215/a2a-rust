@@ -28,7 +28,7 @@ only: when something here is done, delete it rather than annotating it.
   and how it was verified. Wrapped up for a pull request on 2026-10-22,
   because container restarts kept killing long work: the study's raw runs
   were moved out of scratch space into the repository and the method
-  committed as a draft (*Next*, item 2). The commits after the kill-switch
+  committed as a draft; the study then finished (*Next*, item 2). The commits after the kill-switch
   conformance one change only `scripts/tool_calling_study/` and `docs/`.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
@@ -151,25 +151,12 @@ only: when something here is done, delete it rather than annotating it.
    prompts a cell, 16 cells. The runs are in
    `scripts/tool_calling_study/runs/`, whose README gives each cell's
    state and provenance; `docs/tool-calling-study.md` holds the method,
-   marked as a draft with no results. On 2026-10-22, 14 cells were
-   complete; `sdk_qwen3-1.7b-q4_k_m_on` (42 of 60) and
-   `sdk_qwen3.5-2b-q4_k_m_on` (58 of 60) were not. In order:
-   1. Build `tool-loop-agent` in release and run `study.sh` with `OUT_DIR`
-      set to `scripts/tool_calling_study/runs` (the command is in the
-      write-up). It skips finished cells and runs only missing seeds. The
-      new binary's hash will differ from the `01dce94e…` the other SDK
-      cells record, since release builds here are not byte-reproducible;
-      `cell.py` refuses a chunk whose header differs, so either drop
-      `binary_sha256` from the header comparison with a recorded reason or
-      re-run both incomplete cells in full. Decide before running. The
-      original binary was kept only in the 2026-10-22 session's scratch
-      space (`study/tool-loop-agent`, 5,349,440 bytes); if a session still
-      has it and its hash matches, use it and the question does not arise.
-   2. Recount with `len(runs)`, commit the files, and update the runs
-      README's table.
-   3. Score with `score.py`, then audit every answer against the rubric
+   marked as a draft with no results. All 16 cells completed on
+   2026-10-22, every SDK cell with the one binary `01dce94e…`; 5 runs
+   recorded errors (listed in the runs README). In order:
+   1. Score with `score.py`, then audit every answer against the rubric
       by reading it, recording each disagreement with the scorer.
-   4. Write the results into the doc with Wilson intervals, and remove its
+   2. Write the results into the doc with Wilson intervals, and remove its
       draft notice.
 3. **OpenTelemetry, batch B:** telemetry initialised in every example,
    `tck/sut`, the ITK agents and the CLI; streaming span lifetime; a span per

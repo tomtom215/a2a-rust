@@ -5,10 +5,9 @@
 
 Measured 2026-10-20 to 2026-10-22, by `scripts/tool_calling_study/`.
 
-**Draft.** The method below is fixed and the runs are in
-`scripts/tool_calling_study/runs/`, but the study is unfinished: two of the
-16 cells are incomplete (see that directory's README), and no cell has been
-scored or audited. There are no results here yet, and none should be read
+**Draft.** The method below is fixed and all 16 cells have run (2026-10-22;
+the runs and their provenance are in `scripts/tool_calling_study/runs/`),
+but no cell has been scored or audited. There are no results here yet, and none should be read
 into the raw files before the audit.
 
 ## The question

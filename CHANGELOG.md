@@ -3076,8 +3076,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is noticed.
 - **The tool-calling study's raw runs are committed**
   (`scripts/tool_calling_study/runs/`), with the scripts that resume it;
-  `docs/tool-calling-study.md` gives its method as a draft. Not scored: two
-  of 16 cells are incomplete.
+  `docs/tool-calling-study.md` gives its method as a draft. All 16 cells
+  have run; none is scored yet.
 - **What the SDK seals at rest is checked four ways** (server, `encryption`).
   Against another implementation: `scripts/crypto_interop/check.py` (CI,
   `ci.yml`, from a hash-locked `cryptography`) states the byte layout and

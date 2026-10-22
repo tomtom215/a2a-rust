@@ -6,13 +6,13 @@
 The output of `run.py` (direct arm) and `sdk_arm.py` (SDK arm), as
 `cell.py` assembled it, 2026-10-20 to 2026-10-22. One file per cell:
 `{arm}_{model}_{thinking}.json`, 30 seeds of each of two prompts
-(`billing`, `checkout`), so 60 runs when complete. The method is in
+(`billing`, `checkout`), 60 runs a cell. All 16 cells are complete. The method is in
 `docs/tool-calling-study.md`; nothing here is scored yet.
 
 These files were kept in the container's scratch space while the study
-ran and are committed so that a restart cannot lose them. `study.sh`
-resumes the study from them: finished cells are skipped, and `cell.py` runs
-only the seeds a partial cell is missing.
+ran and were committed as it went so that a restart could not lose them.
+`study.sh` resumes a study from such files: finished cells are skipped,
+and `cell.py` runs only the seeds a partial cell is missing.
 
 ## State of each cell
 
@@ -27,8 +27,8 @@ last changed this README; recount before relying on them.
 | `direct_qwen3.5-2b-q4_k_m_{off,on}` | 60, 60 | `run.py` `536670664c79` | `on` resumed from 9 runs |
 | `sdk_qwen3.5-0.8b-q4_0_{off,on}` | 60, 60 | `sdk_arm.py` `0f3c76d439bd` | |
 | `sdk_qwen3.5-0.8b-q4_k_m_{off,on}` | 60, 60 | `sdk_arm.py` `0f3c76d439bd` | |
-| `sdk_qwen3-1.7b-q4_k_m_{off,on}` | 60, 42 | `sdk_arm.py` `0f3c76d439bd` | `on` incomplete |
-| `sdk_qwen3.5-2b-q4_k_m_{off,on}` | 60, 58 | `sdk_arm.py` `0f3c76d439bd` | `off` resumed from 14; `on` incomplete |
+| `sdk_qwen3-1.7b-q4_k_m_{off,on}` | 60, 60 | `sdk_arm.py` `0f3c76d439bd` | |
+| `sdk_qwen3.5-2b-q4_k_m_{off,on}` | 60, 60 | `sdk_arm.py` `0f3c76d439bd` | `off` resumed from 14 |
 
 ## What a reader must know
 
@@ -59,4 +59,7 @@ last changed this README; recount before relying on them.
   the server's `/health` before each chunk.
 - **Errors kept as data.** Runs recorded against a healthy server are kept
   whatever happened in them: `server_error` in the SDK arm, `http_error` in
-  a direct run's turns. Before scoring, count and read them.
+  a direct run's turns. Before scoring, read them. Counted at completion:
+  one `http_error` (500) in `direct_qwen3.5-0.8b-q4_0_on`, seed 2006;
+  `server_error` in `sdk_qwen3.5-0.8b-q4_0_off` (seed 1020) and
+  `sdk_qwen3.5-0.8b-q4_0_on` (seeds 1000, 1016, 2022); none elsewhere.
