@@ -84,18 +84,53 @@ async fn an_unreadable_row_fails_the_load() {
     assert!(store.load().await.is_err());
 }
 
+/// A database of its own for one test. The halt table and its notification
+/// channel belong to a database, and tests share one only by accident: the
+/// mutation job runs each test in its own process, all at once, and there
+/// one test's writes were another's unexpected row and signal (2026-10-22).
+#[cfg(feature = "postgres")]
+struct Scratch {
+    admin: sqlx::postgres::PgPool,
+    name: String,
+    url: String,
+}
+
+#[cfg(feature = "postgres")]
+impl Scratch {
+    async fn new() -> Self {
+        let admin_url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+        let admin = sqlx::postgres::PgPool::connect(&admin_url).await.unwrap();
+        let name = format!("a2a_halt_test_{}", uuid::Uuid::new_v4().simple());
+        sqlx::query(&format!("CREATE DATABASE {name}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let url = format!("{}/{name}", admin_url.rsplit_once('/').expect("path").0);
+        Self { admin, name, url }
+    }
+
+    async fn store(&self) -> PostgresHaltStore {
+        let pool = sqlx::postgres::PgPool::connect(&self.url).await.unwrap();
+        PostgresHaltStore::from_pool(pool).await.unwrap()
+    }
+
+    async fn drop_database(self) {
+        let _ = sqlx::query(&format!(
+            "DROP DATABASE IF EXISTS {} WITH (FORCE)",
+            self.name
+        ))
+        .execute(&self.admin)
+        .await;
+    }
+}
+
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
 async fn postgres_keeps_the_contract() {
-    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
-    let pool = sqlx::postgres::PgPool::connect(&url).await.unwrap();
-    let store = PostgresHaltStore::from_pool(pool.clone()).await.unwrap();
-    sqlx::query("DELETE FROM a2a_halts")
-        .execute(&pool)
-        .await
-        .unwrap();
-    contract(&store).await;
+    let db = Scratch::new().await;
+    contract(&db.store().await).await;
+    db.drop_database().await;
 }
 
 /// What one replica's store writes, another's subscriber is told (ADR
@@ -154,14 +189,11 @@ async fn sqlite_does_not_push() {
 #[tokio::test]
 #[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
 async fn postgres_pushes_between_replicas() {
-    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
-    let a = PostgresHaltStore::from_pool(sqlx::postgres::PgPool::connect(&url).await.unwrap())
-        .await
-        .unwrap();
-    let b = PostgresHaltStore::from_pool(sqlx::postgres::PgPool::connect(&url).await.unwrap())
-        .await
-        .unwrap();
+    let db = Scratch::new().await;
+    let (a, b) = (db.store().await, db.store().await);
     signals_contract(&a, &b, Some(HaltSignal::Changed)).await;
+    drop((a, b));
+    db.drop_database().await;
 }
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
