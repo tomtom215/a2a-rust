@@ -222,3 +222,7 @@ fn exact(value: &serde_json::Value, field: &str) -> A2aResult<()> {
         )))
     })
 }
+
+#[cfg(test)]
+#[path = "content_tests.rs"]
+mod tests;

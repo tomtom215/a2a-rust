@@ -152,6 +152,7 @@ async fn each_flaw_is_named() {
         (Flaw::Appends, "a_put_replaces_the_halt_of_its_scope"),
         (Flaw::Collides, "scopes_do_not_collide"),
         (Flaw::KeepsRemoved, "a_remove_removes_exactly_its_scope"),
+        (Flaw::KeepsRemoved, "a_removal_is_seen_by_another_handle"),
         (Flaw::Mute, "a_write_is_pushed_to_another_handle"),
     ] {
         let report = grade_store(Broken::new(flaw)).await;

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! Cancellation at each point a run checks it, and the tool set's
-//! refusal of a duplicate name.
+//! Cancellation at each point a run checks it, the tool set's refusal of
+//! a duplicate name, and the loop's `Debug`.
 
 use super::*;
 
@@ -81,6 +81,7 @@ async fn cancellation_abandons_a_turn_in_progress() {
 fn a_second_tool_of_the_same_name_is_refused_and_the_set_unchanged() {
     let (a, _) = TestTool::new("service_status", |_| Ok("a".to_owned()));
     let (b, _) = TestTool::new("service_status", |_| Ok("b".to_owned()));
+    assert!(ToolSet::new().is_empty());
     let mut set = ToolSet::new().with(a).unwrap();
     assert_eq!(
         set.add(b).unwrap_err(),
@@ -94,4 +95,21 @@ fn a_second_tool_of_the_same_name_is_refused_and_the_set_unchanged() {
     assert_eq!(set.names(), ["service_status", "list_services"]);
     assert_eq!(set.len(), 2);
     assert!(!set.is_empty());
+}
+
+/// `Debug` names the model, the tools and the turn bound, and leaves the
+/// rest out. The mutation gate found it untested: an empty answer survived.
+#[test]
+fn a_loop_debugs_as_its_model_tools_and_bound() {
+    let (model, _) = Scripted::new(Vec::new());
+    let (tool, _) = status_tool();
+    let tool_loop = ToolLoop::new(model, tools(vec![tool])).with_max_turns(3);
+    let debug = format!("{tool_loop:?}");
+    assert!(
+        debug.starts_with(
+            r#"ToolLoop { model: "scripted", tools: ["service_status"], max_turns: 3, "#
+        ),
+        "{debug}"
+    );
+    assert!(debug.ends_with(", .. }"), "{debug}");
 }

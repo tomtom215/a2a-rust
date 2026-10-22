@@ -91,3 +91,14 @@ fn a_streamed_message_is_signed() {
     let provenance = provenance_of(&message).unwrap().expect("provenance");
     assert!(provenance.signature.is_some());
 }
+
+/// `Debug` says how many keys there are and whether unsigned content is
+/// refused, never the keys themselves.
+#[test]
+fn inbound_debugs_as_its_key_count_and_policy() {
+    let keys = a2a_protocol_types::signing::Jwks::new(vec![]);
+    assert_eq!(
+        format!("{:?}", Inbound::verifying(keys).requiring_signatures()),
+        "Inbound { keys: Some(0), require_signed: true }"
+    );
+}
