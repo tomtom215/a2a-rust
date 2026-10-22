@@ -179,13 +179,6 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Waiting on the maintainer
 
-- **A `tokio` floor of 1.54.1?** (2026-10-22) `tokio` 1.54.0 has a
-  use-after-free race in `time::Interval` (GHSA-5wjr-9356-4wc8), which the
-  halt sync uses. Every lockfile here now has 1.54.1, but the manifests'
-  `>=1.44.2, <2` still lets a downstream lockfile keep 1.54.0, and
-  `check_advisory_floors.py` does not flag it, because it ignores yanked
-  versions. Raising the floor forces every user onto `tokio` 1.54.1 or later
-  (MSRV 1.85, under ours), so it is the maintainer's call.
 - **File GHSA-hr9h-6jvf-wvg6 with RustSec** (found 2026-10-21 by the CRA
   review). The project's own advisory (fixed in 0.14.1) is on GitHub only:
   the RustSec database and OSV have no entry (OSV queried 2026-10-21), so

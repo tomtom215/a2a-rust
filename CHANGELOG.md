@@ -2850,8 +2850,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Lockfiles move off this week's advisories** (no manifest change).
-  `tokio` 1.54.0, yanked for a use-after-free race in `time::Interval` on
+- **`tokio` requires 1.54.1; lockfiles move off this week's advisories**
+  (client, server, SDK, SLIMRPC binding). `tokio` 1.54.0, yanked for a use-after-free race in `time::Interval` on
   the multi-threaded runtime (GHSA-5wjr-9356-4wc8; the server's halt sync
   uses `Interval`), is replaced by 1.54.1 in the workspace, SLIMRPC, fuzz
   and ITK lockfiles. `rustls-webpki` 0.103.15 (RUSTSEC-2026-0382, distrusted
@@ -2860,9 +2860,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by 1.0.10. In
   CI's hash-locked Python tools, `certifi` 2026.7.22 (GHSA-6q48-6c7w-9gw2)
   becomes 2026.10.19 and `uv` 0.13.1 (GHSA-hq85-5cpj-mr62) becomes 0.13.5,
-  for the same emSign root. The manifests still admit `tokio` 1.54.0 to a
-  downstream build that resolves its own; crates.io has yanked it, so a
-  new resolution does not pick it.
+  for the same emSign root. The `tokio` requirement rises from 1.44.2 to
+  1.54.1, so a downstream lockfile that already holds 1.54.0 must update
+  (crates.io has yanked it, so a new resolution never picked it; a
+  lockfile written between 2026-10-19 and the yank could). 1.54.1 needs
+  Rust 1.85, under this crate's 1.88.
 
 - **`webpki-roots` requires 1.0.10** (client, server; RUSTSEC-2026-0381,
   affecting 1.0.0 to 1.0.9). The lockfiles already resolved 1.0.10, except
