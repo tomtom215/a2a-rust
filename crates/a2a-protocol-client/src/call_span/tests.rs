@@ -112,6 +112,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
 fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {
     use tracing_subscriber::layer::SubscriberExt as _;
     let fields = Fields::default();
+    crate::test_tracing::install();
     tracing::subscriber::with_default(tracing_subscriber::registry().with(fields.clone()), f);
     let recorded = fields.0.lock().unwrap();
     recorded.clone()
@@ -302,13 +303,16 @@ fn an_unknown_method_is_named_for_its_system() {
     assert!(!known.contains_key("rpc.method_original"));
 }
 
-/// `f` with a `tracing-opentelemetry` layer recording every span.
+/// `f` with a `tracing-opentelemetry` layer recording every span, over the
+/// crate's global test subscriber ([`crate::test_tracing`]), without which
+/// the call span can come back disabled.
 #[cfg(feature = "otel")]
 fn with_otel<R>(f: impl FnOnce() -> R) -> R {
     use opentelemetry::trace::TracerProvider as _;
     use tracing_subscriber::layer::SubscriberExt as _;
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
     let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("call-span-test"));
+    crate::test_tracing::install();
     tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), f)
 }
 
