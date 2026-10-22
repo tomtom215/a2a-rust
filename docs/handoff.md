@@ -30,10 +30,13 @@ only: when something here is done, delete it rather than annotating it.
   were moved out of scratch space into the repository and the method
   committed as a draft; the study then finished (*Next*, item 2). Pull
   request #178 is open with the `mutation-test` label. The commits after it
-  went up fix what its CI found, each message naming the check; the last
-  adds tests for the 51 mutants its two labelled incremental mutation runs
-  left surviving, and fixes the kill-switch harness passing a store that
-  widened a tenant's halt.
+  went up fix what its CI found, each message naming the check. From
+  `1ebec172` on they add tests for the mutants each labelled incremental
+  mutation run left surviving (51, then 9 more, then 1: one commit per
+  batch lists them), and `1ebec172` fixes the kill-switch harness passing a
+  store that widened a tenant's halt. Each run grades only part of the
+  server crate's changed code, so a later run can find survivors an
+  earlier one never graded.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the

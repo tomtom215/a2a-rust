@@ -292,3 +292,28 @@ pub trait ToolModel: Send + Sync + 'static {
         request: ChatRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<ModelTurn, ModelError>> + Send + 'a>>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A status with no body says only the status; with one, both. The
+    /// mutation gate found the empty case untested: printing `: ` after the
+    /// status survived.
+    #[test]
+    fn a_status_error_names_its_body_only_when_it_has_one() {
+        let bare = ModelError::Status {
+            status: 503,
+            body: String::new(),
+        };
+        assert_eq!(bare.to_string(), "the model provider answered HTTP 503");
+        let with_body = ModelError::Status {
+            status: 429,
+            body: "slow down".to_owned(),
+        };
+        assert_eq!(
+            with_body.to_string(),
+            "the model provider answered HTTP 429: slow down"
+        );
+    }
+}
