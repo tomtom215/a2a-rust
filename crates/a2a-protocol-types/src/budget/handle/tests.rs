@@ -324,5 +324,6 @@ fn a_deadline_beyond_instant_is_about_thirty_years_off() {
     let h = BudgetHandle::start_at(&Budget::new().with_time(most), received);
     let left = h.remaining_time().expect("a deadline");
     let year = Duration::from_secs(365 * 24 * 3600);
-    assert!(left > year * 29 && left <= year * 30, "{left:?}");
+    assert!(left > year * 29, "the deadline is under 29 years off");
+    assert!(left <= year * 30, "the deadline is over 30 years off");
 }
