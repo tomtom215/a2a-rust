@@ -230,7 +230,8 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     // until its children close — the call's span waits for the background
     // processor and the SSE writer it spawned (its recorded end time is the
     // call's own, or its stream's). So wait, with a deadline, for every span the SDK
-    // spawns to have its parent exported, rather than for a fixed time.
+    // spawns to have its parent exported, and for every call's SERVER span (the
+    // first alone holds for a call with nothing exported yet), not a fixed time.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let spans = loop {
         let _ = tracer_provider.force_flush();
@@ -240,7 +241,11 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         let settled = spans
             .iter()
             .filter(|s| spawned_by_the_sdk(&s.name))
-            .all(|s| ids.contains(&s.parent_span_id));
+            .all(|s| ids.contains(&s.parent_span_id))
+            && CALLS
+                .iter()
+                .all(|call| conventions::server_span(&spans, call.trace_id).is_some())
+            && streams::recorded(&spans);
         if settled || tokio::time::Instant::now() >= deadline {
             break spans;
         }
@@ -252,12 +257,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
 
     for call in &CALLS {
         let b = call.binding;
-        let server = spans.iter().find(|s| {
-            s.span_kind == SpanKind::Server
-                && s.name == SEND_SPAN
-                && s.span_context.trace_id().to_string() == call.trace_id
-        });
-        let Some(server) = server else {
+        let Some(server) = conventions::server_span(&spans, call.trace_id) else {
             gaps.push(format!(
                 "{b}: no SERVER span `{SEND_SPAN}` in trace {} (O1)",
                 call.trace_id

@@ -12,6 +12,15 @@ use crate::SEND_SPAN;
 use crate::fixtures::attr;
 
 /// Checks binding `b`'s executor span `span` and its call's `server` span.
+/// The `SERVER` span `SendMessage` recorded in trace `trace_id`.
+pub fn server_span<'a>(spans: &'a [SpanData], trace_id: &str) -> Option<&'a SpanData> {
+    spans.iter().find(|s| {
+        s.span_kind == SpanKind::Server
+            && s.name == SEND_SPAN
+            && s.span_context.trace_id().to_string() == trace_id
+    })
+}
+
 pub fn check_call(b: &str, span: &SpanData, server: &SpanData, gaps: &mut Vec<String>) {
     // The GenAI conventions' internal `invoke_agent` span, which
     // is what an agent-aware backend keys on (Langfuse: AGENT,

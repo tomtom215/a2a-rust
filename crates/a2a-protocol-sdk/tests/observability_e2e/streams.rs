@@ -179,6 +179,16 @@ fn server_span<'a>(spans: &'a [SpanData], text: &str) -> Option<&'a SpanData> {
     })
 }
 
+/// Whether every call [`run`] made has its `SERVER` span among `spans`.
+pub fn recorded(spans: &[SpanData]) -> bool {
+    let mut texts: Vec<&str> = STREAMED.iter().map(|(_, text)| *text).collect();
+    texts.push("stream-cancel");
+    if cfg!(feature = "websocket") {
+        texts.extend(["ws-1", "ws-2", "stream-WEBSOCKET"]);
+    }
+    texts.iter().all(|text| server_span(spans, text).is_some())
+}
+
 fn lasted(span: &SpanData) -> Duration {
     span.end_time
         .duration_since(span.start_time)
