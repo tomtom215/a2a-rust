@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! `halts` and `tenant_scope` graded on states `check_handlers` cannot reach
-//! through a store: each check that needs two things must fail when only one
-//! holds. The mutation gate found these conjunctions untested: `||` survived
-//! in each.
+//! `halts`, `restart_and_resume` and `tenant_scope` graded on states
+//! `check_handlers` cannot reach through a store: each check that needs two
+//! things must fail when only one holds. The mutation gate found these
+//! conjunctions untested: `||` survived in each.
 
 use super::*;
 use crate::conformance::Outcome;
@@ -65,4 +65,20 @@ async fn a_tenant_refused_on_the_other_replica_is_not_spared() {
     let result = tenant_scope(&here, &there).await;
     assert_eq!(result.outcome, Outcome::Fail, "{result:?}");
     assert!(result.detail.contains("beta spared: false"), "{result:?}");
+}
+
+/// A resume that lifted nothing fails, even where the replica built after
+/// it admits sends.
+#[tokio::test]
+async fn a_resume_that_lifted_nothing_fails_however_the_restart_went() {
+    let fresh = || replica(Arc::new(InMemoryHaltStore::new())).expect("builds");
+    let (here, there, restarted) = (fresh(), fresh(), fresh());
+    let results = restart_and_resume(&here, &there, &restarted).await;
+    assert!(
+        failed(
+            &results,
+            "a_resume_on_any_replica_lifts_the_halt_everywhere"
+        ),
+        "{results:?}"
+    );
 }
