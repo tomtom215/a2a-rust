@@ -243,30 +243,23 @@ pub(super) async fn process_event_with(
                 let prev_metadata = existing.metadata.clone();
 
                 let appended = update.artifact.parts.len();
-                existing.parts.extend(update.artifact.parts.iter().cloned());
-                // Merge metadata: new values override existing keys.
-                if let Some(ref new_meta) = update.artifact.metadata {
-                    let meta = existing
-                        .metadata
-                        .get_or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-                    if let (Some(existing_map), Some(new_map)) =
-                        (meta.as_object_mut(), new_meta.as_object())
-                    {
-                        for (k, v) in new_map {
-                            existing_map.insert(k.clone(), v.clone());
-                        }
-                    }
-                }
-                if let Err(e) = task_store
-                    .save_artifact_delta(
-                        last_task,
-                        ArtifactDelta::AppendedParts {
-                            index,
-                            count: appended,
-                        },
-                    )
-                    .await
-                {
+                // The delta carries the new parts only; an append that changed
+                // the metadata is written whole (`merge_append`).
+                let written =
+                    if crate::handler::event_processing::merge_append(existing, &update.artifact) {
+                        task_store.save(last_task).await
+                    } else {
+                        task_store
+                            .save_artifact_delta(
+                                last_task,
+                                ArtifactDelta::AppendedParts {
+                                    index,
+                                    count: appended,
+                                },
+                            )
+                            .await
+                    };
+                if let Err(e) = written {
                     if let Some(refused) = refusal(&e) {
                         return refused;
                     }

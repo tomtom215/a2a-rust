@@ -286,7 +286,7 @@ for line 212 records the wait and this reasoning.
 
 ## R36(b) — a task snapshot may move a task back to `Submitted`
 
-**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:381-384` and
+**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:374-384` and
 `crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:524-526` store an executor's `Task` snapshot without
 `can_transition_to`, which forbids re-entering `Submitted`
 (`crates/a2a-protocol-types/src/task.rs:318`) and is applied only to status updates. The store refuses only

@@ -59,10 +59,9 @@ only: when something here is done, delete it rather than annotating it.
   server test targets with all features (1,221 passed, 114 ignored), run 5
   at a time because 15 at a time filled the disk at link time. That
   commit's message says 22 hand mutants and 170 citations; recounted, they
-  are 21 and 169. Found on the way, not fixed:
-  metadata on an artifact append chunk is kept by the in-memory store and
-  dropped by the SQLite and PostgreSQL append deltas (read, not yet
-  reproduced by a test).
+  are 21 and 169. Found on the way, and fixed
+  2026-10-22: metadata on an appended artifact chunk was dropped by the
+  SQLite and PostgreSQL stores (`tests/artifact_append_metadata.rs`).
 - **Built on this branch (2026-10-22):** ADR 0026's tool-call idempotency:
   `ToolInvocation::idempotency_key`, `Tool::read_only`, and a repeated call
   to a side-effecting tool answered from the first
@@ -417,6 +416,9 @@ into this file: the commit that records it changes it.
   means the disk is full. `bindings/a2a-protocol-slimrpc/target` reaches
   12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
   and delete it afterwards.
+- **`check_file_lengths.sh` counts tracked files only:** run it after
+  `git add`, or a new file over 500 lines passes unseen (it did:
+  `tests/provenance_signing.rs`, 533 lines, at `69163dec`).
 - **PostgreSQL 16** is installed: `pg_ctlcluster 16 main start`, then
   `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`.
   The `postgres` role's password is not always `postgres` in a fresh

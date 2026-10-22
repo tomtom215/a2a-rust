@@ -2035,6 +2035,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Metadata on an appended artifact chunk is kept in SQLite and
+  PostgreSQL** (server). Both event processors merge an appended chunk's
+  `metadata` into the stored artifact and wrote the change as
+  `ArtifactDelta::AppendedParts`, which the SQLite and PostgreSQL stores
+  (and `EncryptedTaskStore` over them) apply by writing the new parts
+  alone, so `GetTask` returned the first chunk's metadata there and the
+  merged metadata in memory. An append that changes the metadata is now
+  written with `save`; one that does not is still a delta.
+  `tests/artifact_append_metadata.rs` fails without the fix on all three.
+
 - **A continuation saved on one replica could hide another replica's event
   from a subscriber** (server, spec §3.5.2). A continuation's save replaces
   the stored artifacts and metadata with the ones its send read; when

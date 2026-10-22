@@ -3162,7 +3162,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:491",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:374"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:367"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/spec_s3_send_shapes.rs:238 blocking_send_persists_agent_message_in_task_history",
@@ -9141,7 +9141,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:60"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:979 process_event_invalid_state_transition_returns_error",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:973 process_event_invalid_state_transition_returns_error",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid",
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
    ],
@@ -9294,8 +9294,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:407",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:465",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:303",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:313"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:296",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:306"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/sync_mode.rs a_repeated_artifact_id_replaces_on_the_blocking_path",
@@ -9346,9 +9346,9 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1633 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1298 an_appended_chunk_with_no_parts_is_dropped",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1235 artifact_with_empty_parts_is_dropped_when_not_appending",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1626 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1292 an_appended_chunk_with_no_parts_is_dropped",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1229 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
     "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts"
    ],
@@ -9537,8 +9537,8 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:219"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1352 artifact_append_merges_into_the_existing_artifact",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1473 artifact_append_targets_the_matching_id_not_another"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1346 artifact_append_merges_into_the_existing_artifact",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1467 artifact_append_targets_the_matching_id_not_another"
    ],
    "notes": "Parts extended and metadata merged into the artifact with matching id.",
    "auditor": "G",
