@@ -19,6 +19,8 @@
 //! installed, so none can disable a callsite again; scoped subscribers then
 //! see every span and event they ask for.
 
+#![cfg(feature = "tracing")]
+
 use std::cell::Cell;
 use std::sync::OnceLock;
 

@@ -134,7 +134,7 @@ mod legacy_card;
 mod loopback;
 mod plaintext;
 mod redact;
-#[cfg(all(test, feature = "tracing"))]
+#[cfg(test)]
 mod test_tracing;
 
 pub mod auth;
