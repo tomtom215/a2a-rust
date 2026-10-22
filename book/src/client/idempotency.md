@@ -144,6 +144,22 @@ The advertisement is derived from the store rather than configured by hand, so
 the card and the behaviour cannot drift: swapping in a store without the index
 removes the advertisement in the same change.
 
+## Delegation adds one
+
+`delegation::Delegation::start` (and `start_leased`, `start_budgeted`) gives
+the child's message a fresh key when the message has none and the client
+knows its agent honours keys (`A2aClient::honours_idempotency`, set by
+`ClientBuilder::from_card`). A key you set is kept, and
+`Delegation::idempotency_key` returns whichever the message carried. Nothing
+is added for an agent not known to honour keys, since this SDK's server
+refuses a key its store cannot honour.
+
+What the key buys depends on what resends. A client with a retry policy
+retries a keyed send that failed ambiguously, and the agent answers the
+retry with the child the first attempt created. A parent that resends
+itself after `start` fails must set the key before calling `start`: a
+failed `start` returns no handle to read it from. ADR 0026 has the rest.
+
 ## The three outcomes
 
 | What arrives | What happens |

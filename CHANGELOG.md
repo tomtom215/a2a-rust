@@ -372,6 +372,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **Delegation keys its sends** (client; ADR 0026). `Delegation::start`,
+  and so `start_leased` and `start_budgeted`, gives the child's message a
+  fresh idempotency key (64 hex digits from two version-4 UUIDs) when it
+  has none and the agent is known to honour keys; a caller's key is kept.
+  `Delegation::idempotency_key` returns it, and
+  `A2aClient::honours_idempotency` says whether the agent's card advertised
+  the extension (or the builder was told it does).
 - **A production profile that refuses to start** (server; ADR 0025).
   `Profile::Production` makes `build()` refuse a handler with no
   authenticating interceptor, no halt store or no lease store, naming the

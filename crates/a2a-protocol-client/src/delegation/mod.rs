@@ -40,6 +40,19 @@
 //! settles on a status update that reports its spend, the parent is charged
 //! that instead of the reservation; every other ending refunds nothing.
 //!
+//! Every `start` gives the child's message an idempotency key
+//! (`a2a_protocol_types::idempotency`, ADR 0026) when the message has none
+//! and the agent is known to honour one
+//! ([`A2aClient::honours_idempotency`]). A client with a retry policy then
+//! retries a send that failed ambiguously without starting a second child,
+//! and the same message sent again with the handle's
+//! [`idempotency_key`](Delegation::idempotency_key) reaches the child the
+//! first created (after [`Outcome::Lost`] with no task id, say). A parent
+//! that resends after `start` itself fails sets the key first, since a
+//! failed `start` returns no handle to read it from. To an agent not known
+//! to honour keys nothing is added: this SDK's server refuses a key its
+//! store cannot honour.
+//!
 //! ```rust,no_run
 //! use std::sync::Arc;
 //! use a2a_protocol_client::{ClientBuilder, delegation::{Delegation, Outcome}};
@@ -65,6 +78,7 @@ use std::time::Duration;
 
 use a2a_protocol_types::budget::{BudgetStatus, ChildGrant};
 use a2a_protocol_types::failure::{FailureClass, class_of};
+use a2a_protocol_types::idempotency;
 use a2a_protocol_types::{Message, MessageSendParams, StreamResponse, TaskState, TaskStatus};
 
 use crate::client::A2aClient;
@@ -77,6 +91,16 @@ use renewal::Renewal;
 /// How long a cancel waits for the child's id, when it is asked for before
 /// the first event named the child.
 pub const DEFAULT_ID_WAIT: Duration = Duration::from_secs(5);
+
+/// A fresh idempotency key: two version-4 UUIDs, 244 random bits from the
+/// operating system's generator, as 64 hex digits.
+fn fresh_key() -> String {
+    format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
 
 /// What became of a delegated task.
 #[derive(Debug)]
@@ -161,17 +185,35 @@ pub struct Delegation {
     /// The child's budget, and the report the event that settled the child
     /// carried, if it carried one.
     budget: Option<(ChildGrant, Option<BudgetStatus>)>,
+    /// The child message's idempotency key, if it carried one.
+    idempotency_key: Option<String>,
 }
 
 impl Delegation {
     /// Sends `params` as a streaming message and returns the handle following
     /// it. Nothing is cancelled until the handle is asked to, or dropped.
     ///
+    /// The message is given a fresh idempotency key when it has none and
+    /// the client knows its agent honours keys (see the [module docs](self));
+    /// a key already on the message is kept.
+    ///
     /// # Errors
     ///
     /// Returns the client's error when the stream cannot be opened. No child
     /// was created then, or none whose id the agent told us.
-    pub async fn start(client: Arc<A2aClient>, params: MessageSendParams) -> ClientResult<Self> {
+    pub async fn start(
+        client: Arc<A2aClient>,
+        mut params: MessageSendParams,
+    ) -> ClientResult<Self> {
+        if client.honours_idempotency() && matches!(idempotency::key_of(&params.message), Ok(None))
+        {
+            // A fresh key is 64 hex digits, always valid, so this cannot fail.
+            let _ = idempotency::set_key(&mut params.message, &fresh_key());
+        }
+        let idempotency_key = idempotency::key_of(&params.message)
+            .ok()
+            .flatten()
+            .map(str::to_owned);
         let tenant = params.tenant.clone();
         let stream = client.stream_message(params).await?;
         Ok(Self {
@@ -184,7 +226,16 @@ impl Delegation {
             id_wait: DEFAULT_ID_WAIT,
             renewal: None,
             budget: None,
+            idempotency_key,
         })
+    }
+
+    /// The idempotency key the child's message carried: the caller's, or the
+    /// one [`start`](Self::start) gave it. The same message sent with it
+    /// reaches the same child.
+    #[must_use]
+    pub fn idempotency_key(&self) -> Option<&str> {
+        self.idempotency_key.as_deref()
     }
 
     /// [`start`](Self::start), granting the child a lease of `ttl` and
@@ -454,6 +505,7 @@ impl Drop for Delegation {
             id_wait: self.id_wait,
             renewal: None,
             budget: None,
+            idempotency_key: self.idempotency_key.take(),
         };
         rt.spawn(async move {
             let done = rest.cancel().await;

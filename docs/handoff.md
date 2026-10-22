@@ -51,8 +51,8 @@ only: when something here is done, delete it rather than annotating it.
 - **Built on this branch (2026-10-22):** ADR 0026's tool-call idempotency:
   `ToolInvocation::idempotency_key`, `Tool::read_only`, and a repeated call
   to a side-effecting tool answered from the first
-  (`tool_loop/idempotency.rs`). Delegation sends still carry no key unless
-  the caller sets one.
+  (`tool_loop/idempotency.rs`); `Delegation::start` keys the child's
+  message when the agent's card honours keys.
 - **Built on this branch (2026-10-21):** ADR 0025's production profile:
   `Profile::Production` (`profile.rs`) and `ServeConfig::production()`
   (`serve/graceful/production.rs`, `ServeReport::refused`). Not covered:

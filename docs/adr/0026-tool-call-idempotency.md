@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# ADR 0026: Tool calls carry idempotency keys, and a repeated call runs once
+# ADR 0026: Tool calls and delegations carry idempotency keys; a repeated call runs once
 
 **Date:** 2026-10-22
 **Status:** Accepted
@@ -63,6 +63,15 @@ side effects by default. The tool loop (ADR 0022) is unreleased, so its
   the default: a lookup left undeclared answers a repeated question from
   the first answer; an effect wrongly declared read-only would act twice.
 
+- **Delegation keys its sends.** A delegated child is a side effect too.
+  `Delegation::start` gives the child's message a fresh key (two version-4
+  UUIDs, 64 hex digits) when it has none and `A2aClient::honours_idempotency`
+  says the agent's card advertised the extension; a caller's key is kept,
+  and `Delegation::idempotency_key` returns it. Nothing is added otherwise:
+  this SDK's server refuses a keyed send its store cannot honour, so a key
+  sent on a guess could break delegation to it. Random, not derived, as the
+  book requires of send keys, which are the handle to a task.
+
 Alternatives not taken:
 
 - *A key and nothing else.* It leaves a repeated call to every backend to
@@ -94,10 +103,16 @@ Alternatives not taken:
   - a message resent without a send key is a new task, with new keys, and
     its tools run again. The send key (`book/src/client/idempotency.md`)
     is what makes the resend the same work.
+- A delegation's key helps a client with a retry policy (it retries the
+  keyed send) and a parent holding the handle. A parent that resends after
+  `start` fails sets its own key first; `from_card` sets no retry policy.
 - Tests that fail without it (`tool_loop/run_tests/idempotency.rs`,
   `tool_loop/idempotency.rs`), each checked against a hand mutant on
   2026-10-22: no replay fails 2, a key ignoring the scope 3, the executor
-  drawing a fresh scope 1. The known-answer key was computed with Python's
+  drawing a fresh scope 1, `Delegation` adding no key 1
+  (`a2a-protocol-client/tests/delegation_idempotency_tests.rs`, where the
+  same message resent with its key reached the same child and the worker
+  ran once). The known-answer key was computed with Python's
   `hmac`, not this code. Removing the field sort fails no test in the
   server's own build, where `serde_json`'s map is sorted already; under
   `--features serde_json/preserve_order`, which `genai` 0.7 turns on in any

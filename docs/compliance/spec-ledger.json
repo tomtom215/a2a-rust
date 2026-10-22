@@ -1342,7 +1342,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:59",
-    "crates/a2a-protocol-client/src/client.rs:150",
+    "crates/a2a-protocol-client/src/client.rs:172",
     "crates/a2a-protocol-client/src/discovery.rs:493"
    ],
    "test_evidence": [
@@ -1480,7 +1480,7 @@
     "crates/a2a-protocol-server/src/handler/helpers.rs:102",
     "crates/a2a-protocol-server/src/handler/capability.rs:121",
     "crates/a2a-protocol-client/src/builder/mod.rs:581",
-    "crates/a2a-protocol-client/src/builder/transport_factory.rs:98",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:99",
     "crates/a2a-protocol-client/src/extensions.rs:35",
     "crates/a2a-protocol-client/src/extensions.rs:50",
     "crates/a2a-protocol-client/src/transport/websocket.rs:602"
@@ -2213,7 +2213,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/declared.rs:60",
-    "crates/a2a-protocol-client/src/client.rs:139",
+    "crates/a2a-protocol-client/src/client.rs:161",
     "crates/a2a-protocol-client/src/methods/send_message.rs:49",
     "crates/a2a-protocol-client/src/builder/mod.rs:506"
    ],
@@ -5309,7 +5309,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:197",
-    "crates/a2a-protocol-client/src/builder/transport_factory.rs:126"
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:127"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:722 from_card_prefers_the_callers_binding_order_over_the_cards",
@@ -5329,7 +5329,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:222",
-    "crates/a2a-protocol-client/src/builder/transport_factory.rs:123",
+    "crates/a2a-protocol-client/src/builder/transport_factory.rs:124",
     "crates/a2a-protocol-client/src/methods/mod.rs:31",
     "crates/a2a-protocol-client/src/methods/send_message.rs:40",
     "crates/a2a-protocol-client/src/methods/extended_card.rs:34"
@@ -8244,7 +8244,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/extended_card.rs:59",
-    "crates/a2a-protocol-client/src/client.rs:150",
+    "crates/a2a-protocol-client/src/client.rs:172",
     "crates/a2a-protocol-client/src/discovery.rs:493"
    ],
    "test_evidence": [

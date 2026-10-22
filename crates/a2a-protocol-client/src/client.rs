@@ -66,6 +66,8 @@ pub struct A2aClient {
     /// the checks were turned off. Behind a lock because fetching the
     /// extended card replaces them ([`Self::adopt_capabilities`]).
     pub(crate) declared: RwLock<Option<DeclaredCapabilities>>,
+    /// Whether the agent is known to honour an idempotency key.
+    pub(crate) honours_idempotency: bool,
 }
 
 impl A2aClient {
@@ -120,7 +122,27 @@ impl A2aClient {
             #[cfg(feature = "otel")]
             metric: crate::call_metric::CallMetric::global(),
             declared: RwLock::new(None),
+            honours_idempotency: false,
         }
+    }
+
+    /// Records whether the agent is known to honour an idempotency key.
+    pub(crate) const fn with_peer_honouring_idempotency(mut self, honours: bool) -> Self {
+        self.honours_idempotency = honours;
+        self
+    }
+
+    /// Whether the agent is known to honour an idempotency key
+    /// (`a2a_protocol_types::idempotency`): its card advertised the
+    /// extension ([`ClientBuilder::from_card`]), or the builder was told so
+    /// with
+    /// [`ClientBuilder::with_peer_honouring_idempotency`](crate::builder::ClientBuilder::with_peer_honouring_idempotency).
+    /// Only then is a keyed send retried after an ambiguous failure, and
+    /// only then does [`Delegation`](crate::delegation::Delegation) attach a
+    /// key of its own.
+    #[must_use]
+    pub const fn honours_idempotency(&self) -> bool {
+        self.honours_idempotency
     }
 
     /// Sets what the client's spans say about the agent it calls.
