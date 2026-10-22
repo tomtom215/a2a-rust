@@ -315,7 +315,7 @@ fn failure_type(status: &a2a_protocol_types::task::TaskStatus) -> &'static str {
 /// its list (`stop`, `length`, `content_filter`, `tool_call`, `compaction`,
 /// `error`), so
 /// none is claimed for them.
-#[cfg(feature = "tracing")]
+#[cfg(feature = "otel")]
 const fn finish_reason(state: TaskState) -> Option<&'static str> {
     match state {
         TaskState::Completed => Some("stop"),
@@ -487,6 +487,7 @@ mod tests {
         assert_eq!(modality(None), "document");
     }
 
+    #[cfg(feature = "otel")]
     #[test]
     fn only_completed_and_failed_claim_a_finish_reason() {
         assert_eq!(finish_reason(TaskState::Completed), Some("stop"));

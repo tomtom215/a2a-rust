@@ -497,6 +497,11 @@ into this file: the commit that records it changes it.
 - Run every clippy invocation CI runs, not only `--all-features`: a type
   used by an always-compiled store from a module gated on `sqlite` built
   with all features and nowhere else (2026-10-18).
+  The 13 named invocations are not all of it: `cargo hack clippy
+  --each-feature` (57 runs) and `cargo doc -p <crate>` per crate, outside
+  the workspace's feature unification, caught a dead function and a link to
+  a `signing`-only method on pull request #178 that every named run passed
+  (2026-10-22).
 - An end-to-end test of a new client helper found a server bug the
   server's own tests missed: after a blocking send answered at
   `AUTH_REQUIRED`, nothing stored the rest of the run. Test the path a

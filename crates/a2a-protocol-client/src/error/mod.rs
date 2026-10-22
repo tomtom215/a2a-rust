@@ -144,7 +144,7 @@ pub enum ClientError {
     /// artifact or agent message whose signature does not verify against
     /// the client's content keys, because it was altered or signed by a key
     /// not in the set, or one carrying no signature when the client requires
-    /// one ([`ClientBuilder::with_content_keys`](crate::ClientBuilder::with_content_keys)).
+    /// one (`ClientBuilder::with_content_keys`, feature `signing`).
     /// Not retryable: the same content fails the same way.
     ContentNotVerified(String),
 }
