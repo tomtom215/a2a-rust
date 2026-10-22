@@ -23,9 +23,13 @@ only: when something here is done, delete it rather than annotating it.
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
 - **Working branch:** `claude/jolly-hypatia-lsr7uv`, started 2026-10-20
-  from `main` at `6c90d0b` (pull request #173 merged that day), pushed, no
-  pull request yet. `git log 6c90d0b..` lists its commits; each message says
-  what it changed and how it was verified.
+  from `main` at `6c90d0b` (pull request #173 merged that day), pushed.
+  `git log 6c90d0b..` lists its commits; each message says what it changed
+  and how it was verified. Wrapped up for a pull request on 2026-10-22,
+  because container restarts kept killing long work: the study's raw runs
+  were moved out of scratch space into the repository and the method
+  committed as a draft (*Next*, item 2). The commits after the kill-switch
+  conformance one change only `scripts/tool_calling_study/` and `docs/`.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the
@@ -141,12 +145,32 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **The tool-calling study** (`scripts/tool_calling_study/`,
-   `docs/tool-calling-study.md` once written): direct and SDK arms over four
-   GGUFs, n = 30 a cell. Started 2026-10-20; results to be scored, audited
-   run by run against the rubric in `score.py`, and written up with
-   intervals. What it answers: whether this SDK's loop changes what a model
-   does with tools, against the same model asked directly.
+2. **Finish the tool-calling study.** It answers whether this SDK's loop
+   changes what a model does with tools, against the same model asked
+   directly: direct and SDK arms over four GGUFs, 30 seeds of each of two
+   prompts a cell, 16 cells. The runs are in
+   `scripts/tool_calling_study/runs/`, whose README gives each cell's
+   state and provenance; `docs/tool-calling-study.md` holds the method,
+   marked as a draft with no results. On 2026-10-22, 14 cells were
+   complete; `sdk_qwen3-1.7b-q4_k_m_on` (42 of 60) and
+   `sdk_qwen3.5-2b-q4_k_m_on` (58 of 60) were not. In order:
+   1. Build `tool-loop-agent` in release and run `study.sh` with `OUT_DIR`
+      set to `scripts/tool_calling_study/runs` (the command is in the
+      write-up). It skips finished cells and runs only missing seeds. The
+      new binary's hash will differ from the `01dce94e…` the other SDK
+      cells record, since release builds here are not byte-reproducible;
+      `cell.py` refuses a chunk whose header differs, so either drop
+      `binary_sha256` from the header comparison with a recorded reason or
+      re-run both incomplete cells in full. Decide before running. The
+      original binary was kept only in the 2026-10-22 session's scratch
+      space (`study/tool-loop-agent`, 5,349,440 bytes); if a session still
+      has it and its hash matches, use it and the question does not arise.
+   2. Recount with `len(runs)`, commit the files, and update the runs
+      README's table.
+   3. Score with `score.py`, then audit every answer against the rubric
+      by reading it, recording each disagreement with the scorer.
+   4. Write the results into the doc with Wilson intervals, and remove its
+      draft notice.
 3. **OpenTelemetry, batch B:** telemetry initialised in every example,
    `tck/sut`, the ITK agents and the CLI; streaming span lifetime; a span per
    WebSocket frame; a client call-duration metric; store spans; SLIMRPC's
@@ -509,6 +533,16 @@ into this file: the commit that records it changes it.
 - A test that passes with and without the code it is meant to guard is
   not coverage: prove each new test fails without its fix, and drop one
   that cannot.
+
+- A line remap of ledger or control-map citations is applied once, to
+  files restored from `HEAD`: run on an already-remapped tree it shifts
+  every moved citation again, and the checkers, which check names not line
+  text, pass it (2026-10-22).
+- Long work in this container dies with it: results kept in scratch space
+  are lost on a restart. Commit raw results as they arrive, and make any
+  long driver resumable and check that its server is ready before each
+  chunk (a restart script that did not filled two cells with failed runs
+  in seconds, 2026-10-22).
 
 ## History
 

@@ -3065,6 +3065,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **A prompt-injection containment harness** (`a2a-protocol-sdk/tests/injection_containment/`,
+  `docs/injection-containment.md`). A deterministic model that obeys every
+  `CALL` line it reads drives a `ToolLoopExecutor` whose tools pay, fetch
+  pages an attacker wrote, and reach other agents over A2A on loopback. 8
+  tests show a control containing an injection (tool-call idempotency, the
+  token budget, content provenance, the approval gate, delegated budgets,
+  caller isolation, the halt), each failing alone when its control is
+  switched off; 3 assert what is not contained, so a change that closes one
+  is noticed.
+- **The tool-calling study's raw runs are committed**
+  (`scripts/tool_calling_study/runs/`), with the scripts that resume it;
+  `docs/tool-calling-study.md` gives its method as a draft. Not scored: two
+  of 16 cells are incomplete.
 - **What the SDK seals at rest is checked four ways** (server, `encryption`).
   Against another implementation: `scripts/crypto_interop/check.py` (CI,
   `ci.yml`, from a hash-locked `cryptography`) states the byte layout and
