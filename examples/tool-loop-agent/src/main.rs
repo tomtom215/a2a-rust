@@ -128,6 +128,7 @@ fn model_from_env() -> Result<OpenAiChatModel, Box<dyn std::error::Error>> {
     let base = std::env::var("TOOL_LOOP_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:8080/v1".to_owned());
     let name = std::env::var("TOOL_LOOP_MODEL").unwrap_or_else(|_| "qwen3:1.7b".to_owned());
+    println!("model: {name} at {base}");
     let mut model = OpenAiChatModel::new(&base, name)?;
     if let Ok(key) = std::env::var("TOOL_LOOP_API_KEY") {
         model = model.with_api_key(key);
@@ -166,7 +167,6 @@ async fn main() -> ExitCode {
     };
     let run = async {
         let model = model_from_env()?;
-        println!("model: {}", model.model_name());
         let url = serve_agent(model).await?;
         println!("agent: {url}");
         println!("asked: {prompt}");
