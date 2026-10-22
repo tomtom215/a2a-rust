@@ -248,8 +248,14 @@ impl Inbound {
     }
 
     /// What `message`'s signature shows: without `signing`, never checked.
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Ok(Default::default())`, and `ContentCheck`'s default is `NotChecked`,
+    // the value written here. The gate also builds with every feature, where
+    // this function is compiled out. No test can distinguish the two (ADR
+    // 0006).
     #[cfg(not(feature = "signing"))]
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)] // the signing build's shape
+    #[mutants::skip]
     pub const fn check(
         &self,
         _message: &Message,
