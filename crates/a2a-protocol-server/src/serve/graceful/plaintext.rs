@@ -70,6 +70,47 @@ mod tests {
         assert_eq!(logged("0.0.0.0:8443", true), Vec::<String>::new());
     }
 
+    /// A server serving plaintext on every interface warns, unless it is told
+    /// TLS is terminated in front of it. The mutation gate found the second
+    /// half untested: warning only when TLS was terminated in front survived.
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn a_server_warns_unless_tls_is_terminated_in_front() {
+        use std::sync::Arc;
+        struct Idle;
+        crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+        let warned = |config: super::super::ServeConfig| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            let warnings = crate::handler::warnings_during(|| {
+                runtime.block_on(async {
+                    let handler = Arc::new(
+                        crate::RequestHandlerBuilder::new(Idle)
+                            .without_agent_card()
+                            .build()
+                            .expect("handler"),
+                    );
+                    super::super::Server::bind("0.0.0.0:0")
+                        .await
+                        .expect("bind")
+                        .with_config(config)
+                        .serve_with_shutdown(
+                            crate::dispatch::JsonRpcDispatcher::new(handler),
+                            async {},
+                        )
+                        .await;
+                });
+            });
+            warnings.iter().any(|w| w == "plaintext listener")
+        };
+        assert!(warned(super::super::ServeConfig::new()));
+        assert!(!warned(
+            super::super::ServeConfig::new().with_tls_terminated_in_front()
+        ));
+    }
+
     #[test]
     fn loopback_or_tls_is_not() {
         assert!(!warns("127.0.0.1:8080", false));
