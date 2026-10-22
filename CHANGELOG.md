@@ -2850,6 +2850,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Lockfiles move off this week's advisories** (no manifest change).
+  `tokio` 1.54.0, yanked for a use-after-free race in `time::Interval` on
+  the multi-threaded runtime (GHSA-5wjr-9356-4wc8; the server's halt sync
+  uses `Interval`), is replaced by 1.54.1 in the workspace, SLIMRPC, fuzz
+  and ITK lockfiles. `rustls-webpki` 0.103.15 (RUSTSEC-2026-0382, distrusted
+  emSign intermediates) is replaced by 0.103.16 wherever it was locked, and
+  the SDK-comparison harness's `webpki-root-certs` 1.0.9 (RUSTSEC-2026-0383)
+  by 1.0.10. In
+  CI's hash-locked Python tools, `certifi` 2026.7.22 (GHSA-6q48-6c7w-9gw2)
+  becomes 2026.10.19 and `uv` 0.13.1 (GHSA-hq85-5cpj-mr62) becomes 0.13.5,
+  for the same emSign root. The manifests still admit `tokio` 1.54.0 to a
+  downstream build that resolves its own; crates.io has yanked it, so a
+  new resolution does not pick it.
+
 - **`webpki-roots` requires 1.0.10** (client, server; RUSTSEC-2026-0381,
   affecting 1.0.0 to 1.0.9). The lockfiles already resolved 1.0.10, except
   the SDK-comparison bench harness, which is updated; the manifests admitted
