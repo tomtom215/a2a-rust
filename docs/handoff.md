@@ -55,7 +55,11 @@ only: when something here is done, delete it rather than annotating it.
   (`src/content.rs`, `ClientError::ContentNotVerified`), and
   `Profile::Production` requiring a signer. An independent review found 12
   problems; the 9 fixed and the limits left are in ADR 0027 (including an
-  unreleased flaw in `verify_content`). Found on the way, not fixed:
+  unreleased flaw in `verify_content`). Verified at `69163dec`: all 169
+  server test targets with all features (1,221 passed, 114 ignored), run 5
+  at a time because 15 at a time filled the disk at link time. That
+  commit's message says 22 hand mutants and 170 citations; recounted, they
+  are 21 and 169. Found on the way, not fixed:
   metadata on an artifact append chunk is kept by the in-memory store and
   dropped by the SQLite and PostgreSQL append deltas (read, not yet
   reproduced by a test).
