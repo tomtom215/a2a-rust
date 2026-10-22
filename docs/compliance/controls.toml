@@ -410,6 +410,9 @@ tests = [
   "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_halt_is_pushed_to_the_other_replica",
   "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_cancel_is_pushed_to_the_replica_running_the_task",
   "crates/a2a-protocol-server/src/store/halt/tests.rs::postgres_pushes_between_replicas",
+  "crates/a2a-protocol-server/tests/kill_switch_conformance.rs::the_in_memory_halt_store_conforms",
+  "crates/a2a-protocol-server/tests/kill_switch_conformance.rs::the_sqlite_halt_store_conforms",
+  "crates/a2a-protocol-server/src/conformance/halt/tests.rs::each_flaw_is_named",
 ]
 evidence = ["docs/swarm-orchestration.md", "book/src/deployment/oversight.md", "docs/adr/0019-shared-halt-store.md", "docs/adr/0024-pushed-halts-and-cancels.md"]
 gap = "Without a halt store a halt holds in one process; with a SQLite store, or a custom one that does not push, another replica follows within its poll interval rather than at once. A cancel pushed to the replica running the task fires its token, but streams open there end without the `Canceled` frame (ADR 0024). An executor that ignores its token keeps running: nothing forces it to stop (a bounded cancel deadline that drops its future, as the executor timeout does, is not built). A crashed parent's delegated children stop only if it started them with a lease (ADR 0020, `Delegation::start_leased`); leases are opt-in."
@@ -1433,8 +1436,11 @@ tests = [
   "crates/a2a-protocol-server/src/handler/halt/store_tests.rs::a_halt_on_one_replica_stops_and_refuses_on_the_other",
   "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_halt_is_pushed_to_the_other_replica",
   "crates/a2a-protocol-server/src/handler/halt/push_tests.rs::a_cancel_is_pushed_to_the_replica_running_the_task",
+  "crates/a2a-protocol-server/tests/kill_switch_conformance.rs::the_in_memory_halt_store_conforms",
+  "crates/a2a-protocol-server/tests/kill_switch_conformance.rs::the_sqlite_halt_store_conforms",
+  "crates/a2a-protocol-server/src/conformance/halt/tests.rs::each_flaw_is_named",
 ]
-gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt reaches other replicas only through a halt store; one that does not push (SQLite, a custom store) is followed within its poll interval. A pushed cancel fires the running executor's token, and an executor that ignores its token runs on."
+gap = "Nothing detects a rogue agent: deciding to halt is a person's or an integrator's monitor's. A halt reaches other replicas only through a halt store; one that does not push (SQLite, a custom store) is followed within its poll interval. A custom store is graded by `conformance::halt`. A pushed cancel fires the running executor's token, and an executor that ignores its token runs on."
 
 [[control]]
 id = "ASI-MODEL"

@@ -372,6 +372,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **Kill-switch conformance** (server, feature `conformance`).
+  `conformance::halt::check_store` grades a `HaltStore` against its
+  contract (replace and remove per scope, scopes that do not collide,
+  another handle reading what was written, pushed writes and cancels when
+  the store pushes); `check_handlers` builds two replicas on it and grades
+  the halt end to end: running tasks stopped on both, new work refused on
+  both, a restarted replica halted, a resume on either lifting it
+  everywhere, and a tenant's halt sparing other tenants. The in-memory,
+  SQLite and PostgreSQL stores pass. `Report`'s heading now names what it
+  graded (`executor conformance:`, `halt store conformance:`, `kill switch
+  conformance:`).
 - **The server signs what it serves** (server, feature `signing`; ADR
   0027). `RequestHandlerBuilder::with_content_signer` signs every agent
   message and artifact on a stream, a push, and in what `SendMessage`,

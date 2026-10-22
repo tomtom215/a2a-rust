@@ -48,6 +48,13 @@ only: when something here is done, delete it rather than annotating it.
   included against a local PostgreSQL 16: 170 distinct tests across 50
   targets, all passing. `check_compliance_map.py` only checks that a cited
   test exists, so rerun them after editing a cited file.
+- **Built on this branch (2026-10-22):** kill-switch conformance,
+  `conformance::halt::{check_store, check_handlers}` (feature
+  `conformance`): 8 store checks and 9 end-to-end replica checks, tested
+  against deliberately broken stores; the in-memory, SQLite and PostgreSQL
+  stores pass (`tests/kill_switch_conformance.rs`). This completes the
+  2026-10-21 safety list except the upstream drafts, which wait on the
+  maintainer.
 - **Built on this branch (2026-10-22):** the prompt-injection containment
   harness (`crates/a2a-protocol-sdk/tests/injection_containment/`,
   `docs/injection-containment.md`): a model that obeys every instruction

@@ -90,6 +90,56 @@ grades an overrun as a failure, so a very slow but correct executor is
 reported as broken; and it grades the executor, not the deployment — the TCK
 is still what says your *server* conforms.
 
+### Kill-switch conformance
+
+A halt (`RequestHandler::halt`) is an operator's last control over agents
+that misbehave, and with a `HaltStore` it reaches every replica and
+survives a restart. If you write your own store, grade it with
+`conformance::halt`, behind the same feature. `open` must open the same
+backing store on each call, starting empty, as another replica would:
+
+```rust
+# use std::sync::Arc;
+# use a2a_protocol_server::conformance::halt::{check_handlers, check_store};
+# use a2a_protocol_server::store::{HaltStore, InMemoryHaltStore};
+# async fn kill_switch_test() {
+let store = InMemoryHaltStore::new(); // yours here
+let open = move || {
+    let store = store.clone();
+    async move { Arc::new(store) as Arc<dyn HaltStore> }
+};
+check_store(&open).await.assert_pass();
+check_handlers(&open).await.assert_pass();
+# }
+# fn main() {
+#     tokio::runtime::Builder::new_current_thread()
+#         .enable_all()
+#         .build()
+#         .expect("runtime")
+#         .block_on(kill_switch_test());
+# }
+```
+
+`check_store` grades the store's contract: a write replaces the halt of its
+scope, a removal removes exactly its scope, the halt of everything and a
+tenant named `all` stay two halts, another handle reads what was written and
+sees what was removed, and, if the store pushes (ADR 0024), a write and a
+cancel reach the other handle's subscription. A store that does not push has
+those two checks not applicable; handlers on it poll. `check_handlers` builds
+two handlers on the store, as replicas, and grades the kill switch end to
+end: a halt stops the running task on this replica and on the other, refuses
+new work on both, is stored, holds on a replica built afterwards, is lifted
+everywhere by a resume on either replica, and a tenant's halt spares the
+other tenants.
+
+What it cannot tell you: it cannot make your store fail, so the rule that an
+unreadable store answers with an error, never with no halts, is not graded;
+it uses its own poll interval (50 ms) and an executor that honours
+cancellation, so it grades the store and the handler's wiring, not your
+interval or your executor; and it runs each check once, so it will not find
+a race. Every store this SDK ships passes it, PostgreSQL's included
+(`tests/kill_switch_conformance.rs`).
+
 ## Unit Testing Executors
 
 Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
