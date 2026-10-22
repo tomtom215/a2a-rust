@@ -48,6 +48,12 @@ only: when something here is done, delete it rather than annotating it.
   included against a local PostgreSQL 16: 170 distinct tests across 50
   targets, all passing. `check_compliance_map.py` only checks that a cited
   test exists, so rerun them after editing a cited file.
+- **Built on this branch (2026-10-22):** the prompt-injection containment
+  harness (`crates/a2a-protocol-sdk/tests/injection_containment/`,
+  `docs/injection-containment.md`): a model that obeys every instruction
+  it reads, 8 scenarios a control contains and 3 limits asserted as limits;
+  cited by the control map's ASI-MODEL row. Chosen by the maintainer over a
+  live-model susceptibility study (2026-10-22).
 - **Built on this branch (2026-10-22):** ADR 0027's provenance wiring:
   `with_content_signer` signs what the server serves (`src/provenance.rs`,
   the stream reader, push, the unary handlers), `with_content_keys` on the

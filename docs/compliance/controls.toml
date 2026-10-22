@@ -1441,9 +1441,20 @@ id = "ASI-MODEL"
 source = "owasp-asi"
 provision = "ASI01, ASI02, ASI05, ASI06"
 requirement = "Goal hijack, tool misuse, unexpected code execution, memory and context poisoning."
-sdk = "Server and client interceptors are where an integrator's filter or policy runs, before and after every call."
+sdk = "Server and client interceptors are where an integrator's filter or policy runs, before and after every call. When the model is hijacked anyway, the SDK contains the effects: a repeated side-effecting tool call runs once, the turn bound and the caller's token budget end a runaway run, content whose signature fails is refused before the model reads it, an approval gate refuses the requester's own approval, delegated budgets bound what children spend, a halt stops the run, and caller isolation hides other callers' tasks. `docs/injection-containment.md` has each scenario, against a model that obeys every instruction it reads."
 status = "integrator"
-gap = "These attack the model, its tools and its memory, which live in the integrator's executor, not in the transport."
+tests = [
+  "crates/a2a-protocol-sdk/tests/injection_containment/tool_results.rs::a_repeated_payment_planted_in_a_page_runs_once",
+  "crates/a2a-protocol-sdk/tests/injection_containment/tool_results.rs::the_callers_token_budget_ends_the_run_sooner",
+  "crates/a2a-protocol-sdk/tests/injection_containment/peers.rs::an_impostors_answer_is_refused_before_the_model_reads_it",
+  "crates/a2a-protocol-sdk/tests/injection_containment/peers.rs::an_unsigned_answer_is_refused_when_signatures_are_required",
+  "crates/a2a-protocol-sdk/tests/injection_containment/approval.rs::an_agent_cannot_approve_the_action_it_requested",
+  "crates/a2a-protocol-sdk/tests/injection_containment/delegation.rs::fan_out_stops_when_the_parents_budget_is_reserved",
+  "crates/a2a-protocol-sdk/tests/injection_containment/delegation.rs::another_callers_task_cannot_be_read_on_an_injected_instruction",
+  "crates/a2a-protocol-sdk/tests/injection_containment/operator.rs::a_halt_stops_an_injected_run_and_refuses_new_work",
+]
+evidence = ["docs/injection-containment.md"]
+gap = "Preventing the hijack is the integrator's: these attack the model, its tools and its memory, which live in the executor. What the SDK does not contain, each asserted by a test: differing side-effecting calls run until the turn bound or budget ends the run; unsigned content passes unless signatures are required; a trusted agent that is compromised is still obeyed, since a signature says who wrote content, not that it is safe."
 
 # ── ISO/IEC 42001 ────────────────────────────────────────────────────────────
 
