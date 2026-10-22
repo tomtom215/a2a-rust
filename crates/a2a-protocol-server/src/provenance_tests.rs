@@ -41,6 +41,10 @@ impl PushSender for Answers {
         self.private
     }
 
+    fn requires_https(&self) -> bool {
+        !self.private
+    }
+
     fn max_delivery_duration(&self) -> Option<Duration> {
         Some(Duration::from_secs(7))
     }
@@ -56,6 +60,7 @@ fn the_signing_push_sender_answers_as_the_one_it_wraps() {
             outbound: Outbound::signing(signer()),
         };
         assert_eq!(wrapped.allows_private_urls(), private);
+        assert_eq!(wrapped.requires_https(), !private);
         assert_eq!(
             wrapped.max_delivery_duration(),
             Some(Duration::from_secs(7))

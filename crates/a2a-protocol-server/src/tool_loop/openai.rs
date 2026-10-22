@@ -471,13 +471,6 @@ mod tests {
         assert!(OpenAiChatModel::new("https://api.example/v1", "m").is_ok());
     }
 
-    /// The conventions name the API spoken, whatever server answers it.
-    #[test]
-    fn the_provider_is_named_for_the_api() {
-        let model = OpenAiChatModel::new("http://127.0.0.1:1/v1", "m").expect("valid");
-        assert_eq!(model.provider_name(), "openai");
-    }
-
     #[test]
     fn the_api_key_is_not_in_debug_output() {
         let model = OpenAiChatModel::new("http://127.0.0.1:1/v1", "m")

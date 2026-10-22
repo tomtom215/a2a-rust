@@ -309,6 +309,16 @@ async fn an_assistant_turn_without_calls_is_sent_as_plain_text() {
     );
 }
 
+/// The conventions name the API spoken, whatever server answers it, and the
+/// model asked for. The mutation gate found both untested: `"xyzzy"`
+/// survived in each.
+#[test]
+fn the_provider_is_named_for_the_api_and_the_model_as_configured() {
+    let model = OpenAiChatModel::new("http://127.0.0.1:1/v1", "m").expect("valid");
+    assert_eq!(model.provider_name(), "openai");
+    assert_eq!(model.model_name(), "m");
+}
+
 /// A body with no `Content-Length` is capped as it streams, not trusted.
 #[tokio::test]
 async fn a_chunked_body_over_the_cap_is_refused() {
