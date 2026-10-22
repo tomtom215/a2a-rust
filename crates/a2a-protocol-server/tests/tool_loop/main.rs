@@ -13,7 +13,7 @@ use std::pin::Pin;
 use std::sync::Mutex;
 
 use a2a_protocol_server::tool_loop::{
-    ChatRequest, ModelError, ModelTurn, Tool, ToolCall, ToolError, ToolModel,
+    ChatRequest, ModelError, ModelTurn, Tool, ToolCall, ToolError, ToolInvocation, ToolModel,
 };
 use serde_json::{Value, json};
 
@@ -85,11 +85,14 @@ impl Tool for Status {
             "required": ["service"]
         })
     }
+    fn read_only(&self) -> bool {
+        true
+    }
     fn call<'a>(
         &'a self,
-        arguments: Value,
+        invocation: ToolInvocation,
     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
-        let result = match arguments.get("service").and_then(Value::as_str) {
+        let result = match invocation.arguments.get("service").and_then(Value::as_str) {
             Some("checkout") => Ok(r#"{"state":"healthy"}"#.to_owned()),
             Some("outage") => Err(ToolError::Fatal("the inventory is down".to_owned())),
             other => Err(ToolError::Failed(format!("no service named {other:?}"))),

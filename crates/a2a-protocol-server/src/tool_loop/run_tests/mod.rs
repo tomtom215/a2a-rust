@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::*;
 use crate::tool_loop::model::{ModelTurn, ToolSpec};
-use crate::tool_loop::tool::{DuplicateTool, Tool};
+use crate::tool_loop::tool::{DuplicateTool, Tool, ToolInvocation};
 
 /// What the scripted model saw on each turn.
 #[derive(Debug, Clone)]
@@ -103,11 +103,14 @@ impl ToolModel for Hanging {
 /// What a test tool does when called.
 type Behaviour = Box<dyn Fn(Value) -> Result<String, ToolError> + Send + Sync>;
 
-/// A tool that counts its calls and answers with `behaviour`.
+/// A tool that counts its calls, records each call's key, and answers with
+/// `behaviour`.
 struct TestTool {
     name: &'static str,
     calls: Arc<AtomicUsize>,
+    keys: Arc<Mutex<Vec<String>>>,
     behaviour: Behaviour,
+    read_only: bool,
 }
 
 impl TestTool {
@@ -119,9 +122,17 @@ impl TestTool {
         let tool = Self {
             name,
             calls: Arc::clone(&calls),
+            keys: Arc::new(Mutex::new(Vec::new())),
             behaviour: Box::new(behaviour),
+            read_only: false,
         };
         (tool, calls)
+    }
+
+    /// Declares the tool read-only.
+    fn read_only(mut self) -> Self {
+        self.read_only = true;
+        self
     }
 }
 
@@ -135,19 +146,24 @@ impl Tool for TestTool {
     fn parameters(&self) -> Value {
         json!({"type": "object", "properties": {"service": {"type": "string"}}})
     }
+    fn read_only(&self) -> bool {
+        self.read_only
+    }
     fn call<'a>(
         &'a self,
-        arguments: Value,
+        invocation: ToolInvocation,
     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        let result = (self.behaviour)(arguments);
+        self.keys.lock().unwrap().push(invocation.idempotency_key);
+        let result = (self.behaviour)(invocation.arguments);
         Box::pin(async move { result })
     }
 }
 
-/// `service_status`, answering for `checkout` and failing for anything else.
+/// `service_status`, a read-only lookup answering for `checkout` and
+/// failing for anything else.
 fn status_tool() -> (TestTool, Arc<AtomicUsize>) {
-    TestTool::new("service_status", |args| {
+    let (tool, calls) = TestTool::new("service_status", |args| {
         match args.get("service").and_then(Value::as_str) {
             Some("checkout") => Ok(r#"{"state":"healthy"}"#.to_owned()),
             Some(other) => Err(ToolError::Failed(format!(
@@ -155,7 +171,8 @@ fn status_tool() -> (TestTool, Arc<AtomicUsize>) {
             ))),
             None => Err(ToolError::Failed("'service' is required".to_owned())),
         }
-    })
+    });
+    (tool.read_only(), calls)
 }
 
 fn call(id: &str, name: &str, arguments: &str) -> ToolCall {
@@ -202,5 +219,6 @@ fn results(seen: &[Seen], turn: usize) -> Vec<(String, String)> {
 
 mod budget;
 mod cancel;
+mod idempotency;
 mod recovery;
 mod turns;

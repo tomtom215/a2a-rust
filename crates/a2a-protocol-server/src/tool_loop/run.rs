@@ -3,15 +3,17 @@
 
 //! [`ToolLoop`]: model turns and tool calls until the model answers.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use a2a_protocol_types::budget::{BudgetHandle, Exhausted, TOKENS_METER};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use super::idempotency::{self, Secret};
 use super::model::{ChatMessage, ChatRequest, ModelError, ToolCall, ToolModel};
 use super::recover;
-use super::tool::{ToolError, ToolSet};
+use super::tool::{ToolError, ToolInvocation, ToolSet};
 use crate::rpc_span::GenAiSpan;
 
 /// The turn bound when none is set.
@@ -81,12 +83,18 @@ impl std::error::Error for LoopError {}
 /// object and [`ToolError::Failed`] are each that call's result, because
 /// that is how a model recovers. Only the provider failing, a
 /// [`ToolError::Fatal`], the turn bound and cancellation end a run.
+///
+/// Each call carries an idempotency key ([`ToolInvocation::idempotency_key`],
+/// ADR 0026), and a call identical to one that already succeeded in the run
+/// is answered with the earlier result instead of being run again, unless
+/// its tool is [`read_only`](super::Tool::read_only).
 pub struct ToolLoop {
     model: Box<dyn ToolModel>,
     tools: ToolSet,
     preamble: String,
     max_turns: usize,
     recover_text_calls: bool,
+    secret: Secret,
 }
 
 impl fmt::Debug for ToolLoop {
@@ -111,7 +119,20 @@ impl ToolLoop {
             preamble: String::new(),
             max_turns: DEFAULT_MAX_TURNS,
             recover_text_calls: true,
+            secret: idempotency::fresh_secret(),
         }
+    }
+
+    /// Sets the secret idempotency keys are derived under. Each loop draws
+    /// its own by default, so keys differ between processes; replicas that
+    /// set the same secret give the same call in the same scope the same
+    /// key, so a backend deduplicates a call one replica retries after
+    /// another made it. Keep it as secret as a credential: with it, keys
+    /// can be computed from task ids and arguments.
+    #[must_use]
+    pub const fn with_idempotency_secret(mut self, secret: [u8; 32]) -> Self {
+        self.secret = secret;
+        self
     }
 
     /// Sets the system preamble every turn is sent with.
@@ -177,10 +198,35 @@ impl ToolLoop {
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
     ) -> Result<Answer, LoopError> {
+        self.run_scoped(&idempotency::fresh_scope(), user_text, cancel, budget)
+            .await
+    }
+
+    /// [`run_within`](Self::run_within), with the calls' idempotency keys
+    /// derived in `scope`. [`run`](Self::run) and `run_within` draw a fresh
+    /// scope for each run; [`ToolLoopExecutor`](super::ToolLoopExecutor)
+    /// uses the task and message ids, so that running the same message of
+    /// the same task again gives each call the key it had before. Give
+    /// different work different scopes: the same call in the same scope has
+    /// the same key.
+    ///
+    /// # Errors
+    ///
+    /// As [`run_within`](Self::run_within).
+    pub async fn run_scoped(
+        &self,
+        scope: &str,
+        user_text: &str,
+        cancel: &CancellationToken,
+        budget: Option<&BudgetHandle>,
+    ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
         let mut messages = vec![ChatMessage::User(user_text.to_owned())];
         let mut trace = Vec::new();
+        // What each call that succeeded returned, by key, for tools that
+        // are not read-only.
+        let mut done = HashMap::new();
 
         for turn in 0..self.max_turns {
             if cancel.is_cancelled() {
@@ -226,7 +272,7 @@ impl ToolLoop {
                 if cancel.is_cancelled() {
                     return Err(LoopError::Cancelled);
                 }
-                let content = self.call(&call, cancel).await?;
+                let content = self.call(&call, cancel, scope, &mut done).await?;
                 trace.push(format!("{}({}) -> {content}", call.name, call.arguments));
                 messages.push(ChatMessage::ToolResult {
                     call_id: call.id,
@@ -269,9 +315,29 @@ impl ToolLoop {
     }
 
     /// Runs one call in its span and returns what goes back to the model.
-    /// Only [`ToolError::Fatal`] and cancellation are errors here.
-    async fn call(&self, call: &ToolCall, cancel: &CancellationToken) -> Result<String, LoopError> {
+    /// Only [`ToolError::Fatal`] and cancellation are errors here. A call
+    /// whose key is in `done` is not run: the earlier result is returned,
+    /// marked, and no span is opened, since nothing ran.
+    async fn call(
+        &self,
+        call: &ToolCall,
+        cancel: &CancellationToken,
+        scope: &str,
+        done: &mut HashMap<String, String>,
+    ) -> Result<String, LoopError> {
         let tool = self.tools.get(&call.name);
+        let arguments = parse_arguments(&call.arguments);
+        let key = match (&tool, &arguments) {
+            (Some(_), Ok(arguments)) => {
+                idempotency::call_key(&self.secret, scope, &call.name, arguments)
+            }
+            _ => String::new(),
+        };
+        if let Some(earlier) = done.get(&key) {
+            return Ok(format!(
+                "not run again: an identical call already ran in this task and returned: {earlier}"
+            ));
+        }
         let span = GenAiSpan::tool(&call.name, &call.id, tool.map(|t| t.description()));
         let Some(tool) = tool else {
             span.failed("unknown_tool");
@@ -281,20 +347,26 @@ impl ToolLoop {
                 self.tools.names().join(", ")
             ));
         };
-        let arguments = match parse_arguments(&call.arguments) {
+        let arguments = match arguments {
             Ok(arguments) => arguments,
             Err(e) => {
                 span.failed("invalid_arguments");
                 return Ok(format!("error: {e}"));
             }
         };
+        let invocation = ToolInvocation::new(arguments, key.clone());
         let result = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(LoopError::Cancelled),
-            result = span.instrument(tool.call(arguments)) => result,
+            result = span.instrument(tool.call(invocation)) => result,
         };
         match result {
-            Ok(output) => Ok(output),
+            Ok(output) => {
+                if !tool.read_only() {
+                    done.insert(key, output.clone());
+                }
+                Ok(output)
+            }
             Err(ToolError::Failed(e)) => {
                 span.failed("tool_error");
                 Ok(format!("error: {e}"))

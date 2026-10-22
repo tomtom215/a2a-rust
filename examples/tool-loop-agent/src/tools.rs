@@ -12,7 +12,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_protocol_sdk::server::tool_loop::{DuplicateTool, Tool, ToolError, ToolSet};
+use a2a_protocol_sdk::server::tool_loop::{
+    DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet,
+};
 use serde_json::{Value, json};
 
 /// One row of the inventory.
@@ -59,9 +61,12 @@ impl Tool for ListServices {
     fn parameters(&self) -> Value {
         json!({"type": "object", "properties": {}, "additionalProperties": false})
     }
+    fn read_only(&self) -> bool {
+        true
+    }
     fn call<'a>(
         &'a self,
-        _arguments: Value,
+        _call: ToolInvocation,
     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
         let names: Vec<&str> = INVENTORY.iter().map(|s| s.name).collect();
         Box::pin(async move { Ok(Value::from(names).to_string()) })
@@ -91,12 +96,15 @@ impl Tool for ServiceStatus {
             "additionalProperties": false
         })
     }
+    fn read_only(&self) -> bool {
+        true
+    }
     fn call<'a>(
         &'a self,
-        arguments: Value,
+        invocation: ToolInvocation,
     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
         // A tool's error goes back to the model, so it names the way out.
-        let result = match arguments.get("service").and_then(Value::as_str) {
+        let result = match invocation.arguments.get("service").and_then(Value::as_str) {
             None => Err(ToolError::Failed(
                 "'service_status' needs a string argument 'service'".to_owned(),
             )),

@@ -22,7 +22,9 @@
 //! - [`ToolModel`]: one completion turn, provider-neutral.
 //!   [`OpenAiChatModel`] is the bundled one, for the chat-completions API
 //!   (`OpenAI`, llama.cpp's llama-server, vLLM, Ollama).
-//! - [`Tool`] and [`ToolSet`]: what the model may call.
+//! - [`Tool`] and [`ToolSet`]: what the model may call. Each call carries
+//!   an idempotency key, and a call repeated within a run to a tool that is
+//!   not read-only is answered from the first (ADR 0026).
 //! - [`ToolLoop`]: turns until the model answers without a call, bounded by
 //!   [`with_max_turns`](ToolLoop::with_max_turns), with a tool's error sent
 //!   back to the model as that call's result, and a call written as text
@@ -39,7 +41,7 @@
 //! use std::future::Future;
 //! use std::pin::Pin;
 //! use a2a_protocol_server::tool_loop::{
-//!     OpenAiChatModel, Tool, ToolError, ToolLoop, ToolLoopExecutor, ToolSet,
+//!     OpenAiChatModel, Tool, ToolError, ToolInvocation, ToolLoop, ToolLoopExecutor, ToolSet,
 //! };
 //! use a2a_protocol_server::RequestHandlerBuilder;
 //!
@@ -50,9 +52,10 @@
 //!     fn parameters(&self) -> serde_json::Value {
 //!         serde_json::json!({"type": "object", "properties": {}})
 //!     }
+//!     fn read_only(&self) -> bool { true }
 //!     fn call<'a>(
 //!         &'a self,
-//!         _arguments: serde_json::Value,
+//!         _call: ToolInvocation,
 //!     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
 //!         Box::pin(async { Ok("2026-10-20T12:00:00Z".to_owned()) })
 //!     }
@@ -69,6 +72,7 @@
 //! ```
 
 mod executor;
+mod idempotency;
 mod model;
 mod openai;
 mod recover;
@@ -81,4 +85,4 @@ pub use model::{
 };
 pub use openai::{DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT, ERROR_BODY_LIMIT, OpenAiChatModel};
 pub use run::{Answer, DEFAULT_MAX_TURNS, LoopError, ToolLoop};
-pub use tool::{DuplicateTool, Tool, ToolError, ToolSet};
+pub use tool::{DuplicateTool, Tool, ToolError, ToolInvocation, ToolSet};

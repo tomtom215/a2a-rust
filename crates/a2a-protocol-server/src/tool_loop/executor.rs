@@ -11,6 +11,7 @@ use a2a_protocol_types::failure::FailureClass;
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::TaskState;
 
+use super::idempotency;
 use super::run::{LoopError, ToolLoop};
 use crate::executor::AgentExecutor;
 use crate::executor_helpers::EventEmitter;
@@ -44,6 +45,9 @@ pub const TRACE_ARTIFACT_ID: &str = "tool-trace";
 /// says which, in words. Cancellation ends the run
 /// at the next turn or call, with nothing written: the cancel path writes
 /// `Canceled`.
+///
+/// Each run's call keys are scoped to the task and the message it answers
+/// (ADR 0026): another message to the same task is new work, with new keys.
 ///
 /// [`ToolError::Fatal`]: super::ToolError::Fatal
 #[derive(Debug)]
@@ -81,7 +85,12 @@ impl AgentExecutor for ToolLoopExecutor {
 
             match self
                 .tool_loop
-                .run_within(&prompt, cancel, ctx.budget())
+                .run_scoped(
+                    &idempotency::task_scope(&ctx.task_id.0, &ctx.message.id.0),
+                    &prompt,
+                    cancel,
+                    ctx.budget(),
+                )
                 .await
             {
                 Ok(answer) => {

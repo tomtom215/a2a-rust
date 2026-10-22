@@ -95,9 +95,13 @@ async fn the_billing_run_recovers_through_the_real_tools_and_reports_the_trace()
 
 #[tokio::test]
 async fn service_status_answers_from_the_inventory() {
-    use a2a_protocol_sdk::server::tool_loop::Tool as _;
+    use a2a_protocol_sdk::server::tool_loop::{Tool as _, ToolInvocation};
+    let key = "0".repeat(64);
     let out = super::tools::ServiceStatus
-        .call(serde_json::json!({"service": "checkout"}))
+        .call(ToolInvocation::new(
+            serde_json::json!({"service": "checkout"}),
+            &key,
+        ))
         .await
         .unwrap();
     let out: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -109,7 +113,7 @@ async fn service_status_answers_from_the_inventory() {
     );
     assert!(
         super::tools::ServiceStatus
-            .call(serde_json::json!({}))
+            .call(ToolInvocation::new(serde_json::json!({}), &key))
             .await
             .is_err()
     );

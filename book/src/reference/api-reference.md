@@ -396,7 +396,7 @@ are rustdoc's job.
 | `TenantResolver` | Extracts tenant from request context |
 | `RateLimitCounter` | A request counter every replica shares |
 | `ToolModel` | One completion turn of a model that can call tools: preamble, conversation and tool specs in, text and tool calls out (`tool-loop` feature) |
-| `Tool` | Something a model may call: a name, a description, a JSON Schema and `call(arguments)` (`tool-loop` feature) |
+| `Tool` | Something a model may call: a name, a description, a JSON Schema, `read_only` (default `false`) and `call(invocation)`, given the arguments and an idempotency key (`tool-loop` feature, ADR 0026) |
 
 ### Dispatchers
 

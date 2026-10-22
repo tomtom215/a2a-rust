@@ -264,21 +264,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off by default; forwarded as `tool-loop` by the SDK; ADR 0022). Two new
   open traits, `ToolModel` (one completion turn: preamble, conversation and
   tool specifications in, text and tool calls out) and `Tool` (name,
-  description, JSON Schema, `call`); `ToolSet`, which refuses a second tool
+  description, JSON Schema, `read_only`, `call`, given a `ToolInvocation`:
+  the arguments and an idempotency key, HMAC-SHA256 under the loop's
+  secret of the task and message, the tool and its canonical arguments;
+  ADR 0026); `ToolSet`, which refuses a second tool
   of one name with `DuplicateTool`; `ToolLoop`, which runs turns until the
   model answers without a call, at most `max_turns` (default 8), sends an
   unknown tool, arguments that are not a JSON object and
   `ToolError::Failed` back to the model as that call's result, and runs a
   reply that is exactly one JSON call to a known tool (bare, fenced or in
   `<tool_call>` tags) as that call (`with_recover_text_calls`, on by
-  default); `ToolLoopExecutor`, which emits `Working`, the `answer`
+  default), and answers a call identical to one that succeeded in the run,
+  to a tool not declared read-only, with the earlier result instead of
+  running it again (`with_idempotency_secret`, `run_scoped`);
+  `ToolLoopExecutor`, which emits `Working`, the `answer`
   artifact, the `tool-trace` artifact when a tool ran and `Completed`, or
   `Failed` with failure class `internal` (the provider failed, or
   `ToolError::Fatal`) or `budget-exhausted` (the turn bound), and stops at
   the next turn or call when cancelled; and `OpenAiChatModel`, a
   `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server,
-  vLLM, Ollama) on the push sender's hyper client, so no new dependency:
-  HTTPS needs `tls-rustls` and is refused at construction without it; an
+  vLLM, Ollama) on the push sender's hyper client; `ring`, in the graph
+  already with `tls-rustls`, for the keys. HTTPS needs `tls-rustls` and is refused at construction without it; an
   optional bearer key; a 120 s turn timeout and an 8 MiB response cap, both
   settable; a non-2xx answer is `ModelError::Status` with at most 512 bytes
   of the body; arguments read as a JSON string or an object; extra request

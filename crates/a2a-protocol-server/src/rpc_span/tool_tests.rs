@@ -15,8 +15,8 @@ use serde_json::{Value, json};
 
 use super::GenAiSpan;
 use crate::tool_loop::{
-    ChatRequest, ModelError, ModelTurn, TokenUsage, Tool, ToolCall, ToolError, ToolLoop,
-    ToolLoopExecutor, ToolModel, ToolSet,
+    ChatRequest, ModelError, ModelTurn, TokenUsage, Tool, ToolCall, ToolError, ToolInvocation,
+    ToolLoop, ToolLoopExecutor, ToolModel, ToolSet,
 };
 
 /// One span as recorded: its fields and its parent's index.
@@ -203,7 +203,7 @@ impl Tool for Status {
     }
     fn call<'a>(
         &'a self,
-        _arguments: Value,
+        _call: ToolInvocation,
     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
         Box::pin(async { Ok("SECRET-RESULT".to_owned()) })
     }

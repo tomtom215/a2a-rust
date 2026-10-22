@@ -38,6 +38,34 @@ impl fmt::Display for ToolError {
 
 impl std::error::Error for ToolError {}
 
+/// One call, as a [`Tool`] is given it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ToolInvocation {
+    /// The arguments, always a JSON object: the loop answers arguments that
+    /// are not one itself, without calling the tool.
+    pub arguments: Value,
+    /// This call's idempotency key (ADR 0026): 64 lowercase hex digits,
+    /// the same for the same tool and arguments within one run of the loop
+    /// over one message, different otherwise, and not computable without
+    /// the loop's secret. A tool with side effects passes it to its backend
+    /// where the backend takes one (an `Idempotency-Key` header, a unique
+    /// request id), so a retried request does its work once.
+    pub idempotency_key: String,
+}
+
+impl ToolInvocation {
+    /// An invocation with `arguments` and `idempotency_key`, for calling a
+    /// tool outside a loop, as a test does.
+    #[must_use]
+    pub fn new(arguments: Value, idempotency_key: impl Into<String>) -> Self {
+        Self {
+            arguments,
+            idempotency_key: idempotency_key.into(),
+        }
+    }
+}
+
 /// Something a model may call.
 ///
 /// Object-safe, with a boxed future like [`AgentExecutor`](crate::AgentExecutor).
@@ -53,8 +81,19 @@ pub trait Tool: Send + Sync + 'static {
     /// A JSON Schema for the arguments, an `object` schema.
     fn parameters(&self) -> Value;
 
-    /// Runs the call. `arguments` is always a JSON object: the loop answers
-    /// arguments that are not one itself, without calling the tool.
+    /// Whether a call changes nothing, so running it again is harmless:
+    /// a lookup, a status query, a search. `false` unless a tool says so.
+    ///
+    /// Within one run, a call identical to one that already succeeded —
+    /// same tool, same arguments — is not run again when the tool is not
+    /// read-only: the model is sent the earlier result, marked as such
+    /// (ADR 0026). A read-only tool is run each time, so a model can poll
+    /// it for a change.
+    fn read_only(&self) -> bool {
+        false
+    }
+
+    /// Runs the call.
     ///
     /// # Errors
     ///
@@ -62,7 +101,7 @@ pub trait Tool: Send + Sync + 'static {
     /// [`ToolError::Fatal`] to end the task.
     fn call<'a>(
         &'a self,
-        arguments: Value,
+        invocation: ToolInvocation,
     ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>>;
 }
 
