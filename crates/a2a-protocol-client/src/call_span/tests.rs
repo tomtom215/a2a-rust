@@ -109,7 +109,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
 
 /// The fields `f` records, with nothing but [`Fields`] subscribed.
 #[cfg(feature = "tracing")]
-fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {
+pub fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {
     use tracing_subscriber::layer::SubscriberExt as _;
     let fields = Fields::default();
     crate::test_tracing::install();
@@ -268,6 +268,15 @@ fn each_binding_reports_the_status_it_was_answered_with() {
         status(Some("grpc"), &E::Timeout("slow".into())),
         (None, Some("timeout".to_owned()))
     );
+    // A binding with no status codes of its own, or none known, records no
+    // status: `error.type` is the A2A error code.
+    for system in [None, Some("websocket")] {
+        assert_eq!(
+            status(system, &not_found()),
+            (None, Some("-32001".to_owned())),
+            "{system:?}"
+        );
+    }
     for (system, ok) in [
         (Some("grpc"), Some("OK")),
         (Some("slimrpc"), Some("OK")),

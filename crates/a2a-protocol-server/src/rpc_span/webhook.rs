@@ -282,4 +282,36 @@ mod tests {
             Some("ERROR")
         );
     }
+
+    /// A POST carries its own span's context as `traceparent`, and nothing
+    /// when no OpenTelemetry layer records the span. The mutation gate found
+    /// `trace_headers` untested: answering with any made-up pair survived.
+    #[cfg(feature = "otel")]
+    #[test]
+    fn a_post_carries_its_spans_context_only_when_it_is_recorded() {
+        use a2a_protocol_types::trace_context::TraceContext;
+        use opentelemetry::trace::TracerProvider as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+        let injected = || {
+            let mut headers = hyper::HeaderMap::new();
+            WebhookSpan::open("http://h.example/hook", 0).inject(&mut headers);
+            headers
+        };
+        let unrecorded = tracing::subscriber::with_default(
+            tracing_subscriber::registry().with(super::super::tests::Fields::default()),
+            injected,
+        );
+        assert!(unrecorded.is_empty(), "{unrecorded:?}");
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+        let recorded = tracing::subscriber::with_default(
+            tracing_subscriber::registry()
+                .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("webhook"))),
+            injected,
+        );
+        let parent = recorded["traceparent"].to_str().unwrap();
+        let context = TraceContext::parse(parent).expect("a valid traceparent");
+        assert!(context.is_sampled(), "{parent}");
+        assert_ne!(context.trace_id(), "0".repeat(32));
+        assert!(!recorded.contains_key("tracestate"), "{recorded:?}");
+    }
 }

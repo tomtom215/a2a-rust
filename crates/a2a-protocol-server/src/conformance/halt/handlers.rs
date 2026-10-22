@@ -250,9 +250,13 @@ async fn tenant_scope(here: &RequestHandler, there: &RequestHandler) -> CheckRes
     let scope = HaltScope::Tenant("acme".into());
     here.halt(scope.clone(), "conformance", "one tenant").await;
     let stopped = reaches(here, "acme", &acme, TaskState::Canceled).await;
+    // Once the other replica refuses acme it has read the halt, so beta is
+    // judged against what the store holds, not against a replica that has
+    // not looked yet: a store that widened the halt to every tenant passed
+    // when beta was judged first.
+    let refused_there = within(|| refused(there, "acme")).await;
     let spared = state(here, "beta", &beta).await == Some(TaskState::Working)
         && start(there, "beta").await.is_ok();
-    let refused_there = within(|| refused(there, "acme")).await;
     let _ = here.resume(scope, "conformance").await;
     grade(
         NAME,
@@ -263,3 +267,7 @@ async fn tenant_scope(here: &RequestHandler, there: &RequestHandler) -> CheckRes
         ),
     )
 }
+
+#[cfg(test)]
+#[path = "handlers_tests.rs"]
+mod tests;

@@ -446,4 +446,4 @@ fn remote_context(
 }
 
 #[cfg(test)]
-mod tests;
+pub mod tests;

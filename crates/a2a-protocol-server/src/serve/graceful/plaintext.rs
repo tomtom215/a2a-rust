@@ -56,6 +56,20 @@ mod tests {
         );
     }
 
+    /// The warning is logged, once, and only when it applies. The mutation
+    /// gate found the logging itself untested: skipping it survived.
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn the_warning_is_logged_when_it_applies() {
+        let logged = |addr: &str, tls: bool| {
+            let addr = addr.parse().expect("addr");
+            crate::handler::warnings_during(|| super::warn_if_plaintext(addr, tls))
+        };
+        assert_eq!(logged("0.0.0.0:8080", false), ["plaintext listener"]);
+        assert_eq!(logged("127.0.0.1:8080", false), Vec::<String>::new());
+        assert_eq!(logged("0.0.0.0:8443", true), Vec::<String>::new());
+    }
+
     #[test]
     fn loopback_or_tls_is_not() {
         assert!(!warns("127.0.0.1:8080", false));

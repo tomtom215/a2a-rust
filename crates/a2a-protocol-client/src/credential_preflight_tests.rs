@@ -238,3 +238,23 @@ fn preflight_debug_shows_mode_and_count_only() {
     );
     assert!(!text.contains("X-API-Key"), "{text}");
 }
+
+/// In warning mode each kind of mismatched call warns once: one carrying
+/// a credential the card does not ask for (here a cookie alone), and one
+/// carrying none.
+#[cfg(feature = "tracing")]
+#[test]
+fn preflight_warns_once_for_each_kind_of_mismatch() {
+    let mut p = requiring(&["basic"]);
+    p.set_mode(CredentialPreflight::Warn);
+    let cookie = request(&[("cookie", "session=c00kie")], &[]);
+    let bare = request(&[], &[]);
+    let first = crate::test_tracing::warnings_in(|| assert!(p.check(&cookie).is_ok()));
+    assert_eq!(first, 1, "the first mismatched call warns");
+    let then = crate::test_tracing::warnings_in(|| {
+        for req in [&cookie, &bare, &bare] {
+            assert!(p.check(req).is_ok());
+        }
+    });
+    assert_eq!(then, 1, "only the first call without credentials warns");
+}

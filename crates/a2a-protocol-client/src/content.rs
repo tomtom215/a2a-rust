@@ -148,3 +148,7 @@ impl ContentKeys {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "content_tests.rs"]
+mod tests;

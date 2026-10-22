@@ -92,5 +92,6 @@ fn a_second_tool_of_the_same_name_is_refused_and_the_set_unchanged() {
     let (d, _) = TestTool::new("list_services", |_| Ok("d".to_owned()));
     set.add(d).unwrap();
     assert_eq!(set.names(), ["service_status", "list_services"]);
+    assert_eq!(set.len(), 2);
     assert!(!set.is_empty());
 }

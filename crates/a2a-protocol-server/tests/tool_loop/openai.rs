@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use a2a_protocol_server::CancellationToken;
 use a2a_protocol_server::tool_loop::{
-    ChatMessage, ChatRequest, ERROR_BODY_LIMIT, ModelError, OpenAiChatModel, TokenUsage, ToolCall,
-    ToolLoop, ToolModel, ToolSet, ToolSpec,
+    ChatMessage, ChatRequest, DEFAULT_MAX_RESPONSE_BYTES, ERROR_BODY_LIMIT, ModelError,
+    OpenAiChatModel, TokenUsage, ToolCall, ToolLoop, ToolModel, ToolSet, ToolSpec,
 };
 use serde_json::{Map, Value, json};
 use tokio::io::AsyncWriteExt;
@@ -272,6 +272,41 @@ async fn a_body_over_the_cap_is_refused_and_one_under_it_read() {
         .await
         .unwrap();
     assert_eq!(turn.text.len(), 2000);
+}
+
+/// The default cap is the documented 8 MiB: a 2 MiB answer is read. The
+/// mutation gate found the default untested: one of 9 KiB survived.
+#[tokio::test]
+async fn the_default_cap_is_eight_mebibytes() {
+    assert_eq!(DEFAULT_MAX_RESPONSE_BYTES, 8 * 1024 * 1024);
+    let padding = "y".repeat(2 * 1024 * 1024);
+    let mock = Mock::start(vec![completion(&json!({"content": padding}))]).await;
+    let turn = one_turn(&model(&mock)).await.unwrap();
+    assert_eq!(turn.text.len(), 2 * 1024 * 1024);
+}
+
+/// An assistant turn that called no tools is sent without a `tool_calls`
+/// field, as the API's plain assistant message. The mutation gate found it
+/// untested: sending an empty `tool_calls` survived.
+#[tokio::test]
+async fn an_assistant_turn_without_calls_is_sent_as_plain_text() {
+    let mock = Mock::start(vec![completion(&json!({"content": "ok"}))]).await;
+    let messages = [
+        ChatMessage::User("hi".to_owned()),
+        ChatMessage::Assistant {
+            text: "hello".to_owned(),
+            tool_calls: Vec::new(),
+        },
+        ChatMessage::User("again".to_owned()),
+    ];
+    model(&mock)
+        .complete(ChatRequest::new("", &messages, &[]))
+        .await
+        .unwrap();
+    assert_eq!(
+        mock.body(0)["messages"][1],
+        json!({"role": "assistant", "content": "hello"})
+    );
 }
 
 /// A body with no `Content-Length` is capped as it streams, not trusted.

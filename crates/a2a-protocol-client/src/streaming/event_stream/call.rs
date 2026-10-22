@@ -94,3 +94,46 @@ impl super::EventStream {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::call_span::{CallSpan, Peer};
+
+    /// What the stream's span records when the stream is dropped, after
+    /// `during` acts on it.
+    fn ended_with(
+        during: impl FnOnce(&mut StreamCall),
+    ) -> std::collections::BTreeMap<String, String> {
+        crate::call_span::tests::recorded(|| {
+            let peer = Peer::new("GRPC", "http://a:1", None);
+            let call = CallSpan::open("SendStreamingMessage", &peer, &serde_json::json!({}));
+            let mut stream = StreamCall::new(call.span.clone(), call.system);
+            during(&mut stream);
+            drop(stream);
+        })
+    }
+
+    #[test]
+    fn a_stream_that_failed_ends_its_span_with_the_error() {
+        let fields = ended_with(|s| s.fail(&ClientError::Timeout("slow".into())));
+        assert_eq!(
+            fields.get("error.type").map(String::as_str),
+            Some("timeout")
+        );
+        assert_eq!(
+            fields.get("otel.status_code").map(String::as_str),
+            Some("ERROR")
+        );
+    }
+
+    #[test]
+    fn a_stream_that_ended_well_ends_its_span_ok() {
+        let fields = ended_with(|_| {});
+        assert_eq!(
+            fields.get("rpc.status_code").map(String::as_str),
+            Some("OK")
+        );
+        assert!(!fields.contains_key("error.type"), "{fields:?}");
+    }
+}

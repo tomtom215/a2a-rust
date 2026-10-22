@@ -379,8 +379,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the store pushes); `check_handlers` builds two replicas on it and grades
   the halt end to end: running tasks stopped on both, new work refused on
   both, a restarted replica halted, a resume on either lifting it
-  everywhere, and a tenant's halt sparing other tenants. The in-memory,
-  SQLite and PostgreSQL stores pass. `Report`'s heading now names what it
+  everywhere, and a tenant's halt sparing other tenants (judged once the
+  other replica has read the halt, so a store that widens a tenant's halt
+  to every tenant fails). The in-memory, SQLite and PostgreSQL stores pass. `Report`'s heading now names what it
   graded (`executor conformance:`, `halt store conformance:`, `kill switch
   conformance:`).
 - **The server signs what it serves** (server, feature `signing`; ADR

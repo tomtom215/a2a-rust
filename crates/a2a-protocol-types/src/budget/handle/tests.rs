@@ -282,3 +282,47 @@ fn exhausted_says_which_bound() {
         "the budget's meter \"tokens\" is spent (2 over)"
     );
 }
+
+#[test]
+fn an_overdraft_of_zero_is_not_reported() {
+    let m = Exhausted::Meter {
+        name: "tokens".to_owned(),
+        overdraft: 0,
+    };
+    assert_eq!(m.to_string(), "the budget's meter \"tokens\" is spent");
+}
+
+#[test]
+fn the_debug_form_names_the_handle_and_its_status() {
+    let debug = format!("{:?}", BudgetHandle::start(&tokens(10)));
+    assert!(debug.starts_with("BudgetHandle"), "{debug}");
+    assert!(debug.contains("status"), "{debug}");
+}
+
+/// A millisecond is the least a child accepts, so exactly one is granted,
+/// with a deadline here and without one.
+#[test]
+fn exactly_a_millisecond_is_granted() {
+    let one = Budget::new().with_time(Duration::from_millis(1));
+    let parent = BudgetHandle::start(&Budget::new().with_time(Duration::from_secs(10)));
+    let g = parent.grant(&one).unwrap();
+    assert_eq!(g.budget().remaining_time(), Some(Duration::from_millis(1)));
+    let no_deadline = BudgetHandle::start(&tokens(5));
+    let g = no_deadline.grant(&one).unwrap();
+    assert_eq!(g.budget().remaining_time(), Some(Duration::from_millis(1)));
+}
+
+/// A deadline past what `Instant` can hold is about 30 years off: never
+/// absent, past, or near.
+#[test]
+fn a_deadline_beyond_instant_is_about_thirty_years_off() {
+    let most = Duration::from_millis(u64::MAX);
+    let mut received = Instant::now();
+    while let Some(later) = received.checked_add(most) {
+        received = later;
+    }
+    let h = BudgetHandle::start_at(&Budget::new().with_time(most), received);
+    let left = h.remaining_time().expect("a deadline");
+    let year = Duration::from_secs(365 * 24 * 3600);
+    assert!(left > year * 29 && left <= year * 30, "{left:?}");
+}

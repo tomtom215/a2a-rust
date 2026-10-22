@@ -207,3 +207,37 @@ impl ToolSet {
         self.tools.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Says nothing about itself beyond what the trait requires.
+    struct Plain;
+
+    impl Tool for Plain {
+        fn name(&self) -> &'static str {
+            "plain"
+        }
+        fn description(&self) -> &'static str {
+            "Does something."
+        }
+        fn parameters(&self) -> Value {
+            serde_json::json!({"type": "object"})
+        }
+        fn call<'a>(
+            &'a self,
+            _invocation: ToolInvocation,
+        ) -> Pin<Box<dyn Future<Output = Result<String, ToolError>> + Send + 'a>> {
+            Box::pin(async { Ok(String::new()) })
+        }
+    }
+
+    /// A tool that does not say it is read-only is treated as changing
+    /// something, so its repeated calls are not run again (ADR 0026). The
+    /// mutation gate found the default untested: `true` survived.
+    #[test]
+    fn a_tool_is_not_read_only_unless_it_says_so() {
+        assert!(!Plain.read_only());
+    }
+}

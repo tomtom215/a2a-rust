@@ -29,6 +29,8 @@ enum Flaw {
     KeepsRemoved,
     /// Offers a subscription and never sends on it.
     Mute,
+    /// A tenant's halt is stored as a halt on everything.
+    Widens,
 }
 
 /// A store in a shared `Vec`, broken as `flaw` says.
@@ -66,13 +68,17 @@ impl HaltStore for Broken {
         &'a self,
         halt: &'a StoredHalt,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        let mut halt = halt.clone();
+        if self.flaw == Flaw::Widens {
+            halt.scope = HaltScope::All;
+        }
         {
             let mut halts = self.halts.lock().unwrap();
             if self.flaw != Flaw::Appends {
                 let key = self.key(&halt.scope);
                 halts.retain(|h| self.key(&h.scope) != key);
             }
-            halts.push(halt.clone());
+            halts.push(halt);
         }
         Box::pin(async { Ok(()) })
     }
@@ -154,6 +160,23 @@ async fn each_flaw_is_named() {
     }
 }
 
+/// A store that already holds a halt is not graded as fresh. The mutation
+/// gate found the emptiness test untested: passing any store survived.
+#[tokio::test]
+async fn a_store_that_starts_halted_is_not_fresh() {
+    let store = Broken::new(Flaw::None);
+    store.halts.lock().unwrap().push(StoredHalt::new(
+        HaltScope::Tenant("left-over".into()),
+        "r",
+        "by",
+    ));
+    let report = grade_store(store).await;
+    assert!(
+        failed(&report).contains(&"a_fresh_store_is_empty"),
+        "{report}"
+    );
+}
+
 /// A store whose second handle sees nothing the first wrote, as a store
 /// kept in each process's memory would across replicas.
 #[tokio::test]
@@ -178,4 +201,20 @@ async fn a_store_each_handle_keeps_alone_fails_the_cross_replica_checks() {
     ] {
         assert!(!failed(&handlers).contains(&passed), "{passed}: {handlers}");
     }
+}
+
+/// A tenant's halt that reaches every tenant still refuses that tenant on
+/// the other replica; it fails because the other tenants are not spared.
+#[tokio::test]
+async fn a_tenant_halt_that_halts_everyone_is_caught() {
+    let store = Broken::new(Flaw::Widens);
+    let open = move || {
+        let store = store.clone();
+        async move { Arc::new(store) as Arc<dyn HaltStore> }
+    };
+    let handlers = check_handlers(&open).await;
+    assert!(
+        failed(&handlers).contains(&"a_tenant_halt_spares_other_tenants"),
+        "{handlers}"
+    );
 }

@@ -190,7 +190,10 @@ async fn a_factor_of_one_holds_nothing_past_the_bound() {
 /// log only until the eviction sweep: before, until the task expired.
 #[tokio::test]
 async fn the_eviction_sweep_trims_a_released_held_log_to_the_bound() {
-    let store = store(Some(8)).await;
+    let recorder = Arc::new(Recorder::default());
+    let store = store(Some(8))
+        .await
+        .with_metrics(crate::metrics::MetricsHandle::from_arc(recorder.clone()));
     let hold = store.hold_events(&TaskId::new("t-1"), 2).expect("a hold");
     append(&store, 1..=10).await;
     store.run_eviction().await;
@@ -206,6 +209,12 @@ async fn the_eviction_sweep_trims_a_released_held_log_to_the_bound() {
         store.holds.over_bound().is_empty(),
         "a log back at its bound is no longer tracked"
     );
+    let seen = recorder
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    assert!(seen.is_empty(), "the sweep forced nothing out: {seen:?}");
 }
 
 #[tokio::test]

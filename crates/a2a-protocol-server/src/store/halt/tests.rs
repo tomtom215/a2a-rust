@@ -196,6 +196,46 @@ async fn postgres_pushes_between_replicas() {
     db.drop_database().await;
 }
 
+/// The listener, and the connection it holds, ends with the last clone of
+/// its store: its subscribers see the channel close. The mutation gate found
+/// the abort untested: a listener left running survived.
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn postgres_listener_ends_with_the_last_clone() {
+    use std::time::Duration;
+    use tokio::sync::broadcast::error::RecvError;
+    let db = Scratch::new().await;
+    let store = db.store().await;
+    let mut rx = store.signals().expect("a pushing store");
+    let listening = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
+    assert_eq!(
+        listening.expect("listening in time").unwrap(),
+        HaltSignal::Changed
+    );
+    let clone = store.clone();
+    drop(store);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !matches!(
+            rx.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Closed)
+        ),
+        "a clone still holds the listener"
+    );
+    drop(clone);
+    let ended = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if rx.recv().await == Err(RecvError::Closed) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(ended.is_ok(), "the listener outlived its store");
+    db.drop_database().await;
+}
+
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 #[test]
 fn scope_keys_round_trip_and_do_not_collide() {

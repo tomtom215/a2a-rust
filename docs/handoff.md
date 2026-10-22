@@ -28,8 +28,12 @@ only: when something here is done, delete it rather than annotating it.
   and how it was verified. Wrapped up for a pull request on 2026-10-22,
   because container restarts kept killing long work: the study's raw runs
   were moved out of scratch space into the repository and the method
-  committed as a draft; the study then finished (*Next*, item 2). The commits after the kill-switch
-  conformance one change only `scripts/tool_calling_study/` and `docs/`.
+  committed as a draft; the study then finished (*Next*, item 2). Pull
+  request #178 is open with the `mutation-test` label. The commits after it
+  went up fix what its CI found, each message naming the check; the last
+  adds tests for the 51 mutants its two labelled incremental mutation runs
+  left surviving, and fixes the kill-switch harness passing a store that
+  widened a tenant's halt.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the

@@ -149,9 +149,10 @@ const CANARY: &str = "warn-capture canary";
 /// under `CAPTURE_LOCK`, makes the callsite permanently interested and the
 /// result independent of ordering.
 ///
-/// Shared with the halt tests (`halt/store_tests.rs`): a second file
+/// Shared with the halt tests (`halt/store_tests.rs`) and, through
+/// `handler::warnings_during`, the rest of the crate: a second file
 /// installing its own global subscriber would lose to this one.
-pub(in crate::handler) fn warnings_during<F>(f: F) -> Vec<String>
+pub fn warnings_during<F>(f: F) -> Vec<String>
 where
     F: FnOnce(),
 {

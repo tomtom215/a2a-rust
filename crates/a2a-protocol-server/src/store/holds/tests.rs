@@ -39,6 +39,7 @@ fn two_holds_on_one_task_are_independent_and_the_lower_is_the_floor() {
     let low = holds.hold(&task, 2);
     let high = holds.hold(&task, 7);
     assert_eq!(holds.floor(&task), Some(2));
+    assert!(!holds.is_empty(), "a held task is an entry");
     drop(low);
     assert_eq!(holds.floor(&task), Some(7), "the other hold stays");
     drop(high);

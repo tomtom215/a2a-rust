@@ -297,3 +297,7 @@ impl crate::push::PushSender for SigningPushSender {
         self.inner.max_delivery_duration()
     }
 }
+
+#[cfg(test)]
+#[path = "provenance_tests.rs"]
+mod tests;

@@ -62,7 +62,13 @@ impl InMemoryTaskStore {
                 0
             };
             drop(store);
-            if forced > 0 {
+            // `!= 0`, not `> 0`: the sweep follows appends that already held
+            // the log to the ceiling, so nothing is forced here, and `> 0`
+            // mutated to `< 0` was equivalent (mutants.toml, "No equivalent
+            // mutants"). Mutated to `== 0`, the sweep reports a drop it never
+            // made, which `the_eviction_sweep_trims_a_released_held_log_to_the_bound`
+            // catches.
+            if forced != 0 {
                 self.report_forced_trim(&task_id, forced);
             }
         }
