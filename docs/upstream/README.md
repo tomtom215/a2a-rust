@@ -26,3 +26,4 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `a2a-required-empty-array-report.md` | `a2aproject/A2A` | Draft, held; re-verified 2026-10-15 |
 | `slimrpc-a2a-error-mapping-report.md` | `a2aproject/experimental-cpb-slimrpc`, or `a2aproject/A2A` | Draft, held; re-verified 2026-10-15 |
 | `a2a-go-a2a-json-errors-report.md` | `a2aproject/a2a-go` | Draft, held |
+| `agntcy-slim-rpc-error-details.md` | `agntcy/slim` | Draft, not sent; verified 2026-10-23 against 3.4.6 |
