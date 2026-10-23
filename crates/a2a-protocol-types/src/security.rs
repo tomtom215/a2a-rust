@@ -291,7 +291,10 @@ impl OAuthFlows {
     /// present, and every URL given in the form of a URL. The proto marks no
     /// field of the deprecated implicit and password flows REQUIRED, but
     /// says each of their URLs "MUST be in the form of a URL" (checked since
-    /// 2026-10-18, as the other flows' are).
+    /// 2026-10-18, as the other flows' are) and, of each, "The OAuth2
+    /// standard requires the use of TLS": an `http://` one is refused since
+    /// 2026-10-23, as `oauth2MetadataUrl`'s is. The proto says nothing of
+    /// TLS for the other three flows, so they are held to the shape alone.
     #[allow(deprecated)] // matching the deprecated flows is not using them
     fn validate(&self) -> Result<(), &'static str> {
         match self {
@@ -319,10 +322,32 @@ impl OAuthFlows {
                 [&f.device_authorization_url, &f.token_url],
                 f.refresh_url.as_deref(),
             ),
-            Self::Implicit(f) => urls([&f.authorization_url], f.refresh_url.as_deref()),
-            Self::Password(f) => urls([&f.token_url], f.refresh_url.as_deref()),
+            Self::Implicit(f) => {
+                urls([&f.authorization_url], f.refresh_url.as_deref()).and_then(|()| {
+                    tls([&f.authorization_url], f.refresh_url.as_deref())
+                        .then_some(())
+                        .ok_or(
+                            "an implicit flow's authorizationUrl and refreshUrl must be https URLs \
+                         (a2a.proto: the OAuth2 standard requires the use of TLS)",
+                        )
+                })
+            }
+            Self::Password(f) => urls([&f.token_url], f.refresh_url.as_deref()).and_then(|()| {
+                tls([&f.token_url], f.refresh_url.as_deref())
+                    .then_some(())
+                    .ok_or(
+                        "a password flow's tokenUrl and refreshUrl must be https URLs \
+                     (a2a.proto: the OAuth2 standard requires the use of TLS)",
+                    )
+            }),
         }
     }
+}
+
+/// Whether every non-empty URL among `required` and `refresh` is `https`.
+fn tls<const N: usize>(required: [&String; N], refresh: Option<&str>) -> bool {
+    let mut all = required.into_iter().map(String::as_str).chain(refresh);
+    all.all(|u| u.is_empty() || is_https_url(u))
 }
 
 /// Every non-empty URL among `required` and `refresh` is in the form of a
