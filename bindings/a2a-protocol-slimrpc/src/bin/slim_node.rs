@@ -77,10 +77,36 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
+/// The SDK's telemetry for this process, from the standard `OTEL_*`
+/// environment, as every other binary in the repository sets it up: with an
+/// OTLP endpoint configured for a signal, SLIM's own traces and logs go
+/// there; without one nothing is built or installed. Kept for the life of
+/// the process, since dropping it flushes.
+#[cfg(feature = "otlp")]
+fn telemetry() -> Result<a2a_protocol_server::otel::Telemetry, String> {
+    let telemetry = a2a_protocol_server::otel::Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_export_where_configured()
+        .build()
+        .map_err(|e| {
+            format!("the OTEL_* environment names a configuration Telemetry cannot use: {e}")
+        })?;
+    telemetry.install_subscriber();
+    Ok(telemetry)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(args) => args,
+        Err(message) => {
+            eprintln!("{message}");
+            return ExitCode::from(2);
+        }
+    };
+    #[cfg(feature = "otlp")]
+    let _telemetry = match telemetry() {
+        Ok(telemetry) => telemetry,
         Err(message) => {
             eprintln!("{message}");
             return ExitCode::from(2);
