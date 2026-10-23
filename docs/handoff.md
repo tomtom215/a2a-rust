@@ -83,8 +83,17 @@ only: when something here is done, delete it rather than annotating it.
   what `DOC_CLAIMS` quotes. All 187 cited tests were run 2026-10-23,
   PostgreSQL-ignored ones included, all passing. The checker verifies that
   a cited test exists, not that it passes: rerun them after editing a cited
-  file. The EU AI Act rows' provision and requirement text was not
-  re-audited against the Regulation: no copy is in the repository.
+  file. On 2026-10-23 the requirement text of every AI Act row claiming SDK
+  support (12-1, 12-2, 12-3, 13-3f, 14-1-3, 14-4a, 14-4d, 14-4e, 14-5,
+  15-4, 15-5, 19-26-6, and the unamended parts of 50-2 and 72-2) was
+  compared with Regulation (EU) 2024/1689 as published (OJ PDF, SHA-256
+  `bba63044…`, the same file as 2026-10-15, fetched with `curl -H 'Accept:
+  application/pdf' -H 'Accept-Language: eng'
+  http://publications.europa.eu/resource/celex/32024R1689`; EUR-Lex
+  answers 202): all consistent, Art. 14(5)'s two-person verification and
+  its law-enforcement exception included. What the rows say Regulation
+  (EU) 2026/1744 changed was not re-checked: that text is not fetchable
+  here.
 - **Built on this branch (2026-10-22):** kill-switch conformance,
   `conformance::halt::{check_store, check_handlers}` (feature
   `conformance`): 8 store checks and 9 end-to-end replica checks, tested
