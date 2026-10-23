@@ -44,8 +44,8 @@ impl SpanExporter for Keep {
 }
 
 /// Parks a new task in `input-required`; answers a follow-up with a
-/// `Message`, then completes it.
-struct AsksThenAnswers;
+/// `Message`, then completes it when the flag says so.
+struct AsksThenAnswers(bool);
 
 impl AgentExecutor for AsksThenAnswers {
     fn execute<'a>(
@@ -70,6 +70,9 @@ impl AgentExecutor for AsksThenAnswers {
                 queue
                     .write(StreamResponse::Message(Message::agent_text("p", "on it")))
                     .await?;
+                if !self.0 {
+                    return Ok(());
+                }
                 queue.write(status(TaskState::Completed)).await
             } else {
                 queue.write(status(TaskState::InputRequired)).await
@@ -78,8 +81,17 @@ impl AgentExecutor for AsksThenAnswers {
     }
 }
 
-#[tokio::test]
-async fn a_follow_up_s_message_does_not_end_the_turn_its_span_records() {
+/// What the executor spans recorded over a new task parked in
+/// `input-required` and a follow-up that `completes` it or not: each turn's
+/// `a2a.task.state`, its `gen_ai.output.messages` (content capture on), and
+/// the state the follow-up's response gave.
+struct Recorded {
+    states: Vec<String>,
+    outputs: Vec<String>,
+    answered: TaskState,
+}
+
+async fn recorded(completes: bool) -> Recorded {
     let keep = Keep::default();
     let tracer = SdkTracerProvider::builder()
         .with_simple_exporter(keep.clone())
@@ -89,8 +101,9 @@ async fn a_follow_up_s_message_does_not_end_the_turn_its_span_records() {
         tracing_subscriber::registry()
             .with(tracing_opentelemetry::layer().with_tracer(tracer.tracer("follow-up"))),
     );
-    let handler = RequestHandlerBuilder::new(AsksThenAnswers)
+    let handler = RequestHandlerBuilder::new(AsksThenAnswers(completes))
         .without_agent_card()
+        .with_span_content_capture(true)
         .build()
         .expect("handler");
     let Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) = handler
@@ -110,27 +123,60 @@ async fn a_follow_up_s_message_does_not_end_the_turn_its_span_records() {
     else {
         panic!("expected the task");
     };
-    assert_eq!(done.status.state, TaskState::Completed);
 
     // The executor's spans are exported as they close, after the response.
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    let states = loop {
-        let states: Vec<String> = keep
-            .0
-            .lock()
-            .unwrap()
-            .iter()
-            .flat_map(|s| s.attributes.iter())
-            .filter(|kv| kv.key.as_str() == "a2a.task.state")
-            .map(|kv| kv.value.to_string())
-            .collect();
+    loop {
+        let values = |key: &str| -> Vec<String> {
+            keep.0
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|s| s.attributes.iter())
+                .filter(|kv| kv.key.as_str() == key)
+                .map(|kv| kv.value.to_string())
+                .collect()
+        };
+        let states = values("a2a.task.state");
         if states.len() >= 2 || tokio::time::Instant::now() > deadline {
-            break states;
+            return Recorded {
+                states,
+                outputs: values("gen_ai.output.messages"),
+                answered: done.status.state,
+            };
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    };
+    }
+}
+
+#[tokio::test]
+async fn a_follow_up_s_message_does_not_end_the_turn_its_span_records() {
+    let r = recorded(true).await;
+    assert_eq!(r.answered, TaskState::Completed);
     assert!(
-        states.iter().any(|s| s == "TASK_STATE_COMPLETED"),
-        "the follow-up's span ended before its terminal state: {states:?}"
+        r.states.iter().any(|s| s == "TASK_STATE_COMPLETED"),
+        "the follow-up's span ended before its terminal state: {:?}",
+        r.states
     );
+}
+
+/// A follow-up answered with a message alone is re-parked
+/// (`TerminalTracking::repark_if_silent`), so its span records the state it
+/// waits in again, and the reply once, though the re-park carries it too.
+#[tokio::test]
+async fn a_follow_up_answered_with_a_message_alone_records_where_it_waits() {
+    let r = recorded(false).await;
+    assert_eq!(r.answered, TaskState::InputRequired);
+    let waiting = r
+        .states
+        .iter()
+        .filter(|s| *s == "TASK_STATE_INPUT_REQUIRED")
+        .count();
+    assert_eq!(
+        waiting, 2,
+        "both turns end waiting for input: {:?}",
+        r.states
+    );
+    let replies: usize = r.outputs.iter().map(|o| o.matches("on it").count()).sum();
+    assert_eq!(replies, 1, "the reply, once: {:?}", r.outputs);
 }

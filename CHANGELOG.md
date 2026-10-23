@@ -1561,8 +1561,22 @@ section "The client refuses what `a2a.proto` does not allow".
   a task stream (`Task`, then the status update) instead of a message-only
   stream, and a blocking follow-up the `Task` with the message as its status
   message instead of the bare `Message`; a `SubscribeToTask` stream on the
-  task gets the same status update (`tests/continuation_message.rs`,
-  `tests/continuation_span.rs`). Unchanged: a new task's first-event
+  task gets the same status update. An executor that answers a follow-up
+  that way and sets no state leaves the task waiting where it waited
+  (`input-required` or `auth-required`), the reply as its status message:
+  the handler writes that state after the executor returns (not after a
+  caller's `CancelTask`). Left `Submitted`, the stream ended on a state a
+  client reads as an incomplete stream, and `Delegation` reported `Lost`
+  after cancelling the child; it now reports `Interrupted` with the reply.
+  An executor that answers a waiting task with an acknowledgement and
+  returns, meaning to finish out of band, now leaves the task waiting for
+  input rather than `Submitted`: set a state (`working`) to say otherwise.
+  Still unsettled, as before: a follow-up whose executor writes nothing, or
+  only artifacts, and one to a task an earlier turn left `working`. Push
+  subscribers get the reply twice, in the folded update and the re-park.
+  Found by the independent reviews (`tests/continuation_message.rs`,
+  `tests/continuation_span.rs`, `delegation_tests.rs`
+  `a_follow_up_answered_with_a_message_leaves_the_child_waiting`). Unchanged: a new task's first-event
   `Message` is a direct reply, a `Message` after only messages on a new task
   stays one, and one after the terminal status is stored and streamed to no
   one. A client that

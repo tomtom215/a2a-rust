@@ -293,7 +293,11 @@ only: when something here is done, delete it rather than annotating it.
   "no task tracking", §3.7 "Status Messages"): a turn that continues a task
   folds every `Message`, its first included (`create::continues`,
   `message_fold`), so the follow-up's stream and every subscriber's carry
-  the same status update. Ledger 206 is TESTED. Left by design: a client
+  the same status update; one answered with messages alone and no state is
+  re-parked where it waited (`TerminalTracking::repark_if_silent`; the
+  review found the task otherwise left `Submitted`, which the SDK's client
+  read as an incomplete stream and `Delegation` as `Lost`). Ledger 206 is
+  TESTED. Left by design: a client
   that found a brand-new task's id and subscribed before its first-event
   `Message` (a direct reply, as §3.1.2 allows) receives it bare. Also
   decided in the fold and open to revisiting: a message written while the

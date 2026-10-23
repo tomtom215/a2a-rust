@@ -212,6 +212,48 @@ async fn a_direct_reply_is_a_message_outcome() {
     assert_eq!(done.task_id, None, "a message-only answer names no task");
 }
 
+/// A follow-up to a waiting child, answered with a message alone, leaves
+/// the child waiting with the reply as its status message. The reply is a
+/// status message, not a direct one (spec §3.7), so the stream is a task
+/// stream; the server re-parks the child, and the stream ends on its
+/// interrupted state rather than incomplete (which reported `Lost` and
+/// cancelled the child).
+#[tokio::test]
+async fn a_follow_up_answered_with_a_message_leaves_the_child_waiting() {
+    let client = worker().await;
+    let asked = Delegation::start(Arc::clone(&client), job("ask"))
+        .await
+        .expect("start")
+        .wait(std::future::pending())
+        .await;
+    assert!(
+        matches!(asked.outcome, Outcome::Interrupted(_)),
+        "{asked:?}"
+    );
+    let id = asked.task_id.expect("the child's id");
+
+    let mut follow_up = job("reply");
+    follow_up.message = follow_up.message.with_task_id(id.as_str());
+    let done = tokio::time::timeout(
+        GUARD,
+        Delegation::start(Arc::clone(&client), follow_up)
+            .await
+            .expect("start")
+            .wait(std::future::pending()),
+    )
+    .await
+    .expect("bounded");
+    match done.outcome {
+        Outcome::Interrupted(status) => {
+            assert_eq!(status.state, TaskState::InputRequired);
+            let said = status.message.as_ref().and_then(Message::text);
+            assert_eq!(said, Some("hello"));
+        }
+        other => panic!("expected the child still waiting, got {other:?}"),
+    }
+    assert_eq!(state_of(&client, None, &id).await, TaskState::InputRequired);
+}
+
 #[tokio::test]
 async fn the_parent_cancelling_cancels_the_child() {
     let client = worker().await;

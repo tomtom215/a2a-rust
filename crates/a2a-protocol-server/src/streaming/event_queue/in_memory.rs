@@ -1149,8 +1149,10 @@ impl InMemoryQueueReader {
     /// executor answers with a `Message`, in which case the stream is that
     /// one `Message` and ends (spec §3.1.2, the message-only pattern).
     ///
-    /// The executor's first event decides. A `Message` then is a direct
-    /// reply, which is how the reference SDK reads it too; anything else, or
+    /// The executor's first event decides, as the queue's writer delivers
+    /// it: a follow-up's `Message` arrives as a status update already
+    /// (`message_fold`), so only a new task can answer this way. A `Message`
+    /// then is a direct reply, which is how the reference SDK reads it too; anything else, or
     /// the executor ending without an event, makes this a task-lifecycle
     /// stream that begins with the snapshot, exactly as before.
     pub(crate) fn set_provisional_task(&mut self, snapshot: StreamResponse) {
