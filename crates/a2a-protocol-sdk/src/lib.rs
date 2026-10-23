@@ -119,6 +119,13 @@ pub mod prelude {
     // `#[macro_export]`ed, hence the crate-root path.
     pub use a2a_protocol_server::agent_executor;
 
+    // ── Telemetry (`otlp`, on by default) ──────────────────────────────
+    // `Telemetry::builder().with_export_where_configured().build()` and
+    // `install_subscriber`: OpenTelemetry from the standard `OTEL_*`
+    // environment, exporting only what an endpoint is configured for.
+    #[cfg(feature = "otlp")]
+    pub use a2a_protocol_server::otel::Telemetry;
+
     // ── Axum integration (feature-gated) ────────────────────────────────
     #[cfg(feature = "axum")]
     pub use a2a_protocol_server::A2aRouter;

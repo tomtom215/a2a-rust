@@ -56,7 +56,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -69,7 +68,6 @@ dependencies = [
  "a2a-protocol-types",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -85,7 +83,6 @@ dependencies = [
  "rmcp",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -261,7 +258,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tonic",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1162,7 +1158,6 @@ dependencies = [
  "axum",
  "tikv-jemallocator",
  "tokio",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1574,7 +1569,6 @@ dependencies = [
  "hyper-util",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2042,7 +2036,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2344,7 +2337,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2421,7 +2413,6 @@ dependencies = [
  "hyper-util",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -3308,7 +3299,6 @@ dependencies = [
  "hyper-util",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -3327,7 +3317,6 @@ dependencies = [
  "rig-core",
  "serde_json",
  "tokio",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -4138,7 +4127,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-util",
- "tracing-subscriber",
  "uuid",
 ]
 

@@ -549,7 +549,6 @@ dependencies = [
  "protoc-bin-vendored",
  "serde_json",
  "tokio",
- "tracing-subscriber",
 ]
 
 [[package]]

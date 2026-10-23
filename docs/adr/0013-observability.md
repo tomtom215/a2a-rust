@@ -320,3 +320,31 @@ still in `a2a-protocol-sdk` only. Read against
   second), not a span. Wrapping each of the stores' 232 statements, in 27
   files, several recorded over the 500-line limit, was not done; the book's
   "What is not measured" says what an operator gets instead.
+
+## 2026-10-23: export where configured, one instance id per process
+
+Found by pointing the repository's own binaries at a live Prometheus and an
+OpenTelemetry Collector (`deploy/observability/`), and by an audit of every
+binary's telemetry setup.
+
+- **Every process reports a `service.instance.id`.** `Telemetry` set none
+  unless `OTEL_RESOURCE_ATTRIBUTES` named one, so replicas of one service
+  exported identical resources; Prometheus maps the attribute to `instance`,
+  and CLI runs without one wrote series with no `instance` at all. It now
+  adds a random UUID when the environment names none, as the conventions
+  recommend and as the Collector does for itself.
+- **`with_export_where_configured()`** builds a signal only when an endpoint
+  names where it goes: `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
+  `OTEL_EXPORTER_OTLP_{SIGNAL}_ENDPOINT`, or code. The seventeen binaries
+  that had decided this themselves read only the general variable, so a
+  metrics-only endpoint exported nothing; each now calls this instead.
+  `install_subscriber()` replaces the registry-and-layer block sixteen of
+  them repeated, and lets `hello-agent` keep its one dependency (the SDK
+  prelude exports `Telemetry` under the default `otlp` feature).
+- **Binaries without telemetry, by decision:** the in-repo TCK runner
+  (`tck/src/main.rs`) depends on no SDK crate by design — a conformance kit
+  that imported the implementation would share its misreadings — so it has
+  no `Telemetry` to build; the MCP tool server
+  (`examples/mcp-agent/src/bin/tool_server.rs`) speaks MCP over stdio, not
+  A2A, and calls no SDK code. `hello-agent` and `tool-loop-agent` now build
+  telemetry; the SLIMRPC binary and example are the binding's own change.

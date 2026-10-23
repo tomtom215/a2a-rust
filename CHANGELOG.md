@@ -248,6 +248,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`TelemetryBuilder::with_export_where_configured` and
+  `Telemetry::install_subscriber`** (server `otlp`; SDK prelude). The first
+  builds each signal only when an endpoint is configured for it —
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
+  `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`, or code — for a binary
+  that must run with or without a collector; the second installs the
+  telemetry's layer as the global `tracing` subscriber when traces or logs
+  were built, never replacing one. Every binary in the repository now uses
+  both; before, each read only `OTEL_EXPORTER_OTLP_ENDPOINT`, so a
+  metrics-only endpoint exported nothing. `Telemetry` is in the SDK's
+  prelude, and `hello-agent` and `tool-loop-agent`, which built no telemetry,
+  now do. Tests: `export_where_configured_builds_only_the_signals_with_an_endpoint`,
+  `installs_once_and_only_when_traces_or_logs_were_built`, and the CLI's
+  `the_cli_exports_its_calls_when_a_collector_is_named` (a metrics-only
+  endpoint exports metrics alone).
+
 - **Prometheus rules and Grafana dashboards** (`deploy/observability/`): a
   Prometheus configuration for OTLP push and one for scraping an
   OpenTelemetry Collector (with the Collector's configuration), 13 recording
@@ -1241,6 +1257,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#151). `Server::bind` now delegates to it.
 
 ### Behaviour Changes
+
+- **`Telemetry` reports a `service.instance.id`** (server `otlp`): a random
+  UUID per process unless `OTEL_RESOURCE_ATTRIBUTES` names one. Replicas of
+  one service no longer export identical resources; in Prometheus each
+  becomes its own `instance`. Test:
+  `each_process_gets_an_instance_id_unless_the_environment_names_one`.
 
 - **A malformed request without a credential is refused as
   unauthenticated, on every binding** (server; spec §7.4, §3.3.2;

@@ -6,13 +6,14 @@
 Three signals, often confused: **logs** say what happened in one request,
 **traces** say how one request travelled — through this agent and every agent
 it called — and **metrics** say what is happening across all of them. This SDK
-records all three. Logging and spans (`tracing`) are on by default and still
-need a subscriber; exporting them over OTLP (`otel`) is **off by default**.
-
-That default is deliberate. A protocol library that pulled in an OpenTelemetry
-exporter to serve one agent would be the wrong trade for most users. The cost
-is that "I see no metrics" is the single most common report against this crate,
-and the answer is almost always this page's first section.
+records all three, and since 0.15 all of it is on by default: spans and
+metrics are recorded through the OpenTelemetry API (`otel`), and the SDK crate
+ships the OTLP exporter (`otlp`). What stays the application's choice is
+where they go: nothing is exported until an endpoint is configured, and spans
+and logs need a `tracing` subscriber (`Telemetry::install_subscriber` installs
+one). If you see no metrics, the answer is almost always this page's first
+section. (Until 2026-10-23 this paragraph said exporting was off by default,
+which stopped being true in 0.15.)
 
 ## Turning them on
 
@@ -108,7 +109,32 @@ the W3C `tracecontext` and `baggage` propagators as the process-global ones,
 and returns a guard whose drop — or explicit `shutdown` — flushes all three.
 `telemetry.layer()` is the `tracing` layer that turns spans into OpenTelemetry
 spans and events into OpenTelemetry log records; add it next to whatever other
-layers you run.
+layers you run, or call `telemetry.install_subscriber()` to install it as the
+process's only subscriber (it never replaces one already set).
+
+A binary that must run as well without a collector as with one builds it with
+`with_export_where_configured()`: each signal is then built only when an
+endpoint names where it goes — `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_METRICS_` / `_LOGS_ENDPOINT`, or
+`with_otlp_endpoint` in code — and a signal with none has no exporter and no
+export thread. Every binary in this repository does this:
+
+```rust,no_run
+use a2a_protocol_server::otel::Telemetry;
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let telemetry = Telemetry::builder()
+    .with_default_service_name("my-agent")
+    .with_export_where_configured()
+    .build()?;
+telemetry.install_subscriber();
+# Ok(())
+# }
+```
+
+Each process also reports a `service.instance.id`, a random UUID unless
+`OTEL_RESOURCE_ATTRIBUTES` names one: it is what tells replicas of one
+service apart (Prometheus turns it into the `instance` label).
 
 It reads the environment as the OpenTelemetry specification defines it, and
 refuses a value it cannot act on rather than ignoring it:
@@ -381,9 +407,11 @@ Stated so a green dashboard is not mistaken for a complete one:
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.
   (The call's span does carry `a2a.tenant`.)
-* **Model calls are not seen.** The SDK does not know which model your
-  executor calls. Instrument the model client itself — its spans nest under
-  `invoke_agent` — or use a framework that reports `chat` spans.
+* **Model calls are seen only through the tool loop.** An executor built on
+  `server::tool_loop` (feature `tool-loop`) records a `chat` span per model
+  call and an `execute_tool` span per tool call, under `invoke_agent`. Any
+  other model client is invisible to the SDK: instrument it, or use a
+  framework that reports `chat` spans.
 
 ## Logs
 

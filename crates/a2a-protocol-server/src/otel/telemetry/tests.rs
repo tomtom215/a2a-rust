@@ -60,6 +60,56 @@ fn every_signal_is_on_by_default_and_each_variable_turns_one_off() {
     );
 }
 
+/// `with_export_where_configured`: a signal is built only when an endpoint
+/// names where it goes — the general variable, the signal's own variable,
+/// or code — and the per-signal exporter variables still win.
+#[test]
+fn export_where_configured_builds_only_the_signals_with_an_endpoint() {
+    let providers = |t: &Telemetry| {
+        (
+            t.tracer_provider().is_some(),
+            t.meter_provider().is_some(),
+            t.logger_provider().is_some(),
+        )
+    };
+    let none = with_env(&[])
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&none), (false, false, false));
+    let all = with_env(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")])
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&all), (true, true, true));
+    let metrics_only = with_env(&[("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://127.0.0.1:9")])
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&metrics_only), (false, true, false));
+    let in_code = with_env(&[])
+        .with_otlp_endpoint("http://127.0.0.1:9")
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&in_code), (true, true, true));
+    let langfuse = with_env(&[])
+        .with_langfuse(Langfuse::new("http://127.0.0.1:9", "pk", "sk"))
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&langfuse), (true, false, false));
+    let turned_off = with_env(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ])
+    .with_export_where_configured()
+    .with_metrics(false)
+    .build()
+    .unwrap();
+    assert_eq!(providers(&turned_off), (true, false, false));
+}
+
 #[test]
 fn langfuse_defaults_metrics_and_logs_off_and_the_environment_can_restore_them() {
     let lf = Langfuse::new("http://127.0.0.1:9", "pk", "sk");

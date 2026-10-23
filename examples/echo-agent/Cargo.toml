@@ -29,8 +29,8 @@ a2a-example-harness = { path = "../harness" }
 # here the transports are hard dependencies and the completeness claim is
 # unconditional.
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
-# `otlp`: the SDK's `Telemetry`, which exports when `OTEL_EXPORTER_OTLP_ENDPOINT`
-# names a collector (`telemetry()` in `src/main.rs`).
+# `otlp`: the SDK's `Telemetry`, which exports each signal an OTLP endpoint is
+# configured for (`telemetry()` in `src/main.rs`).
 a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "otlp"] }
 tracing            = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["registry"] }

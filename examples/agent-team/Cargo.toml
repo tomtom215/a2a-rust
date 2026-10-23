@@ -46,8 +46,8 @@ grpc = [
 ]
 ## Enable agent card signing tests.
 signing = ["a2a-protocol-types/signing", "dep:ring", "dep:base64"]
-## The SDK's telemetry, exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT`
-## names a collector (`src/telemetry.rs`), and the `OtelMetrics` self-check.
+## The SDK's telemetry, exported over OTLP for each signal an endpoint is
+## configured for (`src/telemetry.rs`), and the `OtelMetrics` self-check.
 otel = ["a2a-protocol-server/otlp", "dep:tracing-subscriber"]
 ## Enable Axum framework integration tests.
 axum = ["a2a-protocol-server/axum", "dep:axum"]

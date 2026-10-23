@@ -74,6 +74,13 @@ impl Signal {
         }
     }
 
+    /// Whether an OTLP endpoint is configured for this signal in the
+    /// environment: its own `OTEL_EXPORTER_OTLP_{SIGNAL}_ENDPOINT`, or the
+    /// general `OTEL_EXPORTER_OTLP_ENDPOINT`.
+    pub(super) fn endpoint_in_env(self, env: &Env) -> bool {
+        self.otlp_var(env, "ENDPOINT").is_some()
+    }
+
     /// The signal-specific variable, falling back to the general one.
     fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
         let specific = format!("OTEL_EXPORTER_OTLP_{}_{suffix}", self.upper());

@@ -20,6 +20,7 @@ pub struct TelemetryBuilder {
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
     install_globally: bool,
+    where_configured: bool,
     env: Arc<Env>,
 }
 
@@ -34,6 +35,7 @@ impl std::fmt::Debug for TelemetryBuilder {
             .field("endpoint", &self.endpoint)
             .field("protocol", &self.protocol)
             .field("langfuse", &self.langfuse)
+            .field("where_configured", &self.where_configured)
             .finish_non_exhaustive()
     }
 }
@@ -53,6 +55,7 @@ impl TelemetryBuilder {
             client_identity: None,
             langfuse: None,
             install_globally: true,
+            where_configured: false,
             env,
         }
     }
@@ -89,6 +92,26 @@ impl TelemetryBuilder {
     #[must_use]
     pub const fn with_logs(mut self, on: bool) -> Self {
         self.logs = Some(on);
+        self
+    }
+
+    /// Exports each signal only where an endpoint is configured for it: in
+    /// code ([`with_otlp_endpoint`](Self::with_otlp_endpoint), or
+    /// [`with_langfuse`](Self::with_langfuse) for traces), or in
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT`, or in the signal's own
+    /// `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` /
+    /// `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` /
+    /// `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`. A signal with none is not built:
+    /// no exporter, no export thread. For a binary that must run as well
+    /// with a collector as without one; without this, every signal is
+    /// exported, to `localhost` when nothing names an endpoint, as the
+    /// OpenTelemetry environment specification has it.
+    ///
+    /// [`with_traces`](Self::with_traces) and its siblings, set in code,
+    /// still win, and `OTEL_TRACES_EXPORTER` and its siblings win over both.
+    #[must_use]
+    pub const fn with_export_where_configured(mut self) -> Self {
+        self.where_configured = true;
         self
     }
 
@@ -195,7 +218,14 @@ impl TelemetryBuilder {
             Signal::Metrics => (self.metrics, self.langfuse.is_none()),
             Signal::Logs => (self.logs, self.langfuse.is_none()),
         };
-        config::exporter_enabled(&*self.env, signal, explicit.unwrap_or(preset_default))
+        let default = if self.where_configured {
+            let in_code =
+                self.endpoint.is_some() || (signal == Signal::Traces && self.langfuse.is_some());
+            preset_default && (in_code || signal.endpoint_in_env(&*self.env))
+        } else {
+            preset_default
+        };
+        config::exporter_enabled(&*self.env, signal, explicit.unwrap_or(default))
     }
 
     pub(super) fn target(&self, signal: Signal) -> Result<Target, TelemetryError> {

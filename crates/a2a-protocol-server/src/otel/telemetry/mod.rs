@@ -168,6 +168,27 @@ impl Telemetry {
         spans.and_then(logs)
     }
 
+    /// Installs [`layer`](Self::layer), on its own, as the process's global
+    /// `tracing` subscriber — what a binary with no subscriber of its own
+    /// needs. Does nothing when neither traces nor logs were built, so a
+    /// process run without a collector keeps no subscriber at all. Returns
+    /// whether it installed one: `false` also when a global subscriber was
+    /// already set, which this never replaces. A process with its own
+    /// subscriber adds `layer()` to it instead.
+    // Called for its effect; the result is for a caller that cares.
+    #[allow(clippy::must_use_candidate)]
+    pub fn install_subscriber(&self) -> bool {
+        use tracing_subscriber::layer::SubscriberExt as _;
+        use tracing_subscriber::util::SubscriberInitExt as _;
+        if self.tracer.is_none() && self.logger.is_none() {
+            return false;
+        }
+        tracing_subscriber::registry()
+            .with(self.layer())
+            .try_init()
+            .is_ok()
+    }
+
     /// An [`OtelMetrics`](super::OtelMetrics) recording through this
     /// telemetry's meter provider, for `RequestHandlerBuilder::with_metrics`.
     /// With metrics off it records into a no-op meter.
