@@ -54,8 +54,10 @@ only: when something here is done, delete it rather than annotating it.
     merged. WP-C (handler-wide conformance) and WP-D (SLIMRPC) are in
     progress in worktrees.
 - **Removing `sign_agent_card*` in 0.15.0 waives `STABILITY.md` §3**'s
-  one-minor deprecation window: they shipped in 0.14.1 and were deprecated
-  only in 0.15.0. Kept, because the maintainer asked for every known break
+  one-minor deprecation window for `sign_agent_card`, which shipped in 0.14.1
+  and was deprecated only in 0.15.0 (`sign_agent_card_ed25519` never
+  shipped: added and removed within 0.15.0; checked against the 0.14.1
+  crate source and by cargo-semver-checks). Kept, because the maintainer asked for every known break
   to land in 0.15.0 (2026-10-23); the CHANGELOG's Breaking entry says so.
   The commit (`types: remove the kid-optional card signers`) stands alone
   if the maintainer decides otherwise.

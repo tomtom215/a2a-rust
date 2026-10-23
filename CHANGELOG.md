@@ -106,7 +106,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kid`. **Deprecation window waived:** `STABILITY.md` §3 asks
   for a deprecated item to stay one minor release; these were deprecated
   only in this release, and are removed in it so that 0.15.0 carries every
-  break known now rather than leaving one for 0.16.0. Both shipped in 0.14.1.
+  break known now rather than leaving one for 0.16.0. Only `sign_agent_card`
+  shipped (0.14.1); `sign_agent_card_ed25519` was added in this release
+  and never published.
   Tests:
   `signing_tests::eddsa_protected_header_carries_alg_typ_and_kid`,
   `signing_tests::sign_and_verify_without_key_id` (now signs kid-less by
