@@ -193,7 +193,10 @@ jobs:
       # supported. A citation that outlives its test is a claim with nothing
       # behind it that reads like one with something behind it, so the map is
       # generated from controls.toml and every cited test, file and CI step is
-      # checked to exist on each push.
+      # checked to exist on each push. Since 2026-10-23 every row must cite a
+      # test or a CI step (the script lists the rows with nothing to cite),
+      # and a row whose claim is what a document says cites this step, which
+      # checks the document still says it.
       - name: Compliance map cites only tests that exist
         run: python3 scripts/check_compliance_map.py --check
 

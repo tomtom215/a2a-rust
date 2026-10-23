@@ -13,9 +13,16 @@
 #   gap         none of it yet; `gap` says what would close it
 #   integrator  not something a protocol library can do; `gap` says why, and
 #               what the SDK offers the integrator who must
+#
+# Whatever its status, every row cites a test (`tests`) or a CI step (`ci`)
+# that proves what its `sdk` text says the SDK offers (maintainer's decision,
+# 2026-10-23). A row whose `sdk` text is that a document says something cites
+# the map's own CI step, and DOC_CLAIMS in the script quotes what the document
+# must keep saying. A row whose `sdk` text says the SDK offers nothing cites
+# nothing and is listed, with the reason, in UNCITED in the script.
 
 [meta]
-as_of = "2026-10-20"
+as_of = "2026-10-23"
 preamble = """
 This is a map from regulatory and standards provisions to what a2a-rust, a
 protocol library, provides toward them. It is not a claim that the SDK is
@@ -128,6 +135,9 @@ provision = "Art. 4 (as replaced by Regulation (EU) 2026/1744)"
 requirement = "Providers and deployers take measures to support the AI literacy of their staff and others operating and using AI systems on their behalf; no specific level of literacy is required of any individual."
 sdk = "The book documents what the SDK does and does not do, including the deployment chapters on audit, oversight and provenance."
 status = "integrator"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 gap = "Literacy measures are an organisation's duty toward its own people; a library has no staff to train."
 
 [[control]]
@@ -137,6 +147,11 @@ provision = "Art. 4a (inserted by Regulation (EU) 2026/1744)"
 requirement = "Providers of high-risk AI systems may exceptionally process special categories of personal data to the extent strictly necessary for bias detection and correction, under all of paragraph 1's conditions: other data will not do, technical limits on re-use with state-of-the-art security and pseudonymisation, controlled and documented access, no transmission to other parties, deletion once the bias is corrected or the retention period ends, and records of processing that say why. Providers and deployers of other AI systems and models, and deployers of high-risk systems, may do the same under the same conditions; this creates no obligation to detect bias. Article 10(5), which held the provider's basis before, is deleted."
 sdk = "The SDK processes no data set and detects no bias. What passes through it is the integrator's data: audit records hold content only as digests, and with the `encryption` feature both the audit trail and the task store protect what they hold (GDPR-25-1)."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_protected_record_names_no_one_and_still_verifies",
+]
 gap = "Whether to process special categories for bias detection, and every safeguard paragraph 1 requires, belong to the provider or deployer that holds the data. `EncryptedTaskStore` encrypts task content but leaves ids, `metadata` and the like readable (GDPR-25-1), so special-category data belongs in parts, if it is routed through tasks at all."
 
 [[control]]
@@ -144,8 +159,14 @@ id = "AIA-5-1"
 source = "ai-act"
 provision = "Art. 5(1)(a)–(h), 5(2)–(8) (from 2 February 2025)"
 requirement = "Prohibited: AI systems that deploy subliminal, purposefully manipulative or deceptive techniques materially distorting behaviour and causing or likely to cause significant harm (a); that exploit vulnerabilities due to age, disability or a specific social or economic situation to the same effect (b); social scoring leading to detrimental treatment in unrelated contexts or out of proportion (c); risk assessment of a person committing a criminal offence based solely on profiling or personality traits (d); facial recognition databases built by untargeted scraping of facial images from the internet or CCTV footage (e); inferring emotions in the workplace and education institutions, except for medical or safety reasons (f); biometric categorisation inferring race, political opinions, trade union membership, religious or philosophical beliefs, sex life or sexual orientation (g); and real-time remote biometric identification in publicly accessible spaces for law enforcement, except as strictly necessary for the objectives of point (h), under the authorisation, assessment and registration conditions of paragraphs 2–7."
-sdk = "The SDK carries messages between agents and performs none of these practices; it has no biometric, scoring or emotion-inference capability. Server interceptors are the hook through which a provider can refuse requests or inspect what passes through an agent; the SDK ships no policy that classifies purposes (AIA-15-5)."
+sdk = "The SDK carries messages between agents and performs none of these practices; it has no biometric, scoring or emotion-inference capability. Server interceptors are the hook through which a provider can refuse a call before it runs, from what the call context carries (the method, the authenticated caller, the tenant, the task id and the headers); they are not given the message, which reaches only the executor. The SDK ships no policy that classifies purposes (AIA-15-5)."
 status = "integrator"
+code = [
+  "crates/a2a-protocol-server/src/interceptor/mod.rs::ServerInterceptor",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/handler_tests/advanced.rs::interceptor_rejection_stops_processing",
+]
 gap = "Each prohibition turns on the practice an AI system performs and the purpose it is placed on the market, put into service or used for, which are the provider's and deployer's; a transport cannot tell one purpose from another. The prohibitions 2026/1744 added are row AIA-5-1-ba-bb."
 
 [[control]]
@@ -153,8 +174,14 @@ id = "AIA-5-1-ba-bb"
 source = "ai-act"
 provision = "Art. 5(1)(ba), (bb), 5(1a), (1b) (inserted by Regulation (EU) 2026/1744; from 2 December 2026)"
 requirement = "Prohibited: placing on the market, putting into service or using an AI system that generates or manipulates realistic images, video, audio or similar material of an identifiable person's intimate parts, or of an identifiable person in sexually explicit activity, without that person's freely given, specific, informed, unambiguous and explicit consent (ba); or child sexual abuse material within Article 2(c) and (e) of Directive 2011/93/EU, except where a 'without right' defence applies under national law (bb). Placing on the market or putting into service is prohibited only where that generation is the system's intended purpose, or a reasonably foreseeable and reproducible outcome that the system lacks reasonable and adequate safeguards to prevent and correct (1a(a)); use is prohibited only where the deployer uses the system for that purpose (1a(b))."
-sdk = "The SDK generates and manipulates no content: it carries messages and artifacts between agents. Server interceptors are the hook through which a provider can inspect what passes through an agent; the SDK ships no content filter (AIA-15-5)."
+sdk = "The SDK generates and manipulates no content: it carries messages and artifacts between agents. Server interceptors can refuse a call from its method, caller, tenant and headers, but are not given its content, which reaches only the executor: a content check is the executor's. The SDK ships no content filter (AIA-15-5)."
 status = "integrator"
+code = [
+  "crates/a2a-protocol-server/src/interceptor/mod.rs::ServerInterceptor",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/handler_tests/advanced.rs::interceptor_rejection_stops_processing",
+]
 gap = "Whether a system can generate such material, and the safeguards recital 12 lists (data cleaning, refusal training, output controls, prompt guardrails, content classification and filtering, abuse detection, notice and action), belong to the provider of the generating system and to the deployer who uses it. Recital 12 counts a system's release and distribution strategy, open-source releases included, when judging whether its safeguards are reasonable. The original Article 5 prohibitions are row AIA-5-1."
 
 [[control]]
@@ -182,6 +209,11 @@ provision = "Art. 11(1) (second subparagraph as replaced by Regulation (EU) 2026
 requirement = "The technical documentation of a high-risk AI system is drawn up before it is placed on the market and kept up to date, contains at least the elements of Annex IV, and is written so that national competent authorities and notified bodies can assess compliance. SMEs, start-ups included, and small mid-caps may provide the Annex IV elements in a simplified manner, on the form the Commission establishes, which notified bodies accept."
 sdk = "Material a provider can cite for the component it takes from this repository: a CycloneDX SBOM per crate attached to each release, the provenance manifest, the ADRs, and the spec ledger, which records the protocol behaviour requirement by requirement."
 status = "integrator"
+ci = [
+  "Generate CycloneDX SBOMs",
+  "Create or update GitHub release",
+  "Spec ledger covers every requirement and cites only tests that exist",
+]
 evidence = ["docs/adr/0015-audit-trail.md", "docs/compliance/spec-ledger.md", "PROVENANCE.md"]
 gap = "The documentation describes the AI system, which is the provider's to write; the SDK's material describes one component of it."
 
@@ -192,6 +224,11 @@ provision = "Art. 25(2), 25(4) (as replaced by Regulation (EU) 2026/1744), 99(4)
 requirement = "Where another operator becomes the provider of a high-risk system (Art. 25(1)), the initial provider is no longer its provider, and cooperates with the new one: technical documentation sufficient to assess compliance with Art. 16, known limitations and failure modes, and targeted technical access including for testing and validation — unless it clearly specified that its system is not to be changed into a high-risk one (25(2)). The provider of a high-risk system and a third party supplying an AI system, model, tools, services, components or processes used or integrated in it specify, by written agreement, the information, capabilities, technical access and other assistance the provider needs; this does not apply to third parties making tools, services, processes or components, other than general-purpose AI models, accessible to the public under a free and open-source licence (25(4)). Breaches of 25(2) and (4) are subject to the fines of Art. 99(4) (point (da))."
 sdk = "The SDK is published under Apache-2.0, a free and open-source licence, and is not a general-purpose AI model, so 25(4)'s written agreement does not apply to it, and it is not an AI system whose provider 25(2) binds. It publishes, without an agreement, much of what one would ask for: the technical material of AIA-11 (SBOMs, provenance manifest, ADRs, spec ledger) and, in each row here, its known limitations."
 status = "integrator"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+  "Generate CycloneDX SBOMs",
+  "Spec ledger covers every requirement and cites only tests that exist",
+]
 evidence = ["LICENSE", "PROVENANCE.md", "docs/compliance/spec-ledger.md"]
 gap = "A provider that integrates the SDK and needs assistance beyond what is published has no written agreement to rely on; one taking components from a supplier that is not exempt must conclude one. The exemption is from 25(4) only."
 
@@ -202,6 +239,14 @@ provision = "Art. 16"
 requirement = "Providers of high-risk AI systems ensure compliance with Chapter III, Section 2 (a); indicate their name, registered trade name or mark and contact address on the system, its packaging or documentation (b); have a quality management system under Art. 17 (c); keep the documentation of Art. 18 (d); keep the logs of Art. 19 when under their control (e); have the system undergo the Art. 43 conformity assessment before placing it on the market (f); draw up the EU declaration of conformity of Art. 47 (g); affix the CE marking of Art. 48 (h); register under Art. 49(1) (i); take corrective action and inform under Art. 20 (j); demonstrate conformity to a national competent authority on reasoned request (k); and meet the accessibility requirements of Directives (EU) 2016/2102 and 2019/882 (l)."
 sdk = "Toward (e): the audit trail of AIA-12-1 and its retention under AIA-19-26-6 are logs a provider can keep. Toward (d), (k) and Art. 25(2): the technical material of AIA-11. Nothing toward the rest, which are the provider's acts about the system as a whole."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
+]
+ci = [
+  "Generate CycloneDX SBOMs",
+  "Spec ledger covers every requirement and cites only tests that exist",
+]
 gap = "Every point is the obligation of the provider of the high-risk system; the SDK is a component of it, not its provider."
 
 [[control]]
@@ -211,6 +256,11 @@ provision = "Art. 43 (43(3) as replaced by Regulation (EU) 2026/1744), 47, 48, 4
 requirement = "Before placing a high-risk system on the market, its provider follows the conformity assessment procedure of Art. 43: for Annex III point 1, internal control (Annex VI) or a notified body (Annex VII), the latter where harmonised standards or common specifications are not applied in full; for Annex III points 2–8, internal control; for Annex I Section A systems, the procedure of that legislation, with Section 2's requirements and the Art. 17 quality management system assessed as part of it (43(3)); and a new assessment after a substantial modification (43(4)). The provider draws up a machine-readable, physical or electronically signed EU declaration of conformity with the content of Annex V, kept for 10 years (Art. 47); affixes the CE marking, digitally for systems provided digitally (Art. 48); and, for Annex III systems other than point 2, registers itself and the system in the EU database before placing it on the market, as must a provider that concluded under Art. 6(3) that an Annex III system is not high-risk (Art. 49(1)–(2)); public-authority deployers register their use (49(3)). Notified bodies are designated by the codes of Annex XIV, whose AIH 0401 names Agentic AI."
 sdk = "Material a provider can put to the assessment: the technical documentation of AIA-11, the spec ledger recording the protocol's behaviour requirement by requirement, and the CycloneDX SBOMs and build-provenance attestations of CRA-13-5."
 status = "integrator"
+ci = [
+  "Spec ledger covers every requirement and cites only tests that exist",
+  "Generate CycloneDX SBOMs",
+  "Attest build provenance (SLSA)",
+]
 evidence = ["docs/compliance/spec-ledger.md", "PROVENANCE.md"]
 gap = "The assessment, the declaration, the CE marking and the registration are the provider's acts about the high-risk system; none can be done for a component."
 
@@ -221,6 +271,12 @@ provision = "Art. 26(1)–(2), (5); Art. 27 (27(4)–(5) as replaced by Regulati
 requirement = "Deployers use high-risk systems according to the instructions for use, assign human oversight to competent persons, monitor operation, and (for the deployers Art. 27 names) assess the impact on fundamental rights before deploying; that assessment may cross-refer to, or include parts of, a data protection impact assessment under Art. 35 GDPR or Art. 27 of Directive (EU) 2016/680 (27(4)), and the AI Office develops a questionnaire template, including an automated tool, to help (27(5))."
 sdk = "The monitoring signals of AIA-12-2 and AIA-14-4a, and the logs of AIA-19-26-6."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/tests/interceptor_on_complete.rs::every_handler_method_reports_its_outcome",
+  "crates/a2a-protocol-sdk/tests/observability_e2e/main.rs::one_server_three_bindings_what_an_operator_sees",
+  "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
+]
 gap = "Each of these is an organisational duty of the deployer."
 
 [[control]]
@@ -230,6 +286,10 @@ provision = "Art. 50(3)–(4)"
 requirement = "Deployers of emotion recognition or biometric categorisation systems inform the persons exposed; deployers of a system generating or manipulating image, audio or video constituting a deep fake disclose that it is artificially generated or manipulated."
 sdk = "The provenance marking of AIA-50-2 can carry the 'artificially generated' fact on a message or artifact."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-types/src/provenance/tests.rs::the_marker_is_machine_readable_in_the_declared_shape",
+  "crates/a2a-protocol-types/src/provenance/tests.rs::artifacts_carry_it_too",
+]
 gap = "The disclosure is to the persons exposed or shown the content, through an interface the SDK never renders."
 
 [[control]]
@@ -278,6 +338,15 @@ provision = "Art. 12(3)"
 requirement = "For high-risk AI systems referred to in point 1(a) of Annex III (remote biometric identification), the logging capabilities provide, at a minimum: the period of each use (start and end date and time); the reference database against which input data has been checked; the input data for which the search has led to a match; and the identification of the natural persons involved in verifying the results, as referred to in Article 14(5). Text read 2026-10-20 in the Official Journal edition of Regulation (EU) 2024/1689 (OJ L, 2024/1689, 12.7.2024, from the Publications Office); whether Regulation (EU) 2026/1744 amends this paragraph was not checked that day."
 sdk = "The audit trail (AIA-12-1) records each call and run with its time, caller and outcome, and each admitted approval with its approver; `AuditRecord::detail` carries kind-specific fields an executor adds, so a reference database or a matched input's digest can be recorded in the same chain."
 status = "integrator"
+code = [
+  "crates/a2a-protocol-types/src/audit/record.rs::AuditRecord",
+  "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::append",
+]
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
+  "crates/a2a-protocol-server/src/audit/executor_detail_tests.rs::an_executors_own_fields_are_recorded_in_the_tenants_chain",
+]
 gap = "The SDK has no biometric capability and no notion of a reference database or a match: which fields a remote biometric identification system must log, and recording them, are its provider's. The two-person verification (d) refers to is row AIA-14-5."
 
 [[control]]
@@ -287,6 +356,9 @@ provision = "Art. 13(3)(f)"
 requirement = "The instructions for use shall describe the mechanisms that allow deployers to properly collect, store and interpret the logs."
 sdk = "The book's Audit Trail chapter says what each record holds, how to configure the store and the checkpoint key, how to verify a chain and an export, how to follow one request across agents, and how retention and legal holds behave; ADR 0015 gives the threat model and limits. Text a provider can adapt into its instructions for use."
 status = "documented"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["book/src/deployment/audit.md", "docs/adr/0015-audit-trail.md"]
 [[control]]
 id = "AIA-13-1-2"
@@ -295,6 +367,10 @@ provision = "Art. 13(1)–(2), 13(3)(a)–(e)"
 requirement = "High-risk AI systems are transparent enough for deployers to interpret and use their output, and come with instructions for use that state the provider, the system's characteristics, capabilities, limitations and accuracy, its human oversight measures and its resource needs."
 sdk = "An agent card names the agent, its provider, version, skills, input and output modes and capabilities; the book documents the SDK's own behaviour, limits and defaults."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-types/tests/coverage_gap_tests.rs::agent_card_full_roundtrip",
+  "crates/a2a-protocol-types/src/agent_card/builders/tests.rs::a_constructed_card_round_trips_through_json",
+]
 gap = "The output, its accuracy and limitations, and the instructions for use belong to the AI system the SDK carries messages for; only its provider can write them. 13(3)(f), the logging mechanisms, is row AIA-13-3f."
 
 [[control]]
@@ -304,6 +380,13 @@ provision = "Art. 14(1)–(3), 14(4)(b)–(c)"
 requirement = "High-risk AI systems can be effectively overseen by natural persons through appropriate human-machine interface tools, with oversight measures commensurate with the risks, and overseers able to stay aware of automation bias and interpret the output correctly."
 sdk = "The protocol hooks oversight can be built on: the approval extension (AIA-14-4d), cancel and halt (AIA-14-4e), per-call outcomes and metrics (AIA-14-4a)."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/src/approval/tests.rs::an_approval_flows_through_the_gate_to_the_executor",
+  "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs::cancel_task_signals_cancellation_token",
+  "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_a_tenant_cancels_its_tasks_and_refuses_its_sends",
+  "crates/a2a-protocol-server/tests/interceptor_on_complete.rs::every_handler_method_reports_its_outcome",
+  "crates/a2a-protocol-sdk/tests/observability_e2e/main.rs::one_server_three_bindings_what_an_operator_sees",
+]
 gap = "The human-machine interface, the choice of oversight measures for a given risk, and guarding against automation bias are the provider's and deployer's; the SDK renders nothing to a person."
 
 [[control]]
@@ -313,6 +396,12 @@ provision = "Art. 15(1)–(3)"
 requirement = "High-risk AI systems achieve an appropriate level of accuracy, robustness and cybersecurity, perform consistently throughout their lifecycle, and declare their accuracy metrics in the instructions for use."
 sdk = "Robustness and cybersecurity of the protocol layer are rows AIA-15-4 and AIA-15-5."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/audit_tests/public_api.rs::executor_timeout_causes_failure",
+  "crates/a2a-protocol-server/tests/shutdown_in_flight_tests.rs::an_executor_that_ignores_its_token_is_reported_not_waited_for_forever",
+  "crates/a2a-protocol-server/src/auth/jwt.rs::alg_none_is_rejected",
+  "crates/a2a-protocol-types/src/signing.rs::verify_rejects_tampered_card",
+]
 gap = "Accuracy and its metrics are properties of the model and the system around it, which the SDK does not contain."
 
 [[control]]
@@ -496,6 +585,9 @@ provision = "Art. 50(1)"
 requirement = "Natural persons are informed that they are interacting with an AI system."
 sdk = "A2A carries agent-to-agent traffic; the agent card names the agent and describes it."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-types/src/agent_card/builders/tests.rs::a_constructed_card_round_trips_through_json",
+]
 gap = "The person interacts with the integrator's interface, which this SDK never renders; the disclosure belongs there."
 
 [[control]]
@@ -552,6 +644,11 @@ provision = "Art. 73, 75(1a) (inserted by Regulation (EU) 2026/1744)"
 requirement = "Providers report serious incidents to market surveillance authorities; providers of high-risk systems under the AI Office's exclusive competence (Art. 75(1): systems built on a general-purpose AI model by the model's provider or its undertaking, with exceptions, and systems that are or are integrated into a very large online platform or search engine) report them to the AI Office instead, with Art. 73(2)–(9) applying mutatis mutandis."
 sdk = "Typed failures, error metrics and spans give a provider the signals to detect one."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-sdk/tests/observability_e2e/main.rs::one_server_three_bindings_what_an_operator_sees",
+  "crates/a2a-protocol-server/tests/failure_class_tests.rs::an_internal_error_is_classified_as_internal",
+  "crates/a2a-protocol-server/tests/executor_failure_logged.rs::a_failed_executor_is_logged_at_error_with_its_task_and_cause",
+]
 gap = "Deciding that an incident is serious, and reporting it, is the provider's act."
 
 # ── Cyber Resilience Act ─────────────────────────────────────────────────────
@@ -574,6 +671,9 @@ provision = "Art. 13(6)"
 requirement = "A manufacturer that identifies a vulnerability in a component reports it to whoever maintains the component."
 sdk = "SECURITY.md names the private reporting channels, accepts Article 13(6) reports and shared fixes on the same three-business-day acknowledgement, and defers to the reporter's statutory notification deadlines."
 status = "documented"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["SECURITY.md"]
 
 [[control]]
@@ -604,6 +704,9 @@ provision = "Annex I, Part I(1); Art. 13(2)–(4)"
 requirement = "Products are designed, developed and produced to ensure an appropriate level of cybersecurity based on the risks. The manufacturer assesses the cybersecurity risks, documents the assessment and keeps it updated during the support period, says in it whether and how each point of Annex I, Part I(2) applies, and includes it in the technical documentation, with a clear justification for any requirement it finds not applicable."
 sdk = "Material for the assessment of a product built on the SDK: the security chapter of the book, which states what holds by construction, what is left to the operator and the known gaps; the production-hardening chapter; the ADRs; and the rows below, which say point by point what the SDK carries."
 status = "integrator"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["book/src/deployment/security.md", "book/src/deployment/production.md", "docs/adr"]
 gap = "The risk assessment is of the product, its intended purpose and its operating environment, which only its manufacturer knows. The SDK publishes no threat model of its own to start one from: the security chapter lists properties and gaps, not threats, assets and attackers."
 
@@ -846,6 +949,9 @@ provision = "Annex I, Part II(2), (4), (8)"
 requirement = "Manufacturers address and remediate vulnerabilities without delay, including by security updates provided, where technically feasible, separately from functionality updates; once an update is available, publicly disclose the fixed vulnerability with a description, the affected product, its impact and severity and how to remediate; and disseminate security updates without delay, free of charge, with advisory messages telling users what to do."
 sdk = "The project's own practice, on its one precedent: GHSA-hr9h-6jvf-wvg6 (high, CVSS 8.1, tenant isolation bypass) was fixed in 0.14.1, a patch release whose changelog holds the fix and internal changes only; the advisory was published with the fix (2026-09-30) and states the impact, the affected crates and version ranges, the patched version, workarounds and references; the changelog's Security section repeats it with the migration and what to do before upgrading. The crates are Apache-2.0 and free of charge. SECURITY.md commits to patch releases of the current line and a 90-day disclosure ceiling."
 status = "partial"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["SECURITY.md", "CHANGELOG.md", "docs/openssf-best-practices.md"]
 gap = "The advisory exists only on GitHub: checked 2026-10-21, the RustSec database (cached copy of 2026-10-17) has no entry for it and OSV has no record, so an integrator scanning their lockfile with cargo-audit, cargo-deny or OSV-Scanner is not told; filing it with RustSec would close that. Only the latest minor line receives fixes, so for an integrator on an older line a security fix arrives together with a minor release's functionality and, before 1.0, its breaking changes. No time to fix is stated beyond the 90-day disclosure ceiling. For the product, remediating, disclosing and shipping the update is the manufacturer's."
 
@@ -867,6 +973,9 @@ provision = "Annex I, Part II(5), (6); Art. 13(17); Annex II(2)"
 requirement = "Manufacturers put in place and enforce a coordinated vulnerability disclosure policy, facilitate the sharing of information about vulnerabilities in the product and its third-party components, provide a contact address for reporting vulnerabilities, and designate a single point of contact that lets users choose their means of communication and is not limited to automated tools."
 sdk = "SECURITY.md is the policy for every crate published from the repository, the unpublished SLIMRPC binding included: two private channels (a GitHub draft security advisory, preferred, and email to the maintainer), acknowledgement within three business days, triage within 14 days, a 90-day coordinated-disclosure timeline, credit to reporters, and a section for manufacturers that accepts Article 13(6) reports and shared fixes and defers to their statutory deadlines."
 status = "documented"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["SECURITY.md", "book/src/deployment/security.md"]
 remainder = "The manufacturer's own policy and point of contact cover its product, and point at this one for reports about the crates. There is no PGP key, so email cannot be encrypted end to end; SECURITY.md says so and prefers the advisory channel."
 
@@ -905,6 +1014,11 @@ provision = "Art. 13(16)–(18); Annex II"
 requirement = "Products are accompanied by the manufacturer's name and contact details, the single point of contact for vulnerabilities and where the disclosure policy is, identification of the product, its intended purpose and security properties, foreseeable circumstances leading to significant risks, the type of support and its end date, instructions for secure commissioning, use, update and decommissioning, where the SBOM is, and, for a product meant for integration, the information an integrator needs to meet Annex I and Annex VII; kept available for ten years or the support period."
 sdk = "For the integrator (Annex II(8)(f)): the book's security chapter (what holds, what is left to the operator, known gaps), the production-hardening chapter, the audit, multi-tenancy and provenance chapters, this control map, and SECURITY.md's section for manufacturers. Contact, disclosure policy and supported versions are in SECURITY.md; each release's SBOMs are on its GitHub release."
 status = "partial"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+  "Generate CycloneDX SBOMs",
+  "Create or update GitHub release",
+]
 evidence = ["SECURITY.md", "book/src/deployment/security.md", "book/src/deployment/production.md", "docs/compliance/control-map.md"]
 gap = "There is no support end date to give (CRA-13-8). The product's own Annex II information is the manufacturer's."
 
@@ -915,6 +1029,14 @@ provision = "Art. 14, 69(3), 71(2)"
 requirement = "From 11 September 2026, and for products placed on the market before 11 December 2027 as well, a manufacturer notifies an actively exploited vulnerability in its product, and a severe incident having an impact on its security, to the coordinating CSIRT and ENISA through the single reporting platform: an early warning within 24 hours, a notification within 72 hours and a final report; and informs the impacted users, where appropriate in a structured, machine-readable format."
 sdk = "SECURITY.md tells a manufacturer that its legal deadlines win over the project's embargo, to notify on the law's timetable and tell the project at the same time. The project's own advisories carry the impact, affected versions, fix and workarounds a notification and a user message need. Spans, metrics, typed failures and the audit trail are the signals a manufacturer can detect an incident from."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-sdk/tests/observability_e2e/main.rs::one_server_three_bindings_what_an_operator_sees",
+  "crates/a2a-protocol-server/tests/failure_class_tests.rs::an_internal_error_is_classified_as_internal",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+]
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["SECURITY.md"]
 gap = "Notifying is the manufacturer's act and applies now: Article 14 has applied since 11 September 2026. The project has no channel to tell integrators of an actively exploited vulnerability beyond a GitHub advisory and the changelog, and its advisory is not in RustSec or OSV, the machine-readable feeds integrators scan (CRA-AI-II-2-4-8)."
 
@@ -925,6 +1047,9 @@ provision = "Art. 24, 3(14)"
 requirement = "An open-source software steward, a legal person other than a manufacturer that systematically supports on a sustained basis free and open-source software intended for commercial activities, puts in place and documents in a verifiable manner a cybersecurity policy covering the documenting, addressing and remediating of vulnerabilities and the sharing of information about them; cooperates with market surveillance authorities; and is subject to Article 14(1), and to 14(3) and (8) for incidents in the infrastructure it provides for development."
 sdk = "The maintainer's position, in SECURITY.md: the crates are published by an individual and not monetised, and a steward is a legal person, so the project is no steward. SECURITY.md is nonetheless such a policy: how vulnerabilities are reported, acknowledged, triaged, fixed, disclosed and credited, and how information is shared through advisories and the changelog."
 status = "documented"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = ["SECURITY.md", "SUPPORT.md", "MAINTAINERS.md"]
 remainder = "If a legal person, such as a foundation hosting the project, takes on its sustained support, Article 24 binds that person: its policy must be documented verifiably, it must cooperate with market surveillance authorities on request, and Article 14(1) notifications apply to the extent it is involved in development."
 
@@ -935,6 +1060,12 @@ provision = "Art. 13(7), 13(12), 31; Annex VII"
 requirement = "Before placing a product on the market the manufacturer draws up technical documentation: a general description and intended purpose, software versions affecting compliance, the design and architecture showing how software components build on each other, the vulnerability handling processes (SBOM, disclosure policy, contact address, secure update distribution), the risk assessment, what determined the support period, the standards or other solutions applied, test reports, and the EU declaration of conformity."
 sdk = "Material for the parts that concern the component: the ADRs and the book's architecture and deployment chapters (design), per-crate SBOMs and SECURITY.md (vulnerability handling), RELEASING.md (secure distribution), the spec ledger (protocol behaviour requirement by requirement, each tied to a test), this control map, and the release workflow's attested conformance results."
 status = "integrator"
+ci = [
+  "Generate CycloneDX SBOMs",
+  "Spec ledger covers every requirement and cites only tests that exist",
+  "Attest ACTS conformance",
+  "Compliance map cites only tests that exist",
+]
 evidence = ["docs/adr", "docs/compliance/spec-ledger.md", "RELEASING.md", "SECURITY.md"]
 gap = "The technical documentation, its risk assessment and the declaration of conformity are the manufacturer's, for its product. CI results other than the attested conformance run are kept only as long as GitHub keeps workflow logs, so a manufacturer who wants the SDK's test reports in its file must keep its own copy."
 
@@ -1113,6 +1244,12 @@ provision = "Art. 9, 10"
 requirement = "Processing of special categories of personal data (racial or ethnic origin, political opinions, religious or philosophical beliefs, trade union membership, genetic data, biometric data for unique identification, health, sex life or sexual orientation) is prohibited unless an exception in Art. 9(2) applies; data on criminal convictions and offences are processed only under official authority or as Union or Member State law authorises."
 sdk = "The SDK neither detects nor treats specially any category of data. What it offers applies to all content: with the `encryption` feature the task store seals every part (GDPR-32-1a), audit records hold content only as digests, keyed with `AuditLog::with_privacy` (GDPR-25-1), and message content stays out of spans unless the operator opts in."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/encrypted_store.rs::a_handler_over_the_wrapper_stores_no_plaintext_and_serves_it_whole",
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/src/audit/privacy/tests.rs::a_protected_record_names_no_one_and_still_verifies",
+  "crates/a2a-protocol-server/tests/telemetry_export/agent_spans.rs::the_executor_span_is_invoke_agent_without_content_by_default",
+]
 gap = "Whether an Art. 9(2) exception or an Art. 10 authorisation applies is the controller's to establish. `EncryptedTaskStore` leaves ids, `metadata`, artifact names and descriptions readable to the store, so special-category data belongs in parts if it is routed through tasks at all."
 
 [[control]]
@@ -1154,6 +1291,9 @@ provision = "Art. 17(2), 19"
 requirement = "A controller that made personal data public and must erase them takes reasonable steps, including technical measures, to inform other controllers processing them of the erasure request (Art. 17(2)); rectification, erasure or restriction is communicated to each recipient to whom the data were disclosed, unless impossible or disproportionate (Art. 19)."
 sdk = "None toward recipients. The A2A protocol has no method that deletes a task, so an erasure reaches only this server's stores (GDPR-5-1e). The client's `Delegation` cancels the tasks a task delegated to other agents; it does not erase them."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-client/tests/delegation_tests.rs::the_parent_cancelling_cancels_the_child",
+]
 gap = "Telling recipients is the controller's act toward the parties it disclosed data to: peer agents a task was delegated to, webhook receivers, telemetry back ends. The SDK keeps no list of what was sent where, beyond the audit trail's records of calls received and the trace id that joins one request's records across agents that are both audited."
 
 [[control]]
@@ -1242,6 +1382,12 @@ provision = "Art. 30"
 requirement = "Each controller and processor keeps a written record of processing activities: purposes, categories of data subjects and data, recipients, third-country transfers, envisaged time limits for erasure and, where possible, a general description of the security measures of Art. 32(1); it is made available to the supervisory authority on request."
 sdk = "The audit trail is a log of processing operations (who called, which task ran, what it emitted), not the record of processing activities Art. 30 describes. Toward the general description of security measures (30(1)(g), 30(2)(d)), the SDK's documents state what it protects and what it does not: the security chapter, ADR 0015 and this control map."
 status = "integrator"
+tests = [
+  "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+]
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = [
   "book/src/deployment/security.md",
   "docs/adr/0015-audit-trail.md",
@@ -1306,6 +1452,9 @@ provision = "Art. 35"
 requirement = "Where a type of processing, in particular using new technologies, is likely to result in a high risk to the rights and freedoms of natural persons, the controller assesses the impact of the envisaged processing on the protection of personal data before processing; the assessment describes the processing and its purposes, assesses necessity, proportionality and risks, and states the measures envisaged to address them."
 sdk = "Inputs to the description of measures (35(7)(d)): this control map; the security chapter, which lists what encryption at rest does and does not protect and the SDK's known gaps; ADR 0015, which states what the audit trail records, the threats it answers and what erasure does not reach. AIA-26-27 notes that a fundamental rights impact assessment under the AI Act may draw on a DPIA."
 status = "integrator"
+ci = [
+  "python3 scripts/check_compliance_map.py --check",
+]
 evidence = [
   "book/src/deployment/security.md",
   "docs/adr/0015-audit-trail.md",
