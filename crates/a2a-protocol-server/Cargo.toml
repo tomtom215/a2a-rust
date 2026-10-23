@@ -29,7 +29,7 @@ default = ["tracing", "otel"]
 ##
 ## Also `RequestHandlerBuilder::with_content_signer`, which signs every agent
 ## message and artifact the server serves (ADR 0027). The server never signs
-## the card it serves: sign it with `sign_agent_card` before handing it to
+## the card it serves: sign it with `sign_card_es256` before handing it to
 ## `RequestHandlerBuilder`, as `examples/incident-response` does.
 signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out

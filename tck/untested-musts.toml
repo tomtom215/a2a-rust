@@ -52,10 +52,11 @@ title = "Signature protected header includes required parameters"
 section = "8.4.2"
 level = "MUST"
 upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/agent_card.py; also backlog task-29 (To Do)."
-scope = "Every signer that is not deprecated writes `alg` and `kid` in the protected header, ES256 and EdDSA, with and without `jku`. Not covered: the two deprecated kid-optional signers (`sign_agent_card`, `sign_agent_card_ed25519`) still omit `kid` when given none; they are deprecated since 0.15.0 for that reason."
+scope = "Every signer writes `alg`, `typ` and `kid` in the protected header, ES256 and EdDSA, with and without `jku`. The two kid-optional signers (`sign_agent_card`, `sign_agent_card_ed25519`), deprecated for omitting `kid`, were removed in 0.15.0."
 tests = [
   "crates/a2a-protocol-types/tests/tck_card_signing.rs::card_sign_003_every_signer_writes_alg_and_kid",
   "crates/a2a-protocol-types/tests/signing_tests.rs::protected_header_carries_alg_typ_and_kid",
+  "crates/a2a-protocol-types/tests/signing_tests.rs::eddsa_protected_header_carries_alg_typ_and_kid",
 ]
 
 [[requirement]]
