@@ -283,6 +283,9 @@ fn inside_a_task_the_spans_nest_under_invoke_agent_and_carry_no_content() {
     }
 }
 
+// `cfg(test)` again, though this file is test-only: it is how
+// `scripts/check_panic_paths.py` knows a `#[path]` module is a test's.
 #[cfg(feature = "otel")]
+#[cfg(test)]
 #[path = "tool_metrics_tests.rs"]
 mod metrics;
