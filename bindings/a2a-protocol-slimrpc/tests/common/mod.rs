@@ -13,6 +13,7 @@
 
 #![allow(dead_code)] // Each suite uses a different subset.
 
+pub mod agent;
 pub mod spire;
 pub mod tls;
 

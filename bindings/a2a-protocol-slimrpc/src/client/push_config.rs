@@ -62,14 +62,19 @@ impl SlimRpcTransport {
             .map_err(ClientError::Serialization)
     }
 
-    /// `ListTaskPushNotificationConfigs`. The response is a page whose configs
-    /// are flattened to the list the A2A method surface returns.
+    /// `ListTaskPushNotificationConfigs`, answered with the page: its
+    /// configs and `nextPageToken`, the `ListPushConfigsResponse`
+    /// `A2aClient::list_push_configs` reads, as every other binding answers.
+    ///
+    /// Until 2026-10-23 the configs were flattened to a bare list, which no
+    /// caller could read: the typed client failed every call with "invalid
+    /// type: map, expected a sequence", and the next page's token was lost.
     pub(super) async fn list_push_configs(
         &self,
         params: serde_json::Value,
         metadata: Option<Metadata>,
     ) -> ClientResult<serde_json::Value> {
-        use a2a_protocol_types::push::TaskPushNotificationConfig as PushConfig;
+        use a2a_protocol_types::responses::ListPushConfigsResponse;
         let domain: a2a_protocol_types::params::ListPushConfigsParams =
             serde_json::from_value(params).map_err(ClientError::Serialization)?;
         let request = pb::ListTaskPushNotificationConfigsRequest::try_from(domain)
@@ -77,13 +82,8 @@ impl SlimRpcTransport {
         let response: Pb<pb::ListTaskPushNotificationConfigsResponse> = self
             .call(method::LIST_PUSH_CONFIGS, request, metadata)
             .await?;
-        let configs: Vec<PushConfig> = response
-            .into_inner()
-            .configs
-            .into_iter()
-            .map(PushConfig::from)
-            .collect();
-        serde_json::to_value(configs).map_err(ClientError::Serialization)
+        serde_json::to_value(ListPushConfigsResponse::from(response.into_inner()))
+            .map_err(ClientError::Serialization)
     }
 
     /// `DeleteTaskPushNotificationConfig`. Returns `null`: the wire response is
