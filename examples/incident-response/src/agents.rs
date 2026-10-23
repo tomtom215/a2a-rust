@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Mutex;
-use std::time::Duration;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
@@ -156,12 +155,15 @@ impl TriageExecutor {
     /// artifact's text. Failures are reported inline so a missing specialist
     /// degrades the report instead of killing the incident response.
     async fn ask_specialist(&self, url: &str, what: &str, question: &str) -> String {
-        let client = match ClientBuilder::new(url).build() {
+        let client = match ClientBuilder::new(url)
+            .with_timeout(crate::serving::MODEL_CALL_TIMEOUT)
+            .build()
+        {
             Ok(c) => c,
             Err(e) => return format!("[{what} agent unavailable: {e}]"),
         };
         match tokio::time::timeout(
-            Duration::from_secs(90),
+            crate::serving::MODEL_CALL_TIMEOUT,
             client.send_message(send_params(user_message(question))),
         )
         .await

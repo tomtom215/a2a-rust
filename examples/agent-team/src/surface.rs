@@ -258,6 +258,13 @@ pub async fn start_restricted() -> String {
     url
 }
 
+/// How long a call may wait for its answer, on every binding. The agent
+/// behind these calls may run a model, and a model on a CPU, with other
+/// requests in flight, takes longer than the transports' 30 s default: a
+/// Qwen3-1.7B turn on four cores took up to 64 s (2026-10-23), which failed a
+/// coverage cell with a timeout that was the client's, not the agent's.
+const MODEL_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// Builds a client speaking `binding` against the surface agent.
 pub async fn client_for(
     binding: Binding,
@@ -266,27 +273,40 @@ pub async fn client_for(
     use a2a_protocol_client::ClientBuilder;
     let url = ep.for_binding(binding);
     match binding {
-        Binding::JsonRpc => ClientBuilder::new(url).build().map_err(|e| e.to_string()),
+        Binding::JsonRpc => ClientBuilder::new(url)
+            .with_timeout(MODEL_CALL_TIMEOUT)
+            .build()
+            .map_err(|e| e.to_string()),
         Binding::HttpJson => ClientBuilder::new(url)
+            .with_timeout(MODEL_CALL_TIMEOUT)
             .with_protocol_binding("HTTP+JSON")
             .build()
             .map_err(|e| e.to_string()),
         Binding::Grpc => {
             let full = format!("http://{url}");
-            let t = a2a_protocol_client::transport::grpc::GrpcTransport::connect(&full)
-                .await
-                .map_err(|e| format!("gRPC connect: {e}"))?;
+            let t = a2a_protocol_client::transport::grpc::GrpcTransport::connect_with_config(
+                &full,
+                a2a_protocol_client::transport::grpc::GrpcTransportConfig::default()
+                    .with_timeout(MODEL_CALL_TIMEOUT),
+            )
+            .await
+            .map_err(|e| format!("gRPC connect: {e}"))?;
             ClientBuilder::new(&full)
+                .with_timeout(MODEL_CALL_TIMEOUT)
                 .with_custom_transport(t)
                 .without_tls()
                 .build()
                 .map_err(|e| e.to_string())
         }
         Binding::WebSocket => {
-            let t = a2a_protocol_client::transport::WebSocketTransport::connect(url.to_owned())
-                .await
-                .map_err(|e| format!("WebSocket connect: {e}"))?;
+            let t = a2a_protocol_client::transport::WebSocketTransport::connect_with_timeout(
+                url.to_owned(),
+                MODEL_CALL_TIMEOUT,
+            )
+            .await
+            .map_err(|e| format!("WebSocket connect: {e}"))?;
             ClientBuilder::new(url)
+                .with_timeout(MODEL_CALL_TIMEOUT)
                 .with_custom_transport(t)
                 .without_tls()
                 .build()
