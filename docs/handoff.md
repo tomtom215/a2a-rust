@@ -220,10 +220,11 @@ only: when something here is done, delete it rather than annotating it.
    a2a-tck#231 are in `docs/upstream/`).
 3. **OpenTelemetry, still open:** store spans and
    `db.client.operation.duration`, `server.address` and `network.peer.*`
-   on server spans, refusal and agent-card spans on the server, a test that
-   logs carry the trace id; then `GenAI` panels on the dashboards. Done on
-   this branch: push `http.client.request.duration`, gRPC conversion
-   failures recorded as failures, the tool loop's `GenAI` metrics,
+   on server spans, refusal and agent-card spans on the server; then
+   `GenAI` panels on the dashboards. Done on this branch: a test that an
+   exported log record carries its span's trace and span ids
+   (`telemetry_export`), push `http.client.request.duration`, gRPC
+   conversion failures recorded as failures, the tool loop's `GenAI` metrics,
    JSON-RPC client span attributes, the card-fetch and webhook-receiver
    spans, delegation spawns kept in the parent's trace, and default
    metrics that follow the global meter provider at each measurement.

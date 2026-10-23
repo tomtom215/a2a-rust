@@ -97,6 +97,31 @@ fn http_exports_traces_metrics_and_logs_without_any_runtime() {
     assert_eq!(paths, ["/v1/logs", "/v1/metrics", "/v1/traces"]);
 }
 
+/// A log record emitted inside a span carries that span's trace and span
+/// ids, so a backend joins the log to its trace.
+#[test]
+fn a_log_inside_a_span_carries_its_trace_and_span_ids() {
+    let collector = Collector::http();
+    let telemetry = builder(&collector.http_base(), OtlpProtocol::HttpProtobuf)
+        .build()
+        .expect("build");
+    record_one_of_each(&telemetry);
+    telemetry.shutdown().expect("every signal flushed");
+    let spans = collector.spans();
+    let (_, span) = spans
+        .iter()
+        .find(|(_, s)| s.name == "unit-of-work")
+        .expect("the span");
+    let records = collector.log_records();
+    let (_, trace_id, span_id) = records
+        .iter()
+        .find(|(body, _, _)| body == "hello from the test")
+        .unwrap_or_else(|| panic!("no log record among {records:?}"));
+    assert_eq!(trace_id.len(), 16, "{records:?}");
+    assert_eq!(*trace_id, span.trace_id);
+    assert_eq!(*span_id, span.span_id);
+}
+
 /// OTLP/gRPC, with a header carried as gRPC metadata.
 #[test]
 fn grpc_exports_traces_metrics_and_logs_with_headers() {
