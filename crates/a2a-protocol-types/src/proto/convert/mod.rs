@@ -9,8 +9,9 @@
 //! directions can reject values:
 //!
 //! - proto → domain: out-of-range enum numbers, missing required submessages
-//!   (a `oneof` or message field the domain models as non-optional), and
-//!   invalid timestamps.
+//!   (a `oneof` or message field the domain models as non-optional), a
+//!   missing field `a2a.proto` marks REQUIRED (below), and invalid
+//!   timestamps.
 //! - domain → proto: invalid base64 in [`PartContent::Raw`](crate::message::PartContent),
 //!   non-object `metadata` values, and unparseable timestamp strings.
 //!
@@ -24,6 +25,23 @@
 //!   `repeated` field maps to `None` for domain `Option<Vec<_>>` fields,
 //!   and a `false` proto `bool` maps to `None` for domain `Option<bool>`
 //!   fields that `ProtoJSON` would omit.
+//! - a field `a2a.proto` marks REQUIRED, absent: refused with
+//!   [`ConvertError`] ("missing required field"), where the JSON bindings
+//!   refuse the missing key. proto3 reads an absent `string` as `""` and an
+//!   absent enum as `0`, so for a REQUIRED string (`Task.id`,
+//!   `Message.message_id`, `AgentCard.name`, the security schemes' and
+//!   flows' REQUIRED strings, ...) `""` is refused, and for a REQUIRED enum
+//!   (`TaskStatus.state`, `Message.role`) the `UNSPECIFIED` zero is; an
+//!   absent REQUIRED message (`AgentCard.capabilities`) is refused rather
+//!   than defaulted. Until 2026-10-23 each was read as its zero value, so
+//!   a peer's task with no id or state, or a card with no name or
+//!   capabilities, converted where the same JSON did not parse. A REQUIRED
+//!   `repeated` field is not refused here, because JSON does not refuse it
+//!   either (`ProtoJSON` omits an empty list); [`crate::required`] refuses an
+//!   empty one on both formats. Nor are the REQUIRED fields whose zero is a
+//!   legitimate value (`ListTasksResponse.next_page_token` on the last
+//!   page), or those of request messages whose conversion is infallible
+//!   (`From`).
 //! - `google.protobuf.Struct` ⇄ JSON objects. Numbers are `f64` in
 //!   protobuf; integral values within the exact-`f64` range convert back
 //!   to JSON integers so common metadata round-trips losslessly.
@@ -36,6 +54,8 @@
 mod card;
 mod messaging;
 mod requests;
+#[cfg(test)]
+mod required_tests;
 
 use base64::Engine as _;
 
@@ -102,6 +122,16 @@ pub fn struct_to_json(value: prost_types::Struct) -> Result<serde_json::Value, C
 }
 
 // ── proto3 implicit presence ────────────────────────────────────────────────
+
+/// A string field `a2a.proto` marks REQUIRED: proto3 reads an absent one
+/// as `""`, which is refused as the JSON bindings refuse the missing key.
+pub(crate) fn required(s: String, field: &'static str) -> Result<String, ConvertError> {
+    if s.is_empty() {
+        Err(ConvertError::missing(field))
+    } else {
+        Ok(s)
+    }
+}
 
 /// Maps a proto3 implicit-presence string to a domain option.
 pub(crate) fn none_if_empty(s: String) -> Option<String> {

@@ -2,7 +2,6 @@
   "message": "ListTasksResponse",
   "proto_json": {
     "tasks": [
-      { "id": "t-0", "contextId": "c", "status": { "state": "TASK_STATE_UNSPECIFIED" } },
       { "id": "t-1", "contextId": "c", "status": { "state": "TASK_STATE_SUBMITTED" } },
       { "id": "t-2", "contextId": "c", "status": { "state": "TASK_STATE_WORKING" } },
       { "id": "t-3", "contextId": "c", "status": { "state": "TASK_STATE_COMPLETED" } },
@@ -13,7 +12,7 @@
       { "id": "t-8", "contextId": "c", "status": { "state": "TASK_STATE_AUTH_REQUIRED" } }
     ],
     "nextPageToken": "",
-    "pageSize": 9,
-    "totalSize": 9
+    "pageSize": 8,
+    "totalSize": 8
   }
 }

@@ -43,12 +43,17 @@ fn arb_task_state() -> impl Strategy<Value = TaskState> {
     ]
 }
 
+/// A task's state on the wire: `TASK_STATE_UNSPECIFIED`, proto3's absent
+/// value of a REQUIRED field, is refused by the conversion since 2026-10-23
+/// (`unspecified_state_and_role_are_refused` below), so it is not a value
+/// that round-trips.
+fn arb_set_task_state() -> impl Strategy<Value = TaskState> {
+    arb_task_state().prop_filter("UNSPECIFIED is no state", |s| *s != TaskState::Unspecified)
+}
+
+/// A message's role: `ROLE_UNSPECIFIED` is refused as the state's zero is.
 fn arb_role() -> impl Strategy<Value = MessageRole> {
-    prop_oneof![
-        Just(MessageRole::Unspecified),
-        Just(MessageRole::User),
-        Just(MessageRole::Agent),
-    ]
+    prop_oneof![Just(MessageRole::User), Just(MessageRole::Agent)]
 }
 
 /// Non-empty identifier-ish strings (proto3 cannot carry `Some("")`).
@@ -150,7 +155,7 @@ fn arb_task() -> impl Strategy<Value = Task> {
     (
         arb_id(),
         arb_id(),
-        arb_task_state(),
+        arb_set_task_state(),
         proptest::option::of(arb_timestamp()),
         proptest::option::of(proptest::collection::vec(arb_message(), 1..3)),
         proptest::option::of(proptest::collection::vec(arb_artifact(), 1..2)),
@@ -263,6 +268,20 @@ proptest! {
         let proto: pb::TaskState = state.into();
         let back: TaskState = proto.try_into().unwrap();
         prop_assert_eq!(back, state);
+    }
+
+    /// The REQUIRED enums' zero, what proto3 reads for an absent field, is
+    /// refused rather than converted, as JSON refuses the missing key.
+    #[test]
+    fn unspecified_state_and_role_are_refused(task in arb_task(), msg in arb_message()) {
+        let mut proto: pb::Task = task.try_into().expect("domain → proto");
+        proto.status.as_mut().expect("status").state = pb::TaskState::Unspecified as i32;
+        let err = Task::try_from(proto).expect_err("UNSPECIFIED state converted");
+        prop_assert_eq!(err.field, "status.state");
+        let mut proto: pb::Message = msg.try_into().expect("domain → proto");
+        proto.role = pb::Role::Unspecified as i32;
+        let err = Message::try_from(proto).expect_err("UNSPECIFIED role converted");
+        prop_assert_eq!(err.field, "message.role");
     }
 
     /// Metadata objects survive Struct conversion bit-for-bit as JSON.
