@@ -339,6 +339,37 @@ async fn a_chunked_body_over_the_cap_is_refused() {
     );
 }
 
+/// An error body is read only as far as it is kept: a server that sends
+/// the kept bytes and then holds the connection open gets its status back,
+/// not a timeout. The mutation gate found the bound untested: reading one
+/// more frame survived.
+#[tokio::test]
+async fn an_error_body_is_not_read_past_what_is_kept() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _ = read_request(&mut stream).await;
+        let mut head = format!(
+            "HTTP/1.1 503 Service Unavailable\r\ncontent-type: text/plain\r\ntransfer-encoding: chunked\r\n\r\n{ERROR_BODY_LIMIT:x}\r\n"
+        )
+        .into_bytes();
+        head.extend_from_slice(&[b'x'; ERROR_BODY_LIMIT]);
+        head.extend_from_slice(b"\r\n");
+        stream.write_all(&head).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        drop(stream);
+    });
+    let model = OpenAiChatModel::new(&base, "m")
+        .unwrap()
+        .with_timeout(Duration::from_secs(2));
+    let ModelError::Status { status, body } = one_turn(&model).await.unwrap_err() else {
+        panic!("not a status error");
+    };
+    assert_eq!(status, 503);
+    assert_eq!(body.len(), ERROR_BODY_LIMIT);
+}
+
 #[tokio::test]
 async fn a_server_that_never_answers_times_out_at_the_bound() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

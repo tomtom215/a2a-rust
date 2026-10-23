@@ -240,4 +240,13 @@ mod tests {
     fn a_tool_is_not_read_only_unless_it_says_so() {
         assert!(!Plain.read_only());
     }
+
+    /// The refusal names the tool.
+    #[test]
+    fn a_duplicate_names_the_tool() {
+        assert_eq!(
+            DuplicateTool("lookup".to_owned()).to_string(),
+            "a tool named 'lookup' is already in this set"
+        );
+    }
 }

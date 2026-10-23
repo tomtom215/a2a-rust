@@ -33,6 +33,10 @@ enum Flaw {
     Widens,
     /// A remove removes every halt, answering true only the first time.
     RemovesAll,
+    /// A halt on everything is never kept.
+    DropsAll,
+    /// Pushes writes, and a cancel for a task other than the one published.
+    WrongCancel,
 }
 
 /// A store in a shared `Vec`, broken as `flaw` says.
@@ -74,6 +78,9 @@ impl HaltStore for Broken {
         if self.flaw == Flaw::Widens {
             halt.scope = HaltScope::All;
         }
+        if self.flaw == Flaw::DropsAll && halt.scope == HaltScope::All {
+            return Box::pin(async { Ok(()) });
+        }
         {
             let mut halts = self.halts.lock().unwrap();
             if self.flaw != Flaw::Appends {
@@ -81,6 +88,9 @@ impl HaltStore for Broken {
                 halts.retain(|h| self.key(&h.scope) != key);
             }
             halts.push(halt);
+        }
+        if self.flaw == Flaw::WrongCancel {
+            let _ = self.signals.send(HaltSignal::Changed);
         }
         Box::pin(async { Ok(()) })
     }
@@ -107,10 +117,26 @@ impl HaltStore for Broken {
             halts.retain(|h| self.key(&h.scope) != key);
             halts.len() < before
         };
+        if self.flaw == Flaw::WrongCancel {
+            let _ = self.signals.send(HaltSignal::Changed);
+        }
         Box::pin(async move { Ok(removed) })
     }
     fn signals(&self) -> Option<tokio::sync::broadcast::Receiver<HaltSignal>> {
-        (self.flaw == Flaw::Mute).then(|| self.signals.subscribe())
+        matches!(self.flaw, Flaw::Mute | Flaw::WrongCancel).then(|| self.signals.subscribe())
+    }
+    fn publish_cancel<'a>(
+        &'a self,
+        tenant: &'a str,
+        _task: &'a str,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        if self.flaw == Flaw::WrongCancel {
+            let _ = self.signals.send(HaltSignal::Cancel {
+                tenant: tenant.to_owned(),
+                task: "some-other-task".to_owned(),
+            });
+        }
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -165,6 +191,8 @@ async fn each_flaw_is_named() {
         (Flaw::KeepsRemoved, "a_remove_removes_exactly_its_scope"),
         (Flaw::KeepsRemoved, "a_removal_is_seen_by_another_handle"),
         (Flaw::RemovesAll, "a_remove_removes_exactly_its_scope"),
+        (Flaw::DropsAll, "scopes_do_not_collide"),
+        (Flaw::WrongCancel, "a_cancel_is_pushed_to_another_handle"),
         (Flaw::Mute, "a_write_is_pushed_to_another_handle"),
     ] {
         let report = grade_store(Broken::new(flaw)).await;
@@ -233,12 +261,21 @@ async fn a_tenant_halt_that_halts_everyone_is_caught() {
 }
 
 /// The wrapper the harness builds handlers on passes the store's
-/// subscription through: without it a pushing store is graded as one that
-/// polls. The mutation gate found the forwarding untested.
-#[test]
-fn the_shared_store_passes_its_subscription_through() {
+/// subscription and cancels through: without them a pushing store is
+/// graded as one that polls. The mutation gate found the forwarding
+/// untested.
+#[tokio::test]
+async fn the_shared_store_passes_its_subscription_through() {
     let pushing = super::Shared(Arc::new(InMemoryHaltStore::new()));
-    assert!(pushing.signals().is_some());
+    let mut rx = pushing.signals().expect("a pushing store");
+    pushing.publish_cancel("t1", "task-9").await.unwrap();
+    assert_eq!(
+        rx.try_recv().expect("the cancel was pushed"),
+        HaltSignal::Cancel {
+            tenant: "t1".to_owned(),
+            task: "task-9".to_owned()
+        }
+    );
     let polling = super::Shared(Arc::new(Broken::new(Flaw::None)));
     assert!(polling.signals().is_none());
 }

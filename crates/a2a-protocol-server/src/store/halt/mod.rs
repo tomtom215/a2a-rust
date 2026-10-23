@@ -145,6 +145,11 @@ pub trait HaltStore: Send + Sync + 'static {
     /// # Errors
     ///
     /// When the signal cannot be sent.
+    // Equivalent mutant: the default body is an empty future answering
+    // `Ok(())`, and cargo-mutants' replacement, `Box::pin(async move {
+    // Ok(()) })`, is the same future. No test can distinguish the two (ADR
+    // 0006).
+    #[mutants::skip]
     fn publish_cancel<'a>(
         &'a self,
         tenant: &'a str,
