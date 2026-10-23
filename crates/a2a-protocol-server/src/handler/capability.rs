@@ -131,6 +131,33 @@ impl RequestHandler {
             .collect()
     }
 
+    /// The call context an executor is given: `call` with its extensions
+    /// narrowed to the ones the agent card declares, in request order.
+    ///
+    /// Spec §4.6.3: an extension (or version) the agent does not support is
+    /// ignored for the interaction. Until 2026-10-23
+    /// [`RequestContext::activated_extensions`](crate::request_context::RequestContext::activated_extensions)
+    /// was the raw `A2A-Extensions` list, so an executor was told `…/v2` was
+    /// active when the card declared only `…/v1` and the response header said
+    /// it was not. Interceptors, and the required-extension check, still read
+    /// the raw list. With no card there is nothing to narrow against.
+    pub(crate) fn executor_call_context(
+        &self,
+        call: &crate::call_context::CallContext,
+    ) -> crate::call_context::CallContext {
+        let ctx = call.clone();
+        if self.agent_card.is_none() {
+            return ctx;
+        }
+        let activated = call
+            .extensions()
+            .iter()
+            .filter(|uri| self.declared_extensions.iter().any(|d| d == *uri))
+            .cloned()
+            .collect();
+        ctx.with_extensions(activated)
+    }
+
     /// Computes the response `A2A-Extensions` header value from a raw request
     /// header value: the comma-joined activated set, or `None` when nothing
     /// was activated (no header is emitted then).

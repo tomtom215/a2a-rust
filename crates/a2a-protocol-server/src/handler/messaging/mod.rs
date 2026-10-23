@@ -377,7 +377,7 @@ impl RequestHandler {
                 context_id,
                 stored_task,
                 params.metadata,
-                call_ctx.clone(),
+                self.executor_call_context(call_ctx),
             );
             // A child of the handler's shutdown token, so shutdown reaches this
             // task too — even if it began a moment ago (`cancel_in_flight`).
