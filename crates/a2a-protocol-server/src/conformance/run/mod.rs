@@ -211,7 +211,7 @@ impl Run {
         let (writer, _reader) = new_in_memory_queue();
         // As the send path binds it: a turn begins `Submitted`, the state a
         // mid-task `Message` is carried in before any status (§3.1.2).
-        writer.bind_state(TaskState::Submitted);
+        writer.bind_state(TaskState::Submitted, false);
         let rx = writer.raw_subscribe();
         let writer = Arc::new(writer);
         let exec = Arc::clone(executor);

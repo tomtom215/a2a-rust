@@ -370,7 +370,7 @@ impl RequestHandler {
                 &params.message,
             );
             // The same decision `build_initial_task` makes.
-            let continues = stored_task.as_ref().is_some_and(|s| s.id == task_id);
+            let continues = create::continues(&task_id, stored_task.as_ref());
             let mut ctx = create::build_request_context(
                 params.message,
                 task_id.clone(),
@@ -424,7 +424,7 @@ impl RequestHandler {
             // its turn is saved; a new task's below (see `save_turn`).
             // Saved as the lease read it, at that read's position (`basis`).
             let (task, read_at) = basis::based_on(task, lease_read, continues);
-            writer.bind_state(task.status.state);
+            writer.bind_state(task.status.state, continues);
             let config = params.configuration.as_ref();
             Box::pin(self.save_turn(&task, read_at, config, continues)).await?;
             if !continues {

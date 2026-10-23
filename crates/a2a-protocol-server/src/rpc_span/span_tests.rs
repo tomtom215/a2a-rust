@@ -99,6 +99,11 @@ fn status(state: TaskState, message: Option<Message>) -> StreamResponse {
 
 /// The executor span's fields after `events`, with content capture on.
 fn executor_fields(events: &[StreamResponse]) -> BTreeMap<String, String> {
+    executor_fields_of(events, false)
+}
+
+/// [`executor_fields`] for a run that `continues` a stored task.
+fn executor_fields_of(events: &[StreamResponse], continues: bool) -> BTreeMap<String, String> {
     use tracing_subscriber::layer::SubscriberExt as _;
     let fields = Fields::default();
     tracing::subscriber::with_default(tracing_subscriber::registry().with(fields.clone()), || {
@@ -112,7 +117,7 @@ fn executor_fields(events: &[StreamResponse]) -> BTreeMap<String, String> {
             },
             &Message::user("m", vec![Part::text("question")]),
         );
-        let recorder = span.recorder().expect("a span that records");
+        let recorder = span.recorder(continues).expect("a span that records");
         for event in events {
             recorder.observe(event);
         }
@@ -174,6 +179,27 @@ fn a_mid_task_message_does_not_end_the_turn() {
     let output = &fields["gen_ai.output.messages"];
     assert!(output.contains("progress"), "{output}");
     assert!(output.contains("the answer"), "{output}");
+    assert_eq!(
+        fields.get("a2a.task.state").map(String::as_str),
+        Some("TASK_STATE_COMPLETED")
+    );
+}
+
+/// A run continuing a task has no direct reply: its first `Message` is a
+/// status message (spec §3.7), so the turn goes on to its terminal state.
+#[test]
+fn a_continuing_run_s_first_message_does_not_end_the_turn() {
+    let fields = executor_fields_of(
+        &[
+            StreamResponse::Message(Message::agent("p", vec![Part::text("on it")])),
+            status(TaskState::Completed, None),
+        ],
+        true,
+    );
+    assert!(
+        fields["gen_ai.output.messages"].contains("on it"),
+        "{fields:?}"
+    );
     assert_eq!(
         fields.get("a2a.task.state").map(String::as_str),
         Some("TASK_STATE_COMPLETED")

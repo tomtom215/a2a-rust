@@ -5,10 +5,14 @@
 //!
 //! Spec §3.1.2 allows a stream of exactly one `Message`, or a stream that
 //! begins with the `Task` and continues with status and artifact updates.
-//! A `Message` an executor writes once its task stream has begun fits
-//! neither, and until 2026-10-23 it was forwarded as it was. Its conforming
-//! carrier is `TaskStatus.message`, so the writer sends it as a status
-//! update that keeps the task's state and carries the message.
+//! The message-only stream is the exchange with "no task tracking" (§3.1.2,
+//! §3.1.1: "simple interactions that don't require task tracking"); once a
+//! task exists, §3.7 gives an agent's message one role, "Status Messages:
+//! Agents attach Messages to status update events". So a `Message` an
+//! executor writes once its task stream has begun, or in a turn that
+//! continues a task, fits neither pattern as it is, and until 2026-10-23 it
+//! was forwarded as it was. The writer sends it as a status update that
+//! keeps the task's state and carries the message.
 //!
 //! The fold happens here, once, before the event is given its position, so
 //! every reader of that position (the send stream, a `SubscribeToTask`
@@ -21,12 +25,20 @@
 //! * a `Message` written after the turn has written a `Task`, a status
 //!   update or an artifact update, in the state the turn last wrote, or the
 //!   state the task was in when the turn began
-//!   ([`InMemoryQueueWriter::bind_state`](super::InMemoryQueueWriter::bind_state)).
+//!   ([`InMemoryQueueWriter::bind_state`](super::InMemoryQueueWriter::bind_state));
+//! * any `Message` of a turn that continues a stored task (§3.4.3: a
+//!   message naming the task's id), its first event included: the task is
+//!   tracked already, so its send stream is a task stream, as every
+//!   `SubscribeToTask` stream on it is (§3.1.6), and both carry one payload
+//!   at each position (§3.5.2).
 //!
 //! What is not:
 //!
-//! * a turn's first event, and a `Message` after only messages: that is the
-//!   message-only exchange §3.1.2 allows, a direct reply;
+//! * a new task's first event, and a `Message` after only messages: that is
+//!   the message-only exchange §3.1.2 allows, a direct reply. A client that
+//!   found the task's id (`ListTasks`) and subscribed before that reply
+//!   receives it bare; §3.1.2 has that exchange track no task at all, and
+//!   this SDK keeps the row only so `GetTask` answers.
 //! * a `Message` after the turn wrote a terminal state: every stream has
 //!   ended by then, and a terminal status update would be a second terminal
 //!   event;
@@ -50,6 +62,8 @@ use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 pub(super) struct Turn {
     /// The turn has written a `Task`, a status update or an artifact update.
     task_stream: bool,
+    /// The turn continues a stored task: every message is a status message.
+    continues: bool,
     /// The task's state as the turn last wrote it, or as the turn began.
     state: Option<TaskState>,
     /// The task and context the last status the turn wrote named, for a
@@ -58,12 +72,13 @@ pub(super) struct Turn {
 }
 
 impl Turn {
-    /// The task's state as the turn begins; a state the turn already wrote
-    /// is kept.
-    pub(super) const fn begin_in(&mut self, state: TaskState) {
+    /// The task's state as the turn begins, and whether the turn continues
+    /// a stored task; a state the turn already wrote is kept.
+    pub(super) const fn begin_in(&mut self, state: TaskState, continues: bool) {
         if self.state.is_none() {
             self.state = Some(state);
         }
+        self.continues = continues;
     }
 
     /// `event` as it is to be written, and whether it is a folded message.
@@ -72,7 +87,7 @@ impl Turn {
             return (event, false);
         };
         match self.state {
-            Some(state) if self.task_stream && !state.is_terminal() => {
+            Some(state) if (self.task_stream || self.continues) && !state.is_terminal() => {
                 // Empty ids are filled from the writer's binding
                 // (`check_identity`); the last status's are for a writer
                 // without one.
@@ -182,7 +197,7 @@ mod tests {
     #[test]
     fn a_first_message_is_a_direct_reply() {
         let mut turn = Turn::default();
-        turn.begin_in(TaskState::Submitted);
+        turn.begin_in(TaskState::Submitted, false);
         assert!(folded(&turn).is_none());
         turn.note(Note::of(&message()));
         assert!(folded(&turn).is_none(), "after only messages");
@@ -191,7 +206,7 @@ mod tests {
     #[test]
     fn a_message_after_a_status_keeps_its_state_and_ids() {
         let mut turn = Turn::default();
-        turn.begin_in(TaskState::Submitted);
+        turn.begin_in(TaskState::Submitted, false);
         turn.note(Note::of(&status(TaskState::InputRequired)));
         let update = folded(&turn).expect("folded");
         assert_eq!(update.status.state, TaskState::InputRequired);
@@ -206,7 +221,7 @@ mod tests {
     #[test]
     fn a_message_after_an_artifact_takes_the_state_the_turn_began_in() {
         let mut turn = Turn::default();
-        turn.begin_in(TaskState::Working);
+        turn.begin_in(TaskState::Working, false);
         turn.note(Note::of(&artifact()));
         assert_eq!(
             folded(&turn).expect("folded").status.state,
@@ -217,7 +232,7 @@ mod tests {
     #[test]
     fn a_message_after_a_terminal_state_is_not_folded() {
         let mut turn = Turn::default();
-        turn.begin_in(TaskState::Working);
+        turn.begin_in(TaskState::Working, false);
         turn.note(Note::of(&status(TaskState::Completed)));
         assert!(folded(&turn).is_none());
     }
@@ -230,10 +245,20 @@ mod tests {
     }
 
     #[test]
+    fn a_continuing_turn_folds_its_first_message() {
+        let mut turn = Turn::default();
+        turn.begin_in(TaskState::Submitted, true);
+        let update = folded(&turn).expect("folded");
+        assert_eq!(update.status.state, TaskState::Submitted);
+        turn.note(Note::of(&status(TaskState::Completed)));
+        assert!(folded(&turn).is_none(), "not after its terminal state");
+    }
+
+    #[test]
     fn a_state_the_turn_wrote_outlives_a_late_binding() {
         let mut turn = Turn::default();
         turn.note(Note::of(&status(TaskState::Working)));
-        turn.begin_in(TaskState::Submitted);
+        turn.begin_in(TaskState::Submitted, false);
         assert_eq!(
             folded(&turn).expect("folded").status.state,
             TaskState::Working
@@ -265,7 +290,7 @@ mod writer_tests {
         let (writer, reader) = new_in_memory_queue();
         let (task_id, context_id) = ids();
         writer.bind_identity(task_id.clone(), context_id.clone());
-        writer.bind_state(TaskState::Submitted);
+        writer.bind_state(TaskState::Submitted, false);
         // No reader and no persistence: the write fails after its position
         // is assigned ("no active receivers").
         drop(reader);

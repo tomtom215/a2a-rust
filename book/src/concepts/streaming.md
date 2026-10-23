@@ -109,7 +109,11 @@ A direct message response (for simple request/reply patterns):
 ```
 
 A `Message` is the whole stream only when it is the executor's first event
-(spec §3.1.2: such a stream holds exactly one `Message`). A `Message` the
+for a new task (spec §3.1.2: such a stream holds exactly one `Message`, with
+"no task tracking"). A follow-up to an existing task has no direct reply:
+every `Message` its executor writes, the first included, is sent as below,
+so the follow-up's stream begins with the `Task` (§3.7: agents "attach
+Messages to status update events"). A `Message` the
 executor writes once the task stream has begun, after a status update, an
 artifact or a task snapshot, is sent as a status update that keeps the
 task's state and carries the message in `status.message`: a task stream

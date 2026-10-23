@@ -1553,9 +1553,19 @@ section "The client refuses what `a2a.proto` does not allow".
   stream, a `SubscribeToTask` stream and a resumed replay carry one payload
   at that position. The store appends the message to `history` as before,
   and, while the task is not finished, also holds it as the status message;
-  push subscribers are sent the update. Unchanged: a first-event `Message`
-  is a direct reply, a `Message` after only messages stays one, and one
-  after the terminal status is stored and streamed to no one. A client that
+  push subscribers are sent the update. A turn that continues an existing
+  task (a follow-up naming its `taskId`, §3.4.3) folds every `Message`, its
+  first included: §3.1.2 gives the message-only stream to the exchange with
+  "no task tracking", and §3.7 has an agent "attach Messages to status update
+  events" once a task exists. A follow-up answered with a `Message` now gets
+  a task stream (`Task`, then the status update) instead of a message-only
+  stream, and a blocking follow-up the `Task` with the message as its status
+  message instead of the bare `Message`; a `SubscribeToTask` stream on the
+  task gets the same status update (`tests/continuation_message.rs`,
+  `tests/continuation_span.rs`). Unchanged: a new task's first-event
+  `Message` is a direct reply, a `Message` after only messages on a new task
+  stays one, and one after the terminal status is stored and streamed to no
+  one. A client that
   read mid-task `Message` events reads `status.message` on status updates
   instead. With it: the executor's span no longer ends the turn's recorded
   output at such a message (`rpc_span/span_tests.rs`

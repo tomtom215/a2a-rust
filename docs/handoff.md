@@ -84,8 +84,8 @@ only: when something here is done, delete it rather than annotating it.
   - §3.1.2 (2026-10-23): a `Message` an executor writes once its task
     stream has begun is sent as a status update carrying it, folded once
     at the queue's writer (`streaming/event_queue/message_fold.rs`),
-    reviewed independently; the subscriber residual waits on the
-    maintainer (*Waiting*).
+    reviewed independently; a follow-up to an existing task folds its
+    first `Message` too (the maintainer's decision, reviewed again).
 - **`sign_agent_card` is deprecated, not removed** (2026-10-23): it shipped
   in 0.14.1, so `STABILITY.md` §3 keeps it for one minor release. It now
   refuses `key_id: None`, which wrote a header without the `kid` §8.4.2
@@ -182,16 +182,14 @@ only: when something here is done, delete it rather than annotating it.
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
   authority on the counts (2026-10-23, after WP-A, WP-B and WP-C: TESTED
-  453, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 5; 510 entries, after
-  the writer fold of 2026-10-23). The five PARTIAL entries, each short for
+  454, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 4; 510 entries, after
+  the writer fold of 2026-10-23). The four PARTIAL entries, each short for
   a stated reason: §3.5.2, a stream lagging
   past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
   itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
   carries no error details (maintainer: stays PARTIAL until it does);
-  §3.1.2 line 206 (low), a turn's first-event `Message` stays a direct
-  reply, so a `SubscribeToTask` stream attached to the task receives it
-  bare (*Waiting on the maintainer*, the §3.1.2 item); §7.6.1,
+  §7.6.1,
   a message to a task in AUTH_REQUIRED is refused while its executor still
   runs (recommended: document that the executor returns, PARTIAL naming
   the conflict between the section's two SHOULDs). The APPLICATION and
@@ -225,9 +223,8 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **The rest of the conformance list:** the five PARTIAL entries (§3.1.2,
-   line 20, the subscriber residual of the writer fold, waits on the
-   maintainer, see *Waiting*; §7.6.1, line
+2. **The rest of the conformance list:** the four PARTIAL entries (§3.5.2,
+   §5.7; §7.6.1, line
    227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
    MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
    CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
@@ -291,25 +288,21 @@ only: when something here is done, delete it rather than annotating it.
   public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
-- **§3.1.2: a turn's first-event `Message` on a subscriber's stream**
-  (2026-10-23). The queue's writer now carries a `Message` written once the
-  task stream has begun in a status update (`streaming/event_queue/
-  message_fold.rs`; ledger 210 TESTED), once per log position, so every
-  stream and a resumed replay agree (§3.5.2). What remains (ledger 206,
-  low): a turn whose *first* event is a `Message` keeps it as a direct
-  reply, as §3.1.2 allows the send stream, so a `SubscribeToTask` stream
-  attached to the task (a continuation answered with a `Message`, or a
-  first turn subscribed to before its first event) receives that `Message`
-  bare, which §3.1.6's output does not list. One payload per position
-  cannot be both; folding it too would turn a continuation's direct reply
-  into a task stream. The maintainer's call. Also decided in the fold and
-  open to revisiting: a message written while the task is parked
-  (`input-required`, `auth-required`) replaces the stored status message
-  (the prompt, or §7.6.1's explanation) as a client applying the update
-  would; the size limit applies to the status update, about 150 bytes more
-  than the bare message; the fold uses the state the executor last wrote,
-  so after a status the processor refused (task stored `Failed`) a later
-  message still streams in the refused state.
+- **§3.1.2, decided (2026-10-23):** the maintainer chose the spec's
+  reading that a follow-up to an existing task has no direct reply (§3.1.2
+  "no task tracking", §3.7 "Status Messages"): a turn that continues a task
+  folds every `Message`, its first included (`create::continues`,
+  `message_fold`), so the follow-up's stream and every subscriber's carry
+  the same status update. Ledger 206 is TESTED. Left by design: a client
+  that found a brand-new task's id and subscribed before its first-event
+  `Message` (a direct reply, as §3.1.2 allows) receives it bare. Also
+  decided in the fold and open to revisiting: a message written while the
+  task is parked (`input-required`, `auth-required`) replaces the stored
+  status message (the prompt, or §7.6.1's explanation) as a client applying
+  the update would; the size limit applies to the status update, about 150
+  bytes more than the bare message; the fold uses the state the executor
+  last wrote, so after a status the processor refused (task stored
+  `Failed`) a later message still streams in the refused state.
 - **SLIMRPC `otlp` is on by default** (2026-10-23). The two conflicts that
   kept it opt-in are fixed: the server's OTLP/gRPC dials TLS through its own
   rustls connector, so tonic's TLS is not linked for it (with it linked,

@@ -53,7 +53,7 @@ pub(super) fn build_initial_task(
     // The task found for this context is this task's past only when the ids
     // match; `resolve_task_id` returns the stored id for a continuation and a
     // fresh uuid otherwise, so this equality is exactly that decision.
-    let continuation = stored_task.filter(|s| s.id == *task_id);
+    let continuation = stored_task.filter(|_| continues(task_id, stored_task));
     // Only the message this turn adds. The stored conversation is NOT copied
     // in: `persist_initial_task` hands this one message to
     // `TaskStore::save_appending_history`, which appends it to whatever the
@@ -70,6 +70,15 @@ pub(super) fn build_initial_task(
         artifacts: continuation.and_then(|s| s.artifacts.clone()),
         metadata: continuation.and_then(|s| s.metadata.clone()),
     }
+}
+
+/// Whether a turn on `task_id` continues `stored_task`, the task found for
+/// the message's context: only when the ids match. `resolve_task_id`
+/// returns the stored id for a continuation (§3.4.3) and a fresh one
+/// otherwise. One decision, read by the task built for the turn, the queue's
+/// fold of its messages (`message_fold`) and the executor's span.
+pub(super) fn continues(task_id: &TaskId, stored_task: Option<&Task>) -> bool {
+    stored_task.is_some_and(|s| s.id == *task_id)
 }
 
 /// The executor's view of the request. Built before the task is saved so
@@ -310,5 +319,34 @@ impl RequestHandler {
     async fn release_admission(&self, task_id: &TaskId) {
         self.event_queue_manager.destroy(task_id).await;
         self.cancellation_tokens.write().await.remove(task_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    use super::*;
+
+    fn task(id: &str) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("c"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn a_turn_continues_only_the_task_it_names() {
+        let stored = task("t-1");
+        assert!(continues(&TaskId::new("t-1"), Some(&stored)));
+        assert!(
+            !continues(&TaskId::new("t-2"), Some(&stored)),
+            "another task in the context"
+        );
+        assert!(!continues(&TaskId::new("t-1"), None));
     }
 }

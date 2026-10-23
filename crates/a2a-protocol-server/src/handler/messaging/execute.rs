@@ -27,6 +27,8 @@ use crate::request_context::RequestContext;
 use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter};
 
 use super::super::budget;
+#[cfg(feature = "tracing")]
+use super::create::continues;
 use super::terminal::TerminalTracking;
 
 use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
@@ -269,7 +271,7 @@ impl RequestHandler {
             &ctx.message,
         );
         #[cfg(feature = "tracing")]
-        let recorder = span.recorder();
+        let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
         span.instrument(tenant.scope(async move {
             // Owned by this future, so the slot is returned when the executor
             // finishes, fails, panics, or is aborted.

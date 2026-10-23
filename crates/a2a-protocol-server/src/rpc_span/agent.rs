@@ -122,10 +122,10 @@ impl ExecutorSpan {
     }
 
     /// What watches the executor's writes on this span's behalf; `None` when
-    /// nothing is recorded.
+    /// nothing is recorded. A run that `continues` a task has no direct reply.
     #[cfg(feature = "tracing")]
-    pub fn recorder(&self) -> Option<OutputRecorder> {
-        (!self.untraced).then(|| OutputRecorder::new(self.span.clone(), self.settings))
+    pub fn recorder(&self, continues: bool) -> Option<OutputRecorder> {
+        (!self.untraced).then(|| OutputRecorder::new(self.span.clone(), self.settings, continues))
     }
 
     /// Runs `fut` — the executor's whole run — inside the span, carrying the
@@ -205,18 +205,18 @@ fn executor_span(
 pub struct OutputRecorder {
     span: tracing::Span,
     content: bool,
-    /// Output parts, bytes left, turn ended, and task/status/artifact seen
-    /// (after which a `Message` is a status update, not a reply: §3.1.2).
+    /// Output parts, bytes left, turn ended, and task stream (a continued
+    /// task, or task/status/artifact seen: a `Message` is no reply, §3.1.2).
     output: Mutex<(Vec<Value>, usize, bool, bool)>,
 }
 
 #[cfg(feature = "tracing")]
 impl OutputRecorder {
-    pub const fn new(span: tracing::Span, settings: SpanSettings) -> Self {
+    pub const fn new(span: tracing::Span, settings: SpanSettings, continues: bool) -> Self {
         Self {
             span,
             content: settings.content,
-            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false, false)),
+            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false, continues)),
         }
     }
 

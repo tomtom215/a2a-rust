@@ -335,11 +335,13 @@ impl InMemoryQueueWriter {
     }
 
     /// Tells the writer the state the task is in as this turn begins, the
-    /// state a `Message` written after an artifact but before any status is
-    /// carried in (see [`super::message_fold`]). Called before the executor
-    /// is spawned; a state the turn has already written is kept.
-    pub(crate) fn bind_state(&self, state: a2a_protocol_types::task::TaskState) {
-        self.turn().begin_in(state);
+    /// state a `Message` written before any status is carried in, and
+    /// whether the turn continues a stored task, whose every `Message` is
+    /// carried in a status update (see [`super::message_fold`]). Called
+    /// before the executor is spawned; a state the turn has already written
+    /// is kept.
+    pub(crate) fn bind_state(&self, state: a2a_protocol_types::task::TaskState, continues: bool) {
+        self.turn().begin_in(state, continues);
     }
 
     /// Gives the turn's fold state what a write said, if it succeeded; called
