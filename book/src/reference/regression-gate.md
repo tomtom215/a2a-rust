@@ -204,6 +204,30 @@ the next section before reaching for one: if a benchmark keeps
 defeating a generous override, the percentage itself may not be a
 meaningful signal for it, which calls for exclusion instead.
 
+**`protocol_payload_scaling/{ser_buffer,to_vec}/*` carry a 150 %
+override (2026-10-23).** On PR #178 the gate flagged the 10 of them from
+1 KiB up on 9 of the 11 heads it completed on, at +54 % to +98 % with
+tight CIs; on the other 2 they measured between -17 % and +4 %. The
+outcome is not the code's. `7ab55ebd` passed (these benchmarks -4 % to
++3 %) and `975477c4` failed (+54 % to +89 %), although `main` had not
+moved and the two heads differ only in a `tokio` version requirement,
+with the lockfile unchanged: built locally in one worktree with this
+job's flags (`CARGO_PROFILE_BENCH_LTO=false`, 16 codegen units, the
+branch-alignment `RUSTFLAGS`), `protocol_overhead` came out
+byte-identical at both (SHA-256 `a1db2724…8083e45a4`). The serialize
+path's source was also unchanged against `main` throughout: the
+`Message` type, the benchmark and its fixtures, `serde_helpers` and the
+`serde_json` version.
+
+So the same pair of binaries measures about 0 % on one runner and up to
++98 % on another, which is the between-runner side of the variance the
+`from_str/16384` case below describes. Unlike that case, the swing has
+stayed bounded across those 11 runs. 150 % clears the largest of them
+with margin, while an algorithmic regression on a 1 MiB payload (a
+quadratic loop, an allocation per byte) would still fail it. If these
+benchmarks swing past 150 % on unchanged serialize code, move them to
+exclusion.
+
 ## Per-benchmark exclusions
 
 Some benchmarks aren't just noisier than the 50 % gate — no fixed

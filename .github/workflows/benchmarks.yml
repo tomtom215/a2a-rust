@@ -391,9 +391,21 @@ jobs:
           # tolerance we'd pick. A 75% override already tried and wasn't
           # enough. See book/src/reference/regression-gate.md's
           # "Per-benchmark exclusions" section for the full writeup.
+          #
+          # The two serialize overrides: on PR #178 the 10 `ser_buffer` and
+          # `to_vec` benchmarks from 1 KiB up measured +54% to +98% (tight
+          # CIs) on 9 of 11 heads and about 0% on the other 2, and the same
+          # binaries did both: `7ab55ebd` passed and `975477c4` failed with
+          # `main` unmoved and a byte-identical `protocol_overhead` build.
+          # The swing is the runner's, not the code's. 150% clears the
+          # largest measured run with margin and still fails an algorithmic
+          # regression on a 1 MiB payload. See the book's "Per-benchmark
+          # overrides" section.
           python3 benches/scripts/check_regression.py \
             --target-dir target/criterion \
             --threshold 0.50 \
+            --override 'protocol_payload_scaling/ser_buffer/*=1.50' \
+            --override 'protocol_payload_scaling/to_vec/*=1.50' \
             --exclude '*/from_str/16384' \
             | tee /tmp/regression.txt
           echo "::endgroup::"
