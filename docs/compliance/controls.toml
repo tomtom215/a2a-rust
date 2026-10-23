@@ -127,6 +127,7 @@ requirement = "This Regulation does not apply to AI systems released under free 
 sdk = "Nothing is needed: the SDK is neither an AI system nor a provider of one (Art. 3(1), 3(3)), so it is outside the Regulation for that reason, not under this paragraph. It is published under Apache-2.0, which an integrator releasing an agent built on it can keep."
 status = "integrator"
 gap = "The exemption is the integrator's to claim for an AI system it releases, and it does not hold for a system placed on the market or put into service as high-risk, or one that falls under Article 5 or Article 50, so an open-source agent that must mark its output (AIA-50-2) or disclose itself (AIA-50-1) owes that whatever its licence."
+ci = ["python3 scripts/check_compliance_map.py --check"]
 
 [[control]]
 id = "AIA-4"
@@ -201,6 +202,7 @@ requirement = "Providers of high-risk AI systems establish and maintain a risk m
 sdk = "Nothing beyond its own engineering process, which is not the provider's QMS: the SDK trains nothing and holds no data set."
 status = "integrator"
 gap = "All three are the provider's, about the AI system as a whole."
+ci = ["cargo +nightly fuzz run", "Run incremental mutation testing", "Run mutation tests", "github/codeql-action/analyze", "Test (all features)"]
 
 [[control]]
 id = "AIA-11"
@@ -557,7 +559,7 @@ tests = [
   "crates/a2a-protocol-server/src/store/encrypted/tests.rs::an_altered_value_is_refused",
 ]
 ci = ["cargo +nightly fuzz run"]
-gap = "The model-level attacks the article names — data and model poisoning, adversarial examples — are the provider's to address; the SDK carries messages and offers interceptors as the hook for a content filter, but ships none."
+gap = "The model-level attacks the article names — data and model poisoning, adversarial examples — are the provider's to address; the SDK carries messages and offers client interceptors, which see what is sent and received, and the executor, which sees the message a server is sent, as the places for a content filter, but ships none."
 
 [[control]]
 id = "AIA-19-26-6"
@@ -1596,7 +1598,7 @@ id = "ASI-MODEL"
 source = "owasp-asi"
 provision = "ASI01, ASI02, ASI05, ASI06"
 requirement = "Goal hijack, tool misuse, unexpected code execution, memory and context poisoning."
-sdk = "Server and client interceptors are where an integrator's filter or policy runs, before and after every call. When the model is hijacked anyway, the SDK contains the effects: a repeated side-effecting tool call runs once, the turn bound and the caller's token budget end a runaway run, content whose signature fails is refused before the model reads it, an approval gate refuses the requester's own approval, delegated budgets bound what children spend, a halt stops the run, and caller isolation hides other callers' tasks. `docs/injection-containment.md` has each scenario, against a model that obeys every instruction it reads."
+sdk = "A client interceptor sees each request's params and each response's result, so an integrator's content filter or policy on what an agent sends and receives runs there; a server interceptor sees only the call context (method, caller, tenant, headers) and can refuse a call from it, and the message reaches only the executor, where a filter on what an agent is sent runs. When the model is hijacked anyway, the SDK contains the effects: a repeated side-effecting tool call runs once, the turn bound and the caller's token budget end a runaway run, content whose signature fails is refused before the model reads it, an approval gate refuses the requester's own approval, delegated budgets bound what children spend, a halt stops the run, and caller isolation hides other callers' tasks. `docs/injection-containment.md` has each scenario, against a model that obeys every instruction it reads."
 status = "integrator"
 tests = [
   "crates/a2a-protocol-sdk/tests/injection_containment/tool_results.rs::a_repeated_payment_planted_in_a_page_runs_once",
@@ -1629,3 +1631,4 @@ requirement = "An AI management system: policy, roles, risk assessment, impact a
 sdk = "Nothing beyond the records above."
 status = "integrator"
 gap = "A management system is an organisation's; a library cannot hold one."
+tests = ["crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable"]

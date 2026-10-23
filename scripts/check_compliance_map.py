@@ -71,11 +71,8 @@ WORKFLOWS = [p.read_text(encoding="utf-8") for p in sorted((ROOT / ".github/work
 # maintainer decides what, if anything, such a row should cite; until then it
 # is listed here rather than left to look like an oversight.
 UNCITED = {
-    "AIA-2-12": "says nothing is needed: the SDK is outside the Regulation as no AI system",
     "AIA-6": "says nothing toward the classification; it turns on the provider's purpose",
-    "AIA-9-10-17": "says nothing beyond its own engineering process; trains nothing, holds no data set",
     "AIA-53": "says nothing: the SDK is not a general-purpose AI model and contains none",
-    "ISO42001-AIMS": "says nothing beyond the records above; a management system is an organisation's",
 }
 
 # A row whose `sdk` text is a claim that a document says something cites
@@ -119,6 +116,7 @@ DOC_CLAIMS = {
         ("book/src/deployment/audit.md", "The design, its threat model and its measured cost are in"),
         (_ADR15, "**What tamper evidence does not cover.**"),
     ],
+    "AIA-2-12": _LICENCE,
     "AIA-25-2-4": _LICENCE,
     "CRA-13-6": _CHANNELS + _MANUFACTURERS,
     "CRA-AI-II-2-4-8": [
