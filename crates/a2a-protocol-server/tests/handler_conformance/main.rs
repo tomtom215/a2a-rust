@@ -13,16 +13,20 @@
 //! | `send_refusals` | §3.1.1, §3.1.2 | content type, terminal and unknown task on both sends |
 //! | `not_found_wire` | §3.3.2 | another caller's task and an unknown one answer alike, byte for byte |
 //! | `auth_before_store` | §13.1 | a refused call reads no store |
+//! | `cancel_and_push` | §3.1.5, §3.1.10 | a second cancel; no delivery after a config is deleted |
+//! | `stream_and_push` | §3.1.2, §3.1.7, §3.1.8 | progress before completion; a config read back whole and kept |
 
 #[path = "../support/s3_agent.rs"]
 mod s3_agent;
 
 mod auth_before_store;
+mod cancel_and_push;
 mod extension_activation;
 mod not_found_wire;
 mod required_extensions;
 mod required_fields;
 mod send_refusals;
+mod stream_and_push;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
