@@ -76,11 +76,15 @@ only: when something here is done, delete it rather than annotating it.
   mutation sweep of the crypto modules (210 mutants, the 2 missed rewritten
   so they are killed). `book/src/deployment/security.md`, "How this is
   verified".
-- **Control map (2026-10-21):** 88 rows after the GDPR and CRA pass
-  (`63418d93`). Every test it cites was run that day, Postgres-ignored ones
-  included against a local PostgreSQL 16: 170 distinct tests across 50
-  targets, all passing. `check_compliance_map.py` only checks that a cited
-  test exists, so rerun them after editing a cited file.
+- **Control map (2026-10-23):** 88 rows; 86 cite a test or CI step that
+  proves the row's `sdk` text, and `check_compliance_map.py --check` fails
+  on a row that cites nothing unless it is in the script's `UNCITED` (AIA-6
+  and AIA-53, each with its reason) and on a document that stops saying
+  what `DOC_CLAIMS` quotes. All 187 cited tests were run 2026-10-23,
+  PostgreSQL-ignored ones included, all passing. The checker verifies that
+  a cited test exists, not that it passes: rerun them after editing a cited
+  file. The EU AI Act rows' provision and requirement text was not
+  re-audited against the Regulation: no copy is in the repository.
 - **Built on this branch (2026-10-22):** kill-switch conformance,
   `conformance::halt::{check_store, check_handlers}` (feature
   `conformance`): 8 store checks and 9 end-to-end replica checks, tested

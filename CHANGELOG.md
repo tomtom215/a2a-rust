@@ -348,6 +348,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every control-map row cites what proves its claim, and CI enforces
+  it.** `docs/compliance/controls.toml` had 42 of 88 rows citing no test.
+  86 now cite a test or a CI step that proves what the row's `sdk` text
+  says the SDK offers; the two whose text says the SDK is not what the
+  provision governs (AIA-6, AIA-53) are listed with the reason in
+  `UNCITED` in `scripts/check_compliance_map.py`. A row whose claim is what
+  a document says (SECURITY.md's channels and timelines, the book's
+  chapters, ADR 0015, the licence) cites the map's CI step, and
+  `DOC_CLAIMS` quotes what each document must keep saying; the rendered map
+  lists every quote. `--check` fails on an uncited row, a stale `UNCITED`
+  entry, or a document that stops saying what is quoted, and
+  `scripts/prove_gates_fail.sh` proves the new rule. Every test the map
+  cites was run on 2026-10-23: 187, all passing, the PostgreSQL ones
+  included. New test: server
+  `audit::executor_detail_tests::an_executors_own_fields_are_recorded_in_the_tenants_chain`.
+
 - **`a2a_protocol_types::required`**: `check_event`, `check_received_event`,
   `check_task`, `check_response`, `check_push_config`, `check_card`,
   `check_status`, `check_message`, `check_artifact` — the REQUIRED-field rules
@@ -2320,6 +2336,15 @@ section "The client refuses what `a2a.proto` does not allow".
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **The control map no longer says a server interceptor can inspect or
+  filter content** (docs). `ServerInterceptor`'s hooks are given the
+  `CallContext` only (method, caller, tenant, task id, headers), never the
+  message. AIA-5-1 and AIA-5-1-ba-bb say a server interceptor can refuse a
+  call from its context and that content reaches only the executor;
+  ASI-MODEL and AIA-15-5 say a content filter runs in a client interceptor,
+  which is given each request's params and response's result, or in the
+  executor.
 
 - **Tests only: security tests that did not test what they were cited for** (server,
   client). `auth_secret_redaction.rs` (the API-key and bearer interceptors'
