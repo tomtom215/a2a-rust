@@ -14,8 +14,8 @@
 use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
-use a2a_protocol_types::message::{Message, MessageRole, Part, PartContent};
-use a2a_protocol_types::task::{TaskState, TaskStatus};
+use a2a_protocol_types::message::{Message, Part, PartContent};
+use a2a_protocol_types::task::TaskStatus;
 
 use crate::portable::{inexact_number, standard_base64};
 
@@ -25,29 +25,33 @@ use crate::portable::{inexact_number, standard_base64};
 /// task snapshot's status, artifacts and history; or when a message or
 /// artifact carries malformed provenance.
 ///
+/// The REQUIRED fields are checked by
+/// [`a2a_protocol_types::required::check_event`], which moved to the types
+/// crate on 2026-10-23 so that a client holds what it receives to the same
+/// rules (it had none).
+///
 /// # Errors
 ///
 /// `InvalidParams` naming the field.
 pub(super) fn check_required_fields(event: &StreamResponse) -> A2aResult<()> {
+    a2a_protocol_types::required::check_event(event)?;
     match event {
-        StreamResponse::Message(message) => check_message(message, "message"),
-        StreamResponse::StatusUpdate(update) => check_status(&update.status),
-        // a2a.proto `Artifact.parts`: "Must contain at least one part". An
-        // appended chunk is an `Artifact` too; until 2026-10-14 it was let
-        // through empty, and one for an artifact id the task did not hold was
-        // stored as a zero-part artifact.
-        StreamResponse::ArtifactUpdate(update) => {
-            check_artifact_id(&update.artifact)?;
-            update.artifact.validate()
-        }
+        StreamResponse::Message(message) => check_provenance(message),
+        StreamResponse::StatusUpdate(update) => update
+            .status
+            .message
+            .as_ref()
+            .map_or(Ok(()), check_provenance),
+        StreamResponse::ArtifactUpdate(update) => check_provenance(&update.artifact),
         StreamResponse::Task(task) => {
-            check_status(&task.status)?;
+            if let Some(message) = &task.status.message {
+                check_provenance(message)?;
+            }
             for artifact in task.artifacts.iter().flatten() {
-                check_artifact_id(artifact)?;
-                artifact.validate()?;
+                check_provenance(artifact)?;
             }
             for message in task.history.iter().flatten() {
-                check_message(message, "history message")?;
+                check_provenance(message)?;
             }
             Ok(())
         }
@@ -57,49 +61,11 @@ pub(super) fn check_required_fields(event: &StreamResponse) -> A2aResult<()> {
     }
 }
 
-fn check_status(status: &TaskStatus) -> A2aResult<()> {
-    if status.state == TaskState::Unspecified {
-        return Err(A2aError::invalid_params(
-            "status.state is required: TASK_STATE_UNSPECIFIED is no state",
-        ));
-    }
-    status
-        .message
-        .as_ref()
-        .map_or(Ok(()), |message| check_message(message, "status message"))
-}
-
-fn check_message(message: &Message, which: &str) -> A2aResult<()> {
-    if message.id.0.is_empty() {
-        return Err(A2aError::invalid_params(format!(
-            "{which}: messageId is required"
-        )));
-    }
-    if message.role == MessageRole::Unspecified {
-        return Err(A2aError::invalid_params(format!(
-            "{which}: role is required: ROLE_USER or ROLE_AGENT"
-        )));
-    }
-    if message.parts.is_empty() {
-        return Err(A2aError::invalid_params(format!(
-            "{which} must contain at least one part"
-        )));
-    }
-    check_provenance(message)
-}
-
 /// Refuses content whose provenance key (`a2a-rust.com/provenance`) holds
 /// something that is not provenance: a server that signs what it serves
 /// (ADR 0027) could sign it on no read, so the task would be unreadable.
 fn check_provenance<C: a2a_protocol_types::provenance::Content>(content: &C) -> A2aResult<()> {
     a2a_protocol_types::provenance::provenance_of(content).map(drop)
-}
-
-fn check_artifact_id(artifact: &Artifact) -> A2aResult<()> {
-    if artifact.id.0.is_empty() {
-        return Err(A2aError::invalid_params("artifactId is required"));
-    }
-    check_provenance(artifact)
 }
 
 /// Refuses `event` when it holds what the gRPC binding cannot carry (spec §4:
