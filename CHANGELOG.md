@@ -12,6 +12,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **An authenticating interceptor needs a scheme declared in the public
+  card, and an extended-card scheme must also be in the public card**
+  (server; spec §13.3). §13.3: agents "MUST authenticate requests using one
+  of the schemes declared in the public `AgentCard.securitySchemes`".
+  `RequestHandlerBuilder::build` compared the interceptors with the schemes
+  of the public and extended cards pooled, and passed when none were
+  declared, so a public card declaring nothing built behind any
+  authenticator, and a scheme declared only on the extended card passed for
+  the public card's. It now refuses, with `InvalidParams` naming §13.3:
+  (1) any authenticating interceptor (bundled or custom) behind a public
+  card that declares no `securitySchemes`; (2) a scheme the extended card
+  declares that the public card does not declare under the same name with
+  the same definition; (3) as before, an authenticator whose
+  `checks_scheme` answers `Some(false)` to every scheme, now of the public
+  card only. A custom authenticator that answers `None` (the trait default)
+  is still trusted to check one of the declared schemes: only its author
+  knows what it checks, and refusing it would refuse every custom
+  authenticator ever written. Without a public card (`without_agent_card`)
+  the extended card's schemes are checked as before.
+  **Migration:** declare the scheme your interceptor checks in the card you
+  pass to `with_agent_card`: for `BearerTokenAuthInterceptor` or
+  `JwtAuthInterceptor`, `securitySchemes: {"bearer": {"httpAuthSecurityScheme":
+  {"scheme": "Bearer"}}}` (in Rust,
+  `.with_security_schemes(HashMap::from([("bearer".into(),
+  SecurityScheme::Http(HttpAuthSecurityScheme { scheme: "Bearer".into(),
+  description: None, bearer_format: None }))]))`); for
+  `ApiKeyAuthInterceptor`, an `apiKeySecurityScheme` naming its header; for
+  `MutualTlsAuthInterceptor`, a `mutualTlsSecurityScheme`; and repeat every
+  extended-card scheme in the public card. The ITK agent now declares its
+  bearer scheme in every pass (it guards the extended card in every pass),
+  and the SLIMRPC binding's tests declare `mutualTlsSecurityScheme` for
+  `SlimPeerAuthInterceptor::required()`. Tests:
+  `auth::declared_tests::an_authenticator_behind_a_public_card_declaring_no_scheme_is_refused`,
+  `auth::declared_tests::a_scheme_declared_only_on_the_extended_card_is_refused`.
+
+- **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519` are
+  removed** (types; spec §8.4.2). Their `key_id: Option<&str>` let a
+  signature's protected header omit `kid`, which §8.4.2 requires.
+  **Migration:** `sign_card_es256(card, key, key_id)` and
+  `sign_card_ed25519(card, key, key_id)`, the same signature with
+  `key_id: &str`. Verification still accepts a foreign signature without
+  `kid`. **Deprecation window waived:** `STABILITY.md` §3 asks
+  for a deprecated item to stay one minor release; these were deprecated
+  only in this release, and are removed in it so that 0.15.0 carries every
+  break known now rather than leaving one for 0.16.0. Both shipped in 0.14.1.
+  Tests:
+  `signing_tests::eddsa_protected_header_carries_alg_typ_and_kid`,
+  `signing_tests::sign_and_verify_without_key_id` (now signs kid-less by
+  hand), `signing::tests::signature_header_kid_is_none_for_a_foreign_signature_without_one`.
+
 - **The MSRV is 1.94, and the SQL stores use `sqlx` 0.9** (server, SDK,
   SLIMRPC binding; 2026-10-23). `sqlx` 0.9 needs Rust 1.94, and its pool
   types are in the SQL stores' public constructors (`SqliteTaskStore`,
@@ -247,6 +297,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`share_tasks_across_callers`).
 
 ### Added
+
+- **`WebSocketDispatcher::with_agent_card_max_age` and
+  `GrpcDispatcher::with_agent_card_max_age`** (server; spec §8.6.1). Both
+  listeners served the card with `max-age=3600` fixed; the default is
+  unchanged. Test:
+  `agent_card_on_every_listener::the_websocket_and_grpc_listeners_send_a_configurable_cache_control`.
 
 - **`TelemetryBuilder::with_export_where_configured` and
   `Telemetry::install_subscriber`** (server `otlp`; SDK prelude). The first
@@ -1280,6 +1336,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **`HttpPushSender` refuses to deliver without the configured
+  credentials** (server; spec §13.2: agents MUST include the credentials
+  `authentication` specifies). A stored config whose `authentication`
+  names a scheme other than `Bearer` or `Basic`, or carries no (or blank)
+  credentials, was delivered with no `Authorization` header; `send` now
+  returns `InvalidParams` naming §13.2 before connecting, and the delivery
+  path records the failure as for any other. Creation already refused such
+  configs, so only one that reached a store another way is affected; leave
+  `authentication` out for an unauthenticated webhook. The tests that pinned
+  the old behaviour are inverted:
+  `push_sender_tests::scheme_without_credentials_is_not_delivered`,
+  `unknown_scheme_is_not_delivered`, `empty_credentials_are_not_delivered`.
+
 - **`Telemetry` reports a `service.instance.id`** (server `otlp`): a random
   UUID per process unless `OTEL_RESOURCE_ATTRIBUTES` names one. Replicas of
   one service no longer export identical resources; in Prometheus each
@@ -2119,6 +2188,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tests only: security tests that did not test what they were cited for** (server,
+  client). `auth_secret_redaction.rs` (the API-key and bearer interceptors'
+  `Debug`, including a derived-`Debug` byte rendering, and every event and
+  span they emit while accepting and refusing); `push_log_redaction.rs
+  the_token_and_credentials_are_never_logged` (a config with a token and
+  `Bearer` credentials, events and span fields); `push_sender_tests
+  a_webhook_that_never_answers_is_abandoned_at_the_timeout`;
+  `tls_protocol_versions.rs` (hand-written TLS 1.0/1.1 `ClientHello`s get a
+  fatal `protocol_version` alert from `Server::with_tls_pem`,
+  `WebSocketDispatcher::with_tls_pem` and `GrpcDispatcher::with_tls`, TLS
+  1.2 gets a `ServerHello` with an ECDHE AEAD suite, and the push sender
+  offers only TLS 1.3/1.2 and forward-secret AEAD suites);
+  `grpc_tls_apply_tests a_server_certificate_from_an_untrusted_ca_is_refused`
+  (client, with a pinned-CA control); `audit_security_events.rs` (an
+  authorization denial and a malformed request recorded with the caller);
+  `a2a_json_security_considerations.rs` (malformed content refused on
+  JSON-RPC and HTTP+JSON with the executor never run; another caller's task
+  answers as a missing one on both).
+
 - **Metadata on an appended artifact chunk is kept in SQLite and
   PostgreSQL** (server). Both event processors merge an appended chunk's
   `metadata` into the stored artifact and wrote the change as
@@ -2828,11 +2916,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could see. Rank bindings with `ClientBuilder::from_card_preferring`, and see
   the choice with `ClientBuilder::chosen_interface`. Kept for one minor
   release, as `STABILITY.md` requires.
-- **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519`**,
-  whose `key_id: Option<&str>` let a signature omit `kid`, which §8.4.2
-  forbids. Use `sign_card_es256` and `sign_card_ed25519`: the same signature
-  with `key_id: &str`. They remain and still sign; removal follows the
-  deprecation window in `STABILITY.md` §3.
 - **`OAuthFlows::Implicit` and `OAuthFlows::Password`** (types), as the A2A
   1.0 proto marks both fields `deprecated`. They remain, parse and serialize
   as before (spec §1.4 keeps deprecated definitions until the next major
@@ -2922,6 +3005,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-10-02 SDK comparison (`docs/sdk-comparison-2026-10-02.md`).
 
 ### Security
+
+- **`TaskPushNotificationConfig`'s `Debug` prints the webhook's origin, not
+  its URL** (types; spec §13.2, §13.4). A webhook URL routinely carries the
+  receiver's secret in its path, query or userinfo; `{:?}` printed it whole,
+  into logs and panic messages, while the server's and client's own log
+  lines already printed only `scheme://host[:port]`. Tests:
+  `push::tests::debug_redacts_secrets_but_keeps_presence` (which asserted
+  the full URL and now asserts its absence),
+  `push::tests::debug_url_never_echoes_what_it_cannot_cut`.
 
 - **`rsa` is no longer in any lockfile** (RUSTSEC-2023-0071, Marvin timing
   side channel, no fixed release). It was in `Cargo.lock` only through
