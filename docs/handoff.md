@@ -250,9 +250,6 @@ only: when something here is done, delete it rather than annotating it.
   not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. CRA rows
   CRA-AI-I-2a, CRA-AI-II-2-4-8 and CRA-14 carry it as a gap. Filing is an
   upstream action, so it waits for the maintainer.
-- **`STABILITY.md` §1** still gives the account written at 0.13; its
-  version sentence now says so. Bring it up to 0.14 and 0.15 at release
-  prep.
 - **Compare-and-set for task writes (cross-replica).** The 2026-10-20 fix
   makes a stale continuation save record the position of its read, so a
   subscriber replays the event it overwrote, but only until the continuing
