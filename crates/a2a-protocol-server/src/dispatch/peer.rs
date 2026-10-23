@@ -54,6 +54,16 @@ pub fn certificate_of(extensions: &hyper::http::Extensions) -> Option<&[u8]> {
         .map(|cert| &*cert.0)
 }
 
+/// What the serving layer attached about a request's connection, for an
+/// agent-card request's telemetry: its peer, and whether this server's TLS
+/// terminated it.
+pub fn card_connection(extensions: &hyper::http::Extensions) -> crate::rpc_span::CardConnection {
+    crate::rpc_span::CardConnection {
+        peer: peer_of(extensions),
+        tls: extensions.get::<crate::serve::OverTls>().is_some(),
+    }
+}
+
 /// The [`PeerAddr`](crate::call_context::PeerAddr) a server attached to a
 /// request, if any.
 pub fn peer_of(extensions: &hyper::http::Extensions) -> Option<std::net::SocketAddr> {

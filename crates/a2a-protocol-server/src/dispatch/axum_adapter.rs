@@ -607,10 +607,20 @@ async fn handle_agent_card(
     State(state): State<A2aState>,
     req: axum::extract::Request,
 ) -> axum::response::Response {
-    state.card_handler.as_ref().map_or_else(
+    let mut connection = super::card_connection(req.extensions());
+    connection.peer = connection.peer.or_else(|| {
+        req.extensions()
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|info| info.0)
+    });
+    let call =
+        crate::rpc_span::CardCall::start(state.handler.inbound_trace_policy, &req, connection);
+    let resp = state.card_handler.as_ref().map_or_else(
         || plain_error(404, "agent card not configured"),
         |h| h.handle(&req).map(Body::new),
-    )
+    );
+    call.finish(&resp);
+    resp
 }
 
 /// Liveness: is this process able to serve at all?

@@ -28,7 +28,9 @@ pub use cors::CorsConfig;
 pub use grpc::{GrpcConfig, GrpcDispatcher};
 pub use hsts::Hsts;
 pub use jsonrpc::JsonRpcDispatcher;
-pub(crate) use peer::{certificate_of, peer_of, record_peer_addr, record_peer_certificate};
+pub(crate) use peer::{
+    card_connection, certificate_of, peer_of, record_peer_addr, record_peer_certificate,
+};
 pub use rest::RestDispatcher;
 pub use version::{A2A_VERSION_METADATA_KEY, validate_version_metadata};
 pub(crate) use version::{requested_version, validate_version_header};

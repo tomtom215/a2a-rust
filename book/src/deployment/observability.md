@@ -349,6 +349,25 @@ The metrics go to the global meter provider as it is when each is
 recorded, so `Telemetry` installed after the loop is built still receives
 them; `ToolLoop::with_meter` sends them elsewhere.
 
+### Agent-card requests
+
+A request for the card at `/.well-known/agent-card.json`, on any listener
+that serves it (JSON-RPC, HTTP+JSON, the axum router, WebSocket, gRPC), is an
+HTTP `SERVER` span named `GET /.well-known/agent-card.json` (or `HTTP` and
+the route for a method the conventions do not know) and a point in the HTTP
+conventions' `http.server.request.duration` (histogram, `s`, their advisory
+buckets), under the `a2a.server` scope. The span carries
+`http.request.method`, `url.path`, `url.scheme`, `http.route`,
+`http.response.status_code`, `network.protocol.version`, `network.peer.*`
+when the listener knows the connection, `server.address` and `server.port`
+from `Host`, and `user_agent.original`; a query is recorded only as
+`url.query="REDACTED"`. `url.scheme` is `https` when this server's TLS
+ended the connection. A 5xx sets `error.type` and the error status; a 4xx,
+as the conventions require of a server span, does not. The span follows
+`InboundTracePolicy` as a call's does. The metric carries only the method,
+scheme, route, status, protocol version and `error.type`, none of which a
+caller can choose freely.
+
 ### Webhook deliveries
 
 With `otel`, each push-notification POST, every retry included, is

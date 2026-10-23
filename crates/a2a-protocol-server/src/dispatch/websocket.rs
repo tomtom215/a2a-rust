@@ -537,6 +537,8 @@ impl WebSocketDispatcher {
                 card::serve(
                     io,
                     super::well_known::card_handler(&self.handler, self.agent_card_max_age),
+                    self.handler.inbound_trace_policy,
+                    crate::rpc_span::CardConnection { peer, tls: true },
                 )
                 .await;
                 return Ok(());
@@ -550,6 +552,8 @@ impl WebSocketDispatcher {
             card::serve(
                 stream,
                 super::well_known::card_handler(&self.handler, self.agent_card_max_age),
+                self.handler.inbound_trace_policy,
+                crate::rpc_span::CardConnection { peer, tls: false },
             )
             .await;
             return Ok(());

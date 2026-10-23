@@ -341,6 +341,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent-card requests are traced and measured** (server, `tracing` and
+  `otel`; HTTP semantic conventions at `55c98cf`). A request for
+  `/.well-known/agent-card.json` on any listener that serves it (JSON-RPC,
+  HTTP+JSON, the axum router, WebSocket, gRPC) had no span and no metric. It
+  is now an HTTP `SERVER` span (`GET /.well-known/agent-card.json`; the
+  conventions' Required, Conditionally Required and Recommended attributes;
+  a query recorded only as `REDACTED`; error status for a 5xx and not a 4xx)
+  under the handler's `InboundTracePolicy`, and a point in
+  `http.server.request.duration` with bounded attributes. `url.scheme` is
+  `https` when this server's TLS ended the connection: `serve` now marks
+  such requests. Tests: `tests/card_request_telemetry.rs` (every listener,
+  each failing with its instrumentation removed); `tests/serve_tls.rs`
+  `a_card_request_over_tls_is_recorded_as_https` (fails without the mark).
+
 - **Every control-map row cites a check; AIA-6 and AIA-53 no longer stand
   uncited** (docs, CI; EU AI Act Art. 6, Art. 53).
   - **"Is Your Agent High-Risk?"** (book, deployment): Article 6's two

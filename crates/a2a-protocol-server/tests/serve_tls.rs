@@ -370,3 +370,54 @@ async fn a_listener_requiring_client_certificates_serves_only_clients_with_one()
         assert_eq!(card["name"].as_str(), Some("tls-agent"), "h2={h2}");
     }
 }
+
+/// A card request this server's TLS terminated is recorded as `https`, over
+/// HTTP/1.1 too, where the request URI carries no scheme: the listener says
+/// the connection was TLS (`rpc_span::CardCall`).
+#[cfg(feature = "otel")]
+#[tokio::test]
+async fn a_card_request_over_tls_is_recorded_as_https() {
+    use opentelemetry::trace::TracerProvider as _;
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    #[derive(Clone, Debug, Default)]
+    struct Keep(Arc<std::sync::Mutex<Vec<opentelemetry_sdk::trace::SpanData>>>);
+    impl opentelemetry_sdk::trace::SpanExporter for Keep {
+        fn export(
+            &self,
+            batch: Vec<opentelemetry_sdk::trace::SpanData>,
+        ) -> impl std::future::Future<Output = opentelemetry_sdk::error::OTelSdkResult> + Send
+        {
+            self.0.lock().unwrap().extend(batch);
+            std::future::ready(Ok(()))
+        }
+    }
+    let keep = Keep::default();
+    let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_simple_exporter(keep.clone())
+        .build();
+    // The test's runtime is current-thread, so the server's tasks record here.
+    let _subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(tracer.tracer("tls"))),
+    );
+    let certs = certs();
+    let addr = start(
+        tls_server(&certs, ServeConfig::default()).await,
+        Arc::default(),
+    )
+    .await;
+    let (version, _) = fetch_card(addr, &certs.ca, false).await.unwrap();
+    assert_eq!(version, hyper::Version::HTTP_11);
+    let spans = keep.0.lock().unwrap().clone();
+    let card = spans
+        .iter()
+        .find(|s| s.name == "GET /.well-known/agent-card.json")
+        .expect("the card request's span");
+    let scheme = card
+        .attributes
+        .iter()
+        .find(|kv| kv.key.as_str() == "url.scheme")
+        .map(|kv| kv.value.to_string());
+    assert_eq!(scheme.as_deref(), Some("https"));
+}

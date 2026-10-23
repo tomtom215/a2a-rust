@@ -45,8 +45,14 @@ pub fn spawn_connection(
                     // The leaf of the chain the client verifier accepted, so
                     // the dispatchers can name the caller from it.
                     let certificate = crate::tls::peer_certificate(io.get_ref().1);
-                    let service =
-                        super::super::service(dispatcher, requests, serving, peer, certificate);
+                    let service = super::super::service(
+                        dispatcher,
+                        requests,
+                        serving,
+                        peer,
+                        certificate,
+                        true,
+                    );
                     serve_io(io, service, watcher, header_read_timeout).await
                 }
                 Err(_e) => {
@@ -60,7 +66,7 @@ pub fn spawn_connection(
             drop(permit);
             return;
         }
-        let service = super::super::service(dispatcher, requests, serving, peer, None);
+        let service = super::super::service(dispatcher, requests, serving, peer, None, false);
         let result = serve_io(io, service, watcher, header_read_timeout).await;
         if let Some(connection) = connection {
             connection.close(result.is_err());

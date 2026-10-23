@@ -45,7 +45,7 @@ pub(super) fn record(span: &tracing::Span, headers: &HashMap<String, String>) {
 
 /// `Host` as `server.address` (an IPv6 literal without its brackets) and
 /// the port it names, if any; `None` when it is not a usable authority.
-fn server(host: &str) -> Option<(String, Option<u16>)> {
+pub(super) fn server(host: &str) -> Option<(String, Option<u16>)> {
     let authority: hyper::http::uri::Authority = host.parse().ok()?;
     if authority.as_str().contains('@') {
         return None;

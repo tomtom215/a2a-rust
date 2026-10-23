@@ -298,16 +298,6 @@ only: when something here is done, delete it rather than annotating it.
   the writer needs the task's state at a turn's start, and a
   continuation's first-event `Message` must stay a direct reply. The
   maintainer's call.
-- **Spans for agent-card requests and pre-routing refusals** (2026-10-23).
-  Refusals are recorded in `rpc.server.call.duration` without a span, by
-  design (`rpc_span/refusal.rs`: the peer's trace context is unread and
-  most have no method). A card request has neither span nor metric. Adding
-  an HTTP `SERVER` span there needs three decisions: `url.scheme` is
-  Required by the HTTP conventions and the card handlers do not know it;
-  `InboundTracePolicy` lives on `RequestHandler`, which
-  `StaticAgentCardHandler` (and the dynamic and per-caller handlers) do not
-  hold; and every unauthenticated discovery request becomes a root span.
-  Not built until the maintainer decides.
 - **SLIMRPC `otlp` is on by default** (2026-10-23). The two conflicts that
   kept it opt-in are fixed: the server's OTLP/gRPC dials TLS through its own
   rustls connector, so tonic's TLS is not linked for it (with it linked,

@@ -331,9 +331,28 @@ impl GrpcDispatcher {
         }
         let router = server.add_service(self.into_service());
         Ok(match card {
-            Some(card) => router.add_service(super::well_known::WellKnownCard(card)),
+            Some(card) => router.add_service(super::well_known::WellKnownCard {
+                card,
+                policy: self.handler.inbound_trace_policy,
+                tls: self.serves_tls(),
+            }),
             None => router,
         })
+    }
+}
+
+impl GrpcDispatcher {
+    /// Whether this listener serves TLS.
+    #[allow(clippy::unused_self)]
+    const fn serves_tls(&self) -> bool {
+        #[cfg(feature = "grpc-tls")]
+        {
+            self.tls.is_some()
+        }
+        #[cfg(not(feature = "grpc-tls"))]
+        {
+            false
+        }
     }
 }
 

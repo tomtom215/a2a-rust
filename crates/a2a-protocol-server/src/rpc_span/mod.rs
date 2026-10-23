@@ -51,6 +51,7 @@ mod address;
 mod agent;
 mod binding;
 mod call;
+mod card;
 mod link;
 mod names;
 #[cfg(feature = "otel")]
@@ -77,6 +78,7 @@ pub use agent::OutputRecorder;
 pub use agent::{ExecutorSpan, SpanSettings};
 pub use binding::{BindingSpan, CustomBinding};
 use call::{Call, Pending};
+pub use card::{CardCall, CardConnection};
 #[cfg(feature = "tracing")]
 use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
