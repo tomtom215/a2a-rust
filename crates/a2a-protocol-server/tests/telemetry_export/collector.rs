@@ -243,30 +243,6 @@ impl Collector {
         out
     }
 
-    /// Every log record with a string body: the body, and the trace and
-    /// span ids it carries (empty when it carries none).
-    pub fn log_records(&self) -> Vec<(String, Vec<u8>, Vec<u8>)> {
-        let mut out = Vec::new();
-        for r in self
-            .received()
-            .into_iter()
-            .filter(|r| r.path.ends_with("/v1/logs"))
-        {
-            let req = ExportLogsServiceRequest::decode(&*r.body).expect("an OTLP logs request");
-            for rl in req.resource_logs {
-                for sl in rl.scope_logs {
-                    for rec in sl.log_records {
-                        if let Some(Value::StringValue(s)) = rec.body.clone().and_then(|b| b.value)
-                        {
-                            out.push((s, rec.trace_id, rec.span_id));
-                        }
-                    }
-                }
-            }
-        }
-        out
-    }
-
     /// Every log record's body, as a string.
     pub fn log_bodies(&self) -> Vec<String> {
         let mut out = Vec::new();
