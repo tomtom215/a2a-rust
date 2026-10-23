@@ -3555,6 +3555,12 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Changed
 
+- **The book says what a message to an `AUTH_REQUIRED` task does while its
+  executor still runs** (spec §7.6.1): it waits up to
+  `executor_drain_timeout`, then is refused `UnsupportedOperation`, so an
+  executor that should accept the next message returns after
+  `auth_required`. Behaviour unchanged.
+
 - **`examples/deploy-agent` runs on jemalloc** (`tikv-jemallocator`, not
   on MSVC). On the echo benchmark jemalloc took unary throughput from 7,189
   to 11,862 requests/s at the same resident memory; see the book's

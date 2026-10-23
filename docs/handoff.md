@@ -211,13 +211,11 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **The rest of the conformance list:** the six PARTIAL entries (§3.1.2
-   lines 20 and 22 want an executor-written message after the task folded
-   into a `TaskStatusUpdateEvent`'s `status.message`, which changes the
-   stream contract and needs an independent review; §7.6.1 line 227 is a
-   documentation fix; §12.4 waits on agntcy/slim), MAY entries relabelled
-   SUPPORTED, and the TCK baseline (the drafts for CORE-SEND-003 and
-   a2a-tck#231 are in `docs/upstream/`).
+2. **The rest of the conformance list:** the six PARTIAL entries (§3.1.2,
+   lines 20 and 22, waits on the maintainer, see *Waiting*; §7.6.1, line
+   227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
+   MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
+   CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
 3. **OpenTelemetry, still open:** store spans and
    `db.client.operation.duration`; then
    `GenAI` panels on the dashboards. Done on this branch: `server.address`
@@ -281,6 +279,20 @@ only: when something here is done, delete it rather than annotating it.
   public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
+- **§3.1.2: where to fold a mid-task `Message`** (2026-10-23). A `Message`
+  an executor writes after its task exists is forwarded inside the task
+  stream, which neither §3.1.2 pattern allows (ledger 20, 22, medium). A
+  fold in each stream's reader was built, reviewed independently and
+  reverted: a resumed `SubscribeToTask` stream starts from the current
+  snapshot and then replays older events, so a replayed `Message` took the
+  current state (a terminal one ends the client's stream early) and
+  different streams got different payloads at one log position, breaking
+  §3.5.2. The conforming fold is once, at the writer, which changes the
+  store contract: the message becomes the stored status message instead of
+  a `history` entry (or the processor appends both), push delivers it,
+  the writer needs the task's state at a turn's start, and a
+  continuation's first-event `Message` must stay a direct reply. The
+  maintainer's call.
 - **Spans for agent-card requests and pre-routing refusals** (2026-10-23).
   Refusals are recorded in `rpc.server.call.duration` without a span, by
   design (`rpc_span/refusal.rs`: the peer's trace context is unread and
@@ -599,7 +611,11 @@ into this file: the commit that records it changes it.
   edited.
 - An independent review before committing found two defects in R69 that the
   change's own tests and 23 hand mutants did not; budget for one on any
-  change to the stream or store contract.
+  change to the stream or store contract. It did again on 2026-10-23: a
+  per-reader §3.1.2 fold passed its tests and broke §3.5.2 on resume.
+- The workspace suite and the all-features server suite in one target
+  directory exceed this container's disk allowance; delete `target/debug`
+  between them (2026-10-23).
 - Run every clippy invocation CI runs, not only `--all-features`: a type
   used by an always-compiled store from a module gated on `sqlite` built
   with all features and nowhere else (2026-10-18).

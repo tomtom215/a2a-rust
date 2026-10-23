@@ -435,7 +435,7 @@
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:259 a_message_only_stream_is_exactly_one_message",
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:264 a_task_lifecycle_stream_begins_with_the_task"
    ],
-   "notes": "The executor's first event decides the pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern allows; TaskStatus.message is the conforming carrier.",
+   "notes": "The executor's first event decides the pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern allows; TaskStatus.message is the conforming carrier. Tried and reverted 2026-10-23: folding the Message into a status update in each stream's reader. An independent review found it breaks §3.5.2: a resumed SubscribeToTask stream begins with the current Task snapshot and then replays older log events, so a replayed Message took the task's current state (even a terminal one, which ends a client's stream before the rest of the replay), and one log position carried different payloads on different streams. A conforming fold must happen once, at the writer, so each log position has one payload; that changes the store contract (the message would be the stored status message rather than a history entry, push would deliver it, the writer must know the task's state at a turn's start, and a continuation's first-event Message must stay a direct reply). Left to the maintainer; see docs/handoff.md.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
@@ -477,7 +477,7 @@
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
     "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:216 a_streaming_retry_replays_the_task_as_its_first_event"
    ],
-   "notes": "PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern allows; TaskStatus.message is the conforming carrier.",
+   "notes": "PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern allows; TaskStatus.message is the conforming carrier. Tried and reverted 2026-10-23: folding the Message into a status update in each stream's reader. An independent review found it breaks §3.5.2: a resumed SubscribeToTask stream begins with the current Task snapshot and then replays older log events, so a replayed Message took the task's current state (even a terminal one, which ends a client's stream before the rest of the replay), and one log position carried different payloads on different streams. A conforming fold must happen once, at the writer, so each log position has one payload; that changes the store contract (the message would be the stored status message rather than a history entry, push would deliver it, the writer must know the task's state at a turn's start, and a continuation's first-event Message must stay a direct reply). Left to the maintainer; see docs/handoff.md.",
    "auditor": "A",
    "source": "spec",
    "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
@@ -5115,10 +5115,10 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:170 auth_required_state_does_not_authorize_the_continuation"
    ],
-   "notes": "Test asserts an authenticated continuation to an AUTH_REQUIRED task is accepted and re-runs the executor (runs==2). PARTIAL (2026-10-23 re-audit): a message to a task in AUTH_REQUIRED whose executor is still running waits executor_drain_timeout and is refused UnsupportedOperation; it is received only once the executor has returned. §7.6.1's two SHOULDs conflict for one executor (keep the stream open, and accept messages meanwhile).",
+   "notes": "Test asserts an authenticated continuation to an AUTH_REQUIRED task is accepted and re-runs the executor (runs==2). PARTIAL (2026-10-23 re-audit): a message to a task in AUTH_REQUIRED whose executor is still running waits executor_drain_timeout and is refused UnsupportedOperation; it is received only once the executor has returned. §7.6.1's two SHOULDs conflict for one executor (keep the stream open, and accept messages meanwhile). Documented 2026-10-23 (book/src/building-agents/executor.md, \"Asking for authorization in the task\"): the conflict between the section's two SHOULDs for one run, the drain wait and the UnsupportedOperation refusal, and that an executor which should accept the next message returns after auth_required. Kept PARTIAL: the behaviour is unchanged.",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23)"
   },
   {
    "spec_line": 1945,
