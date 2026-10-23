@@ -358,6 +358,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`examples/live-model`: the SDK end to end against a real model.** A
+  check suite over any OpenAI-compatible endpoint (llama.cpp's
+  `llama-server`, vLLM, Ollama): the tool loop streamed and
+  signature-verified on JSON-RPC, HTTP+JSON, gRPC and WebSocket; a client
+  holding another key refusing the signed artifacts; a repeated
+  side-effecting call run once under its idempotency key; a one-token
+  budget exhausted; delegation under a budget; halt cancelling a working
+  run; and an approval quorum of two. Each check reports pass, fail or
+  not exercised. The README records the runs: model, quantization,
+  llama.cpp build and commands.
+
+- **SLIMRPC: every operation over the fabric, and an equivalence suite
+  against JSON-RPC** (`a2a-protocol-slimrpc`; spec §5.1, §12, §12.1).
+  `tests/operations.rs` drives ListTasks, CancelTask, SubscribeToTask and
+  the four push-config methods through the typed client, reads each error
+  path off the wire (status and type-name prefix), and checks that a
+  non-empty unsupported `A2A-Version` gets `VersionNotSupportedError`.
+  `tests/equivalence.rs` serves one `RequestHandler` over SLIMRPC and
+  JSON-RPC at once and checks equal tasks, events and cancelled tasks,
+  equal reads of one task and push config, and eight faults decoding to
+  the same `ErrorCode`. `docs/upstream/agntcy-slim-rpc-error-details.md`
+  drafts an issue for `agntcy/slim` (not filed): `RpcError::details`
+  never reaches the caller.
+
 - **Handler-wide conformance tests** (server `tests/handler_conformance/`,
   SDK `tests/binding_equivalence/`): the required-extension refusal on every
   operation through the handler, JSON-RPC and HTTP+JSON;
@@ -1470,6 +1494,24 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Behaviour Changes
 
+- **SLIMRPC: the binding takes the server at its default features, and an
+  opt-in `otlp` feature builds the SDK's `Telemetry` into `slim-node` and
+  `examples/in_process`** (`a2a-protocol-slimrpc`). The server dependency
+  was `default-features = false`, a leftover from before `tracing` and
+  `otel` were the server's defaults; a SLIMRPC call's `SERVER` span and
+  `rpc.server.call.duration` now reach the application's subscriber and
+  meter provider. With `--features otlp` the node builds `Telemetry` from
+  the `OTEL_*` environment, as every other binary does, and exits with
+  status 2 on a configuration it cannot use. `otlp` is off by default
+  because, measured, it conflicts with SLIM's own TLS: it links rustls
+  with `ring` beside SLIM's `aws-lc-rs`, so rustls picks no default
+  provider (the binaries install `aws-lc-rs`; a library user enabling
+  `otlp` must do the same), and it turns on tonic's TLS features, after
+  which tonic refuses the `https://` endpoint SLIM dials and the TLS
+  node suites hang. Test: `tests/out_of_process.rs`
+  `the_node_builds_telemetry_from_the_otel_environment` (under `otlp`; a
+  CI step runs the binding's suites with it).
+
 - **An executor's `RequestContext::activated_extensions()` lists only the
   extensions the agent card declares** (server; spec §4.6.3: an extension
   or version the agent does not support SHOULD be ignored for the
@@ -2392,6 +2434,28 @@ section "The client refuses what `a2a.proto` does not allow".
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **SLIMRPC: `A2aClient::list_push_configs` works** (`a2a-protocol-slimrpc`;
+  spec §12.1). `SlimRpcTransport` answered ListTaskPushNotificationConfigs
+  with a bare list where the typed client expects the
+  `ListPushConfigsResponse` page, so every call failed with "invalid type:
+  map, expected a sequence" and `nextPageToken` was lost. Tests:
+  `tests/operations.rs` `push_configs_round_trip_over_the_fabric`,
+  `tests/equivalence.rs` `one_task_reads_the_same_through_slimrpc_and_jsonrpc`.
+
+- **SLIMRPC: retryable errors carry the A2A error type name**
+  (`a2a-protocol-slimrpc`; SLIMRPC §6.2). `RESOURCE_EXHAUSTED` (overload,
+  rate limit) and `UNAVAILABLE` (halt, store temporarily unavailable) went
+  out with a bare message; they now carry the `InternalError: ` prefix
+  §6.2 requires on every error. Status codes are unchanged. Test:
+  `src/error_tests.rs` `retryable_errors_carry_the_a2a_type_name`.
+
+- **SLIMRPC: a call whose answer cannot be converted to protobuf is
+  recorded as failed** (`a2a-protocol-slimrpc`). The unary methods
+  converted the handler's answer after the call's span ended, so the
+  caller got `INTERNAL` while the span and `rpc.server.call.duration`
+  recorded `OK`. The conversion now runs inside the span. Test:
+  `src/server/methods/tests.rs` `an_answer_the_wire_cannot_carry_fails_its_span`.
 
 - **The WebSocket binding page states the service-parameter rules the
   dispatcher applies** (book; spec §12.3). It said a value "not valid UTF-8

@@ -1540,16 +1540,18 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:119 RestDispatcher::dispatch_unlabelled",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:37 validated_metadata",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:874 check_a2a_version",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter/validate.rs:27 validate_a2a_request"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter/validate.rs:27 validate_a2a_request",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/headers.rs:74 a2a_headers"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:217 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:352 an_unsupported_version_is_refused_over_the_fabric"
    ],
    "notes": "Every binding, the axum adapter included (validate_a2a_request middleware), answers VersionNotSupportedError.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-D)"
   },
   {
    "spec_line": 488,
@@ -1709,7 +1711,7 @@
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:114 rest_answers_a_missing_bearer_token_401_with_its_challenge",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:187 an_api_key_refusal_names_its_header_in_the_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:78 a_missing_credential_carries_its_challenge",
-    "bindings/a2a-protocol-slimrpc/src/error.rs:440 a_refused_credential_reaches_the_client_as_401_or_403",
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:241 a_refused_credential_reaches_the_client_as_401_or_403",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:316 a_refused_credential_carries_the_refusal_detail"
    ],
    "notes": "WWW-Authenticate added on HTTP bindings for 401. Since 2026-10-13 gRPC sends the same challenge as `www-authenticate` metadata on UNAUTHENTICATED, and SLIMRPC, whose errors carry no metadata, ends the message with `(WWW-Authenticate: <challenge>)`; both had dropped it. WebSocket refuses a credential per message with -32600 carrying a google.rpc.ErrorInfo whose metadata holds the challenge as `www-authenticate` (refusal_detail; websocket_binding_spec.rs a_refused_credential_carries_the_refusal_detail) (corrected 2026-10-23: the note said WebSocket sent no challenge).",
@@ -1734,7 +1736,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:187 an_api_key_refusal_names_its_header_in_the_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:78 a_missing_credential_carries_its_challenge",
-    "bindings/a2a-protocol-slimrpc/src/error.rs:440 a_refused_credential_reaches_the_client_as_401_or_403"
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:241 a_refused_credential_reaches_the_client_as_401_or_403"
    ],
    "notes": "Challenge carries the scheme (e.g. `Bearer realm=\"a2a\"`), on HTTP as a header, on gRPC as metadata and on SLIMRPC in the message (since 2026-10-13 for the last two).",
    "auditor": "B",
@@ -3059,16 +3061,18 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:37 validated_metadata",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:874 check_a2a_version",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter/validate.rs:27 validate_a2a_request",
-    "crates/a2a-protocol-server/src/dispatch/version.rs:105 validate_version_header"
+    "crates/a2a-protocol-server/src/dispatch/version.rs:105 validate_version_header",
+    "bindings/a2a-protocol-slimrpc/src/server/methods/headers.rs:74 a2a_headers"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:217 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:352 an_unsupported_version_is_refused_over_the_fabric"
    ],
    "notes": "The axum adapter now validates A2A-Version like the other bindings.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-D)"
   },
   {
    "spec_line": 739,
@@ -4005,7 +4009,7 @@
     "spec/slimrpc_v1/slimrpc.md:210 \"A2A Error to SLIMRPC Code Mapping\""
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix"
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:16 every_error_code_round_trips_through_the_message_prefix"
    ],
    "notes": "WebSocket reuses the JSON-RPC codes verbatim, documented in its binding spec §5. Remaining: SLIMRPC's RpcCode mapping for PushNotSupported/UnsupportedOperation/VersionNotSupported (UNIMPLEMENTED) differs from A2A §5.4's gRPC column (FAILED_PRECONDITION); this is the SLIMRPC spec's own mapping (2977, maintainer/upstream). Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §12/§5.4 row, approved): UNIMPLEMENTED preserves the meaning the A2A types carry (the operation is not available here), as SLIMRPC's own canonical mapping requires; the difference from the gRPC column is for the maintainer to report upstream (draft prepared, not filed).",
    "auditor": "C",
@@ -4026,7 +4030,7 @@
     "bindings/a2a-protocol-slimrpc/src/error.rs:109 error_code_to_rpc_code"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:330 status_codes_follow_the_slimrpc_table",
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:91 status_codes_follow_the_slimrpc_table",
     "crates/a2a-protocol-server/tests/websocket_binding_spec.rs:150 refusals_carry_the_documented_codes"
    ],
    "notes": "Re-examined 2026-10-18, PARTIAL -> TESTED: for both custom bindings this SDK provides, its documentation carries a table of every A2A error: the WebSocket binding specification §5, and since 2026-10-18 a full fourteen-row table in the SLIMRPC crate's README, whose three rows SLIMRPC's own §6.1 omits (-32007, -32008, -32009) taking A2A §5.4's gRPC code; each is pinned by a test. What remains is upstream's, not this SDK's: the vendored SLIMRPC specification's table still lacks those three rows (docs/upstream/slimrpc-a2a-error-mapping-report.md, held by the maintainer).",
@@ -7105,12 +7109,15 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1006 process_ws_message"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:330 status_codes_follow_the_slimrpc_table"
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:91 status_codes_follow_the_slimrpc_table",
+    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:135 the_same_requests_get_the_same_answers_on_slimrpc_and_jsonrpc",
+    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:175 one_task_reads_the_same_through_slimrpc_and_jsonrpc",
+    "bindings/a2a-protocol-slimrpc/tests/equivalence.rs:246 every_fault_is_the_same_a2a_error_on_slimrpc_and_jsonrpc"
    ],
    "notes": "SLIMRPC sends PushNotificationNotSupported and UnsupportedOperation as UNIMPLEMENTED where A2A §5.4's gRPC column says FAILED_PRECONDITION. This is the SLIMRPC spec's own §6.1 'canonical mapping' (a MUST), which the binding now follows exactly; the conflict is between the two specifications, not an implementation defect, and is left PARTIAL until upstream resolves it. The stale 'identical to dispatch/grpc' comment was rewritten. Reclassified PARTIAL to TESTED on 2026-10-14 (audit register, the §12/§5.4 row, approved): the text asks for an equivalent mapping that preserves each error's meaning, which the SLIMRPC mapping does, not for the gRPC column itself. The conflict between the two specifications is for upstream; a report is drafted for the maintainer, not filed.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-D)"
   },
   {
    "spec_line": 2983,
@@ -7122,17 +7129,24 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1006 process_ws_message",
-    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:85 register_a2a_methods"
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:88 register_a2a_methods",
+    "bindings/a2a-protocol-slimrpc/src/client/push_config.rs:72 list_push_configs"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2394 ws_push_config_methods_routed",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2567 ws_get_extended_agent_card_routed",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2155 ws_send_streaming_message_events",
-    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:93 every_spec_method_is_registered"
+    "bindings/a2a-protocol-slimrpc/tests/e2e.rs:93 every_spec_method_is_registered",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:63 list_tasks_lists_the_tasks_made_over_the_fabric",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:114 cancel_task_cancels_over_the_fabric",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:164 subscribe_to_task_follows_a_task_over_the_fabric",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:222 push_configs_round_trip_over_the_fabric",
+    "bindings/a2a-protocol-slimrpc/tests/operations.rs:330 push_configs_are_refused_by_an_agent_without_push"
    ],
-   "notes": "Both bindings route all 11 v1.0 methods to the shared RequestHandler. WebSocket refuses the v0.3 alias `message/stream` with MethodNotFound, as it does every v0.3 name (process_ws_message), and ws_legacy_method_names_rejected covers message/send, message/stream, tasks/list and tasks/get (corrected 2026-10-23: the note said the alias was accepted and untested; it was removed on 2026-10-12, see §5.1).",
+   "notes": "Both bindings route all 11 v1.0 methods to the shared RequestHandler. WebSocket refuses the v0.3 alias `message/stream` with MethodNotFound, as it does every v0.3 name (process_ws_message), and ws_legacy_method_names_rejected covers message/send, message/stream, tasks/list and tasks/get (corrected 2026-10-23: the note said the alias was accepted and untested; it was removed on 2026-10-12, see §5.1). SLIMRPC: every operation is driven over the fabric through the typed client (tests/operations.rs, 2026-10-23), which found and fixed ListTaskPushNotificationConfigs answering a bare list instead of the page.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-D)"
   },
   {
    "spec_line": 2984,
@@ -7285,7 +7299,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1939 ws_get_task_not_found",
-    "bindings/a2a-protocol-slimrpc/src/error.rs:255 every_error_code_round_trips_through_the_message_prefix",
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:16 every_error_code_round_trips_through_the_message_prefix",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:213 a2a_errors_keep_their_identity_across_the_fabric"
    ],
    "notes": "",
@@ -7310,12 +7324,13 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2512 ws_unary_error_carries_error_info",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2789 ws_lagged_stream_reports_server_error_code",
-    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2539 ws_invalid_params_name_the_field"
+    "crates/a2a-protocol-server/src/dispatch/websocket.rs:2539 ws_invalid_params_name_the_field",
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:162 retryable_errors_carry_the_a2a_type_name"
    ],
-   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. A SLIMRPC multicast member that falls behind is handed the typed streamLagged error since 2026-10-14 (audit register R66); it was a Transport error carrying only text. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details. Its spec lists optional details (§6.2) without an encoding, and agntcy-slim-rpc sends an error's code and message only: its error send (send_error_to in 3.4.1, which the binding uses since R13 and is the latest release, rpc_session.rs:152-174; send_error_for_rpc in 2.3.0 before it) drops details, and the receiver builds the error with none (channel.rs:704-714; both read 2026-10-15). Upstream report: docs/upstream/slimrpc-a2a-error-mapping-report.md (held). Re-examined 2026-10-18, kept PARTIAL/low: SLIMRPC errors keep their A2A identity through the type-name prefix but lose their details, because agntcy-slim-rpc 3.4.1, the newest release, sends only a code and a message (read 2026-10-15). It closes when the library carries details; the report is held. Re-checked 2026-10-20: agntcy-slim-rpc 3.4.5 is the newest release and its src/ is byte-identical to 3.4.2 (diff -rq empty); send_error_to (rpc_session.rs:152-174) still publishes only the message bytes with status-code and rpc-id metadata, so RpcError's details field never leaves the process. The binding cannot add metadata to that frame. The one in-repo route is to carry the details inside the message text, after the type-name prefix SLIMRPC §6.2 defines, which keeps the prefix but makes the message no longer the human-readable string §6.2 describes and puts JSON in front of every other SLIMRPC peer's users; that trade is the maintainer's, and is not built. Re-checked 2026-10-23: the binding's lockfile now resolves agntcy-slim-rpc 3.4.6 (bindings/a2a-protocol-slimrpc/Cargo.lock), so the earlier remark that 3.4.3+ could not be locked no longer holds. 3.4.6's RpcError has a details field (src/error.rs RpcError::with_details), but send_error_to (src/rpc_session.rs:152-174) still publishes only the message with status-code and rpc-id metadata, the server sends handler errors through it (src/server.rs:382, :486) and receivers rebuild errors with RpcError::new(code, message) (src/channel.rs:715, src/stream_types.rs:119), so details still never reach a client. Kept PARTIAL.",
+   "notes": "WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker instead of -32000. A SLIMRPC multicast member that falls behind is handed the typed streamLagged error since 2026-10-14 (audit register R66); it was a Transport error carrying only text. Remaining (why PARTIAL/low): SLIMRPC keeps identity through its TypeNameError: message prefix but carries no details. Its spec lists optional details (§6.2) without an encoding, and agntcy-slim-rpc sends an error's code and message only: its error send (send_error_to in 3.4.1, which the binding uses since R13 and is the latest release, rpc_session.rs:152-174; send_error_for_rpc in 2.3.0 before it) drops details, and the receiver builds the error with none (channel.rs:704-714; both read 2026-10-15). Upstream report: docs/upstream/slimrpc-a2a-error-mapping-report.md (held). Re-examined 2026-10-18, kept PARTIAL/low: SLIMRPC errors keep their A2A identity through the type-name prefix but lose their details, because agntcy-slim-rpc 3.4.1, the newest release, sends only a code and a message (read 2026-10-15). It closes when the library carries details; the report is held. Re-checked 2026-10-20: agntcy-slim-rpc 3.4.5 is the newest release and its src/ is byte-identical to 3.4.2 (diff -rq empty); send_error_to (rpc_session.rs:152-174) still publishes only the message bytes with status-code and rpc-id metadata, so RpcError's details field never leaves the process. The binding cannot add metadata to that frame. The one in-repo route is to carry the details inside the message text, after the type-name prefix SLIMRPC §6.2 defines, which keeps the prefix but makes the message no longer the human-readable string §6.2 describes and puts JSON in front of every other SLIMRPC peer's users; that trade is the maintainer's, and is not built. Re-checked 2026-10-23: the binding's lockfile now resolves agntcy-slim-rpc 3.4.6 (bindings/a2a-protocol-slimrpc/Cargo.lock), so the earlier remark that 3.4.3+ could not be locked no longer holds. 3.4.6's RpcError has a details field (src/error.rs RpcError::with_details), but send_error_to (src/rpc_session.rs:152-174) still publishes only the message with status-code and rpc-id metadata, the server sends handler errors through it (src/server.rs:382, :486) and receivers rebuild errors with RpcError::new(code, message) (src/channel.rs:715, src/stream_types.rs:119), so details still never reach a client. Kept PARTIAL. Updated 2026-10-23 (WP-D): the type-name prefix now also covers the retryable errors (RESOURCE_EXHAUSTED, UNAVAILABLE). The details gap is drafted for upstream in docs/upstream/agntcy-slim-rpc-error-details.md (agntcy-slim-rpc 3.4.6, the lockfile's and the newest on crates.io; not filed). Kept PARTIAL.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-D)"
   },
   {
    "spec_line": 3017,
@@ -7329,8 +7344,8 @@
     "bindings/a2a-protocol-slimrpc/src/error.rs:109 error_code_to_rpc_code"
    ],
    "test_evidence": [
-    "bindings/a2a-protocol-slimrpc/src/error.rs:330 status_codes_follow_the_slimrpc_table",
-    "bindings/a2a-protocol-slimrpc/src/error.rs:381 a_rate_limit_refusal_maps_to_resource_exhausted"
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:91 status_codes_follow_the_slimrpc_table",
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:142 a_rate_limit_refusal_maps_to_resource_exhausted"
    ],
    "notes": "The binding follows the SLIMRPC spec's §6.1 table row by row (ParseError INTERNAL, ContentTypeNotSupported/Push/UnsupportedOperation UNIMPLEMENTED) and A2A §5.4's gRPC code for the three errors the table omits (FAILED_PRECONDITION). The table's UNKNOWN row has no case to apply to: every ServerError converts to an A2A code. Where the SLIMRPC table and A2A §5.4's gRPC column disagree (Push, UnsupportedOperation), the binding's own table is followed; see the §12 entry at line 2977.",
    "auditor": "E",
@@ -7394,7 +7409,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket/stream.rs:22 stream_events",
-    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:433 event_stream"
+    "bindings/a2a-protocol-slimrpc/src/server/methods/mod.rs:458 event_stream"
    ],
    "test_evidence": [],
    "notes": "Both custom bindings support streaming. Re-examined 2026-10-18, kept: conditional on a binding without streaming; both custom bindings this SDK provides stream (websocket_binding_spec.rs a_stream_is_frames_then_the_marker; SLIMRPC e2e streaming_send_delivers_events_and_terminates). Re-verified against the code 2026-10-20 (ledger audit): the WebSocket citation named the push-config list handler; it now names stream_events.",
@@ -7427,7 +7442,7 @@
     "crates/a2a-protocol-sdk/tests/auth_rejection_e2e.rs:141 a_refused_token_is_a_401_over_websocket",
     "crates/a2a-protocol-client/src/transport/tests.rs:261 a_websocket_refusal_is_the_http_status",
     "crates/a2a-protocol-client/src/transport/tests.rs:275 anything_else_stays_a_protocol_error",
-    "bindings/a2a-protocol-slimrpc/src/error.rs:440 a_refused_credential_reaches_the_client_as_401_or_403",
+    "bindings/a2a-protocol-slimrpc/src/error_tests.rs:241 a_refused_credential_reaches_the_client_as_401_or_403",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:384 a_jwt_identity_carries_an_a2a_call",
     "bindings/a2a-protocol-slimrpc/tests/spiffe.rs:94 a_spiffe_identity_carries_an_a2a_call"
    ],
