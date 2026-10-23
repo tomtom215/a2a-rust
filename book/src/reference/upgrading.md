@@ -200,6 +200,35 @@ URLs (user information, or a query parameter named like a secret such as
 `InvalidParams` on `authentication.credentials`; leave `authentication` out
 for an unauthenticated webhook.
 
+### An authenticator needs a scheme declared in the public card
+
+Spec §13.3: agents "MUST authenticate requests using one of the schemes
+declared in the public `AgentCard.securitySchemes`". `build()` now refuses an
+authenticating interceptor (bundled or custom) behind a public card that
+declares no `securitySchemes`, and a scheme declared on the extended card but
+not, the same, on the public one. Declare the scheme your interceptor checks
+in the public card: an `httpAuthSecurityScheme` with scheme `Bearer` for
+`BearerTokenAuthInterceptor` or `JwtAuthInterceptor`, an
+`apiKeySecurityScheme` naming the header for `ApiKeyAuthInterceptor`, a
+`mutualTlsSecurityScheme` for `MutualTlsAuthInterceptor`
+([Authentication](../building-agents/authentication.md#api-key--static-bearer-token)
+shows one), and repeat any extended-card scheme in the public card.
+
+### A push config the sender cannot authenticate is not delivered
+
+Spec §13.2: agents MUST send the credentials `authentication` specifies.
+`HttpPushSender::send` used to deliver with no `Authorization` header when a
+stored config named a scheme other than `Bearer` or `Basic`, or no
+credentials; it now refuses the delivery with `InvalidParams`. Creation
+already refused such configs, so only one stored another way is affected.
+
+### `sign_agent_card` and `sign_agent_card_ed25519` are gone
+
+They took `key_id: Option<&str>`, and `None` wrote a protected header
+without `kid`, which spec §8.4.2 requires. Call `sign_card_es256(card, key,
+key_id)` or `sign_card_ed25519(card, key, key_id)`, whose `key_id` is a
+`&str`; the signature is otherwise the same.
+
 ### `ConvertError` and `SseParseError` are `#[non_exhaustive]`
 
 Build a `ConvertError` with `ConvertError::new(field, reason)`, and give a
@@ -398,6 +427,16 @@ callers are meant to see each other's tasks, say so:
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+#         .with_security_schemes(std::collections::HashMap::from([(
+#             "bearer".to_owned(),
+#             a2a_protocol_types::security::SecurityScheme::Http(
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
+#                     scheme: "Bearer".to_owned(),
+#                     description: None,
+#                     bearer_format: None,
+#                 },
+#             ),
+#         )]))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_sdk::server::InMemoryTaskStore;
