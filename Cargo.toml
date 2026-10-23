@@ -21,6 +21,7 @@ members = [
     "examples/incident-response",
     "examples/mcp-agent",
     "examples/tool-loop-agent",
+    "examples/live-model",
     "examples/mcp-bridge",
     "examples/resilient-agent",
     "examples/swarm",
