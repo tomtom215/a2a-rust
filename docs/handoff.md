@@ -22,34 +22,43 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Working branch:** `claude/jolly-hypatia-lsr7uv`, started 2026-10-20
-  from `main` at `6c90d0b` (pull request #173 merged that day), pushed.
-  `git log 6c90d0b..` lists its commits; each message says what it changed
-  and how it was verified. Wrapped up for a pull request on 2026-10-22,
-  because container restarts kept killing long work: the study's raw runs
-  were moved out of scratch space into the repository and the method
-  committed as a draft; the study then finished (*Next*, item 2). Pull
-  request #178 is open with the `mutation-test` label. The commits after it
-  went up fix what its CI found, each message naming the check. From
-  `1ebec172` on they add tests for the mutants each labelled incremental
-  mutation run left surviving (51, then 9, then 2 and one equivalent
-  mutant skipped with its argument, then 13 and a second equivalent on
-  `fcd73c5e`, the first run after `640773fc`, then 1 on `9557b24d`; each
-  commit lists its batch),
-  and `1ebec172` fixes the kill-switch harness passing a store that widened
-  a tenant's halt. Before `640773fc` a measurement's timeout scored a
-  different set of server mutants caught in each run, which is why each
-  run found survivors the last had not; on `fcd73c5e` all 571 catches in
-  the 19 finished server shards were real test failures, and on `9557b24d`
-  612 of 614, the other two a mutant's own test hanging and a mutant whose
-  killing tests a PostgreSQL timeout cancelled (checked by hand). Also
-  pending in `.github/workflows/`: the Regression Gate's 150% override for
-  the payload serialize benchmarks (`b6bd6350`; the swing is the runner's,
-  measured on byte-identical binaries) and a 1800s mutation build timeout
-  (`231f7d8e`). The crypto-interop gate `bb7518b3` added had no defect
-  injection, so `scripts/prove_gates_fail.sh` exited 2; it now has one (a
-  push config sealed under a context other than the stated one), as a
-  follow-up to this pull request.
+- **Working branch:** `claude/zealous-fermat-f4kg9z`, started 2026-10-23
+  from `main` at `4cadc2af` (pull request #178 merged that day), to make
+  0.15.0 release-ready. Not pushed yet: the maintainer asked for fixes to
+  be batched and pushed only after a long local verification, then the
+  labelled mutation run. `git log 4cadc2af..` lists its commits; each
+  message says what it changed and how it was verified. So far:
+  - the tool-calling study scored, audited by reading every answer, and
+    published (`docs/tool-calling-study.md`, `34f579d`);
+  - every dependency refreshed in all nine lockfiles, the Python
+    requirements, Actions, Go, npm and Maven pins; MSRV 1.94, which sqlx
+    0.9 requires (`7a73bdc`; `STABILITY.md` §5 allows the raise);
+  - Prometheus recording and alerting rules (with `promtool` tests) and
+    two Grafana dashboards, built from a live Prometheus 3.15.1 fed by the
+    repository's own binaries, directly over OTLP and through an
+    OpenTelemetry Collector (`deploy/observability/`, `c372919`);
+  - OpenTelemetry: a `service.instance.id` per process (`755b121`), export
+    wherever an endpoint is configured in every binary (`988fb69`), the
+    tool loop's `GenAI` metrics and the rest of its `chat` span
+    (`d118aaf`);
+  - the spec ledger cites code by symbol at its definition line, and the
+    checker verifies it (`6202a56`);
+  - a re-audit of all 510 ledger entries against the v1.0.1 text found
+    273 confirmed as written; its defects are being fixed in work
+    packages. WP-A (server security: §13.3 schemes on the public card,
+    §13.2 push credentials, push config `Debug`, the kid-optional signers
+    removed, card `max-age` on WebSocket and gRPC, eleven security tests
+    that now test what they are cited for) and WP-B (the client validates
+    every object and card it receives against a2a.proto's REQUIRED
+    fields; the gRPC conversion refuses absent ones; wire forms) are
+    merged. WP-C (handler-wide conformance) and WP-D (SLIMRPC) are in
+    progress in worktrees.
+- **Removing `sign_agent_card*` in 0.15.0 waives `STABILITY.md` §3**'s
+  one-minor deprecation window: they shipped in 0.14.1 and were deprecated
+  only in 0.15.0. Kept, because the maintainer asked for every known break
+  to land in 0.15.0 (2026-10-23); the CHANGELOG's Breaking entry says so.
+  The commit (`types: remove the kid-optional card signers`) stands alone
+  if the maintainer decides otherwise.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the
@@ -125,7 +134,7 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-21: TESTED 455, APPLICATION 32,
+  authority on the counts (2026-10-23, after WP-A and WP-B: TESTED 455, APPLICATION 32,
   NOT_APPLICABLE 20, PARTIAL 3; 510 entries). The three PARTIAL entries,
   each short of a MUST for a stated reason: §3.5.2, a stream lagging past
   the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
@@ -136,17 +145,17 @@ only: when something here is done, delete it rather than annotating it.
   the specification text on 2026-10-20 (*Next*, item 1). The checker now
   also reads `impl_evidence`: a cited file must exist, a cited line be
   inside it, a named symbol appear in it.
-- **Ledger citations drift:** the checker verifies test names, not line
-  text, so any edit above a cited line moves its citation silently. After
-  editing a cited file, re-derive test lines by name and map
-  `impl_evidence` lines by their text in the version they came from
-  (2026-10-20: a three-way merge re-derived 2,341 that way; one, §5.1's
-  `grpc/dispatcher.rs:888`, had pointed past the end of a 444-line file
-  since `7deff577`).
-- **CI on `main` at `6c90d0b`:** every workflow green except CI, cancelled:
-  `Example surface coverage` ran out of its 20 minutes compiling `swarm`,
-  every earlier step green. Split into two jobs on this branch
-  (`example-surface-ops`).
+- **Ledger citations:** since `6202a56` every Rust citation is
+  `path:line Symbol` at the symbol's definition line (non-Rust:
+  `path:line "fragment"`), and the checker verifies that the symbol is
+  defined at that line. After a code move, `check_spec_ledger.py
+  --fix-lines` re-points the citations it can; where a symbol is defined
+  twice in a file (`TryFrom` both ways) it cannot, and each must be
+  re-pointed by hand to the same impl it named before (2026-10-23: 23
+  after WP-B, each checked against the old file).
+- **CI on `main` at `4cadc2af`:** all fifteen push workflows green
+  (checked 2026-10-23). The scheduled OSV-Scanner runs failed on the older
+  head `6c90d0b`, before the merge; the merge's push run passed.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
 
@@ -165,23 +174,18 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **Finish the tool-calling study.** It answers whether this SDK's loop
-   changes what a model does with tools, against the same model asked
-   directly: direct and SDK arms over four GGUFs, 30 seeds of each of two
-   prompts a cell, 16 cells. The runs are in
-   `scripts/tool_calling_study/runs/`, whose README gives each cell's
-   state and provenance; `docs/tool-calling-study.md` holds the method,
-   marked as a draft with no results. All 16 cells completed on
-   2026-10-22, every SDK cell with the one binary `01dce94e…`; 5 runs
-   recorded errors (listed in the runs README). In order:
-   1. Score with `score.py`, then audit every answer against the rubric
-      by reading it, recording each disagreement with the scorer.
-   2. Write the results into the doc with Wilson intervals, and remove its
-      draft notice.
-3. **OpenTelemetry, batch B:** telemetry initialised in every example,
-   `tck/sut`, the ITK agents and the CLI; streaming span lifetime; a span per
-   WebSocket frame; a client call-duration metric; store spans; SLIMRPC's
-   gRPC error classification. Started 2026-10-20.
+2. **Merge WP-C and WP-D** when they report (their CHANGELOG fragments and
+   ledger rows; re-point moved citations, checking each one's text), then
+   the rest of the conformance list: the PARTIAL entries, MAY entries
+   relabelled SUPPORTED, and the TCK baseline (the drafts for
+   CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
+3. **OpenTelemetry, still open:** store spans and
+   `db.client.operation.duration`, delegation spans, push
+   `http.client.request.duration` and the webhook receiver honouring
+   `traceparent`, refusal and agent-card spans, gRPC conversion failures
+   recorded as failures, instruments bound when built rather than when
+   recorded (`OtelMetrics`), a test that logs carry the trace id; then
+   `GenAI` panels on the dashboards.
 4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
    and the incremental gate across 20 (`mutants.yml`, measured from runs
    39193157308 and 39343090044). The three 2026-10-19 survivors were
@@ -320,18 +324,13 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 ## Waivers and their removal tests
 
-The SLIMRPC binding's `deny.toml` ignores one entry since 2026-10-19: the
-yanked `mls-rs-crypto-awslc` 0.25.1, which its comment explains (0.25.0
-would bring back four rustls advisories). **Never run a blanket `cargo
-update` in the binding:** it cannot keep a yanked version, so it downgrades
-agntcy-slim-* (3.4.3 to 3.4.2), aws-lc-rs and rustls (0.23.46 to 0.23.43)
-back into those advisories. Update named packages with `cargo update -p`.
-On 2026-10-20 agntcy-slim-rpc 3.4.5 still could not be taken: every
-agntcy-slim-auth after 0.17.6 requires the yanked `^0.25.1`.
-The root `deny.toml` ignores nothing since 2026-10-20, when the
-examples moved to genai 0.7 and `paste` left the graph. The root
-`osv-scanner.toml` keeps RUSTSEC-2023-0071 (`rsa`, in `Cargo.lock` through
-`sqlx-mysql` but resolved by no feature; re-checked 2026-10-20).
+No waivers anywhere since 2026-10-23. The SLIMRPC binding's `deny.toml`
+ignored the yanked `mls-rs-crypto-awslc` 0.25.1 until agntcy-slim-mls 0.5.1
+accepted 0.26; a plain `cargo update` in the binding then took
+agntcy-slim-rpc 3.4.6 and kept rustls at 0.23.46 (its comment has the
+history). The root `osv-scanner.toml` dropped RUSTSEC-2023-0071 when sqlx
+0.9 removed `rsa` from every lockfile. Before updating the binding, still
+read `cargo deny check advisories` after the update, not before.
 
 ## Decisions the maintainer made
 
@@ -468,11 +467,18 @@ into this file: the commit that records it changes it.
   The `postgres` role's password is not always `postgres` in a fresh
   container (scram auth refused it on 2026-10-20): set it with
   `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`.
-- **llama.cpp** b11751 (`8466395`) is built at `/opt/llama/src/build/bin`;
-  the study's GGUFs are in `/opt/models` (hashes in the study). Use
-  `-c 8192` (the default context sized the KV cache to ~4.6 GB and the OOM
-  killer took the server), and send one request at a time to a server whose
-  results must replay.
+- **llama.cpp:** b11836 (`f5027fb`) at `/opt/llama/src/build/bin`, and
+  the study's b11751 (`8466395`) at `/opt/llama/old`; GGUFs in
+  `/opt/models` (hashes in the study). Use `-c 8192` (the default context
+  sized the KV cache to ~4.6 GB and the OOM killer took the server), and
+  send one request at a time to a server whose results must replay. A
+  replay is host-dependent: the same binary and seed gave different
+  answers on a 2.10 GHz and a 2.80 GHz host (`GGML_NATIVE`), which is
+  what the study's uptime gap turned out to be.
+- **A local OTLP collector breaks one test:**
+  `otel_pipeline_default_endpoint` expects its flush to the default
+  endpoint to fail, and fails whenever something listens on 4317. Stop the
+  `deploy/observability/` stack before running the server suite.
 - **No Docker daemon** in the cloud container, so `itk/docker-compose.yml`
   cannot be run here.
 - `pkill -f` and `pgrep -f` match their own shell's command line, which
@@ -505,8 +511,9 @@ into this file: the commit that records it changes it.
   mutation filter beside the soak binaries.
 - A test passing and `cargo semver-checks` passing do not show a serde
   change preserves behaviour; parse fixed inputs with both builds.
-- The ledger checker verifies test names, not line text: after code moves,
-  re-point `impl_evidence` citations from a diff and check each one's text.
+- After code moves, re-point ledger citations with `--fix-lines` and
+  check by hand every one it cannot place: the checker knows where a
+  symbol is defined, not which of two same-named impls a citation meant.
 - Count before writing a number into a document, and say what was counted.
 - A `compile_fail` doctest needs a control that compiles.
 - A re-run after a fix must cover the binary that failed, not only the files
@@ -562,6 +569,18 @@ into this file: the commit that records it changes it.
   long driver resumable and check that its server is ready before each
   chunk (a restart script that did not filled two cells with failed runs
   in seconds, 2026-10-22).
+
+- A subagent's "fails at HEAD too" is a claim about the environment as
+  much as the code: two agents reported `otel_pipeline_default_endpoint`
+  as pre-existing; it failed because a collector of mine held port 4317
+  (2026-10-23).
+- An agent's report written as an untracked file in its worktree is
+  deleted with the worktree: copy what is not yet applied before
+  `git worktree remove --force`.
+- A stricter client breaks the repository's own fixtures outside the
+  crate it changed: after WP-B, the CLI's and the MCP bridge's tests
+  served cards without skills. Run the whole workspace, not the crates a
+  package touched, before merging it.
 
 ## History
 
