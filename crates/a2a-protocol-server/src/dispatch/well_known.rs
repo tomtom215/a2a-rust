@@ -23,10 +23,9 @@ use crate::handler::RequestHandler;
 /// The well-known path of the agent card (spec §8.2).
 pub const PATH: &str = "/.well-known/agent-card.json";
 
-/// The handler serving `handler`'s agent card, if it has one, with the HTTP
-/// dispatchers' default `max-age`.
-pub fn card_handler(handler: &RequestHandler) -> Option<Arc<StaticAgentCardHandler>> {
-    let max_age = super::DispatchConfig::default().agent_card_max_age;
+/// The handler serving `handler`'s agent card, if it has one, with
+/// `Cache-Control: public, max-age=<max_age>` (spec §8.6.1).
+pub fn card_handler(handler: &RequestHandler, max_age: u32) -> Option<Arc<StaticAgentCardHandler>> {
     handler
         .agent_card
         .as_ref()

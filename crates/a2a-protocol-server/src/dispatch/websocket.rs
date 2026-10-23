@@ -145,6 +145,7 @@ pub struct WebSocketDispatcher {
     task_grace: Duration,
     drain_timeout: Duration,
     origins: origin::Origins,
+    agent_card_max_age: u32,
     #[cfg(feature = "tls-rustls")]
     tls: Option<crate::tls::Tls>,
 }
@@ -175,9 +176,21 @@ impl WebSocketDispatcher {
             task_grace: crate::serve::DEFAULT_TASK_GRACE,
             drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
             origins: origin::Origins::ANY,
+            agent_card_max_age: super::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "tls-rustls")]
             tls: None,
         }
+    }
+
+    /// Sets the `Cache-Control: max-age`, in seconds, this listener serves
+    /// the agent card with (spec §8.6.1: "appropriate for the agent's
+    /// expected update frequency"). Default 3600, as
+    /// [`DispatchConfig::with_agent_card_max_age`](super::DispatchConfig::with_agent_card_max_age)
+    /// for the HTTP dispatchers. Until 2026-10-23 it was 3600 here, fixed.
+    #[must_use]
+    pub const fn with_agent_card_max_age(mut self, seconds: u32) -> Self {
+        self.agent_card_max_age = seconds;
+        self
     }
 
     /// Serves `wss://`: every connection is a TLS handshake first, with
@@ -521,7 +534,11 @@ impl WebSocketDispatcher {
             let (card, seen) = card::read_card_request(&mut session, self.handshake_timeout).await;
             let io = WsIo::Tls(Box::new(io::Replay::new(seen, session)));
             if card {
-                card::serve(io, super::well_known::card_handler(&self.handler)).await;
+                card::serve(
+                    io,
+                    super::well_known::card_handler(&self.handler, self.agent_card_max_age),
+                )
+                .await;
                 return Ok(());
             }
             return self.upgrade(io, peer, certificate, closing).await;
@@ -530,7 +547,11 @@ impl WebSocketDispatcher {
         // Spec §8.1: the agent card, at its well-known path, on this listener
         // too. Anything else is the WebSocket handshake.
         if card::asks_for_card(&stream, self.handshake_timeout).await {
-            card::serve(stream, super::well_known::card_handler(&self.handler)).await;
+            card::serve(
+                stream,
+                super::well_known::card_handler(&self.handler, self.agent_card_max_age),
+            )
+            .await;
             return Ok(());
         }
         self.upgrade(WsIo::Plain(stream), peer, None, closing).await

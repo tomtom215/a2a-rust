@@ -101,6 +101,11 @@ pub struct DispatchConfig {
     pub agent_card_max_age: u32,
 }
 
+/// The default `max-age`, in seconds, of the agent card's `Cache-Control`
+/// on every listener: [`DispatchConfig::agent_card_max_age`] for the HTTP
+/// dispatchers, and `with_agent_card_max_age` on the WebSocket and gRPC ones.
+pub(crate) const DEFAULT_AGENT_CARD_MAX_AGE: u32 = 3600;
+
 impl Default for DispatchConfig {
     fn default() -> Self {
         Self {
@@ -111,7 +116,7 @@ impl Default for DispatchConfig {
             sse_channel_capacity: 64,
             max_batch_size: 100,
             require_version_header: true,
-            agent_card_max_age: 3600,
+            agent_card_max_age: DEFAULT_AGENT_CARD_MAX_AGE,
         }
     }
 }
