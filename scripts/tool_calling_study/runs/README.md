@@ -6,8 +6,16 @@
 The output of `run.py` (direct arm) and `sdk_arm.py` (SDK arm), as
 `cell.py` assembled it, 2026-10-20 to 2026-10-22. One file per cell:
 `{arm}_{model}_{thinking}.json`, 30 seeds of each of two prompts
-(`billing`, `checkout`), 60 runs a cell. All 16 cells are complete. The method is in
-`docs/tool-calling-study.md`; nothing here is scored yet.
+(`billing`, `checkout`), 60 runs a cell. All 16 cells are complete. The method,
+the scored and audited results and the follow-up are in
+`docs/tool-calling-study.md`; the audit's 98 corrections to `score.py` are in
+`../audit.json`, one per run with its reason.
+
+`followup/` holds the 2026-10-23 uptime follow-up: the direct arm's checkout
+prompt on Qwen3-1.7B, thinking off, seeds 2000-2029, on another host, under
+the study's llama.cpp (`*_rig_b11751.json`) and a newer one with each result
+key order (`*_rig.json`, `*_serde.json`). Each file records its harness hash,
+build and `key_order`.
 
 These files were kept in the container's scratch space while the study
 ran and were committed as it went so that a restart could not lose them.

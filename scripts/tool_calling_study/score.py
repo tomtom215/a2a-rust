@@ -19,8 +19,11 @@ Every run is also given one failure class, the first that applies:
   service the inventory does not have, in a run that never recovered),
   wrong_service (billing answered with another service's figures), other.
 
-Usage: score.py FILE... ; prints one row per (file, prompt) and, with
---runs, each run's class and answer for the audit.
+Usage: score.py [--runs] [--audit audit.json] FILE... ; prints one row per
+(file, prompt) and, with --runs, each run's class and answer for the audit.
+With --audit, each run named in that file takes its audited verdict instead
+of this script's, and each row also gives this script's own count; the file
+records both verdicts and the reason for every run where they differ.
 """
 import json
 import math
@@ -95,22 +98,33 @@ def classify(run):
 
 
 def main():
-    show = "--runs" in sys.argv
-    files = [f for f in sys.argv[1:] if f != "--runs"]
+    args = sys.argv[1:]
+    show = "--runs" in args
+    audit = {}
+    if "--audit" in args:
+        i = args.index("--audit")
+        for o in json.load(open(args[i + 1]))["overrides"]:
+            audit[(o["cell"], o["kind"], o["seed"])] = tuple(o["audited"])
+        del args[i:i + 2]
+    files = [f for f in args if f != "--runs"]
     print(f"{'arm':6} {'label':22} {'think':5} {'prompt':8} {'correct':>9} {'95% CI':>15} "
-          f"{'uptime wrong':>12}  failure classes")
+          f"{'uptime wrong':>12}  {'scorer':>7}  failure classes")
     for path in files:
         d = json.load(open(path))
         arm = d.get("arm", "direct")
+        cell = path.rsplit("/", 1)[-1].removesuffix(".json")
         for kind in ("billing", "checkout"):
             runs = [r for r in d["runs"] if r["kind"] == kind]
             if not runs:
                 continue
             classes = {}
             k = 0
+            raw = 0
             uw = 0
             for r in runs:
                 ok, cls = classify(r)
+                raw += ok
+                ok, cls = audit.get((cell, kind, r["seed"]), (ok, cls))
                 k += ok
                 classes[cls] = classes.get(cls, 0) + 1
                 if kind == "checkout" and r["final"] and uptime_wrong(r["final"]):
@@ -121,7 +135,7 @@ def main():
             fails = ", ".join(f"{c} {n}" for c, n in sorted(classes.items()) if c != "correct")
             uptime = f"{uw}/{len(runs)}" if kind == "checkout" else "-"
             print(f"{arm:6} {d['label']:22} {d['thinking']:5} {kind:8} {k:>4}/{len(runs):<4} "
-                  f"[{lo:.2f}, {hi:.2f}] {uptime:>12}  {fails}")
+                  f"[{lo:.2f}, {hi:.2f}] {uptime:>12}  {raw:>7}  {fails}")
 
 
 if __name__ == "__main__":

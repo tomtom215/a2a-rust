@@ -10,6 +10,11 @@ every turn is recorded whole, so any run can be replayed and re-scored.
 
 Usage:
   run.py --port P --label L --thinking on|off --n N --seed-base S --out FILE
+         [--prompts billing,checkout] [--key-order rig|serde]
+
+--key-order serde writes service_status's result in the SDK arm's key order
+(uptimeSeconds before version, as serde_json without preserve_order does);
+the default is rig-agent's. It exists for the study's key-order follow-up.
 
 Writes FILE as JSON: the server's /props facts (chat-template hash, model
 path, build), the sampler, and per run the prompt, seed, every turn's
@@ -61,6 +66,9 @@ SAMPLER = {"temperature": 0.8, "top_k": 40, "top_p": 0.95, "min_p": 0.05}
 TURN_TIMEOUT_SECS = 1800
 
 
+KEY_ORDER = "rig"
+
+
 def invoke(name, args):
     """examples/rig-agent/src/tools.rs invoke, including its error texts."""
     if name == "list_services":
@@ -71,9 +79,15 @@ def invoke(name, args):
             return "error: 'service_status' needs a string argument 'service'"
         for service, state, version, uptime in INVENTORY:
             if service == wanted:
-                # Key order as rig-agent writes it (insertion order).
-                return json.dumps({"service": service, "state": state, "version": version,
-                                   "uptimeSeconds": uptime}, separators=(",", ":"))
+                # Key order as rig-agent writes it (insertion order), or as
+                # the SDK arm's serde_json writes it (sorted).
+                if KEY_ORDER == "serde":
+                    status = {"service": service, "state": state, "uptimeSeconds": uptime,
+                              "version": version}
+                else:
+                    status = {"service": service, "state": state, "version": version,
+                              "uptimeSeconds": uptime}
+                return json.dumps(status, separators=(",", ":"))
         return f"error: no service named '{wanted}'; call list_services for the inventory"
     return f"error: no tool named '{name}'"
 
@@ -141,14 +155,18 @@ def main():
     ap.add_argument("--seed-base", type=int, required=True)
     ap.add_argument("--max-tokens", type=int, default=4096)
     ap.add_argument("--prompts", default="billing,checkout")
+    ap.add_argument("--key-order", choices=("rig", "serde"), default="rig")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    global KEY_ORDER
+    KEY_ORDER = a.key_order
     props = post(a.port, "/props")
     with open(__file__, "rb") as f:
         harness = hashlib.sha256(f.read()).hexdigest()
     out = {
         "label": a.label, "thinking": a.thinking, "n": a.n, "seed_base": a.seed_base,
         "max_tokens": a.max_tokens, "sampler": SAMPLER, "max_turns": MAX_TURNS,
+        "key_order": a.key_order,
         "harness_sha256": harness, "turn_timeout_secs": TURN_TIMEOUT_SECS,
         "server": {"model_path": props.get("model_path"), "build_info": props.get("build_info"),
                    "chat_template_sha256": hashlib.sha256(props.get("chat_template", "").encode()).hexdigest()},
