@@ -102,3 +102,16 @@ fn inbound_debugs_as_its_key_count_and_policy() {
         "Inbound { keys: Some(0), require_signed: true }"
     );
 }
+
+/// `Debug` says whether content is signed, and nothing of the key.
+#[test]
+fn outbound_debugs_as_whether_it_signs() {
+    assert_eq!(
+        format!("{:?}", Outbound::signing(signer())),
+        "Outbound { signs: true }"
+    );
+    assert_eq!(
+        format!("{:?}", Outbound::default()),
+        "Outbound { signs: false }"
+    );
+}

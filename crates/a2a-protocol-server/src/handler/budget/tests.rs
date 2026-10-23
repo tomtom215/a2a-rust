@@ -21,7 +21,7 @@ use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
-use super::{relabel, report, requested, turn_timeout};
+use super::{relabel, report, requested, sooner, turn_timeout};
 use crate::builder::RequestHandlerBuilder;
 use crate::error::ServerError;
 use crate::request_context::RequestContext;
@@ -214,6 +214,19 @@ fn ctx_with(budget: Option<Budget>) -> RequestContext {
         Some(b) => ctx.with_budget(BudgetHandle::start(&b)),
         None => ctx,
     }
+}
+
+/// At a tie the server's own timeout governs, so the turn is not blamed
+/// on the caller. `turn_timeout` reads the clock, so the tie is tested on
+/// the choice itself; the mutation gate found `<` as `<=` untested.
+#[test]
+fn at_a_tie_the_servers_own_timeout_governs() {
+    let t = Some(Duration::from_secs(5));
+    assert_eq!(sooner(t, t), (t, false));
+    assert_eq!(
+        sooner(Some(Duration::from_secs(4)), t),
+        (Some(Duration::from_secs(4)), true)
+    );
 }
 
 #[test]

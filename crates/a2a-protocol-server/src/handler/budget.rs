@@ -103,8 +103,15 @@ fn turn_timeout(
     if left == Some(Duration::ZERO) {
         return Err(deadline_passed());
     }
+    Ok(sooner(left, own))
+}
+
+/// The sooner of the caller's remaining time `left` and the server's own
+/// timeout, and whether it is the caller's. At a tie it is the server's own:
+/// a turn the server would have ended anyway is not blamed on the caller.
+fn sooner(left: Option<Duration>, own: Option<Duration>) -> (Option<Duration>, bool) {
     let inherited = left.is_some_and(|l| own.is_none_or(|own| l < own));
-    Ok((if inherited { left } else { own }, inherited))
+    (if inherited { left } else { own }, inherited)
 }
 
 fn relabel(

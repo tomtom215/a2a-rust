@@ -31,6 +31,8 @@ enum Flaw {
     Mute,
     /// A tenant's halt is stored as a halt on everything.
     Widens,
+    /// A remove removes every halt, answering true only the first time.
+    RemovesAll,
 }
 
 /// A store in a shared `Vec`, broken as `flaw` says.
@@ -88,6 +90,15 @@ impl HaltStore for Broken {
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         if self.flaw == Flaw::KeepsRemoved {
             return Box::pin(async { Ok(true) });
+        }
+        if self.flaw == Flaw::RemovesAll {
+            let removed = {
+                let mut halts = self.halts.lock().unwrap();
+                let any = !halts.is_empty();
+                halts.clear();
+                any
+            };
+            return Box::pin(async move { Ok(removed) });
         }
         let key = self.key(scope);
         let removed = {
@@ -153,6 +164,7 @@ async fn each_flaw_is_named() {
         (Flaw::Collides, "scopes_do_not_collide"),
         (Flaw::KeepsRemoved, "a_remove_removes_exactly_its_scope"),
         (Flaw::KeepsRemoved, "a_removal_is_seen_by_another_handle"),
+        (Flaw::RemovesAll, "a_remove_removes_exactly_its_scope"),
         (Flaw::Mute, "a_write_is_pushed_to_another_handle"),
     ] {
         let report = grade_store(Broken::new(flaw)).await;
@@ -218,4 +230,15 @@ async fn a_tenant_halt_that_halts_everyone_is_caught() {
         failed(&handlers).contains(&"a_tenant_halt_spares_other_tenants"),
         "{handlers}"
     );
+}
+
+/// The wrapper the harness builds handlers on passes the store's
+/// subscription through: without it a pushing store is graded as one that
+/// polls. The mutation gate found the forwarding untested.
+#[test]
+fn the_shared_store_passes_its_subscription_through() {
+    let pushing = super::Shared(Arc::new(InMemoryHaltStore::new()));
+    assert!(pushing.signals().is_some());
+    let polling = super::Shared(Arc::new(Broken::new(Flaw::None)));
+    assert!(polling.signals().is_none());
 }

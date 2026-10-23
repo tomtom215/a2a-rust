@@ -185,6 +185,28 @@ fn a_task_event_records_its_state() {
     );
 }
 
+/// A whole task that ends `Failed` marks the span failed, as a status
+/// update does. The mutation gate found the task's status untested:
+/// dropping it survived.
+#[test]
+fn a_failed_task_event_marks_the_span_failed() {
+    let task: a2a_protocol_types::task::Task = serde_json::from_value(serde_json::json!({
+        "id": "t",
+        "contextId": "c",
+        "status": {"state": "TASK_STATE_FAILED"}
+    }))
+    .unwrap();
+    let fields = executor_fields(&[StreamResponse::Task(task)]);
+    assert_eq!(
+        fields.get("error.type").map(String::as_str),
+        Some("internal")
+    );
+    assert_eq!(
+        fields.get("otel.status_code").map(String::as_str),
+        Some("ERROR")
+    );
+}
+
 /// A turn that ends `Failed` marks the span failed, with the class its
 /// status message carries — or `internal`, for one that carries none — as
 /// `error.type`; a turn that ends otherwise does not.

@@ -61,6 +61,47 @@ async fn each_approval_toward_a_quorum_is_audited() {
     }
 }
 
+/// A gate that needs one approver records its approval without the quorum's
+/// fields. The mutation gate found the quorum test untested: adding them for
+/// a quorum of one survived.
+#[cfg(feature = "audit")]
+#[tokio::test]
+async fn a_single_approval_records_no_quorum() {
+    use a2a_protocol_types::audit::kind;
+
+    use crate::audit::{AuditLog, InMemoryAuditStore};
+
+    let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
+    let resumed = Arc::new(AtomicUsize::new(0));
+    let h = builder(ApprovalGate::new(), &resumed)
+        .with_audit(Arc::clone(&log))
+        .build()
+        .expect("handler");
+    let (task, req) = asked(&h).await;
+    send(
+        &h,
+        "t-bob",
+        answer(&ApprovalDecision::approve(&req), &task, "a-1"),
+    )
+    .await
+    .unwrap();
+
+    let records = log.export("").await.expect("export");
+    let approvals: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind == kind::APPROVAL)
+        .collect();
+    assert_eq!(approvals.len(), 1, "{records:#?}");
+    assert_eq!(approvals[0].detail["decision"], "approve");
+    for field in ["required", "approvedBy", "reachedExecutor"] {
+        assert!(
+            !approvals[0].detail.contains_key(field),
+            "{field}: {:?}",
+            approvals[0].detail
+        );
+    }
+}
+
 /// Two replicas, each its own handler and its own connection pool on one
 /// SQLite database: Bob's approval recorded on A counts on B.
 #[cfg(feature = "sqlite")]
