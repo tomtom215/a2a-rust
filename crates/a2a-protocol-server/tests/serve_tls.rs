@@ -10,161 +10,19 @@
 #![cfg(feature = "tls-rustls")]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use a2a_protocol_server::builder::RequestHandlerBuilder;
-use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::metrics::{ConnectionPoolStats, Metrics};
 use a2a_protocol_server::serve::{ServeConfig, Server};
-use a2a_protocol_server::{RequestHandler, agent_executor};
-use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
-use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-struct Idle;
-agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+#[path = "support/tls_server.rs"]
+mod tls_server;
 
-/// The last `connections_closed` count the server reported.
-#[derive(Default)]
-struct Closed(AtomicU64);
-impl Metrics for Closed {
-    fn on_connection_pool_stats(&self, stats: &ConnectionPoolStats) {
-        self.0.store(stats.connections_closed, Ordering::SeqCst);
-    }
-}
-
-struct Certs {
-    ca: rustls_pki_types::CertificateDer<'static>,
-    cert_der: rustls_pki_types::CertificateDer<'static>,
-    key_der: Vec<u8>,
-    cert_pem: String,
-    key_pem: String,
-    /// A client certificate the same CA issued, for mutual TLS.
-    client_der: rustls_pki_types::CertificateDer<'static>,
-    client_key_der: Vec<u8>,
-}
-
-fn certs() -> Certs {
-    let mut ca_params = rcgen::CertificateParams::new(vec![]).unwrap();
-    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-    let ca_key = rcgen::KeyPair::generate().unwrap();
-    let ca = ca_params.self_signed(&ca_key).unwrap();
-    let issuer = rcgen::Issuer::new(ca_params, ca_key);
-    let params = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
-    let key = rcgen::KeyPair::generate().unwrap();
-    let cert = params.signed_by(&key, &issuer).unwrap();
-    let client_params = rcgen::CertificateParams::new(vec!["client".into()]).unwrap();
-    let client_key = rcgen::KeyPair::generate().unwrap();
-    let client = client_params.signed_by(&client_key, &issuer).unwrap();
-    Certs {
-        ca: ca.der().clone(),
-        cert_der: cert.der().clone(),
-        key_der: key.serialize_der(),
-        cert_pem: cert.pem(),
-        key_pem: key.serialize_pem(),
-        client_der: client.der().clone(),
-        client_key_der: client_key.serialize_der(),
-    }
-}
-
-fn handler(metrics: Arc<Closed>) -> Arc<RequestHandler> {
-    let card = AgentCard::new(
-        "tls-agent",
-        "1.0.0",
-        AgentInterface::jsonrpc("https://localhost:1"),
-    )
-    .with_description("serves HTTPS")
-    .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
-    Arc::new(
-        RequestHandlerBuilder::new(Idle)
-            .with_agent_card(card)
-            .with_metrics(metrics)
-            .build()
-            .unwrap(),
-    )
-}
-
-/// Serves `server` with a JSON-RPC dispatcher; the address to reach it at.
-async fn start(server: Server, metrics: Arc<Closed>) -> std::net::SocketAddr {
-    let addr = server.local_addr().unwrap();
-    let dispatcher = JsonRpcDispatcher::new(handler(metrics));
-    tokio::spawn(server.serve_with_shutdown(dispatcher, std::future::pending()));
-    addr
-}
-
-fn roots(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::RootCertStore {
-    let mut roots = rustls::RootCertStore::empty();
-    roots.add(ca.clone()).unwrap();
-    roots
-}
-
-fn provider() -> Arc<rustls::crypto::CryptoProvider> {
-    Arc::new(rustls::crypto::ring::default_provider())
-}
-
-fn client_builder(
-    ca: &rustls_pki_types::CertificateDer<'static>,
-) -> rustls::ConfigBuilder<rustls::ClientConfig, rustls::client::WantsClientCert> {
-    rustls::ClientConfig::builder_with_provider(provider())
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_root_certificates(roots(ca))
-}
-
-/// Trusts the test CA only. ALPN is the connector's: `h2` or `http/1.1`.
-fn client_config(ca: &rustls_pki_types::CertificateDer<'static>) -> rustls::ClientConfig {
-    client_builder(ca).with_no_client_auth()
-}
-
-/// GETs the agent card over HTTPS, as HTTP/2 when `h2`.
-async fn fetch_card(
-    addr: std::net::SocketAddr,
-    ca: &rustls_pki_types::CertificateDer<'static>,
-    h2: bool,
-) -> Result<(hyper::Version, serde_json::Value), String> {
-    fetch_card_with(addr, client_config(ca), h2).await
-}
-
-/// [`fetch_card`] with the client's own TLS configuration.
-async fn fetch_card_with(
-    addr: std::net::SocketAddr,
-    config: rustls::ClientConfig,
-    h2: bool,
-) -> Result<(hyper::Version, serde_json::Value), String> {
-    let builder = hyper_rustls::HttpsConnectorBuilder::new()
-        .with_tls_config(config)
-        .https_only();
-    let connector = if h2 {
-        builder.enable_http2().build()
-    } else {
-        builder.enable_http1().build()
-    };
-    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-        .http2_only(h2)
-        .build::<_, Empty<Bytes>>(connector);
-    let uri = format!(
-        "https://localhost:{}/.well-known/agent-card.json",
-        addr.port()
-    );
-    let resp = client
-        .get(uri.parse().unwrap())
-        .await
-        .map_err(|e| format!("{e:?}"))?;
-    let version = resp.version();
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
-    Ok((version, serde_json::from_slice(&body).unwrap()))
-}
-
-async fn tls_server(certs: &Certs, config: ServeConfig) -> Server {
-    Server::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .with_config(config)
-        .with_tls_pem(certs.cert_pem.as_bytes(), certs.key_pem.as_bytes())
-        .unwrap()
-}
+use tls_server::{
+    Closed, certs, client_builder, client_config, fetch_card, fetch_card_with, provider, roots,
+    start, tls_server,
+};
 
 #[tokio::test]
 async fn the_agent_card_is_served_over_https_on_http1_and_http2() {
@@ -369,55 +227,4 @@ async fn a_listener_requiring_client_certificates_serves_only_clients_with_one()
         let (_, card) = fetch_card_with(addr, with_cert, h2).await.unwrap();
         assert_eq!(card["name"].as_str(), Some("tls-agent"), "h2={h2}");
     }
-}
-
-/// A card request this server's TLS terminated is recorded as `https`, over
-/// HTTP/1.1 too, where the request URI carries no scheme: the listener says
-/// the connection was TLS (`rpc_span::CardCall`).
-#[cfg(feature = "otel")]
-#[tokio::test]
-async fn a_card_request_over_tls_is_recorded_as_https() {
-    use opentelemetry::trace::TracerProvider as _;
-    use tracing_subscriber::layer::SubscriberExt as _;
-
-    #[derive(Clone, Debug, Default)]
-    struct Keep(Arc<std::sync::Mutex<Vec<opentelemetry_sdk::trace::SpanData>>>);
-    impl opentelemetry_sdk::trace::SpanExporter for Keep {
-        fn export(
-            &self,
-            batch: Vec<opentelemetry_sdk::trace::SpanData>,
-        ) -> impl std::future::Future<Output = opentelemetry_sdk::error::OTelSdkResult> + Send
-        {
-            self.0.lock().unwrap().extend(batch);
-            std::future::ready(Ok(()))
-        }
-    }
-    let keep = Keep::default();
-    let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-        .with_simple_exporter(keep.clone())
-        .build();
-    // The test's runtime is current-thread, so the server's tasks record here.
-    let _subscriber = tracing::subscriber::set_default(
-        tracing_subscriber::registry()
-            .with(tracing_opentelemetry::layer().with_tracer(tracer.tracer("tls"))),
-    );
-    let certs = certs();
-    let addr = start(
-        tls_server(&certs, ServeConfig::default()).await,
-        Arc::default(),
-    )
-    .await;
-    let (version, _) = fetch_card(addr, &certs.ca, false).await.unwrap();
-    assert_eq!(version, hyper::Version::HTTP_11);
-    let spans = keep.0.lock().unwrap().clone();
-    let card = spans
-        .iter()
-        .find(|s| s.name == "GET /.well-known/agent-card.json")
-        .expect("the card request's span");
-    let scheme = card
-        .attributes
-        .iter()
-        .find(|kv| kv.key.as_str() == "url.scheme")
-        .map(|kv| kv.value.to_string());
-    assert_eq!(scheme.as_deref(), Some("https"));
 }

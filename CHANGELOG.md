@@ -352,8 +352,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `http.server.request.duration` with bounded attributes. `url.scheme` is
   `https` when this server's TLS ended the connection: `serve` now marks
   such requests. Tests: `tests/card_request_telemetry.rs` (every listener,
-  each failing with its instrumentation removed); `tests/serve_tls.rs`
-  `a_card_request_over_tls_is_recorded_as_https` (fails without the mark).
+  each failing with its instrumentation removed);
+  `tests/card_span_over_tls.rs` (fails without the mark).
 
 - **Every control-map row cites a check; AIA-6 and AIA-53 no longer stand
   uncited** (docs, CI; EU AI Act Art. 6, Art. 53).

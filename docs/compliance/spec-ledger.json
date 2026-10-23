@@ -432,7 +432,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:70 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:559 process_folded_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:560 process_folded_message",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:680 SyncCollector::fold_message"
    ],
    "test_evidence": [
@@ -481,7 +481,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:70 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:559 process_folded_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:560 process_folded_message",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:680 SyncCollector::fold_message"
    ],
    "test_evidence": [
@@ -4640,10 +4640,10 @@
     "book/src/deployment/production.md:80 \"The **server** terminates TLS itself\""
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/serve_tls.rs:170 the_agent_card_is_served_over_https_on_http1_and_http2",
-    "crates/a2a-protocol-server/tests/serve_tls.rs:191 a_plaintext_request_gets_no_http_answer",
-    "crates/a2a-protocol-server/tests/serve_tls.rs:227 a_stalled_handshake_is_closed_at_the_header_read_timeout",
-    "crates/a2a-protocol-server/tests/serve_tls.rs:268 the_default_alpn_list_negotiates_h2_and_http1"
+    "crates/a2a-protocol-server/tests/serve_tls.rs:28 the_agent_card_is_served_over_https_on_http1_and_http2",
+    "crates/a2a-protocol-server/tests/serve_tls.rs:49 a_plaintext_request_gets_no_http_answer",
+    "crates/a2a-protocol-server/tests/serve_tls.rs:85 a_stalled_handshake_is_closed_at_the_header_read_timeout",
+    "crates/a2a-protocol-server/tests/serve_tls.rs:126 the_default_alpn_list_negotiates_h2_and_http1"
    ],
    "notes": "Since 2026-10-14 serve::Server terminates TLS (Server::with_tls, with_tls_pem; tls-rustls, on by default in a2a-protocol-sdk), so the agent card and every JSON-RPC and HTTP+JSON call can be served over HTTPS by the process itself; gRPC has had it since grpc-tls. The client fetches over HTTPS (rustls). Still plaintext: the quick-start serve/serve_with_addr and the WebSocket listener, which the deployment page puts behind a TLS-terminating proxy. Before: only gRPC terminated TLS.",
    "auditor": "C",
@@ -4846,7 +4846,7 @@
     "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:20 plaintext_warning"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/serve_tls.rs:170 the_agent_card_is_served_over_https_on_http1_and_http2",
+    "crates/a2a-protocol-server/tests/serve_tls.rs:28 the_agent_card_is_served_over_https_on_http1_and_http2",
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs:224 a_request_is_served_over_wss",
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs:214 tls_client_round_trips_through_the_tls_dispatcher",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
@@ -8459,7 +8459,7 @@
     "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:20 plaintext_warning"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/serve_tls.rs:170 the_agent_card_is_served_over_https_on_http1_and_http2",
+    "crates/a2a-protocol-server/tests/serve_tls.rs:28 the_agent_card_is_served_over_https_on_http1_and_http2",
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs:224 a_request_is_served_over_wss",
     "crates/a2a-protocol-server/tests/websocket_tls_origin.rs:269 a_plaintext_client_is_refused",
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs:214 tls_client_round_trips_through_the_tls_dispatcher",
@@ -9499,7 +9499,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1770 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1771 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1336 an_appended_chunk_with_no_parts_is_dropped",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1273 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
@@ -9697,8 +9697,8 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1390 artifact_append_merges_into_the_existing_artifact",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1511 artifact_append_targets_the_matching_id_not_another",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1831 append_merges_and_non_append_does_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1898 append_merges_into_the_matching_artifact_not_another"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1832 append_merges_and_non_append_does_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1899 append_merges_into_the_matching_artifact_not_another"
    ],
    "notes": "Parts extended and metadata merged into the artifact with matching id.",
    "auditor": "G",

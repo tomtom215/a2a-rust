@@ -610,6 +610,11 @@ into this file: the commit that records it changes it.
   check by hand every one it cannot place: the checker knows where a
   symbol is defined, not which of two same-named impls a citation meant.
 - Count before writing a number into a document, and say what was counted.
+- A test that reads spans through a thread-local subscriber needs a test
+  binary of its own when other tests in its binary reach the same callsite
+  with none: `tracing` caches interest globally. Rebuilding the interest
+  cache was not enough (`tests/card_span_over_tls.rs`, 2026-10-23: 9 of 20
+  runs failed beside the other TLS tests, 20 of 20 passed alone).
 - A `compile_fail` doctest needs a control that compiles.
 - A re-run after a fix must cover the binary that failed, not only the files
   edited.

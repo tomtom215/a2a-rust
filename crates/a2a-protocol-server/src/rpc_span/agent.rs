@@ -205,10 +205,8 @@ fn executor_span(
 pub struct OutputRecorder {
     span: tracing::Span,
     content: bool,
-    /// The agent's output so far as message parts, the bytes left, whether
-    /// the turn has ended and been recorded, and whether the executor has
-    /// written a task, status or artifact (after which a `Message` is not a
-    /// direct reply: the queue carries it in a status update, spec §3.1.2).
+    /// Output parts, bytes left, turn ended, and task/status/artifact seen
+    /// (after which a `Message` is a status update, not a reply: §3.1.2).
     output: Mutex<(Vec<Value>, usize, bool, bool)>,
 }
 
