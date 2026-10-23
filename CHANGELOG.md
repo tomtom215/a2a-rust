@@ -358,6 +358,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Handler-wide conformance tests** (server `tests/handler_conformance/`,
+  SDK `tests/binding_equivalence/`): the required-extension refusal on every
+  operation through the handler, JSON-RPC and HTTP+JSON;
+  `ContentTypeNotSupported`, terminal-task and unknown-task refusals on the
+  streaming send; no store read before admission on any operation; another
+  caller's task and an unknown one answering identically on the wire; a
+  second cancel having the first's effect; nothing sent to a deleted push
+  config; progress reaching the stream while the executor runs; Get
+  returning the whole push config, which outlives the task's completion; a
+  streaming send's task events honouring `historyLength`; the empty
+  ListTasks page's wire form; artifact-update id binding; gRPC
+  `VersionNotSupported` for a non-empty unsupported version; every
+  binding's error carrying a code and a message; and events arriving in
+  generation order on every binding. Each was shown to fail with its
+  behaviour removed.
+
 - **Every control-map row cites what proves its claim, and CI enforces
   it.** `docs/compliance/controls.toml` had 42 of 88 rows citing no test.
   86 now cite a test or a CI step that proves what the row's `sdk` text
@@ -1454,6 +1470,36 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Behaviour Changes
 
+- **An executor's `RequestContext::activated_extensions()` lists only the
+  extensions the agent card declares** (server; spec §4.6.3: an extension
+  or version the agent does not support SHOULD be ignored for the
+  interaction). The response's `A2A-Extensions` header already echoed only
+  the declared set, but the executor was given the raw request list, so it
+  was told `…/ext/v2` was active when the card declared only `…/ext/v1`. The
+  `RequestContext` given to `execute` and `cancel` now carries the
+  intersection, in request order; interceptors (`CallContext::extensions`)
+  and the required-extension check still see the raw list, and without a
+  card the list passes through. An executor that read an undeclared
+  extension no longer finds it: declare it on the card. Tests:
+  `handler_conformance/extension_activation.rs` (three).
+- **A refused request's `google.rpc.BadRequest` names the missing field
+  itself, and the `SendMessage` ids by their wire paths** (server; spec
+  §5.7, §11.6). A missing key was reported at its parent (`message` for a
+  message without `role`, `""` for a request without `message` or `id`); it
+  is now `message.role`, `message.messageId`, `message`, `id`, `url`, on
+  JSON-RPC, WebSocket and HTTP+JSON. The `SendMessage` id checks named
+  `message.id`, `task_id`, `context_id` and `reference_task_ids`; they are
+  `message.messageId`, `message.taskId`, `message.contextId` and
+  `message.referenceTaskIds`, in the violation's `field` and the message
+  ("message.messageId must not be empty or whitespace-only"). A client
+  matching the old strings must use the new ones. Tests:
+  `handler_conformance/required_fields.rs` (two).
+- **An empty push-config `url` is `InvalidParams` naming `url`, checked
+  before the task lookup** (server). It reached the lookup first and
+  answered `TaskNotFoundError` for an unknown task, while the same request
+  without the key answered `InvalidParams`. Tests: `required_fields.rs`,
+  `set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed`.
+
 - **Default metrics follow the global meter provider at each measurement**
   (server, client). A handler given no `with_metrics`, and every client's
   `rpc.client.call.duration`, bound their instruments to the provider that
@@ -2346,6 +2392,16 @@ section "The client refuses what `a2a.proto` does not allow".
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **The WebSocket binding page states the service-parameter rules the
+  dispatcher applies** (book; spec §12.3). It said a value "not valid UTF-8
+  is dropped" and listed only `:path`. Any header line that is not visible
+  ASCII is left out, valid UTF-8 such as `café` included; a header's lines
+  are joined with `", "` (`"; "` for `Cookie`); `Last-Event-ID` is dropped;
+  the reserved names are `:path`, `:peer-addr`, `:peer-certificate`,
+  `:upgrade-traceparent` and `:upgrade-tracestate`. Test:
+  `websocket_binding_spec.rs`
+  `the_service_parameters_are_the_visible_ascii_upgrade_headers_and_the_reserved_entries`.
 
 - **The control map no longer says a server interceptor can inspect or
   filter content** (docs). `ServerInterceptor`'s hooks are given the
