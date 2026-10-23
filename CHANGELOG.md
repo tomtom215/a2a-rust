@@ -358,6 +358,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`http.client.request.duration` for every webhook POST** (server,
+  `otel`). Each push-notification attempt, retries included, is measured
+  with the HTTP conventions' advisory buckets and the attributes of its
+  `POST` span: `http.request.method`, `server.address`, `server.port`,
+  `http.response.status_code` when a response came back, and `error.type`
+  (the status for a 4xx or 5xx, `timeout`, or `transport`), on the global
+  meter provider as it is at the measurement. The URL is not an attribute.
+  Test: `tests/webhook_client_metrics.rs`
+  `every_webhook_attempt_is_measured_with_the_http_client_attributes`.
+
 - **`examples/live-model`: the SDK end to end against a real model.** A
   check suite over any OpenAI-compatible endpoint (llama.cpp's
   `llama-server`, vLLM, Ollama): the tool loop streamed and
@@ -2434,6 +2444,16 @@ section "The client refuses what `a2a.proto` does not allow".
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **gRPC: a call whose answer cannot be converted to protobuf is recorded
+  as failed** (server, `grpc`). SendMessage, GetTask, ListTasks,
+  CancelTask, GetExtendedAgentCard and a directly answered
+  SendStreamingMessage converted the handler's answer after the call's
+  span had ended, so the caller got `INTERNAL` while the span and
+  `rpc.server.call.duration` recorded `OK`. The conversion now runs inside
+  the call. Test: `dispatch/grpc/native.rs`
+  `an_answer_the_wire_cannot_carry_is_recorded_as_internal` (fails with the
+  conversion moved back after the span).
 
 - **SLIMRPC: `A2aClient::list_push_configs` works** (`a2a-protocol-slimrpc`;
   spec §12.1). `SlimRpcTransport` answered ListTaskPushNotificationConfigs

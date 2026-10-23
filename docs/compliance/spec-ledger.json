@@ -1157,7 +1157,7 @@
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:177 jsonrpc_and_rest_carry_the_page_and_its_token",
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:235 the_websocket_binding_carries_the_page_and_its_token",
     "crates/a2a-protocol-server/tests/push_config_pagination.rs:215 the_axum_router_carries_the_page_and_its_token",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:905 list_push_configs_pages_with_a_token"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:955 list_push_configs_pages_with_a_token"
    ],
    "notes": "Since 2026-10-14 RequestHandler::on_list_push_configs_page pages the list on every binding (JSON-RPC and WebSocket params, HTTP+JSON and axum query, gRPC and SLIMRPC fields): ordered by id, at most pageSize, nextPageToken while more remain (base64url of the last id returned), InvalidField(pageToken) for one this server did not give, pageSize 0 read as unset. Without pageSize or pageToken the whole list is returned unordered, as before. Before: pageSize/pageToken were ignored and nextPageToken was always None; the list is bounded by max_push_configs_per_task either way. Existing tests assert 5 configs come back in 3 pages of at most 2 with no token on the last, also over JSON-RPC and REST; shown able to fail by making push_config_page.rs page() return every config unpaged (2026-10-20)",
    "auditor": "A",
@@ -1545,7 +1545,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:217 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:764 an_unsupported_version_is_refused_with_version_not_supported",
     "bindings/a2a-protocol-slimrpc/tests/operations.rs:352 an_unsupported_version_is_refused_over_the_fabric"
    ],
    "notes": "Every binding, the axum adapter included (validate_a2a_request middleware), answers VersionNotSupportedError.",
@@ -2013,7 +2013,7 @@
     "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:156 json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs:118 every_binding_s_error_carries_a_code_and_a_message",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:764 an_unsupported_version_is_refused_with_version_not_supported"
    ],
    "notes": "JSON-RPC {code,message,data}, REST AIP-193 {code,status,message,details}, gRPC Status(code,message,details).",
    "auditor": "B",
@@ -2039,7 +2039,7 @@
     "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:372 a_lagged_stream_s_error_keeps_its_marker",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/streaming/sse.rs:1078 an_object_data_is_a_protojson_any_holding_a_struct"
    ],
    "notes": "Every detail carries @type. An A2A error's ErrorInfo (and RetryInfo for a rate limit) comes from error_info_data. A2aError.data follows it as a typed detail (sse::error_details, used by JSON-RPC, HTTP+JSON and WebSocket): as it is when it names its own string @type (a google.rpc.BadRequest), otherwise as a google.protobuf.Struct in the ProtoJSON Any form, {\"@type\": ..., \"value\": {...}}, with a non-object under value (since 2026-10-14, audit register R19; the fields were written beside @type, the form a2a-go writes, which a ProtoJSON Any decoder rejects). The gRPC binding sends the same data as BadRequest field violations or a Struct Any (dispatch/grpc/details.rs).",
@@ -3066,7 +3066,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:217 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:714 an_unsupported_version_is_refused_with_version_not_supported",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:764 an_unsupported_version_is_refused_with_version_not_supported",
     "bindings/a2a-protocol-slimrpc/tests/operations.rs:352 an_unsupported_version_is_refused_over_the_fabric"
    ],
    "notes": "The axum adapter now validates A2A-Version like the other bindings.",
@@ -3091,7 +3091,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/jsonrpc.rs:526 jsonrpc_missing_version_header_rejected",
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:843 rest_missing_version_header_rejected_but_card_discovery_versionless",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:671 default_config_rejects_a_versionless_rpc",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:721 default_config_rejects_a_versionless_rpc",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2701 ws_missing_version_header_rejected_by_default",
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:347 an_empty_version_is_refused_unless_none_is_required",
     "bindings/a2a-protocol-slimrpc/src/server/methods/tests.rs:146 an_absent_version_is_refused_as_0_3_unless_none_is_required"
@@ -3601,7 +3601,7 @@
    "impl_evidence": [
     "book/src/bindings/websocket.md:67 \"## 3. Messages\"",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:306 GrpcDispatcher::build_router",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:138 A2aServiceImpl::send_message",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:198 A2aServiceImpl::send_message",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:255 RestDispatcher::dispatch_rest",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1006 process_ws_message"
    ],
@@ -3665,7 +3665,7 @@
     "tck/src/equivalence.rs:646 bind_equiv_003",
     "crates/a2a-protocol-server/tests/http_json_error_parity.rs:76 rest_and_axum_answer_the_same_failures_identically",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:372 a_lagged_stream_s_error_keeps_its_marker",
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1394 status_to_error_keeps_a_struct_detail_as_data",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1454 status_to_error_keeps_field_violations_as_data"
@@ -6306,7 +6306,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:301 JsonRpcDispatcher::dispatch_single_request_http",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:238 A2aServiceImpl::subscribe_to_task"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:289 A2aServiceImpl::subscribe_to_task"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:801 resubscribe_terminal_task_returns_unsupported_operation",
@@ -6460,7 +6460,7 @@
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:372 a_lagged_stream_s_error_keeps_its_marker"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "A2aError::data reaches the client as a further detail (a Struct, or as is when it names its @type) on JSON-RPC and HTTP+JSON unary responses, on both bindings' stream frames, and on WebSocket. Since 2026-10-13 gRPC carries it too, unary and stream: a BadRequest as google.rpc.BadRequest, other data as a google.protobuf.Struct Any (dispatch/grpc/details.rs). SLIMRPC carries the message text only.",
    "auditor": "E",
@@ -6553,7 +6553,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:276 validated_metadata_accepts_1_0_with_any_patch",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:671 default_config_rejects_a_versionless_rpc"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:721 default_config_rejects_a_versionless_rpc"
    ],
    "notes": "All 11 RPCs go through A2aServiceImpl::admit (dispatch/grpc/admit.rs), which reads the metadata with helpers::request_headers, itself validated_metadata, and passes the headers to the handler (corrected 2026-10-23: the note named validated_metadata as called by each RPC).",
    "auditor": "E",
@@ -6591,14 +6591,14 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status",
     "crates/a2a-protocol-types/src/error.rs:99 ErrorCode::a2a_reason",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:65 reader_to_native_stream"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:107 reader_to_native_stream"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:158 a2a_error_status_carries_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
     "crates/a2a-protocol-client/src/transport/grpc.rs:1473 status_to_error_prefers_error_info_reason",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:372 a_lagged_stream_s_error_keeps_its_marker"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
    "auditor": "E",
@@ -10977,7 +10977,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:563 RestDispatcher::handle_cancel_task",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:21 bad_request_response",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1250 dispatch_simple",
-    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:138 A2aServiceImpl::send_message"
+    "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:198 A2aServiceImpl::send_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:503 send_message_request_without_message_rejected",

@@ -62,7 +62,16 @@ only: when something here is done, delete it rather than annotating it.
     signature-verified on all four bindings, provenance refusal,
     idempotency, budget exhaustion, delegation under a budget, halt,
     quorum). Its README records the runs, the model, the quantization and
-    the llama.cpp build.
+    the llama.cpp build. The other model-backed examples were run the same
+    day against the same llama-server (b11836, Qwen3-1.7B Q4_K_M, alias
+    `qwen3:1.7b` on port 11434, release builds): `tool-loop-agent` (billing
+    question: right, two rounds), `incident-response` (exit 0, Act 4 44 of
+    44 cells, Act 5 16 of 16 with `A2A_TEST_POSTGRES_URL`), `genai-agent`
+    (44 of 44, LLM leg exercised), `mcp-agent` (exit 0; 1 of 2 answers
+    used the MCP tools, and the billing answer, which called none, is
+    invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
+    `rig-agent` (44 of 44 on its second run; see the 30 s timeout under
+    *Open engineering*). Logs were not committed.
 - **Removing `sign_agent_card*` in 0.15.0 waives `STABILITY.md` §3**'s
   one-minor deprecation window for `sign_agent_card`, which shipped in 0.14.1
   and was deprecated only in 0.15.0 (`sign_agent_card_ed25519` never
@@ -210,11 +219,11 @@ only: when something here is done, delete it rather than annotating it.
    SUPPORTED, and the TCK baseline (the drafts for CORE-SEND-003 and
    a2a-tck#231 are in `docs/upstream/`).
 3. **OpenTelemetry, still open:** store spans and
-   `db.client.operation.duration`, push `http.client.request.duration`,
-   `server.address` and `network.peer.*` on server spans, refusal and
-   agent-card spans on the server, gRPC conversion failures recorded as
-   failures, a test that logs carry the trace id; then `GenAI` panels on
-   the dashboards. Done on this branch: the tool loop's `GenAI` metrics,
+   `db.client.operation.duration`, `server.address` and `network.peer.*`
+   on server spans, refusal and agent-card spans on the server, a test that
+   logs carry the trace id; then `GenAI` panels on the dashboards. Done on
+   this branch: push `http.client.request.duration`, gRPC conversion
+   failures recorded as failures, the tool loop's `GenAI` metrics,
    JSON-RPC client span attributes, the card-fetch and webhook-receiver
    spans, delegation spawns kept in the parent's trace, and default
    metrics that follow the global meter provider at each measurement.
@@ -300,6 +309,21 @@ only: when something here is done, delete it rather than annotating it.
 ## Open engineering, not committed
 
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
+
+- **Examples time out a CPU-served model at the client's 30 s default**
+  (found 2026-10-23, low, examples only). Every transport defaults to a
+  30 s request timeout, and the model-backed examples build their clients
+  with it (`examples/{rig-agent,genai-agent,agent-team,multi-lang-team}/
+  src/surface.rs` `client_for`, `examples/incident-response/src/agents.rs`
+  and `serving.rs`). With Qwen3-1.7B on four CPU cores and several runs
+  in flight, a model turn took up to 64 s (llama-server's own timings):
+  `rig-agent`'s first run lost SendMessage over WebSocket and the five
+  cells after it (exit 1; 44 of 44 on a re-run), and in 2 of 3
+  `incident-response` runs the runbook leg timed out, which the demo
+  prints inside the report and still exits 0. Proposed: one longer
+  timeout for these examples' clients, every binding included (gRPC's and
+  WebSocket's transports take their own). Not built: it touches five
+  examples, beyond this branch's scope without the maintainer's say.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
   `tests/multi_replica.rs` that is ignored by default). A continuation's

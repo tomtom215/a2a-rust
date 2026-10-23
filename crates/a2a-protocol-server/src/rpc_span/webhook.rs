@@ -27,6 +27,15 @@
 //! instrumentations can identify it". The origin is kept; a path or query
 //! becomes `/REDACTED`.
 //!
+//! With the `otel` feature each attempt is also measured in
+//! `http.client.request.duration` (`docs/http/http-metrics.md`, same
+//! revision): seconds, the conventions' advised buckets, and the span's
+//! `http.request.method`, `server.address` and `server.port` (Required),
+//! `http.response.status_code` and `error.type` (Conditionally Required),
+//! on the global meter provider as it is at the measurement, under the
+//! `a2a.server` scope. The URL is not an attribute: it would carry the
+//! receiver's secret and an unbounded number of values.
+//!
 //! With the `otel` feature the POST carries this span's own context as
 //! `traceparent` (and `tracestate`), so a receiver that continues the trace
 //! is the child of a span the exporter has. When nothing records the span —
@@ -40,6 +49,9 @@ use std::future::Future;
 pub struct WebhookSpan {
     #[cfg(feature = "tracing")]
     span: tracing::Span,
+    /// `server.address` and `server.port`, for the duration metric.
+    #[cfg(feature = "otel")]
+    target: (String, u16),
 }
 
 impl WebhookSpan {
@@ -52,12 +64,17 @@ impl WebhookSpan {
     pub fn open(url: &str, resend_count: usize) -> Self {
         #[cfg(feature = "tracing")]
         {
+            let (host, port) = target(url);
             let span = if super::untraced() {
                 tracing::Span::none()
             } else {
-                client_span(url, resend_count)
+                client_span(url, &host, port, resend_count)
             };
-            Self { span }
+            Self {
+                span,
+                #[cfg(feature = "otel")]
+                target: (host, port),
+            }
         }
         #[cfg(not(feature = "tracing"))]
         {
@@ -100,21 +117,28 @@ impl WebhookSpan {
     {
         #[cfg(feature = "tracing")]
         {
+            #[cfg(feature = "otel")]
+            let started = std::time::Instant::now();
             let out = tracing::Instrument::instrument(attempt, self.span.clone()).await;
-            let failure = match &out {
-                Ok(Ok(resp)) => {
-                    let status = resp.status().as_u16();
-                    self.span
-                        .record("http.response.status_code", i64::from(status));
-                    (status >= 400).then(|| status.to_string())
-                }
-                Ok(Err(_)) => Some("transport".to_owned()),
-                Err(_) => Some("timeout".to_owned()),
+            let status = match &out {
+                Ok(Ok(resp)) => Some(resp.status().as_u16()),
+                _ => None,
             };
-            if let Some(kind) = failure {
-                self.span.record("error.type", kind.as_str());
+            let failure = match (&out, status) {
+                (Ok(Ok(_)), Some(status)) => (status >= 400).then(|| status.to_string()),
+                (Ok(Err(_)), _) => Some("transport".to_owned()),
+                _ => Some("timeout".to_owned()),
+            };
+            if let Some(status) = status {
+                self.span
+                    .record("http.response.status_code", i64::from(status));
+            }
+            if let Some(kind) = failure.as_deref() {
+                self.span.record("error.type", kind);
                 self.span.record("otel.status_code", "ERROR");
             }
+            #[cfg(feature = "otel")]
+            record_duration(&self.target, started.elapsed(), status, failure.as_deref());
             out
         }
         #[cfg(not(feature = "tracing"))]
@@ -124,9 +148,10 @@ impl WebhookSpan {
     }
 }
 
-/// The span, every field declared up front.
+/// `server.address` and `server.port` for `url`: the host without an IPv6
+/// literal's brackets, and the port, or the scheme's default.
 #[cfg(feature = "tracing")]
-fn client_span(url: &str, resend_count: usize) -> tracing::Span {
+fn target(url: &str) -> (String, u16) {
     let uri = url.parse::<hyper::Uri>().ok();
     // `Uri::host` keeps an IPv6 literal's brackets; `server.address` is the
     // address itself.
@@ -144,6 +169,50 @@ fn client_span(url: &str, resend_count: usize) -> tracing::Span {
             }
         })
     });
+    (host.to_owned(), port)
+}
+
+/// The HTTP conventions' advised buckets for `http.client.request.duration`.
+#[cfg(feature = "otel")]
+const DURATION_BUCKETS: [f64; 14] = [
+    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+];
+
+/// Records one attempt in `http.client.request.duration`.
+#[cfg(feature = "otel")]
+fn record_duration(
+    (host, port): &(String, u16),
+    elapsed: std::time::Duration,
+    status: Option<u16>,
+    failure: Option<&str>,
+) {
+    use opentelemetry::KeyValue;
+    let histogram = opentelemetry::global::meter("a2a.server")
+        .f64_histogram("http.client.request.duration")
+        .with_unit("s")
+        .with_description("Duration of HTTP client requests.")
+        .with_boundaries(DURATION_BUCKETS.to_vec())
+        .build();
+    let mut attributes = vec![
+        KeyValue::new("http.request.method", "POST"),
+        KeyValue::new("server.address", host.clone()),
+        KeyValue::new("server.port", i64::from(*port)),
+    ];
+    if let Some(status) = status {
+        attributes.push(KeyValue::new(
+            "http.response.status_code",
+            i64::from(status),
+        ));
+    }
+    if let Some(failure) = failure {
+        attributes.push(KeyValue::new("error.type", failure.to_owned()));
+    }
+    histogram.record(elapsed.as_secs_f64(), &attributes);
+}
+
+/// The span, every field declared up front.
+#[cfg(feature = "tracing")]
+fn client_span(url: &str, host: &str, port: u16, resend_count: usize) -> tracing::Span {
     let span = tracing::info_span!(
         target: "a2a_protocol_server::push",
         "a2a.webhook",

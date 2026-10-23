@@ -349,6 +349,20 @@ The metrics go to the global meter provider as it is when each is
 recorded, so `Telemetry` installed after the loop is built still receives
 them; `ToolLoop::with_meter` sends them elsewhere.
 
+### Webhook deliveries
+
+With `otel`, each push-notification POST, every retry included, is
+measured in the HTTP conventions' `http.client.request.duration`
+(histogram, `s`, their advisory buckets of 5 ms to 10 s), under the
+`a2a.server` scope, on the global meter provider as it is at the
+measurement. Its attributes are those of the attempt's `POST` span:
+`http.request.method` (`POST`), `server.address`, `server.port`,
+`http.response.status_code` when a response came back, and `error.type`
+when the attempt failed: the status for a 4xx or 5xx, `timeout`, or
+`transport` for no response. The URL is not an attribute, because it would
+carry the receiver's secret and unbounded values. `a2a.server.push_deliveries`
+still counts each delivery's final outcome; this metric times each attempt.
+
 ### What these become in Prometheus
 
 The dots are correct: OpenTelemetry names metrics this way
