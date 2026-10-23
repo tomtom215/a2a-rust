@@ -10,13 +10,19 @@
 //! | `required_extensions` | §3.3.4, §4.6.3 | every operation refuses a client that does not declare a required extension |
 //! | `extension_activation` | §4.6.3 | the executor sees only the extensions the card declares |
 //! | `required_fields` | §5.7 | a missing or empty REQUIRED field is `InvalidParams` naming it |
+//! | `send_refusals` | §3.1.1, §3.1.2 | content type, terminal and unknown task on both sends |
+//! | `not_found_wire` | §3.3.2 | another caller's task and an unknown one answer alike, byte for byte |
+//! | `auth_before_store` | §13.1 | a refused call reads no store |
 
 #[path = "../support/s3_agent.rs"]
 mod s3_agent;
 
+mod auth_before_store;
 mod extension_activation;
+mod not_found_wire;
 mod required_extensions;
 mod required_fields;
+mod send_refusals;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
