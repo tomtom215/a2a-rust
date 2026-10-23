@@ -34,12 +34,21 @@ only: when something here is done, delete it rather than annotating it.
   `1ebec172` on they add tests for the mutants each labelled incremental
   mutation run left surviving (51, then 9, then 2 and one equivalent
   mutant skipped with its argument, then 13 and a second equivalent on
-  `fcd73c5e`, the first run after `640773fc`; each commit lists its batch),
+  `fcd73c5e`, the first run after `640773fc`, then 1 on `9557b24d`; each
+  commit lists its batch),
   and `1ebec172` fixes the kill-switch harness passing a store that widened
   a tenant's halt. Before `640773fc` a measurement's timeout scored a
   different set of server mutants caught in each run, which is why each
   run found survivors the last had not; on `fcd73c5e` all 571 catches in
-  the 19 finished server shards were real test failures.
+  the 19 finished server shards were real test failures, and on `9557b24d`
+  612 of 614, the other two a mutant's own test hanging and a mutant whose
+  killing tests a PostgreSQL timeout cancelled (checked by hand). Also
+  pending in `.github/workflows/`: the Regression Gate's 150% override for
+  the payload serialize benchmarks (`b6bd6350`; the swing is the runner's,
+  measured on byte-identical binaries) and a 1800s mutation build timeout
+  (`231f7d8e`). Open: `scripts/prove_gates_fail.sh` exits 2 because the
+  crypto-interop gate `bb7518b3` added has no registered defect injection;
+  CI does not run that script.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the
