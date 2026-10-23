@@ -70,10 +70,7 @@ WORKFLOWS = [p.read_text(encoding="utf-8") for p in sorted((ROOT / ".github/work
 # there is no behaviour of the SDK's for a test to prove. Each says why. The
 # maintainer decides what, if anything, such a row should cite; until then it
 # is listed here rather than left to look like an oversight.
-UNCITED = {
-    "AIA-6": "says nothing toward the classification; it turns on the provider's purpose",
-    "AIA-53": "says nothing: the SDK is not a general-purpose AI model and contains none",
-}
+UNCITED: dict[str, str] = {}
 
 # A row whose `sdk` text is a claim that a document says something cites
 # this, the command CI runs this script with, and `DOC_CLAIMS` says what each
@@ -117,6 +114,14 @@ DOC_CLAIMS = {
         (_ADR15, "**What tamper evidence does not cover.**"),
     ],
     "AIA-2-12": _LICENCE,
+    "AIA-6": [
+        ("book/src/SUMMARY.md", "[Is Your Agent High-Risk?](./deployment/ai-act-classification.md)"),
+        ("book/src/deployment/ai-act-classification.md", "## The two routes to high-risk (Article 6)"),
+        ("book/src/deployment/ai-act-classification.md", "**An Annex III system that profiles natural persons is always high-risk.**"),
+        ("book/src/deployment/ai-act-classification.md", "Article 6(4): if you decide an Annex III system is not high-risk, you document that assessment before placing it on the market, register under Article 49(2)"),
+        ("book/src/deployment/ai-act-classification.md", "## If it is high-risk: what the SDK gives you"),
+        ("book/src/deployment/ai-act-classification.md", "## What stays yours"),
+    ],
     "AIA-25-2-4": _LICENCE,
     "CRA-13-6": _CHANNELS + _MANUFACTURERS,
     "CRA-AI-II-2-4-8": [

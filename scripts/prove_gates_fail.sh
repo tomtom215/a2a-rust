@@ -160,6 +160,9 @@ revert_all() {
         git rm -q --cached --ignore-unmatch "crates/a2a-protocol-types/src/$probe.rs" \
             2>/dev/null || true
     done
+    rm -f crates/a2a-protocol-types/src/gate_probe_model.gguf
+    git rm -q --cached --ignore-unmatch crates/a2a-protocol-types/src/gate_probe_model.gguf \
+        2>/dev/null || true
     # The `mutants_config` injection's copy, and the directory it needed.
     # `rmdir` and not `rm -rf`: if `.cargo/` ever holds a real config.toml,
     # removing it would be the injection doing damage rather than undoing it.
@@ -368,6 +371,8 @@ injection_for() {
             echo "tck_untested_map" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
+        *"check_no_model_artifacts.py"*)
+            echo "no_model_artifacts" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
         # (B23), so it is matched here rather than in the SLIMRPC block above.
         # The injection is unchanged: a manifest the wrapper must still reject.
@@ -541,6 +546,7 @@ expected_marker() {
         spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
         tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
+        no_model_artifacts) echo "a model-format file (.gguf)" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
@@ -654,6 +660,11 @@ PY
         codegen)
             note_touched "crates/a2a-protocol-types/src/generated/task.rs"
             printf '\n// gate probe: a hand edit\n' >>crates/a2a-protocol-types/src/generated/task.rs ;;
+        # A model file where `cargo package` would upload it: the defect the
+        # AIA-53 row's claim rests on not being there.
+        no_model_artifacts)
+            printf 'gate probe\n' >crates/a2a-protocol-types/src/gate_probe_model.gguf
+            git add -N crates/a2a-protocol-types/src/gate_probe_model.gguf >/dev/null 2>&1 || true ;;
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;

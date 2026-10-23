@@ -341,6 +341,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every control-map row cites a check; AIA-6 and AIA-53 no longer stand
+  uncited** (docs, CI; EU AI Act Art. 6, Art. 53).
+  - **"Is Your Agent High-Risk?"** (book, deployment): Article 6's two
+    routes, the 6(3) exception and the rule that profiling stays high-risk,
+    the 6(4) duty to document and register, which SDK feature answers which
+    high-risk obligation (Art. 12, 14, 15, 50(2)), and what stays the
+    provider's. Every article number and quoted condition was checked
+    against the Official Journal text (OJ L, 2024/1689). AIA-6 cites it
+    through `check_compliance_map.py`'s document claims.
+  - **`scripts/check_no_model_artifacts.py`**, a new `static-checks` step:
+    no published crate's `cargo package --list` holds a model-format file
+    or one over 10 MiB, and no dependency graph, every feature on, holds a
+    crate that loads or runs models. AIA-53's "contains no general-purpose
+    AI model" cites it. It fails on a `.gguf` planted in a crate, and
+    `prove_gates_fail.sh` carries that injection.
+
 - **SLIMRPC: an agent card declares SLIM's authentication**
   (`a2a-protocol-slimrpc`; A2A §13.3, SLIMRPC §8.4; WP-A, Medium).
   `SlimPeerAuthInterceptor::declare_on(&mut card)` adds

@@ -200,6 +200,14 @@ jobs:
       - name: Compliance map cites only tests that exist
         run: python3 scripts/check_compliance_map.py --check
 
+      # The control map's AIA-53 row (AI Act Art. 53) says the SDK is not a
+      # general-purpose AI model and contains none. A model file in a test
+      # fixture, or a feature pulling in an inference runtime, would make the
+      # row false without touching it, so what each published crate actually
+      # uploads, and its dependency graph, are checked here.
+      - name: No published crate carries or runs an AI model
+        run: python3 scripts/check_no_model_artifacts.py
+
       # docs/compliance/spec-ledger.json records what this SDK does about every
       # RFC 2119 statement in the A2A specification and the proto's REQUIRED
       # fields. It rots two ways nobody would notice: the vendored
