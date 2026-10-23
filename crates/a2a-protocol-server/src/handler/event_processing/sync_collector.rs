@@ -481,6 +481,14 @@ impl SyncCollector {
         // streaming sends would be a history whose completeness depended on
         // which method the caller happened to use.
         super::background::record_event(&*self.task_store, task_id, &event, &*self.metrics).await;
+        if let Ok(crate::streaming::StreamEvent {
+            folded_message: true,
+            event: StreamResponse::StatusUpdate(ref update),
+            ..
+        }) = event
+        {
+            return self.fold_message(update, state).await;
+        }
         let last_task = &mut state.task;
         match event.map(|e| e.event) {
             Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
@@ -659,6 +667,42 @@ impl SyncCollector {
                 state.saw_task_shaped_event = true;
                 return Err(ServerError::Protocol(e));
             }
+        }
+        Ok(())
+    }
+
+    /// A status update the writer made of a `Message` the agent wrote during
+    /// its task (spec §3.1.2; `streaming::event_queue::message_fold`),
+    /// recorded as the background processor records it
+    /// (`process_folded_message`): appended to `history`, and the status
+    /// message, with the update's timestamp, while the task is not
+    /// finished. The state is not touched and no transition is checked.
+    async fn fold_message(
+        &self,
+        update: &a2a_protocol_types::events::TaskStatusUpdateEvent,
+        state: &mut CollectState,
+    ) -> ServerResult<()> {
+        let Some(message) = update.status.message.clone() else {
+            return Ok(());
+        };
+        let last_task = &mut state.task;
+        let open = !last_task.status.state.is_terminal();
+        if open {
+            last_task.status.message = Some(message.clone());
+            last_task
+                .status
+                .timestamp
+                .clone_from(&update.status.timestamp);
+        }
+        let history = last_task.history.get_or_insert_with(Vec::new);
+        history.push(message);
+        crate::handler::messaging::TASK_HISTORY_LIMIT.trim(history);
+        self.task_store.save(last_task).await?;
+        if open {
+            state.record_for_push(
+                self.push_sender.is_some(),
+                &StreamResponse::StatusUpdate(update.clone()),
+            );
         }
         Ok(())
     }

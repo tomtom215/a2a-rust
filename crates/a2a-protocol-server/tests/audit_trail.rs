@@ -21,7 +21,8 @@ use a2a_protocol_server::{
     BearerTokenAuthInterceptor, EventEmitter, RequestHandlerBuilder, agent_executor,
 };
 use a2a_protocol_types::audit::{CheckpointSigner, SigningAlg};
-use a2a_protocol_types::message::Part;
+use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::message::{Message, Part};
 use a2a_protocol_types::task::TaskState;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -34,6 +35,12 @@ agent_executor!(Echo, |ctx, q| async {
     emit.status(TaskState::Working).await?;
     emit.artifact("answer", vec![Part::text("echo")], None, Some(true))
         .await?;
+    // Mid-task, so the queue carries it in a status update (spec §3.1.2).
+    q.write(StreamResponse::Message(Message::agent_text(
+        "progress-1",
+        "nearly there",
+    )))
+    .await?;
     emit.status(TaskState::Completed).await
 });
 
@@ -193,6 +200,14 @@ async fn every_call_and_event_is_recorded_and_attributable() {
         "{events:#?}"
     );
     assert!(events.iter().all(|e| e.digests.contains_key("event")));
+    // A message the agent wrote is attributable by its id, though the queue
+    // sent it as a status update.
+    assert!(
+        events
+            .iter()
+            .any(|e| e.message_id.as_deref() == Some("progress-1")),
+        "{events:#?}"
+    );
     assert_eq!(
         events.last().unwrap().state.as_deref(),
         Some("TASK_STATE_COMPLETED")

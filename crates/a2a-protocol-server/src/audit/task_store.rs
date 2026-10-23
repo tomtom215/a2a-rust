@@ -32,7 +32,8 @@ type Fut<'a, T> = Pin<Box<dyn Future<Output = A2aResult<T>> + Send + 'a>>;
 /// so wrapping changes nothing about how tasks are stored (CONTRIBUTING.md,
 /// "A default is not free"). Only [`append_event`](TaskStore::append_event)
 /// does more: once the wrapped store has accepted the event, it records the
-/// event's digest, its position, the new state for a status change, and the
+/// event's digest, its position, the new state for a status change and the
+/// id of a message the status carries, and the
 /// `run.started` record of the run that emitted it, which names the caller.
 ///
 /// Installed by [`RequestHandlerBuilder::with_audit`](crate::RequestHandlerBuilder::with_audit);
@@ -56,6 +57,9 @@ impl AuditedTaskStore {
                 r.state = serde_json::to_value(u.status.state)
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_owned));
+                // A message on the status, the agent's own or one the queue
+                // carried there from a mid-task `Message` (spec §3.1.2).
+                r.message_id = u.status.message.as_ref().map(|m| m.id.0.clone());
                 u.status.state.is_terminal()
             }
             StreamResponse::ArtifactUpdate(u) => {

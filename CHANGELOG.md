@@ -1542,6 +1542,32 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Behaviour Changes
 
+- **A `Message` an executor writes during its task is streamed as a status
+  update** (server; spec §3.1.2, §3.5.2). A stream is exactly one `Message`
+  or a `Task` followed by status and artifact updates; a `Message` written
+  after the task stream began was forwarded as a `Message` inside it, which
+  is neither. The queue's writer now sends it as a `TaskStatusUpdateEvent`
+  that keeps the state the turn last wrote (or, before any status, the
+  state the turn began in) and carries the message in `status.message`. It
+  does so once, before the event takes its log position, so the send
+  stream, a `SubscribeToTask` stream and a resumed replay carry one payload
+  at that position. The store appends the message to `history` as before,
+  and, while the task is not finished, also holds it as the status message;
+  push subscribers are sent the update. Unchanged: a first-event `Message`
+  is a direct reply, a `Message` after only messages stays one, and one
+  after the terminal status is stored and streamed to no one. A client that
+  read mid-task `Message` events reads `status.message` on status updates
+  instead. With it: the executor's span no longer ends the turn's recorded
+  output at such a message (`rpc_span/span_tests.rs`
+  `a_mid_task_message_does_not_end_the_turn`); the audit trail's
+  `task.event` record of a status update that carries a message names the
+  message's id, as the record of a `Message` event did (`tests/audit_trail.rs`);
+  and a refused history append on a task with no history restores no
+  history rather than an empty one. Tests: `tests/mid_task_message.rs`,
+  `streaming/event_queue/message_fold.rs`, the processor and state-machine
+  unit tests named `carried`, `tests/event_processing_tests/streaming_mode.rs`;
+  each part was shown to fail with it disabled.
+
 - **A refused call is recorded, and counted, for why it was refused**
   (server; spec §3.3.2; audit WP-A). `ServerError::metric_label`, which
   names an error in the audit trail's `call` records and in

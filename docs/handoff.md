@@ -81,6 +81,11 @@ only: when something here is done, delete it rather than annotating it.
     invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
     `rig-agent` (44 of 44 on its second run; see the 30 s timeout under
     *Open engineering*). Logs were not committed.
+  - §3.1.2 (2026-10-23): a `Message` an executor writes once its task
+    stream has begun is sent as a status update carrying it, folded once
+    at the queue's writer (`streaming/event_queue/message_fold.rs`),
+    reviewed independently; the subscriber residual waits on the
+    maintainer (*Waiting*).
 - **`sign_agent_card` is deprecated, not removed** (2026-10-23): it shipped
   in 0.14.1, so `STABILITY.md` §3 keeps it for one minor release. It now
   refuses `key_id: None`, which wrote a header without the `kid` §8.4.2
@@ -177,15 +182,16 @@ only: when something here is done, delete it rather than annotating it.
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
   authority on the counts (2026-10-23, after WP-A, WP-B and WP-C: TESTED
-  452, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 6; 510 entries). The six
-  PARTIAL entries, each short for a stated reason: §3.5.2, a stream lagging
+  453, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 5; 510 entries, after
+  the writer fold of 2026-10-23). The five PARTIAL entries, each short for
+  a stated reason: §3.5.2, a stream lagging
   past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
   itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
   carries no error details (maintainer: stays PARTIAL until it does);
-  §3.1.2 (two entries), a Message an executor writes after the Task is
-  forwarded inside the task stream, which neither stream pattern allows
-  (the fix recommended: fold it into a status update's `message`); §7.6.1,
+  §3.1.2 line 206 (low), a turn's first-event `Message` stays a direct
+  reply, so a `SubscribeToTask` stream attached to the task receives it
+  bare (*Waiting on the maintainer*, the §3.1.2 item); §7.6.1,
   a message to a task in AUTH_REQUIRED is refused while its executor still
   runs (recommended: document that the executor returns, PARTIAL naming
   the conflict between the section's two SHOULDs). The APPLICATION and
@@ -219,8 +225,9 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **The rest of the conformance list:** the six PARTIAL entries (§3.1.2,
-   lines 20 and 22, waits on the maintainer, see *Waiting*; §7.6.1, line
+2. **The rest of the conformance list:** the five PARTIAL entries (§3.1.2,
+   line 20, the subscriber residual of the writer fold, waits on the
+   maintainer, see *Waiting*; §7.6.1, line
    227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
    MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
    CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
@@ -284,20 +291,25 @@ only: when something here is done, delete it rather than annotating it.
   public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
-- **§3.1.2: where to fold a mid-task `Message`** (2026-10-23). A `Message`
-  an executor writes after its task exists is forwarded inside the task
-  stream, which neither §3.1.2 pattern allows (ledger 20, 22, medium). A
-  fold in each stream's reader was built, reviewed independently and
-  reverted: a resumed `SubscribeToTask` stream starts from the current
-  snapshot and then replays older events, so a replayed `Message` took the
-  current state (a terminal one ends the client's stream early) and
-  different streams got different payloads at one log position, breaking
-  §3.5.2. The conforming fold is once, at the writer, which changes the
-  store contract: the message becomes the stored status message instead of
-  a `history` entry (or the processor appends both), push delivers it,
-  the writer needs the task's state at a turn's start, and a
-  continuation's first-event `Message` must stay a direct reply. The
-  maintainer's call.
+- **§3.1.2: a turn's first-event `Message` on a subscriber's stream**
+  (2026-10-23). The queue's writer now carries a `Message` written once the
+  task stream has begun in a status update (`streaming/event_queue/
+  message_fold.rs`; ledger 210 TESTED), once per log position, so every
+  stream and a resumed replay agree (§3.5.2). What remains (ledger 206,
+  low): a turn whose *first* event is a `Message` keeps it as a direct
+  reply, as §3.1.2 allows the send stream, so a `SubscribeToTask` stream
+  attached to the task (a continuation answered with a `Message`, or a
+  first turn subscribed to before its first event) receives that `Message`
+  bare, which §3.1.6's output does not list. One payload per position
+  cannot be both; folding it too would turn a continuation's direct reply
+  into a task stream. The maintainer's call. Also decided in the fold and
+  open to revisiting: a message written while the task is parked
+  (`input-required`, `auth-required`) replaces the stored status message
+  (the prompt, or §7.6.1's explanation) as a client applying the update
+  would; the size limit applies to the status update, about 150 bytes more
+  than the bare message; the fold uses the state the executor last wrote,
+  so after a status the processor refused (task stored `Failed`) a later
+  message still streams in the refused state.
 - **SLIMRPC `otlp` is on by default** (2026-10-23). The two conflicts that
   kept it opt-in are fixed: the server's OTLP/gRPC dials TLS through its own
   rustls connector, so tonic's TLS is not linked for it (with it linked,
@@ -604,10 +616,17 @@ into this file: the commit that records it changes it.
 - An independent review before committing found two defects in R69 that the
   change's own tests and 23 hand mutants did not; budget for one on any
   change to the stream or store contract. It did again on 2026-10-23: a
-  per-reader §3.1.2 fold passed its tests and broke §3.5.2 on resume.
+  per-reader §3.1.2 fold passed its tests and broke §3.5.2 on resume; the
+  writer fold that replaced it was reviewed the same way, and the review's
+  findings (a failed write still setting the fold's state, the agent span
+  ending at a mid-task message, the audit record losing the message id, a
+  revert leaving `history: []`) were fixed with a test each.
 - The workspace suite and the all-features server suite in one target
   directory exceed this container's disk allowance; delete `target/debug`
-  between them (2026-10-23).
+  between them (2026-10-23). Building with `CARGO_INCREMENTAL=0
+  CARGO_PROFILE_DEV_DEBUG=line-tables-only
+  CARGO_PROFILE_TEST_DEBUG=line-tables-only` keeps the server's ~180 test
+  binaries well under it; full debuginfo filled it at 14 GB of `deps`.
 - Run every clippy invocation CI runs, not only `--all-features`: a type
   used by an always-compiled store from a module gated on `sqlite` built
   with all features and nowhere else (2026-10-18).

@@ -15,7 +15,7 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskState;
 
 use super::super::report::CheckResult;
-use super::{RUN_TIMEOUT, Run, RunOutcome, states};
+use super::{RUN_TIMEOUT, Run, RunOutcome};
 
 impl Run {
     pub(in crate::conformance) fn did_not_panic(&self, name: &'static str) -> CheckResult {
@@ -114,7 +114,7 @@ impl Run {
         }
         CheckResult::pass(
             NAME,
-            states(&self.events)
+            self.statuses
                 .last()
                 .map_or_else(|| "stopped".to_owned(), |s| format!("stopped at {s}")),
         )
@@ -156,7 +156,7 @@ impl Run {
                 "the executor failed, so the handler writes the terminal status",
             );
         }
-        match states(&self.events).last().copied() {
+        match self.statuses.last().copied() {
             None => CheckResult::fail(
                 NAME,
                 "returned Ok having emitted no status at all; the task stays \
@@ -178,7 +178,7 @@ impl Run {
 
     pub(in crate::conformance) fn transitions_are_legal(&self) -> CheckResult {
         const NAME: &str = "transitions_are_legal";
-        let seen = states(&self.events);
+        let seen = &self.statuses;
         if seen.len() < 2 {
             return CheckResult::skip(NAME, "fewer than two statuses emitted");
         }
@@ -252,7 +252,7 @@ impl Run {
 
     pub(in crate::conformance) fn parking_is_not_an_error(&self) -> CheckResult {
         const NAME: &str = "parking_is_not_an_error";
-        let parked = states(&self.events).iter().any(|s| s.is_interrupted());
+        let parked = self.statuses.iter().any(|s| s.is_interrupted());
         if !parked {
             return CheckResult::skip(NAME, "the executor never parked");
         }
@@ -284,7 +284,7 @@ impl Run {
                 ),
             );
         }
-        let seen = states(&self.events);
+        let seen = &self.statuses;
         if seen.contains(&TaskState::Completed) {
             return CheckResult::fail(
                 NAME,

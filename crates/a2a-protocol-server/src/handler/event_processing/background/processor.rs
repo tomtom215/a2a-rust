@@ -51,7 +51,7 @@ use crate::streaming::event_queue::terminal_gate::TerminalGate;
 
 use super::push_delivery::deliver_push_bg;
 use super::record_event;
-use super::state_machine::{BackgroundDeps, Outcome, process_event_with};
+use super::state_machine::{BackgroundDeps, Outcome, process_queued_event};
 
 /// The state one background processor carries between events.
 pub(super) struct Processor<'a> {
@@ -167,8 +167,8 @@ impl<'a> Processor<'a> {
                 release(event);
             }
         };
-        let fold = process_event_with(
-            event.map(|e| e.event),
+        let fold = process_queued_event(
+            event,
             self.task_id,
             &mut self.last_task,
             self.deps,

@@ -205,9 +205,11 @@ fn executor_span(
 pub struct OutputRecorder {
     span: tracing::Span,
     content: bool,
-    /// The agent's output so far as message parts, the bytes left, and
-    /// whether the turn has ended and been recorded.
-    output: Mutex<(Vec<Value>, usize, bool)>,
+    /// The agent's output so far as message parts, the bytes left, whether
+    /// the turn has ended and been recorded, and whether the executor has
+    /// written a task, status or artifact (after which a `Message` is not a
+    /// direct reply: the queue carries it in a status update, spec §3.1.2).
+    output: Mutex<(Vec<Value>, usize, bool, bool)>,
 }
 
 #[cfg(feature = "tracing")]
@@ -216,7 +218,7 @@ impl OutputRecorder {
         Self {
             span,
             content: settings.content,
-            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false)),
+            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false, false)),
         }
     }
 
@@ -253,11 +255,13 @@ impl OutputRecorder {
             StreamResponse::Message(m) => (None, Some(&m.parts), true),
             _ => (None, None, false),
         };
-        let ends_turn = reply || state.is_some_and(|s| s.is_terminal() || s.is_interrupted());
         let Ok(mut output) = self.output.lock() else {
             return;
         };
-        let (collected, budget, ended) = &mut *output;
+        let (collected, budget, ended, task_stream) = &mut *output;
+        let reply = reply && !*task_stream;
+        *task_stream |= !matches!(event, StreamResponse::Message(_));
+        let ends_turn = reply || state.is_some_and(|s| s.is_terminal() || s.is_interrupted());
         if *ended {
             return;
         }

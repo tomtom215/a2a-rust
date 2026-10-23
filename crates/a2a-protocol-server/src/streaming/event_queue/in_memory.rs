@@ -193,6 +193,10 @@ pub struct InMemoryQueueWriter {
     /// path has bound them ([`bind_identity`](Self::bind_identity)); shared
     /// by every clone. See `check_identity`.
     identity: Arc<std::sync::OnceLock<(TaskId, ContextId)>>,
+    /// What the turn has written so far, for carrying a mid-task `Message`
+    /// in a status update; shared by every clone and changed only under
+    /// `order`. See [`super::message_fold`].
+    turn: Arc<std::sync::Mutex<super::message_fold::Turn>>,
     /// Holds a terminal event back until the background processor has ruled
     /// on it. `None` unless the send path enabled it; see
     /// [`TerminalGate`](super::terminal_gate::TerminalGate).
@@ -231,6 +235,7 @@ impl InMemoryQueueWriter {
             order: Arc::default(),
             applied: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
+            turn: Arc::default(),
             terminal_gate: None,
             collected: false,
         }
@@ -253,6 +258,7 @@ impl InMemoryQueueWriter {
             order: Arc::default(),
             applied: Arc::default(),
             identity: Arc::new(std::sync::OnceLock::new()),
+            turn: Arc::default(),
             terminal_gate: None,
             collected: false,
         }
@@ -326,6 +332,30 @@ impl InMemoryQueueWriter {
     /// labelled as another's). The first binding wins.
     pub(crate) fn bind_identity(&self, task_id: TaskId, context_id: ContextId) {
         let _ = self.identity.set((task_id, context_id));
+    }
+
+    /// Tells the writer the state the task is in as this turn begins, the
+    /// state a `Message` written after an artifact but before any status is
+    /// carried in (see [`super::message_fold`]). Called before the executor
+    /// is spawned; a state the turn has already written is kept.
+    pub(crate) fn bind_state(&self, state: a2a_protocol_types::task::TaskState) {
+        self.turn().begin_in(state);
+    }
+
+    /// Gives the turn's fold state what a write said, if it succeeded; called
+    /// under the order lock, as the fold that reads it is.
+    fn noted(&self, note: super::message_fold::Note, written: &A2aResult<()>) {
+        if written.is_ok() {
+            self.turn().note(note);
+        }
+    }
+
+    /// The turn's fold state, locked. Poisoning is ignored: no method on it
+    /// can panic part-way through a change.
+    fn turn(&self) -> std::sync::MutexGuard<'_, super::message_fold::Turn> {
+        self.turn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Fills empty ids from the binding and refuses foreign ones. A writer
@@ -626,6 +656,10 @@ impl InMemoryQueueWriter {
         mut event: StreamResponse,
         order: tokio::sync::MutexGuard<'a, ()>,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        // First, so the update it may become is checked and stamped as any
+        // other status update is (spec §3.1.2; see `message_fold`).
+        let folded_message;
+        (event, folded_message) = self.turn().fold(event);
         // Before anything persists or broadcasts it (N35).
         if let Err(e) = self.check_identity(&mut event) {
             return Box::pin(std::future::ready(Err(e)));
@@ -647,12 +681,14 @@ impl InMemoryQueueWriter {
         if let Err(e) = self.check_event_size(&event) {
             return Box::pin(std::future::ready(Err(e)));
         }
+        let note = super::message_fold::Note::of(&event);
         // The position, assigned exactly once and carried on both channels
         // below. `Relaxed` is enough: this is the only writer of the counter
         // and the value travels with the event, so no other memory is ordered
         // against it.
         let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
-        let event = StreamEvent::at(seq, event);
+        let mut event = StreamEvent::at(seq, event);
+        event.folded_message = folded_message;
         // Armed before the hand-off, so the processor's verdict can never
         // arrive ahead of the ticket it answers.
         let mut ticket = self.ticket_for(&event);
@@ -677,7 +713,9 @@ impl InMemoryQueueWriter {
                 Handoff::Full => {
                     return Box::pin(async move {
                         let _order = order;
-                        self.finish_write(event, seq, ticket, deadline, false).await
+                        let written = self.finish_write(event, seq, ticket, deadline, false).await;
+                        self.noted(note, &written);
+                        written
                     });
                 }
             }
@@ -685,10 +723,13 @@ impl InMemoryQueueWriter {
         if ticket.is_some() {
             return Box::pin(async move {
                 let _order = order;
-                self.finish_write(event, seq, ticket, deadline, true).await
+                let written = self.finish_write(event, seq, ticket, deadline, true).await;
+                self.noted(note, &written);
+                written
             });
         }
         let outcome = self.broadcast(event, collector_gone);
+        self.noted(note, &outcome);
         drop(order);
         // `try_send` spends none of the task's cooperative budget, and the
         // `send` it replaces spent one unit per write. Without this an

@@ -405,3 +405,38 @@ async fn a_status_update_is_marked_stored_before_its_push() {
     let stored = f.pushes.2.lock().unwrap().clone();
     assert_eq!(stored, [true], "pushed once, after the mark said stored");
 }
+
+/// A `Message` the writer carried in a status update (spec §3.1.2) is
+/// stored as the message it was, held as the status message, logged at its
+/// position, and pushed as the update the streams carried.
+#[tokio::test]
+async fn a_carried_message_is_stored_logged_and_pushed() {
+    let f = Fixture::new(TaskState::Working).await;
+    let id = TaskId::new("t");
+    let mut run = f.processor(&id);
+
+    let mut carried = status(1, TaskState::Working);
+    if let StreamResponse::StatusUpdate(u) = &mut carried.event {
+        u.status.message = Some(a2a_protocol_types::message::Message::agent_text(
+            "progress-1",
+            "nearly there",
+        ));
+    }
+    carried.folded_message = true;
+    run.handle(Ok(carried)).await;
+
+    let stored = f.store.get(&id).await.expect("get").expect("task");
+    assert_eq!(stored.status.state, TaskState::Working);
+    let held = stored.status.message.as_ref().map(|m| m.id.0.as_str());
+    assert_eq!(held, Some("progress-1"), "{stored:?}");
+    assert!(
+        stored
+            .history
+            .iter()
+            .flatten()
+            .any(|m| m.id.0 == "progress-1"),
+        "{stored:?}"
+    );
+    assert_eq!(f.logged().await, vec![(1, Some(TaskState::Working))]);
+    assert_eq!(f.pushed(), vec![TaskState::Working]);
+}

@@ -158,6 +158,28 @@ fn a_direct_reply_is_the_output() {
     assert!(!fields.contains_key("a2a.task.state"), "{fields:?}");
 }
 
+/// A `Message` written once the task is under way is not a direct reply:
+/// the queue carries it in a status update (spec §3.1.2), and the turn goes
+/// on to its terminal state, whose output follows the message's.
+#[test]
+fn a_mid_task_message_does_not_end_the_turn() {
+    let fields = executor_fields(&[
+        status(TaskState::Working, None),
+        StreamResponse::Message(Message::agent("p", vec![Part::text("progress")])),
+        status(
+            TaskState::Completed,
+            Some(Message::agent("a", vec![Part::text("the answer")])),
+        ),
+    ]);
+    let output = &fields["gen_ai.output.messages"];
+    assert!(output.contains("progress"), "{output}");
+    assert!(output.contains("the answer"), "{output}");
+    assert_eq!(
+        fields.get("a2a.task.state").map(String::as_str),
+        Some("TASK_STATE_COMPLETED")
+    );
+}
+
 /// A turn that ends with nothing said records its state and no output.
 #[test]
 fn a_turn_with_nothing_said_records_no_output() {

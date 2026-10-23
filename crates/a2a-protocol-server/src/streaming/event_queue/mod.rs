@@ -24,6 +24,7 @@ mod hold_tests;
 mod identity_tests;
 mod in_memory;
 mod manager;
+mod message_fold;
 #[cfg(test)]
 mod paging_tests;
 #[cfg(test)]
@@ -133,6 +134,11 @@ pub struct StreamEvent {
     pub seq: Option<u64>,
     /// What the agent emitted.
     pub event: StreamResponse,
+    /// `event` is a status update the writer made of a `Message` the agent
+    /// wrote during its task (spec §3.1.2; see `message_fold`). Read by the
+    /// processors that keep the task store, which record it as the message
+    /// it was; not carried in the log, whose readers need only the payload.
+    pub(crate) folded_message: bool,
 }
 
 impl StreamEvent {
@@ -142,6 +148,7 @@ impl StreamEvent {
         Self {
             seq: Some(seq),
             event,
+            folded_message: false,
         }
     }
 
@@ -149,7 +156,11 @@ impl StreamEvent {
     /// by the agent.
     #[must_use]
     pub const fn unpositioned(event: StreamResponse) -> Self {
-        Self { seq: None, event }
+        Self {
+            seq: None,
+            event,
+            folded_message: false,
+        }
     }
 }
 

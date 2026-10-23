@@ -30,7 +30,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---:|---:|---:|---:|---:|
 | §1 | 3 |  | 4 |  | 7 |
 | §2 | 2 |  | 1 |  | 3 |
-| §3 | 120 | 11 | 3 | 3 | 137 |
+| §3 | 121 | 11 | 3 | 2 | 137 |
 | §4 | 15 |  |  |  | 15 |
 | §5 | 31 | 1 | 2 | 1 | 35 |
 | §7 | 13 | 5 |  | 1 | 19 |
@@ -43,14 +43,13 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 14 | 2 |  |  | 16 |
 | §A |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 94 | 4 | 8 |  | 106 |
-| **All** | **452** | **32** | **20** | **6** | **510** |
+| **All** | **453** | **32** | **20** | **5** | **510** |
 
 ## Open items, most severe first
 
 | Severity | Status | Where | Requirement | Notes |
 |---|---|---|---|---|
-| medium | PARTIAL | §3.1.2 (line 206) | The stream MUST follow one of these patterns: (1) Message-only stream ... (2) Task lifecycle stream | The executor's first event decides the pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Tas… |
-| medium | PARTIAL | §3.1.2 (line 210) | Task lifecycle stream: If the agent returns a Task, the stream MUST begin with the Task object, followed by zero or more TaskStatusUpdateEv… | PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern a… |
+| low | PARTIAL | §3.1.2 (line 206) | The stream MUST follow one of these patterns: (1) Message-only stream ... (2) Task lifecycle stream | The executor's first event decides the send stream's pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. A Message an executor writes once its task stream has begun… |
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
 | low | PARTIAL | §7.6.1 (line 1933) | Agents SHOULD support receiving messages directed to the Task while the Task remains in `TASK_STATE_AUTH_REQUIRED`. | Test asserts an authenticated continuation to an AUTH_REQUIRED task is accepted and re-runs the executor (runs==2). PARTIAL (2026-10-23 re-audit): a message to a task in AUTH_REQUIRED whose executor is still running waits executor_drain_timeout and is refused… |

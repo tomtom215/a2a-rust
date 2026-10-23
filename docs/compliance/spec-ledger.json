@@ -303,7 +303,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1497 InMemoryQueueReader::next_live"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1538 InMemoryQueueReader::next_live"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -425,20 +425,27 @@
    "binds": "server",
    "requirement": "The stream MUST follow one of these patterns: (1) Message-only stream ... (2) Task lifecycle stream",
    "status": "PARTIAL",
-   "severity": "medium",
+   "severity": "low",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1113 InMemoryQueueReader::set_provisional_task",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1154 InMemoryQueueReader::set_provisional_task",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:70 Turn::fold",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:559 process_folded_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:680 SyncCollector::fold_message"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:259 a_message_only_stream_is_exactly_one_message",
-    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:264 a_task_lifecycle_stream_begins_with_the_task"
+    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:269 a_message_only_stream_is_exactly_one_message",
+    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:274 a_task_lifecycle_stream_begins_with_the_task",
+    "crates/a2a-protocol-server/tests/mid_task_message.rs:173 a_mid_task_message_streams_as_a_status_update_in_the_task_s_state",
+    "crates/a2a-protocol-server/tests/mid_task_message.rs:280 a_resumed_subscription_replays_the_same_payload_at_each_position",
+    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:274 a_task_lifecycle_stream_begins_with_the_task"
    ],
-   "notes": "The executor's first event decides the pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern allows; TaskStatus.message is the conforming carrier. Tried and reverted 2026-10-23: folding the Message into a status update in each stream's reader. An independent review found it breaks §3.5.2: a resumed SubscribeToTask stream begins with the current Task snapshot and then replays older log events, so a replayed Message took the task's current state (even a terminal one, which ends a client's stream before the rest of the replay), and one log position carried different payloads on different streams. A conforming fold must happen once, at the writer, so each log position has one payload; that changes the store contract (the message would be the stored status message rather than a history entry, push would deliver it, the writer must know the task's state at a turn's start, and a continuation's first-event Message must stay a direct reply). Left to the maintainer; see docs/handoff.md.",
+   "notes": "The executor's first event decides the send stream's pattern (InMemoryQueueReader::set_provisional_task): a Message makes a message-only stream, anything else a task stream that begins with the Task. A Message an executor writes once its task stream has begun (after a Task, status or artifact update) is sent, since 2026-10-23, as a TaskStatusUpdateEvent that keeps the state the turn last wrote (or, before any status, the state the turn began in) and carries the message in status.message. The writer folds it once, before the event takes its log position, so the send stream, a SubscribeToTask stream and a resumed replay carry one payload at that position (§3.5.2); the processors store it as a history entry and the status message, with no transition check, and push it. A fold in each stream's reader, tried first the same day, was reverted after an independent review: a replayed Message took the task's current state. The writer fold was reviewed independently (no critical or high findings); each part is shown to fail with it disabled (mutation, 2026-10-23). PARTIAL, low, for one residual the review found: a turn's first-event Message stays a direct reply, so a SubscribeToTask stream attached to the task (a continuation answered with a Message, or a first turn subscribed to before its first event) receives that bare Message, which §3.1.6's output (Task, then status and artifact updates) does not list. One payload per log position cannot be both the send stream's direct reply and the subscriber's status update; which to give up is the maintainer's call (docs/handoff.md).",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, writer fold)"
   },
   {
    "spec_line": 208,
@@ -450,11 +457,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:259 a_message_only_stream_is_exactly_one_message",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1656 a_dropped_first_read_still_ends_a_message_only_stream"
+    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:269 a_message_only_stream_is_exactly_one_message",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1697 a_dropped_first_read_still_ends_a_message_only_stream"
    ],
    "notes": "Exactly one Message, then the reader returns None; a read dropped while waiting for the first event keeps the decision (cancel-safety test).",
    "auditor": "A",
@@ -467,20 +474,27 @@
    "keyword": "MUST",
    "binds": "server",
    "requirement": "Task lifecycle stream: If the agent returns a Task, the stream MUST begin with the Task object, followed by zero or more TaskStatusUpdateEvent or TaskArtifactUpdateEvent objects.",
-   "status": "PARTIAL",
-   "severity": "medium",
+   "status": "TESTED",
+   "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay"
+    "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay",
+    "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:70 Turn::fold",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:559 process_folded_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:680 SyncCollector::fold_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
-    "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:216 a_streaming_retry_replays_the_task_as_its_first_event"
+    "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:216 a_streaming_retry_replays_the_task_as_its_first_event",
+    "crates/a2a-protocol-server/tests/mid_task_message.rs:173 a_mid_task_message_streams_as_a_status_update_in_the_task_s_state",
+    "crates/a2a-protocol-server/tests/mid_task_message.rs:280 a_resumed_subscription_replays_the_same_payload_at_each_position",
+    "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:274 a_task_lifecycle_stream_begins_with_the_task"
    ],
-   "notes": "PARTIAL (2026-10-23 re-audit): a Message an executor writes after the Task is forwarded as a Message event inside the task stream (tests/event_processing_tests/streaming_mode.rs pins [Task, StatusUpdate, Message, StatusUpdate]), which neither stream pattern allows; TaskStatus.message is the conforming carrier. Tried and reverted 2026-10-23: folding the Message into a status update in each stream's reader. An independent review found it breaks §3.5.2: a resumed SubscribeToTask stream begins with the current Task snapshot and then replays older log events, so a replayed Message took the task's current state (even a terminal one, which ends a client's stream before the rest of the replay), and one log position carried different payloads on different streams. A conforming fold must happen once, at the writer, so each log position has one payload; that changes the store contract (the message would be the stored status message rather than a history entry, push would deliver it, the writer must know the task's state at a turn's start, and a continuation's first-event Message must stay a direct reply). Left to the maintainer; see docs/handoff.md.",
+   "notes": "A Message an executor writes once its task stream has begun (after a Task, status or artifact update) is sent, since 2026-10-23, as a TaskStatusUpdateEvent that keeps the state the turn last wrote (or, before any status, the state the turn began in) and carries the message in status.message. The writer folds it once, before the event takes its log position, so the send stream, a SubscribeToTask stream and a resumed replay carry one payload at that position (§3.5.2); the processors store it as a history entry and the status message, with no transition check, and push it. A fold in each stream's reader, tried first the same day, was reverted after an independent review: a replayed Message took the task's current state. The writer fold was reviewed independently (no critical or high findings); each part is shown to fail with it disabled (mutation, 2026-10-23). The send stream is therefore always a Task followed by status and artifact updates once the executor's first event is not a Message.",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-C)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, writer fold)"
   },
   {
    "spec_line": 210,
@@ -491,8 +505,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1497 InMemoryQueueReader::next_live",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1538 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:103 TerminalTracking::cancel_with",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:227 RequestHandler::executor_future"
@@ -519,7 +533,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -539,7 +553,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/delegation_tests.rs:202 a_direct_reply_is_a_message_outcome",
@@ -560,9 +574,9 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:574 InMemoryQueueWriter::broadcast",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:604 InMemoryQueueWriter::broadcast",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1497 InMemoryQueueReader::next_live"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1538 InMemoryQueueReader::next_live"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
@@ -868,7 +882,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81 RequestHandler::subscribe_reattach_hook",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:251 HandlerLimits::default",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:103 TerminalTracking::cancel_with"
    ],
    "test_evidence": [
@@ -897,7 +911,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:178 RequestHandler::subscription",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:217 RequestHandler::snapshot_and_live",
     "crates/a2a-protocol-server/src/streaming/event_queue/applied.rs:111 AppliedMark::read_through",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:316 InMemoryQueueWriter::attach"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:322 InMemoryQueueWriter::attach"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:842 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
@@ -2105,7 +2119,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:99 RequestHandler::resolve_task_id",
     "crates/a2a-protocol-server/src/handler/messaging/admission.rs:119 RequestHandler::settled_task",
     "crates/a2a-protocol-server/src/handler/messaging/admission.rs:84 RequestHandler::wait_for_parked_turn",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:290 InMemoryQueueWriter::settled"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:296 InMemoryQueueWriter::settled"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:1976 input_required_continuation_reuses_task_id",
@@ -2291,7 +2305,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:193 RequestHandler::respond_blocking",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/context_id_in_reply.rs:47 a_blocking_direct_reply_carries_the_generated_context",
@@ -2700,12 +2714,12 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:147 InMemoryQueueWriter",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:574 InMemoryQueueWriter::broadcast"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:604 InMemoryQueueWriter::broadcast"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2788 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2829 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs:130 bind_equiv_002_every_binding_delivers_events_in_generation_order"
@@ -2724,7 +2738,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:385 InMemoryQueueWriter::subscribe"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:415 InMemoryQueueWriter::subscribe"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:550 subscribe_creates_additional_reader",
@@ -2762,14 +2776,14 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1342 InMemoryQueueReader::settle",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1371 InMemoryQueueReader::settle_lag",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1401 InMemoryQueueReader::settle_from",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1431 InMemoryQueueReader::settle_through",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:932 CatchUpPage::goes_on",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1142 InMemoryQueueReader::queue_resume_replay",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1452 InMemoryQueueReader::close_through",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1481 InMemoryQueueReader::deliver_live_position",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1383 InMemoryQueueReader::settle",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1412 InMemoryQueueReader::settle_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1442 InMemoryQueueReader::settle_from",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1472 InMemoryQueueReader::settle_through",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:973 CatchUpPage::goes_on",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1183 InMemoryQueueReader::queue_resume_replay",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1493 InMemoryQueueReader::close_through",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1522 InMemoryQueueReader::deliver_live_position",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:431 RequestHandler::lag_catch_up_hook",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:684 LogReplay::read",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:298 RequestHandler::replay_after",
@@ -2785,8 +2799,8 @@
     "crates/a2a-protocol-server/src/store/task_store/config.rs:350 TaskStoreConfig::with_max_held_events_factor",
     "crates/a2a-protocol-server/src/store/task_store/mod.rs:745 TaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:618 TenantAwareInMemoryTaskStore::hold_events",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1229 InMemoryQueueReader::read",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1066 InMemoryQueueReader::owed_after",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1270 InMemoryQueueReader::read",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1107 InMemoryQueueReader::owed_after",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:31 RequestHandler::held_snapshot_and_live",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:59 RequestHandler::holding_log",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
@@ -2801,10 +2815,10 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:258 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:140 a_replay_over_the_limit_is_read_in_pages",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:417 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2788 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2608 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2829 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2649 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2073 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2114 subscribe_creates_independent_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:312 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:200 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:208 a_turn_longer_than_a_poll_keeps_its_first_events",
@@ -2890,7 +2904,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:385 InMemoryQueueWriter::subscribe"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:415 InMemoryQueueWriter::subscribe"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/streaming_contract.rs:172 closing_one_stream_leaves_the_other_streaming"
@@ -3238,7 +3252,7 @@
     "crates/a2a-protocol-server/src/portable.rs:13 standard_base64",
     "crates/a2a-protocol-server/src/portable.rs:28 inexact_number",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:81 make_portable",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:624 InMemoryQueueWriter::write_in_order"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/proto_golden_fixtures.rs:137 golden_fixtures_from_official_sdk_roundtrip",
@@ -3374,7 +3388,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:116 delivery_concurrency",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:142 deliver_to_every_config",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:743 SyncPushJob::run",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:787 SyncPushJob::run",
     "crates/a2a-protocol-server/src/push/sender.rs:216 PushRetryPolicy::with_max_attempts"
    ],
    "test_evidence": [
@@ -3382,8 +3396,8 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs:213 the_budget_sets_how_many_deliveries_run_at_once",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/budget.rs:245 delivery_concurrency_fits_the_budget_and_never_drops_a_config",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/tests/mod.rs:134 deliver_push_bg_attempts_every_config_within_the_deadline",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2196 the_sync_push_budget_is_the_configured_one",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2138 each_webhook_sees_events_in_order",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2240 the_sync_push_budget_is_the_configured_one",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:2182 each_webhook_sees_events_in_order",
     "crates/a2a-protocol-server/tests/push_sender_tests.rs:840 zero_attempts_still_sends_once"
    ],
    "notes": "Every configured webhook is attempted for every event, on the background and blocking paths. push_delivery_budget now sets concurrency: ceil(configs / (budget / timeout)), at least 1, at most configs (17 at the defaults); events go in order per webhook. Until 2026-10-11 deliveries were sequential and the budget skipped the rest (6 of 100 reached at defaults). PushRetryPolicy max_attempts 0 is taken as 1 (setter and loop). Not covered: a webhook whose single attempt exceeds push_delivery_timeout is cut off, which is an attempt, not a skip.",
@@ -5067,7 +5081,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:88 TerminalTracking::terminal_written"
    ],
    "test_evidence": [
@@ -7030,8 +7044,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:624 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1497 InMemoryQueueReader::next_live",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1538 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/streaming/sse.rs:388 build_sse_response"
    ],
    "test_evidence": [
@@ -7053,8 +7067,8 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:30 HandlerLimits",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:478 RequestHandler::final_snapshot_hook",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1027 InMemoryQueueReader::final_snapshot",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1068 InMemoryQueueReader::final_snapshot",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -8706,7 +8720,7 @@
     "crates/a2a-protocol-server/src/audit/interceptor.rs:57 append_or_report"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/audit_trail.rs:113 every_call_and_event_is_recorded_and_attributable"
+    "crates/a2a-protocol-server/tests/audit_trail.rs:120 every_call_and_event_is_recorded_and_attributable"
    ],
    "notes": "With the `audit` feature + with_audit, refused calls are recorded (test sends a credential-less call and asserts a record with no actor). The auth interceptors themselves emit no log line; metrics on_error counts failures.",
    "auditor": "F",
@@ -8754,7 +8768,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_security_events.rs:119 an_authorization_denial_is_recorded_with_the_denied_caller",
     "crates/a2a-protocol-server/tests/audit_security_events.rs:158 a_malformed_request_is_recorded_as_refused",
-    "crates/a2a-protocol-server/tests/audit_trail.rs:113 every_call_and_event_is_recorded_and_attributable"
+    "crates/a2a-protocol-server/tests/audit_trail.rs:120 every_call_and_event_is_recorded_and_attributable"
    ],
    "notes": "Opt-in audit feature records every call with outcome.",
    "auditor": "F",
@@ -8793,8 +8807,8 @@
     "crates/a2a-protocol-server/src/audit/log.rs:46 AuditLog"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/audit_trail.rs:226 a_cancel_request_names_who_asked",
-    "crates/a2a-protocol-server/tests/audit_trail.rs:399 each_tenant_gets_its_own_chain"
+    "crates/a2a-protocol-server/tests/audit_trail.rs:241 a_cancel_request_names_who_asked",
+    "crates/a2a-protocol-server/tests/audit_trail.rs:414 each_tenant_gets_its_own_chain"
    ],
    "notes": "Hash-chained per-tenant audit log (feature `audit`, opt-in).",
    "auditor": "F",
@@ -9279,7 +9293,7 @@
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:93 required_enum"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:973 process_event_invalid_state_transition_returns_error",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1017 process_event_invalid_state_transition_returns_error",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid",
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
     "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
@@ -9332,7 +9346,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:93 stamp_ids",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:193 RequestHandler::respond_blocking",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1263 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1304 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:218 agent_messages_on_a_status_or_in_history_get_the_tasks_ids",
@@ -9476,7 +9490,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:624 InMemoryQueueWriter::write_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:654 InMemoryQueueWriter::write_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36 check_required_fields",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:132 process_event_with",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:472 SyncCollector::process_event",
@@ -9485,9 +9499,9 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1626 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1292 an_appended_chunk_with_no_parts_is_dropped",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1229 artifact_with_empty_parts_is_dropped_when_not_appending",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1770 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1336 an_appended_chunk_with_no_parts_is_dropped",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1273 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
     "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts",
     "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
@@ -9533,7 +9547,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/executor_helpers.rs:223 EventEmitter::status",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:363 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:14 TaskStatusUpdateEvent",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
@@ -9557,7 +9571,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/executor_helpers.rs:223 EventEmitter::status",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:363 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:14 TaskStatusUpdateEvent",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
@@ -9604,7 +9618,7 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:223 EventEmitter::status",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:279 RequestHandler::commit_task",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:363 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
@@ -9631,7 +9645,7 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:223 EventEmitter::status",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:279 RequestHandler::commit_task",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:363 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
@@ -9681,10 +9695,10 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:132 process_event_with"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1346 artifact_append_merges_into_the_existing_artifact",
-    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1467 artifact_append_targets_the_matching_id_not_another",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1687 append_merges_and_non_append_does_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1754 append_merges_into_the_matching_artifact_not_another"
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1390 artifact_append_merges_into_the_existing_artifact",
+    "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1511 artifact_append_targets_the_matching_id_not_another",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1831 append_merges_and_non_append_does_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1898 append_merges_into_the_matching_artifact_not_another"
    ],
    "notes": "Parts extended and metadata merged into the artifact with matching id.",
    "auditor": "G",
