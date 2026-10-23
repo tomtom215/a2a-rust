@@ -44,7 +44,9 @@ server, such as one in a test.
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _queue| async { Ok(()) });
 # use a2a_protocol_sdk::server::{HttpPushSender, TaskStoreConfig};
-# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"])) }
+# fn make_agent_card() -> AgentCard { AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000")).with_description("An example agent").with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#     // Spec §13.3: the scheme the bearer interceptor below checks.
+#     .with_security_schemes(std::collections::HashMap::from([("bearer".to_owned(), a2a_protocol_types::security::SecurityScheme::Http(a2a_protocol_types::security::HttpAuthSecurityScheme { scheme: "Bearer".to_owned(), description: None, bearer_format: None }))])) }
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 use std::time::Duration;
 

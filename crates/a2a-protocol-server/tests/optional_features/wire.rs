@@ -13,6 +13,7 @@
 //! * Appendix A.2: a server "MAY accept both legacy and current request
 //!   message forms" and emits only the current form.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use a2a_protocol_server::serve::Server;
@@ -21,6 +22,9 @@ use a2a_protocol_server::{
     agent_executor,
 };
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::security::{
+    HttpAuthSecurityScheme, SecurityRequirement, SecurityScheme, StringList,
+};
 use a2a_protocol_types::task::TaskState;
 use serde_json::{Value, json};
 
@@ -47,6 +51,19 @@ async fn server() -> (std::net::SocketAddr, String) {
         .with_capabilities(AgentCapabilities::none().with_streaming(true));
     let mut card = card;
     card.supported_interfaces.push(AgentInterface::rest(&url));
+    // Spec §13.3: the scheme the bearer interceptor checks, declared in the
+    // public card. Until 2026-10-23 this card declared none and still built.
+    card.security_schemes = Some(HashMap::from([(
+        "bearer".to_owned(),
+        SecurityScheme::Http(HttpAuthSecurityScheme {
+            scheme: "Bearer".to_owned(),
+            description: None,
+            bearer_format: None,
+        }),
+    )]));
+    card.security_requirements = Some(vec![SecurityRequirement {
+        schemes: HashMap::from([("bearer".to_owned(), StringList { list: vec![] })]),
+    }]);
     let handler = RequestHandlerBuilder::new(Done)
         .with_agent_card(card)
         .with_interceptor(BearerTokenAuthInterceptor::new(["tok"]))

@@ -256,8 +256,7 @@ mod tests {
     /// missing credentials are rejected by the interceptor itself.
     #[tokio::test]
     async fn get_extended_agent_card_with_authenticator_gates_on_credentials() {
-        let mut card = make_agent_card();
-        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
+        let card = declaring();
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_agent_card(card.clone())
             .with_extended_agent_card(card)
@@ -324,7 +323,15 @@ mod tests {
     fn declaring() -> AgentCard {
         let mut card = make_agent_card();
         card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
-        card
+        bearer_declared(card)
+    }
+
+    /// `card` declaring the scheme `BearerTokenAuthInterceptor` checks: spec
+    /// §13.3 has requests authenticated with a scheme the public card declares.
+    fn bearer_declared(card: AgentCard) -> AgentCard {
+        let bearer =
+            serde_json::json!({"bearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}});
+        card.with_security_schemes(serde_json::from_value(bearer).unwrap())
     }
 
     /// The public card plus a skill only authenticated callers see.
@@ -414,7 +421,7 @@ mod tests {
     fn build_refuses_an_extended_card_the_public_card_never_serves() {
         let why = refusal(
             RequestHandlerBuilder::new(DummyExecutor)
-                .with_agent_card(make_agent_card())
+                .with_agent_card(bearer_declared(make_agent_card()))
                 .with_extended_agent_card(extended()),
         );
         assert!(

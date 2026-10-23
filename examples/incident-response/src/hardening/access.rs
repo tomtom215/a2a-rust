@@ -12,7 +12,9 @@ use a2a_protocol_server::auth::{ApiKeyAuthInterceptor, BearerTokenAuthIntercepto
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::rate_limit::{RateLimitConfig, RateLimitInterceptor};
 
-use super::{Check, HeaderInterceptor, bind, is_refusal, plain_card, serve};
+use super::{
+    Check, HeaderInterceptor, api_key_card, bearer_card, bind, is_refusal, plain_card, serve,
+};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -36,7 +38,7 @@ pub(super) async fn bearer_auth() -> Check {
 
     let (listener, url) = bind().await;
     let handler = match RequestHandlerBuilder::new(LogSearchExecutor)
-        .with_agent_card(plain_card(&url, "Secured Agent"))
+        .with_agent_card(bearer_card(&url, "Secured Agent"))
         .with_interceptor(BearerTokenAuthInterceptor::new([TOKEN.to_owned()]))
         .build()
     {
@@ -116,7 +118,7 @@ pub(super) async fn api_key_auth() -> Check {
 
     let (listener, url) = bind().await;
     let handler = match RequestHandlerBuilder::new(LogSearchExecutor)
-        .with_agent_card(plain_card(&url, "Keyed Agent"))
+        .with_agent_card(api_key_card(&url, "Keyed Agent", HEADER))
         .with_interceptor(ApiKeyAuthInterceptor::new([KEY.to_owned()]).with_header(HEADER))
         .build()
     {

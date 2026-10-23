@@ -552,7 +552,10 @@ let handler = RequestHandlerBuilder::new(executor)
   count as authenticating for the extended agent card.
 - `SlimPeerAuthInterceptor::required()` also refuses a call with no verified
   peer as unauthenticated (`UNAUTHENTICATED`, challenge `SLIM-MLS`), and does
-  count.
+  count. Since 0.15 an authenticating interceptor needs the public card to
+  declare a security scheme (spec §13.3), or `build()` refuses; A2A has none
+  for a SLIM MLS session, and this crate's tests declare
+  `mutualTlsSecurityScheme`, the nearest.
 - An identity an earlier interceptor recorded stands, with its scheme.
 
 `:peer-addr` is an address in `100::/64`, the IPv6 discard-only block

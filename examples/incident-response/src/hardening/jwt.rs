@@ -40,7 +40,7 @@ pub(super) async fn jwt_auth() -> Check {
     use a2a_protocol_server::auth::jwt::{JwtAuthInterceptor, JwtValidator};
     use a2a_protocol_server::builder::RequestHandlerBuilder;
 
-    use super::{HeaderInterceptor, bind, is_refusal, plain_card, serve};
+    use super::{HeaderInterceptor, bearer_card, bind, is_refusal, serve};
     use crate::agents::LogSearchExecutor;
     use crate::{send_params, user_message};
 
@@ -66,7 +66,7 @@ pub(super) async fn jwt_auth() -> Check {
 
     let (listener, url) = bind().await;
     let handler = match RequestHandlerBuilder::new(LogSearchExecutor)
-        .with_agent_card(plain_card(&url, "JWT Agent"))
+        .with_agent_card(bearer_card(&url, "JWT Agent"))
         .with_interceptor(JwtAuthInterceptor::from_jwks_url(validator, jwks_url))
         .build()
     {

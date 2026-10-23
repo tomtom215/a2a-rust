@@ -19,6 +19,7 @@ use a2a_protocol_server::serve::serve_with_addr;
 use a2a_protocol_server::{CallContext, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::extensions::AgentExtension;
+use a2a_protocol_types::security::{HttpAuthSecurityScheme, SecurityScheme};
 use serde_json::json;
 
 use super::{bearer, http};
@@ -38,6 +39,15 @@ fn public() -> AgentCard {
     .with_description("publishes its limits to authenticated callers")
     .with_skill(AgentSkill::new("chat", "Chat", "d").with_tags(["t"]))
     .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
+    // Spec §13.3: the scheme the bearer interceptor checks, in the public card.
+    .with_security_schemes(std::collections::HashMap::from([(
+        "bearer".to_owned(),
+        SecurityScheme::Http(HttpAuthSecurityScheme {
+            scheme: "Bearer".to_owned(),
+            description: None,
+            bearer_format: None,
+        }),
+    )]))
 }
 
 /// The public card, plus the limits that apply to a caller.

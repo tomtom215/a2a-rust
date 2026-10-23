@@ -991,13 +991,18 @@ impl RequestHandlerBuilder {
         }
         // Spec §3.3.2, §7.4, §13.3: the authentication the cards declare is
         // the authentication the chain enforces.
+        crate::auth::declared::check(
+            public_card.map(|(_, card)| card),
+            extended_card.map(|(_, card)| card),
+            &self.interceptors,
+            self.auth_waivers.upstream,
+        )
+        .map_err(crate::error::ServerError::InvalidParams)?;
         let cards: Vec<&AgentCard> = public_card
             .into_iter()
             .chain(extended_card)
             .map(|(_, card)| card)
             .collect();
-        crate::auth::declared::check(&cards, &self.interceptors, self.auth_waivers.upstream)
-            .map_err(crate::error::ServerError::InvalidParams)?;
         // Spec §14, §13.3: a credential in a published card is disclosed.
         for (which, card) in public_card.into_iter().chain(extended_card) {
             let leaked = crate::agent_card::card_credentials(card);

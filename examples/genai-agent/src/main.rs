@@ -43,6 +43,7 @@ use std::sync::Arc;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
+mod auth_card;
 mod local_model;
 mod surface;
 mod telemetry;
@@ -322,11 +323,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             GenaiAgentExecutor::new(&model)?
         };
 
+        let mut card = make_agent_card(&url, &model);
+        auth_card::declare(&mut card);
         let mut builder = RequestHandlerBuilder::new(executor)
-            .with_agent_card(make_agent_card(&url, &model))
+            .with_agent_card(card.clone())
             // §3.1.11: the card declares an extended card, so one is set; the
             // public card is served as it.
-            .with_extended_agent_card(make_agent_card(&url, &model))
+            .with_extended_agent_card(card)
             // The push-config store is the builder's default, which follows
             // the task store: tenant-aware when an authenticating interceptor
             // below isolates callers' tasks (spec §13.1).

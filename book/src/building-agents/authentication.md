@@ -32,9 +32,27 @@ For a fixed set of accepted credentials, `ApiKeyAuthInterceptor` and
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let my_executor = MyAgent;
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
+use a2a_protocol_types::security::{
+    HttpAuthSecurityScheme, SecurityRequirement, SecurityScheme, StringList,
+};
+use std::collections::HashMap;
+
+// Spec §13.3: the public card declares the scheme the interceptor checks.
+let card = card()
+    .with_security_schemes(HashMap::from([(
+        "bearer".to_owned(),
+        SecurityScheme::Http(HttpAuthSecurityScheme {
+            scheme: "Bearer".to_owned(),
+            description: None,
+            bearer_format: None,
+        }),
+    )]))
+    .with_security_requirements(vec![SecurityRequirement {
+        schemes: HashMap::from([("bearer".to_owned(), StringList { list: vec![] })]),
+    }]);
 
 let handler = RequestHandlerBuilder::new(my_executor)
-    .with_agent_card(card())
+    .with_agent_card(card)
     .with_interceptor(BearerTokenAuthInterceptor::new([
         "service-token-1",
         "service-token-2",
@@ -216,16 +234,22 @@ declares with the interceptors that enforce it (since 0.15):
   makes authentication optional, as in OpenAPI, and asks for nothing. When a
   gateway, mesh or sidecar in front of the process checks the credential,
   say so with `authenticated_upstream()`.
-- An authenticating interceptor that checks none of the schemes the card
-  declares is refused: §13.3 requires requests to be authenticated "using one
-  of the schemes declared in the public `AgentCard`", and a client following
-  the card could never pass it. `BearerTokenAuthInterceptor` and
+- §13.3 requires requests to be authenticated "using one of the schemes
+  declared in the public `AgentCard.securitySchemes`". So, since 0.15.0, an
+  authenticating interceptor behind a public card that declares no scheme is
+  refused, custom ones included: a client reading the card could not know
+  what to present. A scheme the extended card declares must be declared,
+  the same, in the public card too.
+- An authenticating interceptor that checks none of the schemes the public
+  card declares is refused: a client following the card could never pass it.
+  `BearerTokenAuthInterceptor` and
   `JwtAuthInterceptor` check the HTTP `bearer` scheme and OAuth 2.0 or OpenID
   Connect schemes (whose access tokens are bearer tokens);
   `ApiKeyAuthInterceptor` checks an `apiKeySecurityScheme` in the header it
   reads, compared without regard to case. A custom interceptor answers
-  through `ServerInterceptor::checks_scheme`; one that does not is not
-  checked.
+  through `ServerInterceptor::checks_scheme`; one that does not (the default
+  `None`) is trusted to check one of the declared schemes, since only its
+  author knows what it checks.
 
 ### Throttling guessed credentials
 
@@ -244,6 +268,16 @@ credential included, so a guesser cannot tell a hit from a miss. Register it
 #     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_security_schemes(std::collections::HashMap::from([(
+#             "bearer".to_owned(),
+#             a2a_protocol_types::security::SecurityScheme::Http(
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
+#                     scheme: "Bearer".to_owned(),
+#                     description: None,
+#                     bearer_format: None,
+#                 },
+#             ),
+#         )]))
 # }
 # use a2a_protocol_sdk::prelude::agent_executor;
 # struct MyAgent;

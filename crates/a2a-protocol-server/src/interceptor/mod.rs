@@ -154,13 +154,16 @@ pub trait ServerInterceptor: Send + Sync + 'static {
     /// `None` (the default) when it cannot tell.
     ///
     /// [`RequestHandlerBuilder::build`](crate::RequestHandlerBuilder::build)
-    /// asks every authenticating interceptor about each scheme the agent card
-    /// declares, and refuses one that answers `Some(false)` to all of them:
-    /// spec §13.3 requires requests to be authenticated "using one of the
-    /// schemes declared in the public `AgentCard`", and a client following
+    /// asks every authenticating interceptor about each scheme the public
+    /// agent card declares, and refuses one that answers `Some(false)` to all
+    /// of them: spec §13.3 requires requests to be authenticated "using one of
+    /// the schemes declared in the public `AgentCard`", and a client following
     /// the card could never present the credential such an interceptor
     /// checks. The bundled authenticators answer; a custom one that does not
-    /// is not checked.
+    /// is trusted to check one of them. Either way the public card must
+    /// declare at least one scheme when any interceptor authenticates, and a
+    /// scheme the extended card declares must be declared in the public card
+    /// too, or `build()` refuses.
     fn checks_scheme(
         &self,
         _scheme: &a2a_protocol_types::security::SecurityScheme,

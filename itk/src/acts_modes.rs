@@ -67,28 +67,31 @@ pub(crate) fn capabilities() -> AgentCapabilities {
     caps
 }
 
-/// Declared only when enforced: a card claiming a scheme it does not check
-/// would be false, and the runner reads this to decide whether `SEC-AUTH`
-/// applies.
+/// The bearer scheme is declared in every pass, because [`Guard`] checks it
+/// on the extended card in every pass, and A2A §13.3 has requests
+/// authenticated "using one of the schemes declared in the public
+/// `AgentCard.securitySchemes`" (the SDK's build refuses an authenticator
+/// behind a card declaring none, since 0.15). It is required
+/// (`securityRequirements`) only when enforced on every operation: a card
+/// requiring a credential it does not check would be false, and the runner
+/// reads this to decide whether `SEC-AUTH` applies.
 pub(crate) fn security() -> (
     Option<NamedSecuritySchemes>,
     Option<Vec<SecurityRequirement>>,
 ) {
-    if !auth_enforced() {
-        return (None, None);
-    }
     let scheme = SecurityScheme::Http(HttpAuthSecurityScheme {
         scheme: "Bearer".into(),
         bearer_format: Some("opaque".into()),
         description: Some("Bearer token presented by the ACTS runner.".into()),
     });
+    let schemes = Some(HashMap::from([(SCHEME_ID.to_owned(), scheme)]));
+    if !auth_enforced() {
+        return (schemes, None);
+    }
     let requirement = SecurityRequirement {
         schemes: HashMap::from([(SCHEME_ID.to_owned(), StringList { list: Vec::new() })]),
     };
-    (
-        Some(HashMap::from([(SCHEME_ID.to_owned(), scheme)])),
-        Some(vec![requirement]),
-    )
+    (schemes, Some(vec![requirement]))
 }
 
 /// What the guard covers.

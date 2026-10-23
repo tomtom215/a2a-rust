@@ -64,8 +64,8 @@ async fn the_server_names_the_caller_slim_verified_and_not_the_one_it_claims() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let handler = Arc::new(
         RequestHandlerBuilder::new(common::SigningExecutor::new("echo_agent"))
-            .with_agent_card(common::agent_card(&agent))
-            .with_extended_agent_card(common::agent_card(&agent))
+            .with_agent_card(common::peer_authenticated_card(&agent))
+            .with_extended_agent_card(common::peer_authenticated_card(&agent))
             .with_interceptor(SlimPeerAuthInterceptor::required())
             .with_interceptor(Recorder(Arc::clone(&seen)))
             .build()
