@@ -378,6 +378,12 @@ section "The client refuses what `a2a.proto` does not allow".
   `the_cli_exports_its_calls_when_a_collector_is_named` (a metrics-only
   endpoint exports metrics alone).
 
+- **A delegation's lease renewals and drop-time cancel are in the parent's
+  trace** (client). Both run on spawned tasks, which start with no current
+  span and no ambient `CurrentTrace`, so each of their calls began a trace
+  of its own. They now run in the span and ambient trace current when the
+  delegation started. Tests: `delegation_spans.rs` (two).
+
 - **Spans for a card fetch and for a push notification received**
   (client). Fetching an agent card is the HTTP conventions' `CLIENT` span,
   `GET`, with the method, the URL without userinfo or query, the server, the

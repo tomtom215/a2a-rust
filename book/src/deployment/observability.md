@@ -565,6 +565,10 @@ stream is dropped; it carries `rpc.status_code` as the client's metric does,
 and the error a stream ended on. As the draft conventions require of A2A instrumentation,
 the client reports no `invoke_agent` span of its own.
 
+A `Delegation`'s lease renewals and the cancel it sends when dropped run
+on spawned tasks, in the span and ambient trace current when the delegation
+started, so their calls are in the delegating task's trace.
+
 **Fetching a card is a `GET` span**, the HTTP conventions' `CLIENT` span
 for a plain HTTP request: `http.request.method`, `url.full` (scheme, host,
 port and path; userinfo and the query are dropped), `server.address`,

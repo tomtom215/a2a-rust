@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::origin::Origin;
 use crate::client::A2aClient;
 
 /// The task renewing a child's lease, aborted when this is dropped.
@@ -21,10 +22,17 @@ pub(super) struct Renewal {
 impl Renewal {
     /// Renews the child's lease every third of `ttl`, once an event has
     /// named the child, until the child is terminal or this is dropped.
-    pub(super) fn spawn(client: Arc<A2aClient>, tenant: Option<String>, ttl: Duration) -> Self {
+    /// Runs where the delegation started (`origin`), so each renewal's call
+    /// is in its trace.
+    pub(super) fn spawn(
+        client: Arc<A2aClient>,
+        tenant: Option<String>,
+        ttl: Duration,
+        origin: &Origin,
+    ) -> Self {
         let id = Arc::new(std::sync::Mutex::new(None::<String>));
         let slot = Arc::clone(&id);
-        let task = tokio::spawn(async move {
+        let task = tokio::spawn(origin.carry(async move {
             let every = ttl / 3;
             loop {
                 tokio::time::sleep(every).await;
@@ -45,7 +53,7 @@ impl Renewal {
                     }
                 }
             }
-        });
+        }));
         Self { id, task }
     }
 }
