@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Alerts for a2a-rust agents, built on a2a-recording.yml. The signals are the
+# ones the book's observability chapter says are worth paging on
+# (book/src/deployment/observability.md, "The four signals worth alerting
+# on"). Thresholds are starting points: tune `for:` and the ratios to your
+# traffic. Each alert has a promtool unit test in ../tests/.
+
+groups:
+  - name: a2a-alerts
+    rules:
+      - alert: A2AServerErrorRatioHigh
+        expr: a2a:rpc_server_error_ratio:rate5m > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of A2A calls failed over 5m"
+          description: >-
+            More than 5% of calls to {{ $labels.job }} failed for 10 minutes, by
+            the RPC conventions' definition of failure (error_type set). Split by
+            rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m.
+
+      - alert: A2APersistenceErrors
+        expr: sum by (job, operation) (rate(a2a_server_persistence_errors_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }}: task writes are failing ({{ $labels.operation }})"
+          description: >-
+            The background processor could not persist task writes. A streaming
+            client already received these events, so the stored task and what
+            clients saw have diverged; a later GetTask returns the wrong answer.
+
+      - alert: A2ARequestsUnanswered
+        # Above floating-point noise: requests - responses - errors is a
+        # difference of rates, so an exact 0 can read as +/-1e-15.
+        expr: a2a:server_unanswered:rate5m > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}/{{ $labels.instance }}: requests without a response"
+          description: >-
+            Requests arrived that produced no response for 15 minutes: a
+            panicking executor, dropped connections, or a process exiting
+            mid-request.
+
+      - alert: A2AQueueDepthGrowing
+        expr: deriv(a2a_server_queue_depth[30m]) > 0 and a2a_server_queue_depth > 100
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}/{{ $labels.instance }}: {{ $value }} event queues and rising"
+          description: >-
+            Active event queues have grown for 30 minutes. Each open stream holds
+            one; a depth that never comes down is subscribers that stopped
+            reading without disconnecting.
+
+      - alert: A2APushDeliveryTruncated
+        expr: sum by (job) (rate(a2a_server_push_deliveries_total{outcome="timeout_truncated"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: push deliveries abandoned with retries left"
+          description: >-
+            push_delivery_timeout is shorter than the sender's retry schedule, so
+            deliveries are given up with attempts remaining. A configuration
+            problem: it will not resolve on its own and no webhook reports it.
+
+      - alert: A2APushDeliveryFailing
+        expr: a2a:push_delivery_failure_ratio:rate5m > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of push deliveries not delivered"
+          description: >-
+            Over 20% of push-notification attempts failed, timed out or were
+            skipped for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m.
+
+      - alert: A2AUnaryLatencyHigh
+        expr: a2a:rpc_server_unary_latency:p99_5m > 2.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} {{ $labels.rpc_method }}: p99 {{ $value | humanizeDuration }}"
+          description: >-
+            The 99th percentile of non-streaming calls has been above 2.5 s for
+            15 minutes. A blocking SendMessage includes the executor's work; set
+            the threshold per method if your agents run long turns.
+
+      - alert: A2AAgentSilent
+        expr: |
+          group by (job, instance) (present_over_time(target_info[1h]))
+            unless
+          group by (job, instance) (present_over_time(target_info[10m]))
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }}/{{ $labels.instance }} has pushed no telemetry for 10 minutes"
+          description: >-
+            Over OTLP there is no scrape and so no `up` series; target_info comes
+            with every export, so an agent seen in the last hour that has sent
+            none for 10 minutes has stopped, or its exporter has. An instance
+            retired on purpose also fires, for the rest of that hour.

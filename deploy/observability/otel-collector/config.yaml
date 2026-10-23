@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# OpenTelemetry Collector (otelcol-contrib) in front of Prometheus: agents
+# send all three signals here over OTLP, and Prometheus scrapes the metrics
+# from the Prometheus exporter (../prometheus/prometheus-collector.yml).
+# Point the agents at it:
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+#
+# 4318 is OTLP over HTTP/protobuf, the specification's default protocol and
+# Telemetry's; for 4317 also set OTEL_EXPORTER_OTLP_PROTOCOL=grpc.
+#
+# Traces and logs go to the `debug` exporter here; replace it with your
+# tracing and log backends (an `otlp` exporter to Tempo, Jaeger, Langfuse ...).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Names as Prometheus's own OTLP receiver writes them, so one set of
+    # rules and dashboards serves both paths.
+    translation_strategy: UnderscoreEscapingWithSuffixes
+    resource_to_telemetry_conversion:
+      enabled: false
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

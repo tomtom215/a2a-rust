@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Prometheus for a2a-rust agents that push OTLP straight to Prometheus.
+# Start Prometheus with `--web.enable-otlp-receiver` and point each agent at
+# it:
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://prometheus:9090/api/v1/otlp
+#   OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+#   OTEL_TRACES_EXPORTER=none OTEL_LOGS_EXPORTER=none
+#
+# (or send all three signals to an OpenTelemetry Collector and use
+# prometheus-collector.yml beside this file). README.md in the directory
+# above says how this file and the rules were tested.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+otlp:
+  # Each agent's OTEL_SERVICE_NAME becomes `job` and its
+  # service.instance.id `instance` without promotion; these are promoted
+  # too so dashboards can group by them.
+  promote_resource_attributes:
+    - service.version
+    - deployment.environment.name
+  translation_strategy: UnderscoreEscapingWithSuffixes
+
+storage:
+  tsdb:
+    # OTLP pushes arrive out of order under retries; accept 30 minutes.
+    out_of_order_time_window: 30m
+
+rule_files:
+  - rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

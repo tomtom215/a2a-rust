@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The Prometheus data source the a2a-rust dashboards query, by uid. Set
+# PROMETHEUS_URL in Grafana's environment (for example http://localhost:9090).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: a2a-prometheus
+    type: prometheus
+    access: proxy
+    url: ${PROMETHEUS_URL}
+    isDefault: true
+    jsonData:
+      timeInterval: 15s

@@ -274,10 +274,15 @@ and *idle* while it is open with none; `closed` counts connections that ended
 in an error or timeout. The gRPC and WebSocket dispatchers' own listeners,
 and a router you serve yourself, do not report them.
 
-`requests` and `responses` are separate on purpose. They are not redundant: the
-gap between them is requests that produced no response — a panicked executor, a
-dropped connection, a process that went away mid-request. A single counter
-would hide exactly the failure you want to see.
+`requests`, `responses` and `errors` are separate on purpose. A request ends in
+exactly one of the other two — a call answered with an error counts in
+`errors`, not in `responses` — so `requests − responses − errors` is the
+requests that produced no answer at all: a panicked executor, a dropped
+connection, a process that went away mid-request. A single counter would hide
+exactly the failure you want to see. (Until 2026-10-23 this paragraph called
+`requests − responses` that gap, which counts every error as unanswered;
+measured against a live Prometheus, the recording rule in
+`deploy/observability/` subtracts both.)
 
 ### What these become in Prometheus
 
@@ -320,6 +325,11 @@ can translate and translates neither form; the change corrects the metadata
 other exporters and backends read.
 
 ## The four signals worth alerting on
+
+Ready-made Prometheus rules, alerts and Grafana dashboards for these signals,
+tested against a live Prometheus and Grafana fed by an agent from this
+repository, are in [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
+(its README says how to point an agent at them and what the test covered).
 
 **`errors` / `requests`.** The obvious one. Split by `method`: a rising error
 rate confined to `SendStreamingMessage` is a different incident from one across

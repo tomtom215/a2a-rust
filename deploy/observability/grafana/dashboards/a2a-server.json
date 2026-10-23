@@ -1,0 +1,621 @@
+{
+  "uid": "a2a-server",
+  "title": "A2A server",
+  "description": "Rate, errors and duration of A2A calls served by a2a-rust agents, per binding and method, with the event-queue, push-delivery, persistence and connection-pool signals. Built on deploy/observability/prometheus/rules/a2a-recording.yml.",
+  "tags": [
+    "a2a",
+    "a2a-rust"
+  ],
+  "editable": true,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Agent (service.name)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "a2a-prometheus"
+        },
+        "query": {
+          "query": "label_values(target_info, job)",
+          "refId": "job-q"
+        },
+        "definition": "label_values(target_info, job)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "a2a-prometheus"
+        },
+        "query": {
+          "query": "label_values(target_info{job=~\"$job\"}, instance)",
+          "refId": "instance-q"
+        },
+        "definition": "label_values(target_info{job=~\"$job\"}, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Calls",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Calls per second, by binding",
+      "description": "rpc.server.call.duration count rate, every A2A method, by rpc.system.name.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (rpc_system_name) (a2a:rpc_server_calls:rate5m{job=~\"$job\"})",
+          "legendFormat": "{{rpc_system_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Failed calls (ratio)",
+      "description": "Calls with error.type set, over all calls (the RPC conventions' definition of failure).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "a2a:rpc_server_error_ratio:rate5m{job=~\"$job\"}",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Calls per second, by method",
+      "description": "By rpc.method (lf.a2a.v1.A2AService/<Method>).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (rpc_method) (a2a:rpc_server_calls:rate5m{job=~\"$job\"})",
+          "legendFormat": "{{rpc_method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Failed calls per second, by method and binding",
+      "description": "Only calls the conventions count as failed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (rpc_method, rpc_system_name) (a2a:rpc_server_errors:rate5m{job=~\"$job\"})",
+          "legendFormat": "{{rpc_method}} {{rpc_system_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Duration (non-streaming calls)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "p50 / p95 / p99",
+      "description": "Quantiles of non-streaming calls; a streaming call lasts as long as its stream.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "max by (rpc_method) (a2a:rpc_server_unary_latency:p50_5m{job=~\"$job\"})",
+          "legendFormat": "p50 {{rpc_method}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "max by (rpc_method) (a2a:rpc_server_unary_latency:p95_5m{job=~\"$job\"})",
+          "legendFormat": "p95 {{rpc_method}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "max by (rpc_method) (a2a:rpc_server_unary_latency:p99_5m{job=~\"$job\"})",
+          "legendFormat": "p99 {{rpc_method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "A2A server signals",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Errors by method and kind",
+      "description": "a2a.server.errors by A2A method and error kind.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (method, error) (a2a:server_errors_by_kind:rate5m{job=~\"$job\"})",
+          "legendFormat": "{{method}} {{error}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Requests without a response",
+      "description": "a2a.server.requests minus a2a.server.responses: panics, dropped connections, exits mid-request.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "a2a:server_unanswered:rate5m{job=~\"$job\", instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Active event queues",
+      "description": "a2a.server.queue_depth: one per open stream. A depth that never comes down is subscribers that stopped reading.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "a2a_server_queue_depth{job=~\"$job\", instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Persistence errors",
+      "description": "Task writes the background processor could not persist. Any non-zero rate means stored state and what clients saw diverged.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (operation, error) (rate(a2a_server_persistence_errors_total{job=~\"$job\"}[5m]))",
+          "legendFormat": "{{operation}} {{error}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Push deliveries, by outcome",
+      "description": "delivered / failed / timeout / timeout_truncated / skipped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (outcome) (a2a:push_deliveries:rate5m{job=~\"$job\"})",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "HTTP connections",
+      "description": "a2a.server.pool.*: reported by serve, serve_with_addr and Server::serve_with_shutdown only.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum(a2a_server_pool_active{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "active"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum(a2a_server_pool_idle{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "idle"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum(rate(a2a_server_pool_closed_total{job=~\"$job\", instance=~\"$instance\"}[5m]))",
+          "legendFormat": "closed on error/timeout /s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ],
+  "links": []
+}

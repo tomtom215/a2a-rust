@@ -248,6 +248,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Prometheus rules and Grafana dashboards** (`deploy/observability/`): a
+  Prometheus configuration for OTLP push and one for scraping an
+  OpenTelemetry Collector (with the Collector's configuration), 13 recording
+  rules, 8 alerts with `promtool` unit tests, and two Grafana dashboards
+  (server and client) with provisioning. Built from the metric and label
+  names a live Prometheus 3.15.1 recorded from `tck/sut` and the `a2a` CLI,
+  not from the code; `scripts/check_dashboards.py` checks every rule and
+  every panel query against a running stack, and passed on both paths
+  (README: what was measured and the two panels left empty).
+
 - **A quorum on the approval gate: `ApprovalGate::with_quorum(n)`** (server;
   EU AI Act Art. 14(5), control map row AIA-14-5, now `supported`). The gate
   waits for `n` distinct allowed approvers, told apart by authenticated

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Loads the dashboards in A2A_DASHBOARDS_DIR (deploy/observability/grafana/dashboards).
+apiVersion: 1
+providers:
+  - name: a2a-rust
+    folder: A2A
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: ${A2A_DASHBOARDS_DIR}
+      foldersFromFilesStructure: false

@@ -1,0 +1,161 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# promtool unit tests for ../rules: each alert fires on the input it is for
+# and stays silent on a control. Run:
+#   promtool test rules deploy/observability/prometheus/tests/a2a-alerts.test.yml
+
+rule_files:
+  - ../rules/a2a-recording.yml
+  - ../rules/a2a-alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 10 calls a minute, 2 of them failed (20%), against a healthy job.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_count{job="bad",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask"}'
+        values: '0+8x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="bad",rpc_system_name="jsonrpc",rpc_method="lf.a2a.v1.A2AService/GetTask",error_type="-32001"}'
+        values: '0+2x30'
+      - series: 'rpc_server_call_duration_seconds_count{job="good",rpc_system_name="grpc",rpc_method="lf.a2a.v1.A2AService/GetTask",rpc_status_code="OK"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: bad}
+            exp_annotations:
+              summary: "bad: 20% of A2A calls failed over 5m"
+              description: "More than 5% of calls to bad failed for 10 minutes, by the RPC conventions' definition of failure (error_type set). Split by rpc_method and rpc_system_name with a2a:rpc_server_errors:rate5m."
+      - eval_time: 8m
+        alertname: A2AServerErrorRatioHigh
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_persistence_errors_total{job="a",operation="save"}'
+        values: '0 0 0 1 1 1 1 1 1 1'
+      - series: 'a2a_server_persistence_errors_total{job="b",operation="save"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: A2APersistenceErrors
+        exp_alerts:
+          - exp_labels: {severity: critical, job: a, operation: save}
+            exp_annotations:
+              summary: "a: task writes are failing (save)"
+              description: "The background processor could not persist task writes. A streaming client already received these events, so the stored task and what clients saw have diverged; a later GetTask returns the wrong answer."
+
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_requests_total{job="a",instance="1",method="SendMessage"}'
+        values: '0+10x30'
+      - series: 'a2a_server_responses_total{job="a",instance="1",method="SendMessage"}'
+        values: '0+9x30'
+      - series: 'a2a_server_requests_total{job="a",instance="2",method="SendMessage"}'
+        values: '0+10x30'
+      - series: 'a2a_server_responses_total{job="a",instance="2",method="SendMessage"}'
+        values: '0+10x30'
+      # Errors are answers too: 8 responses + 2 errors for 10 requests.
+      - series: 'a2a_server_requests_total{job="a",instance="3",method="GetTask"}'
+        values: '0+10x30'
+      - series: 'a2a_server_responses_total{job="a",instance="3",method="GetTask"}'
+        values: '0+8x30'
+      - series: 'a2a_server_errors_total{job="a",instance="3",method="GetTask",error="task_not_found"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2ARequestsUnanswered
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a, instance: "1"}
+            exp_annotations:
+              summary: "a/1: requests without a response"
+              description: "Requests arrived that produced no response for 15 minutes: a panicking executor, dropped connections, or a process exiting mid-request."
+
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_queue_depth{job="a",instance="1"}'
+        values: '100+2x80'
+      - series: 'a2a_server_queue_depth{job="a",instance="2"}'
+        values: '150x80'
+      - series: 'a2a_server_queue_depth{job="a",instance="3"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 75m
+        alertname: A2AQueueDepthGrowing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a, instance: "1"}
+            exp_annotations:
+              summary: "a/1: 0.03333333333333333 event queues and rising"
+              description: "Active event queues have grown for 30 minutes. Each open stream holds one; a depth that never comes down is subscribers that stopped reading without disconnecting."
+
+  - interval: 1m
+    input_series:
+      - series: 'a2a_server_push_deliveries_total{job="a",outcome="timeout_truncated"}'
+        values: '0+1x30'
+      - series: 'a2a_server_push_deliveries_total{job="a",outcome="delivered"}'
+        values: '0+1x30'
+      - series: 'a2a_server_push_deliveries_total{job="b",outcome="delivered"}'
+        values: '0+5x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2APushDeliveryTruncated
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a}
+            exp_annotations:
+              summary: "a: push deliveries abandoned with retries left"
+              description: "push_delivery_timeout is shorter than the sender's retry schedule, so deliveries are given up with attempts remaining. A configuration problem: it will not resolve on its own and no webhook reports it."
+      - eval_time: 25m
+        alertname: A2APushDeliveryFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: a}
+            exp_annotations:
+              summary: "a: 50% of push deliveries not delivered"
+              description: "Over 20% of push-notification attempts failed, timed out or were skipped for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m."
+
+  # Every call 3 s against a control at 50 ms; streaming calls excluded.
+  - interval: 1m
+    input_series:
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="2.5"}'
+        values: '0x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="5"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="+Inf"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",le="5"}'
+        values: '0x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="slow",rpc_method="lf.a2a.v1.A2AService/SendStreamingMessage",le="+Inf"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="fast",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="0.05"}'
+        values: '0+10x30'
+      - series: 'rpc_server_call_duration_seconds_bucket{job="fast",rpc_method="lf.a2a.v1.A2AService/SendMessage",le="+Inf"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AUnaryLatencyHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: slow, rpc_method: lf.a2a.v1.A2AService/SendMessage}
+            exp_annotations:
+              summary: "slow lf.a2a.v1.A2AService/SendMessage: p99 4.975s"
+              description: "The 99th percentile of non-streaming calls has been above 2.5 s for 15 minutes. A blocking SendMessage includes the executor's work; set the threshold per method if your agents run long turns."
+
+  # Instance 1 stops pushing at minute 20; instance 2 keeps going.
+  - interval: 1m
+    input_series:
+      - series: 'target_info{job="a",instance="1"}'
+        values: '1x20 _x40'
+      - series: 'target_info{job="a",instance="2"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: A2AAgentSilent
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: A2AAgentSilent
+        exp_alerts:
+          - exp_labels: {severity: critical, job: a, instance: "1"}
+            exp_annotations:
+              summary: "a/1 has pushed no telemetry for 10 minutes"
+              description: "Over OTLP there is no scrape and so no `up` series; target_info comes with every export, so an agent seen in the last hour that has sent none for 10 minutes has stopped, or its exporter has. An instance retired on purpose also fires, for the rest of that hour."

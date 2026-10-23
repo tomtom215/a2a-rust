@@ -1,0 +1,265 @@
+{
+  "uid": "a2a-client",
+  "title": "A2A client",
+  "description": "Calls a2a-rust clients make to agents (rpc.client.call.duration), per target agent, binding and method.",
+  "tags": [
+    "a2a",
+    "a2a-rust"
+  ],
+  "editable": true,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Calling service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "a2a-prometheus"
+        },
+        "query": {
+          "query": "label_values(rpc_client_call_duration_seconds_count, job)",
+          "refId": "job-q"
+        },
+        "definition": "label_values(rpc_client_call_duration_seconds_count, job)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      },
+      {
+        "name": "server",
+        "label": "Agent host",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "a2a-prometheus"
+        },
+        "query": {
+          "query": "label_values(rpc_client_call_duration_seconds_count{job=~\"$job\"}, server_address)",
+          "refId": "server-q"
+        },
+        "definition": "label_values(rpc_client_call_duration_seconds_count{job=~\"$job\"}, server_address)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Calls",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Calls per second, by agent and binding",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (server_address, rpc_system_name) (a2a:rpc_client_calls:rate5m{job=~\"$job\", server_address=~\"$server\"})",
+          "legendFormat": "{{server_address}} {{rpc_system_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Failed calls (ratio), by agent",
+      "description": "error.type set: the agent's error, or timeout / transport when it never answered.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "a2a:rpc_client_error_ratio:rate5m{job=~\"$job\", server_address=~\"$server\"}",
+          "legendFormat": "{{server_address}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Failures by kind",
+      "description": "error.type values: a status the agent returned, or the client's failure class.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (server_address, error_type) (rate(rpc_client_call_duration_seconds_count{job=~\"$job\", server_address=~\"$server\", error_type!=\"\"}[5m]))",
+          "legendFormat": "{{server_address}} {{error_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "p95 duration, non-streaming",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "max by (server_address, rpc_method) (a2a:rpc_client_unary_latency:p95_5m{job=~\"$job\", server_address=~\"$server\"})",
+          "legendFormat": "{{server_address}} {{rpc_method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ],
+  "links": []
+}
