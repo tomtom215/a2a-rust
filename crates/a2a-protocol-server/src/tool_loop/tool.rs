@@ -241,6 +241,21 @@ mod tests {
         assert!(!Plain.read_only());
     }
 
+    /// Either kind of failure displays as its message alone. The loop
+    /// matches on the variant, so only a caller logging the error reads
+    /// this: the mutation gate found it untested.
+    #[test]
+    fn a_tool_error_displays_as_its_message() {
+        assert_eq!(
+            ToolError::Failed("no such record".to_owned()).to_string(),
+            "no such record"
+        );
+        assert_eq!(
+            ToolError::Fatal("backend down".to_owned()).to_string(),
+            "backend down"
+        );
+    }
+
     /// The refusal names the tool.
     #[test]
     fn a_duplicate_names_the_tool() {
