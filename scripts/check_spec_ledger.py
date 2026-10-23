@@ -25,17 +25,22 @@ the vendored proto:
 2. Every entry's `spec_line` still names a line with a keyword on it, so a
    refreshed specification that moves text shows up as stale entries rather
    than as entries quietly pointing at the wrong sentence.
-3. Every `test_evidence` names a file that exists and, for Rust, a function
-   of that name in it; for anything else, the name appears in the file.
-   Every `impl_evidence` that names a file names one that exists, a line it
-   cites is inside it, and a symbol it names appears in it (since
-   2026-10-20: one citation had pointed past the end of a 444-line file for
-   six days, because nothing read these).
+3. Every citation names what it points at, and the line it gives is where
+   that thing is (since 2026-10-23; scripts/lib/spec_ledger/citations.py has
+   the forms in full). Rust implementation evidence is `path:line Symbol`,
+   the line of the item's definition; anything else is `path:line
+   "fragment"`, the fragment on that line; test evidence is `path:line
+   name`, the line of `fn name`. Before, a bare `path:line` was checked only
+   to be inside its file and a symbol only to appear somewhere in it, so 419
+   citations sat on comments, blank lines and braces, and any edit above a
+   cited line moved it silently (2026-10-20: one had pointed past the end of
+   a 444-line file for six days). `--fix-lines` moves line numbers whose
+   target is found exactly once and lists the rest.
 4. `status` and `severity` use the ledger's vocabulary, an open status has a
    severity, and a closed one does not.
 5. Entries under `after_release` (requirements upstream added after the
-   release the ledger audits) meet 3 and 4, and cite no line: their text is
-   not in the vendored copy.
+   release the ledger audits) meet 3 and 4, and cite no spec line: their text
+   is not in the vendored copy.
 
 It does not, and cannot, check that a test *proves* what the entry says. That
 judgement is in the entry's notes and in review.
@@ -43,6 +48,7 @@ judgement is in the entry's notes and in review.
 `--write` regenerates docs/compliance/spec-ledger.md, the readable summary,
 from the JSON; the default `--check` also fails when that file is stale, so
 the page a reviewer reads cannot drift from the data it summarises.
+`--self-test` proves each citation rule refuses what it should, offline.
 
 Exit 0 when all hold, 1 otherwise, 2 when an input is missing or unreadable.
 """
@@ -56,6 +62,11 @@ import sys
 import argparse
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+
+from spec_ledger import citations  # noqa: E402
+from spec_ledger.selftest import self_test  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs/compliance/spec-ledger.json"
 SPEC = ROOT / "docs/implementation/a2a-v1.0.1-specification.md"
@@ -67,7 +78,6 @@ KEYWORD = re.compile(r"\b(MUST|SHOULD|REQUIRED|SHALL|RECOMMENDED|MAY)\b")
 OPEN = {"GAP", "PARTIAL", "IMPLEMENTED_UNTESTED", "UNKNOWN"}
 CLOSED = {"TESTED", "APPLICATION", "NOT_APPLICABLE", "SUPPORTED", "NOT_SUPPORTED"}
 SEVERITIES = {"high", "medium", "low"}
-EVIDENCE = re.compile(r"^(?P<path>[\w./+-]+?)(?::\d+)?(?:\s+(?P<name>.+))?$")
 
 
 def spec_body(path: Path) -> list[str]:
@@ -132,55 +142,13 @@ def covered_by_list(lines: list[str], n: int, cited: set[int]) -> bool:
     return False
 
 
-def check_evidence(entry: dict, problems: list[str]) -> None:
-    for ev in entry.get("test_evidence", []):
-        m = EVIDENCE.match(ev.strip())
-        where = f"entry at {entry.get('source')}:{entry.get('spec_line')} cites {ev!r}"
-        if not m:
-            problems.append(f"{where}: not `path[:line] name`")
-            continue
-        path = ROOT / m.group("path")
-        if not path.is_file():
-            problems.append(f"{where}: no such file")
-            continue
-        name = m.group("name")
-        # A parenthesised name describes the evidence rather than naming it.
-        if not name or name.lstrip().startswith("("):
-            continue
-        ident = re.match(r"`?([A-Za-z_][A-Za-z0-9_:]*)", name)
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if path.suffix == ".rs" and ident:
-            fn = ident.group(1).split("::")[-1]
-            if not re.search(r"\bfn\s+" + re.escape(fn) + r"\b", text):
-                problems.append(f"{where}: no `fn {fn}` in {m.group('path')}")
-        elif name.strip("` ") not in text:
-            problems.append(f"{where}: {name!r} does not appear in {m.group('path')}")
-
-
-IMPL = re.compile(r"(?P<path>[\w.\-]+(?:/[\w.\-]+)+)(?::(?P<line>\d+))?(?:\s+(?P<name>.*))?$")
-
-
-def check_impl(entry: dict, problems: list[str]) -> None:
-    for ev in entry.get("impl_evidence", []):
-        m = IMPL.match(ev.strip())
-        if not m:
-            continue  # prose, not a citation
-        where = f"entry at {entry.get('source')}:{entry.get('spec_line')} cites {ev!r}"
-        path = ROOT / m.group("path")
-        if path.is_dir() and not m.group("line") and not m.group("name"):
-            continue  # a module directory, cited whole
-        if not path.is_file():
-            problems.append(f"{where}: no such file")
-            continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if m.group("line") and int(m.group("line")) > text.count("\n") + 1:
-            problems.append(f"{where}: past the end of the file")
-        name = (m.group("name") or "").strip()
-        ident = re.match(r"`?([A-Za-z_][A-Za-z0-9_:]*)`?$", name.split(" / ")[0].split()[0]) if name else None
-        if ident:
-            sym = ident.group(1).split("::")[-1]
-            if not re.search(r"\b" + re.escape(sym) + r"\b", text):
-                problems.append(f"{where}: {sym!r} does not appear in {m.group('path')}")
+def check_citations(entry: dict, problems: list[str]) -> None:
+    where = f"entry at {entry.get('source', 'after_release')}:{entry.get('spec_line', entry.get('section'))}"
+    for key, check in (("impl_evidence", citations.check_impl), ("test_evidence", citations.check_test)):
+        for ev in entry.get(key, []):
+            why = check(ROOT, ev)
+            if why:
+                problems.append(f"{where} cites {ev!r}: {why}")
 
 
 def chapter(entry: dict) -> str:
@@ -269,10 +237,21 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--check", action="store_true", help="validate (default)")
     group.add_argument("--write", action="store_true", help="regenerate spec-ledger.md")
+    group.add_argument("--fix-lines", action="store_true",
+                       help="move citation line numbers to their unique target; list the rest")
+    group.add_argument("--self-test", action="store_true", help="prove the citation rules, offline")
+    parser.add_argument("--ledger", type=Path, default=LEDGER,
+                        help="check this copy of the ledger instead (spec-ledger.md is not compared)")
     args = parser.parse_args()
+    # The citation rules are proven on every run, so a change that makes one
+    # accept everything fails this gate instead of passing the ledger.
+    failed = self_test()
+    if failed or args.self_test:
+        return failed
+    args.ledger = args.ledger.resolve()
 
     try:
-        ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
+        ledger = json.loads(args.ledger.read_text(encoding="utf-8"))
         spec = spec_body(SPEC)
         proto = PROTO.read_text(encoding="utf-8").split("\n")
     except (OSError, ValueError, StopIteration) as e:
@@ -281,6 +260,17 @@ def main() -> int:
 
     entries = ledger.get("entries", [])
     problems: list[str] = []
+
+    if args.ledger != LEDGER and args.write:
+        print("check_spec_ledger: --write regenerates the real ledger's summary only", file=sys.stderr)
+        return 2
+    if args.fix_lines:
+        fixed, left = citations.fix_lines(ROOT, entries + ledger.get("after_release", {}).get("entries", []))
+        args.ledger.write_text(json.dumps(ledger, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"check_spec_ledger --fix-lines: moved {fixed} line number(s); {len(left)} left for a person")
+        for p in left:
+            print(f"  {p}")
+        return 1 if left else 0
 
     # 0. The text the line numbers refer to.
     digest = hashlib.sha256("\n".join(spec).encode("utf-8")).hexdigest()
@@ -347,9 +337,8 @@ def main() -> int:
                     f"{source}:{n} is {status}, which answers only a MAY or OPTIONAL, "
                     f"but its keyword is {e.get('keyword')!r}: use TESTED or APPLICATION"
                 )
-        # 3. Evidence exists.
-        check_evidence(e, problems)
-        check_impl(e, problems)
+        # 3. Evidence exists and is where it is said to be.
+        check_citations(e, problems)
 
     # 5. Requirements added upstream after the audited release.
     for e in ledger.get("after_release", {}).get("entries", []):
@@ -363,12 +352,14 @@ def main() -> int:
             problems.append(f"{where} is {status} but carries severity {severity!r}")
         elif status not in OPEN | CLOSED:
             problems.append(f"{where} has unknown status {status!r}")
-        check_evidence(e, problems)
+        check_citations(e, problems)
 
     summary_text = render(ledger)
     if args.write:
         SUMMARY.write_text(summary_text, encoding="utf-8")
         print(f"check_spec_ledger: wrote {SUMMARY.relative_to(ROOT)}")
+    elif args.ledger != LEDGER:
+        pass  # a copy under test: the summary describes the real ledger
     elif not SUMMARY.is_file() or SUMMARY.read_text(encoding="utf-8") != summary_text:
         problems.append(
             f"{SUMMARY.relative_to(ROOT)} is stale; run scripts/check_spec_ledger.py --write"
