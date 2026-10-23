@@ -188,3 +188,21 @@ fn body_params<T: serde::de::DeserializeOwned>(
     }
     params_from_value(value)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Unreadable;
+
+    /// `Debug` names the error the chain is told, and leaves the response
+    /// out. The mutation gate found it untested: an empty answer survived.
+    #[test]
+    fn an_unreadable_request_debugs_as_its_error() {
+        let debug = format!("{:?}", Unreadable::violation("message", "missing"));
+        assert!(
+            debug.starts_with("Unreadable { error: InvalidField"),
+            "{debug}"
+        );
+        assert!(debug.contains(r#""message""#), "{debug}");
+        assert!(debug.ends_with(", .. }"), "{debug}");
+    }
+}
