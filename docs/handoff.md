@@ -577,6 +577,11 @@ into this file: the commit that records it changes it.
 - An agent's report written as an untracked file in its worktree is
   deleted with the worktree: copy what is not yet applied before
   `git worktree remove --force`.
+- A defect-injection script that restores a file from a backup restores
+  its old modification time too, older than the build, so Cargo reuses the
+  binary built with the defect: the next "green" or "red" run is about the
+  defect, not the code. Touch every restored file (`os.utime`), or edit the
+  crate, before trusting a run after one (2026-10-23).
 - A stricter client breaks the repository's own fixtures outside the
   crate it changed: after WP-B, the CLI's and the MCP bridge's tests
   served cards without skills. Run the whole workspace, not the crates a

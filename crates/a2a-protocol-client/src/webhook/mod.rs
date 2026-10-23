@@ -51,6 +51,7 @@
 
 mod outcome;
 mod receiver;
+mod span;
 mod state;
 mod token;
 

@@ -16,6 +16,8 @@
 //! `Expires`, `Age`) and revalidates a stale one with `If-None-Match` /
 //! `If-Modified-Since`. The free functions fetch once and cache nothing.
 
+#[cfg(feature = "tracing")]
+mod card_span;
 mod freshness;
 
 use std::collections::HashMap;
@@ -532,15 +534,37 @@ async fn fetch_card(
     Ok(card)
 }
 
-/// Fetches the card, conditionally when `cached` holds validators, and
-/// returns it with the validators and freshness of the response (a `304`'s
-/// validators fall back to the stored ones).
-#[allow(clippy::too_many_lines)]
+/// The validators and freshness a fetch returns with the card.
+type Fetched = (AgentCard, Option<String>, Option<String>, Freshness);
+
+/// [`fetch_inner`] in the HTTP conventions' `CLIENT` span for the `GET`
+/// (`card_span.rs`).
 async fn fetch_card_with_metadata(
     url: &str,
     cached: Option<&CachedCard>,
     options: &CardFetchOptions,
-) -> ClientResult<(AgentCard, Option<String>, Option<String>, Freshness)> {
+) -> ClientResult<Fetched> {
+    #[cfg(feature = "tracing")]
+    {
+        let span = card_span::open(url);
+        let result =
+            tracing::Instrument::instrument(fetch_inner(url, cached, options), span.clone()).await;
+        card_span::ended(&span, result.as_ref().err());
+        result
+    }
+    #[cfg(not(feature = "tracing"))]
+    fetch_inner(url, cached, options).await
+}
+
+/// Fetches the card, conditionally when `cached` holds validators, and
+/// returns it with the validators and freshness of the response (a `304`'s
+/// validators fall back to the stored ones).
+#[allow(clippy::too_many_lines)]
+async fn fetch_inner(
+    url: &str,
+    cached: Option<&CachedCard>,
+    options: &CardFetchOptions,
+) -> ClientResult<Fetched> {
     #[cfg(not(feature = "tls-rustls"))]
     let client: Client<HttpConnector, Full<Bytes>> = {
         let mut connector = HttpConnector::new();
@@ -601,6 +625,8 @@ async fn fetch_card_with_metadata(
         .map_err(|e| ClientError::HttpClient(e.to_string()))?;
 
     let status = resp.status();
+    #[cfg(feature = "tracing")]
+    tracing::Span::current().record("http.response.status_code", status.as_u16());
     let retry_after = crate::error::parse_retry_after(resp.headers());
 
     // Extract caching headers before consuming the response body.

@@ -565,6 +565,21 @@ stream is dropped; it carries `rpc.status_code` as the client's metric does,
 and the error a stream ended on. As the draft conventions require of A2A instrumentation,
 the client reports no `invoke_agent` span of its own.
 
+**Fetching a card is a `GET` span**, the HTTP conventions' `CLIENT` span
+for a plain HTTP request: `http.request.method`, `url.full` (scheme, host,
+port and path; userinfo and the query are dropped), `server.address`,
+`server.port`, `http.response.status_code` (`304` for a revalidated card),
+and on failure `error.type` — the status, or `invalid_response` for a card
+a2a.proto's field rules refuse. **Checking a push notification**
+(`WebhookReceiver::receive`) is an `INTERNAL` span, `a2a.webhook.receive`,
+under whatever span the integrator's HTTP server recorded; when none is
+recorded it continues the `traceparent` the agent's push sender sent, so a
+notification is found under the task that caused it. It records
+`a2a.webhook.outcome` (`accepted`, `duplicate`, `rejected`), the task once
+the request authenticated, and for a rejection its kind as `error.type`
+(`unknown_token`, `bad_authorization`, …) — never the token, the
+credentials or the body.
+
 A span is exported when it closes, and `tracing` holds a span open until its
 children close, so a call's span reaches your backend once the work it
 spawned has finished — with its own end time, the call's, not theirs; a

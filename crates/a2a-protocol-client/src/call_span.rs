@@ -401,7 +401,7 @@ pub fn qualified(method: &str) -> &'static str {
 /// HTTP status, or what went wrong — `error.type` when the binding has no
 /// status for it ([`Status::failed`]).
 #[cfg(feature = "tracing")]
-fn error_type(error: &crate::error::ClientError) -> String {
+pub fn error_type(error: &crate::error::ClientError) -> String {
     use crate::error::ClientError as E;
     match error {
         E::Protocol(e) => e.code.as_i32().to_string(),
@@ -411,6 +411,7 @@ fn error_type(error: &crate::error::ClientError) -> String {
         E::Serialization(_) => "serialization".to_owned(),
         E::InvalidEndpoint(_) => "invalid_endpoint".to_owned(),
         E::AuthRequired { .. } => "auth_required".to_owned(),
+        E::InvalidAgentResponse(_) => "invalid_response".to_owned(),
         _ => "_OTHER".to_owned(),
     }
 }
@@ -471,7 +472,7 @@ pub fn propagate(
 }
 
 #[cfg(feature = "otel")]
-fn remote_context(
+pub fn remote_context(
     trace: &a2a_protocol_types::trace_context::TraceContext,
 ) -> Option<opentelemetry::Context> {
     use opentelemetry::trace::{

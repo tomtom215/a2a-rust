@@ -16,6 +16,7 @@ use a2a_protocol_types::task::TaskId;
 use tokio::time::Instant;
 
 use super::outcome::{WebhookError, WebhookOutcome, WebhookRejection};
+use super::span::ReceiveSpan;
 use super::state::{Bucket, DedupCache, RateLimit};
 use super::token;
 
@@ -220,14 +221,22 @@ impl WebhookReceiver {
     ///
     /// `body` is the request body as received. Bound its size before
     /// reading it; this takes what it is given.
+    ///
+    /// Runs in a span, `a2a.webhook.receive`, that continues the sender's
+    /// trace when no recorded span is current (`span.rs`).
     pub fn receive(&self, headers: &hyper::HeaderMap, body: &[u8]) -> WebhookOutcome {
-        match self.check(headers, body) {
+        let span = ReceiveSpan::open(headers);
+        #[cfg(feature = "tracing")]
+        let _entered = span.span.enter();
+        let outcome = match self.check(headers, body) {
             Ok(outcome) => outcome,
             Err(rejection) => {
                 trace_debug!(reason = %rejection, "webhook request rejected");
                 WebhookOutcome::Rejected(rejection)
             }
-        }
+        };
+        span.ended(&outcome);
+        outcome
     }
 
     fn check(

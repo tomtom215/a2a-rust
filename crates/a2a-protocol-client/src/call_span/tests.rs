@@ -230,6 +230,10 @@ fn every_error_class_has_its_error_type() {
             },
             "auth_required",
         ),
+        (
+            E::InvalidAgentResponse("no skill".into()),
+            "invalid_response",
+        ),
         (E::ProtocolBindingMismatch("x".into()), "_OTHER"),
     ] {
         assert_eq!(error_type(&error), expected, "{error:?}");

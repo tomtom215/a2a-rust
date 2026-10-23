@@ -378,6 +378,21 @@ section "The client refuses what `a2a.proto` does not allow".
   `the_cli_exports_its_calls_when_a_collector_is_named` (a metrics-only
   endpoint exports metrics alone).
 
+- **Spans for a card fetch and for a push notification received**
+  (client). Fetching an agent card is the HTTP conventions' `CLIENT` span,
+  `GET`, with the method, the URL without userinfo or query, the server, the
+  response status and `error.type` on failure; it had none.
+  `WebhookReceiver::receive` runs in an `INTERNAL` span,
+  `a2a.webhook.receive`, which continues the push sender's `traceparent`
+  when the integrator's server recorded no span, and records the outcome,
+  the task and a rejection's kind, never a secret; before, a notification
+  started no span and its sender's trace ended at the POST. `error.type`
+  for `ClientError::InvalidAgentResponse` is now `invalid_response`, on call
+  spans and the call metric too, not `_OTHER`. Tests: `card_fetch_span.rs`
+  (three), `webhook_receiver_spans.rs` (three),
+  `card_span::tests::the_url_keeps_its_origin_and_path_and_drops_userinfo_and_query`,
+  `every_error_class_has_its_error_type`.
+
 - **A JSON-RPC client call's span carries `jsonrpc.protocol.version`,
   `rpc.method_original` and `jsonrpc.request.id`** (client), as the
   server's already did: `docs/rpc/json-rpc.md` makes the first two
