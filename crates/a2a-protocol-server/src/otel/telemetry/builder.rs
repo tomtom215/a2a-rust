@@ -240,15 +240,28 @@ impl TelemetryBuilder {
 
     pub(super) fn resource(&self) -> Resource {
         // `Resource::builder` reads `OTEL_SERVICE_NAME` and
-        // `OTEL_RESOURCE_ATTRIBUTES` itself; the default is added only when
-        // they name no service, so it never overwrites them.
-        let builder = Resource::builder();
-        match &self.default_service_name {
-            Some(name) if !config::service_name_from_env(&*self.env) => {
-                builder.with_service_name(name.clone()).build()
-            }
-            _ => builder.build(),
+        // `OTEL_RESOURCE_ATTRIBUTES` itself; the defaults are added only when
+        // they name none, so they never overwrite them.
+        let mut builder = Resource::builder();
+        if let Some(name) = &self.default_service_name
+            && !config::service_name_from_env(&*self.env)
+        {
+            builder = builder.with_service_name(name.clone());
         }
+        // The conventions make `service.instance.id` the one attribute that
+        // tells two replicas of a service apart (`service.instance.id`,
+        // resource/service.md: "MUST be unique for each instance of the same
+        // service.namespace,service.name pair"). Prometheus turns it into
+        // `instance`, so without one every replica writes the same series.
+        // A random UUID is what the conventions recommend when nothing
+        // better names the process.
+        if !config::resource_attribute_from_env(&*self.env, "service.instance.id") {
+            builder = builder.with_attribute(opentelemetry::KeyValue::new(
+                "service.instance.id",
+                uuid::Uuid::new_v4().to_string(),
+            ));
+        }
+        builder.build()
     }
 
     /// Builds every enabled signal's exporter and provider.

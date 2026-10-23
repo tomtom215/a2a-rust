@@ -255,13 +255,17 @@ pub(super) fn client_identity_files(
 /// Whether the environment names the service, in which case it wins over
 /// [`TelemetryBuilder::with_default_service_name`](super::TelemetryBuilder::with_default_service_name).
 pub(super) fn service_name_from_env(env: &Env) -> bool {
-    env("OTEL_SERVICE_NAME").is_some()
-        || env("OTEL_RESOURCE_ATTRIBUTES").is_some_and(|attrs| {
-            attrs
-                .split(',')
-                .filter_map(|kv| kv.split_once('='))
-                .any(|(k, _)| k.trim() == "service.name")
-        })
+    env("OTEL_SERVICE_NAME").is_some() || resource_attribute_from_env(env, "service.name")
+}
+
+/// Whether `OTEL_RESOURCE_ATTRIBUTES` sets `key`.
+pub(super) fn resource_attribute_from_env(env: &Env, key: &str) -> bool {
+    env("OTEL_RESOURCE_ATTRIBUTES").is_some_and(|attrs| {
+        attrs
+            .split(',')
+            .filter_map(|kv| kv.split_once('='))
+            .any(|(k, _)| k.trim() == key)
+    })
 }
 
 #[cfg(test)]

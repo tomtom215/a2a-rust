@@ -146,6 +146,22 @@ fn the_default_service_name_applies_only_when_the_environment_names_none() {
     assert_ne!(name, "code-default");
 }
 
+/// Two processes of one service report different `service.instance.id`s
+/// unless the environment names one, which then wins.
+#[test]
+fn each_process_gets_an_instance_id_unless_the_environment_names_one() {
+    let key = opentelemetry::Key::new("service.instance.id");
+    let a = with_env(&[]).resource().get(&key).map(|v| v.to_string());
+    let b = with_env(&[]).resource().get(&key).map(|v| v.to_string());
+    let a = a.expect("an instance id by default");
+    assert!(uuid::Uuid::parse_str(&a).is_ok(), "{a}");
+    assert_ne!(Some(a), b, "two telemetries must not share an instance id");
+    // The injected environment names one, so none is generated; the
+    // process environment, which `Resource` reads, names none here.
+    let named = with_env(&[("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=pod-7")]).resource();
+    assert_eq!(named.get(&key), None);
+}
+
 #[test]
 fn debug_output_never_contains_header_values() {
     let b = with_env(&[]).with_otlp_header("authorization", "Basic c2VjcmV0");
