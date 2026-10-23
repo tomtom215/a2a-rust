@@ -80,14 +80,12 @@ only: when something here is done, delete it rather than annotating it.
     invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
     `rig-agent` (44 of 44 on its second run; see the 30 s timeout under
     *Open engineering*). Logs were not committed.
-- **Removing `sign_agent_card*` in 0.15.0 waives `STABILITY.md` §3**'s
-  one-minor deprecation window for `sign_agent_card`, which shipped in 0.14.1
-  and was deprecated only in 0.15.0 (`sign_agent_card_ed25519` never
-  shipped: added and removed within 0.15.0; checked against the 0.14.1
-  crate source and by cargo-semver-checks). Kept, because the maintainer asked for every known break
-  to land in 0.15.0 (2026-10-23); the CHANGELOG's Breaking entry says so.
-  The commit (`types: remove the kid-optional card signers`) stands alone
-  if the maintainer decides otherwise.
+- **`sign_agent_card` is deprecated, not removed** (2026-10-23): it shipped
+  in 0.14.1, so `STABILITY.md` §3 keeps it for one minor release. It now
+  refuses `key_id: None`, which wrote a header without the `kid` §8.4.2
+  requires (a specification correction, §2), and goes in 0.16.0.
+  `sign_agent_card_ed25519` never shipped and stays removed. No §3 waiver
+  remains.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the

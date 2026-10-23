@@ -81,9 +81,9 @@ key and the key id a verifier will look the key up by. The protected header
 carries `alg`, `typ: "JOSE"` and `kid` (spec §8.4.2), and the card is
 canonicalized with protobuf field presence first (§8.4.1): a field holding
 its default value is left out unless it is `REQUIRED` or `optional`. The
-older `sign_agent_card` and `sign_agent_card_ed25519`, which took the key id
-as an `Option` and so could break §8.4.2, were removed in 0.15.0: call
-`sign_card_es256` or `sign_card_ed25519` with the key id instead.
+older `sign_agent_card`, which takes the key id as an `Option` and so could
+break §8.4.2, is deprecated and refuses `None` since 0.15.0, and is removed
+in 0.16.0: call `sign_card_es256` with the key id instead.
 `sign_card_es256_with_jku` and `sign_card_ed25519_with_jku` add the `jku`
 (the JWK Set URL, which must be `https://`) that §8.4.2 allows. A verifier
 still chooses which key sets to trust; this SDK's verification never

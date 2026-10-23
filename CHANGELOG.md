@@ -105,23 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `auth::declared_tests::an_authenticator_behind_a_public_card_declaring_no_scheme_is_refused`,
   `auth::declared_tests::a_scheme_declared_only_on_the_extended_card_is_refused`.
 
-- **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519` are
-  removed** (types; spec §8.4.2). Their `key_id: Option<&str>` let a
-  signature's protected header omit `kid`, which §8.4.2 requires.
-  **Migration:** `sign_card_es256(card, key, key_id)` and
-  `sign_card_ed25519(card, key, key_id)`, the same signature with
-  `key_id: &str`. Verification still accepts a foreign signature without
-  `kid`. **Deprecation window waived:** `STABILITY.md` §3 asks
-  for a deprecated item to stay one minor release; these were deprecated
-  only in this release, and are removed in it so that 0.15.0 carries every
-  break known now rather than leaving one for 0.16.0. Only `sign_agent_card`
-  shipped (0.14.1); `sign_agent_card_ed25519` was added in this release
-  and never published.
-  Tests:
-  `signing_tests::eddsa_protected_header_carries_alg_typ_and_kid`,
-  `signing_tests::sign_and_verify_without_key_id` (now signs kid-less by
-  hand), `signing::tests::signature_header_kid_is_none_for_a_foreign_signature_without_one`.
-
 - **The MSRV is 1.94, and the SQL stores use `sqlx` 0.9** (server, SDK,
   SLIMRPC binding; 2026-10-23). `sqlx` 0.9 needs Rust 1.94, and its pool
   types are in the SQL stores' public constructors (`SqliteTaskStore`,
@@ -1359,8 +1342,8 @@ section "The client refuses what `a2a.proto` does not allow".
     come back unchanged (`tests/content_provenance_e2e.rs`).
 - **Card verification with EdDSA and JWK Sets** (types and client;
   `signing`).
-  - `sign_agent_card_ed25519` signs with Ed25519, and verification accepts
-    EdDSA as well as ES256.
+  - `sign_card_ed25519` signs with Ed25519, and verification accepts EdDSA
+    as well as ES256.
   - `signing::{Jwk, Jwks, VerifyingKey}` and `verify_agent_card_with_jwks`
     select keys by `kid`. A key is only ever tried under the algorithm its
     type is for.
@@ -3219,6 +3202,17 @@ section "The client refuses what `a2a.proto` does not allow".
   of dropping events. Measured after: 600 of 600 in 60 of 60 sends.
 
 ### Deprecated
+
+- **`signing::sign_agent_card`** (types; spec §8.4.2), for
+  `sign_card_es256(card, key, key_id)`, whose `key_id` is a `&str`. Its
+  `key_id: Option<&str>` let a signature's protected header omit `kid`,
+  which §8.4.2 requires, so it now refuses `None` with `InvalidParams`
+  instead of writing a header without one: a specification correction
+  (`STABILITY.md` §2), which is the only change for a caller passing a key
+  id. Kept for the one minor release `STABILITY.md` §3 requires and removed
+  in 0.16.0. Test: `signing_tests::the_deprecated_sign_agent_card_needs_a_key_id`.
+  (`sign_agent_card_ed25519`, its Ed25519 twin, was added and removed within
+  0.15.0 and never published; `sign_card_ed25519` is the Ed25519 signer.)
 
 - **`HotReloadAgentCardHandler::update`**, for **`try_update`** (server;
   spec §5.7: arrays marked as required MUST contain at least one element).

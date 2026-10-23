@@ -347,7 +347,8 @@ fn sign_and_verify_without_key_id() {
 }
 
 /// §8.4.2: "The protected header MUST include" `alg`, `typ` and `kid`, for
-/// EdDSA too. `sign_agent_card_ed25519(.., None)`, removed in 0.15, wrote no `kid`.
+/// EdDSA too. `sign_agent_card_ed25519(.., None)`, added and removed within
+/// 0.15.0 and never published, wrote no `kid`.
 #[test]
 fn eddsa_protected_header_carries_alg_typ_and_kid() {
     let pkcs8 = signature::Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
@@ -495,5 +496,30 @@ fn verify_rejects_modified_protected_header() {
     assert!(
         result.is_err(),
         "verification must fail when protected header is modified"
+    );
+}
+
+/// `sign_agent_card`, deprecated in 0.15.0 and kept for `STABILITY.md` §3's
+/// window, signs as `sign_card_es256` does with a key id, and refuses
+/// `None`, which in 0.14 wrote a header without the `kid` §8.4.2 requires.
+#[test]
+#[allow(deprecated)]
+fn the_deprecated_sign_agent_card_needs_a_key_id() {
+    use a2a_protocol_types::signing::sign_agent_card;
+    let (pkcs8, pub_key) = generate_es256_keypair();
+    let card = minimal_card();
+    let sig = sign_agent_card(&card, &pkcs8, Some("key-1")).expect("signed with a key id");
+    let header: serde_json::Value =
+        serde_json::from_slice(&URL_SAFE_NO_PAD.decode(&sig.protected).unwrap()).unwrap();
+    assert_eq!(
+        header,
+        serde_json::json!({"alg": "ES256", "typ": "JOSE", "kid": "key-1"})
+    );
+    verify_agent_card(&card, &sig, &pub_key).expect("verifies");
+    let err = sign_agent_card(&card, &pkcs8, None).expect_err("no kid, no signature");
+    assert_eq!(
+        err.code,
+        a2a_protocol_types::error::ErrorCode::InvalidParams,
+        "{err:?}"
     );
 }

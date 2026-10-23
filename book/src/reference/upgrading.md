@@ -222,12 +222,13 @@ stored config named a scheme other than `Bearer` or `Basic`, or no
 credentials; it now refuses the delivery with `InvalidParams`. Creation
 already refused such configs, so only one stored another way is affected.
 
-### `sign_agent_card` and `sign_agent_card_ed25519` are gone
+### `sign_agent_card` is deprecated, and refuses `None`
 
-They took `key_id: Option<&str>`, and `None` wrote a protected header
-without `kid`, which spec §8.4.2 requires. Call `sign_card_es256(card, key,
-key_id)` or `sign_card_ed25519(card, key, key_id)`, whose `key_id` is a
-`&str`; the signature is otherwise the same.
+It takes `key_id: Option<&str>`, and in 0.14 `None` wrote a protected
+header without `kid`, which spec §8.4.2 requires; it now returns
+`InvalidParams` for `None`. It is removed in 0.16. Call
+`sign_card_es256(card, key, key_id)`, whose `key_id` is a `&str`; with a key
+id the signature is the same. For Ed25519, `sign_card_ed25519`.
 
 ### `ConvertError` and `SseParseError` are `#[non_exhaustive]`
 

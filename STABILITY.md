@@ -14,15 +14,16 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 The crates are at `0.15.0`, unreleased; `0.14.1` (2026-09-30) is the newest
 release. `0.14.0` (2026-09-26) carried seven breaking changes and `0.14.1`,
-a patch, none. `0.15.0` carries 27, each under "Breaking Changes" in
+a patch, none. `0.15.0` carries 26, each under "Breaking Changes" in
 `CHANGELOG.md` with its migration (counted 2026-10-23 as that section's
 top-level entries). That number is deliberate: the maintainer chose on
 2026-10-23 to land every break then known in this one release, the minimum
 supported Rust version included (§5), rather than spread them over several.
 It also restarts §7's count again: `0.13.0`, `0.14.0` and `0.15.0` each
 break, so no release yet counts toward the two consecutive unbroken minors
-`1.0` needs. One break, the removal of `sign_agent_card`, waives §3's
-deprecation window; the changelog entry says so.
+`1.0` needs. None waives §3's deprecation window: `sign_agent_card`, which
+can omit the `kid` spec §8.4.2 requires, is deprecated, refuses `None` as a
+specification correction (§2), and is removed in `0.16.0`.
 
 What follows is the account written at `0.13` (2026-09-20), kept as it was.
 Between `0.7.0` (2026-07-24) and `0.11.0`

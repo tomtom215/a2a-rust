@@ -311,8 +311,8 @@ fn write_canonical_string(s: &str, buf: &mut Vec<u8>) {
 
 /// The JWS protected header for a card signature (§8.4.2): `alg`, `typ` and
 /// `kid` MUST be present, and `typ` SHOULD be `"JOSE"`. Every signer takes
-/// the key id; the two that let it be omitted, `sign_agent_card` and
-/// `sign_agent_card_ed25519`, were removed in 0.15.0.
+/// the key id; the deprecated [`sign_agent_card`], whose key id is an
+/// `Option`, refuses `None`.
 fn protected_header(alg: &str, key_id: &str, jku: Option<&str>) -> A2aResult<String> {
     let mut header = serde_json::json!({ "alg": alg, "typ": "JOSE", "kid": key_id });
     if let Some(jku) = jku {
@@ -402,6 +402,37 @@ pub fn sign_card_es256(
     key_id: &str,
 ) -> A2aResult<AgentCardSignature> {
     sign_es256(card, pkcs8_key, key_id, None)
+}
+
+/// Signs an [`AgentCard`] with ES256, as [`sign_card_es256`] does, for code
+/// written against 0.14.
+///
+/// Its `key_id` is an `Option`, and spec §8.4.2 requires `kid` in the
+/// protected header. In 0.14 `None` wrote a header without one, a signature
+/// a conforming verifier may refuse; since 0.15.0 `None` is refused instead,
+/// a specification correction (`STABILITY.md` §2). It is kept for the
+/// one-minor deprecation window `STABILITY.md` §3 gives, and is removed in
+/// 0.16.0.
+///
+/// # Errors
+///
+/// Invalid params when `key_id` is `None`; otherwise as [`sign_card_es256`].
+#[deprecated(
+    since = "0.15.0",
+    note = "use sign_card_es256(card, key, key_id), whose key id is required (spec §8.4.2)"
+)]
+pub fn sign_agent_card(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: Option<&str>,
+) -> A2aResult<AgentCardSignature> {
+    let key_id = key_id.ok_or_else(|| {
+        A2aError::invalid_params(
+            "a card signature's protected header must carry kid (spec §8.4.2): \
+             pass a key id, or call sign_card_es256",
+        )
+    })?;
+    sign_card_es256(card, pkcs8_key, key_id)
 }
 
 /// Signs an [`AgentCard`] with Ed25519 (JWS `EdDSA`, RFC 8037), as
