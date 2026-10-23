@@ -65,11 +65,11 @@ async fn each_refusal_names_the_parameter_and_what_is_accepted() {
     let cases = [
         (
             send("1.0", message("", text()), None).await,
-            vec!["message.id", "must not be empty"],
+            vec!["message.messageId", "must not be empty"],
         ),
         (
             send("1.0", message(&"x".repeat(5000), text()), None).await,
-            vec!["message.id", "got 5000", "max "],
+            vec!["message.messageId", "got 5000", "max "],
         ),
         (
             send("1.0", message("m-1", json!([])), None).await,

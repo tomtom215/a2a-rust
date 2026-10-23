@@ -9,12 +9,14 @@
 //! |---|---|---|
 //! | `required_extensions` | §3.3.4, §4.6.3 | every operation refuses a client that does not declare a required extension |
 //! | `extension_activation` | §4.6.3 | the executor sees only the extensions the card declares |
+//! | `required_fields` | §5.7 | a missing or empty REQUIRED field is `InvalidParams` naming it |
 
 #[path = "../support/s3_agent.rs"]
 mod s3_agent;
 
 mod extension_activation;
 mod required_extensions;
+mod required_fields;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
