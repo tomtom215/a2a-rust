@@ -125,24 +125,15 @@ skip = [
     { crate = "getrandom", reason = "ring 0.17 pins 0.2.x; rand 0.9 lineage uses 0.3/0.4" },
     { crate = "windows-sys", reason = "ring 0.17 pins 0.52; newer crates use 0.61" },
 
-    # --- Windows per-target crates (8) ---
-    # One `windows-targets` split fans out into eight identical
-    # per-architecture duplicates. They are a single upstream fact reported
-    # eight times, and none is compiled on this project's CI targets.
-    { crate = "windows-targets", reason = "0.42/0.48 vs 0.52 split from transitive Windows deps" },
-    { crate = "windows_aarch64_gnullvm", reason = "fanout of the windows-targets split" },
-    { crate = "windows_aarch64_msvc", reason = "fanout of the windows-targets split" },
-    { crate = "windows_i686_gnu", reason = "fanout of the windows-targets split" },
-    { crate = "windows_i686_msvc", reason = "fanout of the windows-targets split" },
-    { crate = "windows_x86_64_gnu", reason = "fanout of the windows-targets split" },
-    { crate = "windows_x86_64_gnullvm", reason = "fanout of the windows-targets split" },
-    { crate = "windows_x86_64_msvc", reason = "fanout of the windows-targets split" },
+    # --- Windows per-target crates ---
+    # The eight `windows-targets` per-architecture entries were retired
+    # 2026-10-23 on cargo-deny's `unnecessary-skip` warning: the split no
+    # longer duplicates after the dependency refresh.
 
-    # --- The rand 0.8 -> 0.9 ecosystem migration (4) ---
+    # --- The rand 0.8 -> 0.9 ecosystem migration (3) ---
     # `sqlx-postgres` and `nanoid` (via rig-core) still sit on the 0.8
     # lineage while newer crates are on 0.9. Closes when they migrate.
     { crate = "rand", reason = "sqlx-postgres/nanoid on 0.8; newer deps on 0.9" },
-    { crate = "rand_chacha", reason = "fanout of the rand 0.8 -> 0.9 migration" },
     { crate = "rand_core", reason = "fanout of the rand 0.8 -> 0.9 migration" },
     { crate = "r-efi", reason = "pulled by the split getrandom versions" },
 
@@ -177,14 +168,18 @@ skip = [
     # Added 2026-10-20 with `x509-parser` (types, `signing`: the JWK `x5c`
     # check). A proc-macro helper, compiled at build time only.
     { crate = "synstructure", reason = "asn1-rs-derive 0.6 (via x509-parser 0.18) is on 0.13; yoke-derive/zerofrom-derive (via url/icu) are on 0.14" },
-    { crate = "redox_syscall", reason = "parking_lot_core 0.9 pins 0.5; libredox 0.1.23 (via whoami, sqlx-postgres) is on 0.9; only compiled for the redox target" },
+    # Added 2026-10-23: sqlx 0.9 is itself mid-migration (cargo deny check
+    # bans failed on the dispatched CI run). `rand_chacha` and
+    # `redox_syscall` were retired the same day on `unnecessary-skip`.
+    { crate = "sha2", reason = "RustCrypto 0.10 -> 0.11 inside sqlx 0.9: sqlx-core (and rig-core 0.42, two examples) is on 0.10.9, sqlx-postgres on 0.11.1 (2026-10-23)" },
     { crate = "foldhash", reason = "hashbrown 0.15 (sqlx 0.8 via hashlink) is on 0.1; serde_json's preserve_order, which genai 0.7 turns on in the two genai examples, is on 0.2 (2026-10-20)" },
 ]
 # `redox_syscall` used to be deliberately absent from the list: it duplicated
 # only in the `--all-features` graph, which this check does not resolve, and
 # cargo-deny reported the entry as `unmatched-skip`. Since libredox 0.1.23
-# (2026-09) it duplicates in the default graph too, so it is back on the list
-# with a reason. The rule stands: an exemption for something that is not
+# (2026-09) it duplicated in the default graph too and went back on the
+# list; on 2026-10-23 it resolved to one version and came off again. The rule
+# stands: an exemption for something that is not
 # happening is how a skip list starts rotting into a blanket waiver, and
 # cargo-deny's `unnecessary-skip` warning is what says when to take it off.
 
