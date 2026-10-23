@@ -168,6 +168,7 @@ impl SlimRpcTransportBuilder {
     ///
     /// [`TransportBuildError`] if the app or channel cannot be created.
     pub fn connect(self) -> Result<SlimRpcTransport, TransportBuildError> {
+        crate::install_crypto_provider();
         let id = ID::new_with_name(
             Kind::new("slim").map_err(|e| TransportBuildError::Slim(e.to_string()))?,
             &self.local.service,

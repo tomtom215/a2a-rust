@@ -184,11 +184,9 @@ pub fn free_port() -> u16 {
 
 /// A SLIM service named for the test that owns it.
 pub fn service(test_name: &str) -> Arc<Service> {
-    // With `otlp`, rustls has two providers linked and picks neither, so
-    // SLIM's TLS would panic; install SLIM's own, as `slim-node` does. An
-    // `Err` means an earlier test in this process already did.
-    #[cfg(feature = "otlp")]
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    // rustls has two providers linked and picks neither, so SLIM's TLS
+    // would panic without a default; install SLIM's own, as `slim-node` does.
+    a2a_protocol_slimrpc::install_crypto_provider();
     let id = ID::new_with_name(Kind::new("slim").expect("kind"), test_name).expect("id");
     Arc::new(Service::new(id))
 }

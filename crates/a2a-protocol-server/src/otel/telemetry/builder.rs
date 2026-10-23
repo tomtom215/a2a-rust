@@ -254,13 +254,18 @@ impl TelemetryBuilder {
             });
         }
         let protocol = config::protocol(env, signal, self.protocol)?;
+        // OTLP/HTTP leaves an unset endpoint to `opentelemetry-otlp`. gRPC
+        // resolves it here, because an `https://` one is dialled over this
+        // crate's own TLS connector, which needs the endpoint to build.
+        let endpoint = match self.endpoint.as_deref() {
+            Some(base) => Some(Target::endpoint_from_base(base, signal, protocol)),
+            None if protocol == OtlpProtocol::Grpc => signal.grpc_endpoint_in_env(env),
+            None => None,
+        };
         Ok(Target {
             signal,
             protocol,
-            endpoint: self
-                .endpoint
-                .as_deref()
-                .map(|base| Target::endpoint_from_base(base, signal, protocol)),
+            endpoint,
             headers: self.headers.clone(),
             timeout,
             ca_pem,

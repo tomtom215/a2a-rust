@@ -47,6 +47,8 @@ dependencies = [
  "serde_path_to_error",
  "tokio",
  "tokio-util",
+ "tonic",
+ "tower-service",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -4730,13 +4732,11 @@ dependencies = [
  "socket2",
  "sync_wrapper",
  "tokio",
- "tokio-rustls",
  "tokio-stream",
  "tower",
  "tower-layer",
  "tower-service",
  "tracing",
- "webpki-roots",
 ]
 
 [[package]]

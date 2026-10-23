@@ -1940,7 +1940,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:330 server_error_overloaded_maps_to_503",
-    "crates/a2a-protocol-server/src/error/tests.rs:470 an_overload_body_names_resource_exhausted",
+    "crates/a2a-protocol-server/src/error/tests.rs:458 an_overload_body_names_resource_exhausted",
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs:84 a_throttled_rest_call_is_429_with_retry_after",
     "crates/a2a-protocol-server/tests/sql_transient_errors.rs:56 http_json_answers_a_starved_store_503_unavailable",
     "crates/a2a-protocol-server/tests/sql_transient_errors.rs:106 a_call_a_client_may_not_repeat_is_not_called_temporary"
@@ -2065,7 +2065,7 @@
     "crates/a2a-protocol-types/src/error.rs:1092 a2a_reason_all_a2a_variants_distinct_and_non_empty",
     "crates/a2a-protocol-server/tests/bad_request_details.rs:109 a_handler_check_names_the_field_over_http_json",
     "crates/a2a-protocol-server/tests/bad_request_details.rs:124 a_handler_check_names_the_field_over_jsonrpc",
-    "crates/a2a-protocol-server/src/error/tests.rs:480 an_invalid_field_is_invalid_params_with_a_bad_request_detail"
+    "crates/a2a-protocol-server/src/error/tests.rs:468 an_invalid_field_is_invalid_params_with_a_bad_request_detail"
    ],
    "notes": "ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Since 2026-10-14 (audit register, the §3.3.2 row) the handler's own request checks carry a BadRequest naming the field too, through the new ServerError::InvalidField: ids (empty, too long, reference_task_ids), message.role, message.parts, every metadata and number-range check, a part's raw, the push config's required ids, taskId, url, authentication.scheme, token and credentials, ListTasks pageSize and statusTimestampAfter, and the REST query parameters. They named the field in the message only. Errors that name no single field (a per-task config limit, a card refused at build()) stay InvalidParams.",
    "auditor": "B",
@@ -7484,7 +7484,7 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/binding.rs:37 SLIMRPC_PROTOCOL_BINDING",
     "bindings/a2a-protocol-slimrpc/src/binding.rs:207 SlimName::to_agent_interface",
-    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:267 SlimRpcServer::agent_interface"
+    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:268 SlimRpcServer::agent_interface"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:293 extended_agent_card_advertises_the_slimrpc_binding"

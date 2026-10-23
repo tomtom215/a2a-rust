@@ -157,12 +157,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // other binary in the repository sets it up: with an OTLP endpoint
     // configured, the agent's `SERVER` spans and SLIM's own go there; without
     // one nothing is installed. Kept to the end, since dropping it flushes.
-    // `otlp` links rustls with `ring` beside SLIM's `aws-lc-rs`, so SLIM's
-    // provider is installed as the process default first (`Cargo.toml`,
-    // `[features]`); an `Err` means one already is.
     #[cfg(feature = "otlp")]
     let _telemetry = {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let telemetry = a2a_protocol_server::otel::Telemetry::builder()
             .with_default_service_name(env!("CARGO_BIN_NAME"))
             .with_export_where_configured()
@@ -173,6 +169,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // One SLIM service is the whole fabric here. Everything below rides its
     // datapath exactly as it would across a node; only the socket is missing.
+    // Before creating a SLIM service of your own: SLIM's TLS needs a
+    // process-wide rustls provider (`install_crypto_provider`).
+    a2a_protocol_slimrpc::install_crypto_provider();
     let service = Arc::new(Service::new(ID::new_with_name(
         Kind::new("slim")?,
         "in-process-example",

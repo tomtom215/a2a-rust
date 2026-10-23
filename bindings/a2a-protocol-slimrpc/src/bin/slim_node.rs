@@ -83,13 +83,8 @@ fn parse_args() -> Result<Args, String> {
 /// there; without one nothing is built or installed. Kept for the life of
 /// the process, since dropping it flushes.
 ///
-/// `otlp` links rustls with `ring` beside SLIM's `aws-lc-rs`, so SLIM's own
-/// provider is installed as the process default first, or the node's first
-/// TLS handshake would panic (see `[features]` in `Cargo.toml`). An `Err`
-/// means one is installed already, which is all this needs.
 #[cfg(feature = "otlp")]
 fn telemetry() -> Result<a2a_protocol_server::otel::Telemetry, String> {
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let telemetry = a2a_protocol_server::otel::Telemetry::builder()
         .with_default_service_name(env!("CARGO_BIN_NAME"))
         .with_export_where_configured()
@@ -134,6 +129,9 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The node's TLS listener is SLIM's, on rustls, before any binding
+    // builder would install the provider (`install_crypto_provider`).
+    a2a_protocol_slimrpc::install_crypto_provider();
     let service = Service::new(id);
 
     if let Err(e) = service

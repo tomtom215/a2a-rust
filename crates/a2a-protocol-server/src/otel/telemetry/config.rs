@@ -81,6 +81,23 @@ impl Signal {
         self.otlp_var(env, "ENDPOINT").is_some()
     }
 
+    /// The OTLP/gRPC endpoint the environment configures for this signal,
+    /// as `opentelemetry-otlp` reads it: the signal's own variable, then the
+    /// general one, used as given. One with no scheme gets `http://` when
+    /// `OTEL_EXPORTER_OTLP_{SIGNAL_}INSECURE` is `true` and `https://`
+    /// otherwise.
+    pub(super) fn grpc_endpoint_in_env(self, env: &Env) -> Option<String> {
+        let (_, endpoint) = self.otlp_var(env, "ENDPOINT")?;
+        if endpoint.contains("://") {
+            return Some(endpoint);
+        }
+        let insecure = self
+            .otlp_var(env, "INSECURE")
+            .is_some_and(|(_, v)| v.trim().eq_ignore_ascii_case("true"));
+        let scheme = if insecure { "http" } else { "https" };
+        Some(format!("{scheme}://{endpoint}"))
+    }
+
     /// The signal-specific variable, falling back to the general one.
     fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
         let specific = format!("OTEL_EXPORTER_OTLP_{}_{suffix}", self.upper());

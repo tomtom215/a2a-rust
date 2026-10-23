@@ -1536,28 +1536,45 @@ section "The client refuses what `a2a.proto` does not allow".
   record. It now answers `unauthenticated` or `permission_denied` for a
   refused credential and the error code's label (`version_not_supported`,
   `content_type_not_supported`, …) for any other. A dashboard or query that
-  matched `protocol` matches these instead. Tests: `error/tests.rs`
+  matched `protocol` matches these instead. Tests: `error/label_tests.rs`
   `a_protocol_error_is_labelled_for_what_it_says`;
   `tests/audit_trail.rs`, `tests/audit_security_events.rs` (each fails with
   the old label).
 
-- **SLIMRPC: the binding takes the server at its default features, and an
-  opt-in `otlp` feature builds the SDK's `Telemetry` into `slim-node` and
-  `examples/in_process`** (`a2a-protocol-slimrpc`). The server dependency
-  was `default-features = false`, a leftover from before `tracing` and
-  `otel` were the server's defaults; a SLIMRPC call's `SERVER` span and
-  `rpc.server.call.duration` now reach the application's subscriber and
-  meter provider. With `--features otlp` the node builds `Telemetry` from
-  the `OTEL_*` environment, as every other binary does, and exits with
-  status 2 on a configuration it cannot use. `otlp` is off by default
-  because, measured, it conflicts with SLIM's own TLS: it links rustls
-  with `ring` beside SLIM's `aws-lc-rs`, so rustls picks no default
-  provider (the binaries install `aws-lc-rs`; a library user enabling
-  `otlp` must do the same), and it turns on tonic's TLS features, after
-  which tonic refuses the `https://` endpoint SLIM dials and the TLS
-  node suites hang. Test: `tests/out_of_process.rs`
-  `the_node_builds_telemetry_from_the_otel_environment` (under `otlp`; a
-  CI step runs the binding's suites with it).
+- **SLIMRPC: the binding takes the server at its default features, and its
+  `otlp` feature, on by default, builds the SDK's `Telemetry` into
+  `slim-node` and `examples/in_process`** (`a2a-protocol-slimrpc`). The
+  server dependency was `default-features = false`, a leftover from before
+  `tracing` and `otel` were the server's defaults; a SLIMRPC call's `SERVER`
+  span and `rpc.server.call.duration` now reach the application's
+  subscriber and meter provider. The node builds `Telemetry` from the
+  `OTEL_*` environment, as every other binary does, and exits with status 2
+  on a configuration it cannot use. Two conflicts with SLIM's own
+  dependencies first kept `otlp` off by default, and both are fixed: the
+  server's OTLP/gRPC no longer links tonic's TLS (see the server entry
+  below), which had made tonic refuse the `https://` endpoint SLIM dials and
+  hang the TLS node suites; and `install_crypto_provider()`, which
+  `SlimRpcServerBuilder::build` and `SlimRpcTransportBuilder::connect` call,
+  installs SLIM's rustls provider when the process has none, since rustls
+  picks no default with `ring` and `aws-lc-rs` both linked and SLIM's first
+  handshake panicked. `default-features = false` drops `Telemetry` and the
+  exporters. Tests: `tests/out_of_process.rs`
+  `the_node_builds_telemetry_from_the_otel_environment`;
+  `tests/crypto_provider.rs` (fails without the builder's install);
+  `tests/remote_node_tls.rs` and `remote_node_mtls.rs` at default features
+  (hang with tonic's TLS linked, killed at 300 s).
+
+- **The server's OTLP/gRPC export dials TLS through its own connector**
+  (server, `otlp`). `opentelemetry-otlp` was built with tonic's TLS
+  (`tls-ring`, `tls-webpki-roots`), and tonic with any TLS feature refuses
+  an `https://` URI it holds no TLS config for, whoever dials it, which broke
+  a dependent dialling TLS through a connector of its own (SLIM's client).
+  An `https://` collector is now reached over the same rustls stack as
+  OTLP/HTTP: Mozilla's roots, the extra CAs, the client certificate, ALPN
+  `h2`, with tonic given the endpoint as `http://` and the connector always
+  dialling TLS. It works whether or not something else in the process turns
+  tonic's TLS on. Tests: `tests/telemetry_export` (all 31, the four gRPC TLS
+  ones included, in a test build that does link tonic's TLS).
 
 - **An executor's `RequestContext::activated_extensions()` lists only the
   extensions the agent card declares** (server; spec §4.6.3: an extension
@@ -3256,7 +3273,7 @@ section "The client refuses what `a2a.proto` does not allow".
   instead of writing a header without one: a specification correction
   (`STABILITY.md` §2), which is the only change for a caller passing a key
   id. Kept for the one minor release `STABILITY.md` §3 requires and removed
-  in 0.16.0. Test: `signing_tests::the_deprecated_sign_agent_card_needs_a_key_id`.
+  in 0.16.0. Test: `tests/sign_agent_card_deprecated.rs`.
   (`sign_agent_card_ed25519`, its Ed25519 twin, was added and removed within
   0.15.0 and never published; `sign_card_ed25519` is the Ed25519 signer.)
 

@@ -198,6 +198,29 @@ pub use multicast::{MemberOutcome, MulticastOutcome, SlimRpcMulticast};
 pub use server::peer::SlimPeerAuthInterceptor;
 pub use server::{SlimRpcServer, SlimRpcServerBuilder};
 
+/// Installs SLIM's rustls provider, `aws-lc-rs`, as the process default,
+/// unless a default is installed already.
+///
+/// rustls picks a process-wide provider by itself only when one is linked.
+/// This crate links two: SLIM's `aws-lc-rs`, and `ring` through the SDK's
+/// server (its OTLP exporters, with `otlp`, the default). With both, rustls
+/// picks neither, and SLIM's first TLS handshake panics ("Could not
+/// automatically determine the process-level `CryptoProvider`"). The SDK's
+/// own TLS names `ring` explicitly and does not depend on the default.
+///
+/// [`SlimRpcServerBuilder::build`] and [`SlimRpcTransportBuilder::connect`]
+/// call this before they create their SLIM service. Call it yourself before
+/// connecting a SLIM `Service` you create, as `slim-node` does: the
+/// `from_app` constructors receive an app that is connected already. A
+/// default some other code installed first is kept.
+pub fn install_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        // Racing another installer is the only failure, and either winner is
+        // a default, which is all this needs.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+}
+
 // ── Public dependencies, re-exported ─────────────────────────────────────────
 //
 // `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`

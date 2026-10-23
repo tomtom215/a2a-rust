@@ -64,7 +64,8 @@ only: when something here is done, delete it rather than annotating it.
     empty push url is `InvalidParams`) and WP-D (SLIMRPC: every operation
     tested over the fabric, an equivalence suite against JSON-RPC, the
     push-config list fixed, retryable errors prefixed, the server's
-    default telemetry, an opt-in `otlp` feature);
+    default telemetry, an `otlp` feature, on by default since the TLS
+    conflicts below were fixed);
   - `examples/live-model` (2026-10-23): the SDK end to end against a real
     model through llama-server, ten checks (the tool loop streamed and
     signature-verified on all four bindings, provenance refusal,
@@ -307,18 +308,15 @@ only: when something here is done, delete it rather than annotating it.
   `StaticAgentCardHandler` (and the dynamic and per-caller handlers) do not
   hold; and every unauthenticated discovery request becomes a root span.
   Not built until the maintainer decides.
-- **SLIMRPC `otlp` is opt-in, not on by default** (WP-D, 2026-10-23).
-  Measured: the server's `otlp` turns on tonic's TLS features through
-  `opentelemetry-otlp`, after which tonic refuses the `https://` endpoint
-  SLIM dials ("Connecting to HTTPS without TLS enabled") and the
-  `remote_node_tls`/`remote_node_mtls` suites hang; it also links rustls
-  with `ring` beside SLIM's `aws-lc-rs` (worked around by installing
-  `aws-lc-rs`). Making it a default needs either the server's `otlp` to
-  stop enabling tonic's TLS or a SLIM change; both are the maintainer's
-  call. The SLIMRPC error-details draft
-  (`docs/upstream/agntcy-slim-rpc-error-details.md`, every citation
-  re-read against agntcy-slim-rpc 3.4.6) is ready for the maintainer to
-  file.
+- **SLIMRPC `otlp` is on by default** (2026-10-23). The two conflicts that
+  kept it opt-in are fixed: the server's OTLP/gRPC dials TLS through its own
+  rustls connector, so tonic's TLS is not linked for it (with it linked,
+  tonic refused SLIM's `https://` dial and `remote_node_tls` hung, re-measured
+  with a 300 s bound); and the binding's builders install SLIM's rustls
+  provider when the process has none (`install_crypto_provider`). The
+  SLIMRPC error-details draft (`docs/upstream/agntcy-slim-rpc-error-details.md`,
+  every citation re-read against agntcy-slim-rpc 3.4.6) is ready for the
+  maintainer to file.
 - **Publishing:** the SLIMRPC binding has never been published (0.7.0).
   `tck/sut` and `examples/mcp-bridge` are `publish = false`; CLI binaries
   wait on `vars.PUBLISH_CLI_BINARIES` (`packaging/README.md`).
