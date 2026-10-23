@@ -15,6 +15,7 @@
 //! | `auth_before_store` | §13.1 | a refused call reads no store |
 //! | `cancel_and_push` | §3.1.5, §3.1.10 | a second cancel; no delivery after a config is deleted |
 //! | `stream_and_push` | §3.1.2, §3.1.7, §3.1.8 | progress before completion; a config read back whole and kept |
+//! | `list_empty_wire` | §3.1.4, §5.7 | the empty `ListTasks` page on the wire |
 
 #[path = "../support/s3_agent.rs"]
 mod s3_agent;
@@ -22,6 +23,7 @@ mod s3_agent;
 mod auth_before_store;
 mod cancel_and_push;
 mod extension_activation;
+mod list_empty_wire;
 mod not_found_wire;
 mod required_extensions;
 mod required_fields;
