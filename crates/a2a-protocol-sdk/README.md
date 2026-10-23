@@ -77,6 +77,7 @@ their own defaults, so `default-features = false` here removes all three.
 | `sqlite` | No | `a2a-protocol-server` |
 | `postgres` | No | `a2a-protocol-server` |
 | `axum` | No | `a2a-protocol-server` |
+| `tool-loop` | No | `a2a-protocol-server` |
 | `auth-jwt` | No | `a2a-protocol-server` |
 | `encryption` | No | `a2a-protocol-server` |
 | `audit` | No | `a2a-protocol-types`, `a2a-protocol-server` |

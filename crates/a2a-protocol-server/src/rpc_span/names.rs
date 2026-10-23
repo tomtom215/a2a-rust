@@ -36,6 +36,50 @@ impl RpcSystem {
             Self::Custom(binding) => binding.name,
         }
     }
+
+    /// Whether a `SERVER` span that ended with wire status `status` failed,
+    /// as each binding's semantic conventions count it — which decides
+    /// `error.type` and `Error` status, while `rpc.status_code` keeps the
+    /// status whatever it is. At `open-telemetry/semantic-conventions@55c98cf`:
+    ///
+    /// * **JSON-RPC**: every error code. `docs/rpc/json-rpc.md`: "All JSON
+    ///   RPC error codes SHOULD be considered errors."
+    /// * **gRPC**: only the server-side failures. `docs/rpc/grpc.md`, server
+    ///   span, `rpc.status_code` note: "The following status codes SHOULD be
+    ///   considered errors: `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`,
+    ///   `INTERNAL`, `UNAVAILABLE`, `DATA_LOSS`". A `NOT_FOUND` `GetTask` is
+    ///   the caller's mistake, answered correctly.
+    /// * **HTTP+JSON**: a 5xx, not a 4xx. Its status *is* an HTTP status, and
+    ///   `docs/http/http-spans.md` says "For HTTP status codes in the 4xx
+    ///   range span status MUST be left unset in case of `SpanKind.SERVER`",
+    ///   with `error.type` set only for a status that "indicates an error
+    ///   according to HTTP span status definition". `rpc-spans.md` leaves
+    ///   which codes are errors to each system's conventions, and this
+    ///   custom system's are HTTP's.
+    /// * **A custom binding**: every status, unless it asked for gRPC's rule
+    ///   ([`CustomBinding::with_grpc_server_errors`](super::CustomBinding::with_grpc_server_errors)).
+    pub fn is_server_error(self, status: &str) -> bool {
+        match self {
+            Self::JsonRpc => true,
+            Self::HttpJson => status.parse::<u16>().ok().is_none_or(|code| code >= 500),
+            Self::Grpc => grpc_server_error(status),
+            Self::Custom(binding) => (binding.server_error)(status),
+        }
+    }
+}
+
+/// gRPC's server-side failures (`docs/rpc/grpc.md`): the statuses a server
+/// span counts as errors.
+pub fn grpc_server_error(status: &str) -> bool {
+    matches!(
+        status,
+        "UNKNOWN"
+            | "DEADLINE_EXCEEDED"
+            | "UNIMPLEMENTED"
+            | "INTERNAL"
+            | "UNAVAILABLE"
+            | "DATA_LOSS"
+    )
 }
 
 /// An error a binding sends, as the status code that binding puts on the wire.
@@ -76,8 +120,11 @@ impl WireStatus for A2aError {
 pub fn a2a_method(method: &str) -> &'static str {
     match method {
         "SendMessage" => "lf.a2a.v1.A2AService/SendMessage",
-        // The WebSocket binding also routes this v0.3 spelling.
-        "SendStreamingMessage" | "message/stream" => "lf.a2a.v1.A2AService/SendStreamingMessage",
+        // Not the v0.3 `message/stream`: no binding routes it — the WebSocket
+        // binding stopped on 2026-10-12, the JSON-RPC one never did — so a
+        // call of it is refused `MethodNotFound` and recorded as `_OTHER`,
+        // with `rpc.method_original`, like every other method not served.
+        "SendStreamingMessage" => "lf.a2a.v1.A2AService/SendStreamingMessage",
         "GetTask" => "lf.a2a.v1.A2AService/GetTask",
         "ListTasks" => "lf.a2a.v1.A2AService/ListTasks",
         "CancelTask" => "lf.a2a.v1.A2AService/CancelTask",

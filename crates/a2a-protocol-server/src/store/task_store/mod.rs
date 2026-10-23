@@ -733,6 +733,19 @@ pub trait TaskStore: Send + Sync + 'static {
         Box::pin(async { Ok(None) })
     }
 
+    /// Holds this task's log after `after` for a stream that still owes those
+    /// positions, until the hold is advanced or dropped (spec §3.5.2); see
+    /// [`EventHolds`](crate::store::EventHolds). Synchronous: a stream takes
+    /// it while it is built. A wrapper must forward it.
+    ///
+    /// `None` by default, and what that costs: a bounded log drops events a
+    /// slow stream still owes, which then ends with `streamLagged`. A store
+    /// that keeps the whole log (the SQL ones) loses nothing by it.
+    #[allow(unused_variables)]
+    fn hold_events(&self, task_id: &TaskId, after: u64) -> Option<crate::store::EventHold> {
+        None
+    }
+
     /// Whether a replay starting after `after_seq` can be served in full.
     ///
     /// `false` means the log no longer holds `after_seq + 1`: the caller asked

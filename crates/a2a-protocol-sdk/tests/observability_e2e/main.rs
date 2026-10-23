@@ -46,8 +46,7 @@ use a2a_protocol_sdk::server::{
     GrpcConfig, GrpcDispatcher, HttpPushSender, JsonRpcDispatcher, RequestHandlerBuilder,
     RestDispatcher, serve_with_addr,
 };
-use a2a_protocol_sdk::types::params::{SendMessageConfiguration, TaskQueryParams};
-use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
+use a2a_protocol_sdk::types::params::TaskQueryParams;
 use a2a_protocol_sdk::types::trace_context::TraceContext;
 use a2a_protocol_sdk::types::{AgentCapabilities, AgentCard, AgentInterface};
 use opentelemetry::trace::{SpanKind, TracerProvider as _};
@@ -58,7 +57,11 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tracing_subscriber::layer::SubscriberExt;
 
 mod conventions;
+mod executor_errors;
 mod fixtures;
+mod grpc_status;
+mod push;
+mod streams;
 use fixtures::*;
 
 /// The advisory buckets for `rpc.server.call.duration`, from the semantic
@@ -217,38 +220,18 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         .flatten()
         .is_some()
     {}
-    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let hook = webhook(Arc::clone(&hits)).await;
-    let mut push = message("push", None);
-    push.configuration = Some(SendMessageConfiguration {
-        task_push_notification_config: Some(TaskPushNotificationConfig::new("", hook)),
-        ..SendMessageConfiguration::default()
-    });
-    let mut stream = jsonrpc_client
-        .stream_message(push)
-        .await
-        .expect("push stream");
-    while tokio::time::timeout(Duration::from_secs(10), stream.next())
-        .await
-        .ok()
-        .flatten()
-        .is_some()
-    {}
-    // Push delivery runs behind the stream: wait for the webhook to be hit,
-    // with a deadline, rather than for a fixed time (CONTRIBUTING.md).
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while hits.load(std::sync::atomic::Ordering::SeqCst) == 0
-        && tokio::time::Instant::now() < deadline
-    {
-        tokio::time::sleep(Duration::from_millis(2)).await;
-    }
+    push::deliver(jsonrpc_client).await;
+    executor_errors::run().await;
+    grpc_status::run(&clients["GRPC"]).await;
+    streams::run().await;
 
     // ── What the exporter and the reader received ───────────────────────────
     // A span is exported when it closes, and `tracing` keeps a parent open
     // until its children close — the call's span waits for the background
-    // processor and the SSE writer it spawned (its recorded end time is still
-    // the call's own). So wait, with a deadline, for every span the SDK
-    // spawns to have its parent exported, rather than for a fixed time.
+    // processor and the SSE writer it spawned (its recorded end time is the
+    // call's own, or its stream's). So wait, with a deadline, for every span the SDK
+    // spawns to have its parent exported, and for every call's SERVER span (the
+    // first alone holds for a call with nothing exported yet), not a fixed time.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let spans = loop {
         let _ = tracer_provider.force_flush();
@@ -258,7 +241,11 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         let settled = spans
             .iter()
             .filter(|s| spawned_by_the_sdk(&s.name))
-            .all(|s| ids.contains(&s.parent_span_id));
+            .all(|s| ids.contains(&s.parent_span_id))
+            && CALLS
+                .iter()
+                .all(|call| conventions::server_span(&spans, call.trace_id).is_some())
+            && streams::recorded(&spans);
         if settled || tokio::time::Instant::now() >= deadline {
             break spans;
         }
@@ -270,12 +257,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
 
     for call in &CALLS {
         let b = call.binding;
-        let server = spans.iter().find(|s| {
-            s.span_kind == SpanKind::Server
-                && s.name == SEND_SPAN
-                && s.span_context.trace_id().to_string() == call.trace_id
-        });
-        let Some(server) = server else {
+        let Some(server) = conventions::server_span(&spans, call.trace_id) else {
             gaps.push(format!(
                 "{b}: no SERVER span `{SEND_SPAN}` in trace {} (O1)",
                 call.trace_id
@@ -364,22 +346,27 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             ));
         }
     }
-    // A call's span ends when the call does, not when the stream it opened
-    // does: `tracing` keeps it open for its children, and the exported end
-    // time must still be the call's own.
+    // A streaming call's span ends when its stream does (`rpc-spans.md`:
+    // "the span SHOULD cover the full lifetime of the request and/or
+    // response streams"), so after the SSE writer it spawned. Until
+    // 2026-10-20 this asserted the opposite: the call ended at the handshake.
     for sse in spans.iter().filter(|s| s.name == "a2a.sse") {
         if let Some(call) = spans
             .iter()
             .find(|s| s.span_context.span_id() == sse.parent_span_id)
-            && call.end_time >= sse.end_time
+            && call.end_time < sse.end_time
         {
             gaps.push(format!(
-                "`{}` ends with the stream it opened, not with the call (O1)",
+                "`{}` ends before the stream it opened (rpc-spans.md)",
                 call.name
             ));
         }
     }
+    streams::check_spans(&spans, &mut gaps);
     conventions::check_unique_keys(&spans, &mut gaps);
+    push::check_webhook(&exporter, &tracer_provider, &mut gaps).await;
+    executor_errors::check(&exporter, &tracer_provider, &mut gaps).await;
+    grpc_status::check_spans(&spans, &mut gaps);
     for name in [EXECUTE, "a2a.process_events", "a2a.sse"] {
         if !spans.iter().any(|s| s.name == name) {
             gaps.push(format!("no `{name}` span was recorded (O4)"));
@@ -388,9 +375,11 @@ async fn one_server_three_bindings_what_an_operator_sees() {
 
     // The unknown task: a failed call, whose span says why with the code the
     // caller was answered with (semconv: `error.type` is that status code).
-    let failed = spans
-        .iter()
-        .find(|s| s.span_kind == SpanKind::Server && s.name == GET_TASK);
+    let failed = spans.iter().find(|s| {
+        s.span_kind == SpanKind::Server
+            && s.name == GET_TASK
+            && attr(s, "rpc.system.name").as_deref() == Some("jsonrpc")
+    });
     match failed {
         None => gaps.push(format!(
             "no SERVER span `{GET_TASK}` for the failed GetTask (O1)"
@@ -421,6 +410,7 @@ async fn one_server_three_bindings_what_an_operator_sees() {
     }
     let mut catalogue = book_catalogue();
     catalogue.insert("rpc.server.call.duration".to_owned());
+    catalogue.insert("rpc.client.call.duration".to_owned());
     for name in &catalogue {
         if !emitted.contains_key(name.as_str()) {
             gaps.push(format!(
@@ -481,6 +471,14 @@ async fn one_server_three_bindings_what_an_operator_sees() {
                     "no rpc.server.call.duration point for the failed GetTask with error.type {TASK_NOT_FOUND:?} (O5, O11)"
                 ));
             }
+            grpc_status::check_points(&points, &mut gaps);
+            let client = emitted
+                .get("rpc.client.call.duration")
+                .map(|m| histogram_points(m, &mut gaps))
+                .unwrap_or_default();
+            let client_points: Vec<_> = client.iter().map(|(p, _)| p.clone()).collect();
+            streams::check_client_points(&client_points, &mut gaps);
+            streams::check_durations(&histogram_points(metric, &mut gaps), &client, &mut gaps);
         } else {
             gaps.push("rpc.server.call.duration is not an f64 histogram".to_owned());
         }

@@ -28,7 +28,7 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Task> {
         let start = Instant::now();
-        trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
+        trace_info!(method = "GetTask", task_id = ?params.id, "handling get task");
         self.metrics.on_request("GetTask");
 
         let tenant = self
@@ -73,6 +73,12 @@ impl RequestHandler {
             Ok(task) => crate::rpc_span::record_task_response(task),
             Err(_) => crate::rpc_span::record_task(&params.id, None),
         }
+        // Signed on the way out (ADR 0027), after `historyLength` trimmed it.
+        let result = result.and_then(|mut task| {
+            self.outbound.sign_task(&mut task)?;
+            Ok(task)
+        });
+
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {

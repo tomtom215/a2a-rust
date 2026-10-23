@@ -13,7 +13,10 @@ license.workspace    = true
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "auth-jwt"] }
+# `otlp`: the SDK's `Telemetry`, which exports when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "auth-jwt", "otlp"] }
+tracing-subscriber = { workspace = true }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
 a2a-example-harness = { path = "../harness" }
 
@@ -26,7 +29,7 @@ bytes          = "1"
 uuid           = { workspace = true }
 
 # genai — multi-provider LLM client (https://crates.io/crates/genai)
-genai = "0.6"
+genai = "0.7"
 
 [dev-dependencies]
 # `start_paused` for the slow-marker test, so it asserts on a virtual clock

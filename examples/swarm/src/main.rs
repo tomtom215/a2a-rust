@@ -207,6 +207,7 @@ async fn cancel_run(swarm: &Swarm, jobs: usize) -> serde_json::Value {
 
 #[tokio::main]
 async fn main() {
+    let telemetry = telemetry();
     let (w, s) = (env("SWARM_WORKERS", 64), env("SWARM_SUPERVISORS", 8));
     let (jobs, inflight) = (env("SWARM_JOBS", 4000), env("SWARM_INFLIGHT", 32));
     let mut ok = true;
@@ -293,6 +294,31 @@ async fn main() {
     }
     if !ok {
         eprintln!("swarm: accounting did not add up — see the JSON lines above");
+        drop(telemetry);
         std::process::exit(1);
     }
+}
+
+/// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
+/// `examples/langfuse-agent`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+/// collector, traces, metrics and logs go there; without it nothing is built
+/// or installed — no exporter, no export thread, no subscriber. Keep it for
+/// the life of the process: dropping it flushes.
+fn telemetry() -> a2a_protocol_server::otel::Telemetry {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+    let export = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some();
+    let telemetry = a2a_protocol_server::otel::Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_traces(export)
+        .with_metrics(export)
+        .with_logs(export)
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    if telemetry.tracer_provider().is_some() || telemetry.logger_provider().is_some() {
+        tracing_subscriber::registry()
+            .with(telemetry.layer())
+            .init();
+    }
+    telemetry
 }

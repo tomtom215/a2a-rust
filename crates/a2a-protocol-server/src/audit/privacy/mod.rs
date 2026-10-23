@@ -168,13 +168,25 @@ fn hex(bytes: &[u8]) -> String {
         })
 }
 
+/// What [`hex`] wrote, and nothing else: lowercase digits only, so a keyed
+/// digest has one spelling (until 2026-10-21 uppercase and a leading `+`
+/// passed too; found by the `sealed_audit_value` fuzz target).
 fn unhex(s: &str) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) {
-        return None;
+    const fn nibble(c: u8) -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            _ => None,
+        }
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+    let (pairs, []) = s.as_bytes().as_chunks::<2>() else {
+        return None;
+    };
+    // `16 * hi + lo`, not `hi << 4 | lo`: there `|` and `^` agree, a
+    // mutant no test can kill.
+    pairs
+        .iter()
+        .map(|&[hi, lo]| Some(nibble(hi)? * 16 + nibble(lo)?))
         .collect()
 }
 

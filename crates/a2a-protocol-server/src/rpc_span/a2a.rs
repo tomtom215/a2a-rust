@@ -102,6 +102,20 @@ pub fn record_message(message: &a2a_protocol_types::message::Message) {
     }
 }
 
+/// `gen_ai.response.finish_reasons` (Recommended on the `invoke_agent`
+/// internal span), whether content capture is on or not, since a reason is
+/// not content. The output message's own `finish_reason` is deprecated in its
+/// favour (`gen-ai-output-messages.json` at `547934a`). A string array, which
+/// a `tracing` field cannot hold, so it goes through the OpenTelemetry span.
+#[cfg(feature = "otel")]
+pub fn record_finish_reason(span: &tracing::Span, reason: &'static str) {
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+    span.set_attribute(
+        "gen_ai.response.finish_reasons",
+        opentelemetry::Value::Array(vec![opentelemetry::StringValue::from(reason)].into()),
+    );
+}
+
 /// `a2a.task.id`, and `gen_ai.conversation.id` when the context is known.
 pub fn record_task(task_id: &str, context_id: Option<&str>) {
     let span = tracing::Span::current();

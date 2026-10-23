@@ -20,7 +20,7 @@ use crate::error::ServerResult;
 use crate::executor::AgentExecutor;
 use crate::handler::{HandlerLimits, RequestHandler};
 use crate::interceptor::{ServerInterceptor, ServerInterceptorChain};
-use crate::metrics::{Metrics, NoopMetrics};
+use crate::metrics::{Metrics, default_metrics};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
 use crate::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use crate::streaming::EventQueueManager;
@@ -181,6 +181,8 @@ pub struct RequestHandlerBuilder {
     caller_isolation: Option<CallerIsolation>,
     inbound_trace_policy: crate::handler::InboundTracePolicy,
     span_settings: crate::rpc_span::SpanSettings,
+    outbound: crate::provenance::Outbound,
+    inbound: crate::provenance::Inbound,
     auth_waivers: AuthWaivers,
     allow_undeclared_input_modes: bool,
     refuse_private_file_urls: bool,
@@ -191,9 +193,8 @@ pub struct RequestHandlerBuilder {
     max_lease_ttl: std::time::Duration,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
-    /// The profile applied, if any; `build()` checks what it needs.
-    #[cfg(feature = "audit")]
-    profile: Option<crate::profile::ProfileKind>,
+    /// The profiles applied; `build()` checks what each needs.
+    profiles: Vec<crate::profile::ProfileKind>,
 }
 
 impl RequestHandlerBuilder {
@@ -216,7 +217,7 @@ impl RequestHandlerBuilder {
             event_queue_capacity: None,
             max_event_size: None,
             max_concurrent_streams: None,
-            metrics: Arc::new(NoopMetrics),
+            metrics: default_metrics(),
             handler_limits: HandlerLimits::default(),
             tenant_resolver: None,
             tenant_config: None,
@@ -228,6 +229,8 @@ impl RequestHandlerBuilder {
                 agent: true,
                 content: false,
             },
+            outbound: crate::provenance::Outbound::default(),
+            inbound: crate::provenance::Inbound::default(),
             auth_waivers: AuthWaivers {
                 extended_card: false,
                 upstream: false,
@@ -241,8 +244,7 @@ impl RequestHandlerBuilder {
             max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
             #[cfg(feature = "audit")]
             audit: None,
-            #[cfg(feature = "audit")]
-            profile: None,
+            profiles: Vec::new(),
         }
     }
 
@@ -306,6 +308,52 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Signs every artifact, status message and direct reply the server
+    /// sends with `signer` (ADR 0027): stream events, pushes, and the tasks
+    /// and messages `SendMessage`, `GetTask`, `ListTasks`, `CancelTask` and
+    /// `SubscribeToTask` return. Each is signed over exactly what is sent, so
+    /// an artifact streamed in chunks verifies chunk by chunk on the stream
+    /// and whole from `GetTask`. A task's history is not signed: it holds the
+    /// caller's messages as they arrived. Content already signed, such as
+    /// another agent's artifact forwarded unchanged, is left as it is.
+    /// Publish `signer.public_jwk()` where callers fetch keys.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_content_signer(
+        mut self,
+        signer: a2a_protocol_types::provenance::ContentSigner,
+    ) -> Self {
+        self.outbound = crate::provenance::Outbound::signing(signer);
+        self
+    }
+
+    /// Verifies the provenance signature of every message sent to this
+    /// agent against `keys` (ADR 0027): a message whose signature does not
+    /// verify, because it was altered or signed by a key not in the set, is
+    /// refused with `InvalidParams` before the executor runs. An unsigned
+    /// message is accepted, and the executor reads
+    /// [`ContentCheck::Unsigned`](crate::request_context::ContentCheck::Unsigned)
+    /// from [`RequestContext::content_check`](crate::RequestContext::content_check);
+    /// [`require_signed_content`](Self::require_signed_content) refuses it
+    /// too.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_content_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.inbound = crate::provenance::Inbound::verifying(keys);
+        self
+    }
+
+    /// Refuses unsigned messages as well as altered ones. Anyone able to
+    /// alter a message can also remove its signature, so a deployment that
+    /// acts only on content from known agents requires one. Needs
+    /// [`with_content_keys`](Self::with_content_keys), called before this.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn require_signed_content(mut self) -> Self {
+        self.inbound = self.inbound.requiring_signatures();
+        self
+    }
+
     /// Sets a push notification sender.
     #[must_use]
     pub fn with_push_sender(mut self, sender: impl PushSender + 'static) -> Self {
@@ -330,16 +378,23 @@ impl RequestHandlerBuilder {
 
     /// Applies a deployment [`Profile`](crate::profile::Profile); see each
     /// profile for what it sets and what `build()` then requires.
-    #[cfg(feature = "audit")]
+    /// Profiles combine: each one applied adds its requirements.
+    // Without `audit`, every profile is a unit variant and none is consumed.
+    #[cfg_attr(not(feature = "audit"), allow(clippy::needless_pass_by_value))]
     #[must_use]
     pub fn with_profile(mut self, profile: crate::profile::Profile) -> Self {
         match profile {
+            #[cfg(feature = "audit")]
             crate::profile::Profile::Auditable(log) => {
-                self.profile = Some(crate::profile::ProfileKind::Auditable);
+                self.profiles.push(crate::profile::ProfileKind::Auditable);
                 if self.approval_gate.is_none() {
                     self.approval_gate = Some(crate::approval::ApprovalGate::new());
                 }
                 self.with_audit(log)
+            }
+            crate::profile::Profile::Production => {
+                self.profiles.push(crate::profile::ProfileKind::Production);
+                self
             }
         }
     }
@@ -569,7 +624,7 @@ impl RequestHandlerBuilder {
 
     /// Sets a metrics observer for handler activity.
     ///
-    /// Defaults to [`NoopMetrics`] which discards all events.
+    /// Defaults to `OtelMetrics` on the global meter provider (`otel`), else `NoopMetrics`.
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
         self.metrics = Arc::new(metrics);
@@ -879,7 +934,10 @@ impl RequestHandlerBuilder {
     ///   tenant, with no authenticating interceptor (when asked for
     ///   explicitly), or with an approval gate that needs a second approver
     ///   (see [`isolate_tasks_by_caller`](Self::isolate_tasks_by_caller));
-    /// - with the `audit` feature, a `Profile` whose requirements are not
+    /// - an approval gate whose [quorum](crate::approval::ApprovalGate::with_quorum)
+    ///   could never be met: `0`, more than its allowed approvers, or more
+    ///   than one with tasks isolated by caller;
+    /// - a [`Profile`](crate::profile::Profile) whose requirements are not
     ///   met.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
@@ -979,8 +1037,17 @@ impl RequestHandlerBuilder {
         }
 
         #[cfg(feature = "audit")]
-        if self.profile == Some(crate::profile::ProfileKind::Auditable) {
+        if self
+            .profiles
+            .contains(&crate::profile::ProfileKind::Auditable)
+        {
             self.check_auditable()?;
+        }
+        if self
+            .profiles
+            .contains(&crate::profile::ProfileKind::Production)
+        {
+            self.check_production()?;
         }
 
         // Validate executor timeout is not zero.
@@ -1112,16 +1179,7 @@ impl RequestHandlerBuilder {
                     params: None,
                 });
             }
-            wanted.push(AgentExtension {
-                uri: a2a_protocol_types::failure::FAILURE_EXTENSION_URI.to_owned(),
-                description: Some(
-                    "A failed task says why in a form a caller can match on, \
-                     rather than only in prose."
-                        .to_owned(),
-                ),
-                required: Some(false),
-                params: None,
-            });
+            wanted.extend(crate::handler::budget::always_declared());
 
             if let Some(card) = agent_card.as_mut() {
                 advertise("agent card", card, &wanted)?;
@@ -1188,6 +1246,13 @@ impl RequestHandlerBuilder {
                     .to_owned(),
             ));
         }
+        if let Some(why) = self
+            .approval_gate
+            .as_ref()
+            .and_then(|gate| gate.unsatisfiable(isolate_callers))
+        {
+            return Err(crate::error::ServerError::InvalidParams(why));
+        }
         if isolate_callers
             && self
                 .approval_gate
@@ -1222,7 +1287,7 @@ impl RequestHandlerBuilder {
             executor: self.executor,
             task_store,
             push_config_store,
-            push_sender: self.push_sender,
+            push_sender: signing_push(self.push_sender, &self.outbound),
             event_queue_manager: {
                 let mut mgr = self
                     .event_queue_capacity
@@ -1256,6 +1321,8 @@ impl RequestHandlerBuilder {
             caller_isolation,
             inbound_trace_policy: self.inbound_trace_policy,
             span_settings: self.span_settings,
+            outbound: self.outbound,
+            inbound: self.inbound,
             allow_unauthenticated_extended_card: self.auth_waivers.extended_card,
             accepted_input_modes,
             required_extensions,
@@ -1282,6 +1349,44 @@ impl RequestHandlerBuilder {
             #[cfg(feature = "audit")]
             audit: self.audit,
         })
+    }
+}
+
+impl RequestHandlerBuilder {
+    /// What [`Profile::Production`](crate::profile::Profile::Production)
+    /// requires, each failure naming its fix.
+    fn check_production(&self) -> ServerResult<()> {
+        let refuse = |why: &str| Err(crate::error::ServerError::InvalidParams(why.to_owned()));
+        if !self.interceptors.has_authenticator() {
+            return refuse(
+                "the production profile needs an authenticating interceptor: \
+                 otherwise any caller reaches every method and every task",
+            );
+        }
+        if self.halt_store.is_none() {
+            return refuse(
+                "the production profile needs a halt store (with_halt_store): \
+                 otherwise a halt reaches only this process and a restart forgets it",
+            );
+        }
+        if self.lease_store.is_none() {
+            return refuse(
+                "the production profile needs a lease store (with_lease_store): \
+                 otherwise a task delegated here runs on after the agent that \
+                 delegated it has stopped",
+            );
+        }
+        if !self.outbound.signs() {
+            return refuse(if cfg!(feature = "signing") {
+                "the production profile needs a content signer (with_content_signer): \
+                 otherwise nothing this agent sends says it made it, and an \
+                 intermediary can alter it unseen (ADR 0027)"
+            } else {
+                "the production profile needs a content signer, which needs the \
+                 `signing` feature: enable it and call with_content_signer (ADR 0027)"
+            });
+        }
+        Ok(())
     }
 }
 
@@ -1351,6 +1456,8 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("caller_isolation", &self.caller_isolation)
             .field("inbound_trace_policy", &self.inbound_trace_policy)
             .field("span_settings", &self.span_settings)
+            .field("outbound", &self.outbound)
+            .field("inbound", &self.inbound)
             .field("auth_waivers", &self.auth_waivers)
             .field(
                 "allow_undeclared_input_modes",
@@ -1362,9 +1469,9 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("halt_poll_interval", &self.halt_poll_interval)
             .field("lease_store", &self.lease_store.is_some())
             .field("max_lease_ttl", &self.max_lease_ttl);
+        d.field("profiles", &self.profiles);
         #[cfg(feature = "audit")]
-        d.field("audit", &self.audit.is_some())
-            .field("profile", &self.profile);
+        d.field("audit", &self.audit.is_some());
         d.finish()
     }
 }
@@ -1416,6 +1523,26 @@ pub(crate) fn advertise(
             .extend(missing);
     }
     Ok(())
+}
+
+/// `sender`, signing each event first when `outbound` signs (ADR 0027).
+#[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+fn signing_push(
+    sender: Option<Arc<dyn PushSender>>,
+    outbound: &crate::provenance::Outbound,
+) -> Option<Arc<dyn PushSender>> {
+    #[cfg(feature = "signing")]
+    if outbound.signs() {
+        return sender.map(|inner| -> Arc<dyn PushSender> {
+            Arc::new(crate::provenance::SigningPushSender {
+                inner,
+                outbound: outbound.clone(),
+            })
+        });
+    }
+    #[cfg(not(feature = "signing"))]
+    let _ = outbound;
+    sender
 }
 
 #[cfg(test)]
@@ -1892,6 +2019,7 @@ mod tests {
         card.capabilities.extensions = Some(vec![
             AgentExtension::new(idempotency::IDEMPOTENCY_EXTENSION_URI),
             AgentExtension::new(a2a_protocol_types::failure::FAILURE_EXTENSION_URI),
+            AgentExtension::new(a2a_protocol_types::budget::BUDGET_EXTENSION_URI),
         ]);
         card.signatures = Some(vec![a_signature()]);
 

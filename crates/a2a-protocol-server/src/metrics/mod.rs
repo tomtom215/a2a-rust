@@ -155,8 +155,13 @@ pub struct RpcCall<'a> {
     /// status name (`NOT_FOUND`, and `OK` on success). `None` on success for
     /// the bindings that send no status code for one.
     pub status_code: Option<&'a str>,
-    /// Set if and only if the call failed, as `error.type`: the failing
-    /// `status_code`, or `cancelled` for a call dropped before it finished.
+    /// Set if and only if the call failed, as `error.type`: the
+    /// `status_code`, when the binding's semantic conventions count it as a
+    /// server failure — every JSON-RPC code; a 5xx, not a 4xx; gRPC's
+    /// `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`,
+    /// `UNAVAILABLE` and `DATA_LOSS`, not `NOT_FOUND` — or `cancelled` for a
+    /// call dropped before it finished. A `GetTask` for an unknown task over
+    /// gRPC is `status_code` `NOT_FOUND` with no `error_type`.
     pub error_type: Option<&'a str>,
 }
 
@@ -227,8 +232,10 @@ pub mod event_log_catchup_error {
 /// replica A already wrote, and the row that stays is A's. Until these labels
 /// existed the store returned `Ok(())` and nothing anywhere said so.
 ///
-/// Both kinds mean **an event the agent emitted is not in the log**, which is
-/// what [`Metrics::on_persistence_error`] is for. A retried append of the
+/// The first two kinds mean **an event the agent emitted is not in the log**,
+/// which is what [`Metrics::on_persistence_error`] is for; the third,
+/// [`HOLD_CEILING`](event_append_error::HOLD_CEILING), that a stream lost its
+/// copy of one the log held. A retried append of the
 /// *same* event is not reported here: see
 /// [`POSITION_CONFLICT`](event_append_error::POSITION_CONFLICT).
 pub mod event_append_error {
@@ -255,6 +262,19 @@ pub mod event_append_error {
     /// append stays a success on purpose — failing it would turn a swept task
     /// into a failed agent — and this is the report that it happened.
     pub const TASK_ABSENT: &str = "task_absent";
+
+    /// The append succeeded, and the log, at its held-events ceiling, dropped
+    /// its oldest event though an attached stream still owed it.
+    ///
+    /// Unlike the two above, the event was in the log; what is lost is one
+    /// stream's copy of it. Only the two in-memory stores raise this (since
+    /// 2026-10-20): an attached stream holds the events it owes past
+    /// [`max_events_per_task`](crate::store::TaskStoreConfig::max_events_per_task),
+    /// up to [`max_held_events_factor`](crate::store::TaskStoreConfig::max_held_events_factor)
+    /// times it. That stream ends with `streamLagged` after what it
+    /// delivered. A non-zero rate is a client reading far slower than its
+    /// task writes, or one that stopped reading and kept its connection.
+    pub const HOLD_CEILING: &str = "hold_ceiling";
 }
 
 /// Error kinds passed to [`Metrics::on_persistence_error`] for
@@ -301,6 +321,26 @@ pub mod push_outcome {
 pub struct NoopMetrics;
 
 impl Metrics for NoopMetrics {}
+
+/// What a `RequestHandlerBuilder` records to unless given other metrics.
+///
+/// With the `otel` feature (on by default), an
+/// [`OtelMetrics`](crate::otel::OtelMetrics) on the global meter provider as
+/// it stands when the builder is created: a process that installed one —
+/// `Telemetry` does — gets `rpc.server.call.duration` and the `a2a.server.*`
+/// instruments with nothing to enable, and one that installed none records
+/// into OpenTelemetry's no-op meter. Without the feature, [`NoopMetrics`].
+#[must_use]
+pub(crate) fn default_metrics() -> Arc<dyn Metrics> {
+    #[cfg(feature = "otel")]
+    {
+        Arc::new(crate::otel::OtelMetricsBuilder::new().build())
+    }
+    #[cfg(not(feature = "otel"))]
+    {
+        Arc::new(NoopMetrics)
+    }
+}
 
 /// A shareable [`Metrics`] a store can hold, and discard into by default.
 ///

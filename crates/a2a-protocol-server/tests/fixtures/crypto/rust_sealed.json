@@ -1,0 +1,302 @@
+{
+  "about": "Sealed by the SDK (tests/crypto_interop.rs, generate). Test keys only.",
+  "audit": {
+    "chain": "fx-chain",
+    "digest_contents": {
+      "message": {
+        "n": 1,
+        "text": "hi"
+      }
+    },
+    "names": {
+      "actor": "alice@example.test",
+      "actors": [
+        "agent-x",
+        "alice@example.test"
+      ],
+      "reason": "a reason, é",
+      "requestedBy": "bob@example.test"
+    },
+    "record": {
+      "actor": {
+        "scheme": "bearer",
+        "subject": "a2a-sealed:v1:310d71d7f19581b4dfe9b49a1953d2c6:iL5UDuz0Y2k8GJKZH1BFAJfP+T9OtVqEdb9SmS43gy3eQZ/ksO0wzxMg3qZuNw=="
+      },
+      "chain": "fx-chain",
+      "detail": {
+        "actors": [
+          "a2a-sealed:v1:7272bb20927503e75e7e5820db766343:em/7//2M6Y+p1yxEGLUOaaoZwBLPej+K+t+LbABj3KuWsWU=",
+          "a2a-sealed:v1:310d71d7f19581b4dfe9b49a1953d2c6:wwfDU5gfMQmCjI7MgtNtHZ5uu7Km9ZJ5dQSWQtezni1z2k3lx/ecpK5x6epmcw=="
+        ],
+        "reason": "a2a-sealed:v1:310d71d7f19581b4dfe9b49a1953d2c6:yjRYDT9/goj3dYWItFXgBfliWdwbYOV9uwypKIEihxfrxmtWm3PMlg==",
+        "requestedBy": "a2a-sealed:v1:63ca6debb09670aa680e6a64e5fe750f:vtqWUdS9LKagpNzVPb/dMcTNsgPRaQDap3YO7eWWQ5KFmaxB67VyzwuOOvE="
+      },
+      "digests": {
+        "message": "hmac-sha256:h1:3252028925d904c202b06190190535b77eb5ad89e23984e20a974f3fffdff468"
+      },
+      "hash": "sha256:410ac47cb872cae197b08204257ab457c04b5ee2b97b268bd2a6cbe3d2db4293",
+      "kind": "call",
+      "schema": "a2a-audit/1",
+      "seq": 1,
+      "time": "2026-10-21T09:07:42.036Z"
+    },
+    "subject_keys": [
+      {
+        "lookup": "h1:43443612520ea7d9bd554a918a0135661503aa5609c4b2bf00571eda9b3ac022",
+        "sid": "310d71d7f19581b4dfe9b49a1953d2c6",
+        "wrapped": "BWtlay0xmYHHiwO45X2QjbCoB1k8L2og4UCFflU5fvyUuRC0pWqMBA+86y5mEm7c3zodS9Mi5OPp1WrXOgmErW4A"
+      },
+      {
+        "lookup": "h1:5c3488dc42d0c906a3e7e56ac3a746738303e43ad28e9ebd04f9bb5c0fe94864",
+        "sid": "63ca6debb09670aa680e6a64e5fe750f",
+        "wrapped": "BWtlay0xLodSaaIA5+QG7d/Ciwm1traXQ/8pc1XFWKNQrwq+FgoFr6pblvtxrhB9t0dE0REXHQRn3soRGkwTw0d2"
+      },
+      {
+        "lookup": "h1:8da5cb1340d95c85c6c3caa7f170f102c02c64706ab0fdd8333de526eff81525",
+        "sid": "7272bb20927503e75e7e5820db766343",
+        "wrapped": "BWtlay0xRSgVO0K3ACWjYuLejmqy89P/n/WmxFpDnp91zCFjpL83e2QQY2VvUQMddApLPJh7ooINt2sxJUdTVbN6"
+      }
+    ],
+    "subjects": [
+      "alice@example.test",
+      "bob@example.test",
+      "agent-x"
+    ]
+  },
+  "cipher": [
+    {
+      "aad": "ctx",
+      "envelope_hex": "0a66782d323032362d3130ca1abb9b21c3186ea0f3032c457fdca57b47da41b3544f311b4e61efed1869e0d7",
+      "name": "short",
+      "plaintext_hex": "68656c6c6f"
+    },
+    {
+      "aad": "",
+      "envelope_hex": "0a66782d323032362d313040342139db00fe024bf2dda213495747fb7f2f2cb0e5f917848015a2",
+      "name": "empty",
+      "plaintext_hex": ""
+    },
+    {
+      "aad": "[\"é\",1]",
+      "envelope_hex": "0a66782d323032362d3130ce4e3306add6bbbe9695509c5d611606b753f385fbee8d82a4f3ec83d72a267916405ad9c380646e6affc64541ea77c485de5a8425d780264b6ddc69a87097cfa1bef48143ed79f5b52d5b63d668ff09b7c4c8a55a7cec894ad0631ea2c0b9a34ecc826aace003dbc3464ad10920337ec1f64212d32e262cdabe7d33ddc08413",
+      "name": "long, non-ASCII context",
+      "plaintext_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f60616263"
+    },
+    {
+      "aad": "ctx",
+      "envelope_hex": "0a66782d323032362d3039027b90ca48b48baecc1ca047d19268643b4a006e4150ea32c538cf4cae27cda73b5474",
+      "name": "sealed by the older key",
+      "plaintext_hex": "726f7461746564"
+    }
+  ],
+  "keys": {
+    "hmac": {
+      "id": "h1",
+      "key": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+    },
+    "kek": [
+      {
+        "id": "kek-1",
+        "key": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+      }
+    ],
+    "store": [
+      {
+        "id": "fx-2026-10",
+        "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      },
+      {
+        "id": "fx-2026-09",
+        "key": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+      }
+    ]
+  },
+  "push": [
+    {
+      "aad": "[\"a2a-push-config/v1\",\"\",\"task-9\",\"cfg-1\"]",
+      "id": "cfg-1",
+      "partition": "",
+      "plaintext_json": "{\"id\":\"cfg-1\",\"taskId\":\"task-9\",\"url\":\"https://hooks.example.com/a2a\",\"token\":\"client-token\",\"authentication\":{\"scheme\":\"Bearer\",\"credentials\":\"webhook-credential\"}}",
+      "stored": "a2a-sealed:v1:CmZ4LTIwMjYtMTD9nob5aCZ6JLgHZ7Co6xvopqA/qkc+PYAzRcYIYEFaBiZsYRkO8cYEql/egm8y62z1Xc5/1MV3PT5kTNWu4qVOzplPVXoqOoR9KxyiQ+5BvTTEsQ07qeIh7EQPOH40LtHVgWW/mESg78FK0iSR6ILWj9tYDIFzTXBUlQVWNMW9RLgheZiWmbxw1a00+w/E4ezTaSNoIZbX3kv+J9FUeXjLaJvYfTYU7yuEmguKGD6yMSqtabSYMfAjduTaA2OaqmyZ",
+      "task_id": "task-9"
+    }
+  ],
+  "store_parts": [
+    {
+      "aad": [
+        "[\"a2a-sealed-part/v1\",\"\",\"task-1\",\"record\",\"message\",\"m-1\",0]",
+        "[\"a2a-sealed-part/v1\",\"\",\"task-1\",\"record\",\"message\",\"m-1\",1]"
+      ],
+      "id": "m-1",
+      "kind": "message",
+      "name": "record message",
+      "partition": "",
+      "plaintext": [
+        {
+          "text": "hello, é \"quoted\""
+        },
+        {
+          "data": {
+            "k": [
+              1,
+              2
+            ],
+            "nested": {
+              "é": "ü"
+            }
+          },
+          "filename": "data.json",
+          "mediaType": "application/json",
+          "metadata": {
+            "m": true
+          }
+        }
+      ],
+      "plaintext_json": [
+        "{\"text\":\"hello, é \\\"quoted\\\"\"}",
+        "{\"data\":{\"k\":[1,2],\"nested\":{\"é\":\"ü\"}},\"metadata\":{\"m\":true},\"filename\":\"data.json\",\"mediaType\":\"application/json\"}"
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTA15pKrkQmWE7ycq737U1rllYsDBAyvJnqDAVnQ9iCuB9Yr3QJ6ZmDR34R9sHZoDPqaud06JfM+E0PS9A==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTDWsMwQoOeclyruTOItFgw+RtIlaLtAirPyFDSO+5OGd5QhZ5B4s/Nl4pwQ5aA4AaU2p5CSL4EordOnfKDci3mqz73PdMT2X9cZCy9TQdnqkAyid14V7/6yENu9WaI98RtEdUWwumhlNKFccvq6PFN8ERt1mn2wAg7j8rfWK8F4t07tdh6d4BYwhWzTg2xITrXy",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-1",
+      "where": "record"
+    },
+    {
+      "aad": [
+        "[\"a2a-sealed-part/v1\",\"tenant-a\",\"task-2\",\"record\",\"artifact\",\"art-1\",0]",
+        "[\"a2a-sealed-part/v1\",\"tenant-a\",\"task-2\",\"record\",\"artifact\",\"art-1\",1]",
+        "[\"a2a-sealed-part/v1\",\"tenant-a\",\"task-2\",\"record\",\"artifact\",\"art-1\",2]"
+      ],
+      "id": "art-1",
+      "kind": "artifact",
+      "name": "record artifact, tenant",
+      "partition": "tenant-a",
+      "plaintext": [
+        {
+          "text": "first"
+        },
+        {
+          "mediaType": "text/plain",
+          "url": "https://example.com/x"
+        },
+        {
+          "raw": "AAECAw=="
+        }
+      ],
+      "plaintext_json": [
+        "{\"text\":\"first\"}",
+        "{\"url\":\"https://example.com/x\",\"mediaType\":\"text/plain\"}",
+        "{\"raw\":\"AAECAw==\"}"
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTAxESbmJilXLhEd521vgHF6AyaxeldnHhX1/3GJzf+JOFNk2hugzS0IIrb44A==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTBDY2wTTmw07LSjqv2eIMUE9aP1PMiOd2538Bp/sS+ZfDx+0Ft5wO07IsVGoVIhHIgWp7r4Ox+wb8952U+fwAj3zoxCUo7jCOS45JVNTACsp6lrI9E=",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTACcpw07k9v0+bx6+0skZSSsn4vI/feya32AfkLOT7VscrvH3/p1Ym9ff1R2nb2",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-2",
+      "where": "record"
+    },
+    {
+      "aad": [
+        "[\"a2a-sealed-part/v1\",\"\",\"task-3\",3,\"message\",\"m-ev\",0]"
+      ],
+      "id": "m-ev",
+      "kind": "message",
+      "name": "logged message",
+      "partition": "",
+      "plaintext": [
+        {
+          "text": "from the log"
+        }
+      ],
+      "plaintext_json": [
+        "{\"text\":\"from the log\"}"
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTCwCIWS/qyfELABIgbnJxaArH+Zl67cXZ87itmf3N8lcWA8dxEcX3UqsIgpF3v+7/pLvUU=",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-3",
+      "where": 3
+    },
+    {
+      "aad": [
+        "[\"a2a-sealed-part/v1\",\"tenant-a\",\"task-4\",7,\"artifact\",\"art-ev\",0]"
+      ],
+      "id": "art-ev",
+      "kind": "artifact",
+      "name": "logged artifact, tenant",
+      "partition": "tenant-a",
+      "plaintext": [
+        {
+          "text": "chunk"
+        }
+      ],
+      "plaintext_json": [
+        "{\"text\":\"chunk\"}"
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTAkSSZTREttrKlkdTb7byS1xUR97zVD4+upce5ZoesqTtg/DdsBmoDY+XVufQ==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-4",
+      "where": 7
+    }
+  ]
+}

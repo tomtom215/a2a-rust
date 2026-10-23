@@ -65,6 +65,25 @@ fn an_undeclared_binding_is_warned_about_and_a_declared_one_is_not() {
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
+/// The axum router serves HTTP+JSON and warns as the other listeners do; it
+/// did not check at all until 2026-10-20 (ledger audit, §5.2 line 1156).
+#[cfg(all(feature = "tracing", feature = "axum"))]
+#[test]
+fn the_axum_router_warns_about_an_undeclared_binding() {
+    let undeclared = crate::handler::shutdown::tests::warning::warnings_during(|| {
+        let _ = crate::dispatch::axum_adapter::A2aRouter::new(handler(Some(jsonrpc_card())))
+            .into_router();
+    });
+    assert_eq!(undeclared, ["undeclared binding"], "{undeclared:?}");
+    let rest = AgentCard::new("a", "1", AgentInterface::rest("https://a.example"))
+        .with_description("d")
+        .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
+    let declared = crate::handler::shutdown::tests::warning::warnings_during(|| {
+        let _ = crate::dispatch::axum_adapter::A2aRouter::new(handler(Some(rest))).into_router();
+    });
+    assert!(declared.is_empty(), "{declared:?}");
+}
+
 #[test]
 fn without_a_static_card_nothing_is_checked() {
     assert_eq!(handler(None).undeclared_binding("GRPC"), None);

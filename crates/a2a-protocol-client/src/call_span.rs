@@ -115,6 +115,8 @@ impl Peer {
 #[derive(Debug)]
 pub struct CallSpan {
     pub(crate) span: tracing::Span,
+    /// `rpc.system.name`, which decides the form of `rpc.status_code`.
+    pub(crate) system: Option<&'static str>,
     task_id: Option<String>,
     context_id: Option<String>,
 }
@@ -125,18 +127,23 @@ impl CallSpan {
     /// its message, task and context.
     pub(crate) fn open(method: &str, peer: &Peer, params: &serde_json::Value) -> Self {
         let qualified = qualified(method);
+        // `docs/rpc/rpc-spans.md`: a span whose `rpc.method` is `_OTHER` is
+        // named `{rpc.system.name}`, and carries the method as sent.
+        let other = qualified == "_OTHER";
         let span = tracing::info_span!(
             target: "a2a_protocol_client::rpc",
             "a2a.rpc.client",
-            otel.name = qualified,
+            otel.name = if other { peer.system.unwrap_or(qualified) } else { qualified },
             otel.kind = "client",
             otel.status_code = tracing::field::Empty,
             rpc.system.name = peer.system,
             rpc.method = qualified,
+            rpc.method_original = other.then_some(method),
             a2a.method.name = method,
             a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
             server.address = peer.address.as_deref(),
             server.port = peer.port,
+            rpc.status_code = tracing::field::Empty,
             error.type = tracing::field::Empty,
             a2a.message.id = tracing::field::Empty,
             a2a.task.id = tracing::field::Empty,
@@ -151,6 +158,7 @@ impl CallSpan {
         if span.is_disabled() {
             return Self {
                 span,
+                system: peer.system,
                 task_id: None,
                 context_id: None,
             };
@@ -170,6 +178,7 @@ impl CallSpan {
         };
         Self {
             span,
+            system: peer.system,
             // A task-scoped request names its task as `id` (the task
             // methods) or `taskId` (push configuration); a send continuing
             // one names it on the message.
@@ -187,7 +196,16 @@ impl CallSpan {
     /// Records the call as finished with `result`, the response's JSON:
     /// a task — bare, or as a send's `{"task": …}` — names the task, its
     /// context and its state.
-    pub(crate) fn succeeded(mut self, result: Option<&serde_json::Value>) {
+    pub(crate) fn succeeded(self, result: Option<&serde_json::Value>) {
+        if let Some(code) = Status::ok(self.system).code {
+            self.span.record("rpc.status_code", code.as_str());
+        }
+        self.opened(result);
+    }
+
+    /// [`succeeded`](Self::succeeded) for a call that opened a stream, whose
+    /// status is recorded when the stream ends ([`ended`](Self::ended)).
+    pub(crate) fn opened(mut self, result: Option<&serde_json::Value>) {
         if self.span.is_disabled() {
             return;
         }
@@ -215,8 +233,7 @@ impl CallSpan {
         if self.span.is_disabled() {
             return;
         }
-        self.span.record("error.type", error_type(error).as_str());
-        self.span.record("otel.status_code", "ERROR");
+        ended(&self.span, &Status::failed(self.system, error));
         self.finish();
     }
 
@@ -228,6 +245,70 @@ impl CallSpan {
             self.span.record("gen_ai.conversation.id", id.as_str());
         }
     }
+}
+
+/// Records how a call ended on its span: `rpc.status_code`, and for a
+/// failure `error.type` and `Error` status. Once per span: a field recorded
+/// twice is exported twice.
+#[cfg(feature = "tracing")]
+pub fn ended(span: &tracing::Span, status: &Status) {
+    if let Some(code) = &status.code {
+        span.record("rpc.status_code", code.as_str());
+    }
+    if let Some(error) = &status.error {
+        span.record("error.type", error.as_str());
+        span.record("otel.status_code", "ERROR");
+    }
+}
+
+/// How a call ended, as `rpc.status_code` and `error.type`.
+#[cfg(feature = "tracing")]
+#[derive(Debug, Default)]
+pub struct Status {
+    /// The status the agent answered with, in its binding's terms: the
+    /// JSON-RPC error code, the HTTP status, the gRPC status name (`OK` on
+    /// success) — as the server records the same call — or `None` where the
+    /// binding has none (a successful JSON-RPC or HTTP+JSON call, or a call
+    /// that failed before the agent answered).
+    pub(crate) code: Option<String>,
+    /// For a failure, the status, or the failure's class when there is none
+    /// (`docs/rpc/rpc-metrics.md`: "If a status code is returned and it
+    /// indicates an error, `error.type` SHOULD be set to that status code").
+    pub(crate) error: Option<String>,
+}
+
+#[cfg(feature = "tracing")]
+impl Status {
+    /// A call on `system` that succeeded.
+    pub(crate) fn ok(system: Option<&str>) -> Self {
+        Self {
+            code: grpc_coded(system).then(|| "OK".to_owned()),
+            error: None,
+        }
+    }
+
+    /// A call on `system` that failed with `error`.
+    pub(crate) fn failed(system: Option<&str>, error: &crate::error::ClientError) -> Self {
+        use crate::error::ClientError as E;
+        let code = match (error, system) {
+            (E::Protocol(e), Some("jsonrpc")) => Some(e.code.as_i32().to_string()),
+            (E::Protocol(e), Some("a2a_http_json")) => Some(e.code.http_status().to_string()),
+            (E::Protocol(e), _) if grpc_coded(system) => Some(e.code.grpc_status().to_owned()),
+            (E::UnexpectedStatus { status, .. }, Some("a2a_http_json")) => Some(status.to_string()),
+            _ => None,
+        };
+        Self {
+            error: Some(code.clone().unwrap_or_else(|| error_type(error))),
+            code,
+        }
+    }
+}
+
+/// Whether `system` answers with gRPC's status codes, `OK` included: gRPC,
+/// and SLIMRPC, which uses them.
+#[cfg(feature = "tracing")]
+fn grpc_coded(system: Option<&str>) -> bool {
+    matches!(system, Some("grpc" | "slimrpc"))
 }
 
 /// `gen_ai.agent.*` from the card the client was built from — "when
@@ -249,7 +330,7 @@ fn record_agent(span: &tracing::Span, peer: &Peer) {
 /// The fully qualified gRPC method — `rpc.method` and the span's name — for
 /// one of the client's method names, without allocating.
 #[cfg(feature = "tracing")]
-fn qualified(method: &str) -> &'static str {
+pub fn qualified(method: &str) -> &'static str {
     match method {
         "SendMessage" => "lf.a2a.v1.A2AService/SendMessage",
         "SendStreamingMessage" => "lf.a2a.v1.A2AService/SendStreamingMessage",
@@ -270,8 +351,9 @@ fn qualified(method: &str) -> &'static str {
     }
 }
 
-/// `error.type`: the JSON-RPC error code an agent answered with, the HTTP
-/// status, or the failure's class.
+/// The failure's class: the JSON-RPC error code an agent answered with, the
+/// HTTP status, or what went wrong — `error.type` when the binding has no
+/// status for it ([`Status::failed`]).
 #[cfg(feature = "tracing")]
 fn error_type(error: &crate::error::ClientError) -> String {
     use crate::error::ClientError as E;
@@ -364,4 +446,4 @@ fn remote_context(
 }
 
 #[cfg(test)]
-mod tests;
+pub mod tests;

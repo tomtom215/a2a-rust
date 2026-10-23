@@ -120,8 +120,52 @@ extension when connecting. An agent that grants no leases ignores the
 grant. `detach()` stops the renewals too: a detached leased child stops
 once its lease lapses.
 
+## A parent's budget: deadlines and meters
+
+A child can also outlive its parent's *deadline*, or spend more than the
+parent had. A budget prevents both (ADR 0023). Every agent built on this SDK
+holds a turn to the deadline its caller sent, and a turn the deadline stops
+ends `failed`, classed `budget-exhausted`. Inside an executor,
+`ctx.budget()` is the turn's account: what is left, `charge` for what was
+spent, and `grant` to carve a child's budget out of it.
+
+```rust,no_run
+use std::sync::Arc;
+use a2a_protocol_client::{A2aClient, delegation::Delegation};
+use a2a_protocol_types::budget::{Budget, BudgetHandle};
+use a2a_protocol_types::{Message, MessageSendParams, Part};
+# async fn run(budget: &BudgetHandle, worker: Arc<A2aClient>)
+#     -> Result<(), Box<dyn std::error::Error>> {
+// Up to 20,000 of this turn's tokens, and all the time it has left less a
+// reserve for transit and wrap-up.
+let grant = budget.grant(&Budget::new().with_meter("tokens", 20_000)?)?;
+let params = MessageSendParams::new(Message::user("m-1", vec![Part::text("summarise")]));
+let child = Delegation::start_budgeted(worker, params, grant, None).await?;
+let done = child.wait(std::future::pending()).await;
+// The parent has been charged what the child reported spending.
+# let _ = done;
+# Ok(())
+# }
+```
+
+A grant reserves each meter from the parent at once, so ten children
+cannot each be given the whole. A meter the request does not name goes to
+the child as 0, so a child cannot spend outside the parent's budget by
+leaving it out. Each status update the child's agent writes carries what is
+left and spent, under `a2a-rust.com/budget` in its `metadata`. When the
+update that settles the child reports its spend, the parent is charged that
+in place of the reservation. Any other ending (a lost stream, a cancel, a
+detached or dropped handle) refunds nothing. Pass `Some(ttl)` as the last argument to grant a lease as
+well.
+
+The SDK's tool loop charges each model reply's reported token usage to the
+`tokens` meter and stops the run once it is spent.
+
 ## What it does not cover
 
+- **An agent that does not implement the budget.** It ignores the budget
+  and reports no spend, so its child is bounded only by its own limits,
+  and the parent is charged the whole reservation.
 - **A drop outside a Tokio runtime.** A drop-time cancel is sent from a
   task spawned on the current runtime. Without a runtime nothing is sent; the
   drop is logged when the `tracing` feature is on.

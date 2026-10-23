@@ -741,6 +741,8 @@ pub struct InMemoryQueueReader {
     /// Consulted once, when the stream reaches its terminal state, just
     /// before it closes; see [`Self::with_final_snapshot`].
     final_snapshot: Option<FinalSnapshotFn>,
+    /// Signs each frame's content as it is read (ADR 0027).
+    outbound: crate::provenance::Outbound,
     /// The final-snapshot hook's answer while it is awaited, kept here for
     /// the same cancel-safety reason as `reattaching`.
     snapshotting: std::sync::Mutex<Option<FinalSnapshotFuture>>,
@@ -795,6 +797,10 @@ pub struct InMemoryQueueReader {
     provisional: Option<StreamResponse>,
     /// Set once a message-only stream has delivered its one `Message`.
     finished: bool,
+    /// This stream's hold on the task's log ([`Self::with_hold`]), raised
+    /// after each read to the lowest position the stream may still read
+    /// from the log, and released when the stream ends or is dropped.
+    hold: Option<crate::store::EventHold>,
 }
 
 // Hand-written because `ReattachFn` is a boxed closure, which cannot derive
@@ -1043,6 +1049,27 @@ impl InMemoryQueueReader {
         self.replayed_through = self.replayed_through.max(position);
     }
 
+    /// Holds the task's log for this stream (spec §3.5.2), so the store's
+    /// bound does not drop what it still owes; see
+    /// [`EventHolds`](crate::store::EventHolds). Take it at
+    /// [`Self::owed_after`], or lower for a replay still to be read.
+    pub(crate) fn with_hold(mut self, hold: Option<crate::store::EventHold>) -> Self {
+        self.hold = hold;
+        self
+    }
+
+    /// The lowest position this stream may still read the log after: a
+    /// resume's pages owe the log from `after` though `replayed_through`
+    /// is already at the live receiver's start; otherwise the last position
+    /// delivered. A fresh-numbered queue resets that to 0, which the hold
+    /// ignores: it never lowers, and that queue's positions are in no log.
+    pub(crate) fn owed_after(&self) -> u64 {
+        match self.owed {
+            Some(Owed::From { after, .. }) => after.min(self.replayed_through),
+            _ => self.replayed_through,
+        }
+    }
+
     /// Creates a new `InMemoryQueueReader`.
     pub(crate) fn new(rx: broadcast::Receiver<super::Shared>) -> Self {
         Self {
@@ -1057,9 +1084,11 @@ impl InMemoryQueueReader {
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
+            outbound: crate::provenance::Outbound::default(),
             replayed_through: 0,
             provisional: None,
             finished: false,
+            hold: None,
         }
     }
 
@@ -1139,9 +1168,11 @@ impl InMemoryQueueReader {
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
+            outbound: crate::provenance::Outbound::default(),
             replayed_through: 0,
             provisional: None,
             finished: false,
+            hold: None,
         }
     }
 
@@ -1168,9 +1199,11 @@ impl InMemoryQueueReader {
             owed: None,
             just_caught_up: false,
             saw_terminal: false,
+            outbound: crate::provenance::Outbound::default(),
             replayed_through: 0,
             provisional: None,
             finished: false,
+            hold: None,
         }
     }
 }
@@ -1197,57 +1230,85 @@ impl EventQueueReader for InMemoryQueueReader {
         &mut self,
     ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamEvent>>> + Send + '_>> {
         Box::pin(async move {
-            if self.finished {
-                return None;
+            let mut next = self.next_frame().await;
+            if let Some(Ok(frame)) = &mut next
+                && let Err(e) = self.outbound.sign_event(&mut frame.event)
+            {
+                next = Some(Err(e));
             }
-            // Drain anything queued ahead of the live channel: the
-            // `SubscribeToTask` snapshot, then any events replayed from the
-            // log for a client resuming at a `Last-Event-ID`.
-            if let Some(first) = self.pending.pop_front() {
-                if let Ok(ref ev) = first {
-                    self.saw_terminal |= carries_terminal_state(&ev.event);
-                }
-                return Some(first);
+            // After every read rather than at each place the mark moves: a
+            // read dropped midway leaves the hold lower, which only keeps an
+            // event longer. A stream that has ended owes nothing.
+            if next.is_none() {
+                self.hold = None;
+            } else if let Some(hold) = &self.hold {
+                hold.advance(self.owed_after());
             }
-            // §3.1.2 / §3.1.6: the stream closes at the terminal state, once
-            // what is queued ahead of it is delivered. It used to end only
-            // when the executor dropped its writer, so one still running
-            // after its terminal status held the stream open.
-            if self.saw_terminal {
-                let last = self.final_snapshot().await;
-                self.finished = true;
-                return last.map(|task| Ok(StreamEvent::unpositioned(task)));
-            }
-            if self.provisional.is_some() {
-                let mut first = self.next_live().await;
-                let snapshot = self.provisional.take()?;
-                if let Some(Ok(ev)) = &mut first
-                    && let StreamResponse::Message(message) = &mut ev.event
-                {
-                    // §3.4.1: a contextId the server generated MUST be in
-                    // the response; the snapshot holds the task's.
-                    if message.context_id.is_none()
-                        && let StreamResponse::Task(task) = &snapshot
-                    {
-                        message.context_id = Some(task.context_id.clone());
-                    }
-                    self.finished = true;
-                    return first;
-                }
-                if let Some(event) = first {
-                    // To the front: a lag catch-up may have queued the rest
-                    // of the replay behind it already.
-                    self.pending.push_front(event);
-                }
-                self.saw_terminal |= carries_terminal_state(&snapshot);
-                return Some(Ok(StreamEvent::unpositioned(snapshot)));
-            }
-            self.next_live().await
+            next
         })
     }
 }
 
 impl InMemoryQueueReader {
+    /// Signs each frame's content as it is read (ADR 0027).
+    #[must_use]
+    // Without `signing`, `Outbound` is empty and this could be `const`.
+    #[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+    pub(crate) fn with_outbound(mut self, outbound: crate::provenance::Outbound) -> Self {
+        self.outbound = outbound;
+        self
+    }
+
+    /// The next frame for [`EventQueueReader::read`].
+    async fn next_frame(&mut self) -> Option<A2aResult<StreamEvent>> {
+        if self.finished {
+            return None;
+        }
+        // Drain anything queued ahead of the live channel: the
+        // `SubscribeToTask` snapshot, then any events replayed from the
+        // log for a client resuming at a `Last-Event-ID`.
+        if let Some(first) = self.pending.pop_front() {
+            if let Ok(ref ev) = first {
+                self.saw_terminal |= carries_terminal_state(&ev.event);
+            }
+            return Some(first);
+        }
+        // §3.1.2 / §3.1.6: the stream closes at the terminal state, once
+        // what is queued ahead of it is delivered. It used to end only
+        // when the executor dropped its writer, so one still running
+        // after its terminal status held the stream open.
+        if self.saw_terminal {
+            let last = self.final_snapshot().await;
+            self.finished = true;
+            return last.map(|task| Ok(StreamEvent::unpositioned(task)));
+        }
+        if self.provisional.is_some() {
+            let mut first = self.next_live().await;
+            let snapshot = self.provisional.take()?;
+            if let Some(Ok(ev)) = &mut first
+                && let StreamResponse::Message(message) = &mut ev.event
+            {
+                // §3.4.1: a contextId the server generated MUST be in
+                // the response; the snapshot holds the task's.
+                if message.context_id.is_none()
+                    && let StreamResponse::Task(task) = &snapshot
+                {
+                    message.context_id = Some(task.context_id.clone());
+                }
+                self.finished = true;
+                return first;
+            }
+            if let Some(event) = first {
+                // To the front: a lag catch-up may have queued the rest
+                // of the replay behind it already.
+                self.pending.push_front(event);
+            }
+            self.saw_terminal |= carries_terminal_state(&snapshot);
+            return Some(Ok(StreamEvent::unpositioned(snapshot)));
+        }
+        self.next_live().await
+    }
+
     /// What the catch-up hook answers for the events after the last position
     /// this reader delivered; `None` without a hook.
     ///
@@ -2673,82 +2734,6 @@ mod tests {
             vec![None, Some(9)],
             "the snapshot leads, and carries no position"
         );
-    }
-
-    // ── identity binding on artifact updates and task snapshots ─────────
-    //
-    // `check_identity` has one arm per event kind that carries ids. Status
-    // updates are covered end to end in `tests/event_identity.rs`; these two
-    // arms are not reached there.
-
-    fn bound_writer() -> (InMemoryQueueWriter, InMemoryQueueReader) {
-        let (writer, reader) = new_in_memory_queue();
-        writer.bind_identity(TaskId::new("t-bound"), ContextId::new("ctx-bound"));
-        (writer, reader)
-    }
-
-    fn artifact_update(task_id: &str) -> StreamResponse {
-        use a2a_protocol_types::artifact::Artifact;
-        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
-        use a2a_protocol_types::message::Part;
-        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: TaskId::new(task_id),
-            context_id: ContextId::new(""),
-            artifact: Artifact::new("a-1", vec![Part::text("x")]),
-            append: None,
-            last_chunk: None,
-            metadata: None,
-        })
-    }
-
-    fn task_snapshot(task_id: &str) -> StreamResponse {
-        use a2a_protocol_types::task::Task;
-        StreamResponse::Task(Task {
-            id: TaskId::new(task_id),
-            context_id: ContextId::new(""),
-            status: TaskStatus {
-                state: TaskState::Working,
-                message: None,
-                timestamp: None,
-            },
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
-    }
-
-    #[tokio::test]
-    async fn a_bound_writer_fills_and_refuses_artifact_update_ids() {
-        let (writer, mut reader) = bound_writer();
-        assert!(
-            writer.write(artifact_update("t-other")).await.is_err(),
-            "an artifact update naming another task is refused"
-        );
-        writer.write(artifact_update("")).await.unwrap();
-        match reader.read().await.unwrap().unwrap().event {
-            StreamResponse::ArtifactUpdate(u) => {
-                assert_eq!(u.task_id, TaskId::new("t-bound"));
-                assert_eq!(u.context_id, ContextId::new("ctx-bound"));
-            }
-            other => panic!("unexpected {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn a_bound_writer_fills_and_refuses_task_snapshot_ids() {
-        let (writer, mut reader) = bound_writer();
-        assert!(
-            writer.write(task_snapshot("t-other")).await.is_err(),
-            "a task snapshot naming another task is refused"
-        );
-        writer.write(task_snapshot("")).await.unwrap();
-        match reader.read().await.unwrap().unwrap().event {
-            StreamResponse::Task(t) => {
-                assert_eq!(t.id, TaskId::new("t-bound"));
-                assert_eq!(t.context_id, ContextId::new("ctx-bound"));
-            }
-            other => panic!("unexpected {other:?}"),
-        }
     }
 
     /// A provisional snapshot that is already terminal closes the stream once

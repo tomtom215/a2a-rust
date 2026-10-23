@@ -24,10 +24,13 @@ fn every_served_method_is_qualified_and_anything_else_is_other() {
     ] {
         assert_eq!(a2a_method(m), format!("lf.a2a.v1.A2AService/{m}"));
     }
-    assert_eq!(
-        a2a_method("message/stream"),
-        "lf.a2a.v1.A2AService/SendStreamingMessage"
-    );
+    // A v0.3 spelling is a method this server does not serve. This expected
+    // `message/stream` as `SendStreamingMessage`, from when the WebSocket
+    // binding still routed it; it stopped on 2026-10-12 and the JSON-RPC
+    // binding never did, so that expectation pinned a refused call
+    // (`-32601`) recorded under a method it never reached, and without the
+    // `rpc.method_original` an `_OTHER` carries.
+    assert_eq!(a2a_method("message/stream"), "_OTHER");
     assert_eq!(a2a_method("message/send"), "_OTHER");
     assert_eq!(a2a_method("DropTables; --"), "_OTHER");
 }
@@ -65,7 +68,7 @@ fn grpc_reports_the_status_name_it_sends() {
     );
 }
 
-type Seen = Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
+pub(super) type Seen = Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
 
 struct Recording(Seen);
 
@@ -78,7 +81,7 @@ impl Metrics for Recording {
     }
 }
 
-fn handler(seen: &Seen) -> RequestHandler {
+pub(super) fn handler(seen: &Seen) -> RequestHandler {
     struct Idle;
     crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
     crate::RequestHandlerBuilder::new(Idle)
@@ -124,6 +127,129 @@ async fn a_finished_call_is_recorded_once() {
         *seen.lock().unwrap(),
         [(Some("lf.a2a.v1.A2AService/ListTasks".to_owned()), None)]
     );
+}
+
+/// Which statuses are server failures is each binding's conventions' rule:
+/// every JSON-RPC code; a 5xx but not a 4xx; gRPC's six server-side codes.
+#[test]
+fn only_server_failures_are_errors() {
+    for code in ["-32001", "-32602", "-32603"] {
+        assert!(RpcSystem::JsonRpc.is_server_error(code), "{code}");
+    }
+    for (code, error) in [("400", false), ("404", false), ("429", false)] {
+        assert_eq!(RpcSystem::HttpJson.is_server_error(code), error, "{code}");
+    }
+    for code in ["500", "503", "not a status"] {
+        assert!(RpcSystem::HttpJson.is_server_error(code), "{code}");
+    }
+    let grpc_errors = [
+        "UNKNOWN",
+        "DEADLINE_EXCEEDED",
+        "UNIMPLEMENTED",
+        "INTERNAL",
+        "UNAVAILABLE",
+        "DATA_LOSS",
+    ];
+    let grpc_answers = [
+        "CANCELLED",
+        "INVALID_ARGUMENT",
+        "NOT_FOUND",
+        "ALREADY_EXISTS",
+        "PERMISSION_DENIED",
+        "RESOURCE_EXHAUSTED",
+        "FAILED_PRECONDITION",
+        "ABORTED",
+        "OUT_OF_RANGE",
+        "UNAUTHENTICATED",
+    ];
+    let custom = CustomBinding::new("custom", |_| "x".into());
+    for code in grpc_errors {
+        assert!(RpcSystem::Grpc.is_server_error(code), "{code}");
+        let grpc_rule = RpcSystem::Custom(custom.with_grpc_server_errors());
+        assert!(grpc_rule.is_server_error(code), "{code}");
+    }
+    for code in grpc_answers {
+        assert!(!RpcSystem::Grpc.is_server_error(code), "{code}");
+        let grpc_rule = RpcSystem::Custom(custom.with_grpc_server_errors());
+        assert!(!grpc_rule.is_server_error(code), "{code}");
+        // A custom binding that did not ask for gRPC's rule keeps counting
+        // every failure.
+        assert!(RpcSystem::Custom(custom).is_server_error(code), "{code}");
+    }
+}
+
+/// A call answered with a status that is no server failure records the
+/// status and no `error.type`; one that is, both — and a call that never
+/// finished is a failure on every binding, `cancelled` included in gRPC's.
+#[tokio::test]
+async fn a_client_class_status_is_recorded_without_an_error_type() {
+    let seen = Seen::default();
+    let handler = handler(&seen);
+    let get_task = || Some("lf.a2a.v1.A2AService/GetTask".to_owned());
+    let mut want = Vec::new();
+    #[cfg(feature = "grpc")]
+    {
+        for err in [
+            ServerError::TaskNotFound("t".into()),
+            ServerError::Internal("broke".into()),
+        ] {
+            let _ = ServerSpan::open(&handler, RpcSystem::Grpc, "GetTask", None)
+                .run(async { Err::<(), _>(err) })
+                .await;
+        }
+        want.extend([
+            (get_task(), None),
+            (get_task(), Some("INTERNAL".to_owned())),
+        ]);
+    }
+    for err in [
+        ServerError::TaskNotFound("t".into()),
+        ServerError::Internal("broke".into()),
+    ] {
+        let _ = ServerSpan::open(&handler, RpcSystem::HttpJson, "GetTask", None)
+            .run(async { Err::<(), _>(err) })
+            .await;
+    }
+    want.extend([(get_task(), None), (get_task(), Some("500".to_owned()))]);
+    let _ = ServerSpan::open(&handler, RpcSystem::JsonRpc, "GetTask", None)
+        .run(async { Err::<(), _>(ServerError::TaskNotFound("t".into())) })
+        .await;
+    want.push((get_task(), Some("-32001".to_owned())));
+    let dropped = ServerSpan::open(&handler, RpcSystem::Grpc, "GetTask", None)
+        .run(std::future::pending::<Result<(), ServerError>>());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), dropped)
+            .await
+            .is_err()
+    );
+    want.push((get_task(), Some("cancelled".to_owned())));
+    assert_eq!(*seen.lock().unwrap(), want);
+}
+
+/// On the span: a `NOT_FOUND` keeps `rpc.status_code` and sets neither
+/// `error.type` nor the `Error` status.
+#[cfg(all(feature = "tracing", feature = "grpc"))]
+#[test]
+fn a_not_found_span_has_its_status_code_and_no_error() {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    let fields = Fields::default();
+    let handler = handler(&Seen::default());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    tracing::subscriber::with_default(tracing_subscriber::registry().with(fields.clone()), || {
+        let _ = runtime.block_on(
+            ServerSpan::open(&handler, RpcSystem::Grpc, "GetTask", None)
+                .run(async { Err::<(), _>(ServerError::TaskNotFound("t".into())) }),
+        );
+    });
+    let fields = fields.0.lock().unwrap().clone();
+    assert_eq!(
+        fields.get("rpc.status_code").map(String::as_str),
+        Some("NOT_FOUND")
+    );
+    assert!(!fields.contains_key("error.type"), "{fields:?}");
+    assert!(!fields.contains_key("otel.status_code"), "{fields:?}");
 }
 
 /// Counts the spans `tracing` is asked to create, by name.
@@ -301,6 +427,19 @@ fn the_span_is_named_by_its_method_or_by_its_system_for_other() {
     assert_eq!(
         unknown.get("rpc.method_original").map(String::as_str),
         Some("NoSuchMethod")
+    );
+}
+
+/// The v0.3 `message/stream`, which no binding routes, is an `_OTHER` call
+/// that keeps what the peer sent.
+#[cfg(feature = "tracing")]
+#[test]
+fn a_legacy_method_name_is_other_with_its_original() {
+    let legacy = span_fields("message/stream");
+    assert_eq!(legacy.get("rpc.method").map(String::as_str), Some(OTHER));
+    assert_eq!(
+        legacy.get("rpc.method_original").map(String::as_str),
+        Some("message/stream")
     );
 }
 

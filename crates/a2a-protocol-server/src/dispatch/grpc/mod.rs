@@ -53,6 +53,7 @@
 //! # }
 //! ```
 
+mod admit;
 mod bounded_incoming;
 mod config;
 mod details;

@@ -25,6 +25,8 @@
 use std::future::Future as _;
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -49,6 +51,50 @@ pub(super) struct IdleTimeout<T> {
     /// long one, and the type now says so.
     idle: Option<Duration>,
     deadline: Pin<Box<Sleep>>,
+    /// The requests the connection's service is answering. While there is
+    /// one, the quiet socket is the server at work, not an idle peer.
+    serving: Serving,
+}
+
+/// Counts the requests a connection is answering, shared between its service
+/// and its [`IdleTimeout`].
+///
+/// A blocking `SendMessage` moves no bytes while its executor works, and the
+/// executor may run for `DEFAULT_EXECUTOR_TIMEOUT` (an hour). Counting only
+/// bytes, the timer closed such a connection at the idle window (75s by
+/// default) with the answer still to come, and the task ran on for a client
+/// that had been told nothing but a reset (found 2026-10-20). A request is
+/// counted from the moment the service is called until its response head is
+/// ready; after that its body's writes keep the timer fed, as before. A peer
+/// that stalls mid-body is still bounded: each bundled dispatcher reads the
+/// body under `DispatchConfig::body_read_timeout` and answers when it runs out.
+#[derive(Clone, Default)]
+pub struct Serving(Arc<AtomicUsize>);
+
+impl Serving {
+    /// Counts one request until the returned guard is dropped.
+    pub fn begin(&self) -> ServingGuard {
+        // Relaxed: a reader that sees a stale count only moves the deadline
+        // one poll early or late, and a request that just arrived has just
+        // moved bytes, so the deadline it could be judged by is a full window
+        // away.
+        self.0.fetch_add(1, Ordering::Relaxed);
+        ServingGuard(Arc::clone(&self.0))
+    }
+
+    fn any(&self) -> bool {
+        self.0.load(Ordering::Relaxed) > 0
+    }
+}
+
+/// One request counted by [`Serving::begin`]; dropped with the request's
+/// future, whether it finished or was abandoned.
+pub struct ServingGuard(Arc<AtomicUsize>);
+
+impl Drop for ServingGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl<T> IdleTimeout<T> {
@@ -63,7 +109,15 @@ impl<T> IdleTimeout<T> {
             // Parked in the far future when disabled. It is never polled in
             // that case, but a `Sleep` must exist for the field to.
             deadline: Box::pin(tokio::time::sleep(idle.unwrap_or(Duration::ZERO))),
+            serving: Serving::default(),
         }
+    }
+
+    /// Shares `serving` with the connection's service, so that a request
+    /// being answered keeps the connection from counting as idle.
+    pub(super) fn with_serving(mut self, serving: Serving) -> Self {
+        self.serving = serving;
+        self
     }
 
     /// Pushes the deadline out from now. Called whenever bytes move.
@@ -122,8 +176,15 @@ impl<T: AsyncRead + Unpin> AsyncRead for IdleTimeout<T> {
                 // registers the waker that makes the timeout fire on a
                 // connection doing nothing at all, which would otherwise never
                 // be polled again.
-                if self.idle.is_some() && self.deadline.as_mut().poll(cx).is_ready() {
-                    return Poll::Ready(Err(self.timed_out()));
+                if self.idle.is_some() {
+                    if self.serving.any() {
+                        // Waiting on the server, not on the peer: the window
+                        // starts again from here, so it is measured from
+                        // the last request's end, not its start.
+                        self.touch();
+                    } else if self.deadline.as_mut().poll(cx).is_ready() {
+                        return Poll::Ready(Err(self.timed_out()));
+                    }
                 }
                 Poll::Pending
             }

@@ -46,8 +46,9 @@ grpc = [
 ]
 ## Enable agent card signing tests.
 signing = ["a2a-protocol-types/signing", "dep:ring", "dep:base64"]
-## Enable OpenTelemetry metrics (noop provider for testing).
-otel = ["a2a-protocol-server/otlp"]
+## The SDK's telemetry, exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT`
+## names a collector (`src/telemetry.rs`), and the `OtelMetrics` self-check.
+otel = ["a2a-protocol-server/otlp", "dep:tracing-subscriber"]
 ## Enable Axum framework integration tests.
 axum = ["a2a-protocol-server/axum", "dep:axum"]
 ## Enable SQLite-backed stores tests.

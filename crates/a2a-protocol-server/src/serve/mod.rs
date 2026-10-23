@@ -193,6 +193,7 @@ pub async fn serve(
 fn service<D: Dispatcher>(
     dispatcher: Arc<D>,
     requests: Option<connections::Requests>,
+    serving: graceful::Serving,
     peer: SocketAddr,
     certificate: Option<crate::PeerCertificate>,
 ) -> impl hyper::service::Service<
@@ -208,7 +209,9 @@ fn service<D: Dispatcher>(
         }
         let d = Arc::clone(&dispatcher);
         let requests = requests.clone();
+        let serving = serving.begin();
         async move {
+            let _serving = serving;
             Ok::<_, Infallible>(match requests {
                 Some(requests) => requests.dispatch(&*d, req).await,
                 None => d.dispatch(req).await,

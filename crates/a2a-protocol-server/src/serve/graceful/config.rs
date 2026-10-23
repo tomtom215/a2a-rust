@@ -115,8 +115,22 @@ pub struct ServeConfig {
     ///
     /// Covers what the header timeout cannot: a peer that sent its headers
     /// promptly and then stopped mid-body, or one that finished a request and
-    /// kept the connection open doing nothing.
+    /// kept the connection open doing nothing. A request the server is still
+    /// answering is not idle time: a blocking `SendMessage` whose executor
+    /// works for longer than this keeps its connection.
     pub idle_timeout: Option<Duration>,
+
+    /// Whether the server refuses to start on what it otherwise only warns
+    /// about: plaintext beyond loopback (spec §7.1) and a binding the agent
+    /// card does not declare (spec §5.2). Off by default; see
+    /// [`production`](Self::production).
+    pub production: bool,
+
+    /// Whether TLS is terminated in front of this listener (a load balancer,
+    /// an ingress, a service mesh), so plaintext here is not plaintext on the
+    /// network. It silences the plaintext warning and lifts the
+    /// [`production`](Self::production) refusal for it.
+    pub tls_terminated_in_front: bool,
 }
 
 impl Default for ServeConfig {
@@ -128,6 +142,8 @@ impl Default for ServeConfig {
             task_grace: DEFAULT_TASK_GRACE,
             header_read_timeout: Some(DEFAULT_HEADER_READ_TIMEOUT),
             idle_timeout: Some(DEFAULT_IDLE_TIMEOUT),
+            production: false,
+            tls_terminated_in_front: false,
         }
     }
 }
@@ -144,6 +160,36 @@ impl ServeConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The defaults, and a server that refuses to start rather than warn
+    /// (ADR 0025): it returns at once, accepting nothing, with
+    /// [`ServeReport::refused`](crate::serve::ServeReport::refused) saying
+    /// why, when it would serve
+    ///
+    /// * plaintext on an address that is not loopback (spec §7.1), unless
+    ///   [`with_tls_terminated_in_front`](Self::with_tls_terminated_in_front)
+    ///   says TLS ends before this listener;
+    /// * a binding the handler's agent card does not declare (spec §5.2).
+    ///   A dispatcher with no handler, or a handler whose card is produced
+    ///   elsewhere, is not checked.
+    ///
+    /// The handler's half is
+    /// [`Profile::Production`](crate::profile::Profile::Production).
+    #[must_use]
+    pub fn production() -> Self {
+        Self {
+            production: true,
+            ..Self::default()
+        }
+    }
+
+    /// Says TLS is terminated in front of this listener: see
+    /// [`tls_terminated_in_front`](Self::tls_terminated_in_front).
+    #[must_use]
+    pub const fn with_tls_terminated_in_front(mut self) -> Self {
+        self.tls_terminated_in_front = true;
+        self
     }
 
     /// Caps the connections served at once.

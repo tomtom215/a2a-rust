@@ -9,13 +9,14 @@ use std::collections::HashMap;
 
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::ListTasksParams;
-use a2a_protocol_types::task::{Task, TaskId};
+use a2a_protocol_types::task::Task;
 use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER, TraceContext};
 
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 
 use super::RequestHandler;
+pub(super) use super::ids::{task_id_param, validate_id};
 
 /// Unsets `field` when it holds the proto3 default, the empty string: a
 /// field without presence carries "unset" that way on the JSON bindings.
@@ -23,35 +24,6 @@ pub(super) fn unset_if_empty(field: &mut Option<String>) {
     if field.as_deref() == Some("") {
         *field = None;
     }
-}
-
-/// Validates an ID string: rejects empty/whitespace-only and excessively long values.
-pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(ServerError::InvalidField {
-            field: name.to_owned(),
-            message: format!("{name} must not be empty or whitespace-only"),
-        });
-    }
-    if trimmed.len() > max_length {
-        return Err(ServerError::InvalidField {
-            field: name.to_owned(),
-            message: format!(
-                "{name} exceeds maximum length (got {}, max {max_length})",
-                trimmed.len()
-            ),
-        });
-    }
-    Ok(())
-}
-
-/// The `id` of `GetTask`, `CancelTask` or `SubscribeToTask`, which a2a.proto marks
-/// REQUIRED. gRPC's absent string and JSON's `""` used to reach the store and
-/// answer `TaskNotFound`; they are `InvalidParams`.
-pub(super) fn task_id_param(raw: &str, max_length: usize) -> ServerResult<TaskId> {
-    validate_id(raw, "id", max_length)?;
-    Ok(TaskId::new(raw))
 }
 
 /// Rejects client-supplied `metadata` that is present but not a JSON object.

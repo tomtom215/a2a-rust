@@ -411,13 +411,17 @@ async fn a_lagged_subscription_catches_up_from_where_it_attached() {
 
 /// A replay with a gap is refused: when the log no longer holds the
 /// positions the stream missed, it ends with `streamLagged`, as before.
+/// Since 2026-10-20 the stream holds what it owes up to a ceiling, so the
+/// ceiling (2 × 10 here) is what the log cannot cover; see `stream_lag_holds`.
 #[tokio::test]
 async fn a_lag_the_log_cannot_cover_still_ends_with_stream_lagged() {
     let handler = RequestHandlerBuilder::new(Burst)
         .without_agent_card()
         .with_event_queue_capacity(CAPACITY)
         .with_task_store(InMemoryTaskStore::with_config(
-            TaskStoreConfig::default().with_max_events_per_task(Some(10)),
+            TaskStoreConfig::default()
+                .with_max_events_per_task(Some(10))
+                .with_max_held_events_factor(Some(2)),
         ))
         .build()
         .expect("handler");

@@ -268,3 +268,90 @@ fn a_verified_peer_does_not_skip_the_version_check() {
         .expect_err("no version is 0.3, verified peer or not");
     assert!(format!("{err:?}").contains("'0.3'"), "{err:?}");
 }
+
+/// `rpc.status_code` and `error.type` of each call recorded.
+type Recorded = std::sync::Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
+
+struct Recorder(Recorded);
+
+impl a2a_protocol_server::Metrics for Recorder {
+    fn on_rpc_call(&self, call: &a2a_protocol_server::RpcCall<'_>) {
+        self.0.lock().unwrap().push((
+            call.status_code.map(str::to_owned),
+            call.error_type.map(str::to_owned),
+        ));
+    }
+}
+
+fn recorded_handler(recorded: &Recorded) -> RequestHandler {
+    struct Idle;
+    a2a_protocol_server::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+    a2a_protocol_server::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .with_metrics(Recorder(std::sync::Arc::clone(recorded)))
+        .build()
+        .unwrap()
+}
+
+/// Statuses as on a gRPC server span (`docs/rpc/grpc.md`): a `NOT_FOUND` is
+/// recorded with no `error.type`, an `INTERNAL` with one.
+#[tokio::test]
+async fn only_server_side_statuses_are_errors() {
+    use a2a_protocol_server::ServerError;
+    let recorded = Recorded::default();
+    let handler = recorded_handler(&recorded);
+    for error in [
+        ServerError::TaskNotFound("t".into()),
+        ServerError::Internal("broke".into()),
+    ] {
+        let _ = BindingSpan::open(&handler, SLIMRPC, method::GET_TASK, None)
+            .run(async { Err::<(), _>(error) })
+            .await;
+    }
+    let some = |s: &str| Some(s.to_owned());
+    assert_eq!(
+        *recorded.lock().unwrap(),
+        [
+            (some("NOT_FOUND"), None),
+            (some("INTERNAL"), some("INTERNAL"))
+        ]
+    );
+}
+
+/// A streaming call ends with its stream: recorded when the reader ends, not
+/// when the handler returned it, and as cancelled when the stream is dropped
+/// unfinished (ADR 0013; `rpc-spans.md`, "the span SHOULD cover the full
+/// lifetime of the request and/or response streams").
+#[tokio::test]
+async fn a_streaming_call_is_recorded_when_its_stream_ends() {
+    use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
+    let recorded = Recorded::default();
+    let handler = recorded_handler(&recorded);
+    let open = |reader| {
+        BindingSpan::open(&handler, SLIMRPC, method::SUBSCRIBE_TO_TASK, None).run_with(
+            async { Ok::<_, a2a_protocol_server::ServerError>(reader) },
+            |out| {
+                let reader = out.unwrap();
+                event_stream(reader, StreamEnd::claim())
+            },
+        )
+    };
+
+    let (writer, reader) = new_in_memory_queue();
+    let mut stream = open(reader).await;
+    assert!(
+        recorded.lock().unwrap().is_empty(),
+        "recorded at the handshake"
+    );
+    drop(writer);
+    while stream.next().await.is_some() {}
+    assert_eq!(*recorded.lock().unwrap(), [(Some("OK".to_owned()), None)]);
+
+    let (_writer, reader) = new_in_memory_queue();
+    drop(open(reader).await);
+    let cancelled = Some("cancelled".to_owned());
+    assert_eq!(
+        recorded.lock().unwrap()[1..],
+        [(cancelled.clone(), cancelled)]
+    );
+}

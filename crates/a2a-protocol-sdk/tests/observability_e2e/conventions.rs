@@ -12,6 +12,15 @@ use crate::SEND_SPAN;
 use crate::fixtures::attr;
 
 /// Checks binding `b`'s executor span `span` and its call's `server` span.
+/// The `SERVER` span `SendMessage` recorded in trace `trace_id`.
+pub fn server_span<'a>(spans: &'a [SpanData], trace_id: &str) -> Option<&'a SpanData> {
+    spans.iter().find(|s| {
+        s.span_kind == SpanKind::Server
+            && s.name == SEND_SPAN
+            && s.span_context.trace_id().to_string() == trace_id
+    })
+}
+
 pub fn check_call(b: &str, span: &SpanData, server: &SpanData, gaps: &mut Vec<String>) {
     // The GenAI conventions' internal `invoke_agent` span, which
     // is what an agent-aware backend keys on (Langfuse: AGENT,
@@ -63,6 +72,30 @@ pub fn check_call(b: &str, span: &SpanData, server: &SpanData, gaps: &mut Vec<St
     }
     if attr(server, "a2a.message.id").is_none_or(|v| v.is_empty()) {
         gaps.push(format!("{b}: the server span has no a2a.message.id"));
+    }
+    if b == "JSONRPC" {
+        check_jsonrpc(server, gaps);
+    }
+}
+
+/// `docs/rpc/json-rpc.md`: `jsonrpc.protocol.version` is Conditionally
+/// Required "if other than the default version (`1.0`)", `rpc.method_original`
+/// "if and only if it's different than `rpc.method`" — the wire's
+/// `SendMessage` is — and `jsonrpc.request.id` Recommended.
+fn check_jsonrpc(server: &SpanData, gaps: &mut Vec<String>) {
+    for (key, want) in [
+        ("jsonrpc.protocol.version", "2.0"),
+        ("rpc.method_original", "SendMessage"),
+    ] {
+        if attr(server, key).as_deref() != Some(want) {
+            gaps.push(format!(
+                "JSONRPC: the server span has {key} {:?}, not {want:?}",
+                attr(server, key)
+            ));
+        }
+    }
+    if attr(server, "jsonrpc.request.id").is_none_or(|v| v.is_empty()) {
+        gaps.push("JSONRPC: the server span has no jsonrpc.request.id".to_owned());
     }
 }
 

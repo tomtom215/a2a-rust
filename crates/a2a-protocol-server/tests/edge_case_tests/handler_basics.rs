@@ -54,83 +54,74 @@ async fn send_message_executor_failure_marks_task_failed() {
 
 #[tokio::test]
 async fn cancel_task_signals_cancellation_token() {
+    use tokio_util::sync::CancellationToken;
+
+    /// Hands the running task's id and cancellation token to the test once
+    /// it is working, then waits for the token (or 60 s).
+    struct TokenExecutor(tokio::sync::mpsc::UnboundedSender<(TaskId, CancellationToken)>);
+
+    impl AgentExecutor for TokenExecutor {
+        fn execute<'a>(
+            &'a self,
+            ctx: &'a RequestContext,
+            queue: &'a dyn EventQueueWriter,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async move {
+                queue
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        status: TaskStatus::with_timestamp(TaskState::Working),
+                        metadata: None,
+                    }))
+                    .await?;
+                let _ = self
+                    .0
+                    .send((ctx.task_id.clone(), ctx.cancellation_token.clone()));
+                tokio::select! {
+                    () = ctx.cancellation_token.cancelled() => Err(A2aError::internal("cancelled")),
+                    () = tokio::time::sleep(Duration::from_secs(60)) => Ok(()),
+                }
+            })
+        }
+    }
+
+    let (tx, mut started) = tokio::sync::mpsc::unbounded_channel();
     let handler = Arc::new(
-        RequestHandlerBuilder::new(SlowExecutor)
+        RequestHandlerBuilder::new(TokenExecutor(tx))
             .without_agent_card()
             .build()
             .unwrap(),
     );
 
-    // Start a streaming task (which won't block waiting for completion)
-    let params = make_send_params("slow task");
-    let result = handler.on_send_message(params, true, None).await.unwrap();
+    let _stream = handler
+        .on_send_message(make_send_params("slow task"), true, None)
+        .await
+        .unwrap();
+    let (task_id, token) = tokio::time::timeout(Duration::from_secs(10), started.recv())
+        .await
+        .expect("the executor started within 10 s")
+        .expect("the executor sent its token");
+    assert!(!token.is_cancelled(), "nothing has cancelled the task yet");
 
-    // Get the task ID from the response
-    match result {
-        a2a_protocol_server::SendMessageResult::Stream(_reader) => {
-            // Give the executor a moment to start
-            tokio::time::sleep(Duration::from_millis(50)).await;
-
-            // List tasks to find our task
-            let list_result = handler
-                .on_list_tasks(
-                    ListTasksParams {
-                        tenant: None,
-                        context_id: None,
-                        status: None,
-                        page_size: Some(10),
-                        page_token: None,
-                        status_timestamp_after: None,
-                        include_artifacts: None,
-                        history_length: None,
-                    },
-                    None,
-                )
-                .await
-                .unwrap();
-
-            assert!(
-                !list_result.tasks.is_empty(),
-                "should have at least one task"
-            );
-
-            // Find a non-terminal task to cancel
-            if let Some(task) = list_result
-                .tasks
-                .iter()
-                .find(|t| !t.status.state.is_terminal())
-            {
-                let cancel_result = handler
-                    .on_cancel_task(
-                        a2a_protocol_types::params::CancelTaskParams {
-                            tenant: None,
-                            id: task.id.to_string(),
-                            metadata: None,
-                        },
-                        None,
-                    )
-                    .await;
-                match cancel_result {
-                    Ok(cancelled) => {
-                        assert_eq!(cancelled.status.state, TaskState::Canceled);
-                    }
-                    Err(e) => {
-                        // Task may have completed by now — verify it's a known cancel-failure error
-                        assert!(
-                            matches!(
-                                e,
-                                a2a_protocol_server::ServerError::TaskNotFound(_)
-                                    | a2a_protocol_server::ServerError::TaskNotCancelable(_)
-                                    | a2a_protocol_server::ServerError::Protocol(_)
-                            ),
-                            "expected TaskNotFound or TaskNotCancelable error, got: {e:?}"
-                        );
-                    }
-                }
-            }
-        }
-        _ => panic!("expected Stream result"),
-    }
+    let cancelled = handler
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: task_id.to_string(),
+                metadata: None,
+            },
+            None,
+        )
+        .await
+        .expect("a working task is cancelable");
+    assert_eq!(cancelled.status.state, TaskState::Canceled);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(10), token.cancelled())
+            .await
+            .is_ok(),
+        "CancelTask answered Canceled but the executor's token never fired"
+    );
 }
 
 #[tokio::test]

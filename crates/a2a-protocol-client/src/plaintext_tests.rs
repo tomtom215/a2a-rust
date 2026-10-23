@@ -102,68 +102,21 @@ fn without_refuse_the_call_goes_and_is_logged_once() {
 /// The warning is logged, and only once: each call after the first goes
 /// silently, however many credentials it carries.
 ///
-/// Counted through one global subscriber, installed once, whose layer counts
-/// only this thread's WARN events. A scoped `with_default` subscriber is not
-/// enough: `tracing` caches each callsite's interest globally, and a first
-/// evaluation of this callsite on another test's thread, with no subscriber
-/// of its own, could leave it disabled here. That made this test fail about
-/// one run in three (CI run 39245951120, both Ubuntu legs, 0 warnings
-/// counted where 1 was emitted); the server's shutdown warning tests met the
-/// same race and settled on the same shape.
-///
-/// The global subscriber narrows that race but does not close it.
-/// `Dispatch::new` registers the subscriber before `set_global_default`
-/// marks it initialized (tracing-core 0.1.36, `dispatcher.rs`). While it is
-/// the only one registered, a callsite registering on another thread takes
-/// its interest from that thread's `get_default`, which is still `NONE`
-/// during that window (`callsite.rs`, `Rebuilder::JustOne`).
-/// `without_refuse_the_call_goes_and_is_logged_once` hits this same warning
-/// in parallel; if its first hit falls in the window, the callsite is cached
-/// as never enabled. CI run 39320253336 (Ubuntu, stable) counted 0 once
-/// more. A standalone program forcing that order (register, first hit on
-/// another thread, then install) saw 0 events after the install and 1 after
-/// `rebuild_interest_cache`. The cache is therefore rebuilt here after the
-/// install, when every rebuild sees this subscriber.
+/// Counted through the crate's global test subscriber
+/// ([`crate::test_tracing`]), whose layer counts only this thread's WARN
+/// events: a scoped subscriber can miss them, because `tracing` caches each
+/// callsite's interest globally (CI runs 39245951120 and 39320253336 counted
+/// 0 where 1 was emitted). That module records why.
 #[cfg(feature = "tracing")]
 #[test]
 fn the_warning_is_logged_once_per_client() {
-    use std::cell::Cell;
-    use std::sync::OnceLock;
-    use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
-
-    thread_local! {
-        /// WARN events seen on this thread while armed; `None` when not.
-        static COUNT: Cell<Option<usize>> = const { Cell::new(None) };
-    }
-
-    struct CountThisThread;
-    impl<S: tracing::Subscriber> Layer<S> for CountThisThread {
-        fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
-            if *event.metadata().level() == tracing::Level::WARN {
-                COUNT.with(|c| c.set(c.get().map(|n| n + 1)));
-            }
+    let warnings = crate::test_tracing::warnings_in(|| {
+        let mut guard = Guard::default();
+        guard.arm("http://agent.example");
+        let req = request(&["authorization"], &[]);
+        for _ in 0..3 {
+            assert!(guard.check(&req).is_ok());
         }
-    }
-
-    static INSTALLED: OnceLock<Result<(), String>> = OnceLock::new();
-    INSTALLED
-        .get_or_init(|| {
-            tracing::subscriber::set_global_default(
-                tracing_subscriber::registry().with(CountThisThread),
-            )
-            .map_err(|e| e.to_string())
-        })
-        .as_ref()
-        .expect("this test's subscriber is the global one");
-    tracing::callsite::rebuild_interest_cache();
-
-    COUNT.with(|c| c.set(Some(0)));
-    let mut guard = Guard::default();
-    guard.arm("http://agent.example");
-    let req = request(&["authorization"], &[]);
-    for _ in 0..3 {
-        assert!(guard.check(&req).is_ok());
-    }
-    let warnings = COUNT.with(|c| c.replace(None));
-    assert_eq!(warnings, Some(1));
+    });
+    assert_eq!(warnings, 1);
 }

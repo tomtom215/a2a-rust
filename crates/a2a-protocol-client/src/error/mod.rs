@@ -117,7 +117,12 @@ pub enum ClientError {
 
     /// An agent's security scheme this client cannot send a credential with:
     /// an `APIKeySecurityScheme` that places the key in the query string, or
-    /// names a header or cookie no request can carry.
+    /// names a header or cookie no request can carry. Also a call not sent
+    /// because its credentials satisfy none of the agent card's security
+    /// requirements, from a client built with
+    /// [`CredentialPreflight::Refuse`](crate::CredentialPreflight::Refuse)
+    /// (spec §3.1.11); the message names schemes, headers, cookies and
+    /// parameters, never a credential. Not retryable.
     InvalidAuthScheme(String),
 
     /// Not sent: a push-notification config's webhook URL is `http://` to a
@@ -134,6 +139,14 @@ pub enum ClientError {
     /// (spec §13.4). Holds the name and the endpoint's origin, never the
     /// credential. Not retryable.
     InsecureTransport(String),
+
+    /// Content the agent sent failed its provenance check (ADR 0027): an
+    /// artifact or agent message whose signature does not verify against
+    /// the client's content keys, because it was altered or signed by a key
+    /// not in the set, or one carrying no signature when the client requires
+    /// one (`ClientBuilder::with_content_keys`, feature `signing`).
+    /// Not retryable: the same content fails the same way.
+    ContentNotVerified(String),
 }
 
 impl fmt::Display for ClientError {
@@ -181,6 +194,12 @@ impl fmt::Display for ClientError {
                  connection to a non-loopback host, and this client requires an \
                  encrypted one"
             ),
+            Self::ContentNotVerified(why) => {
+                write!(
+                    f,
+                    "content from the agent failed its provenance check: {why}"
+                )
+            }
             Self::InsecureWebhook(origin) => write!(
                 f,
                 "push config not sent: webhook {origin} is plaintext http:// to a \

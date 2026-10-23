@@ -109,9 +109,10 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
 
 /// The fields `f` records, with nothing but [`Fields`] subscribed.
 #[cfg(feature = "tracing")]
-fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {
+pub fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {
     use tracing_subscriber::layer::SubscriberExt as _;
     let fields = Fields::default();
+    crate::test_tracing::install();
     tracing::subscriber::with_default(tracing_subscriber::registry().with(fields.clone()), f);
     let recorded = fields.0.lock().unwrap();
     recorded.clone()
@@ -235,13 +236,92 @@ fn every_error_class_has_its_error_type() {
     }
 }
 
-/// `f` with a `tracing-opentelemetry` layer recording every span.
+/// `rpc.status_code` is the status in the binding's own terms, as the server
+/// records the same call; `error.type` is that status, or the failure's class
+/// when the binding has none for it.
+#[cfg(feature = "tracing")]
+#[test]
+fn each_binding_reports_the_status_it_was_answered_with() {
+    use crate::error::ClientError as E;
+    let not_found = || E::Protocol(a2a_protocol_types::error::A2aError::task_not_found("t"));
+    let status = |system: Option<&str>, error: &E| {
+        let s = Status::failed(system, error);
+        (s.code, s.error)
+    };
+    let both = |v: &str| (Some(v.to_owned()), Some(v.to_owned()));
+    assert_eq!(status(Some("jsonrpc"), &not_found()), both("-32001"));
+    assert_eq!(status(Some("a2a_http_json"), &not_found()), both("404"));
+    assert_eq!(status(Some("grpc"), &not_found()), both("NOT_FOUND"));
+    assert_eq!(status(Some("slimrpc"), &not_found()), both("NOT_FOUND"));
+    let unavailable = E::UnexpectedStatus {
+        status: 503,
+        body: String::new(),
+        retry_after: None,
+    };
+    assert_eq!(status(Some("a2a_http_json"), &unavailable), both("503"));
+    // A JSON-RPC status is an error code; an HTTP status is not one.
+    assert_eq!(
+        status(Some("jsonrpc"), &unavailable),
+        (None, Some("503".to_owned()))
+    );
+    assert_eq!(
+        status(Some("grpc"), &E::Timeout("slow".into())),
+        (None, Some("timeout".to_owned()))
+    );
+    // A binding with no status codes of its own, or none known, records no
+    // status: `error.type` is the A2A error code.
+    for system in [None, Some("websocket")] {
+        assert_eq!(
+            status(system, &not_found()),
+            (None, Some("-32001".to_owned())),
+            "{system:?}"
+        );
+    }
+    for (system, ok) in [
+        (Some("grpc"), Some("OK")),
+        (Some("slimrpc"), Some("OK")),
+        (Some("jsonrpc"), None),
+        (Some("a2a_http_json"), None),
+        (None, None),
+    ] {
+        let s = Status::ok(system);
+        assert_eq!((s.code.as_deref(), s.error), (ok, None), "{system:?}");
+    }
+}
+
+/// A method outside the A2A service is `_OTHER`, as on the server: the span is
+/// named for its system and keeps the method as sent.
+#[cfg(feature = "tracing")]
+#[test]
+fn an_unknown_method_is_named_for_its_system() {
+    let fields = recorded(|| {
+        let call = CallSpan::open("message/send", &peer_with("", ""), &serde_json::json!({}));
+        call.succeeded(None);
+    });
+    let field = |k: &str| fields.get(k).map(String::as_str);
+    assert_eq!(field("otel.name"), Some("jsonrpc"));
+    assert_eq!(field("rpc.method"), Some("_OTHER"));
+    assert_eq!(field("rpc.method_original"), Some("message/send"));
+    let known = recorded(|| {
+        CallSpan::open("GetTask", &peer_with("", ""), &serde_json::json!({})).succeeded(None);
+    });
+    assert_eq!(
+        known.get("otel.name").map(String::as_str),
+        Some("lf.a2a.v1.A2AService/GetTask")
+    );
+    assert!(!known.contains_key("rpc.method_original"));
+}
+
+/// `f` with a `tracing-opentelemetry` layer recording every span, over the
+/// crate's global test subscriber ([`crate::test_tracing`]), without which
+/// the call span can come back disabled.
 #[cfg(feature = "otel")]
 fn with_otel<R>(f: impl FnOnce() -> R) -> R {
     use opentelemetry::trace::TracerProvider as _;
     use tracing_subscriber::layer::SubscriberExt as _;
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
     let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("call-span-test"));
+    crate::test_tracing::install();
     tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), f)
 }
 

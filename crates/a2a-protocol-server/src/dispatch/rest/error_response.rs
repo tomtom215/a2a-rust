@@ -10,6 +10,7 @@ use std::convert::Infallible;
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 
+use super::params::Unreadable;
 use super::response::{build_json_response, internal_error_response};
 use crate::error::ServerError;
 
@@ -43,34 +44,33 @@ fn violation_field(path: &serde_path_to_error::Path) -> String {
 }
 
 /// Deserializes request parameters from a parsed body. A value of the wrong
-/// shape answers [`bad_request_response`] naming the field.
-#[allow(clippy::result_large_err)] // the error is the response, as in `read_body_with_path_fields`
+/// shape is [`Unreadable::violation`], a [`bad_request_response`] naming the
+/// field once the caller is admitted.
+#[allow(clippy::result_large_err)] // the error holds the response, as in `RestDispatcher::read_params`
 pub fn params_from_value<T: serde::de::DeserializeOwned>(
     value: serde_json::Value,
-) -> Result<T, hyper::Response<BoxBody<Bytes, Infallible>>> {
+) -> Result<T, Unreadable> {
     serde_path_to_error::deserialize(value)
-        .map_err(|e| bad_request_response(&violation_field(e.path()), &e.inner().to_string()))
+        .map_err(|e| Unreadable::violation(&violation_field(e.path()), &e.inner().to_string()))
 }
 
 /// Deserializes request parameters from raw body bytes. Malformed JSON is a
 /// plain 400 as before; well-formed JSON of the wrong shape is re-parsed with
 /// path tracking, on the failure path only, to name the field.
 #[cfg(feature = "axum")]
-#[allow(clippy::result_large_err)] // the error is the response, as in `read_body_with_path_fields`
-pub fn params_from_slice<T: serde::de::DeserializeOwned>(
-    body: &[u8],
-) -> Result<T, hyper::Response<BoxBody<Bytes, Infallible>>> {
+#[allow(clippy::result_large_err)] // the error holds the response, as in `RestDispatcher::read_params`
+pub fn params_from_slice<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Unreadable> {
     match serde_json::from_slice(body) {
         Ok(v) => Ok(v),
         Err(e) if e.classify() != serde_json::error::Category::Data => {
-            Err(error_json_response(400, &e.to_string()))
+            Err(Unreadable::not_json(&e))
         }
         Err(e) => {
             let mut de = serde_json::Deserializer::from_slice(body);
             let tracked: Result<T, _> = serde_path_to_error::deserialize(&mut de);
             Err(match tracked {
-                Err(t) => bad_request_response(&violation_field(t.path()), &t.inner().to_string()),
-                Ok(_) => bad_request_response("", &e.to_string()),
+                Err(t) => Unreadable::violation(&violation_field(t.path()), &t.inner().to_string()),
+                Ok(_) => Unreadable::violation("", &e.to_string()),
             })
         }
     }

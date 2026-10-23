@@ -58,11 +58,18 @@ pub struct A2aClient {
     pub(crate) config: ClientConfig,
     /// The agent called, as its spans describe it.
     pub(crate) peer: crate::call_span::Peer,
+    /// Where each call's `rpc.client.call.duration` goes.
+    #[cfg(feature = "otel")]
+    pub(crate) metric: crate::call_metric::CallMetric,
     /// The optional capabilities the agent's card declares, checked before a
     /// call that needs one; `None` when there is no card to check against or
     /// the checks were turned off. Behind a lock because fetching the
     /// extended card replaces them ([`Self::adopt_capabilities`]).
     pub(crate) declared: RwLock<Option<DeclaredCapabilities>>,
+    /// What received content is checked against (ADR 0027).
+    pub(crate) content: crate::content::ContentKeys,
+    /// Whether the agent is known to honour an idempotency key.
+    pub(crate) honours_idempotency: bool,
 }
 
 impl A2aClient {
@@ -92,11 +99,12 @@ impl A2aClient {
     /// transport supplied through
     /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
     /// which never sees the config.
-    pub(crate) const fn configure_stream(&self, stream: EventStream) -> EventStream {
+    pub(crate) fn configure_stream(&self, stream: EventStream) -> EventStream {
         stream
             .with_first_event_timeout(self.config.stream_first_event_timeout)
             .with_idle_timeout(self.config.stream_idle_timeout)
             .with_max_event_size(self.config.max_event_size)
+            .with_content_keys(self.content.clone())
     }
 
     /// Creates a new [`A2aClient`] from its constituent parts.
@@ -114,8 +122,39 @@ impl A2aClient {
             interceptors,
             config,
             peer: crate::call_span::Peer::default(),
+            #[cfg(feature = "otel")]
+            metric: crate::call_metric::CallMetric::global(),
             declared: RwLock::new(None),
+            content: crate::content::ContentKeys::default(),
+            honours_idempotency: false,
         }
+    }
+
+    /// Sets what received content is checked against.
+    // Without `signing`, `ContentKeys` is empty and this could be `const`.
+    #[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+    pub(crate) fn with_content_keys(mut self, content: crate::content::ContentKeys) -> Self {
+        self.content = content;
+        self
+    }
+
+    /// Records whether the agent is known to honour an idempotency key.
+    pub(crate) const fn with_peer_honouring_idempotency(mut self, honours: bool) -> Self {
+        self.honours_idempotency = honours;
+        self
+    }
+
+    /// Whether the agent is known to honour an idempotency key
+    /// (`a2a_protocol_types::idempotency`): its card advertised the
+    /// extension ([`ClientBuilder::from_card`]), or the builder was told so
+    /// with
+    /// [`ClientBuilder::with_peer_honouring_idempotency`](crate::builder::ClientBuilder::with_peer_honouring_idempotency).
+    /// Only then is a keyed send retried after an ambiguous failure, and
+    /// only then does [`Delegation`](crate::delegation::Delegation) attach a
+    /// key of its own.
+    #[must_use]
+    pub const fn honours_idempotency(&self) -> bool {
+        self.honours_idempotency
     }
 
     /// Sets what the client's spans say about the agent it calls.
@@ -178,6 +217,8 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<serde_json::Value> {
         let params = std::mem::take(&mut req.params);
+        #[cfg(feature = "otel")]
+        let started = std::time::Instant::now();
         #[cfg(feature = "tracing")]
         let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
         #[cfg(feature = "otel")]
@@ -196,6 +237,8 @@ impl A2aClient {
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
         let result = send.await;
+        #[cfg(feature = "otel")]
+        self.measure(method, started, result.as_ref().err());
         #[cfg(feature = "tracing")]
         match &result {
             Ok(value) => call.succeeded(Some(value)),
@@ -215,6 +258,8 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<EventStream> {
         let params = std::mem::take(&mut req.params);
+        #[cfg(feature = "otel")]
+        let started = std::time::Instant::now();
         #[cfg(feature = "tracing")]
         let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
         #[cfg(feature = "otel")]
@@ -233,16 +278,25 @@ impl A2aClient {
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
         let result = send.await;
-        // A stream's span stays open with the stream: the call lasts until
-        // the caller has finished consuming it (`call_span.rs`).
+        // A stream's span stays open with the stream, and its duration runs:
+        // the call lasts until the caller has finished consuming it
+        // (`call_span.rs`, `call_metric.rs`).
         #[cfg(feature = "tracing")]
         let result = match result {
             Ok(stream) => {
-                let span = call.span.clone();
-                call.succeeded(None);
-                Ok(stream.with_span(span))
+                let stream_call = crate::streaming::event_stream::call::StreamCall::new(
+                    call.span.clone(),
+                    call.system,
+                );
+                #[cfg(feature = "otel")]
+                let stream_call =
+                    stream_call.measured(self.metric.clone(), self.peer.clone(), method, started);
+                call.opened(None);
+                Ok(stream.with_call(stream_call))
             }
             Err(e) => {
+                #[cfg(feature = "otel")]
+                self.measure(method, started, Some(&e));
                 call.failed(&e);
                 Err(e)
             }
@@ -251,6 +305,26 @@ impl A2aClient {
             self.interceptors.run_on_error(req, e).await;
         }
         result
+    }
+}
+
+#[cfg(feature = "otel")]
+impl A2aClient {
+    /// Records a call of `method` begun at `started`, which failed with
+    /// `error` or, without one, succeeded (`call_metric.rs`).
+    fn measure(
+        &self,
+        method: &str,
+        started: std::time::Instant,
+        error: Option<&crate::error::ClientError>,
+    ) {
+        let system = self.peer.system;
+        let status = error.map_or_else(
+            || crate::call_span::Status::ok(system),
+            |e| crate::call_span::Status::failed(system, e),
+        );
+        let method = crate::call_span::qualified(method);
+        self.metric.record(&self.peer, method, started, &status);
     }
 }
 

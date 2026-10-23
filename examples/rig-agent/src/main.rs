@@ -73,8 +73,33 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod agent;
+mod leaked;
 mod surface;
 mod tools;
+
+/// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
+/// `examples/langfuse-agent`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+/// collector, traces, metrics and logs go there; without it nothing is built
+/// or installed — no exporter, no export thread, no subscriber. Keep it for
+/// the life of the process: dropping it flushes.
+fn telemetry() -> a2a_protocol_server::otel::Telemetry {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+    let export = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some();
+    let telemetry = a2a_protocol_server::otel::Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_traces(export)
+        .with_metrics(export)
+        .with_logs(export)
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    if telemetry.tracer_provider().is_some() || telemetry.logger_provider().is_some() {
+        tracing_subscriber::registry()
+            .with(telemetry.layer())
+            .init();
+    }
+    telemetry
+}
 
 #[cfg(test)]
 mod tests;
@@ -283,6 +308,7 @@ fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let telemetry = telemetry();
     // Defaults to a *tool-capable* model, unlike the sibling examples' 0.8B:
     // measured 2026-09-19, Qwen3.5-0.8B never emits a tool call even with
     // `tool_choice: "required"`, so it cannot demonstrate what this example
@@ -321,7 +347,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| format!("failed to build the rig OpenAI client: {e}"))?;
         Ok(RigAgent::new(
             client.completion_model(model),
-            "You are a helpful A2A protocol agent.",
+            agent::PREAMBLE,
         ))
     };
 
@@ -382,6 +408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(c) => clients.push((*binding, c)),
             Err(e) => {
                 eprintln!("could not build a {} client: {e}", binding.label());
+                drop(telemetry);
                 std::process::exit(1);
             }
         }
@@ -408,6 +435,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let code = outcome.exit_code();
     if code != 0 {
+        drop(telemetry);
         std::process::exit(code);
     }
     Ok(())

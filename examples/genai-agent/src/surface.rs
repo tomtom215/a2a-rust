@@ -60,7 +60,7 @@ pub async fn start(model: &str) -> Result<Endpoints, BoxErr> {
     card.supported_interfaces = interfaces(&ep);
 
     let handler: Arc<RequestHandler> = Arc::new(
-        RequestHandlerBuilder::new(GenaiAgentExecutor::with_fallback(model))
+        RequestHandlerBuilder::new(GenaiAgentExecutor::with_fallback(model)?)
             .with_agent_card(card.clone())
             // §3.1.11: the card declares an extended card, so one is set; the
             // public card is served as it.
@@ -107,7 +107,7 @@ pub async fn start_restricted(model: &str) -> Result<String, BoxErr> {
     card.capabilities = AgentCapabilities::none();
 
     let handler: Arc<RequestHandler> = Arc::new(
-        RequestHandlerBuilder::new(GenaiAgentExecutor::with_fallback(model))
+        RequestHandlerBuilder::new(GenaiAgentExecutor::with_fallback(model)?)
             .with_agent_card(card)
             .build()?,
     );

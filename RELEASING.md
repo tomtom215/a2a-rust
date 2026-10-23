@@ -116,7 +116,17 @@ git checkout -b release/vX.Y.Z main
 # URIs are the `*_EXTENSION_URI` constants and `WEBSOCKET_BINDING_URI` in
 # crates/a2a-protocol-types/src, all `/v1`; find them with
 #     git grep -n '_URI: &str = "https://a2a-rust.com' -- crates
-# and read the CHANGELOG's Breaking Changes for anything that touches them.
+# Noticing is checked: each URI is pinned to a snapshot of its wire contract
+# (keys, field and variant names, tokens, sample values, the binding's
+# frames), and a change to one with its URI unchanged fails CI —
+#     cargo test -p a2a-protocol-types --all-features --test uri_contracts
+#     cargo test -p a2a-protocol-server --features websocket --test uri_contract_websocket
+# Deciding is not: a person reads the diff the failure prints and either
+# bumps the URI (breaking) or re-blesses the snapshot with
+# A2A_BLESS_URI_CONTRACTS=1 on the same command (not breaking, e.g. a new
+# optional field), saying why in the commit. Snapshots: tests/golden/uri_contracts/
+# in each crate. Read the CHANGELOG's Breaking Changes for anything that
+# touches them too: a meaning can change with no byte of the wire changing.
 
 # Update ROADMAP.md's "Current release:" line, and add a section to
 # book/src/reference/changelog.md — neither is checked by anything, and both
@@ -162,7 +172,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging (mirror the exclude list in ci.yml / release.yml exactly)
-cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
+cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude mcp-a2a-agent --exclude a2a-mcp-bridge --exclude genai-a2a-agent --exclude incident-response --exclude resilient-agent --exclude swarm --exclude langfuse-agent --exclude tool-loop-agent --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks --exclude a2a-cli
 ```
 
 ### 2. Merge to main
@@ -199,8 +209,9 @@ there has the commands.
 > * A tag alone does not attest who cut the release, or when.
 > * Nothing here is GPG/SSH-signed, so `git tag -v` cannot verify any release.
 > * Adopters needing a verifiable link from a version to this repository must
->   use the build provenance attestations in [`PROVENANCE.md`](PROVENANCE.md),
->   which *are* signed, rather than the tag.
+>   use the build provenance attestations the release workflow attaches
+>   (`gh attestation verify`, step 3 below), which *are* signed, rather than
+>   the tag.
 >
 > Using `-a` as written fixes this for future releases; it does not
 > retroactively fix the ten existing tags, and re-tagging published releases

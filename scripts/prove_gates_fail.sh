@@ -114,6 +114,19 @@ PACKAGE_CLONE=""
 
 note_touched() { TOUCHED+=("$1"); }
 
+# Renames `fn $2()` in $1 to `$2_renamed`, refusing unless it occurs once.
+rename_test() {
+    note_touched "$1"
+    python3 - "$1" "$2" <<'PY'
+import pathlib, sys
+p, name = pathlib.Path(sys.argv[1]), sys.argv[2]
+s, old = p.read_text(), f"fn {name}()"
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one `{old}` in {p}; found {s.count(old)}")
+p.write_text(s.replace(old, f"fn {name}_renamed()"))
+PY
+}
+
 revert_all() {
     if [ "${#TOUCHED[@]}" -gt 0 ]; then
         # `git checkout HEAD --`, not `git checkout --`. The latter restores
@@ -351,6 +364,8 @@ injection_for() {
             echo "compliance_map" ;;
         *"check_spec_ledger.py"*)
             echo "spec_ledger" ;;
+        *"check_tck_untested_map.py"*)
+            echo "tck_untested_map" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
         # The binding's packaging gate is a wrapper, not a bare `cargo package`
@@ -388,6 +403,8 @@ injection_for() {
             echo "advisory_floors" ;;
         *"check_lockfiles.sh"*)
             echo "lockfiles" ;;
+        *"crypto_interop/check.py"*)
+            echo "crypto_interop" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -441,6 +458,7 @@ injection_for() {
             echo "clippy:$TYPES_LIB:signing" ;;
         "cargo clippy"*"--features tracing"*)
             echo "clippy:$CLIENT_LIB:tracing" ;;
+        "cargo clippy"*"--features tool-loop"*) echo "clippy:$SERVER_LIB:tool-loop" ;;
         "cargo clippy"*"--features tls-rustls"*)
             echo "clippy:$CLIENT_LIB:tls-rustls" ;;
         "cargo clippy"*"--features sqlite"*)
@@ -465,6 +483,7 @@ injection_for() {
             echo "test:$TYPES_LIB:signing" ;;
         "cargo test"*"--features tracing"*)
             echo "test:$CLIENT_LIB:tracing" ;;
+        "cargo test"*"--features tool-loop"*) echo "test:$SERVER_LIB:tool-loop" ;;
         "cargo test -p a2a-protocol-client --features tls-rustls")
             echo "test:$CLIENT_LIB:tls-rustls" ;;
         "cargo test -p a2a-protocol-server --features tls-rustls")
@@ -479,9 +498,7 @@ injection_for() {
             echo "test:$CLIENT_LIB:websocket" ;;
         "cargo test"*"--features grpc"*)
             echo "test:$CLIENT_LIB:grpc" ;;
-        "cargo test"*"--features auth-jwt,tls-rustls"*)
-            echo "test:$SERVER_LIB:auth-jwt" ;;
-        "cargo test"*"--features auth-jwt"*)
+        "cargo test"*"--features auth-jwt,tls-rustls"*|"cargo test"*"--features auth-jwt"*)
             echo "test:$SERVER_LIB:auth-jwt" ;;
         "cargo test --workspace")
             echo "test_always:$TYPES_LIB" ;;
@@ -519,6 +536,7 @@ expected_marker() {
         fuzz_matrix)      echo "no runner ever executes it" ;;
         compliance_map)   echo "no \`fn verify_rejects_tampered_card\`" ;;
         spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
+        tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
@@ -532,6 +550,10 @@ expected_marker() {
         store_delta_forwarding) echo "overrides \`save_status_delta\` but not \`try_save_status_delta\`" ;;
         readme_doctests)  echo "crates/a2a-protocol-client/src/lib.rs: README.md is not included" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
+        # The AES-GCM tag refusing the stated context, not a fixture that
+        # failed to parse: a run red for a JSON or key error would prove
+        # nothing about the layout check.
+        crypto_interop)   echo "FAILED: InvalidTag" ;;
         # The probe step's own name, so a run that failed on some *other*
         # inventory drift — a job somebody added in the same branch, say — is
         # INCONCLUSIVE rather than counted as proof of this one.
@@ -832,36 +854,17 @@ if s.count(old) != 1:
 p.write_text(s.replace(old, ""))
 PY
             ;;
+        # The three citation registers share one defect, verbatim: a refactor
+        # renames a test, everything still builds and passes, and the register
+        # goes on citing it as evidence. Each register's own test is renamed.
         compliance_map)
-            # Rename a test the control map cites, leaving the map alone. That is
-            # the defect verbatim: a refactor renames a test, everything else
-            # still builds and passes, and the map goes on calling the control
-            # supported on the strength of a test that no longer exists.
-            note_touched "crates/a2a-protocol-types/src/signing.rs"
-            python3 - <<'PY'
-import pathlib, sys
-p = pathlib.Path("crates/a2a-protocol-types/src/signing.rs")
-s = p.read_text()
-old = "fn verify_rejects_tampered_card()"
-if s.count(old) != 1:
-    sys.exit(f"expected exactly one verify_rejects_tampered_card; found {s.count(old)}")
-p.write_text(s.replace(old, "fn verify_rejects_tampered_card_renamed()"))
-PY
-            ;;
+            rename_test crates/a2a-protocol-types/src/signing.rs verify_rejects_tampered_card ;;
         spec_ledger)
-            # Rename a test the spec ledger cites, leaving the ledger alone:
-            # the same defect as compliance_map's, against the other register.
-            note_touched "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs"
-            python3 - <<'PY'
-import pathlib, sys
-p = pathlib.Path("crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs")
-s = p.read_text()
-old = "fn a_message_only_stream_is_exactly_one_message()"
-if s.count(old) != 1:
-    sys.exit(f"expected exactly one a_message_only_stream_is_exactly_one_message; found {s.count(old)}")
-p.write_text(s.replace(old, "fn a_message_only_stream_is_exactly_one_message_renamed()"))
-PY
-            ;;
+            rename_test crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs \
+                a_message_only_stream_is_exactly_one_message ;;
+        tck_untested_map)
+            rename_test crates/a2a-protocol-types/tests/tck_card_signing.rs \
+                card_sign_002_signatures_are_not_part_of_the_signed_payload ;;
         gate_reachability)
             # The defect is the review's "Done when" verbatim: drop ci.yml's
             # `push` trigger, leaving `pull_request` only. Every gate in this
@@ -958,6 +961,26 @@ PY
             sed -i 's/version = ">=0.23.46, <0.24"/version = ">=0.23, <0.24"/' "$client_toml"
             grep -q 'version = ">=0.23, <0.24"' "$client_toml" \
                 || { echo "advisory_floors: rustls requirement not found in $client_toml" >&2; return 1; }
+            ;;
+        crypto_interop)
+            # A push config the SDK sealed under a context other than the
+            # stated one: the record names tenant `acme`, the value was
+            # sealed for the default partition, as a store that stopped
+            # binding the tenant would write it. The sealed bytes are left
+            # as they are, so the value is still a valid AES-256-GCM seal;
+            # only the stated layout no longer opens it.
+            local fx=crates/a2a-protocol-server/tests/fixtures/crypto/rust_sealed.json
+            note_touched "$fx"
+            python3 - "$fx" <<'PY' || { echo "crypto_interop: no push config with the default partition in $fx" >&2; return 1; }
+import json, sys
+p = sys.argv[1]
+fx = json.load(open(p, encoding="utf-8"))
+push = [e for e in fx["push"] if e["partition"] == ""]
+if not push:
+    sys.exit(1)
+push[0]["partition"] = "acme"
+open(p, "w", encoding="utf-8").write(json.dumps(fx, indent=2, ensure_ascii=False) + "\n")
+PY
             ;;
         lockfiles)
             # Put `itk/Cargo.lock` back the way it was found on 2026-09-24:

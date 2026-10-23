@@ -66,6 +66,14 @@ an opt-in (its HTTPS connector is `https_or_http`), and this tool does not add
 or remove any policy of its own: TLS verification is the library's, against
 its bundled roots, with no way to turn it off here.
 
+## Telemetry
+
+With `OTEL_EXPORTER_OTLP_ENDPOINT` set, `a2a` exports each call's `CLIENT`
+span and `rpc.client.call.duration` there through the SDK's `Telemetry`,
+configured by the standard `OTEL_*` environment (service name `a2a` unless
+`OTEL_SERVICE_NAME` says otherwise), and flushes before it exits. Unset,
+nothing is built and nothing is sent.
+
 ## Exit codes
 
 | Code | Meaning |

@@ -180,7 +180,8 @@ impl ClientError {
             | Self::ProtocolBindingMismatch(_)
             | Self::InvalidAuthScheme(_)
             | Self::InsecureWebhook(_)
-            | Self::InsecureTransport(_) => false,
+            | Self::InsecureTransport(_)
+            | Self::ContentNotVerified(_) => false,
         }
     }
 }

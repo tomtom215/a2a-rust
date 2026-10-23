@@ -80,14 +80,23 @@ async fn start_webhook() -> String {
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "tracing")]
+    let telemetry = telemetry();
     {
-        use tracing_subscriber::EnvFilter;
-        tracing_subscriber::fmt()
-            .with_env_filter(
+        use tracing_subscriber::layer::SubscriberExt as _;
+        use tracing_subscriber::util::SubscriberInitExt as _;
+        let exporting =
+            telemetry.tracer_provider().is_some() || telemetry.logger_provider().is_some();
+        let subscriber = tracing_subscriber::registry().with(telemetry.layer());
+        #[cfg(feature = "tracing")]
+        let subscriber = subscriber.with({
+            use tracing_subscriber::{EnvFilter, Layer as _};
+            tracing_subscriber::fmt::layer().with_filter(
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
             )
-            .init();
+        });
+        if exporting || cfg!(feature = "tracing") {
+            subscriber.init();
+        }
     }
 
     // ── Server-only mode (for the in-repo TCK / CI) ──────────────────────
@@ -155,6 +164,7 @@ async fn main() {
         ),
         Err(e) => {
             eprintln!("agent card discovery failed: {e}");
+            drop(telemetry);
             std::process::exit(1);
         }
     }
@@ -167,6 +177,7 @@ async fn main() {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("could not build a {} client: {e}", binding.label());
+                drop(telemetry);
                 std::process::exit(1);
             }
         };
@@ -211,6 +222,7 @@ async fn main() {
         for f in &failures {
             println!("  - {f}");
         }
+        drop(telemetry);
         std::process::exit(1);
     }
     if !missing.is_empty() {
@@ -218,6 +230,7 @@ async fn main() {
         for (m, b) in &missing {
             println!("  - {} over {}", m.wire_name(), b.label());
         }
+        drop(telemetry);
         std::process::exit(2);
     }
 
@@ -413,4 +426,20 @@ fn advertise_security(card: &mut a2a_protocol_types::agent_card::AgentCard) {
     for skill in &mut card.skills {
         skill.security_requirements = Some(vec![requirement(&["read"])]);
     }
+}
+
+/// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
+/// `examples/langfuse-agent`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+/// collector, traces, metrics and logs go there; without it nothing is built
+/// — no exporter, no export thread — and its layer records nothing. Keep it
+/// for the life of the process: dropping it flushes.
+fn telemetry() -> a2a_protocol_server::otel::Telemetry {
+    let export = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some();
+    a2a_protocol_server::otel::Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_traces(export)
+        .with_metrics(export)
+        .with_logs(export)
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use")
 }

@@ -15,7 +15,10 @@ license.workspace    = true
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
 a2a-example-harness = { path = "../harness" }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc"] }
+# `otlp`: the SDK's `Telemetry`, which exports when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "otlp"] }
+tracing-subscriber = { workspace = true }
 
 serde_json     = { workspace = true }
 tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }

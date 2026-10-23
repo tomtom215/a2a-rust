@@ -244,3 +244,51 @@ async fn the_axum_adapter_answers_a_missing_bearer_token_401_with_its_challenge(
     .await;
     assert_eq!(served.status, 404);
 }
+
+/// Records the method of each call it is asked to admit, and admits it.
+#[cfg(feature = "axum")]
+#[derive(Clone, Default)]
+struct Methods(Arc<std::sync::Mutex<Vec<String>>>);
+
+#[cfg(feature = "axum")]
+impl ServerInterceptor for Methods {
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.0.lock().unwrap().push(ctx.method().to_owned());
+        Box::pin(async { Ok(()) })
+    }
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// A send whose body cannot be read is admitted as the method its route
+/// names, so a policy keyed on the method judges it as it would a readable
+/// one. The mutation gate found the axum adapter's name for it untested:
+/// answering with an empty name survived.
+#[cfg(feature = "axum")]
+#[tokio::test]
+async fn the_axum_adapter_admits_an_unreadable_send_as_its_method() {
+    use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;
+
+    let seen = Methods::default();
+    let app = A2aRouter::new(handler(seen.clone())).into_router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let unreadable = Some(serde_json::json!("not params"));
+    for path in ["/message:send", "/message:stream"] {
+        let reply = call(addr, "POST", path, unreadable.clone(), &[]).await;
+        assert_eq!(reply.status, 400, "{path}: {}", reply.body);
+    }
+    assert_eq!(
+        *seen.0.lock().unwrap(),
+        ["SendMessage", "SendStreamingMessage"]
+    );
+}

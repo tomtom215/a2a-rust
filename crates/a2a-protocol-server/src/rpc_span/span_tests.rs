@@ -185,6 +185,52 @@ fn a_task_event_records_its_state() {
     );
 }
 
+/// A whole task that ends `Failed` marks the span failed, as a status
+/// update does. The mutation gate found the task's status untested:
+/// dropping it survived.
+#[test]
+fn a_failed_task_event_marks_the_span_failed() {
+    let task: a2a_protocol_types::task::Task = serde_json::from_value(serde_json::json!({
+        "id": "t",
+        "contextId": "c",
+        "status": {"state": "TASK_STATE_FAILED"}
+    }))
+    .unwrap();
+    let fields = executor_fields(&[StreamResponse::Task(task)]);
+    assert_eq!(
+        fields.get("error.type").map(String::as_str),
+        Some("internal")
+    );
+    assert_eq!(
+        fields.get("otel.status_code").map(String::as_str),
+        Some("ERROR")
+    );
+}
+
+/// A turn that ends `Failed` marks the span failed, with the class its
+/// status message carries — or `internal`, for one that carries none — as
+/// `error.type`; a turn that ends otherwise does not.
+#[test]
+fn a_failed_turn_records_its_failure_class_as_the_error_type() {
+    use a2a_protocol_types::failure::{FailureClass, set_class};
+    let mut note = Message::agent("a", vec![Part::text("executor timed out after 1s")]);
+    set_class(&mut note, FailureClass::BudgetExhausted);
+    let classified = executor_fields(&[status(TaskState::Failed, Some(note))]);
+    assert_eq!(
+        classified.get("error.type").map(String::as_str),
+        Some("budget-exhausted")
+    );
+    assert_eq!(
+        classified.get("otel.status_code").map(String::as_str),
+        Some("ERROR")
+    );
+    let bare = executor_fields(&[status(TaskState::Failed, None)]);
+    assert_eq!(bare.get("error.type").map(String::as_str), Some("internal"));
+    let completed = executor_fields(&[status(TaskState::Completed, None)]);
+    assert!(!completed.contains_key("error.type"), "{completed:?}");
+    assert!(!completed.contains_key("otel.status_code"), "{completed:?}");
+}
+
 /// The output budget is 64 KiB: two thousand bytes fit whole.
 #[test]
 fn output_well_under_the_limit_is_kept_whole() {

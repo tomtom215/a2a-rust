@@ -545,27 +545,21 @@ impl SyncCollector {
                     let prev_metadata = existing.metadata.clone();
 
                     let appended = update.artifact.parts.len();
-                    existing.parts.extend(update.artifact.parts.iter().cloned());
-                    if let Some(ref new_meta) = update.artifact.metadata {
-                        let meta = existing.metadata.get_or_insert_with(|| {
-                            serde_json::Value::Object(serde_json::Map::new())
-                        });
-                        if let (Some(existing_map), Some(new_map)) =
-                            (meta.as_object_mut(), new_meta.as_object())
-                        {
-                            for (k, v) in new_map {
-                                existing_map.insert(k.clone(), v.clone());
-                            }
-                        }
-                    }
+                    let metadata_changed = super::merge_append(existing, &update.artifact);
                     // A delta, not `save`: `save` clones the whole task, so each
                     // chunk of a streamed artifact cost more than the last —
                     // the background processor has saved deltas since 0.13.
+                    // Unless the metadata changed, which the delta does not carry.
                     let delta = crate::store::ArtifactDelta::AppendedParts {
                         index,
                         count: appended,
                     };
-                    if let Err(e) = self.task_store.save_artifact_delta(last_task, delta).await {
+                    let written = if metadata_changed {
+                        self.task_store.save(last_task).await
+                    } else {
+                        self.task_store.save_artifact_delta(last_task, delta).await
+                    };
+                    if let Err(e) = written {
                         revert_artifact_append(
                             last_task,
                             &update.artifact.id,

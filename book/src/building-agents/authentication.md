@@ -442,6 +442,21 @@ before sending it, with `ClientError::InsecureTransport` naming the header and
 the endpoint's origin. `http://localhost` and other loopback addresses are
 allowed either way.
 
+**Declared schemes.** Spec §3.1.11 says the client MUST authenticate with one
+of the schemes the agent card declares. A client built with
+`ClientBuilder::from_card` checks each call, after its interceptors run, that
+it meets at least one of the card's `securityRequirements`: `Authorization`
+with the declared HTTP scheme (compared without case; `Bearer` for OAuth 2.0
+and OpenID Connect), or the header, query parameter or cookie an API-key
+scheme names, whichever interceptor wrote it. A mutual-TLS scheme counts as
+met, since the certificate is not in the request. By default a mismatch is
+sent and logged once per client;
+`.with_credential_preflight(CredentialPreflight::Refuse)` refuses it before
+sending, with `ClientError::InvalidAuthScheme` naming the card's schemes and
+the request's header, cookie and parameter names, never their values, and
+`CredentialPreflight::Off` turns the check off. A client built for a bare
+endpoint has no card and checks nothing.
+
 ### OAuth 2.0 client credentials
 
 `OAuth2ClientCredentials` runs the RFC 6749 §4.4 grant, caches the token,

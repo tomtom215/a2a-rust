@@ -8,10 +8,10 @@
 //!
 //! `genai` supports OpenAI, Anthropic, Google Gemini, Ollama, Groq, and
 //! Cohere out of the box. Any model name that doesn't match a hosted
-//! provider's prefix routes to the Ollama adapter at
-//! `http://localhost:11434/v1/`, which is also what llama.cpp's
-//! `llama-server` speaks — so this example runs fully local with no API
-//! key (see the README for a verified walkthrough).
+//! provider's prefix goes to the OpenAI-compatible API at
+//! `http://localhost:11434/v1/` (`local_model`), which llama.cpp's
+//! `llama-server`, vLLM and Ollama all serve — so this example runs fully
+//! local with no API key (see the README for a verified walkthrough).
 //!
 //! # Setup
 //!
@@ -43,7 +43,9 @@ use std::sync::Arc;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
+mod local_model;
 mod surface;
+mod telemetry;
 
 #[cfg(test)]
 mod tests;
@@ -75,21 +77,22 @@ struct GenaiAgentExecutor {
 }
 
 impl GenaiAgentExecutor {
-    fn new(model: impl Into<String>) -> Self {
-        Self {
-            client: genai::Client::default(),
+    /// Fails only when genai cannot build its HTTP client.
+    fn new(model: impl Into<String>) -> genai::Result<Self> {
+        Ok(Self {
+            client: local_model::client()?,
             model: model.into(),
             fallback_on_error: false,
-        }
+        })
     }
 
     /// Same agent, but an unreachable model yields a labelled mechanical
     /// reply instead of failing the task.
-    fn with_fallback(model: impl Into<String>) -> Self {
-        Self {
+    fn with_fallback(model: impl Into<String>) -> genai::Result<Self> {
+        Ok(Self {
             fallback_on_error: true,
-            ..Self::new(model)
-        }
+            ..Self::new(model)?
+        })
     }
 }
 
@@ -272,6 +275,7 @@ fn env_flag(name: &str) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let telemetry = telemetry::init();
     let model = std::env::var("GENAI_MODEL").unwrap_or_else(|_| "qwen3.5:0.8b".to_string());
 
     println!("Genai + A2A Agent Example");
@@ -313,9 +317,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // e.g. under sustained load — without a live model in the loop.
         let allow_fallback = env_flag("A2A_ALLOW_FALLBACK");
         let executor = if allow_fallback {
-            GenaiAgentExecutor::with_fallback(&model)
+            GenaiAgentExecutor::with_fallback(&model)?
         } else {
-            GenaiAgentExecutor::new(&model)
+            GenaiAgentExecutor::new(&model)?
         };
 
         let mut builder = RequestHandlerBuilder::new(executor)
@@ -446,6 +450,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(c) => clients.push((*binding, c)),
             Err(e) => {
                 eprintln!("could not build a {} client: {e}", binding.label());
+                drop(telemetry);
                 std::process::exit(1);
             }
         }
@@ -472,6 +477,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let code = outcome.exit_code();
     if code != 0 {
+        drop(telemetry);
         std::process::exit(code);
     }
     Ok(())

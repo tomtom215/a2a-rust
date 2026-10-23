@@ -9,6 +9,7 @@ pub mod applied;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
 pub mod halt;
+pub mod holds;
 pub mod lease;
 pub mod retention;
 pub mod task_store;
@@ -50,7 +51,8 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
-pub use halt::{HaltStore, InMemoryHaltStore, StoredHalt};
+pub use halt::{HaltSignal, HaltStore, InMemoryHaltStore, StoredHalt};
+pub use holds::{DEFAULT_MAX_HELD_EVENTS_FACTOR, EventHold, EventHolds};
 pub use lease::{InMemoryLeaseStore, LeaseStore};
 pub use retention::{PurgeReport, RetentionPolicy, terminal_states};
 // `IdempotencyClaim` is the return type of a `TaskStore` method, so an

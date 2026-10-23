@@ -49,8 +49,8 @@ let telemetry = Telemetry::builder()
     .build()?;
 tracing_subscriber::registry().with(telemetry.layer()).init();
 
-// Hand the handler builder `.with_metrics(telemetry.otel_metrics())`, serve,
-// and on the way out:
+// Build handlers after this: one given no `with_metrics` records to the meter
+// provider it installed. Serve, and on the way out:
 telemetry.shutdown()?; // or let it drop: both flush
 # Ok(())
 # }
@@ -94,7 +94,11 @@ appear and your dashboard is still empty, the problem is the exporter, not the
 SDK — which is the distinction this two-minute step buys you.
 
 With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
-`Telemetry` exports it over OTLP.
+`Telemetry` exports it over OTLP. `otel` is a default feature, and with it a
+handler given no `with_metrics` records through `OtelMetrics` on the global
+meter provider as it stands when `RequestHandlerBuilder::new` runs: install
+the provider first (`Telemetry` does) and nothing else is needed. Before 0.15
+such a handler recorded nothing until given `with_metrics`.
 
 ## Exporting with `Telemetry`
 
@@ -214,13 +218,49 @@ instrument, with their advisory buckets (5 ms to 10 s) and attributes:
 serve; `rpc.status_code`; and, only when the call failed, `error.type`. Both
 are the status the binding answered with — the JSON-RPC error code (`-32001`),
 the HTTP status (`404`), or the gRPC status name (`NOT_FOUND`; gRPC and
-SLIMRPC, which uses gRPC's status codes, also report `OK`) — or `cancelled` for a call whose peer went away first. It
-records calls the handler never sees: on JSON-RPC, a body that is not a
-request (no `rpc.method`), an unknown method, a batch over the limit; on
-HTTP+JSON, a request refused on its body or parameters, under the route's
-method. For a streaming method it times the call up to the stream being
-established, not the stream.
-The same values reach a custom `Metrics` as `on_rpc_call`.
+SLIMRPC, which uses gRPC's status codes, also report `OK`) — or `cancelled` for a call whose peer went away first.
+
+**What counts as failed** is each binding's semantic conventions' rule, so
+`error.type` marks a server failure rather than every answer that was not a
+success: every JSON-RPC error code ("All JSON RPC error codes SHOULD be
+considered errors"); on HTTP+JSON a 5xx but not a 4xx (the HTTP conventions
+leave a server span's status unset for a 4xx); on gRPC only `UNKNOWN`,
+`DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE` and
+`DATA_LOSS`. A `GetTask` for an unknown task is `rpc.status_code` `NOT_FOUND`
+(or `404`) with no `error.type`. Before 0.15 every non-success status set it;
+a dashboard counting failures from `error.type` on HTTP+JSON or gRPC now sees
+only server failures, and one that wants the 4xx class reads
+`rpc.status_code`. A binding outside this crate opts into gRPC's rule with
+`CustomBinding::with_grpc_server_errors`.
+
+It
+records calls the handler never sees, with the status they were answered:
+on JSON-RPC, a body that is not a request (no `rpc.method`), an unknown
+method, a batch over the limit; on HTTP+JSON and the axum router, a request
+refused before routing — an unsupported or missing `A2A-Version`, a content
+type, a path no route serves (no `rpc.method`) — and one refused on its body
+or parameters, under the route's method; on gRPC, a call refused for its
+metadata or a request that does not convert, under its method. A streaming
+call — `SendStreamingMessage` or `SubscribeToTask`, over SSE, gRPC or
+WebSocket — lasts until its stream ends, as the conventions ask ("the span
+SHOULD cover the full lifetime of the request and/or response streams"): it
+is recorded then, with the error the stream's last frame carried, or
+`cancelled` if the client went away first. Before 0.15 it was timed only up
+to the stream being established, and recorded as a success whatever the
+stream did next. The same values reach a custom `Metrics` as `on_rpc_call`.
+
+**The client measures its calls too:** `rpc.client.call.duration`, the
+conventions' client histogram (unit `s`, the same buckets), with
+`rpc.system.name`, `rpc.method`, `rpc.status_code` as the server records it
+(the JSON-RPC code, the HTTP status, or the gRPC status name, `OK` on a gRPC
+success), `error.type` for a failed call (that status, or the failure's
+class — `timeout`, `transport` — when the agent never answered), and
+`server.address` and `server.port`. A streaming call is measured until the
+caller drops its stream, as its span is. It records through the global
+meter provider — the one `Telemetry` installs — as it stood when the client
+was built, under the meter `a2a.client`; a call on a custom transport that
+names no `rpc.system.name` is not recorded, since that attribute is
+required.
 
 `a2a.server.request.duration` times the same calls by A2A method, with the
 same buckets. Before 0.15 it was `a2a.server.latency`, deprecated in 0.14.0
@@ -316,15 +356,21 @@ Stated so a green dashboard is not mistaken for a complete one:
 
 * **The executor has a span, not a metric.** Its time is the
   `invoke_agent` span's duration; no histogram records it.
-* **Task-store operations have no latency instrument.** `persistence_errors`
-  counts failures, not slowness — a store degrading toward a timeout shows up
-  in request latency first, without saying it was the store.
+* **Task-store operations have no latency instrument and no span.**
+  `persistence_errors` counts failures, not slowness — a store degrading
+  toward a timeout shows up in request latency first, without saying it was
+  the store. The SQLite and PostgreSQL stores open no `db.*` client span:
+  sqlx 0.8 reports each statement as a `tracing` *event*, not a span
+  (target `sqlx::query`, with the SQL as `db.statement` — placeholders, not
+  the bound values — `rows_affected` and `elapsed_secs`), at `DEBUG`, or at
+  `WARN` when it takes a second or more. Under `Telemetry` those events are
+  log records in the trace of the call or executor that ran them; the slow
+  ones at the default `INFO` log level, every one with
+  `TelemetryBuilder::with_log_level(Level::DEBUG)`.
 * **There is no per-tenant metric dimension.** A tenant hitting
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.
   (The call's span does carry `a2a.tenant`.)
-* **The client records spans, not metrics.** There is no
-  `rpc.client.call.duration`; the client span's duration is the measure.
 * **Model calls are not seen.** The SDK does not know which model your
   executor calls. Instrument the model client itself — its spans nest under
   `invoke_agent` — or use a framework that reports `chat` spans.
@@ -347,12 +393,17 @@ context.
 With the `tracing` feature — on by default — every inbound call, on every
 binding, runs in one span of kind `SERVER`, named for the method as the gRPC
 service spells it: `lf.a2a.v1.A2AService/SendMessage`. It carries the
-semantic conventions' `rpc.system.name`, `rpc.method` and, when the call
-fails, `rpc.status_code` and `error.type` with the span's status set to
-error — the same values as `rpc.server.call.duration` above. A method the
+semantic conventions' `rpc.system.name`, `rpc.method`, `rpc.status_code`
+when the binding sent one, and, when the call failed by its binding's rule
+above, `error.type` with the span's status set to error — the same values as
+`rpc.server.call.duration`. A method the
 server does not serve is named for its binding (`jsonrpc`), with
 `rpc.method` `_OTHER` and the name the peer sent, cut to 128 bytes, as
-`rpc.method_original`.
+`rpc.method_original`; the v0.3 `message/stream` is one of them. A JSON-RPC
+span, over HTTP or WebSocket, also carries `jsonrpc.protocol.version`
+(`2.0`), the method as sent (`SendMessage`) as `rpc.method_original`, and the
+request's id as `jsonrpc.request.id` (not for a notification or a `null` id),
+as `docs/rpc/json-rpc.md` asks.
 
 It also carries the attributes of the **draft OpenTelemetry A2A
 conventions** — `open-telemetry/semantic-conventions-genai` pull request
@@ -394,7 +445,23 @@ backend keys on: Langfuse shows the run as an agent and groups a context's
 runs into one session. If an agent framework inside your executor reports
 its own `invoke_agent` span, turn this one off with
 `RequestHandlerBuilder::with_agent_span_conventions(false)`; the span is then
-`a2a.execute`, as in 0.14.
+`a2a.execute`, as in 0.14. A run that ends `Failed` — the executor's own
+status, or the one written for an executor that returned `Err` or ran past
+its timeout — sets the span's status to error and its `error.type` to the
+failure class (`internal`, `invalid-request`, `transient`, `policy-refusal`,
+or `budget-exhausted`, which a timeout is).
+
+**Each push-notification POST is an HTTP `CLIENT` span**, named `POST`, a
+child of `a2a.deliver_push` or `a2a.process_events`, with
+`http.request.method`, `server.address`, `server.port`,
+`http.response.status_code`, `http.request.resend_count` on a retry, and
+`error.type` — the status, `timeout` or `transport` — for a failed attempt.
+Its `url.full` is the webhook's origin and `/REDACTED`, since a webhook's
+path or query is often its secret. With the `otel` feature the POST carries
+that span as its `traceparent` (and `tracestate`), so a receiver that
+continues the trace is a child of a span your backend has; when no span is
+recorded — no OpenTelemetry layer, or `InboundTracePolicy::Drop` — none is
+sent.
 
 **Message content is opt-in.** With
 `RequestHandlerBuilder::with_span_content_capture(true)`, the executor's span
@@ -403,19 +470,26 @@ replies and artifacts as `gen_ai.output.messages`, in the conventions' JSON
 message format. That copies what users and agents say into your traces and
 wherever they are exported, which is why it is off. Each attribute holds at
 most 64 KiB of text and data, cut with a marker beyond that; raw file bytes
-are never recorded, only their media type and length.
+are never recorded, only their media type and length. The finish reason is
+not content: a completed turn records `gen_ai.response.finish_reasons`
+`["stop"]` and a failed one `["error"]` either way, as a string array (it was
+a `finish_reason` inside the output message before 0.15, which the
+conventions deprecate).
 
 **Each call through the client is a `CLIENT` span** with the same name as the
-server span it causes, the same A2A attributes as far as the request and
+server span it causes (for a method outside the A2A service, `_OTHER`, it is
+named for its `rpc.system.name` and carries `rpc.method_original`), the same A2A attributes as far as the request and
 response show them, the agent's name, description and version when the
 client was built from its card, and `server.address` and `server.port`. A
 streaming call's span covers consuming the stream, and is exported when the
-stream is dropped. As the draft conventions require of A2A instrumentation,
+stream is dropped; it carries `rpc.status_code` as the client's metric does,
+and the error a stream ended on. As the draft conventions require of A2A instrumentation,
 the client reports no `invoke_agent` span of its own.
 
 A span is exported when it closes, and `tracing` holds a span open until its
 children close, so a call's span reaches your backend once the work it
-spawned has finished — with its own end time, the call's, not theirs. Every
+spawned has finished — with its own end time, the call's, not theirs; a
+streaming call's is its stream's. Every
 attribute is recorded once: `tracing-opentelemetry` 0.34.0 exports a field
 recorded twice as two attributes with one key, and the SDK's observability
 gate fails on any span that carries one.
@@ -502,7 +576,11 @@ it carries headers only on the HTTP upgrade, and a `traceparent` fixed there
 would report every request on the connection as one span, which W3C §3.4
 forbids. The interceptor is silently ineffective on an established WebSocket
 connection; the transport warns once per connection when it drops one. Send
-traced calls over one of the other three.
+traced calls over one of the other three. On the server, for the same reason,
+a WebSocket call's span is not a child of the upgrade request's
+`traceparent`: each call is a root span of its own, with a span link to the
+upgrade's trace (under `InboundTracePolicy::Continue`). Before 0.15 every call
+on a connection was recorded as a child of the operation that opened it.
 
 **Trusting the caller's trace.** The inbound `traceparent` is read while the
 `CallContext` is built, which is before your interceptors run — so on a public

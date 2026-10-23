@@ -101,18 +101,18 @@ impl Place<'_> {
     }
 }
 
-/// Seals and opens parts.
-pub(super) struct Sealer<'a> {
-    pub(super) cipher: &'a dyn ContentCipher,
+/// Seals and opens parts. Re-exported to the crate for `crate::fuzzing`.
+pub struct Sealer<'a> {
+    pub cipher: &'a dyn ContentCipher,
     /// The tenant-aware stores' partition key the request runs in.
-    pub(super) partition: String,
+    pub partition: String,
     /// Read a part that is not sealed as it is written, rather than refuse
     /// it: for data stored before encryption was turned on.
-    pub(super) accept_unsealed: bool,
+    pub accept_unsealed: bool,
 }
 
 impl Sealer<'_> {
-    async fn seal_part(&self, part: &Part, context: &[u8]) -> A2aResult<Part> {
+    pub async fn seal_part(&self, part: &Part, context: &[u8]) -> A2aResult<Part> {
         let plaintext = serde_json::to_vec(part).map_err(|e| A2aError::internal(e.to_string()))?;
         let sealed = self.cipher.seal(plaintext, context).await?;
         let value = serde_json::json!({
@@ -126,7 +126,7 @@ impl Sealer<'_> {
         })
     }
 
-    async fn open_part(&self, part: Part, context: &[u8]) -> A2aResult<Part> {
+    pub async fn open_part(&self, part: Part, context: &[u8]) -> A2aResult<Part> {
         let refused = || A2aError::internal("a stored part is not in the sealed form");
         if part.media_type.as_deref() != Some(SEALED_MEDIA_TYPE) {
             if self.accept_unsealed {

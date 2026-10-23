@@ -118,6 +118,7 @@ pub mod artifact;
 #[cfg(feature = "audit")]
 pub mod audit;
 pub mod auth_rejection;
+pub mod budget;
 pub mod error;
 pub mod events;
 pub mod extensions;

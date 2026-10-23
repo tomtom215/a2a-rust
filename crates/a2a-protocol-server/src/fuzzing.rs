@@ -10,8 +10,17 @@
 //! each unchanged. It exists under `cfg(fuzzing)`, which `cargo fuzz` sets,
 //! and under `cfg(test)`, so the forwarding itself is tested; it is in no
 //! build an adopter makes and in no published API. Audit escape class 8.
+//! With `encryption`, the readers of what is sealed at rest as well, whose
+//! input is whatever the store holds (`fuzzing_sealed.rs`).
 
 use std::collections::HashMap;
+
+// The readers of sealed values at rest; see that module's docs.
+#[cfg(feature = "encryption")]
+#[path = "fuzzing_sealed.rs"]
+mod sealed;
+#[cfg(feature = "encryption")]
+pub use sealed::*;
 
 /// The HS256 secret [`jwt_validate`] verifies against: 32 bytes, the
 /// shortest `JwtValidator` accepts (RFC 7518 §3.2).

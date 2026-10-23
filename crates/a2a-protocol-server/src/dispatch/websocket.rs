@@ -54,14 +54,18 @@ use a2a_protocol_types::jsonrpc::{
 
 use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
-use crate::streaming::EventQueueReader;
+use crate::rpc_span::StreamEnd;
 
 mod card;
 mod io;
 mod origin;
+mod params;
 mod shutdown;
+mod stream;
 
 use io::WsIo;
+use params::{Unread, parse_params};
+use stream::stream_events;
 
 /// Maximum size of an incoming WebSocket message (and frame), in bytes.
 ///
@@ -807,15 +811,29 @@ impl WebSocketDispatcher {
 
 /// The upgrade request's header fields, read as the HTTP bindings read them
 /// ([`header_fields`](super::header_fields)), plus the request path (under
-/// `":path"`), less `Last-Event-ID`.
+/// `":path"`), less `Last-Event-ID`, and with its trace context set aside.
 ///
 /// This binding has no resumption: a resubscribe starts from the task's
 /// snapshot. `Last-Event-ID` is the HTTP binding's resumption cursor, and
 /// these headers reach every call on the connection, so until 2026-10-14 one
 /// on the upgrade made every `SubscribeToTask` replay the log from it.
+///
+/// For the same reason `traceparent` and `tracestate` move to
+/// [`UPGRADE_TRACEPARENT`] and [`UPGRADE_TRACESTATE`]: read as each call's,
+/// they made every call on the connection a child of the operation that
+/// opened it. Each call's span links to that trace instead (`ws_span`).
 fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
+    use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER};
     let mut map = super::header_fields(req.headers());
     map.remove("last-event-id");
+    for (header, kept) in [
+        (TRACEPARENT_HEADER, UPGRADE_TRACEPARENT),
+        (TRACESTATE_HEADER, UPGRADE_TRACESTATE),
+    ] {
+        if let Some(value) = map.remove(header) {
+            map.insert(kept.to_owned(), value);
+        }
+    }
     // The pseudo-header name cannot collide with a real HTTP/1 header (colons
     // are not valid in field names), and it is what
     // `PathSegmentTenantResolver` documents reading.
@@ -1022,7 +1040,7 @@ async fn process_ws_message(
         "GetTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::TaskQueryParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::TaskQueryParams = p.read().await?;
                     h.on_get_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1034,7 +1052,7 @@ async fn process_ws_message(
         "ListTasks" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::ListTasksParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::ListTasksParams = p.read().await?;
                     h.on_list_tasks(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1046,7 +1064,7 @@ async fn process_ws_message(
         "CancelTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::CancelTaskParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::CancelTaskParams = p.read().await?;
                     h.on_cancel_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1057,15 +1075,16 @@ async fn process_ws_message(
         }
         "SubscribeToTask" => {
             let call = async {
-                let params = parse_params::<a2a_protocol_types::params::TaskIdParams>(
-                    rpc_req.params.as_ref(),
-                )?;
+                let params = parse_params(handler, &rpc_req, headers).await?;
                 handler.on_resubscribe(params, Some(headers)).await
             };
-            match ws_span(handler, &rpc_req, headers).run(call).await {
-                Ok(reader) => {
-                    stream_events(&writer, reader, id).await;
-                }
+            // The stream claims the call, which then ends with it.
+            let claim = |out: Result<_, _>| out.map(|r| (r, StreamEnd::claim()));
+            match ws_span(handler, &rpc_req, headers)
+                .run_with(call, claim)
+                .await
+            {
+                Ok((reader, end)) => stream_events(&writer, reader, id, end).await,
                 Err(e) => {
                     send_error(&writer, id, &e).await;
                 }
@@ -1075,7 +1094,7 @@ async fn process_ws_message(
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::push::TaskPushNotificationConfig =
-                        ws_params(&p)?;
+                        p.read().await?;
                     h.on_set_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1087,7 +1106,7 @@ async fn process_ws_message(
         "GetTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::GetPushConfigParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::GetPushConfigParams = p.read().await?;
                     h.on_get_push_config(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -1099,7 +1118,8 @@ async fn process_ws_message(
         "ListTaskPushNotificationConfigs" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::ListPushConfigsParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::ListPushConfigsParams =
+                        p.read().await?;
                     h.on_list_push_configs_page(&params, Some(hdr))
                         .await
                         .map(|resp| serde_json::to_value(&resp).unwrap_or_default())
@@ -1111,7 +1131,8 @@ async fn process_ws_message(
         "DeleteTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, reply, |h, p, hdr| {
                 Box::pin(async move {
-                    let params: a2a_protocol_types::params::DeletePushConfigParams = ws_params(&p)?;
+                    let params: a2a_protocol_types::params::DeletePushConfigParams =
+                        p.read().await?;
                     h.on_delete_push_config(params, Some(hdr))
                         .await
                         .map(|()| serde_json::json!({}))
@@ -1142,17 +1163,25 @@ async fn process_ws_message(
     }
 }
 
-/// The span one WebSocket call runs in: JSON-RPC frames, so `jsonrpc`.
+/// Where the upgrade request's `traceparent` and `tracestate` are kept
+/// ([`extract_upgrade_headers`]): pseudo-header names, like `":path"`, which
+/// no real header can collide with.
+const UPGRADE_TRACEPARENT: &str = ":upgrade-traceparent";
+const UPGRADE_TRACESTATE: &str = ":upgrade-tracestate";
+
+/// The span one WebSocket call runs in: JSON-RPC frames, so `jsonrpc`. A
+/// frame carries no trace context, so the span is no remote child; it links
+/// to the trace the upgrade request carried, if any (`rpc_span/link.rs`).
 fn ws_span(
     handler: &RequestHandler,
     rpc_req: &JsonRpcRequest,
     headers: &HashMap<String, String>,
 ) -> crate::rpc_span::ServerSpan {
-    crate::rpc_span::ServerSpan::open(
+    crate::rpc_span::ServerSpan::open_jsonrpc(handler, rpc_req, Some(headers)).with_link(
         handler,
-        crate::rpc_span::RpcSystem::JsonRpc,
-        &rpc_req.method,
-        Some(headers),
+        headers,
+        UPGRADE_TRACEPARENT,
+        UPGRADE_TRACESTATE,
     )
 }
 
@@ -1166,13 +1195,18 @@ async fn dispatch_send_message(
     writer: Option<&WsSink>,
 ) {
     let call = async {
-        let params =
-            parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req.params.as_ref())?;
+        let params = parse_params(handler, rpc_req, headers).await?;
         handler
             .on_send_message(params, streaming, Some(headers))
             .await
     };
-    let outcome = ws_span(handler, rpc_req, headers).run(call).await;
+    // A stream claims the call, which then ends with it.
+    let (outcome, end) = ws_span(handler, rpc_req, headers)
+        .run_with(call, |out| {
+            let streams = matches!(out, Ok(SendMessageResult::Stream(_)));
+            (out, streams.then(StreamEnd::claim).flatten())
+        })
+        .await;
     let Some(writer) = writer else { return };
     match outcome {
         Ok(SendMessageResult::Response(resp)) => {
@@ -1184,74 +1218,17 @@ async fn dispatch_send_message(
             };
             send_json(writer, &success).await;
         }
-        Ok(SendMessageResult::Stream(reader)) => {
-            stream_events(writer, reader, id).await;
-        }
+        Ok(SendMessageResult::Stream(reader)) => stream_events(writer, reader, id, end).await,
         Err(e) => {
             send_error(writer, id, &e).await;
         }
     }
 }
 
-/// Streams events from an event queue reader over WebSocket as individual frames.
-async fn stream_events(
-    writer: &WsSink,
-    mut reader: crate::streaming::InMemoryQueueReader,
-    id: JsonRpcId,
-) {
-    while let Some(event) = reader.read().await {
-        match event.map(|e| e.event) {
-            Ok(stream_resp) => {
-                // Wrap each event in a JSON-RPC success envelope so the client
-                // can route it by `id` and deserialize as `JsonRpcResponse<StreamResponse>`.
-                //
-                // No log position on the wire here: resumption is the SSE
-                // binding's `id:`/`Last-Event-ID` pair, and inventing a
-                // WebSocket spelling for it would be a protocol extension
-                // this server made up.
-                let envelope = JsonRpcSuccessResponse {
-                    jsonrpc: JsonRpcVersion,
-                    id: id.clone(),
-                    result: stream_resp,
-                };
-                let json = serde_json::to_string(&envelope).unwrap_or_default();
-                let mut w = writer.sink.lock().await;
-                if w.send(WsMessage::Text(json.into())).await.is_err() {
-                    return; // Client disconnected
-                }
-                drop(w);
-                // This is the write that keeps a long subscription alive under
-                // an idle timeout: the consumer may say nothing for hours.
-                writer.activity.touch();
-            }
-            Err(e) => {
-                // The error's own code and details, as the SSE binding sends
-                // them. It was rewritten to -32000 with `e.to_string()`,
-                // which lost the A2A code and the `streamLagged` marker
-                // (§12.4: preserve error information).
-                let err_resp = JsonRpcErrorResponse::new(
-                    id.clone(),
-                    crate::streaming::sse::jsonrpc_error_from(&e),
-                );
-                send_json(writer, &err_resp).await;
-                return;
-            }
-        }
-    }
-
-    // Stream complete — send final success response.
-    let success = JsonRpcSuccessResponse {
-        jsonrpc: JsonRpcVersion,
-        id,
-        result: serde_json::json!({"status": "stream_complete"}),
-    };
-    send_json(writer, &success).await;
-}
-
 /// Generic dispatcher for simple (non-streaming) methods.
 async fn dispatch_simple<'a, F>(
     handler: &'a RequestHandler,
-    rpc_req: &JsonRpcRequest,
+    rpc_req: &'a JsonRpcRequest,
     id: JsonRpcId,
     headers: &'a HashMap<String, String>,
     writer: Option<&WsSink>,
@@ -1259,7 +1236,7 @@ async fn dispatch_simple<'a, F>(
 ) where
     F: FnOnce(
         &'a RequestHandler,
-        serde_json::Value,
+        Unread<'a>,
         &'a HashMap<String, String>,
     ) -> std::pin::Pin<
         Box<
@@ -1270,7 +1247,7 @@ async fn dispatch_simple<'a, F>(
         >,
     >,
 {
-    let params = rpc_req.params.clone().unwrap_or_else(empty_params);
+    let params = Unread::new(handler, rpc_req, headers);
     let outcome = ws_span(handler, rpc_req, headers)
         .run(f(handler, params, headers))
         .await;
@@ -1367,55 +1344,9 @@ fn busy_response(text: &str) -> JsonRpcErrorResponse {
     )
 }
 
-/// Parses one method's params; a shape error is `InvalidParams` with a
-/// `google.rpc.BadRequest` naming the field (§9.5), as on the HTTP binding.
-fn ws_params<T: serde::de::DeserializeOwned>(
-    p: &serde_json::Value,
-) -> Result<T, a2a_protocol_types::error::A2aError> {
-    T::deserialize(p)
-        .map_err(|e| crate::streaming::sse::invalid_params_for::<T>(p, &e).to_a2a_error())
-}
-
-/// Parses params from an optional JSON value, absent read as `{}` (JSON-RPC
-/// 2.0 §4.2: `params` "MAY be omitted"), as over HTTP.
-fn parse_params<T: serde::de::DeserializeOwned>(
-    params: Option<&serde_json::Value>,
-) -> Result<T, ServerError> {
-    let value = params.cloned().unwrap_or_else(empty_params);
-    T::deserialize(&value).map_err(|e| crate::streaming::sse::invalid_params_for::<T>(&value, &e))
-}
-
-/// The `params` an omitted member stands for: `{}`.
-fn empty_params() -> serde_json::Value {
-    serde_json::Value::Object(serde_json::Map::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_params_with_valid_json() {
-        let value = Some(serde_json::json!({"id": "task-1"}));
-        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> =
-            parse_params(value.as_ref());
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().id, "task-1");
-    }
-
-    #[test]
-    fn parse_params_with_none_returns_error() {
-        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> = parse_params(None);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_params_with_wrong_type_returns_error() {
-        let value = Some(serde_json::json!("not an object"));
-        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> =
-            parse_params(value.as_ref());
-        assert!(result.is_err());
-    }
 
     // WsError Display
     #[test]
@@ -3049,5 +2980,24 @@ mod tests {
                 .contains("binary"),
             "error should explain binary frames are unsupported: {v}"
         );
+    }
+
+    /// The upgrade's trace context is set aside for the link, not read as
+    /// every call's own (`rpc_span/link.rs`).
+    #[test]
+    fn upgrade_trace_context_is_kept_aside() {
+        let req = WsUpgradeRequest::builder()
+            .uri("/")
+            .header(
+                "traceparent",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            )
+            .header("tracestate", "vendor=1")
+            .body(())
+            .unwrap();
+        let headers = extract_upgrade_headers(&req);
+        assert!(!headers.contains_key("traceparent") && !headers.contains_key("tracestate"));
+        assert_eq!(headers[UPGRADE_TRACEPARENT], req.headers()["traceparent"]);
+        assert_eq!(headers[UPGRADE_TRACESTATE], "vendor=1");
     }
 }

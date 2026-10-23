@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **Every agent card declares the budget extension** (server; ADR 0023).
+  `https://a2a-rust.com/extensions/budget/v1` joins the failure taxonomy
+  as an extension the builder adds to every card, never as required. A
+  card that carries a signature but does not declare it is refused at
+  `build()`, as for any extension the builder would have to add to signed
+  bytes. Migration: declare it on the card, then sign the result.
+
+- **`TenantLimits::max_stored_tasks` is removed** (server), with
+  `TenantLimits::with_max_stored_tasks` and
+  `TenantLimitsBuilder::max_stored_tasks`. Deprecated since 0.10.0 and
+  0.12.0 as "never enforced": the field sat on `PerTenantConfig`, which a
+  store never sees, so nothing read it. Migration: give the tenant its own
+  `TaskStoreConfig::max_capacity` with
+  `TenantAwareInMemoryTaskStore::with_tenant_override`. The deprecations
+  made in 0.15.0 stay until 0.16.
+
 - **`TaskStore::save_appending_history` takes a `HistoryLimit`, not a
   message count** (server; release audit F2). The limit bounds bytes as well
   as messages. A store that overrides the method trims with
@@ -214,6 +230,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A quorum on the approval gate: `ApprovalGate::with_quorum(n)`** (server;
+  EU AI Act Art. 14(5), control map row AIA-14-5, now `supported`). The gate
+  waits for `n` distinct allowed approvers, told apart by authenticated
+  identity, to approve the same pending request and digest before the
+  decision reaches the executor. Until then each approval is recorded on the
+  task's status message under `QUORUM_METADATA_KEY`
+  (`a2a-rust.com/approval-quorum`), the approver is answered with the task
+  still `input-required`, and the executor does not run. An approver
+  approving twice counts once, the requester is refused as before, a decision
+  on another digest is refused and not counted, and a deny from any approver
+  reaches the executor at once. `VerifiedApproval` gains `approvers` (every
+  approver counted) and `required`. Each decision is its own `approval` audit
+  record, which under a quorum also holds `required`, `approvedBy` and
+  `reachedExecutor`. The record lives in the task store, so replicas sharing
+  one count together; two approvals arriving at two replicas at once can
+  overwrite each other's record, leaving the count short (never over) until
+  the approver sends again. `build()` refuses a quorum of `0`, one above the
+  `with_approvers` list, or one above `1` with tasks isolated by caller. The
+  default, `1`, is the gate as it was. The approval extension's wire contract
+  (`approval/v1`: request and decision) is unchanged; the record is new,
+  additive metadata on the status message.
+
+- **`Server` warns when it serves plaintext beyond loopback** (server, spec
+  §7.1: production deployments MUST use encrypted communication). Once, at
+  start, when the listener has no TLS and its address is not loopback,
+  naming `Server::with_tls` or a terminating proxy; a warning, not a
+  refusal, because TLS is often terminated in front. The client has warned
+  about credentials over plaintext since 0.12. Found by the ledger audit of
+  2026-10-20.
+
+- **Tool calling in the SDK: `tool_loop`** (server, feature `tool-loop`,
+  off by default; forwarded as `tool-loop` by the SDK; ADR 0022). Two new
+  open traits, `ToolModel` (one completion turn: preamble, conversation and
+  tool specifications in, text and tool calls out) and `Tool` (name,
+  description, JSON Schema, `read_only`, `call`, given a `ToolInvocation`:
+  the arguments and an idempotency key, HMAC-SHA256 under the loop's
+  secret of the task and message, the tool and its canonical arguments;
+  ADR 0026); `ToolSet`, which refuses a second tool
+  of one name with `DuplicateTool`; `ToolLoop`, which runs turns until the
+  model answers without a call, at most `max_turns` (default 8), sends an
+  unknown tool, arguments that are not a JSON object and
+  `ToolError::Failed` back to the model as that call's result, and runs a
+  reply that is exactly one JSON call to a known tool (bare, fenced or in
+  `<tool_call>` tags) as that call (`with_recover_text_calls`, on by
+  default), and answers a call identical to one that succeeded in the run,
+  to a tool not declared read-only, with the earlier result instead of
+  running it again (`with_idempotency_secret`, `run_scoped`);
+  `ToolLoopExecutor`, which emits `Working`, the `answer`
+  artifact, the `tool-trace` artifact when a tool ran and `Completed`, or
+  `Failed` with failure class `internal` (the provider failed, or
+  `ToolError::Fatal`) or `budget-exhausted` (the turn bound), and stops at
+  the next turn or call when cancelled; and `OpenAiChatModel`, a
+  `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server,
+  vLLM, Ollama) on the push sender's hyper client; `ring`, in the graph
+  already with `tls-rustls`, for the keys. HTTPS needs `tls-rustls` and is refused at construction without it; an
+  optional bearer key; a 120 s turn timeout and an 8 MiB response cap, both
+  settable; a non-2xx answer is `ModelError::Status` with at most 512 bytes
+  of the body; arguments read as a JSON string or an object; extra request
+  fields (`chat_template_kwargs`, `temperature`) through `with_extra_body`.
+  Each turn is a `chat {model}` span and each call an `execute_tool {name}`
+  span, with the `GenAI` conventions' attributes and token usage, inside the
+  executor's `invoke_agent` span; neither records prompt, arguments or
+  results. New example: `examples/tool-loop-agent`, run against
+  llama-server b11751 on Qwen3-1.7B (its README has the results). Tests:
+  `tool_loop::run::tests`, `rpc_span::tool::tests`, `tests/tool_loop/`.
+
+- **Every example, the TCK SUT, the ITK agent and the `a2a` CLI start the
+  SDK's `Telemetry`** (examples, `tck/sut`, `itk`, `tools/a2a-cli`). Each
+  builds it from the standard `OTEL_*` environment as `langfuse-agent` does,
+  keeps the guard for the life of the process, and flushes it before every
+  `std::process::exit`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
+  collector, the process's traces, metrics and logs go there; unset, nothing
+  is built or installed, so a plain `cargo run` needs no collector. Not
+  `hello-agent`, whose point is that the prelude alone says hello, nor
+  `mcp-agent`'s `tool_server`, which runs no A2A code. The CLI now depends on
+  `a2a-protocol-server` (for `Telemetry`, the `otlp` feature) as well as the
+  client.
+- **`rpc.client.call.duration`** (client, `otel`, on by default): the
+  semantic conventions' client histogram, the counterpart of the server's
+  `rpc.server.call.duration` — unit `s`, the same advisory buckets, with
+  `rpc.system.name`, `rpc.method`, `rpc.status_code`, `error.type` on
+  failure, and `server.address` and `server.port`
+  (`docs/rpc/rpc-metrics.md`). A streaming call is measured until its stream
+  is dropped, as its `CLIENT` span is. It records through the global meter
+  provider as it stood when the client was built (the one `Telemetry`
+  installs), under the meter `a2a.client`. The `CLIENT` span gains
+  `rpc.status_code` — the JSON-RPC code, the HTTP status, or the gRPC status
+  name, `OK` on a gRPC or SLIMRPC success — and records the error a stream
+  ended on, which it did not before. Its `error.type` is now that status
+  when the agent answered with one, as the conventions ask ("If a status
+  code is returned and it indicates an error, `error.type` SHOULD be set to
+  that status code"): a failed HTTP+JSON or gRPC call that recorded the
+  JSON-RPC code (`-32001`) records `404` or `NOT_FOUND`; JSON-RPC is
+  unchanged.
+- **`ClientBuilder::with_credential_preflight(CredentialPreflight)`**
+  (client; spec §3.1.11 "The client MUST authenticate the request using one
+  of the schemes declared in the public `AgentCard.securitySchemes` and
+  `AgentCard.security` fields"). A client built from a card keeps the card's
+  security schemes and requirements and checks each call after its
+  interceptors run, where the §13.4 plaintext check runs, so streaming calls
+  and every transport are covered: at least one requirement must be met,
+  each of its schemes by `Authorization` with the declared HTTP scheme (no
+  case), `Bearer` for OAuth 2.0 and OpenID Connect, or the header, query
+  parameter or cookie an API-key scheme names; a mutual-TLS scheme counts as
+  met. `Warn`, the default, sends the call and logs once per client for a
+  call with no credential and once for one with an undeclared credential;
+  `Refuse` returns `ClientError::InvalidAuthScheme` before anything is sent;
+  `Off` does not look. Neither names a credential value. A client built for
+  a bare endpoint, or from a card without `securityRequirements`, checks
+  nothing; fetching the extended card replaces the requirements, as it does
+  the capabilities. Tests: `declared_credentials`,
+  `credential_preflight::tests`.
+
+- **JSON-RPC spans carry `jsonrpc.protocol.version`, `jsonrpc.request.id`
+  and `rpc.method_original`** (server; `docs/rpc/json-rpc.md`). Over HTTP and
+  WebSocket: `jsonrpc.protocol.version` `2.0` (Conditionally Required when
+  not `1.0`), the request's id (not for a notification or a `null` id, which
+  the conventions say not to capture), and the method as sent
+  (`SendMessage`), which differs from the qualified `rpc.method` and so is
+  Conditionally Required. The id and method are cut to 128 bytes.
+- **Push webhooks carry the trace and have a span** (server). Each webhook
+  POST from `HttpPushSender` runs in an HTTP `CLIENT` span named `POST`
+  (`docs/http/http-spans.md`): `http.request.method`, `server.address`,
+  `server.port`, `url.full` (the origin and `/REDACTED`, since a webhook's
+  path or query is often its secret), `http.response.status_code`,
+  `http.request.resend_count` on a retry, and `error.type` with `Error`
+  status for a failed attempt (the status, `timeout` or `transport`). With
+  `otel`, the POST carries that span as `traceparent` and `tracestate`, so a
+  receiver that continues the trace hangs off a span the exporter has; it
+  sent neither before. Nothing is sent when no span is recorded.
 - **The originating principal on delegated calls, by RFC 8693 token
   exchange** (server, client; ADR 0021; OWASP ASI03). `JwtAuthInterceptor`
   reads the `act` chain of a verified token. The caller identity stays its
@@ -226,6 +372,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider (`ExchangeRequest`: subject and actor tokens, audience,
   resource, scopes), so a delegating agent sends a token naming the
   principal instead of its own credential.
+- **Kill-switch conformance** (server, feature `conformance`).
+  `conformance::halt::check_store` grades a `HaltStore` against its
+  contract (replace and remove per scope, scopes that do not collide,
+  another handle reading what was written, pushed writes and cancels when
+  the store pushes); `check_handlers` builds two replicas on it and grades
+  the halt end to end: running tasks stopped on both, new work refused on
+  both, a restarted replica halted, a resume on either lifting it
+  everywhere, and a tenant's halt sparing other tenants (judged once the
+  other replica has read the halt, so a store that widens a tenant's halt
+  to every tenant fails). The in-memory, SQLite and PostgreSQL stores pass. `Report`'s heading now names what it
+  graded (`executor conformance:`, `halt store conformance:`, `kill switch
+  conformance:`).
+- **The server signs what it serves** (server, feature `signing`; ADR
+  0027). `RequestHandlerBuilder::with_content_signer` signs every agent
+  message and artifact on a stream, a push, and in what `SendMessage`,
+  `GetTask`, `ListTasks`, `CancelTask` and `SubscribeToTask` return, over
+  exactly what is sent; content already signed is passed on as it is. The
+  queue writer now refuses an event whose provenance value is malformed.
+  `with_content_keys` verifies each message sent to the agent, refusing one
+  whose signature fails with `InvalidParams`; the executor reads the result
+  from `RequestContext::content_check` (`ContentCheck`), and
+  `require_signed_content` refuses unsigned messages too.
+- **The client verifies what it receives** (client, feature `signing`; ADR
+  0027). `ClientBuilder::with_content_keys` checks every artifact and agent
+  message in streams and in what `send_message`, `get_task`, `list_tasks`
+  and `cancel_task` return; one whose signature fails ends the call or the
+  stream with the new `ClientError::ContentNotVerified`.
+  `require_signed_content` refuses unsigned content too.
+- **Delegation keys its sends** (client; ADR 0026). `Delegation::start`,
+  and so `start_leased` and `start_budgeted`, gives the child's message a
+  fresh idempotency key (64 hex digits from two version-4 UUIDs) when it
+  has none and the agent is known to honour keys; a caller's key is kept.
+  `Delegation::idempotency_key` returns it, and
+  `A2aClient::honours_idempotency` says whether the agent's card advertised
+  the extension (or the builder was told it does).
+- **A production profile that refuses to start** (server; ADR 0025).
+  `Profile::Production` makes `build()` refuse a handler with no
+  authenticating interceptor, no halt store, no lease store or no content
+  signer (ADR 0027; feature `signing`), naming the call that supplies each. `ServeConfig::production()` makes
+  `Server::serve_with_shutdown` return at once, accepting nothing, when it
+  would serve plaintext beyond loopback (unless
+  `with_tls_terminated_in_front()`) or a binding the agent card does not
+  declare; the new `ServeReport::refused` says why. Profiles now combine,
+  and the `profile` module no longer needs the `audit` feature. Defaults
+  are unchanged.
+- **Halts and cancels are pushed to every replica** (server; ADR 0024;
+  EU AI Act Art. 14(4)(e); OWASP ASI10). `HaltStore` gains `signals()` and
+  `publish_cancel`, provided methods whose defaults keep a store polling.
+  `PostgresHaltStore` notifies `a2a_halts` in the transaction of each write
+  and removal, and `a2a_cancels` for a cancel; one listener per store
+  forwards both, and sends `Changed` after a reconnect so nothing missed
+  stays missed. `InMemoryHaltStore` broadcasts the same. The handler's
+  poller reads the store at once on a signal, and fires the token of a task
+  a cancel on another replica names; the poll stays behind the push.
+  `push_tests.rs` sets the interval to an hour and still sees the other
+  replica stop at once; `postgres_pushes_between_replicas` runs two stores
+  on PostgreSQL.
+- **A budget travels down the delegation chain** (types, server, client; ADR 0023;
+  G5 in `docs/swarm-orchestration.md`; OWASP ASI08). A message carries
+  `{"remainingMs": n, "meters": {"tokens": n}}` under `a2a-rust.com/budget`
+  (`a2a_protocol_types::budget::Budget`). Every server honours it, with no
+  switch. Before any work it refuses a malformed budget, or one with no
+  time left, as invalid params. The turn's executor timeout becomes the
+  smaller of the server's and the caller's, and a turn the caller's
+  deadline stops ends `failed`, classed `budget-exhausted`, saying so.
+  `RequestContext::budget()` is the turn's `BudgetHandle`: what is left,
+  `charge` for real spend (lock-free, never refused), and `grant`, which
+  carves a child's budget out of the parent's, reserving each meter so
+  ten children cannot each be given the whole. Each status update carries
+  what is left and spent (`BudgetStatus`). `Delegation::start_budgeted`
+  sends a grant and, when the child settles, charges the parent what the
+  child reported spending on the update that settled it in place of the
+  reservation, and keeps the whole reservation on any other ending; a start
+  the agent refused returns it. `ToolLoop::run_within` (and `ToolLoopExecutor`)
+  charges each reply's reported usage to the `tokens` meter and stops once
+  it is spent. A wire contract test pins the shape
+  (`tests/golden/uri_contracts/budget.json`), and
+  `delegation_budget_tests.rs` runs it two hops deep against real servers.
 - **Leases on delegated tasks: a child whose parent goes quiet stops**
   (types, server, client; ADR 0020; G1-B in `docs/swarm-orchestration.md`;
   OWASP ASI08). The extension `https://a2a-rust.com/extensions/lease/v1`
@@ -990,6 +1214,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behaviour Changes
 
+- **A malformed request without a credential is refused as
+  unauthenticated, on every binding** (server; spec §7.4, §3.3.2;
+  `docs/handoff.md` "Open engineering"). **A caller the interceptor chain
+  does not admit now gets `401` (HTTP+JSON), `UNAUTHENTICATED` (gRPC) or the
+  refusal frame (`-32600` with its `UNAUTHENTICATED` detail, WebSocket)
+  where it got `400`, `INVALID_ARGUMENT` or `-32602` naming the field it got
+  wrong.** HTTP+JSON (`RestDispatcher` and the axum router) read the body,
+  its JSON and its shape, and the query values that must parse
+  (`historyLength`, `ListTasks`' filters, `pageSize`), before the handler
+  saw the call; gRPC converted the request; WebSocket parsed each frame's
+  params. A request the binding cannot read is now admitted first
+  (`RequestHandler::admit_unreadable`, the JSON-RPC fix of the same
+  morning): one the chain refuses gets the refusal with its challenge, and
+  one it admits gets the answer it always got, byte for byte. Likewise
+  `ListTasks`' `pageSize` and `statusTimestampAfter` and
+  `CreateTaskPushNotificationConfig`'s `taskId`, which the handler checked
+  before admission on every binding, JSON-RPC included, are checked after
+  it. Interceptors now see these calls (no task id; `on_complete` `Failed`
+  with the validation error), so a rate limiter counts them and an audit
+  interceptor records them. Still answered before admission, because they
+  refuse a well-formed request alike and say nothing about its fields: the
+  `A2A-Version` check (§3.6.2: the version names the semantics the request
+  is read with), the request media type, the body's size cap (`413`) and
+  read timeout (`408`) (§13.4 asks for size limits), the query-string
+  length cap, routing (`404`/`405`), a gRPC message tonic cannot decode, and
+  a WebSocket frame that is not JSON (`-32700`) or not a request
+  (`-32600`), which names no method to admit it as, as over JSON-RPC. The
+  tenant too: with a `TenantResolver`, a client tenant the resolver
+  disagrees with, or none under `require_resolved_tenant`, was refused
+  `InvalidParams` before admission, telling an unauthenticated caller that
+  strict multi-tenancy was on or which tenant its credential did not map
+  to; a refusal from `resolve_tenant` now goes through the chain first
+  (`handler/tenant_resolution.rs`). Tests: `auth_before_params` (one module
+  per binding, the handler checks over JSON-RPC and HTTP+JSON, and the
+  tenant).
+- **Two names the semantic conventions spell differently** (server and
+  client; checked against `open-telemetry/semantic-conventions@55c98cf` and
+  `semantic-conventions-genai@547934a`). The executor span's finish reason
+  is `gen_ai.response.finish_reasons`, a string array recorded whether
+  content capture is on or not; it was a `finish_reason` member of the
+  captured `gen_ai.output.messages`, which `gen-ai-output-messages.json`
+  deprecates in its favour. A client call whose `rpc.method` is `_OTHER` is
+  named for its `rpc.system.name` and records `rpc.method_original`, as
+  `docs/rpc/rpc-spans.md` asks and as the server already did; it was named
+  `_OTHER`.
+- **SLIMRPC: a streaming call's span and duration cover its stream**
+  (`a2a-protocol-slimrpc`), as on the server crate's bindings (the entry
+  on streaming calls below): `SendStreamingMessage` and `SubscribeToTask`
+  are recorded when the event stream ends — `OK`, the error it ended on,
+  or `cancelled` when the stream is dropped first — through
+  `BindingSpan::run_with` and `StreamEnd`.
+- **SLIMRPC: a client-side status is not a server error**
+  (`a2a-protocol-slimrpc`). The binding sends gRPC's status codes and its
+  server span now counts them as a gRPC server span does
+  (`CustomBinding::with_grpc_server_errors`; `docs/rpc/grpc.md`): only
+  `UNKNOWN`, `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE`
+  and `DATA_LOSS` set `error.type` and `Error` status. A `GetTask` for an
+  unknown task is `rpc.status_code` `NOT_FOUND` with no `error.type`, as on
+  the gRPC binding; it was counted as a server error.
+- **A handler records its metrics to the global meter provider by default**
+  (server, `otel`). `RequestHandlerBuilder` defaulted to `NoopMetrics`, so a
+  process that installed a provider — `Telemetry` does — got the SDK's spans
+  and none of its metrics until every handler was given
+  `.with_metrics(...)`, though the `otel` entry above says it gets both with
+  nothing to enable. With the `otel` feature (on by default) the default is
+  now `OtelMetrics` on the global meter provider as it stands when
+  `RequestHandlerBuilder::new` runs; with none installed that is
+  OpenTelemetry's no-op meter. Without the feature it is still
+  `NoopMetrics`, and `with_metrics` still replaces it.
+- **A WebSocket call's span links to the upgrade request's trace instead
+  of being its child** (server, WebSocket binding). A frame carries no
+  trace context — the binding defines none, and this SDK's client sends
+  none — so the only `traceparent` a WebSocket call had was the upgrade
+  request's, and every call on a connection was recorded as a child of the
+  operation that opened it: W3C Trace Context §3.4 has each request name its
+  own parent, which is why the client already refused to send one fixed at
+  the handshake. Each call's `SERVER` span is now a root of its own with a
+  span link to that trace, under `InboundTracePolicy::Continue`. The
+  upgrade's `traceparent` and `tracestate` reach the handler as the
+  pseudo-headers `:upgrade-traceparent` and `:upgrade-tracestate`, so a
+  WebSocket call's `CallContext` no longer carries the handshake's trace
+  either.
+- **A streaming call's span and `rpc.server.call.duration` cover its
+  stream** (server; `SendStreamingMessage` and `SubscribeToTask` over SSE —
+  JSON-RPC, HTTP+JSON and the axum router — gRPC and WebSocket). The
+  semantic conventions' `docs/rpc/rpc-spans.md`: "For streaming RPCs, the
+  span SHOULD cover the full lifetime of the request and/or response
+  streams until they are closed or terminated", and the metric "SHOULD be
+  the same as the RPC server span duration". Both ended when the handler
+  returned the stream, and recorded a success whatever the stream did next.
+  Now the call is recorded when its stream ends: completed; failed with the
+  error its last frame or status carried (as `rpc.status_code` and, by the
+  binding's rule, `error.type`); or `cancelled` when the client went away
+  or the stream was dropped. The `SERVER` span's exported end time is the
+  stream's end, after the SSE writer's `a2a.sse` span. The SSE writer now
+  notices a client that went away at once — it watches the response body
+  close, as the gRPC forwarder does (N31) — instead of at its next send,
+  which a quiet task might not make for a long time, so the reader leaves
+  the task's queue then too. A dashboard reading `rpc.server.call.duration`
+  for the two streaming methods sees stream lifetimes, not handshakes.
+  A binding outside the server crate gets the same through
+  `BindingSpan::run_with`, `StreamEnd` and `StreamOutcome` (new).
+- **`error.type` marks a server failure, by each binding's conventions**
+  (server; `rpc.server.call.duration` and the `SERVER` span). It was set,
+  with `Error` status, for every status but success. Now: every JSON-RPC
+  error code, as `docs/rpc/json-rpc.md` says ("All JSON RPC error codes
+  SHOULD be considered errors"); on HTTP+JSON a 5xx and not a 4xx, as
+  `docs/http/http-spans.md` says of a server span ("For HTTP status codes in
+  the 4xx range span status MUST be left unset"); on gRPC only `UNKNOWN`,
+  `DEADLINE_EXCEEDED`, `UNIMPLEMENTED`, `INTERNAL`, `UNAVAILABLE` and
+  `DATA_LOSS`, as `docs/rpc/grpc.md` says of a server span. `rpc.status_code`
+  is unchanged and still carries every status, so a `GetTask` for an unknown
+  task over gRPC is `NOT_FOUND` with no `error.type`. A dashboard counting
+  client errors from `error.type` on HTTP+JSON or gRPC reads
+  `rpc.status_code` instead. `CustomBinding::with_grpc_server_errors` gives
+  a binding outside this crate gRPC's rule; without it every failure is
+  still an error.
+- **A stream that lags past the in-memory event log's bound is held, not
+  cut off** (server; spec §3.5.2 "each stream MUST receive the same events
+  in the same order"; maintainer decision 2026-10-20). The in-memory stores
+  dropped a task's oldest logged event on every append past
+  `TaskStoreConfig::max_events_per_task` (512 by default), whether or not a
+  stream still owed it, so a stream that fell further behind than that
+  found the head of its catch-up gone and ended with `streamLagged`. A
+  stream now holds the positions it still owes (new `store::EventHolds` /
+  `EventHold`, and the provided trait method
+  `TaskStore::hold_events(&TaskId, after) -> Option<EventHold>`, default
+  `None`: a store without it trims as before, and the SQL stores keep the
+  whole log so need nothing). The log drops an event only once no attached
+  stream owes it, up to a ceiling: new
+  `TaskStoreConfig::max_held_events_factor` (`with_max_held_events_factor`),
+  `Some(8)` by default, so 8 × 512 = 4,096 events a task; `None` is no
+  ceiling, and `Some(1)` holds nothing past the bound, the old behaviour.
+  The ceiling is a multiple of the bound rather than a count, so a
+  deployment that lowered the bound for large artifact chunks keeps its
+  worst case proportional. Past the ceiling the stream still ends with
+  `streamLagged` after what it delivered, and the store reports it as
+  `on_persistence_error("event_append", "hold_ceiling")`
+  (`metrics::event_append_error::HOLD_CEILING`). **Memory:** a task with a
+  slow or stalled stream attached now keeps up to the ceiling in its log
+  instead of the bound, until the stream advances or disconnects and the
+  next append, or for a finished task the next eviction sweep, trims it
+  back. The ceiling's report is counted on every append it forces and
+  logged once per task; `Some(1)` consults no hold and reports nothing, as
+  before. A streaming send takes its hold before the task's event
+  processor starts appending; it was taken after a store read that a
+  `historyLength` request makes, and a stream that lagged during that read
+  still ended with `streamLagged` (both found by the independent review). The audit, encrypted and tenant-aware wrappers
+  forward the hold (the tenant store to the request's partition). Tests:
+  `tests/stream_lag_holds.rs` (a lag of 62 positions behind a bound of 10
+  now delivers every one, through a send, a subscription and a tenant
+  store; past the ceiling it still ends with `streamLagged`),
+  `store::task_store::in_memory::hold_tests`, `store::holds::tests`,
+  `streaming::event_queue::hold_tests`, and the tenant store's
+  `event_log_tests`.
+
 - **An agent message on a task status, or in a snapshot's history, is
   given the task's ids when it carries none** (server; a2a.proto `Message`:
   "For server messages, `context_id` must be provided"). Only a direct
@@ -1667,6 +2047,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Metadata on an appended artifact chunk is kept in SQLite and
+  PostgreSQL** (server). Both event processors merge an appended chunk's
+  `metadata` into the stored artifact and wrote the change as
+  `ArtifactDelta::AppendedParts`, which the SQLite and PostgreSQL stores
+  (and `EncryptedTaskStore` over them) apply by writing the new parts
+  alone, so `GetTask` returned the first chunk's metadata there and the
+  merged metadata in memory. An append that changes the metadata is now
+  written with `save`; one that does not is still a delta.
+  `tests/artifact_append_metadata.rs` fails without the fix on all three.
+
+- **A continuation saved on one replica could hide another replica's event
+  from a subscriber** (server, spec §3.5.2). A continuation's save replaces
+  the stored artifacts and metadata with the ones its send read; when
+  another replica's turn folded an event into the task after that read, the
+  save dropped it and kept the log position that fold had stored, so the
+  store said the task reflected an event it no longer held. A subscription
+  on a replica with no live queue starts from the stored task and replays
+  the log after that position, and the event was in neither: missing from
+  its stream, with no `streamLagged`. The save is now built from the task
+  the queue lease reads to number the turn, and records that read's
+  position, so the subscriber replays the event. The task still loses it
+  (a lost update, open: only a compare-and-set write would refuse the stale
+  save), and the continuing turn's first fold stores a position past it
+  again. Reproduced on the in-memory store shared by two handlers, on two
+  `SQLite` pools and on two `PostgreSQL` pools on one database;
+  `tests/stale_write_position`.
+
+- **The axum `A2aRouter` did not warn about an undeclared binding** (server,
+  spec §5.2). Every other listener warns when it starts if the static card
+  declares no interface for the binding it serves; `A2aRouter::into_router`
+  now does the same for HTTP+JSON. Found by the ledger audit of 2026-10-20.
+
+- **A `wss://` interface was warned as plaintext** (server, the card lint
+  `build()` runs). The check behind "is not https; production deployments
+  MUST use encrypted communication" accepted only `https://`, so a
+  production WebSocket interface on `wss://` drew the warning; `wss://` is
+  now encrypted too, and `ws://` still warns. Found by the ledger audit of
+  2026-10-20; `agent_card::lint::tests::a_wss_interface_is_encrypted_and_a_ws_one_is_not`.
+
+- **A blocking request outlasting the idle timeout lost its answer**
+  (server, `Server` / `serve`). `ServeConfig::idle_timeout` (75s by
+  default) measured silence on the socket, and a blocking `SendMessage`
+  is silent while its executor works, for up to `DEFAULT_EXECUTOR_TIMEOUT`
+  (an hour): the connection was closed at 75s, the client saw a reset, and
+  the task ran on. A request is now counted from the moment the service
+  is called until its response is ready, and the timer gives no verdict
+  while one is; the window restarts when it is answered. A peer stalled
+  mid-body is still bounded by `DispatchConfig::body_read_timeout`.
+  WebSocket (Ping at half the budget) and gRPC (tonic's own server) were
+  not affected. Found 2026-10-20 driving a live model through the tool
+  loop; `serve::graceful::tests::a_request_still_being_served_is_not_idle`.
+
+- **A `message/stream` call is recorded as `_OTHER`** (server). The span and
+  metric name mapping still treated the v0.3 spelling as
+  `SendStreamingMessage`, though no binding routes it (WebSocket stopped on
+  2026-10-12; JSON-RPC never did), so a refused legacy call was counted
+  under a method it never reached and without `rpc.method_original`.
+- **Requests refused before their span opens are in
+  `rpc.server.call.duration`** (server). gRPC (a missing or unsupported
+  `A2A-Version`, metadata or a request that does not convert), HTTP+JSON and
+  the axum router (version, content type, path traversal, an oversized query,
+  a path no route serves) answered these without recording them, while the
+  JSON-RPC and WebSocket bindings did. Each is now one point with the status
+  it was answered: on gRPC under its method, on HTTP+JSON with no
+  `rpc.method`.
+- **A failed or timed-out executor's `invoke_agent` span says so** (server).
+  The GenAI conventions require `error.type` "if the operation ended in an
+  error"; the span never set it. A run that ends `Failed` — the executor's
+  own status, or the one written for an executor that returned `Err` or ran
+  past its timeout — now sets `error.type` to the failure class
+  (`internal`, `invalid-request`, `transient`, `policy-refusal`,
+  `budget-exhausted`; a timeout is `budget-exhausted`) and the span's status
+  to `Error` explicitly. The status was already `Error` only by way of the
+  `executor failed` ERROR event and `tracing-opentelemetry`'s default of
+  turning error events into span status.
 - **The Go SDK interop's secured-card leg enforces the key it publishes**
   (`examples/echo-agent`, `itk/interop/go-sdk-client`). The handler build
   now refuses a card whose `securityRequirements` no interceptor checks, so
@@ -2396,6 +2851,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`tokio` requires 1.54.1; lockfiles move off this week's advisories**
+  (client, server, SDK, SLIMRPC binding). `tokio` 1.54.0, yanked for a use-after-free race in `time::Interval` on
+  the multi-threaded runtime (GHSA-5wjr-9356-4wc8; the server's halt sync
+  uses `Interval`), is replaced by 1.54.1 in the workspace, SLIMRPC, fuzz
+  and ITK lockfiles. `rustls-webpki` 0.103.15 (RUSTSEC-2026-0382, distrusted
+  emSign intermediates) is replaced by 0.103.16 wherever it was locked, and
+  the SDK-comparison harness's `webpki-root-certs` 1.0.9 (RUSTSEC-2026-0383)
+  by 1.0.10. The SLIMRPC lockfile's `ctutils` 0.4.3 (RUSTSEC-2026-0385,
+  mask generation and `u128` comparisons that could branch on secret values)
+  becomes 0.4.4; it arrives through the SLIM crates' `p256` and `ml-kem`,
+  and no other lockfile holds it. In
+  CI's hash-locked Python tools, `certifi` 2026.7.22 (GHSA-6q48-6c7w-9gw2)
+  becomes 2026.10.19 and `uv` 0.13.1 (GHSA-hq85-5cpj-mr62) becomes 0.13.5,
+  for the same emSign root. The `tokio` requirement rises from 1.44.2 to
+  1.54.1, so a downstream lockfile that already holds 1.54.0 must update
+  (crates.io has yanked it, so a new resolution never picked it; a
+  lockfile written between 2026-10-19 and the yank could). 1.54.1 needs
+  Rust 1.85, under this crate's 1.88.
+
+- **`webpki-roots` requires 1.0.10** (client, server; RUSTSEC-2026-0381,
+  affecting 1.0.0 to 1.0.9). The lockfiles already resolved 1.0.10, except
+  the SDK-comparison bench harness, which is updated; the manifests admitted
+  the affected versions to a downstream build that resolves its own.
+  `check_advisory_floors.py` found it.
+
+- **A keyed audit digest has one spelling** (server, `audit` and
+  `encryption`). `AuditLog::digest_matches` decoded the hex of a stored
+  `hmac-sha256:<kid>:<hex>` with `u8::from_str_radix`, which also takes
+  uppercase digits and a leading `+`, so a record whose digest had a digit
+  uppercased (or `0f` written `+f`) still matched. Nothing could be forged
+  this way, since the tag bytes compared were the same, but a changed record
+  matched. It now takes lowercase digits only, which is all the SDK writes.
+  Found by the new `sealed_audit_value` fuzz target. Test:
+  `hex_round_trips_and_refuses_what_is_not_hex`.
+- **A control character in a client's id is refused** (server; spec §14
+  "MUST sanitize user-provided content"). `validate_id` refused only empty
+  and over-long ids, so `"a\r\nb"` as a message, context, task or reference
+  task id was stored, and `GetTask`, `CancelTask` and `SubscribeToTask`
+  logged the requested id with `%`, writing a line of the client's choosing
+  into the server's log. The push-config `taskId` and `id` (create, get,
+  list, delete, and inline in `SendMessage`) and the `ListTasks` `contextId`
+  filter never reached `validate_id` at all. Each now answers
+  `InvalidParams` naming the field — `-32602` on JSON-RPC, `400` on
+  HTTP+JSON — for any `char::is_control` character (C0, DEL, C1), as the
+  idempotency key already did; a tenant is refused likewise, not only for
+  U+001F. An inline push config is checked before the task is created. The
+  three entry logs and JSON-RPC's dispatch log now record the id and method
+  with `?`, escaped, since they run before validation. Letters outside ASCII
+  still pass. Tests: `control_chars_in_ids`, `handler::ids::tests`.
+- **JSON-RPC authenticates a call before reading its params** (server;
+  `docs/handoff.md` "Open engineering"). A call whose `params` did not
+  deserialize was answered `-32602`, naming the field at fault, before the
+  interceptor chain saw it, so a caller with no credential got the parameter
+  schema where a well-formed call got `401`. Such a call is now admitted
+  first: one the chain refuses gets the refusal (`401`/`403` with its
+  challenge, `-32600` in the body; `200` inside a batch), and one it admits
+  gets the `-32602` it always got. Interceptors now see these calls, with no
+  task id, and `on_complete` reports them `Failed` with the `-32602`; a rate
+  limiter counts them and an audit interceptor records them. HTTP+JSON, gRPC
+  and WebSocket followed the same day (Behaviour Changes, "A malformed
+  request without a credential is refused as unauthenticated"). Test:
+  `jsonrpc_auth_before_params`.
+- **A card-signing key whose `x5c` certificate has expired is not used**
+  (types, `signing`; spec §8.4.3 "Expired or revoked keys MUST NOT be used
+  for verification"; RFC 7517 §4.7). `Jwk` had no `x5c` member, so serde
+  dropped it and a key whose certificate had expired still verified a card.
+  `Jwk` gains `x5c: Option<Vec<String>>`, and `Jwks::candidates` (so
+  `verify_agent_card_with_jwks`, `verify_card_with_jwks`,
+  `verify_card_json_with_jwks` and the client's signed-card fetch) uses a
+  key that carries one only when its first certificate holds the same key
+  (algorithm, curve and key bits from the parsed `SubjectPublicKeyInfo`)
+  and the verification time is within its `notBefore`..`notAfter`,
+  inclusive. An empty chain, an entry that is not standard base64 or not
+  exactly one DER certificate leaves the key unused; the refusal reads as
+  a missing key. Keys without `x5c` are unchanged. Not checked: the chain
+  to a trust anchor, the certificates' signatures, key usage, and
+  revocation (CRL/OCSP); the set itself is the caller's trusted source.
+  New dependency of the `signing` feature: `x509-parser` 0.18
+  (MIT OR Apache-2.0, already in the lockfile through `rcgen`), default
+  features off. Tests: `signing::keys::x5c::tests`,
+  `signing::keys::x5c::spki_tests`, and
+  `a_fetched_key_whose_certificate_has_expired_is_not_used` in the
+  client's `jwks_fetch_tests`.
+
 - **SLIMRPC: the binding has no advisory waivers** (`a2a-protocol-slimrpc`).
   With `agntcy-slim-auth` 0.17.5 the lock takes `mls-rs-crypto-awslc`
   0.25.1, which pins `aws-lc-rs =1.18.1`, so `rustls` resolves to 0.23.46
@@ -2406,6 +2945,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from its `osv-scanner.toml`; cargo-deny 0.20.2 and osv-scanner 2.6.0 report
   nothing without them. `deny.toml` allows `CDLA-Permissive-2.0` again, as
   the root does, for `webpki-root-certs`, which the SLIM 3.x tree brings.
+  Since 2026-10-19 it carries one again: `mls-rs-crypto-awslc` 0.25.1 was
+  yanked with no stated defect, and 0.25.0 would bring the four rustls
+  advisories back; the binding's `deny.toml` explains the entry. Update the
+  binding's lockfile by package name, never with a blanket `cargo update`,
+  which cannot keep a yanked version and downgrades rustls to 0.23.43.
 
 - **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
   four rustls advisories on 2026-10-14, all patched in 0.23.46
@@ -2541,6 +3085,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **A prompt-injection containment harness** (`a2a-protocol-sdk/tests/injection_containment/`,
+  `docs/injection-containment.md`). A deterministic model that obeys every
+  `CALL` line it reads drives a `ToolLoopExecutor` whose tools pay, fetch
+  pages an attacker wrote, and reach other agents over A2A on loopback. 8
+  tests show a control containing an injection (tool-call idempotency, the
+  token budget, content provenance, the approval gate, delegated budgets,
+  caller isolation, the halt), each failing alone when its control is
+  switched off; 3 assert what is not contained, so a change that closes one
+  is noticed.
+- **The tool-calling study's raw runs are committed**
+  (`scripts/tool_calling_study/runs/`), with the scripts that resume it;
+  `docs/tool-calling-study.md` gives its method as a draft. All 16 cells
+  have run; none is scored yet.
+- **What the SDK seals at rest is checked four ways** (server, `encryption`).
+  Against another implementation: `scripts/crypto_interop/check.py` (CI,
+  `ci.yml`, from a hash-locked `cryptography`) states the byte layout and
+  associated data of every sealed form (the `Aes256GcmCipher` value, a
+  sealed part in a record and in the log, a sealed push config, the audit
+  log's wrapped subject keys, sealed values and keyed digests) and decrypts
+  the 21 values the SDK wrote into `tests/fixtures/crypto/rust_sealed.json`;
+  `tests/crypto_interop.rs` opens the 22 the script sealed with its own
+  nonces through `EncryptedTaskStore`, the SQLite push-config store and
+  `AuditLog::reveal`. Against NIST: `tests/crypto_nist_gcm.rs` runs 37 CAVP
+  AES-256-GCM cases (`gcmEncryptExtIV256.rsp`, `gcmDecrypt256.rsp`, quoted
+  with their source and hashes) through the cipher's open path and the
+  `ring` calls its seal makes. Fuzzing: four targets (`sealed_ring_value`,
+  `sealed_part`, `sealed_push_config`, `sealed_audit_value`) feed what a
+  store holds to each reader; ten minutes each, 0.7 to 2.1 million runs, one
+  finding (Security, "A keyed audit digest has one spelling"). Mutation
+  testing of `cipher.rs`, `seal.rs`, `push/cipher.rs` and `audit/privacy/`:
+  210 mutants, 2 missed, both equivalent as written and both removed by
+  rewriting the expression (an `Aes256GcmCipher` value too short for its tag
+  is now refused before the cipher is asked).
+- **Each extension and binding URI this SDK defines is pinned to its wire
+  contract** (spec §4.6.3: "A new URI MUST be created for breaking changes to
+  an extension"; §5.8, the same for a binding). `uri_contracts` (types)
+  snapshots, for the failure, provenance, idempotency, lease and approval
+  extensions, the metadata key, the field and variant names a peer reads
+  (from the `Deserialize` impls, so a new optional field shows), a fully
+  populated sample of each value as it serializes, and the tokens and what
+  they mean; `uri_contract_websocket` (server) snapshots the WebSocket
+  binding's frames from a live dispatcher. A contract that changes under an
+  unchanged URI fails with the diff and the two ways out (bump the URI, or
+  re-bless with `A2A_BLESS_URI_CONTRACTS=1`), as does a bumped URI with the
+  old snapshot. RELEASING.md's checklist, which asked a person to notice,
+  now points at them; whether a change is breaking stays a person's call.
+- **The 22 TCK MUSTs the official suite does not grade are mapped to this
+  repository's tests.** `tck/untested-musts.toml` names, for each, the tests
+  that assert it; `check_tck_untested_map.py` (CI) fails when an entry cites
+  no test, a missing one or an ignored one, or an ID twice. New tests: a
+  cross-binding suite (`a2a-protocol-sdk/tests/binding_equivalence/`) that
+  drives one agent over JSON-RPC, HTTP+JSON, gRPC and WebSocket for
+  `BIND-EQUIV-001..004`, `VER-CLIENT-001/002`, `VER-SERVER-001` and
+  `CARD-EXT-002`, and `CARD-SIGN-001..003` tests that verify the signature
+  over a signing input the test builds itself. Still not graded by the
+  official suite; `docs/official-tck-findings.md` §16 says what changed.
 - **The spec ledger's `SUPPORTED` answers only a MAY.**
   `check_spec_ledger.py` now refuses `SUPPORTED` or `NOT_SUPPORTED` on an
   entry whose keyword is not MAY or OPTIONAL, as the ledger's own status key

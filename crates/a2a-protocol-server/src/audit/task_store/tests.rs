@@ -156,3 +156,19 @@ fn the_wrapper_reports_the_wrapped_stores_capabilities() {
     assert!(tenanted.isolates_tenants());
     assert!(tenanted.supports_idempotency());
 }
+
+/// A stream reading through the audit wrapper holds the wrapped store's log.
+/// The mutation gate found the forwarding untested: `None` survived.
+#[test]
+fn a_hold_is_taken_on_the_wrapped_store() {
+    let inner = Arc::new(InMemoryTaskStore::new());
+    let store = AuditedTaskStore {
+        inner: Arc::clone(&inner) as Arc<dyn TaskStore>,
+        log: Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new()))),
+        metrics: Arc::new(NoopMetrics),
+    };
+    let id = TaskId::new("t-1");
+    let hold = store.hold_events(&id, 2).expect("the wrapped store holds");
+    assert_eq!(inner.holds.floor(&id), Some(2));
+    drop(hold);
+}

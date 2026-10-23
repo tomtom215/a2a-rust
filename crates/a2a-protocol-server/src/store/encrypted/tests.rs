@@ -383,7 +383,7 @@ async fn an_unsealed_part_is_refused_unless_accepted() {
 
 #[tokio::test]
 async fn the_capabilities_are_the_wrapped_stores() {
-    let (store, _) = wrapped(cipher("k1", 1));
+    let (store, inner) = wrapped(cipher("k1", 1));
     assert!(store.supports_event_log());
     assert!(store.supports_idempotency());
     assert!(!store.isolates_tenants());
@@ -402,6 +402,10 @@ async fn the_capabilities_are_the_wrapped_stores() {
     assert_eq!(store.last_event_seq(&id).await.unwrap(), 4);
     assert_eq!(store.earliest_event_seq(&id).await.unwrap(), Some(1));
     assert!(store.event_log_covers(&id, 0).await.unwrap());
+    // A stream reading through the wrapper holds the wrapped store's log.
+    let hold = store.hold_events(&id, 2).expect("the wrapped store holds");
+    assert_eq!(inner.holds.floor(&id), Some(2));
+    drop(hold);
     // A log whose head was dropped says so through the wrapper.
     let short = EncryptedTaskStore::new(
         InMemoryTaskStore::with_config(

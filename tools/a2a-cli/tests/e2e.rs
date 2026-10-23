@@ -319,3 +319,102 @@ async fn help_and_version_exit_zero() {
     let out = a2a(&["--version"]).await;
     assert_eq!(code(&out), 0);
 }
+
+/// A stand-in OTLP/HTTP collector: answers every request `200` with an empty
+/// protobuf body (an `Export…ServiceResponse` with every field at its
+/// default) and keeps the path each one was sent to.
+async fn collector() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = Arc::clone(&paths);
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let seen = Arc::clone(&seen);
+            tokio::spawn(async move {
+                let mut buf = vec![0_u8; 1 << 20];
+                let mut n = 0;
+                // The head, then the body its content-length names.
+                loop {
+                    let Ok(read) = socket.read(&mut buf[n..]).await else {
+                        return;
+                    };
+                    n += read;
+                    let text = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+                    let Some(end) = text.find("\r\n\r\n") else {
+                        if read == 0 {
+                            return;
+                        } else {
+                            continue;
+                        };
+                    };
+                    let length = text
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if n >= end + 4 + length || read == 0 {
+                        let path = text.split_whitespace().nth(1).unwrap_or("").to_owned();
+                        seen.lock().expect("lock").push(path);
+                        break;
+                    }
+                }
+                let _ = socket
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-type: application/x-protobuf\r\n\
+                          content-length: 0\r\nconnection: close\r\n\r\n",
+                    )
+                    .await;
+            });
+        }
+    });
+    (format!("http://{addr}"), paths)
+}
+
+/// With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the CLI exports the call it made
+/// — its `CLIENT` span, and `rpc.client.call.duration` — before it exits;
+/// without it, it sends nothing anywhere.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_cli_exports_its_calls_when_a_collector_is_named() {
+    let url = start_agent().await;
+    let (endpoint, paths) = collector().await;
+    let run = |with_endpoint: bool| {
+        let (url, endpoint) = (url.clone(), endpoint.clone());
+        tokio::task::spawn_blocking(move || {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_a2a"));
+            command
+                .args(["send", &url, "hello"])
+                .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
+                .env_remove("OTEL_TRACES_EXPORTER")
+                .env_remove("OTEL_METRICS_EXPORTER")
+                .env_remove("OTEL_LOGS_EXPORTER")
+                .env_remove("OTEL_SDK_DISABLED");
+            if with_endpoint {
+                command
+                    .env("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint)
+                    .env("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
+            }
+            command.output().expect("spawn a2a")
+        })
+    };
+
+    let out = run(false).await.expect("join");
+    assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
+    assert!(
+        paths.lock().expect("lock").is_empty(),
+        "exported with no collector named"
+    );
+
+    let out = run(true).await.expect("join");
+    assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
+    let paths = paths.lock().expect("lock").clone();
+    for signal in ["/v1/traces", "/v1/metrics"] {
+        assert!(
+            paths.iter().any(|p| p == signal),
+            "nothing exported to {signal}: {paths:?}"
+        );
+    }
+}

@@ -18,6 +18,10 @@ pub(crate) mod applied;
 mod content;
 #[cfg(test)]
 mod final_snapshot_tests;
+#[cfg(test)]
+mod hold_tests;
+#[cfg(test)]
+mod identity_tests;
 mod in_memory;
 mod manager;
 #[cfg(test)]

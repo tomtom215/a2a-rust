@@ -61,6 +61,23 @@ async fn every_refusal_reads_the_same() {
     assert_eq!(err.to_string(), wrong);
 }
 
+/// The shortest value that opens is an empty plaintext's: key id, nonce and
+/// tag. One byte less is refused before the cipher is asked.
+#[tokio::test]
+async fn an_empty_plaintext_is_the_shortest_value() {
+    let c = cipher("k1", 1);
+    let empty = ContentCipher::seal(&c, Vec::new(), b"aad").await.unwrap();
+    assert_eq!(empty.len(), 1 + 2 + 12 + 16);
+    assert_eq!(
+        ContentCipher::open(&c, empty.clone(), b"aad")
+            .await
+            .unwrap(),
+        b""
+    );
+    let short = empty[..empty.len() - 1].to_vec();
+    assert!(ContentCipher::open(&c, short, b"aad").await.is_err());
+}
+
 #[test]
 fn a_ring_refuses_an_empty_long_or_repeated_key_id() {
     assert!(Aes256GcmCipher::new("", [0; AES_256_KEY_LEN]).is_err());

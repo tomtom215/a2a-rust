@@ -13,8 +13,12 @@ unpinned; `pin-freshness.yml` installs the newest SDK on purpose; and
 `official-tck.yml` installs the cloned upstream TCK with `uv pip install -e .`.
 
 Run the commands below from this directory (`.github/requirements/`), with
-`NAME` one of the seven locks: `a2a-sdk`, `a2a-sdk-http`, `a2a-sdk-signing`,
-`httpx`, `itk-selftest`, `pyyaml`, `uv`.
+`NAME` one of the eight locks: `a2a-sdk`, `a2a-sdk-http`, `a2a-sdk-signing`,
+`cryptography`, `httpx`, `itk-selftest`, `pyyaml`, `uv`. `cryptography` (50.0.2,
+locked 2026-10-21) is `scripts/crypto_interop/check.py`'s, in `ci.yml`.
+On 2026-10-22 `certifi` (2026.10.19, GHSA-6q48-6c7w-9gw2) and `uv` (0.13.5,
+GHSA-hq85-5cpj-mr62) were moved alone, with `--upgrade-package`, for the
+emSign root both bundled; every other pin is as it was.
 
 Regenerate one after changing its `.in`, or to take newer releases:
 

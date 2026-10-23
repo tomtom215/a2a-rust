@@ -15,7 +15,7 @@
 //! to prevent HTTP header injection.
 
 use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
@@ -27,14 +27,16 @@ use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
+use super::pinning::{host_header_from_url, pin_target, rewrite_uri_with_pinned_addr};
+
 /// The hyper client type backing [`HttpPushSender`].
 ///
 /// Plaintext-HTTP only in the default build; an HTTPS-capable
 /// (`https_or_http`) client when the `tls-rustls` feature is enabled.
 #[cfg(not(feature = "tls-rustls"))]
-type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
+pub(crate) type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
-type PushHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+pub(crate) type PushHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
 
 /// Builds the rustls `ClientConfig` used for HTTPS push delivery: TLS 1.2+ with
 /// `ring` selected explicitly (avoiding the multi-provider "could not determine
@@ -54,7 +56,7 @@ fn push_tls_config() -> rustls::ClientConfig {
 
 /// Builds an HTTPS-capable (`https_or_http`) push client from a rustls config.
 #[cfg(feature = "tls-rustls")]
-fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
+pub(crate) fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
     let mut http = HttpConnector::new();
     // Let the HttpsConnector wrapper handle TLS for https:// targets while
     // still permitting plaintext http:// via `https_or_http()`.
@@ -70,7 +72,7 @@ fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
 
 /// Builds the push-delivery hyper client for the active feature set, using the
 /// default trust roots.
-fn build_push_http_client() -> PushHttpClient {
+pub(crate) fn build_push_http_client() -> PushHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
         Client::builder(TokioExecutor::new()).build_http()
@@ -448,77 +450,6 @@ pub(crate) async fn validate_webhook_url_with_dns(
     crate::url_guard::resolve(url, "webhook URL", dns_timeout).await
 }
 
-/// Rewrites a webhook URL so that the host component is replaced with the
-/// given literal [`SocketAddr`], preserving scheme, path, and query.
-///
-/// Used after [`validate_webhook_url_with_dns`] returns a validated
-/// `SocketAddr` so the outgoing request connects to the exact IP that was
-/// validated — not whatever the HTTP client's own resolver returns seconds
-/// later. This is the pin half of the DNS-rebinding defence; the caller is
-/// responsible for setting the `Host` header to the original hostname so
-/// HTTP vhost routing still works at the remote end.
-fn rewrite_uri_with_pinned_addr(url: &str, pinned: SocketAddr) -> A2aResult<hyper::Uri> {
-    let uri: hyper::Uri = url
-        .parse()
-        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
-
-    let scheme = uri
-        .scheme_str()
-        .ok_or_else(|| A2aError::invalid_params("webhook URL missing scheme"))?;
-
-    // IPv6 literals must be bracketed in the URI authority.
-    let host_str = match pinned.ip() {
-        IpAddr::V4(v4) => v4.to_string(),
-        IpAddr::V6(v6) => format!("[{v6}]"),
-    };
-
-    let path_and_query = uri
-        .path_and_query()
-        .map_or_else(|| "/".to_string(), std::string::ToString::to_string);
-
-    let rewritten = format!(
-        "{scheme}://{host_str}:{port}{path_and_query}",
-        port = pinned.port()
-    );
-
-    rewritten
-        .parse()
-        .map_err(|e| A2aError::invalid_params(format!("could not rewrite webhook URL: {e}")))
-}
-
-/// Extracts the original `Host` header value (`host[:port]`) from a webhook URL.
-///
-/// Used with [`rewrite_uri_with_pinned_addr`] so the remote server still sees
-/// the original hostname for vhost routing even though the connection is
-/// dialled directly to the pinned IP.
-fn host_header_from_url(url: &str) -> A2aResult<String> {
-    let uri: hyper::Uri = url
-        .parse()
-        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
-    let host = uri
-        .host()
-        .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))?;
-    Ok(uri
-        .port_u16()
-        .map_or_else(|| host.to_string(), |port| format!("{host}:{port}")))
-}
-
-/// Decides whether to pin the pre-validated IP for this delivery.
-///
-/// `http://` requests pin (the caller rewrites the URI to the literal IP and
-/// restores the original `Host` header) to close the DNS-rebinding TOCTOU
-/// window. `https://` requests must **not** pin — the connection has to present
-/// the original hostname for SNI and certificate verification, and TLS
-/// validation itself defeats a rebind to a private address (no valid cert for
-/// the hostname → handshake fails). A `None` address (IP literal, or SSRF
-/// validation skipped) is never pinned.
-const fn pin_target(is_https: bool, pinned_addr: Option<SocketAddr>) -> Option<SocketAddr> {
-    match pinned_addr {
-        Some(addr) if !is_https => Some(addr),
-        _ => None,
-    }
-}
-
 /// Validates that a header value contains no CR/LF characters.
 fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
     if value.contains('\r') || value.contains('\n') {
@@ -744,12 +675,20 @@ impl PushSender for HttpPushSender {
                         );
                 }
 
-                let req = builder
+                let mut req = builder
                     .body(Full::new(body_bytes.clone()))
                     .map_err(|e| A2aError::internal(format!("push request build: {e}")))?;
 
-                let request_result =
-                    tokio::time::timeout(self.request_timeout, self.client.request(req)).await;
+                // Each attempt in its HTTP `CLIENT` span, carrying that span
+                // as the receiver's `traceparent` (`rpc_span::webhook`).
+                let span = crate::rpc_span::WebhookSpan::open(url, attempt);
+                span.inject(req.headers_mut());
+                let request_result = span
+                    .run(tokio::time::timeout(
+                        self.request_timeout,
+                        self.client.request(req),
+                    ))
+                    .await;
 
                 match request_result {
                     Ok(Ok(resp)) if resp.status().is_success() => {

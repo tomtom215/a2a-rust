@@ -313,3 +313,19 @@ async fn an_answer_with_no_tool_calls_has_an_empty_trace() {
     assert_eq!(answer.text, "No tools needed.");
     assert!(answer.trace.is_empty());
 }
+
+/// A call the model wrote as its reply's text is run over MCP as the call
+/// it is (see `leaked`), not handed to the caller as raw JSON.
+#[tokio::test]
+async fn a_call_written_as_text_crosses_mcp() {
+    let agent = agent_with([
+        says(r#"{"name": "echo", "arguments": {"text": "from the server"}}"#),
+        says("The server said: from the server."),
+    ])
+    .await;
+
+    let answer = agent.prompt("say something").await.expect("two turns");
+    assert_eq!(answer.text, "The server said: from the server.");
+    assert_eq!(answer.trace.len(), 1);
+    assert!(answer.trace[0].starts_with("echo("), "{}", answer.trace[0]);
+}

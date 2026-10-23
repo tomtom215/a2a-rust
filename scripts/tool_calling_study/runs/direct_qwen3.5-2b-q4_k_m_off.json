@@ -1,0 +1,3727 @@
+{
+ "label": "qwen3.5-2b-q4_k_m",
+ "thinking": "off",
+ "n": 30,
+ "seed_base": 1000,
+ "max_tokens": 4096,
+ "sampler": {
+  "temperature": 0.8,
+  "top_k": 40,
+  "top_p": 0.95,
+  "min_p": 0.05
+ },
+ "max_turns": 6,
+ "harness_sha256": "536670664c7936ff0aa2f5657569408f6c5ba0bac9a59846ccd75d57fae63968",
+ "turn_timeout_secs": 1800,
+ "server": {
+  "model_path": "/opt/models/qwen3.5-2b-q4_k_m.gguf",
+  "build_info": "b1-8466395",
+  "chat_template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80"
+ },
+ "runs": [
+  {
+   "kind": "billing",
+   "seed": 1000,
+   "turns": [
+    {
+     "seed": 8000,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8001,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8002,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently in a **degraded** state.\n\nHere are the details:\n- **Service Name:** payments-api\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds (approximately 20.5 days)",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently in a **degraded** state.\n\nHere are the details:\n- **Service Name:** payments-api\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds (approximately 20.5 days)",
+   "secs": 103.4
+  },
+  {
+   "kind": "billing",
+   "seed": 1001,
+   "turns": [
+    {
+     "seed": 8008,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8009,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8010,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently in a **degraded** state.\n\nHere are the details:\n- **Current State**: degraded\n- **Version**: 4.2.1\n- **Uptime**: 1,814,400 seconds (approximately 20.19 days)",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently in a **degraded** state.\n\nHere are the details:\n- **Current State**: degraded\n- **Version**: 4.2.1\n- **Uptime**: 1,814,400 seconds (approximately 20.19 days)",
+   "secs": 46.5
+  },
+  {
+   "kind": "billing",
+   "seed": 1002,
+   "turns": [
+    {
+     "seed": 8016,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8017,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8018,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently **degraded** and has an uptime of **1,814,400 seconds** (approximately 20.2 days).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently **degraded** and has an uptime of **1,814,400 seconds** (approximately 20.2 days).",
+   "secs": 89.9
+  },
+  {
+   "kind": "billing",
+   "seed": 1003,
+   "turns": [
+    {
+     "seed": 8024,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8025,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8026,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is in a **degraded** state with version 4.2.1. It has been up for 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is in a **degraded** state with version 4.2.1. It has been up for 1,814,400 seconds.",
+   "secs": 40.0
+  },
+  {
+   "kind": "billing",
+   "seed": 1004,
+   "turns": [
+    {
+     "seed": 8032,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8033,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8034,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service `payments-api` is currently in a **degraded** state, with a version of 4.2.1 and an uptime of 181,4400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service `payments-api` is currently in a **degraded** state, with a version of 4.2.1 and an uptime of 181,4400 seconds.",
+   "secs": 109.0
+  },
+  {
+   "kind": "billing",
+   "seed": 1005,
+   "turns": [
+    {
+     "seed": 8040,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8041,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8042,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently **degraded**, version 4.2.1, with an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently **degraded**, version 4.2.1, with an uptime of 1,814,400 seconds.",
+   "secs": 68.7
+  },
+  {
+   "kind": "billing",
+   "seed": 1006,
+   "turns": [
+    {
+     "seed": 8048,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8049,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8050,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently in a **degraded** state. Its version is 4.2.1 and it has been running for 1,814,400 seconds (50 hours).\n\nYou should check the `payments-api` service status.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently in a **degraded** state. Its version is 4.2.1 and it has been running for 1,814,400 seconds (50 hours).\n\nYou should check the `payments-api` service status.",
+   "secs": 51.1
+  },
+  {
+   "kind": "billing",
+   "seed": 1007,
+   "turns": [
+    {
+     "seed": 8056,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8057,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8058,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 with an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 with an uptime of 1,814,400 seconds.",
+   "secs": 69.8
+  },
+  {
+   "kind": "billing",
+   "seed": 1008,
+   "turns": [
+    {
+     "seed": 8064,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8065,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8066,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 and has an uptime of 1814400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 and has an uptime of 1814400 seconds.",
+   "secs": 81.6
+  },
+  {
+   "kind": "billing",
+   "seed": 1009,
+   "turns": [
+    {
+     "seed": 8072,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8073,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8074,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently **degraded**. It is running version 4.2.1 and has an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently **degraded**. It is running version 4.2.1 and has an uptime of 1,814,400 seconds.",
+   "secs": 53.8
+  },
+  {
+   "kind": "billing",
+   "seed": 1010,
+   "turns": [
+    {
+     "seed": 8080,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8081,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8082,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, **payments-api**, is currently in a **degraded** state with version 4.2.1.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, **payments-api**, is currently in a **degraded** state with version 4.2.1.",
+   "secs": 59.6
+  },
+  {
+   "kind": "billing",
+   "seed": 1011,
+   "turns": [
+    {
+     "seed": 8088,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8089,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8090,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently in a **degraded** state. Its version is 4.2.1 and it has been running for approximately 50.4 days (1814400 seconds).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently in a **degraded** state. Its version is 4.2.1 and it has been running for approximately 50.4 days (1814400 seconds).",
+   "secs": 61.9
+  },
+  {
+   "kind": "billing",
+   "seed": 1012,
+   "turns": [
+    {
+     "seed": 8096,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8097,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8098,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, **payments-api**, is currently in a **degraded** state.\n\nHere are the details for the billing service:\n- **Version**: 4.2.1\n- **Uptime**: 1,814,400 seconds (approximately 20.2 days)",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, **payments-api**, is currently in a **degraded** state.\n\nHere are the details for the billing service:\n- **Version**: 4.2.1\n- **Uptime**: 1,814,400 seconds (approximately 20.2 days)",
+   "secs": 71.4
+  },
+  {
+   "kind": "billing",
+   "seed": 1013,
+   "turns": [
+    {
+     "seed": 8104,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8105,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8106,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently in a **degraded** state.\n\nHere are the details:\n*   **Service Name:** payments-api\n*   **State:** degraded\n*   **Version:** 4.2.1\n*   **Uptime:** 1814400 seconds (approximately 20.2 days)",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently in a **degraded** state.\n\nHere are the details:\n*   **Service Name:** payments-api\n*   **State:** degraded\n*   **Version:** 4.2.1\n*   **Uptime:** 1814400 seconds (approximately 20.2 days)",
+   "secs": 58.0
+  },
+  {
+   "kind": "billing",
+   "seed": 1014,
+   "turns": [
+    {
+     "seed": 8112,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8113,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8114,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service `payments-api` is currently in a **degraded** state, version 4.2.1. Its uptime is 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service `payments-api` is currently in a **degraded** state, version 4.2.1. Its uptime is 1,814,400 seconds.",
+   "secs": 47.1
+  },
+  {
+   "kind": "billing",
+   "seed": 1015,
+   "turns": [
+    {
+     "seed": 8120,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8121,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8122,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is in a **degraded** state. It is currently at version 4.2.1 with an uptime of approximately 1814400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is in a **degraded** state. It is currently at version 4.2.1 with an uptime of approximately 1814400 seconds.",
+   "secs": 87.1
+  },
+  {
+   "kind": "billing",
+   "seed": 1016,
+   "turns": [
+    {
+     "seed": 8128,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8129,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8130,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently in a **degraded** state.\n\nHere are the details:\n- **State**: degraded\n- **Version**: 4.2.1\n- **Uptime**: 1,814,400 seconds (approximately 20.2 days)\n\nWould you like me to check the status of the other services (`checkout` or `search`) as well?",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently in a **degraded** state.\n\nHere are the details:\n- **State**: degraded\n- **Version**: 4.2.1\n- **Uptime**: 1,814,400 seconds (approximately 20.2 days)\n\nWould you like me to check the status of the other services (`checkout` or `search`) as well?",
+   "secs": 103.7
+  },
+  {
+   "kind": "billing",
+   "seed": 1017,
+   "turns": [
+    {
+     "seed": 8136,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8137,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8138,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently in a **degraded** state. It is running version 4.2.1 and has been up for 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently in a **degraded** state. It is running version 4.2.1 and has been up for 1,814,400 seconds.",
+   "secs": 93.5
+  },
+  {
+   "kind": "billing",
+   "seed": 1018,
+   "turns": [
+    {
+     "seed": 8144,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8145,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8146,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, **payments-api**, is currently in a **degraded** state.\n\nHere are the details:\n- **State:** degraded\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds (approximately 20.2 days)",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, **payments-api**, is currently in a **degraded** state.\n\nHere are the details:\n- **State:** degraded\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds (approximately 20.2 days)",
+   "secs": 41.2
+  },
+  {
+   "kind": "billing",
+   "seed": 1019,
+   "turns": [
+    {
+     "seed": 8152,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8153,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8154,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 and has been up for 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 and has been up for 1,814,400 seconds.",
+   "secs": 87.9
+  },
+  {
+   "kind": "billing",
+   "seed": 1020,
+   "turns": [
+    {
+     "seed": 8160,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "I will check the status of the billing service.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8161,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "Now I will check the status of the billing service.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"billing\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8162,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "It appears the service is not named exactly \"billing\". Let me check the full list of services to see if the correct name is available.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-2-0"
+      }
+     ]
+    },
+    {
+     "seed": 8163,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "The services available in the inventory are \"payments-api\", \"checkout\", and \"search\". The \"billing\" service is not listed. The available service that might be responsible for billing is \"payments-api\".\n\nLet me check the status of the \"payments-api\" service to see if it is functioning correctly.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-3-0"
+      }
+     ]
+    },
+    {
+     "seed": 8164,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing-related service, \"payments-api\", is currently in a **degraded** state. It is running version 4.2.1 with 1,814,400 seconds of uptime.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "billing"
+     },
+     "result": "error: no service named 'billing'; call list_services for the inventory"
+    },
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing-related service, \"payments-api\", is currently in a **degraded** state. It is running version 4.2.1 with 1,814,400 seconds of uptime.",
+   "secs": 137.0
+  },
+  {
+   "kind": "billing",
+   "seed": 1021,
+   "turns": [
+    {
+     "seed": 8168,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8169,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8170,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The **payments-api** service is currently **degraded**.\n\nHere are the details:\n- **State:** degraded\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The **payments-api** service is currently **degraded**.\n\nHere are the details:\n- **State:** degraded\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds",
+   "secs": 56.8
+  },
+  {
+   "kind": "billing",
+   "seed": 1022,
+   "turns": [
+    {
+     "seed": 8176,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "I need to use the available tools to find out the current status of the billing service. Let me first list the services to identify the correct name.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8177,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "I don't see a service named \"billing\" in the list. Let me check the status of the \"payments-api\" service, as it's likely the billing service.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8178,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service (payments-api) is currently in a **degraded** state. It is running version 4.2.1 and has been up for 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service (payments-api) is currently in a **degraded** state. It is running version 4.2.1 and has been up for 1,814,400 seconds.",
+   "secs": 84.1
+  },
+  {
+   "kind": "billing",
+   "seed": 1023,
+   "turns": [
+    {
+     "seed": 8184,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8185,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8186,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, **payments-api**, is currently **degraded**. It has version 4.2.1 and has an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, **payments-api**, is currently **degraded**. It has version 4.2.1 and has an uptime of 1,814,400 seconds.",
+   "secs": 65.7
+  },
+  {
+   "kind": "billing",
+   "seed": 1024,
+   "turns": [
+    {
+     "seed": 8192,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8193,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8194,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, identified as `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 with an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, identified as `payments-api`, is currently in a **degraded** state. It is running version 4.2.1 with an uptime of 1,814,400 seconds.",
+   "secs": 63.2
+  },
+  {
+   "kind": "billing",
+   "seed": 1025,
+   "turns": [
+    {
+     "seed": 8200,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8201,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8202,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is in a **degraded** state with version 4.2.1 and an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is in a **degraded** state with version 4.2.1 and an uptime of 1,814,400 seconds.",
+   "secs": 68.0
+  },
+  {
+   "kind": "billing",
+   "seed": 1026,
+   "turns": [
+    {
+     "seed": 8208,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8209,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8210,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, named `payments-api`, is currently **degraded**.\n\nHere are the current details:\n- **State:** degraded\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds (50 days)",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, named `payments-api`, is currently **degraded**.\n\nHere are the current details:\n- **State:** degraded\n- **Version:** 4.2.1\n- **Uptime:** 1,814,400 seconds (50 days)",
+   "secs": 61.0
+  },
+  {
+   "kind": "billing",
+   "seed": 1027,
+   "turns": [
+    {
+     "seed": 8216,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8217,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8218,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The billing service, `payments-api`, is currently in a **degraded** state.\n\nHere are the details:\n*   **Current State:** Degraded\n*   **Version:** 4.2.1\n*   **Uptime:** 1,814,400 seconds",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The billing service, `payments-api`, is currently in a **degraded** state.\n\nHere are the details:\n*   **Current State:** Degraded\n*   **Version:** 4.2.1\n*   **Uptime:** 1,814,400 seconds",
+   "secs": 74.3
+  },
+  {
+   "kind": "billing",
+   "seed": 1028,
+   "turns": [
+    {
+     "seed": 8224,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8225,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8226,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The `payments-api` service is currently in a **degraded** state. It is running version 4.2.1 and has had 1,814,400 seconds of uptime.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The `payments-api` service is currently in a **degraded** state. It is running version 4.2.1 and has had 1,814,400 seconds of uptime.",
+   "secs": 58.1
+  },
+  {
+   "kind": "billing",
+   "seed": 1029,
+   "turns": [
+    {
+     "seed": 8232,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 8233,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"payments-api\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 8234,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The **payments-api** service is in a **degraded** state. It is currently running version 4.2.1 with an uptime of 1,814,400 seconds.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "payments-api"
+     },
+     "result": "{\"service\":\"payments-api\",\"state\":\"degraded\",\"version\":\"4.2.1\",\"uptimeSeconds\":1814400}"
+    }
+   ],
+   "final": "The **payments-api** service is in a **degraded** state. It is currently running version 4.2.1 with an uptime of 1,814,400 seconds.",
+   "secs": 72.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2000,
+   "turns": [
+    {
+     "seed": 16000,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16001,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16002,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy. Its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy. Its current version is 2.8.0.",
+   "secs": 52.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2001,
+   "turns": [
+    {
+     "seed": 16008,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16009,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16010,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy. Its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy. Its version is 2.8.0.",
+   "secs": 62.7
+  },
+  {
+   "kind": "checkout",
+   "seed": 2002,
+   "turns": [
+    {
+     "seed": 16016,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16017,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16018,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy, and its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy, and its current version is 2.8.0.",
+   "secs": 57.9
+  },
+  {
+   "kind": "checkout",
+   "seed": 2003,
+   "turns": [
+    {
+     "seed": 16024,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16025,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16026,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state and is currently running version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state and is currently running version 2.8.0.",
+   "secs": 41.1
+  },
+  {
+   "kind": "checkout",
+   "seed": 2004,
+   "turns": [
+    {
+     "seed": 16032,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16033,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16034,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state and its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state and its version is 2.8.0.",
+   "secs": 67.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2005,
+   "turns": [
+    {
+     "seed": 16040,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16041,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16042,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently healthy. Its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is currently healthy. Its version is 2.8.0.",
+   "secs": 36.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2006,
+   "turns": [
+    {
+     "seed": 16048,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16049,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16050,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and its current version is 2.8.0.",
+   "secs": 64.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2007,
+   "turns": [
+    {
+     "seed": 16056,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "I'll help you check the status of the checkout service. Let me first list the services to find the exact name, then check its status.\n\n",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16057,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16058,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0.",
+   "secs": 55.7
+  },
+  {
+   "kind": "checkout",
+   "seed": 2008,
+   "turns": [
+    {
+     "seed": 16064,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16065,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16066,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy. It is version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy. It is version 2.8.0.",
+   "secs": 74.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2009,
+   "turns": [
+    {
+     "seed": 16072,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16073,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16074,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy, and its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy, and its version is 2.8.0.",
+   "secs": 49.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2010,
+   "turns": [
+    {
+     "seed": 16080,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16081,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16082,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state and its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state and its version is 2.8.0.",
+   "secs": 56.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2011,
+   "turns": [
+    {
+     "seed": 16088,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16089,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16090,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and has version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and has version 2.8.0.",
+   "secs": 62.9
+  },
+  {
+   "kind": "checkout",
+   "seed": 2012,
+   "turns": [
+    {
+     "seed": 16096,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16097,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16098,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0.",
+   "secs": 71.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2013,
+   "turns": [
+    {
+     "seed": 16104,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16105,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16106,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy, and its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy, and its version is 2.8.0.",
+   "secs": 39.5
+  },
+  {
+   "kind": "checkout",
+   "seed": 2014,
+   "turns": [
+    {
+     "seed": 16112,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16113,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16114,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. It is running version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. It is running version 2.8.0.",
+   "secs": 75.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2015,
+   "turns": [
+    {
+     "seed": 16120,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16121,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16122,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy with version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy with version 2.8.0.",
+   "secs": 52.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2016,
+   "turns": [
+    {
+     "seed": 16128,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16129,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16130,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and is running version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and is running version 2.8.0.",
+   "secs": 34.5
+  },
+  {
+   "kind": "checkout",
+   "seed": 2017,
+   "turns": [
+    {
+     "seed": 16136,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16137,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16138,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is running in a healthy state with version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is running in a healthy state with version 2.8.0.",
+   "secs": 67.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2018,
+   "turns": [
+    {
+     "seed": 16144,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16145,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16146,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy, and its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy, and its version is 2.8.0.",
+   "secs": 58.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2019,
+   "turns": [
+    {
+     "seed": 16152,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16153,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16154,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy with version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy with version 2.8.0.",
+   "secs": 78.1
+  },
+  {
+   "kind": "checkout",
+   "seed": 2020,
+   "turns": [
+    {
+     "seed": 16160,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16161,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16162,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and its current version is 2.8.0.",
+   "secs": 39.7
+  },
+  {
+   "kind": "checkout",
+   "seed": 2021,
+   "turns": [
+    {
+     "seed": 16168,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16169,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16170,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy. Its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy. Its current version is 2.8.0.",
+   "secs": 59.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2022,
+   "turns": [
+    {
+     "seed": 16176,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16177,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16178,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and its version is 2.8.0.",
+   "secs": 39.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2023,
+   "turns": [
+    {
+     "seed": 16184,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16185,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16186,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and is running version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and is running version 2.8.0.",
+   "secs": 50.3
+  },
+  {
+   "kind": "checkout",
+   "seed": 2024,
+   "turns": [
+    {
+     "seed": 16192,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16193,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16194,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy. Its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy. Its current version is 2.8.0.",
+   "secs": 66.9
+  },
+  {
+   "kind": "checkout",
+   "seed": 2025,
+   "turns": [
+    {
+     "seed": 16200,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16201,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16202,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy. Its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy. Its current version is 2.8.0.",
+   "secs": 51.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2026,
+   "turns": [
+    {
+     "seed": 16208,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16209,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16210,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state and is currently running version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state and is currently running version 2.8.0.",
+   "secs": 61.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2027,
+   "turns": [
+    {
+     "seed": 16216,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16217,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16218,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is healthy and is running version 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is healthy and is running version 2.8.0.",
+   "secs": 75.9
+  },
+  {
+   "kind": "checkout",
+   "seed": 2028,
+   "turns": [
+    {
+     "seed": 16224,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16225,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16226,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0.",
+   "secs": 78.1
+  },
+  {
+   "kind": "checkout",
+   "seed": 2029,
+   "turns": [
+    {
+     "seed": 16232,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16233,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\":\"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16234,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently healthy. Its version is 2.8.0.",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"version\":\"2.8.0\",\"uptimeSeconds\":259200}"
+    }
+   ],
+   "final": "The checkout service is currently healthy. Its version is 2.8.0.",
+   "secs": 72.6
+  }
+ ]
+}

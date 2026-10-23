@@ -42,7 +42,10 @@ a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["
 # All four bindings are hard dependencies, not features: this example asserts
 # a complete method x binding matrix, and behind a feature flag the default
 # build would quietly shrink the matrix and still report it full.
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc"] }
+# `otlp`: the SDK's `Telemetry`, which exports when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "otlp"] }
+tracing-subscriber = { workspace = true }
 a2a-example-harness = { path = "../harness" }
 
 serde_json     = { workspace = true }
@@ -71,6 +74,6 @@ rcgen             = { version = "0.14", optional = true }
 opentelemetry     = { version = "0.33", optional = true }
 opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
 
-# genai — multi-provider LLM client; unknown model names route to the local
-# Ollama-compatible endpoint on :11434 (llama-server / Ollama).
-genai = "0.6"
+# genai — multi-provider LLM client; unknown model names go to the local
+# OpenAI-compatible API on :11434/v1/ (src/local_model.rs).
+genai = "0.7"

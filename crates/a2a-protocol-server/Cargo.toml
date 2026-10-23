@@ -27,10 +27,10 @@ categories             = ["network-programming", "web-programming"]
 default = ["tracing", "otel"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##
-## A forwarding feature: this crate contains no `#[cfg(feature = "signing")]`
-## code and never signs the card it serves. Sign your card with
-## `sign_agent_card` before handing it to `RequestHandlerBuilder`, as
-## `examples/incident-response` does.
+## Also `RequestHandlerBuilder::with_content_signer`, which signs every agent
+## message and artifact the server serves (ADR 0027). The server never signs
+## the card it serves: sign it with `sign_agent_card` before handing it to
+## `RequestHandlerBuilder`, as `examples/incident-response` does.
 signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out
 ## when disabled).
@@ -95,6 +95,13 @@ otlp-json = ["otlp", "opentelemetry-otlp/http-json"]
 ## servers, and this grades the thing an adopter actually writes. Pulls in no
 ## extra dependencies.
 conformance = []
+## Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, the
+## `ToolModel` and `Tool` traits, `ToolLoopExecutor`, and `OpenAiChatModel`
+## for the chat-completions API (OpenAI, llama-server, vLLM, Ollama). On the
+## hyper client push delivery uses; `ring`, already in the graph with the
+## default `tls-rustls`, derives each tool call's idempotency key (ADR 0026).
+## HTTPS to the model needs `tls-rustls`.
+tool-loop = ["dep:ring"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
 ## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
@@ -144,7 +151,7 @@ rustls         = { version = ">=0.23.46, <0.24", optional = true, default-featur
 rustls-pki-types = { version = ">=1.9, <2", optional = true, features = ["std"] }
 # `Server::with_tls` (`tls-rustls`). Already in the graph through hyper-rustls.
 tokio-rustls   = { version = ">=0.26, <0.27", optional = true, default-features = false, features = ["ring"] }
-webpki-roots   = { version = ">=1.0, <2", optional = true }
+webpki-roots   = { version = ">=1.0.10, <2", optional = true }
 # JWT verification (auth-jwt feature). `ring` is the same crypto backend the
 # types crate's `signing` feature already uses.
 ring           = { version = "0.17.12", optional = true }

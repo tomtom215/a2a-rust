@@ -22,74 +22,207 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Working branch:** `claude/charming-lamport-yp20d6`, started 2026-10-18
-  from `main` at `86c8fac` (pull request #172 merged). Pull request #173
-  is open for it (2026-10-19). `git log 86c8fac..` lists its commits; each message says what
-  it changed and how it was verified.
+- **Working branch:** `claude/jolly-hypatia-lsr7uv`, started 2026-10-20
+  from `main` at `6c90d0b` (pull request #173 merged that day), pushed.
+  `git log 6c90d0b..` lists its commits; each message says what it changed
+  and how it was verified. Wrapped up for a pull request on 2026-10-22,
+  because container restarts kept killing long work: the study's raw runs
+  were moved out of scratch space into the repository and the method
+  committed as a draft; the study then finished (*Next*, item 2). Pull
+  request #178 is open with the `mutation-test` label. The commits after it
+  went up fix what its CI found, each message naming the check. From
+  `1ebec172` on they add tests for the mutants each labelled incremental
+  mutation run left surviving (51, then 9, then 2 and one equivalent
+  mutant skipped with its argument, then 13 and a second equivalent on
+  `fcd73c5e`, the first run after `640773fc`, then 1 on `9557b24d`; each
+  commit lists its batch),
+  and `1ebec172` fixes the kill-switch harness passing a store that widened
+  a tenant's halt. Before `640773fc` a measurement's timeout scored a
+  different set of server mutants caught in each run, which is why each
+  run found survivors the last had not; on `fcd73c5e` all 571 catches in
+  the 19 finished server shards were real test failures, and on `9557b24d`
+  612 of 614, the other two a mutant's own test hanging and a mutant whose
+  killing tests a PostgreSQL timeout cancelled (checked by hand). Also
+  pending in `.github/workflows/`: the Regression Gate's 150% override for
+  the payload serialize benchmarks (`b6bd6350`; the swing is the runner's,
+  measured on byte-identical binaries) and a 1800s mutation build timeout
+  (`231f7d8e`). The crypto-interop gate `bb7518b3` added had no defect
+  injection, so `scripts/prove_gates_fail.sh` exited 2; it now has one (a
+  push config sealed under a context other than the stated one), as a
+  follow-up to this pull request.
+- **Built on this branch (2026-10-20):** ADR 0022's tool loop
+  (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
+  whose README records the live run); the §3.5.2 holds, with the
+  independent review's findings fixed (`store/holds`); a fix for the idle
+  timeout cutting a blocking request still being answered
+  (`serve::graceful::idle::Serving`); the dependency refresh (genai 0.7,
+  tokio 1.54, no `deny.toml` waiver left at the root).
+- **Encryption, verified three ways (2026-10-21):** the sealed formats
+  read by Python's `cryptography` in both directions
+  (`scripts/crypto_interop/check.py`, `tests/crypto_interop.rs`, a CI
+  step); 37 NIST CAVP AES-256-GCM cases (the zip's SHA-256 and every case
+  re-checked against the download, and every case re-decrypted
+  independently); four fuzz targets on the unseal parsers, 600 s each, which
+  found that a keyed audit digest accepted uppercase hex (fixed); and a
+  mutation sweep of the crypto modules (210 mutants, the 2 missed rewritten
+  so they are killed). `book/src/deployment/security.md`, "How this is
+  verified".
+- **Control map (2026-10-21):** 88 rows after the GDPR and CRA pass
+  (`63418d93`). Every test it cites was run that day, Postgres-ignored ones
+  included against a local PostgreSQL 16: 170 distinct tests across 50
+  targets, all passing. `check_compliance_map.py` only checks that a cited
+  test exists, so rerun them after editing a cited file.
+- **Built on this branch (2026-10-22):** kill-switch conformance,
+  `conformance::halt::{check_store, check_handlers}` (feature
+  `conformance`): 8 store checks and 9 end-to-end replica checks, tested
+  against deliberately broken stores; the in-memory, SQLite and PostgreSQL
+  stores pass (`tests/kill_switch_conformance.rs`). This completes the
+  2026-10-21 safety list except the upstream drafts, which wait on the
+  maintainer.
+- **Built on this branch (2026-10-22):** the prompt-injection containment
+  harness (`crates/a2a-protocol-sdk/tests/injection_containment/`,
+  `docs/injection-containment.md`): a model that obeys every instruction
+  it reads, 8 scenarios a control contains and 3 limits asserted as limits;
+  cited by the control map's ASI-MODEL row. Chosen by the maintainer over a
+  live-model susceptibility study (2026-10-22).
+- **Built on this branch (2026-10-22):** ADR 0027's provenance wiring:
+  `with_content_signer` signs what the server serves (`src/provenance.rs`,
+  the stream reader, push, the unary handlers), `with_content_keys` on the
+  server (`RequestContext::content_check`) and the client
+  (`src/content.rs`, `ClientError::ContentNotVerified`), and
+  `Profile::Production` requiring a signer. An independent review found 12
+  problems; the 9 fixed and the limits left are in ADR 0027 (including an
+  unreleased flaw in `verify_content`). Verified at `69163dec`: all 169
+  server test targets with all features (1,221 passed, 114 ignored), run 5
+  at a time because 15 at a time filled the disk at link time. That
+  commit's message says 22 hand mutants and 170 citations; recounted, they
+  are 21 and 169. Found on the way, and fixed
+  2026-10-22: metadata on an appended artifact chunk was dropped by the
+  SQLite and PostgreSQL stores (`tests/artifact_append_metadata.rs`).
+- **Built on this branch (2026-10-22):** ADR 0026's tool-call idempotency:
+  `ToolInvocation::idempotency_key`, `Tool::read_only`, and a repeated call
+  to a side-effecting tool answered from the first
+  (`tool_loop/idempotency.rs`); `Delegation::start` keys the child's
+  message when the agent's card honours keys.
+- **Built on this branch (2026-10-21):** ADR 0025's production profile:
+  `Profile::Production` (`profile.rs`) and `ServeConfig::production()`
+  (`serve/graceful/production.rs`, `ServeReport::refused`). Not covered:
+  the gRPC and WebSocket listeners. Since ADR 0027 the profile also
+  requires a content signer.
+- **Built on this branch (2026-10-21):** ADR 0024's pushed halts and
+  cancels (`store/halt/postgres.rs`, `handler/halt/sync.rs`).
+- **Built on this branch (2026-10-21):** ADR 0023's budget, G5 in
+  `docs/swarm-orchestration.md`: `a2a_protocol_types::budget` (`Budget`,
+  `BudgetStatus`, `BudgetHandle`), every server holding a turn to the
+  caller's deadline (`handler/budget.rs`), `Delegation::start_budgeted`,
+  and the tool loop charging the `tokens` meter. The 0.10/0.12
+  `max_stored_tasks` deprecations are removed. `webpki-roots` requires
+  1.0.10 (RUSTSEC-2026-0381).
+- **Trailers on `main` (for the maintainer):** 36 of the 86 non-merge
+  commits pull request #173 merged (`86c8fac..6c90d0b^2`) carry
+  `Co-Authored-By` and `Claude-Session` trailers, against `CONTRIBUTING.md`'s
+  "no other trailer" rule, and the `Co-Authored-By` line names a model.
+  Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
+  rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts. Since 2026-10-18 it also refuses `SUPPORTED` or
-  `NOT_SUPPORTED` on anything but a MAY or OPTIONAL: 23 entries had used it
-  for a MUST or SHOULD, 12 of them now `TESTED` and 11 `APPLICATION` (each
-  note says which hook the SDK gives). Three entries stay PARTIAL, each
-  short of a MUST for a reason outside this repository: §3.5.2 (a lag
-  beyond the in-memory log's 512 events), §5.7 (the specification
-  contradicts itself on an empty `ListTasksResponse.tasks`) and §12.4
-  (agntcy-slim-rpc carries no error details). §5.4 and §11.1 closed on
-  2026-10-18: the SLIMRPC README has the full error table, and §11.1's one
-  exception is a stated, valid reason to set aside a SHOULD (a2a-go). Every
-  NOT_APPLICABLE and APPLICATION entry records a 2026-10-18 review.
+  authority on the counts (2026-10-21: TESTED 455, APPLICATION 32,
+  NOT_APPLICABLE 20, PARTIAL 3; 510 entries). The three PARTIAL entries,
+  each short of a MUST for a stated reason: §3.5.2, a stream lagging past
+  the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
+  default) ends with `streamLagged`; §5.7, the specification contradicts
+  itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
+  carries no error details (maintainer: stays PARTIAL until it does). The
+  APPLICATION and NOT_APPLICABLE entries were reviewed against the code and
+  the specification text on 2026-10-20 (*Next*, item 1). The checker now
+  also reads `impl_evidence`: a cited file must exist, a cited line be
+  inside it, a named symbol appear in it.
 - **Ledger citations drift:** the checker verifies test names, not line
   text, so any edit above a cited line moves its citation silently. After
   editing a cited file, re-derive test lines by name and map
-  `impl_evidence` lines through a line diff from the last commit.
+  `impl_evidence` lines by their text in the version they came from
+  (2026-10-20: a three-way merge re-derived 2,341 that way; one, §5.1's
+  `grpc/dispatcher.rs:888`, had pointed past the end of a 444-line file
+  since `7deff577`).
+- **CI on `main` at `6c90d0b`:** every workflow green except CI, cancelled:
+  `Example surface coverage` ran out of its 20 minutes compiling `swarm`,
+  every earlier step green. Split into two jobs on this branch
+  (`example-surface-ops`).
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
 
 ## Next, in order
 
-1. **Mutation testing of this branch's diff.** CI's incremental job
-   (split by crate on this branch: types 2, client 2, sdk 1, server 10
-   shards) grades it once a pull request is open. A local run with `lld`
-   and `-j 2` takes roughly a minute a mutant; survivors found so far were
-   fixed in the branch, and the last local results are in the session
-   report, not here.
-2. **APPLICATION entries (35).** 22 were re-examined and kept on
-   2026-10-18 (each note says why); 11 are card-content, deployment or
-   agent-reasoning requirements the SDK only warns about or hands the agent
-   (moved from a mistaken `SUPPORTED`). What could still become SDK work:
-   §3.1.11 423 (a client preflight that the credentials it attaches match
-   a declared scheme), §8.4.3 x5c certificate expiry, a JWT revocation list
-   (`jti`).
-3. **Official TCK.** Re-run against the newest a2a-tck before a pull request
-   that changes wire behaviour (`--min-graded 88` full, 66 minimal).
-   Re-run 2026-10-19 on this branch at `8aef50d` (a2a-tck `263b9cf`, debug
-   SUT): the full gate graded 88 with the 9 baselined failures, the minimal
-   gate 66; both exit 0. Re-run it after any further wire change.
-4. **Step 4 — OpenTelemetry on by default**, with the exporter staying in
-   `a2a-protocol-sdk` only (decided 2026-10-18). Done 2026-10-18: UCUM
-   units, `a2a.server.latency` removed for `a2a.server.request.duration`,
-   `init_otlp_pipeline(Option<&str>)` with the environment first, ADR 0013
-   Accepted, and the split: `otel` (instrumentation, the API only) is a
-   default feature of the server, client and SDK, and `otlp` (`Telemetry`,
-   the exporters) is default in the SDK only. Also done 2026-10-18: mTLS
-   to the collector and `http/json` (the opt-in `otlp-json` feature; see the
-   CHANGELOG for why it is not in `otlp`), and the server span and
-   `rpc.server.call.duration` on SLIMRPC through the new public
-   `BindingSpan` (ADR 0013, 2026-10-18 section), with
-   `Transport::rpc_system` naming custom transports on client spans. The
-   RPC semantic conventions were re-read on upstream `main` that day and
-   match every name used. Step 4 is complete.
-5. **Freshness:** the 2026-10-19 sweep is recorded in
-   `book/src/reference/mutation-history.md`, from the shards' logs (the
-   artifacts could not be downloaded here). It is incomplete: three of the
-   24 `a2a-server` shards hit the 240-minute limit, so the shard count or
-   the timeout needs raising again before a sweep is whole. Its three
-   survivors have tests on this branch (the row names them). After the next release,
-   check the versioned docs deploy.
+1. **After the APPLICATION and NOT_APPLICABLE review** (2026-10-20, all
+   54 against the v1.0.1 text, tag `3303592`, and the code; about 130 note
+   claims checked, 8 not verifiable from the repository): 35 kept as they
+   were, 16 kept with wrong or stale note claims and citations corrected,
+   §14 line 3244 split (what the SDK consumes is TESTED; content an agent
+   forwards stays APPLICATION), and §4.6.3 1139 and §5.8 1297 moved to
+   TESTED by URI-contract golden tests (`uri_contracts.rs`,
+   `uri_contract_websocket.rs`). Its suggestions were built the same day:
+   the `wss://` lint fix, the axum `A2aRouter` §5.2 warning, and `Server`'s
+   plaintext warning (§7.1). Left: a public form of the §5.2 check for
+   bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
+   `spec_line` N is line N + 31 of the vendored file (the header ends at
+   line 30, then one blank line).
+2. **Finish the tool-calling study.** It answers whether this SDK's loop
+   changes what a model does with tools, against the same model asked
+   directly: direct and SDK arms over four GGUFs, 30 seeds of each of two
+   prompts a cell, 16 cells. The runs are in
+   `scripts/tool_calling_study/runs/`, whose README gives each cell's
+   state and provenance; `docs/tool-calling-study.md` holds the method,
+   marked as a draft with no results. All 16 cells completed on
+   2026-10-22, every SDK cell with the one binary `01dce94e…`; 5 runs
+   recorded errors (listed in the runs README). In order:
+   1. Score with `score.py`, then audit every answer against the rubric
+      by reading it, recording each disagreement with the scorer.
+   2. Write the results into the doc with Wilson intervals, and remove its
+      draft notice.
+3. **OpenTelemetry, batch B:** telemetry initialised in every example,
+   `tck/sut`, the ITK agents and the CLI; streaming span lifetime; a span per
+   WebSocket frame; a client call-duration metric; store spans; SLIMRPC's
+   gRPC error classification. Started 2026-10-20.
+4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
+   and the incremental gate across 20 (`mutants.yml`, measured from runs
+   39193157308 and 39343090044). The three 2026-10-19 survivors were
+   re-verified killed on this branch by hand mutants (2026-10-20). Read the
+   next scheduled sweep's logs.
+5. **Official TCK** after any wire change: `--min-graded 88` full, 66
+   minimal. Last run 2026-10-20 at `1305674b`, after the auth-ordering,
+   streaming-span and WebSocket trace-context changes, against a2a-tck
+   `5daf014` (the workflow tracks `main`): full 88 graded, 81 passed, the
+   9 baselined (requirement, transport) failures and no other; minimal 66
+   graded, 8 of the 9 baselined failing (STREAM-SUB-003 not graded there);
+   required-extension CORE-CAP-004 passed on JSON-RPC and HTTP+JSON. All
+   three gates exit 0. Re-run after any further wire change.
 6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
 
 ## Waiting on the maintainer
 
+- **File GHSA-hr9h-6jvf-wvg6 with RustSec** (found 2026-10-21 by the CRA
+  review). The project's own advisory (fixed in 0.14.1) is on GitHub only:
+  the RustSec database and OSV have no entry (OSV queried 2026-10-21), so
+  `cargo audit`, `cargo deny` and OSV-Scanner on an integrator's lockfile do
+  not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. CRA rows
+  CRA-AI-I-2a, CRA-AI-II-2-4-8 and CRA-14 carry it as a gap. Filing is an
+  upstream action, so it waits for the maintainer.
+- **`STABILITY.md` §1** still gives the account written at 0.13; its
+  version sentence now says so. Bring it up to 0.14 and 0.15 at release
+  prep.
+- **Compare-and-set for task writes (cross-replica).** The 2026-10-20 fix
+  makes a stale continuation save record the position of its read, so a
+  subscriber replays the event it overwrote, but only until the continuing
+  turn's first fold stores a position past it again; the stored task keeps
+  the lost update. Closing both needs a conditional write: provided methods
+  `get_versioned` and `save_appending_history_if(.., expected)` (defaults
+  unchecked), a `version BIGINT` column on Postgres and SQLite (two
+  migrations; on SQLite compare `(row version, MAX(journal seq))` so the
+  journal keeps its O(1) appends), a counter under the in-memory write
+  lock, forwarding in the encrypted, audit and tenant wrappers, and a
+  bounded re-read and retry on a refused continuation. It changes the store
+  contract custom stores implement, so it is the maintainer's call. It
+  does not make concurrent turns on two replicas safe; that needs
+  cross-replica single-writer admission (a lease row per task).
 - **A release signing key.** `.github/release-signers/allowed_signers` and
   `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
   tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
@@ -121,51 +254,84 @@ only: when something here is done, delete it rather than annotating it.
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
-  `tests/multi_replica.rs` that is ignored by default); a stale unscoped write from another
-  replica keeps a stored position whose effect it overwrote
-  (`store/applied.rs`).
-- **Server:** JSON-RPC parses a request's params
-  before the interceptor chain authenticates it (a malformed body is
-  refused `-32602` before `401`).
+  `tests/multi_replica.rs` that is ignored by default). A continuation's
+  save on one replica still overwrites an artifact another replica's
+  running turn folded after the save's read: a lost update only a
+  compare-and-set write would refuse. Since 2026-10-20 the save records
+  the position of its read, so a subscriber replays that event rather than
+  losing it, until the continuing turn's first fold stores a position past
+  it again (`store/applied.rs`, `handler/messaging/basis.rs`,
+  `tests/stale_write_position`).
+- **Holds (§3.5.2):** the subscription's setup hold
+  (`handler/lifecycle/subscribe/hold.rs`) has no test that fails without
+  it; with the in-memory processor the window it guards cannot open past
+  the bound (ledger §3.5.2 note). The gap path's early returns in
+  `replay_after` predate the holds and skip the positions between the
+  snapshot and the attach point if the log cannot cover them, with no
+  `streamLagged` (independent review, 2026-10-20, finding 6): rarer now,
+  not closed.
+- **AES-GCM nonce budget is per process** (encryption verification,
+  2026-10-21, medium, design). The 2^32-seal limit per key is counted per
+  process and resets on restart, so R replicas can seal R × 2^32 under one
+  key: a repeat probability R² times the NIST target (R = 10: 1.2e-8). The
+  proposed fix seals each value under an HKDF-derived key with a random
+  salt, marked by a leading `0x00` byte no current value can start with;
+  it is a format change that needs a two-step rollout (readers first,
+  then writers behind a flag), so it waits. The book tells deployers to
+  give each replica its share of the limit meanwhile.
+- **An intermittent test:** `push_delivery::tests::log_redaction::
+  a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` misses
+  its timeout warning about once in 20 parallel runs of `--lib -- audit
+  store::encrypted push` (2 of 40, 2026-10-21; never alone, 0 of 6). The
+  event is emitted (the timeout path's result is asserted) but not
+  captured. `rebuild_interest_cache` after the install and again before
+  the second delivery did not stop it (still 2 of 40), so the callsite
+  cache is not the whole cause. Not skipped; cause unknown.
+- **Tool loop:** spans record no content, because the handler's
+  content-capture setting does not reach an executor; a `Failed` status
+  carries up to 512 bytes of the provider's error body to the A2A caller;
+  `CONTRIBUTING.md` still says the server has "eleven public traits"
+  (21 `pub trait`s on 2026-10-20).
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive
   in backups and logs, erasure is not serialised across replicas.
   `erase_caller` (2026-10-18) removes a caller's partitions but not what a
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
   ids, states, timestamps, `metadata` and order unprotected, and its seal
-  limit is per process while the true budget is per key across processes
-  (F7 made deltas seal only what they store). Two concurrent writers no longer leave a record
-  unreadable: the SQL appends are compare-and-append (F5, 2026-10-18).
+  limit is per process while the true budget is per key across processes.
 - **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
   WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
   measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
   10K tasks.
 - **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
-  `scripts/go_sdk_interop.sh` re-run 2026-10-19 (debug build, a2a-go
-  v2.6.0): both directions pass. Leg 1, 52 checks; leg 1b (secured card),
-  38, now with the key enforced and a keyless call refused; leg 2, every
-  method on all three bindings. The first run failed leg 1b: this branch's
-  build check refused echo-agent's secured card, which nothing enforced.
-- **Control map (2026-10-18 review):** of the 13 `partial` rows, four
-  had gaps engineering could close. ASI07's, the HTTP dispatchers naming a
-  caller from a mutual-TLS client certificate, is closed (ADR 0018, with no
-  new dependency); AIA-14-4e's and ASI10's, a halt that persists and crosses replicas, is
-  closed too (ADR 0019), ASI08's, G1-B's lease (ADR 0020), and ASI03's,
-  the originating principal on delegated calls (ADR 0021, RFC 8693; it
-  needs an identity provider that supports token exchange). The rest, and all 19 `integrator` rows, are split
-  by nature (reviewed, unchanged).
+  `scripts/go_sdk_interop.sh` last passed both directions 2026-10-20 at
+  `4101bb55`, after the auth-ordering change: leg 1 52 checks, leg 1b
+  38, leg 2 33 cells exercised (11 WebSocket cells not applicable), 0
+  failures.
+- **Control map:** 13 supported, 2 documented, 11 partial, 22 integrator
+  (`python3 scripts/check_compliance_map.py`); the partial rows' remaining
+  gaps are in each row's `gap`.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
-  benchmark comparison harness still pins `=0.14.1`.
+  benchmark comparison harness pins `=0.14.1`, the newest release on
+  crates.io (checked 2026-10-20), and moves when 0.15.0 is published;
+  `prove_workflow_gates_fail.py` needs `ssh-keygen`, absent in the cloud
+  container (apt has no candidate), so it did not run here on 2026-10-20.
 
 ## Waivers and their removal tests
 
-The SLIMRPC binding carries none since 2026-10-15: its move to
-agntcy-slim-rpc 3.4.1 (R13) took rustls to 0.23.46 and removed
-`unsafe-libyaml`, and its `deny.toml` and `osv-scanner.toml` notes say how
-each of the five was cleared. The root `deny.toml` ignores
-RUSTSEC-2024-0436 (`paste`, unmaintained) until genai drops it; its own
-comment is the authority.
+The SLIMRPC binding's `deny.toml` ignores one entry since 2026-10-19: the
+yanked `mls-rs-crypto-awslc` 0.25.1, which its comment explains (0.25.0
+would bring back four rustls advisories). **Never run a blanket `cargo
+update` in the binding:** it cannot keep a yanked version, so it downgrades
+agntcy-slim-* (3.4.3 to 3.4.2), aws-lc-rs and rustls (0.23.46 to 0.23.43)
+back into those advisories. Update named packages with `cargo update -p`.
+On 2026-10-20 agntcy-slim-rpc 3.4.5 still could not be taken: every
+agntcy-slim-auth after 0.17.6 requires the yanked `^0.25.1`.
+The root `deny.toml` ignores nothing since 2026-10-20, when the
+examples moved to genai 0.7 and `paste` left the graph. The root
+`osv-scanner.toml` keeps RUSTSEC-2023-0071 (`rsa`, in `Cargo.lock` through
+`sqlx-mysql` but resolved by no feature; re-checked 2026-10-20).
 
 ## Decisions the maintainer made
 
@@ -210,8 +376,41 @@ it.
   peer address (built); a total-task cap across tenant partitions is an
   option (built, `TenantStoreConfig::with_max_total_tasks`), and the
   approval-gate refusal under caller isolation stays.
-- **Earlier, still standing:** tool calling stays in the examples, not the
-  crates (`examples/rig-agent`); the rig integration crate is held
+- **2026-10-20:** §3.5.2: build a per-task watermark so the in-memory event
+  log never trims what an attached stream still owes (bounded by a hard
+  ceiling), with an independent review. §12.4: SLIMRPC stays PARTIAL until
+  agntcy-slim-rpc carries error details; no details in the message text.
+  Tool calling moves into the SDK as a feature-gated module (ADR 0022),
+  superseding the earlier examples-only decision below.
+- **2026-10-21:** production-grade safety work for delegation at scale,
+  each built with an ADR, tests that fail without it, and an independent
+  review where it touches the store/stream contract. Provenance: receivers
+  verify present signatures by default and refuse altered content, signing
+  turns on when a key is configured, unsigned peers still interoperate
+  (marked unverified), and the production profile requires a key.
+  Deadlines and budgets: an extension carrying an absolute deadline and
+  named meters (tokens, tool calls, cost in a named currency), decremented
+  per hop, with the remainder visible before expensive work. Production
+  profile: builder presets (`RequestHandlerBuilder::production()`,
+  `ServeConfig::production()`) that refuse to start on plaintext off
+  loopback, an undeclared binding, no authenticating interceptor, or
+  delegation without leases and a halt store; defaults unchanged. Instant
+  halt: the Postgres halt store pushes halts and cross-replica cancels
+  with LISTEN/NOTIFY; SQLite and in-memory keep polling. Also: narrower
+  credentials per hop through RFC 8693/8707, idempotency keys for tool
+  side effects by default, a multi-agent prompt-injection harness, the
+  tool-calling study published, kill-switch conformance tests, upstream
+  drafts for deadline propagation and provenance (not filed without the
+  maintainer), the three encryption verifications, and the removal of the
+  0.10/0.12 deprecations in 0.15.0. Built differently from this record in
+  two respects: ADR 0023's deadline is relative (`remainingMs`, as gRPC's
+  `grpc-timeout`), not absolute, so clock skew between agents does not
+  move it; each hop's remainder is what its parent reserved. And the
+  handler preset is `with_profile(Profile::Production)`, not
+  `RequestHandlerBuilder::production()`, because profiles are how the
+  builder already applies presets (ADR 0025).
+- **Earlier, still standing:** ~~tool calling stays in the examples, not the
+  crates (`examples/rig-agent`)~~ (superseded 2026-10-20, above); the rig integration crate is held
   unpublished; the cargo-mutants patch is kept in-repo, not proposed
   upstream (`scripts/cargo-mutants/README.md`); a store that cannot isolate
   refuses a request naming a tenant (G3 option 2); caller isolation is on by
@@ -261,12 +460,30 @@ into this file: the commit that records it changes it.
   means the disk is full. `bindings/a2a-protocol-slimrpc/target` reaches
   12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
   and delete it afterwards.
+- **`check_file_lengths.sh` counts tracked files only:** run it after
+  `git add`, or a new file over 500 lines passes unseen (it did:
+  `tests/provenance_signing.rs`, 533 lines, at `69163dec`).
 - **PostgreSQL 16** is installed: `pg_ctlcluster 16 main start`, then
-  `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`
-  (password `postgres`).
+  `A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres`.
+  The `postgres` role's password is not always `postgres` in a fresh
+  container (scram auth refused it on 2026-10-20): set it with
+  `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`.
+- **llama.cpp** b11751 (`8466395`) is built at `/opt/llama/src/build/bin`;
+  the study's GGUFs are in `/opt/models` (hashes in the study). Use
+  `-c 8192` (the default context sized the KV cache to ~4.6 GB and the OOM
+  killer took the server), and send one request at a time to a server whose
+  results must replay.
 - **No Docker daemon** in the cloud container, so `itk/docker-compose.yml`
   cannot be run here.
-- `pkill -f` matches its own shell: kill by PID.
+- `pkill -f` and `pgrep -f` match their own shell's command line, which
+  contains the pattern: kill by PID, or put the command in a script file
+  (cost a killed shell twice on 2026-10-20).
+- Agents in worktrees that share `target/` race on a crate's `.rlib`
+  (`linking with cc failed` while the other build replaced it): re-run the
+  step before reading anything into it.
+- `cargo test --workspace` stops at the first failing test binary; use
+  `--no-fail-fast`, or one package at a time when the disk allowance cannot
+  hold every test binary at once.
 - `cmd | tail` reports `tail`'s exit status; use `PIPESTATUS` or a file.
 - Run `rustup update stable` and nightly clippy before trusting local clippy;
   CI's stable moves.
@@ -279,6 +496,13 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- A mutation run's "caught" is only as good as the test that failed. Read
+  the per-mutant logs in the shard artifacts (`mutation-report-*`,
+  `outcomes.json` and `log/`): on 2026-10-22 an assertion-free `#[ignore]`
+  measurement timing out at nextest's 45s kill had scored 245 of 610 server
+  catches, so each labelled run surfaced survivors the last had scored
+  caught (`640773fc`). A slow test that asserts nothing belongs in the
+  mutation filter beside the soak binaries.
 - A test passing and `cargo semver-checks` passing do not show a serde
   change preserves behaviour; parse fixed inputs with both builds.
 - The ledger checker verifies test names, not line text: after code moves,
@@ -293,6 +517,11 @@ into this file: the commit that records it changes it.
 - Run every clippy invocation CI runs, not only `--all-features`: a type
   used by an always-compiled store from a module gated on `sqlite` built
   with all features and nowhere else (2026-10-18).
+  The 13 named invocations are not all of it: `cargo hack clippy
+  --each-feature` (57 runs) and `cargo doc -p <crate>` per crate, outside
+  the workspace's feature unification, caught a dead function and a link to
+  a `signing`-only method on pull request #178 that every named run passed
+  (2026-10-22).
 - An end-to-end test of a new client helper found a server bug the
   server's own tests missed: after a blocking send answered at
   `AUTH_REQUIRED`, nothing stored the rest of the run. Test the path a
@@ -308,6 +537,31 @@ into this file: the commit that records it changes it.
   resolve, though neither manifest changes: run `scripts/check_lockfiles.sh`
   before a pull request. On 2026-10-19 `otel` by default left both stale,
   and the ITK harness's `cargo build --locked` failed every scenario.
+
+- tokio 1.54.0 starts an accepted socket readable (#8435), so a mock that
+  read only the request head and answered left the body unread; five push
+  sender mocks failed until `tests/support/raw_http.rs` read the whole
+  request. Its signal driver's panic text also changed ("IO is disabled").
+- One example dependency turning on `serde_json/preserve_order`
+  (genai 0.7) changes every crate built with it: map iteration order (the
+  card ETag, a lint's output) and type sizes (`A2aError` past clippy's
+  `result_large_err`). Sort explicitly where order is a contract.
+- An idle timeout that counts bytes cuts a request the server is still
+  answering: a blocking `SendMessage` is silent while its executor works.
+  Found only by driving a slow live model through the SDK (2026-10-20).
+- A test that passes with and without the code it is meant to guard is
+  not coverage: prove each new test fails without its fix, and drop one
+  that cannot.
+
+- A line remap of ledger or control-map citations is applied once, to
+  files restored from `HEAD`: run on an already-remapped tree it shifts
+  every moved citation again, and the checkers, which check names not line
+  text, pass it (2026-10-22).
+- Long work in this container dies with it: results kept in scratch space
+  are lost on a restart. Commit raw results as they arrive, and make any
+  long driver resumable and check that its server is ready before each
+  chunk (a restart script that did not filled two cells with failed runs
+  in seconds, 2026-10-22).
 
 ## History
 

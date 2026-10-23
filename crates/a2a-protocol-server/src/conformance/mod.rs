@@ -53,6 +53,7 @@ use a2a_protocol_types::message::Message;
 use crate::call_context::CallContext;
 use crate::executor::AgentExecutor;
 
+pub mod halt;
 mod report;
 mod run;
 
@@ -123,7 +124,10 @@ async fn check_inner(
 
     results.push(cancel_succeeds(&executor, &message, cc).await);
 
-    Report { results }
+    Report {
+        subject: "executor",
+        results,
+    }
 }
 
 #[cfg(test)]

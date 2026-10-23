@@ -1,0 +1,47 @@
+{
+  "contract": {
+    "deadlinePassed": "the turn ends TASK_STATE_FAILED with failure class budget-exhausted",
+    "fields": {
+      "Budget": [
+        "meters",
+        "remainingMs"
+      ],
+      "BudgetStatus": [
+        "meters",
+        "remainingMs",
+        "spent"
+      ]
+    },
+    "grant": {
+      "extensions": [
+        "https://a2a-rust.com/extensions/budget/v1"
+      ],
+      "metadata": {
+        "a2a-rust.com/budget": {
+          "meters": {
+            "tokens": 50000
+          },
+          "remainingMs": 30000
+        }
+      }
+    },
+    "metadataKey": "a2a-rust.com/budget",
+    "meterName": "1 to 64 of [a-z0-9._-]; at most 16 meters",
+    "receipt": "deadline = admission time + remainingMs; remainingMs 0 is refused as invalid params",
+    "status": {
+      "carrier": "TaskStatusUpdateEvent.metadata of every status update in the turn",
+      "metadata": {
+        "a2a-rust.com/budget": {
+          "meters": {
+            "tokens": 41000
+          },
+          "remainingMs": 12000,
+          "spent": {
+            "tokens": 9000
+          }
+        }
+      }
+    }
+  },
+  "uri": "https://a2a-rust.com/extensions/budget/v1"
+}

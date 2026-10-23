@@ -30,7 +30,7 @@ pub(super) fn unset_proto3_defaults(config: &mut TaskPushNotificationConfig) {
 /// `InvalidParams` when a field the proto marks REQUIRED is empty. On gRPC
 /// an absent string arrives as `""`, and JSON can send `""` outright; both
 /// used to reach the store, where an empty id on delete or list matched
-/// nothing and answered success.
+/// nothing and answered success; a control character is refused (§14).
 fn require_field(name: &str, value: &str) -> ServerResult<()> {
     if value.is_empty() {
         return Err(ServerError::InvalidField {
@@ -38,7 +38,7 @@ fn require_field(name: &str, value: &str) -> ServerResult<()> {
             message: format!("{name} is required"),
         });
     }
-    Ok(())
+    super::ids::refuse_control_chars(value, name)
 }
 
 impl RequestHandler {
@@ -80,6 +80,7 @@ impl RequestHandler {
         let Some(ref sender) = self.push_sender else {
             return Err(ServerError::PushNotSupported);
         };
+        super::ids::refuse_control_chars_in_push_config(&config)?;
 
         // SPEC §3.1.7: the target task MUST exist. Storing a config for a
         // task that was never created leaves an unroutable, orphaned config.
@@ -181,17 +182,6 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {
-                // taskId is optional on the wire (a config nested in
-                // SendMessageConfiguration omits it), but a standalone create has
-                // no task context to infer it from — reject explicitly instead of
-                // storing an unroutable config.
-                if config.task_id.as_deref().unwrap_or("").is_empty() {
-                    return Err(ServerError::InvalidField {
-                        field: "taskId".into(),
-                        message: "taskId is required for CreateTaskPushNotificationConfig".into(),
-                    });
-                }
-
                 let mut call_ctx = build_call_context(
                     "CreateTaskPushNotificationConfig",
                     headers,
@@ -206,9 +196,19 @@ impl RequestHandler {
                     // SPEC §3.3.4: reject clients that do not declare support for
                     // extensions the agent card marks required.
                     self.ensure_required_extensions(&call_ctx)?;
-
-                    let result = self.validate_and_store_push_config(config).await?;
-                    Ok(result)
+                    // taskId is optional on the wire (a config nested in
+                    // SendMessageConfiguration omits it), but a standalone
+                    // create has no task to infer it from, so it is refused,
+                    // after admission: until 2026-10-20 before it, to callers
+                    // with no credential too.
+                    if config.task_id.as_deref().unwrap_or("").is_empty() {
+                        return Err(ServerError::InvalidField {
+                            field: "taskId".into(),
+                            message: "taskId is required for CreateTaskPushNotificationConfig"
+                                .into(),
+                        });
+                    }
+                    self.validate_and_store_push_config(config).await
                 }
                 .await;
                 call.finish(result).await

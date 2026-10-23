@@ -38,10 +38,6 @@
 #
 # Measured 2026-09-10: 1 signature-A and 20 signature-C candidates.
 
-# ── Signature A: a field nothing reads ───────────────────────────────────────
-
--  max_stored_tasks  -  # `#[deprecated]` on TenantLimits (tenant_config.rs:150-158), note "never enforced": it sits on PerTenantConfig, which the handler holds and a store never sees, so nothing can read it. Kept because removing a pub field is a semver break (see RELEASING.md); the working replacement is TenantAwareInMemoryTaskStore::with_tenant_override (store/tenant/store.rs:148). Drop this entry with the field at the next major.
-
 # ── CallInterceptor: AuthInterceptor, BearerAuthInterceptor ──────────────────
 
 CallInterceptor  request_timeout  AuthInterceptor,ExtensionsHeader,TracePropagationInterceptor,VersionQueryInterceptor  # Name collision, not a bound. The "read" is OAuth2ClientCredentials::request_timeout (token_provider.rs:320, applied at :501), the token-endpoint call's own timeout, which happens to live in the file holding `impl CallInterceptor for BearerAuthInterceptor`. None of the five reads ClientConfig::request_timeout: AuthInterceptor copies a stored credential into a header (auth.rs:226), ExtensionsHeader the A2A-Extensions value it was built with (extensions.rs:52), TracePropagationInterceptor writes traceparent/tracestate (trace_propagation.rs:155-162) and VersionQueryInterceptor adds the A2A-Version query parameter (version_query.rs:56-73); none makes a request to time out.

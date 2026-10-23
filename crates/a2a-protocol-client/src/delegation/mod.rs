@@ -34,6 +34,25 @@
 //! that crashes, hangs, is partitioned away, or [`detach`](Delegation::detach)es
 //! stops renewing, and its child stops within the time to live.
 //!
+//! [`start_budgeted`](Delegation::start_budgeted) sends the child a budget
+//! carved out of the parent's (`a2a_protocol_types::budget`, ADR 0023): a
+//! deadline inside the parent's and meters reserved from it. When the child
+//! settles on a status update that reports its spend, the parent is charged
+//! that instead of the reservation; every other ending refunds nothing.
+//!
+//! Every `start` gives the child's message an idempotency key
+//! (`a2a_protocol_types::idempotency`, ADR 0026) when the message has none
+//! and the agent is known to honour one
+//! ([`A2aClient::honours_idempotency`]). A client with a retry policy then
+//! retries a send that failed ambiguously without starting a second child,
+//! and the same message sent again with the handle's
+//! [`idempotency_key`](Delegation::idempotency_key) reaches the child the
+//! first created (after [`Outcome::Lost`] with no task id, say). A parent
+//! that resends after `start` itself fails sets the key first, since a
+//! failed `start` returns no handle to read it from. To an agent not known
+//! to honour keys nothing is added: this SDK's server refuses a key its
+//! store cannot honour.
+//!
 //! ```rust,no_run
 //! use std::sync::Arc;
 //! use a2a_protocol_client::{ClientBuilder, delegation::{Delegation, Outcome}};
@@ -57,81 +76,31 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_types::failure::{FailureClass, class_of};
-use a2a_protocol_types::{Message, MessageSendParams, StreamResponse, TaskState, TaskStatus};
+use a2a_protocol_types::budget::{BudgetStatus, ChildGrant};
+use a2a_protocol_types::idempotency;
+use a2a_protocol_types::{MessageSendParams, StreamResponse};
 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 
+mod outcome;
+mod renewal;
+pub use outcome::{Delegated, Outcome};
+use renewal::Renewal;
+
 /// How long a cancel waits for the child's id, when it is asked for before
 /// the first event named the child.
 pub const DEFAULT_ID_WAIT: Duration = Duration::from_secs(5);
 
-/// What became of a delegated task.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum Outcome {
-    /// The child completed.
-    Completed(TaskStatus),
-    /// The child failed or was rejected (`status.state` says which), with
-    /// the class it declared, or [`FailureClass::Internal`] if it declared
-    /// none.
-    Failed {
-        /// The child's final status.
-        status: TaskStatus,
-        /// Its failure class.
-        class: FailureClass,
-    },
-    /// The child reached `canceled`, whoever asked for it.
-    Canceled(TaskStatus),
-    /// The child is waiting for the parent: `input-required` or
-    /// `auth-required`. It was not cancelled; continue it by sending a
-    /// message with its task id, or cancel it.
-    Interrupted(TaskStatus),
-    /// The agent answered with a message and created no task.
-    Message(Message),
-    /// The child's stream failed or ended before the child settled. The
-    /// child, if its id was known, was sent `CancelTask`.
-    Lost(Option<ClientError>),
-    /// A cancel was asked for, but the child's id was never learned within
-    /// the wait, so no `CancelTask` could be sent. A child may be running.
-    Unreachable,
-    /// `CancelTask` was accepted, but the task it returned is not yet in a
-    /// terminal state; the agent stops the child asynchronously.
-    CancelRequested(TaskStatus),
-    /// `CancelTask` was sent and refused or failed.
-    CancelFailed(ClientError),
-}
-
-impl Outcome {
-    fn of(status: TaskStatus) -> Option<Self> {
-        Some(match status.state {
-            TaskState::Completed => Self::Completed(status),
-            TaskState::Canceled => Self::Canceled(status),
-            TaskState::Failed | TaskState::Rejected => {
-                let class = status
-                    .message
-                    .as_ref()
-                    .and_then(class_of)
-                    .unwrap_or(FailureClass::Internal);
-                Self::Failed { status, class }
-            }
-            s if s.is_interrupted() => Self::Interrupted(status),
-            _ => return None,
-        })
-    }
-}
-
-/// A delegation that has ended: the child's id, if it was learned, and its
-/// outcome.
-#[derive(Debug)]
-#[non_exhaustive]
-pub struct Delegated {
-    /// The child's task id; `None` if no event named it.
-    pub task_id: Option<String>,
-    /// What became of it.
-    pub outcome: Outcome,
+/// A fresh idempotency key: two version-4 UUIDs, 244 random bits from the
+/// operating system's generator, as 64 hex digits.
+fn fresh_key() -> String {
+    format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
 }
 
 /// A child task sent to another agent, which is cancelled if its parent
@@ -148,31 +117,38 @@ pub struct Delegation {
     /// Renews the child's lease, when it was granted one; stops when this is
     /// dropped.
     renewal: Option<Renewal>,
-}
-
-/// The task renewing a child's lease, aborted when this is dropped.
-#[derive(Debug)]
-struct Renewal {
-    /// The child's id, once an event names it.
-    id: Arc<std::sync::Mutex<Option<String>>>,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for Renewal {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
+    /// The child's budget, and the report the event that settled the child
+    /// carried, if it carried one.
+    budget: Option<(ChildGrant, Option<BudgetStatus>)>,
+    /// The child message's idempotency key, if it carried one.
+    idempotency_key: Option<String>,
 }
 
 impl Delegation {
     /// Sends `params` as a streaming message and returns the handle following
     /// it. Nothing is cancelled until the handle is asked to, or dropped.
     ///
+    /// The message is given a fresh idempotency key when it has none and
+    /// the client knows its agent honours keys (see the [module docs](self));
+    /// a key already on the message is kept.
+    ///
     /// # Errors
     ///
     /// Returns the client's error when the stream cannot be opened. No child
     /// was created then, or none whose id the agent told us.
-    pub async fn start(client: Arc<A2aClient>, params: MessageSendParams) -> ClientResult<Self> {
+    pub async fn start(
+        client: Arc<A2aClient>,
+        mut params: MessageSendParams,
+    ) -> ClientResult<Self> {
+        if client.honours_idempotency() && matches!(idempotency::key_of(&params.message), Ok(None))
+        {
+            // A fresh key is 64 hex digits, always valid, so this cannot fail.
+            let _ = idempotency::set_key(&mut params.message, &fresh_key());
+        }
+        let idempotency_key = idempotency::key_of(&params.message)
+            .ok()
+            .flatten()
+            .map(str::to_owned);
         let tenant = params.tenant.clone();
         let stream = client.stream_message(params).await?;
         Ok(Self {
@@ -184,7 +160,17 @@ impl Delegation {
             armed: true,
             id_wait: DEFAULT_ID_WAIT,
             renewal: None,
+            budget: None,
+            idempotency_key,
         })
+    }
+
+    /// The idempotency key the child's message carried: the caller's, or the
+    /// one [`start`](Self::start) gave it. The same message sent with it
+    /// reaches the same child.
+    #[must_use]
+    pub fn idempotency_key(&self) -> Option<&str> {
+        self.idempotency_key.as_deref()
     }
 
     /// [`start`](Self::start), granting the child a lease of `ttl` and
@@ -206,31 +192,51 @@ impl Delegation {
         a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
         let tenant = params.tenant.clone();
         let mut this = Self::start(Arc::clone(&client), params).await?;
-        let id = Arc::new(std::sync::Mutex::new(None::<String>));
-        let slot = Arc::clone(&id);
-        let task = tokio::spawn(async move {
-            let every = ttl / 3;
-            loop {
-                tokio::time::sleep(every).await;
-                let known = slot
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone();
-                let Some(id) = known else { continue };
-                let mut query = a2a_protocol_types::TaskQueryParams::new(id);
-                query.tenant.clone_from(&tenant);
-                match client.renew_lease(query).await {
-                    Ok(task) if task.status.state.is_terminal() => return,
-                    Ok(_) => {}
-                    // Missed renewals are what the lease is for; a later one
-                    // may land.
-                    Err(_e) => {
-                        trace_debug!(error = %_e, "lease renewal failed");
-                    }
+        this.renewal = Some(Renewal::spawn(client, tenant, ttl));
+        Ok(this)
+    }
+
+    /// [`start`](Self::start) with `grant`, a budget carved out of the
+    /// parent's by `BudgetHandle::grant`, and a lease of `lease` as
+    /// [`start_leased`](Self::start_leased) grants one when it is `Some`.
+    ///
+    /// When the handle ends, the grant is settled. If the status update
+    /// that settled the child (terminal or interrupted) carried a budget
+    /// report, the parent is charged that spend instead of the reservation.
+    /// Any other ending (a lost stream, a cancel answered by `CancelTask`,
+    /// an unreachable child), a report-less update, or a handle detached or
+    /// dropped keeps the whole reservation as spent. An agent that does not
+    /// implement the extension reports nothing.
+    ///
+    /// # Errors
+    ///
+    /// As [`start`](Self::start). The reservation is returned only when the
+    /// error shows the agent refused the request, so no child exists: an
+    /// A2A error, an HTTP error status, or an authentication challenge.
+    /// After a transport error or a timeout a child may be running, and the
+    /// reservation is kept.
+    pub async fn start_budgeted(
+        client: Arc<A2aClient>,
+        mut params: MessageSendParams,
+        grant: ChildGrant,
+        lease: Option<Duration>,
+    ) -> ClientResult<Self> {
+        grant.budget().attach(&mut params.message);
+        if let Some(ttl) = lease {
+            a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
+        }
+        let tenant = params.tenant.clone();
+        let mut this = match Self::start(Arc::clone(&client), params).await {
+            Ok(this) => this,
+            Err(e) => {
+                if refused(&e) {
+                    grant.release();
                 }
+                return Err(e);
             }
-        });
-        this.renewal = Some(Renewal { id, task });
+        };
+        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl));
+        this.budget = Some((grant, None));
         Ok(this)
     }
 
@@ -270,6 +276,7 @@ impl Delegation {
     }
 
     fn observe(&mut self, ev: &StreamResponse) {
+        let mut report = None;
         if let (None, Some(id), Some(renewal)) = (&self.task_id, task_id_of(ev), &self.renewal) {
             *renewal
                 .id
@@ -283,6 +290,7 @@ impl Delegation {
             }
             StreamResponse::StatusUpdate(u) => {
                 self.task_id.get_or_insert_with(|| u.task_id.to_string());
+                report = BudgetStatus::read_from(u.metadata.as_ref()).ok().flatten();
                 &u.status
             }
             StreamResponse::Message(m) => {
@@ -296,6 +304,14 @@ impl Delegation {
         };
         if self.settled.is_none() {
             self.settled = Outcome::of(status.clone());
+            // Only the report on the event that settled the child is its
+            // whole spend; an earlier one is not, and settling with it would
+            // refund what the child spent afterwards.
+            if self.settled.is_some()
+                && let Some((_, last)) = self.budget.as_mut()
+            {
+                *last = report;
+            }
         }
     }
 
@@ -368,11 +384,26 @@ impl Delegation {
 
     fn finish(mut self, outcome: Outcome) -> Delegated {
         self.armed = false;
+        if let Some((grant, last)) = self.budget.take() {
+            grant.settle(last.as_ref());
+        }
         Delegated {
             task_id: self.task_id.take(),
             outcome,
         }
     }
+}
+
+/// Whether `e` shows the agent answered and refused, so that no child was
+/// created. Anything else may have reached the agent.
+const fn refused(e: &ClientError) -> bool {
+    matches!(
+        e,
+        ClientError::Protocol(_)
+            | ClientError::UnexpectedStatus { .. }
+            | ClientError::AuthRequired { .. }
+            | ClientError::InvalidEndpoint(_)
+    )
 }
 
 /// The task id an event names, if it names one.
@@ -408,6 +439,8 @@ impl Drop for Delegation {
             armed: false,
             id_wait: self.id_wait,
             renewal: None,
+            budget: None,
+            idempotency_key: self.idempotency_key.take(),
         };
         rt.spawn(async move {
             let done = rest.cancel().await;

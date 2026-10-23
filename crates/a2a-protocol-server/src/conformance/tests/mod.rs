@@ -422,6 +422,7 @@ async fn a_panicking_join_is_a_panic_and_a_cancelled_one_is_not() {
 #[test]
 fn a_report_that_graded_nothing_is_not_a_pass() {
     let empty = Report {
+        subject: "executor",
         results: Vec::new(),
     };
     assert_eq!(empty.graded(), 0);
@@ -432,6 +433,7 @@ fn a_report_that_graded_nothing_is_not_a_pass() {
     );
 
     let all_not_applicable = Report {
+        subject: "executor",
         results: vec![
             CheckResult::skip("first", "never applied"),
             CheckResult::skip("second", "never applied either"),

@@ -19,11 +19,13 @@
 //! | `event_processing` | Event collection, state transitions, push delivery |
 //! | `shutdown` | Ending in-flight work, then graceful shutdown with optional timeout |
 
+pub(crate) mod budget;
 mod capability;
 mod concurrency;
 mod event_processing;
 pub(crate) mod halt;
 pub(crate) mod helpers;
+mod ids;
 pub(crate) mod input_modes;
 mod introspection;
 pub(crate) mod lease;
@@ -35,13 +37,17 @@ mod messaging;
 mod push_config;
 mod push_config_page;
 mod shutdown;
+mod tenant_resolution;
 mod undeclared_binding;
+mod unreadable;
 
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
 pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
 pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
+#[cfg(all(test, feature = "tracing"))]
+pub(crate) use shutdown::tests::warning::warnings_during;
 pub use shutdown::{InFlightReport, ShutdownReport};
 
 use std::collections::HashMap;
@@ -131,6 +137,10 @@ pub struct RequestHandler {
     /// What the executor's span records: the `GenAI` `invoke_agent`
     /// conventions, and whether messages are captured.
     pub(crate) span_settings: crate::rpc_span::SpanSettings,
+    /// What content the server serves is signed with (ADR 0027).
+    pub(crate) outbound: crate::provenance::Outbound,
+    /// What an arriving message's signature is checked against (ADR 0027).
+    pub(crate) inbound: crate::provenance::Inbound,
     /// When `true`, `GetExtendedAgentCard` is served even though no
     /// authenticating interceptor guards the chain. Spec §13.3 says the
     /// operation MUST require authentication, so the default is `false`:
@@ -275,64 +285,6 @@ impl RequestHandler {
         Some(config.get(&crate::store::tenant::TenantContext::current()))
     }
 
-    /// Resolves the authoritative tenant for a request.
-    ///
-    /// When a [`TenantResolver`] is configured it is the source of truth: the
-    /// tenant is derived from trusted request context (an auth token, a
-    /// gateway-set header, a URL path segment) rather than from the
-    /// client-supplied `tenant` field. A client that *also* names a tenant is
-    /// honored only when it matches the resolved one; a mismatch is a
-    /// cross-tenant access attempt and is rejected. This closes the gap where a
-    /// configured resolver was never consulted and the client's `params.tenant`
-    /// alone selected the store partition — letting any caller read or write
-    /// another tenant's tasks by naming it.
-    ///
-    /// With no resolver configured, the client-supplied value is used verbatim
-    /// (single-tenant deployments, or trusted callers behind an authenticating
-    /// gateway), preserving the prior behavior.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ServerError::InvalidParams`] when a client-supplied tenant
-    /// disagrees with the resolver-derived tenant.
-    pub(crate) async fn resolve_tenant(
-        &self,
-        method: &str,
-        headers: Option<&HashMap<String, String>>,
-        client_tenant: Option<&str>,
-    ) -> ServerResult<String> {
-        #[cfg(feature = "tracing")]
-        crate::rpc_span::record_tenant(client_tenant);
-        let Some(resolver) = self.tenant_resolver.as_deref() else {
-            return self.isolatable(client_tenant.unwrap_or_default().to_owned());
-        };
-        let call_ctx =
-            crate::handler::helpers::build_call_context(method, headers, self.inbound_trace_policy);
-        let derived = resolver.resolve(&call_ctx).await;
-        // Strict mode: a resolver that cannot determine a tenant must not fall
-        // through to the shared default partition — reject instead, so a
-        // header-less/unauthenticated request cannot read or write the `""`
-        // bucket. Off by default to preserve the documented resolver contract
-        // (`None` → default partition) for deployments that rely on it.
-        if self.require_resolved_tenant && derived.is_none() {
-            return Err(crate::error::ServerError::InvalidParams(
-                "no tenant could be determined for this request and strict \
-                 multi-tenancy is enabled"
-                    .to_owned(),
-            ));
-        }
-        let authoritative = derived.unwrap_or_default();
-        if let Some(client) = client_tenant
-            && !client.is_empty()
-            && client != authoritative
-        {
-            return Err(crate::error::ServerError::InvalidParams(format!(
-                "request tenant '{client}' does not match the authenticated tenant"
-            )));
-        }
-        self.isolatable(authoritative)
-    }
-
     /// Runs the interceptors' `before` hooks, then isolates the rest of the
     /// request to the caller they identified
     /// ([`enter_caller_partition`](Self::enter_caller_partition)). One call,
@@ -434,11 +386,11 @@ impl RequestHandler {
     /// [`ServerError::UnsupportedOperation`](crate::error::ServerError::UnsupportedOperation)
     /// naming what to configure.
     fn isolatable(&self, tenant: String) -> ServerResult<String> {
-        // The separator joins a tenant to a caller in a store partition key;
-        // a tenant containing it could name another tenant's caller partition.
-        if tenant.contains(crate::store::tenant::CALLER_SEPARATOR) {
+        // The U+001F separator joins a tenant to a caller in a partition key,
+        // and a tenant is logged: no control character reaches either (§14).
+        if tenant.chars().any(char::is_control) {
             return Err(crate::error::ServerError::InvalidParams(
-                "a tenant may not contain the U+001F unit separator".to_owned(),
+                "a tenant may not contain a control character such as U+001F".to_owned(),
             ));
         }
         if tenant.is_empty() || !self.refuse_unisolated_tenants {

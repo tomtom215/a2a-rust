@@ -21,13 +21,16 @@
 //! plain future.
 //!
 //! The call's duration and outcome go to [`Metrics::on_rpc_call`] whatever
-//! the features: a metrics callback is always compiled. A failed call carries
-//! the status code its binding put on the wire — the JSON-RPC error code, the
-//! HTTP status, the gRPC status name — as both `rpc.status_code` and
-//! `error.type`, as the semantic conventions ask ("If a status code is
-//! returned and it indicates an error, `error.type` SHOULD be set to that
-//! status code"). Each binding's own mapping produces it, so the metric
-//! cannot disagree with the response.
+//! the features: a metrics callback is always compiled. A call that did not
+//! succeed carries the status code its binding put on the wire — the
+//! JSON-RPC error code, the HTTP status, the gRPC status name — as
+//! `rpc.status_code`, and, when that status "indicates an error", also as
+//! `error.type` with `Error` status, as the semantic conventions ask. Which
+//! statuses indicate one is each binding's conventions' rule
+//! ([`RpcSystem::is_server_error`]): every JSON-RPC code, a 5xx but not a
+//! 4xx, and gRPC's six server-side codes but not `NOT_FOUND`. Each binding's
+//! own mapping produces the status, so the metric cannot disagree with the
+//! response.
 //!
 //! Attribute names and rules are the OpenTelemetry semantic conventions'
 //! `docs/rpc/{rpc-spans,rpc-metrics,grpc,json-rpc}.md`, read upstream on
@@ -45,9 +48,17 @@ use std::time::{Duration, Instant};
 mod a2a;
 mod agent;
 mod binding;
+mod call;
+mod link;
 mod names;
 #[cfg(feature = "otel")]
 mod otel;
+mod refusal;
+mod spawn;
+mod stream;
+#[cfg(feature = "tool-loop")]
+mod tool;
+mod webhook;
 
 #[cfg(feature = "tracing")]
 use crate::handler::InboundTracePolicy;
@@ -61,6 +72,7 @@ pub use a2a::{
 pub use agent::OutputRecorder;
 pub use agent::{ExecutorSpan, SpanSettings};
 pub use binding::{BindingSpan, CustomBinding};
+use call::{Call, Pending};
 #[cfg(feature = "tracing")]
 use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
@@ -68,6 +80,14 @@ pub use names::{RpcSystem, WireStatus, a2a_method};
 pub use otel::current_recorded_span;
 #[cfg(feature = "otel")]
 use otel::remote_parent;
+#[cfg(feature = "grpc")]
+pub use refusal::record_refused;
+pub use refusal::{record_if_refused, record_unrouted, refused};
+pub use spawn::{in_child_span, in_current_span};
+pub use stream::{StreamEnd, StreamOutcome, spanning_stream};
+#[cfg(feature = "tool-loop")]
+pub use tool::GenAiSpan;
+pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the
 /// original value; a request body may be megabytes, and an attribute that
@@ -170,6 +190,48 @@ impl ServerSpan {
         }
     }
 
+    /// [`open`](Self::open) for a JSON-RPC request — over HTTP or WebSocket —
+    /// adding what `docs/rpc/json-rpc.md` asks of its span:
+    /// `jsonrpc.protocol.version` `2.0` (Conditionally Required "if other
+    /// than the default version (`1.0`)"); `rpc.method_original`, the method
+    /// as sent (Conditionally Required "if and only if it's different than
+    /// `rpc.method`", which a served method's `SendMessage` always is); and
+    /// `jsonrpc.request.id` (Recommended; not for a notification or a `null`
+    /// id, which the conventions say not to capture). The two the peer
+    /// chooses are cut to 128 bytes.
+    pub fn open_jsonrpc(
+        handler: &RequestHandler,
+        request: &a2a_protocol_types::jsonrpc::JsonRpcRequest,
+        headers: Option<&HashMap<String, String>>,
+    ) -> Self {
+        let call = Self::open(handler, RpcSystem::JsonRpc, &request.method, headers);
+        #[cfg(feature = "tracing")]
+        {
+            call.span.record("jsonrpc.protocol.version", "2.0");
+            // `open` records it for `_OTHER`; a field recorded twice is
+            // exported twice (`a2a.rs`).
+            if call.method != OTHER {
+                call.span.record(
+                    "rpc.method_original",
+                    truncated(&request.method, METHOD_ORIGINAL_MAX),
+                );
+            }
+            match request.id.as_value() {
+                Some(serde_json::Value::String(id)) => {
+                    call.span
+                        .record("jsonrpc.request.id", truncated(id, METHOD_ORIGINAL_MAX));
+                }
+                Some(id) => {
+                    let id = id.to_string();
+                    call.span
+                        .record("jsonrpc.request.id", truncated(&id, METHOD_ORIGINAL_MAX));
+                }
+                None => {}
+            }
+        }
+        call
+    }
+
     /// Adds the HTTP request method and matched route template to an
     /// HTTP+JSON call's span, so HTTP-oriented tooling still finds it (ADR
     /// 0013, option 2). `route` is the template (`/tasks/{id}`), never the
@@ -198,14 +260,17 @@ impl ServerSpan {
         E: WireStatus,
         F: Future<Output = Result<T, E>>,
     {
-        self.run_with(fut, |out| out)
+        self.call(fut, failed_with, |out| out, false)
     }
 
     /// [`run`](Self::run), then `then` on the outcome, still inside the span:
     /// for a binding that builds its response from the outcome and spawns
     /// work doing so — an SSE response's writer task — so that work is a
-    /// child of the call rather than the root of a trace of its own. The
-    /// call's recorded duration ends before `then`.
+    /// child of the call rather than the root of a trace of its own.
+    ///
+    /// A stream set up in `then` may claim the call
+    /// ([`StreamEnd::claim`], [`spanning_stream`]); a successful call is then
+    /// recorded when that stream ends, with its outcome (`stream.rs`).
     pub fn run_with<T, E, F, R>(
         self,
         fut: F,
@@ -215,18 +280,15 @@ impl ServerSpan {
         E: WireStatus,
         F: Future<Output = Result<T, E>>,
     {
-        self.call(
-            fut,
-            |out, system| out.as_ref().err().map(|e| e.wire_status(system)),
-            then,
-        )
+        self.call(fut, failed_with, then, true)
     }
 
     /// [`run`](Self::run) for a binding whose response already says how the
     /// call went: an HTTP+JSON response's status *is* its wire status, so
     /// timing the whole route — parsing the body and params included — and
     /// classifying by that status records a request refused before the
-    /// handler ran exactly as a caller saw it.
+    /// handler ran exactly as a caller saw it. An SSE response's stream
+    /// claims the call, as in [`run_with`](Self::run_with).
     pub fn run_response<B, F>(self, fut: F) -> impl Future<Output = hyper::Response<B>>
     where
         F: Future<Output = hyper::Response<B>>,
@@ -238,6 +300,7 @@ impl ServerSpan {
                     .then(|| Cow::Owned(resp.status().as_u16().to_string()))
             },
             |resp| resp,
+            true,
         )
     }
 
@@ -249,12 +312,17 @@ impl ServerSpan {
     /// awaited — which doubled every dispatcher's future past clippy's
     /// `large_futures` bound; boxing it instead cost an allocation and a copy
     /// of up to 84 KB per call, measured at +11% on an HTTP+JSON send.
-    fn call<F, C, T, R>(self, fut: F, classify: C, then: T) -> Call<F, C, T>
+    ///
+    /// `streams`: whether the call can answer with a stream, which then
+    /// records it (`stream.rs`).
+    fn call<F, C, T, R>(self, fut: F, classify: C, then: T, streams: bool) -> Call<F, C, T>
     where
         F: Future,
         C: FnOnce(&F::Output, RpcSystem) -> Option<Cow<'static, str>>,
         T: FnOnce(F::Output) -> R,
     {
+        let slot = streams.then(stream::Slot::new);
+        let fut = stream::scope_future(slot.as_ref(), fut);
         #[cfg(feature = "tracing")]
         let inner =
             tracing::Instrument::instrument(UNTRACED.scope(self.untraced, fut), self.span.clone());
@@ -267,6 +335,7 @@ impl ServerSpan {
                 started: Instant::now(),
             },
             finish: Some((classify, then)),
+            slot,
         }
     }
 
@@ -284,15 +353,20 @@ impl ServerSpan {
         }
     }
 
-    /// Records a finished call on the span and in the metrics.
-    fn finish(&self, duration: Duration, failed_with: Option<&str>) {
+    /// Records a finished call on the span and in the metrics: `status` is
+    /// the wire status of a call that did not succeed, `None` for one that
+    /// did. Whether it is an error is the binding's conventions' call
+    /// ([`RpcSystem::is_server_error`]); a call that never finished is one
+    /// on every binding.
+    fn finish(&self, duration: Duration, status: Option<&str>) {
         // gRPC always has a status; the other bindings have one only on error.
-        let status_code = match (failed_with, self.system) {
+        let status_code = match (status, self.system) {
             (Some(code), _) => Some(code),
             (None, RpcSystem::Grpc) => Some("OK"),
             (None, RpcSystem::Custom(binding)) => binding.ok_status,
             (None, _) => None,
         };
+        let failed_with = status.filter(|s| *s == CANCELLED || self.system.is_server_error(s));
         #[cfg(feature = "tracing")]
         {
             if let Some(code) = status_code {
@@ -336,6 +410,8 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
         rpc.method = qualified,
         rpc.method_original = tracing::field::Empty,
         rpc.status_code = tracing::field::Empty,
+        jsonrpc.protocol.version = tracing::field::Empty,
+        jsonrpc.request.id = tracing::field::Empty,
         error.type = tracing::field::Empty,
         http.request.method = tracing::field::Empty,
         http.route = tracing::field::Empty,
@@ -352,86 +428,12 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
     )
 }
 
-/// The future inside a call's span, as the call's future is wrapped when
-/// tracing is compiled in.
-#[cfg(feature = "tracing")]
-type Inner<F> = tracing::instrument::Instrumented<tokio::task::futures::TaskLocalFuture<bool, F>>;
-#[cfg(not(feature = "tracing"))]
-type Inner<F> = F;
-
-pin_project_lite::pin_project! {
-    /// A call running in its span; when it finishes, it is recorded and its
-    /// outcome handed on. See [`ServerSpan::run`].
-    pub struct Call<F, C, T>
-    where
-        F: Future,
-    {
-        #[pin]
-        inner: Inner<F>,
-        pending: Pending,
-        finish: Option<(C, T)>,
-    }
-}
-
-impl<F, C, T, R> Future for Call<F, C, T>
-where
-    F: Future,
-    C: FnOnce(&F::Output, RpcSystem) -> Option<Cow<'static, str>>,
-    T: FnOnce(F::Output) -> R,
-{
-    type Output = R;
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<R> {
-        let this = self.project();
-        let out = std::task::ready!(this.inner.poll(cx));
-        // Both are taken only here, on the poll that returns `Ready`, so they
-        // are missing only if the future is polled again after completing —
-        // which `Future`'s contract lets an implementation panic on, and
-        // which every `async` block does. No caller in this crate re-polls.
-        let (classify, then) = this.finish.take().expect("a call polled after it finished");
-        let call = this
-            .pending
-            .call
-            .take()
-            .expect("a call polled after it finished");
-        let status = classify(&out, call.system);
-        call.finish(this.pending.started.elapsed(), status.as_deref());
-        call.enter(|| then(out)).into()
-    }
-}
-
-/// A call in flight; records it as cancelled if dropped unfinished.
-struct Pending {
-    call: Option<ServerSpan>,
-    started: Instant,
-}
-
-impl Drop for Pending {
-    fn drop(&mut self) {
-        if let Some(call) = self.call.take() {
-            call.finish(self.started.elapsed(), Some(CANCELLED));
-        }
-    }
-}
-
-/// Records a request refused before it named a method — a body that is not
-/// JSON-RPC, a batch over the limit, an unsupported content type — as a
-/// failed call without `rpc.method`, which the conventions require only "if
-/// available". No span: there is no method to name one for, and the peer's
-/// trace context has not been read.
-pub fn record_unrouted(
-    handler: &RequestHandler,
+/// The wire status of a call that returned `Err`, `None` for `Ok`.
+fn failed_with<T, E: WireStatus>(
+    out: &Result<T, E>,
     system: RpcSystem,
-    started: Instant,
-    status: &str,
-) {
-    handler.metrics.on_rpc_call(&RpcCall {
-        system: system.name(),
-        method: None,
-        duration: started.elapsed(),
-        status_code: Some(status),
-        error_type: Some(status),
-    });
+) -> Option<Cow<'static, str>> {
+    out.as_ref().err().map(|e| e.wire_status(system))
 }
 
 /// `s` cut to at most `max` bytes, on a character boundary.
@@ -447,45 +449,11 @@ fn truncated(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
-/// Runs a task spawned on behalf of the current call — the executor, the
-/// event processor, a push delivery — in an `INTERNAL` child span of it, so
-/// the work shows up under the call in a trace and its log events carry the
-/// call's context across the `tokio::spawn` (audit O4).
-pub fn in_child_span<F: Future>(name: &'static str, fut: F) -> impl Future<Output = F::Output> {
-    #[cfg(feature = "tracing")]
-    {
-        let untraced = untraced();
-        let span = if untraced {
-            tracing::Span::none()
-        } else {
-            tracing::info_span!(target: "a2a_protocol_server::rpc", "a2a.task", otel.name = name)
-        };
-        tracing::Instrument::instrument(UNTRACED.scope(untraced, fut), span)
-    }
-    #[cfg(not(feature = "tracing"))]
-    {
-        let _ = name;
-        fut
-    }
-}
-
-/// Runs work spawned to finish a call's own job — not a task of its own —
-/// in the call's span, carrying whether the call is untraced across the
-/// `tokio::spawn`. For work that must outlive the request future when its
-/// client goes away (N27) without adding a span to the call's trace.
-pub fn in_current_span<F: Future>(fut: F) -> impl Future<Output = F::Output> {
-    #[cfg(feature = "tracing")]
-    {
-        let untraced = untraced();
-        tracing::Instrument::instrument(UNTRACED.scope(untraced, fut), tracing::Span::current())
-    }
-    #[cfg(not(feature = "tracing"))]
-    {
-        fut
-    }
-}
-
+#[cfg(test)]
+mod jsonrpc_tests;
 #[cfg(test)]
 mod span_tests;
+#[cfg(test)]
+mod stream_tests;
 #[cfg(test)]
 mod tests;

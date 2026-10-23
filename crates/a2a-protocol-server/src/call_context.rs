@@ -168,6 +168,10 @@ pub struct CallContext {
 
     /// The task the request names, when it names one.
     task_id: Option<String>,
+
+    /// When the call context was built: as the request arrived, before any
+    /// admission wait. See [`received_at`](Self::received_at).
+    received_at: std::time::Instant,
 }
 
 /// Hand-written so a caller's credentials cannot reach a log through a
@@ -203,6 +207,7 @@ impl std::fmt::Debug for CallContext {
             .field("trace_context", &self.trace_context)
             .field("tenant", &self.tenant)
             .field("task_id", &self.task_id)
+            .field("received_at", &self.received_at)
             .finish()
     }
 }
@@ -384,7 +389,16 @@ impl CallContext {
             trace_context: None,
             tenant: None,
             task_id: None,
+            received_at: std::time::Instant::now(),
         }
+    }
+
+    /// When this call context was built, which the handler does as the
+    /// request arrives, before interceptors, locks and admission waits. A
+    /// caller's budget is timed from here (ADR 0023).
+    #[must_use]
+    pub const fn received_at(&self) -> std::time::Instant {
+        self.received_at
     }
 
     /// Sets the trace this call belongs to.

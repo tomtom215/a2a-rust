@@ -26,10 +26,10 @@ pub fn make_etag(data: &[u8]) -> String {
 /// `card` as the JSON a response sends, and its weak `ETag` (spec §8.6.1:
 /// "a hash of the card content"), the same for equal cards.
 ///
-/// The `ETag` hashes the card as a `serde_json::Value`, whose objects keep their
-/// keys sorted (`serde_json::Map` is a `BTreeMap` in this build; see
-/// `serde_json_maps_are_sorted` below). The card's own serialization will
-/// not do: `securitySchemes`, a requirement's `schemes` and an OAuth flow's
+/// The `ETag` hashes the card as a `serde_json::Value` with every object's
+/// keys sorted (`sorted_json`, whatever `serde_json::Map` keeps; it
+/// keeps insertion order when `preserve_order` is on anywhere in the build).
+/// The card's own serialization will not do: `securitySchemes`, a requirement's `schemes` and an OAuth flow's
 /// `scopes` are `HashMap`s, written in an order each map instance draws at
 /// random, so until 2026-10-13 the same card parsed twice, on two replicas
 /// or after a restart, or built afresh for each request of a dynamic
@@ -42,7 +42,8 @@ pub fn make_etag(data: &[u8]) -> String {
 pub(crate) fn card_body_and_etag(
     card: &a2a_protocol_types::agent_card::AgentCard,
 ) -> serde_json::Result<(Vec<u8>, String)> {
-    let etag = make_etag(&serde_json::to_vec(&serde_json::to_value(card)?)?);
+    let value = super::sorted_json::sorted(serde_json::to_value(card)?);
+    let etag = make_etag(&serde_json::to_vec(&value)?);
     Ok((serde_json::to_vec(card)?, etag))
 }
 
@@ -269,17 +270,6 @@ pub(crate) mod tests {
             security_requirements: None,
             signatures: None,
         }
-    }
-
-    /// What [`card_body_and_etag`] relies on. Were `serde_json`'s `preserve_order`
-    /// feature enabled anywhere in the build, a `Value` would keep a
-    /// `HashMap`'s order and the card's `ETag` would vary again.
-    #[test]
-    fn serde_json_maps_are_sorted() {
-        let mut map = serde_json::Map::new();
-        map.insert("b".into(), 1.into());
-        map.insert("a".into(), 2.into());
-        assert_eq!(map.keys().collect::<Vec<_>>(), ["a", "b"]);
     }
 
     #[test]

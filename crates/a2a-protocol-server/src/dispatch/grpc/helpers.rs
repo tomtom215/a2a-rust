@@ -177,10 +177,15 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
 /// semantic conventions record as `rpc.status_code` — the name of the code
 /// [`server_error_to_status`] sends, so the two cannot disagree.
 pub fn grpc_status_name(err: &ServerError) -> &'static str {
+    code_name(grpc_code(err, err.to_a2a_error().code))
+}
+
+/// A status code by its canonical name, as `rpc.status_code` records it.
+pub(super) const fn code_name(code: tonic::Code) -> &'static str {
     use tonic::Code;
     // Every code, not the few `grpc_code` returns today: a new arm there
     // then needs nothing here, and tonic adding a code fails to compile.
-    match grpc_code(err, err.to_a2a_error().code) {
+    match code {
         Code::Ok => "OK",
         Code::Cancelled => "CANCELLED",
         Code::Unknown => "UNKNOWN",

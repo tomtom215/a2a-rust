@@ -28,6 +28,8 @@ use a2a_protocol_types::events::StreamResponse;
 
 use a2a_protocol_types::task::TaskState;
 
+use a2a_protocol_types::budget::BudgetHandle;
+
 use super::super::ExecutorTurn;
 use crate::executor::AgentExecutor;
 use crate::request_context::RequestContext;
@@ -43,6 +45,8 @@ pub struct TerminalTracking {
     /// span.
     #[cfg(feature = "tracing")]
     recorder: Option<crate::rpc_span::OutputRecorder>,
+    /// The caller's budget, reported on each status update (ADR 0023).
+    budget: Option<BudgetHandle>,
 }
 
 impl TerminalTracking {
@@ -54,7 +58,14 @@ impl TerminalTracking {
             turn,
             #[cfg(feature = "tracing")]
             recorder: None,
+            budget: None,
         }
+    }
+
+    /// Reports what is left of `budget` and spent on each status update.
+    pub(super) fn with_budget(mut self, budget: Option<&BudgetHandle>) -> Self {
+        self.budget = budget.cloned();
+        self
     }
 
     /// Waits for the turn's events to be stored; see
@@ -126,6 +137,8 @@ impl EventQueueWriter for TerminalTracking {
         event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            let mut event = event;
+            super::super::budget::report(&mut event, self.budget.as_ref());
             let terminal = is_terminal(&event);
             #[cfg(feature = "tracing")]
             if let Some(recorder) = &self.recorder {

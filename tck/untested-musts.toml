@@ -1,0 +1,304 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The official A2A TCK's MUST requirements that its suite does not grade
+# against this SDK, and this repository's own tests for each.
+#
+# Measured against a2aproject/a2a-tck at 263b9cf: 21 of them have no test
+# function in its `tests/` tree at all (docs/official-tck-findings.md §16 and
+# §24), and one, CARD-EXT-002, has a test whose precondition this SDK's SUT
+# cannot meet, so it is always SKIPPED. They are therefore *not graded by the
+# official suite*, and nothing here changes that. What this file adds is
+# in-repo evidence: for each requirement, the tests in this repository that
+# assert it, so the claim "this SDK meets it" names something a reader can
+# run.
+#
+# `scripts/check_tck_untested_map.py` (CI, `ci.yml`) fails when an entry has
+# no tests, cites a test that does not exist or is ignored, or an id appears
+# twice. `id`, `title`, `section` and `level` are copied from the suite's
+# `tck/requirements/*.py`.
+#
+# `upstream` says why the suite does not grade it; `scope` says exactly what
+# the cited tests show and, where it applies, what they do not.
+
+[[requirement]]
+id = "CARD-SIGN-001"
+title = "Agent Card canonicalized with JCS before signing"
+section = "8.4.1"
+level = "MUST"
+upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/agent_card.py; also backlog task-29 (To Do)."
+scope = "The signature verifies, under ring, over a JWS signing input the test builds from the RFC 8785 canonical card, and not over the plain serialization; the canonicalizer passes RFC 8785's own vectors and §8.4.1's worked example."
+tests = [
+  "crates/a2a-protocol-types/tests/tck_card_signing.rs::card_sign_001_the_signed_payload_is_the_jcs_canonical_card",
+  "crates/a2a-protocol-types/tests/rfc8785_vectors.rs::rfc8785_appendix_b_from_json_text",
+  "crates/a2a-protocol-types/src/signing/presence/tests.rs::the_specification_example_canonicalizes_as_published",
+]
+
+[[requirement]]
+id = "CARD-SIGN-002"
+title = "Signatures field excluded from signed content"
+section = "8.4.1"
+level = "MUST"
+upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/agent_card.py; also backlog task-29 (To Do)."
+scope = "The canonical payload of a card with `signatures` populated equals the unsigned card's and has no `signatures` key; a served card, and one carrying a second signature, still verifies."
+tests = [
+  "crates/a2a-protocol-types/tests/tck_card_signing.rs::card_sign_002_signatures_are_not_part_of_the_signed_payload",
+  "crates/a2a-protocol-types/src/signing.rs::sign_and_verify_card_in_wire_shape",
+]
+
+[[requirement]]
+id = "CARD-SIGN-003"
+title = "Signature protected header includes required parameters"
+section = "8.4.2"
+level = "MUST"
+upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/agent_card.py; also backlog task-29 (To Do)."
+scope = "Every signer that is not deprecated writes `alg` and `kid` in the protected header, ES256 and EdDSA, with and without `jku`. Not covered: the two deprecated kid-optional signers (`sign_agent_card`, `sign_agent_card_ed25519`) still omit `kid` when given none; they are deprecated since 0.15.0 for that reason."
+tests = [
+  "crates/a2a-protocol-types/tests/tck_card_signing.rs::card_sign_003_every_signer_writes_alg_and_kid",
+  "crates/a2a-protocol-types/tests/signing_tests.rs::protected_header_carries_alg_typ_and_kid",
+]
+
+[[requirement]]
+id = "CARD-SIGN-004"
+title = "Expired or revoked keys must not be used for verification"
+section = "8.4.3"
+level = "MUST"
+upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/agent_card.py; also backlog task-29 (To Do)."
+scope = "A JWKS key past its `exp` is no verification candidate, and a key removed from the set no longer verifies (docs/official-tck-findings.md §19: key lifecycle is the caller's, expressed through the key set). A key carrying `x5c` is used only while its leaf certificate is valid and holds the JWK's own key. Not covered: validating the chain to a trust anchor and CRL/OCSP revocation."
+tests = [
+  "crates/a2a-protocol-types/src/signing/keys/tests.rs::an_expired_key_is_not_used",
+  "crates/a2a-protocol-types/src/signing/keys/tests.rs::removing_a_key_from_the_set_revokes_it",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_expired_leaf_is_not_used",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_not_yet_valid_leaf_is_not_used",
+  "crates/a2a-protocol-types/src/signing/keys/x5c/tests.rs::x5c_leaf_holding_another_key_is_not_used",
+]
+
+[[requirement]]
+id = "AUTH-TLS-001"
+title = "Production deployments must use encrypted communication"
+section = "7.1"
+level = "MUST"
+upstream = "Tagged NOT_AUTOMATABLE in tck/requirements/auth.py; also backlog task-27 (To Do)."
+scope = "A deployment requirement, so the evidence is capability, not enforcement: the SDK serves HTTPS (HTTP/1.1 and HTTP/2), wss:// and gRPC over TLS, answers nothing to plaintext on a TLS listener, its client connects over TLS, and a client built with `require_https_credentials` refuses to send a credential over plaintext to a non-loopback host. The SDK cannot know whether a deployment is production: it serves plaintext when configured to, and by default the client warns rather than refuses."
+tests = [
+  "crates/a2a-protocol-server/tests/serve_tls.rs::the_agent_card_is_served_over_https_on_http1_and_http2",
+  "crates/a2a-protocol-server/tests/serve_tls.rs::a_plaintext_request_gets_no_http_answer",
+  "crates/a2a-protocol-server/tests/websocket_tls_origin.rs::a_request_is_served_over_wss",
+  "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs::tls_client_round_trips_through_the_tls_dispatcher",
+  "crates/a2a-protocol-client/tests/tls_integration_tests.rs::tls_client_connects_to_tls_server_with_custom_ca",
+  "crates/a2a-protocol-client/tests/credentials_plaintext.rs::a_credential_to_a_plaintext_remote_agent_is_refused_before_sending",
+]
+
+[[requirement]]
+id = "GRPC-SVC-003"
+title = "gRPC over HTTP/2 with TLS"
+section = "10.1"
+level = "MUST"
+upstream = "No tag; tck/requirements/binding_grpc.py carries the comment `# Not tested: TLS is a production deployment concern.`"
+scope = "This SDK's client and server complete A2A calls over gRPC with TLS (and mutual TLS), and a TLS listener refuses a plaintext client. gRPC runs over HTTP/2 by construction (tonic). As with AUTH-TLS-001, plaintext gRPC is still served when a deployment configures no TLS."
+tests = [
+  "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs::tls_client_round_trips_through_the_tls_dispatcher",
+  "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs::plaintext_client_is_refused_by_the_tls_dispatcher",
+  "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs::mutual_tls_admits_a_client_the_ca_signed",
+]
+
+[[requirement]]
+id = "VER-CLIENT-001"
+title = "Clients must send A2A-Version header with each request"
+section = "3.6.1"
+level = "MUST"
+upstream = "Out of scope: backlog/archive task-30, \"Won't Do: Testing the A2A client (i.e. the TCK itself) is out of scope\"."
+scope = "Every one of the eleven operations, on all four bindings, reaches the agent carrying `A2A-Version: 1.0`; the agent-card fetch sends it too."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/version.rs::ver_client_001_every_call_on_every_binding_carries_a2a_version",
+  "crates/a2a-protocol-client/src/discovery.rs::the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+  "crates/a2a-protocol-client/src/transport/grpc.rs::add_metadata_injects_a2a_version",
+]
+
+[[requirement]]
+id = "VER-CLIENT-002"
+title = "Patch version numbers must not affect negotiation"
+section = "3.6"
+level = "MUST"
+upstream = "Out of scope: backlog/archive task-30, \"Won't Do: Testing the A2A client (i.e. the TCK itself) is out of scope\"."
+scope = "Interfaces declaring 1.0.9 or 1.0.3 are chosen and spoken to exactly as 1.0 is, and the request names 1.0; the server accepts 1.0 with any patch."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/version.rs::ver_client_002_a_patch_on_the_card_does_not_change_negotiation",
+  "crates/a2a-protocol-client/src/builder/selection_tests.rs::prefixed_and_missing_versions_count_as_compatible",
+  "crates/a2a-protocol-server/src/dispatch/version.rs::version_metadata_accepts_this_major_minor_with_any_patch",
+]
+
+[[requirement]]
+id = "VER-SERVER-001"
+title = "Agent processes requests using requested version semantics"
+section = "3.6.2"
+level = "MUST"
+upstream = "Backlog task-30, archived with its two client-side siblings; no separate disposition recorded."
+scope = "This server implements one Major.Minor, 1.0. On all four bindings a request for 1.0 (any patch) is processed, and one for 0.3 (including an absent version), 0.9, 1.1 or 2.0 is refused with VersionNotSupportedError before reaching the handler, rather than served with 1.0's semantics."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/version.rs::ver_server_001_http_bindings_process_only_the_requested_major_minor",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/version.rs::ver_server_001_grpc_and_websocket_process_only_the_requested_major_minor",
+  "crates/a2a-protocol-server/src/dispatch/version.rs::version_metadata_refuses_another_minor_or_no_minor",
+]
+
+[[requirement]]
+id = "AUTH-SERVER-002"
+title = "Server must authenticate every incoming request"
+section = "7.4"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "With a card requiring a bearer token, every method is refused with 401 without a credential and with a wrong one, on all four bindings, and served with the right one."
+tests = [
+  "crates/a2a-protocol-server/tests/auth_every_method.rs::every_method_is_refused_without_a_valid_credential_on_both_http_bindings",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/auth.rs::bind_equiv_004_every_binding_enforces_the_cards_scheme_on_every_operation",
+]
+
+[[requirement]]
+id = "AUTH-INTASK-001"
+title = "Agent MUST use a Task to track operation requiring authorization"
+section = "7.6.1"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "An agent asking for authorization answers with a Task, its own or relayed from a downstream agent."
+tests = [
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::auth_required_parks_the_task_with_its_explanation",
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::a_downstream_auth_request_is_relayed_with_its_explanation",
+]
+
+[[requirement]]
+id = "AUTH-INTASK-002"
+title = "Agent MUST transition to auth_required state"
+section = "7.6.1"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "The task is at TASK_STATE_AUTH_REQUIRED, on a blocking send, on a stream, and when relayed."
+tests = [
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::auth_required_parks_the_task_with_its_explanation",
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::the_stream_stays_open_across_auth_required_until_the_task_ends",
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::a_downstream_auth_request_is_relayed_with_its_explanation",
+]
+
+[[requirement]]
+id = "AUTH-INTASK-003"
+title = "Agent MUST include status message explaining authorization"
+section = "7.6.1"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "The status message carries the explanation text and the task's ids; a relayed request carries the downstream explanation in a message of the task's own."
+tests = [
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::auth_required_parks_the_task_with_its_explanation",
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::a_downstream_auth_request_is_relayed_with_its_explanation",
+]
+
+[[requirement]]
+id = "AUTH-INTASK-004"
+title = "Agent MUST arrange to receive credentials out-of-band"
+section = "7.6.1"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "The credential reaches the executor outside A2A (a test signal stands in for the out-of-band channel) and the task resumes to COMPLETED with no further client message: on the open stream, after a blocking send, and over the wire by subscription and by polling. The task's state grants no in-band authorization. The out-of-band channel itself is the agent author's; the SDK's part is keeping the task resumable."
+tests = [
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::the_stream_stays_open_across_auth_required_until_the_task_ends",
+  "crates/a2a-protocol-server/tests/auth_required_in_task.rs::a_blocking_send_answered_at_auth_required_still_records_the_rest",
+  "crates/a2a-protocol-client/tests/follow_task_e2e.rs::a_streaming_agents_task_is_followed_by_subscription",
+  "crates/a2a-protocol-client/tests/follow_task_e2e.rs::a_non_streaming_agents_task_is_followed_by_polling",
+  "crates/a2a-protocol-server/tests/auth_required_state_tests.rs::auth_required_state_does_not_authorize_the_continuation",
+]
+
+[[requirement]]
+id = "AUTH-SCOPE-001"
+title = "Authorization checks on every operation request"
+section = "13.1"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "An authorizing interceptor sees the task each of the eleven methods names, on both HTTP bindings, and can refuse it with 403. The authorization model is the deployer's; the SDK supplies the check point on every operation."
+tests = [
+  "crates/a2a-protocol-server/tests/authorization_per_task.rs::an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
+]
+
+[[requirement]]
+id = "AUTH-SCOPE-002"
+title = "Results scoped to caller's authorization boundaries"
+section = "13.1"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "With caller isolation (the default for identified callers), lists hold only the caller's tasks and push configs, and another caller's task and config cannot be read, changed, cancelled or continued."
+tests = [
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::isolated_another_callers_task_is_not_found_by_any_operation",
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::another_callers_push_config_cannot_be_read_or_deleted",
+  "crates/a2a-protocol-server/tests/caller_isolation_default.rs::by_default_only_identified_callers_are_isolated",
+]
+
+[[requirement]]
+id = "AUTH-SCOPE-003"
+title = "Server must not reveal existence of unauthorized resources"
+section = "3.3.2"
+level = "MUST"
+upstream = "Backlog task-27 (To Do)."
+scope = "Another caller's task, and its push config, are answered TaskNotFound by every operation that names them, exactly as an unknown id is."
+tests = [
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::isolated_another_callers_task_is_not_found_by_any_operation",
+  "crates/a2a-protocol-server/tests/caller_isolation.rs::another_callers_push_config_cannot_be_read_or_deleted",
+]
+
+[[requirement]]
+id = "BIND-EQUIV-001"
+title = "All supported protocols provide identical functionality"
+section = "5.1"
+level = "MUST"
+upstream = "Backlog task-28 (To Do)."
+scope = "One handler served on JSON-RPC, HTTP+JSON, gRPC and WebSocket: each binding completes all eleven operations on their success paths and delivers exactly Method::ALL, and serves the same capabilities."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/functionality.rs::bind_equiv_001_every_operation_succeeds_on_every_binding",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/functionality.rs::bind_equiv_001_every_binding_serves_the_same_capabilities",
+]
+
+[[requirement]]
+id = "BIND-EQUIV-002"
+title = "All bindings return semantically equivalent results"
+section = "5.1"
+level = "MUST"
+upstream = "Backlog task-28 (To Do)."
+scope = "The same send and the same stream give the same task and events on every binding, server-minted ids aside; one task and one push config read the same through every binding, with timestamps compared as instants."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs::bind_equiv_002_the_same_send_gets_the_same_task_on_every_binding",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs::bind_equiv_002_the_same_stream_carries_the_same_events_on_every_binding",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs::bind_equiv_002_one_task_reads_the_same_through_every_binding",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs::bind_equiv_002_one_push_config_reads_the_same_through_every_binding",
+]
+
+[[requirement]]
+id = "BIND-EQUIV-003"
+title = "All bindings map errors consistently"
+section = "5.1"
+level = "MUST"
+upstream = "Backlog task-28 (To Do)."
+scope = "Six faults decode to the same A2A error on all four bindings; on the HTTP bindings the wire carries §5.4's JSON-RPC code, HTTP status and ErrorInfo reason. gRPC's status codes are pinned to the same table by unit tests, not read off the wire here."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs::bind_equiv_003_every_binding_decodes_the_same_a2a_error",
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs::bind_equiv_003_each_http_binding_uses_its_own_protocol_codes",
+  "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs::task_not_found_maps_to_not_found",
+]
+
+[[requirement]]
+id = "BIND-EQUIV-004"
+title = "All bindings support same authentication schemes"
+section = "5.1"
+level = "MUST"
+upstream = "Backlog task-28 (To Do)."
+scope = "One card declares one bearer scheme; every operation on every binding is refused without it and with a wrong token, and served with it."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/auth.rs::bind_equiv_004_every_binding_enforces_the_cards_scheme_on_every_operation",
+]
+
+[[requirement]]
+id = "CARD-EXT-002"
+title = "Extended card not configured returns specific error"
+section = "3.1.11"
+level = "MUST"
+upstream = "Has a test (tests/compatibility/core_operations/test_error_handling.py, TestExtendedCardNotConfigured) whose precondition is unreachable on this SDK's SUT: tck/sut configures the extended card its card declares, which CARD-EXT-001 needs, so the probe finds a card and the test is SKIPPED. One SUT cannot hold both preconditions."
+scope = "A card declaring extendedAgentCard with no extended card configured answers ExtendedAgentCardNotConfiguredError (-32007 on JSON-RPC) on all four bindings."
+tests = [
+  "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs::card_ext_002_a_declared_but_unconfigured_extended_card_is_refused_on_every_binding",
+  "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs::a_declared_card_with_no_extended_card_is_not_configured",
+]

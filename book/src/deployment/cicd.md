@@ -20,7 +20,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main`, on PRs to
 | **Semver** | `cargo-semver-checks` over the four published crates, all features |
 | **SDK dogfood** | `cargo run -p agent-team --release --all-features` |
 | **SLIMRPC binding** | builds the out-of-workspace binding and runs `cargo-deny` over its own dependency tree |
-| **Example surface coverage** | runs the examples (echo-agent, incident-response, genai, rig, multi-lang-team), each driving every method over every binding it supports |
+| **Example surface coverage** | two jobs: echo-agent, incident-response, genai and rig, each driving every method over every binding it supports; and multi-lang-team, resilient-agent (durability, failure injection, scaling against PostgreSQL) and swarm |
 | **Go SDK interop** | `scripts/go_sdk_interop.sh` — both directions, three bindings |
 
 The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main`, on PRs, on demand (which is how a branch with no PR yet gets a coverage number), and weekly (for the `codecov.yml` ignores-applied check):

@@ -31,14 +31,22 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Task> {
         let start = Instant::now();
-        trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
+        trace_info!(method = "CancelTask", task_id = ?params.id, "handling cancel task");
         self.metrics.on_request("CancelTask");
 
         let tenant = self
             .resolve_tenant("CancelTask", headers, params.tenant.as_deref())
             .await?;
-        let result: ServerResult<_> =
-            crate::store::tenant::TenantContext::scope_request(tenant, async {
+        // Boxed for clippy's `large_futures`, which estimates this future at
+        // about 16 KiB and every dispatcher's that awaits it inline over its
+        // 16 KiB limit once `serde_json`'s `preserve_order` (genai 0.7 in the
+        // examples) grows `Value`. Its estimate, not the layout: `size_of_val`
+        // measures the unboxed future at 656 bytes, 736 with `preserve_order`
+        // (2026-10-20). One allocation per cancel; the gate is CI's workspace
+        // clippy.
+        let result: ServerResult<_> = Box::pin(crate::store::tenant::TenantContext::scope_request(
+            tenant,
+            async {
                 let call_ctx = build_call_context("CancelTask", headers, self.inbound_trace_policy)
                     .with_task_id(params.id.clone());
                 let mut call = self.interceptors.begin(&call_ctx);
@@ -59,13 +67,17 @@ impl RequestHandler {
                         return Err(ServerError::TaskNotCancelable(task_id));
                     }
 
-                    // Signal the cancellation token so the executor can observe the cancellation.
-                    {
+                    // Signal the cancellation token so the executor can observe the
+                    // cancellation. Without one here the task runs on another
+                    // replica, or nowhere; it is told below, once the store says
+                    // `Canceled` (ADR 0024).
+                    let runs_here = {
                         let tokens = self.cancellation_tokens.read().await;
-                        if let Some(entry) = tokens.get(&task_id) {
-                            entry.token.cancel();
-                        }
-                    }
+                        tokens
+                            .get(&task_id)
+                            .map(|entry| entry.token.cancel())
+                            .is_some()
+                    };
 
                     #[cfg(feature = "audit")]
                     if let Some(log) = &self.audit {
@@ -152,6 +164,9 @@ impl RequestHandler {
                             None => e.into(),
                         });
                     }
+                    if !runs_here {
+                        self.publish_cancel(&task_id).await;
+                    }
                     // Re-read to return the authoritative final state.
                     let final_task = self
                         .task_store
@@ -163,14 +178,21 @@ impl RequestHandler {
                 }
                 .await;
                 call.finish(result).await
-            })
-            .await;
+            },
+        ))
+        .await;
 
         #[cfg(feature = "tracing")]
         match &result {
             Ok(task) => crate::rpc_span::record_task_response(task),
             Err(_) => crate::rpc_span::record_task(&params.id, None),
         }
+        // Signed on the way out (ADR 0027).
+        let result = result.and_then(|mut task| {
+            self.outbound.sign_task(&mut task)?;
+            Ok(task)
+        });
+
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {

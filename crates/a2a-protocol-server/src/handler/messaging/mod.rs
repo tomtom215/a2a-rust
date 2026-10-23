@@ -14,6 +14,7 @@
 //! | `continuation` | which context and task the message belongs to |
 //! | `admission` | in-flight rejection and the event-queue lease |
 //! | `eviction` | the stale-token sweep and the token insert |
+//! | `quorum` | the approval gate's check, and its count under a quorum |
 //! | `create` | the initial task, its request context, the store write, the inline push config |
 //! | `execute` | the spawned executor and the guard that releases its resources |
 //! | `decisions` | the pure predicates the phases above decide with |
@@ -33,6 +34,7 @@ use super::helpers::build_call_context;
 use super::{RequestHandler, SendMessageResult};
 
 mod admission;
+mod basis;
 mod commit_guard;
 mod continuation;
 mod create;
@@ -42,11 +44,13 @@ mod execute;
 pub use execute::WatchedExecutor;
 mod idempotency;
 mod mode;
+mod quorum;
 mod respond;
 mod start;
 use start::{ExecutorStart, runtime_has_one_worker};
 pub(super) mod terminal;
 mod validation;
+pub use validation::FileUrls;
 
 #[cfg(test)]
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
@@ -88,17 +92,9 @@ enum Committed {
     /// future: a `Task` inline here pushed all three dispatch futures past
     /// clippy's `large_futures` threshold.
     Replay(Box<Task>),
-}
-
-/// Which file references a message may carry; see
-/// [`refuse_private_file_urls`](crate::RequestHandlerBuilder::refuse_private_file_urls).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileUrls {
-    /// Any, unchecked: the default.
-    Any,
-    /// Only those [`check_public_url`](crate::url_guard::check_public_url)
-    /// accepts.
-    PublicOnly,
+    /// An approval recorded toward a quorum that is still short (`quorum`):
+    /// the task as saved, still waiting. Nothing runs.
+    Waiting(Box<Task>),
 }
 
 impl RequestHandler {
@@ -137,7 +133,8 @@ impl RequestHandler {
             Box::pin(self.send_message_inner(params, streaming, method_name, headers)).await
         })
         .await
-        .map_err(crate::error::ServerError::not_retry_safe);
+        .map_err(crate::error::ServerError::not_retry_safe)
+        .and_then(|sent| self.outbound.sign_sent(sent));
         #[cfg(feature = "tracing")]
         if let Ok(SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),
@@ -200,6 +197,7 @@ impl RequestHandler {
                     Box::pin(self.respond_replay(*task, streaming, mode.response_history_length))
                         .await
                 }
+                Committed::Waiting(task) => Ok(Self::respond_waiting(*task, streaming, mode)),
                 Committed::Started(started) => {
                     if mode.use_background {
                         Ok(self
@@ -248,12 +246,19 @@ impl RequestHandler {
             self.ensure_streaming_supported()?;
         }
 
-        self.validate_send_params(&mut params)?;
+        // Before an approval is counted or a send key's replay answered.
+        let content_check = self.validate_send_params(&mut params)?;
 
         let mode = SendMode::of(&params, streaming);
-        self.commit_task(params, mode.use_background, tenant_slot, call_ctx)
-            .await
-            .map(|started| (mode, started))
+        self.commit_task(
+            params,
+            mode.use_background,
+            tenant_slot,
+            call_ctx,
+            content_check,
+        )
+        .await
+        .map(|started| (mode, started))
     }
 
     /// Resolves the task the message belongs to and commits it: the queue
@@ -277,6 +282,7 @@ impl RequestHandler {
         use_background: bool,
         tenant_slot: Option<OwnedSemaphorePermit>,
         call_ctx: &CallContext,
+        content_check: crate::request_context::ContentCheck,
     ) -> ServerResult<Committed> {
         let context_id = self.resolve_context_id(&params.message).await?;
 
@@ -302,9 +308,10 @@ impl RequestHandler {
             .await?;
         // A decision is checked against the request pending on the task it
         // continues, before anything is claimed; see `crate::approval`.
-        let approval = match &self.approval_gate {
-            Some(gate) => gate.check(stored_task.as_ref(), &params.message, call_ctx)?,
-            None => None,
+        let gated = self.gate_decision(stored_task.as_ref(), &params.message, call_ctx);
+        let approval = match Box::pin(gated).await? {
+            quorum::Gated::Pass(approval) => approval,
+            quorum::Gated::Waiting(task) => return Ok(Committed::Waiting(task)),
         };
 
         // An idempotency key, if the send carries one, is claimed here: after
@@ -343,9 +350,10 @@ impl RequestHandler {
             // A halted tenant takes no new work (`halt`); a halt that lands
             // after this check is caught once the token is registered.
             self.refuse_if_halted().await?;
-            // A lease is checked before any work, and stored once the turn
-            // has its token (`lease`).
+            // A lease and a budget are checked before any work; the lease is
+            // stored once the turn has its token (`lease`, `budget`).
             let lease = self.requested_lease(&params.message)?;
+            let budget = super::budget::requested(&params.message, call_ctx.received_at())?;
             // Under the still-held per-context lock, so it is atomic with the
             // token insert below.
             self.reject_in_flight_send(&task_id).await?;
@@ -375,6 +383,8 @@ impl RequestHandler {
             // task too — even if it began a moment ago (`cancel_in_flight`).
             ctx.cancellation_token = self.in_flight.task_token();
             ctx.approval = approval;
+            ctx.budget = budget;
+            ctx.content_check = content_check;
             if let Some(config) = params.configuration.as_ref() {
                 ctx = ctx.with_accepted_output_modes(config.accepted_output_modes.clone());
             }
@@ -383,7 +393,7 @@ impl RequestHandler {
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.
-            let (writer, reader, persistence_rx) =
+            let (writer, reader, persistence_rx, lease_read) =
                 self.lease_event_queue(&task_id, use_background).await?;
             writer.bind_identity(
                 task_id.clone(),
@@ -412,7 +422,10 @@ impl RequestHandler {
             Box::pin(self.audit_approval(call_ctx, &task_id, ctx.approval.as_ref())).await;
             // A continuation's inline push config is registered here, before
             // its turn is saved; a new task's below (see `save_turn`).
-            Box::pin(self.save_turn(&task, params.configuration.as_ref(), continues)).await?;
+            // Saved as the lease read it, at that read's position (`basis`).
+            let (task, read_at) = basis::based_on(task, lease_read, continues);
+            let config = params.configuration.as_ref();
+            Box::pin(self.save_turn(&task, read_at, config, continues)).await?;
             if !continues {
                 guard_ref.created_row();
             }

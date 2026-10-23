@@ -11,11 +11,11 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Outcome {
-    /// The executor did the right thing.
+    /// What was graded did the right thing.
     Pass,
-    /// The executor broke a protocol invariant.
+    /// What was graded broke an invariant.
     Fail,
-    /// The check did not apply — the executor never did the thing it is
+    /// The check did not apply — what was graded never did the thing it is
     /// about. Never counted as a pass.
     NotApplicable,
 }
@@ -60,6 +60,8 @@ impl CheckResult {
 /// Everything the harness found.
 #[derive(Debug, Clone)]
 pub struct Report {
+    /// What was graded, for the report's heading: `executor`, `halt store`.
+    pub(super) subject: &'static str,
     pub(super) results: Vec<CheckResult>,
 }
 
@@ -94,7 +96,7 @@ impl Report {
         self.graded() - self.passed()
     }
 
-    /// Whether the executor conforms.
+    /// Whether what was graded conforms.
     ///
     /// Requires at least one graded check, so a harness that measured
     /// nothing reports failure rather than full marks.
@@ -115,7 +117,7 @@ impl Report {
 
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "executor conformance:")?;
+        writeln!(f, "{} conformance:", self.subject)?;
         for r in &self.results {
             let mark = match r.outcome {
                 Outcome::Pass => "pass",

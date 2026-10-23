@@ -107,7 +107,7 @@ pub use cipher::{
 };
 pub use seal::SEALED_MEDIA_TYPE;
 
-use seal::Sealer;
+pub(crate) use seal::Sealer;
 
 use super::tenant::TenantContext;
 use super::{ArtifactDelta, IdempotencyClaim, RecordedEvent, TaskStore};
@@ -354,6 +354,10 @@ impl TaskStore for EncryptedTaskStore {
             }
             Ok(opened)
         })
+    }
+
+    fn hold_events(&self, task_id: &TaskId, after: u64) -> Option<crate::store::EventHold> {
+        self.inner.hold_events(task_id, after)
     }
 
     fn earliest_event_seq<'a>(&'a self, task_id: &'a TaskId) -> Fut<'a, Option<u64>> {

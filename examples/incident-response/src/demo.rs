@@ -67,8 +67,11 @@ async fn stream_and_narrate(
     Ok((task_id, context_id, last_state))
 }
 
+/// `telemetry` is flushed before each exit, which skips its drop.
 #[allow(clippy::too_many_lines)]
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    telemetry: &a2a_protocol_server::otel::Telemetry,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("Incident-Response Agent Team");
     println!("============================");
     println!();
@@ -181,6 +184,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("could not build a {} client: {e}", binding.label());
+                let _ = telemetry.force_flush();
                 std::process::exit(1);
             }
         };
@@ -220,6 +224,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         for f in &failures {
             println!("  - {f}");
         }
+        let _ = telemetry.force_flush();
         std::process::exit(1);
     }
     if !missing.is_empty() {
@@ -227,6 +232,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         for (m, b) in &missing {
             println!("  - {} over {}", m.wire_name(), b.label());
         }
+        let _ = telemetry.force_flush();
         std::process::exit(2);
     }
     println!();
@@ -247,6 +253,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if hardening_failures > 0 {
         println!();
         println!("{hardening_failures} hardening check(s) failed.");
+        let _ = telemetry.force_flush();
         std::process::exit(3);
     }
 

@@ -27,6 +27,7 @@ mod infrastructure;
 // `[ ] NOT RUN` and the binary exits 2 rather than scoring half a matrix.
 #[cfg(all(feature = "websocket", feature = "grpc"))]
 mod surface;
+mod telemetry;
 mod tests;
 
 use std::collections::HashMap;
@@ -55,15 +56,7 @@ use tests::{
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "tracing")]
-    {
-        use tracing_subscriber::EnvFilter;
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-            )
-            .init();
-    }
+    let telemetry = telemetry::init();
 
     let total_start = Instant::now();
     println!("╔══════════════════════════════════════════════════════════════╗");
@@ -452,6 +445,7 @@ async fn main() {
             "\nThe \"SDK FEATURES EXERCISED\" table no longer matches the suite. \
              Update examples/agent-team/src/features.rs."
         );
+        telemetry::flush(&telemetry);
         std::process::exit(1);
     }
 
@@ -470,10 +464,12 @@ async fn main() {
         for (m, b) in &surface_missing {
             println!("  - {} over {}", m.wire_name(), b.label());
         }
+        telemetry::flush(&telemetry);
         std::process::exit(2);
     }
 
     if failed > 0 {
+        telemetry::flush(&telemetry);
         std::process::exit(1);
     }
 
@@ -495,6 +491,7 @@ async fn main() {
         for label in &not_run {
             println!("  - {label}");
         }
+        telemetry::flush(&telemetry);
         std::process::exit(2);
     }
 }

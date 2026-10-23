@@ -46,6 +46,9 @@ use tokio::task::AbortHandle;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::sse_parser::SseParser;
 
+#[cfg(feature = "tracing")]
+pub(crate) mod call;
+
 // ── Chunk ─────────────────────────────────────────────────────────────────────
 
 /// A raw byte chunk from the HTTP body reader task.
@@ -132,13 +135,14 @@ pub struct EventStream {
     held: Option<
         Box<dyn std::any::Any + Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>,
     >,
-    /// The call's span, kept open while the stream is: a streaming call
-    /// lasts until its consumer is done with it (`call_span.rs`).
-    /// `AssertUnwindSafe` keeps the stream's own unwind-safety auto traits,
-    /// which `held` above says `cargo-semver-checks` guards; a span holds no
-    /// state a panic could leave half-written.
+    /// The call, which lasts until its consumer is done with the stream
+    /// (`event_stream/call.rs`). `AssertUnwindSafe` keeps the stream's own
+    /// unwind-safety auto traits, which `held` above says `cargo-semver-checks`
+    /// guards; the call holds no state a panic could leave half-written.
     #[cfg(feature = "tracing")]
-    span: Option<std::panic::AssertUnwindSafe<tracing::Span>>,
+    call: Option<std::panic::AssertUnwindSafe<Box<call::StreamCall>>>,
+    /// What each event's content is checked against (ADR 0027).
+    content: crate::content::ContentKeys,
 }
 
 impl EventStream {
@@ -166,7 +170,8 @@ impl EventStream {
             last_event_id: None,
             held: None,
             #[cfg(feature = "tracing")]
-            span: None,
+            call: None,
+            content: crate::content::ContentKeys::default(),
         }
     }
 
@@ -196,7 +201,8 @@ impl EventStream {
             last_event_id: None,
             held: None,
             #[cfg(feature = "tracing")]
-            span: None,
+            call: None,
+            content: crate::content::ContentKeys::default(),
         }
     }
 
@@ -291,7 +297,8 @@ impl EventStream {
             last_event_id: None,
             held: None,
             #[cfg(feature = "tracing")]
-            span: None,
+            call: None,
+            content: crate::content::ContentKeys::default(),
         }
     }
 
@@ -300,6 +307,14 @@ impl EventStream {
     /// When `false`, each SSE `data:` field is parsed as a bare
     /// `StreamResponse` (REST binding). Default is `true` (JSON-RPC binding).
     #[must_use]
+    /// Checks each event's content against `content` (ADR 0027).
+    // Without `signing`, `ContentKeys` is empty and this could be `const`.
+    #[cfg_attr(not(feature = "signing"), allow(clippy::missing_const_for_fn))]
+    pub(crate) fn with_content_keys(mut self, content: crate::content::ContentKeys) -> Self {
+        self.content = content;
+        self
+    }
+
     pub(crate) const fn with_jsonrpc_envelope(mut self, envelope: bool) -> Self {
         self.jsonrpc_envelope = envelope;
         self
@@ -385,14 +400,6 @@ impl EventStream {
         self
     }
 
-    /// Keeps `span` open until the stream is dropped.
-    #[cfg(feature = "tracing")]
-    #[must_use]
-    pub(crate) fn with_span(mut self, span: tracing::Span) -> Self {
-        self.span = Some(std::panic::AssertUnwindSafe(span));
-        self
-    }
-
     /// Returns the HTTP status code from the response that established this stream.
     ///
     /// The transport layer validates the HTTP status during stream establishment
@@ -429,12 +436,42 @@ impl EventStream {
     /// and [`ClientError::Timeout`] when a silence bound expires. After an
     /// error the stream is finished and the next call returns `None`.
     pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>> {
+        let resume_from = self.last_event_id.clone();
+        let next = self.next_traced().await;
+        // Content whose signature does not verify ends the stream, as any
+        // other error does (ADR 0027): nothing buffered behind it is
+        // delivered, the body reader stops, and the refused event does not
+        // count as delivered, so a resume from `last_event_id` replays it.
+        if let Some(Ok(event)) = &next
+            && let Err(e) = self.content.event(event)
+        {
+            self.phase = Phase::Finished;
+            self.parser = SseParser::new();
+            self.last_event_id = resume_from;
+            if let Some(handle) = self.abort_handle.take() {
+                handle.abort();
+            }
+            #[cfg(feature = "tracing")]
+            if let Some(call) = self.call.as_mut() {
+                call.0.fail(&e);
+            }
+            return Some(Err(e));
+        }
+        next
+    }
+
+    /// [`next`](Self::next), before the content check.
+    async fn next_traced(&mut self) -> Option<ClientResult<StreamResponse>> {
         // Polled inside the call's span, so the span covers consuming the
         // stream: `tracing-opentelemetry` ends a span at its last exit, and
         // holding it alone would end it when the stream opened.
         #[cfg(feature = "tracing")]
-        if let Some(span) = self.span.as_ref().map(|s| s.0.clone()) {
-            return tracing::Instrument::instrument(self.next_event(), span).await;
+        if let Some(span) = self.call.as_ref().map(|c| c.0.span.clone()) {
+            let next = tracing::Instrument::instrument(self.next_event(), span).await;
+            if let (Some(Err(e)), Some(call)) = (&next, self.call.as_mut()) {
+                call.0.fail(e);
+            }
+            return next;
         }
         self.next_event().await
     }

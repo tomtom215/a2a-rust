@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "tool-loop-agent"
+version     = "0.0.0"
+description = "An agent with tool calling from the SDK alone: ToolLoopExecutor over OpenAiChatModel (ADR 0022)"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+# The umbrella crate with `tool-loop`, and nothing else for the agent: no
+# rig, no genai, no HTTP client of its own. That is the point of ADR 0022.
+a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk", features = ["tool-loop"] }
+serde_json       = { workspace = true }
+tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }

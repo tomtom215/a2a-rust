@@ -284,3 +284,39 @@ the client, `Transport::rpc_system` (default `None`) lets a transport given to
 `with_custom_transport` name its system on the `CLIENT` span: `jsonrpc` for
 WebSocket, as the server records the same call, and `slimrpc`. The builder
 reads it before wrapping the transport in retries.
+
+## 2026-10-20: streams, WebSocket, the client's metric, every binary
+
+Closing the audit's remaining gaps under the maintainer's requirement that
+OpenTelemetry be wired and on by default on every path, with the exporter
+still in `a2a-protocol-sdk` only. Read against
+`open-telemetry/semantic-conventions@55c98cf` and
+`semantic-conventions-genai@547934a`.
+
+- **A streaming call ends when its stream does** (`rpc_span/stream.rs`).
+  `rpc-spans.md`: the span "SHOULD cover the full lifetime of the request
+  and/or response streams". The code that forwards a stream claims the call
+  while it is set up inside it; a successful call hands itself to the claim
+  and is recorded when the stream ends — completed, failed with the error it
+  sent, or `cancelled` — re-entering the span so the exported end time
+  moves. Every binding claims, SLIMRPC through `BindingSpan::run_with`. The
+  gate's check that a call's span ended *before* its SSE writer asserted the
+  opposite of the convention, and now asserts it.
+- **A WebSocket call links to the upgrade's trace.** A frame carries no
+  trace context, and inventing a carrier in `params` would be a private
+  protocol extension, which the client's module docs already decline. The
+  upgrade's `traceparent` names the operation that opened the connection, so
+  each call's span is a root with a span link to it, not its child.
+- **The client records `rpc.client.call.duration`** through the global meter
+  provider, and its span `rpc.status_code`; with `otel`, a handler given no
+  metrics records through `OtelMetrics` on the global provider, so a process
+  that installs one gets both sides' metrics with nothing else to do.
+- **Every example, the TCK SUT, the ITK agent and the CLI** build
+  `Telemetry` from `OTEL_*`, exporting only when
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+- **The SQL stores open no `db.*` spans.** sqlx 0.8 emits each statement as
+  a `tracing` event (`sqlx-core` 0.8.6 `logger.rs`, `QueryLogger::finish`:
+  `db.statement`, `rows_affected`, `elapsed_secs` at `DEBUG`, `WARN` past one
+  second), not a span. Wrapping each of the stores' 232 statements, in 27
+  files, several recorded over the 500-line limit, was not done; the book's
+  "What is not measured" says what an operator gets instead.

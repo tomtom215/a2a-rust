@@ -27,6 +27,10 @@ the vendored proto:
    than as entries quietly pointing at the wrong sentence.
 3. Every `test_evidence` names a file that exists and, for Rust, a function
    of that name in it; for anything else, the name appears in the file.
+   Every `impl_evidence` that names a file names one that exists, a line it
+   cites is inside it, and a symbol it names appears in it (since
+   2026-10-20: one citation had pointed past the end of a 444-line file for
+   six days, because nothing read these).
 4. `status` and `severity` use the ledger's vocabulary, an open status has a
    severity, and a closed one does not.
 5. Entries under `after_release` (requirements upstream added after the
@@ -151,6 +155,32 @@ def check_evidence(entry: dict, problems: list[str]) -> None:
                 problems.append(f"{where}: no `fn {fn}` in {m.group('path')}")
         elif name.strip("` ") not in text:
             problems.append(f"{where}: {name!r} does not appear in {m.group('path')}")
+
+
+IMPL = re.compile(r"(?P<path>[\w.\-]+(?:/[\w.\-]+)+)(?::(?P<line>\d+))?(?:\s+(?P<name>.*))?$")
+
+
+def check_impl(entry: dict, problems: list[str]) -> None:
+    for ev in entry.get("impl_evidence", []):
+        m = IMPL.match(ev.strip())
+        if not m:
+            continue  # prose, not a citation
+        where = f"entry at {entry.get('source')}:{entry.get('spec_line')} cites {ev!r}"
+        path = ROOT / m.group("path")
+        if path.is_dir() and not m.group("line") and not m.group("name"):
+            continue  # a module directory, cited whole
+        if not path.is_file():
+            problems.append(f"{where}: no such file")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if m.group("line") and int(m.group("line")) > text.count("\n") + 1:
+            problems.append(f"{where}: past the end of the file")
+        name = (m.group("name") or "").strip()
+        ident = re.match(r"`?([A-Za-z_][A-Za-z0-9_:]*)`?$", name.split(" / ")[0].split()[0]) if name else None
+        if ident:
+            sym = ident.group(1).split("::")[-1]
+            if not re.search(r"\b" + re.escape(sym) + r"\b", text):
+                problems.append(f"{where}: {sym!r} does not appear in {m.group('path')}")
 
 
 def chapter(entry: dict) -> str:
@@ -319,6 +349,7 @@ def main() -> int:
                 )
         # 3. Evidence exists.
         check_evidence(e, problems)
+        check_impl(e, problems)
 
     # 5. Requirements added upstream after the audited release.
     for e in ledger.get("after_release", {}).get("entries", []):

@@ -129,3 +129,30 @@ async fn a_set_is_never_fetched_in_the_clear_from_a_remote_host() {
         .unwrap_err();
     assert!(matches!(err, ClientError::InvalidEndpoint(_)), "{err:?}");
 }
+
+/// A fetched key carries its `x5c` certificate (RFC 7517 §4.7) through the
+/// fetch, and a key whose certificate has expired is not used to verify
+/// (spec §8.4.3), while the same key under a current certificate is.
+#[tokio::test]
+async fn a_fetched_key_whose_certificate_has_expired_is_not_used() {
+    use base64::Engine;
+    let pair = rcgen::KeyPair::try_from(hex(P256_PKCS8).as_slice()).unwrap();
+    let cert = |from: i32, to: i32| {
+        let mut params = rcgen::CertificateParams::new(vec!["keys.example".to_owned()]).unwrap();
+        params.not_before = rcgen::date_time_ymd(from, 1, 1);
+        params.not_after = rcgen::date_time_ymd(to, 1, 1);
+        let cert = params.self_signed(&pair).unwrap();
+        base64::engine::general_purpose::STANDARD.encode(cert.der())
+    };
+    let key = VerifyingKey::from_bytes("ES256", &hex(P256_POINT)).unwrap();
+    for (chain, verifies) in [(cert(2001, 2002), false), (cert(2000, 9000), true)] {
+        let mut jwk = Jwk::from_verifying_key(&key, Some("k1"));
+        jwk.x5c = Some(vec![chain]);
+        let set = Jwks::new(vec![jwk]);
+        let url = key_server(200, serde_json::to_vec(&set).unwrap()).await;
+        let fetched = fetch_jwks(&url, &options()).await.unwrap();
+        assert_eq!(fetched, set, "x5c survives the fetch");
+        let outcome = verify_card_with_jwks(&signed_card(), &fetched);
+        assert_eq!(outcome.is_ok(), verifies, "{outcome:?}");
+    }
+}

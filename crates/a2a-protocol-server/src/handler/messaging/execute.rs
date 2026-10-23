@@ -26,6 +26,7 @@ use crate::executor::AgentExecutor;
 use crate::request_context::RequestContext;
 use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter};
 
+use super::super::budget;
 use super::terminal::TerminalTracking;
 
 use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
@@ -289,10 +290,13 @@ impl RequestHandler {
             #[cfg(feature = "audit")]
             crate::audit::record_run_started(audit.as_ref(), &ctx).await;
 
-            let writer = TerminalTracking::new(writer, Arc::clone(&turn));
+            let writer = TerminalTracking::new(writer, Arc::clone(&turn)).with_budget(ctx.budget());
             #[cfg(feature = "tracing")]
             let writer = writer.with_recorder(recorder);
-            let result = run_executor(executor.as_ref(), &ctx, &writer, executor_timeout).await;
+            let result = budget::run_bounded(&ctx, executor_timeout, |timeout| {
+                run_executor(executor.as_ref(), &ctx, &writer, timeout)
+            })
+            .await;
             if let Err((ref e, class)) = result {
                 write_failure_event(&writer, &ctx, e, class).await;
             } else if (shutdown.is_cancelled() || turn.is_halted()) && !writer.terminal_written() {

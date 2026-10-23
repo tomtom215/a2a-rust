@@ -51,6 +51,22 @@ fn interface_urls_must_be_absolute_and_https_off_loopback() {
     assert!(w[1].contains("agent.example:443") && w[1].contains("not an absolute URL"));
 }
 
+/// `wss://` is the WebSocket binding's encrypted scheme, so it meets §7.1 as
+/// `https://` does; a production WebSocket interface was warned as plaintext
+/// until 2026-10-20 (found by the ledger audit). `ws://` still is.
+#[test]
+fn a_wss_interface_is_encrypted_and_a_ws_one_is_not() {
+    let ws = "https://a2a-rust.com/bindings/websocket/v1";
+    let c = card(&interfaces(&[
+        ("wss://agent.example/ws", ws),
+        ("WSS://agent.example/ws", ws),
+        ("ws://agent.example/ws", ws),
+    ]));
+    let w = card_warnings(&c);
+    assert_eq!(w.len(), 1, "{w:#?}");
+    assert!(w[0].contains("ws://agent.example/ws") && w[0].contains("not https"));
+}
+
 #[test]
 fn a_custom_binding_should_be_a_uri() {
     let w = card_warnings(&card(&interfaces(&[

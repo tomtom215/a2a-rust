@@ -1,0 +1,281 @@
+{
+  "about": "Sealed by scripts/crypto_interop/check.py --generate with cryptography. Test keys only.",
+  "audit": {
+    "chain": "py-chain",
+    "digest_contents": {
+      "message": {
+        "n": 2,
+        "text": "from python"
+      }
+    },
+    "names": {
+      "actor": "carol@example.test",
+      "actors": [
+        "agent-py",
+        "carol@example.test"
+      ],
+      "reason": "python's reason, é",
+      "requestedBy": "dave@example.test"
+    },
+    "record": {
+      "actor": {
+        "scheme": "bearer",
+        "subject": "a2a-sealed:v1:2dbe3126199cc106329c434f26240c3a:rCTFaRMCvSdkXPgwaeRwUq0f+AAbPev6o9Bb0elPeNVc9KLdjMQaKnkA7VhsPg=="
+      },
+      "chain": "py-chain",
+      "detail": {
+        "actors": [
+          "a2a-sealed:v1:a5c67d24eb3a5685ac3882f45da5d8f1:8m0YtXAvPLfGj8n4VBIhRhs4NZTlrAwNYEqIH6wj1cLVvy3N",
+          "a2a-sealed:v1:2dbe3126199cc106329c434f26240c3a:GwNBfSeQK0I4IyVuHAnk0Baw/0jYxTgb9fviyf+NRdEZmujjM8e/7t8mEceVog=="
+        ],
+        "reason": "a2a-sealed:v1:2dbe3126199cc106329c434f26240c3a:Dn045/1WAn2D88RyLS7xQu7ZrWDbXScwH1f5s9QYXxHJFONHgO1SIsBcAoa3xPI=",
+        "requestedBy": "a2a-sealed:v1:eaa314fab6d0943780b84888d0f59c3d:4zubyNr9O+5sESy/vaGWmC32n7VczDhCdanK5T4LJDh+mISUJtv4Lem5PeN1"
+      },
+      "digests": {
+        "message": "hmac-sha256:h1:d3e3b0c53cd75230ea2cd348839855278ceddbe064d7e06548632d23a1782693"
+      },
+      "hash": "",
+      "kind": "call",
+      "schema": "a2a-audit/1",
+      "seq": 5,
+      "time": "2026-10-21T00:00:00.000Z"
+    },
+    "subject_keys": [
+      {
+        "lookup": "h1:5a4352a80b67da506d59e43a86786ac92796ec926bcaf2e1f903f78ed6190e2a",
+        "sid": "2dbe3126199cc106329c434f26240c3a",
+        "wrapped": "BWtlay0xZ5zNXGOVVTfxMd4ETNrntqllpbAslaUBTDSYlFyQU1ofIBuuT5cz05oH3ArwwYPA8ZuW6UT3NX7N7BKY"
+      },
+      {
+        "lookup": "h1:64a2fd352adc18460995a272dcd4b3540321e01e4928affb1227062cc762eaa8",
+        "sid": "eaa314fab6d0943780b84888d0f59c3d",
+        "wrapped": "BWtlay0xNH1N7dJVLzqYxUE4AQ+5suEvfeF/NIt1R24M0xxiyENWpz5jvm0fJeA3QAuNvReWU42MgxleIek2Glot"
+      },
+      {
+        "lookup": "h1:8880febd09e586f064635b2bed226274b6c18416b02aa33935bfca2543ddfeda",
+        "sid": "a5c67d24eb3a5685ac3882f45da5d8f1",
+        "wrapped": "BWtlay0xT3CSwpFN5lz81oZ/9cVetd/EnwA7eLV4j3f6ST1C2rOLAklraW6yxqjv/OV2iOdP/1EWyu+SM/Ogmxlo"
+      }
+    ],
+    "subjects": [
+      "carol@example.test",
+      "dave@example.test",
+      "agent-py"
+    ]
+  },
+  "cipher": [
+    {
+      "aad": "ctx",
+      "envelope_hex": "0a66782d323032362d313005480e379c97eb33311ec767834ba1b5d1a9bd941143187f6afd1a3690f353e47ed13f4faddc1ee0f3011ab1fa",
+      "name": "short",
+      "plaintext_hex": "68656c6c6f2066726f6d20707974686f6e"
+    },
+    {
+      "aad": "",
+      "envelope_hex": "0a66782d323032362d31300e2ecc56899b23ed1985834b8d3c7e3eb5d8a57d43c805b0f18875ca",
+      "name": "empty",
+      "plaintext_hex": ""
+    },
+    {
+      "aad": "[\"é\",1]",
+      "envelope_hex": "0a66782d323032362d3130a540c6b484154a9cfa60c4359361a80923d626faf52c6f2b6163ecb72df9ba84759ae7be814ce2b95f35f35b00098d2d0dc1f6a4c5b7ba155c262f43238614f5200a1121925f6546c0c10fa9cc474fc7f374a24c46a6d71d6b9e3479466eca125a9692da211fb25cbb6a54c4602faf7f842343a3dea4a54ff1e4d54668b4aae2539a7d2b29a1285d00982f794d4cb6adab8de080225802deb3872d6e7646bff7d3366b5bde39c1310f8cdced130404811cac41fc78781284b92ca0cd21d0c9248622c492b844f9b2fcccec5fcb743d208d3203e694830446cc3a3c65fba65ea441ae1707866d12f8b4852defb9342257896adfe806c1ab986541242e8b66a02d2d8378ae3a86c79d3773112fa3c2bd895f4a542ef2875ff7ed8dd2f9",
+      "name": "non-ASCII context",
+      "plaintext_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+    },
+    {
+      "aad": "ctx",
+      "envelope_hex": "0a66782d323032362d3039efd4d1b95673d736f7ff619bc05f565a4bb9ca6ddde21357073d93277e9a0a2b9e01c7",
+      "name": "sealed by the older key",
+      "plaintext_hex": "726f7461746564"
+    }
+  ],
+  "keys": {
+    "hmac": {
+      "id": "h1",
+      "key": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+    },
+    "kek": [
+      {
+        "id": "kek-1",
+        "key": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+      }
+    ],
+    "store": [
+      {
+        "id": "fx-2026-10",
+        "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      },
+      {
+        "id": "fx-2026-09",
+        "key": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+      }
+    ]
+  },
+  "push": [
+    {
+      "id": "cfg-p",
+      "partition": "",
+      "plaintext_json": "{\"taskId\": \"task-p\", \"id\": \"cfg-p\", \"url\": \"https://hooks.example.com/py\", \"token\": \"py-token\"}",
+      "stored": "a2a-sealed:v1:CmZ4LTIwMjYtMTB6olOM20iyzY4E3DyL5VHefCZN0bj9DAn4P6ixR7VPSO8COVIIe0OE4EbqZ+kDvNNYxampt63CX4UyCmbBOeJoYuoEmSWSQF2DfFuYhpi3Lttl4VMotJyjNKgPIc/EwFznPIARaStoa2Pg5VKdYDwEgerKCKvc1Fzy0Is=",
+      "task_id": "task-p"
+    }
+  ],
+  "store_parts": [
+    {
+      "id": "m-1",
+      "kind": "message",
+      "name": "record message",
+      "partition": "",
+      "plaintext": [
+        {
+          "text": "python record message, é"
+        },
+        {
+          "data": {
+            "from": "python"
+          },
+          "mediaType": "application/json"
+        }
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTBoEruV0GJqznEZfjHmdUbaG35wO9Vlo5flXpm7ylNsZ0zJG2Uk0/KUPUx9FUfZMeZ6KZcQ6LtEtLDVebShpmCrQqPYV/k=",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTCg+v8ao7XQlO/1sRHA7jRrOysjbqaFwyAh/cgBI+K/WHgk6OB0+x235ucYH3oMBXELHFfukjzA5zW+l+4UU1N74EIGjfTTeSkBjIHxP22ufAX0z1vKq25mZw==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-1",
+      "where": "record"
+    },
+    {
+      "id": "art-1",
+      "kind": "artifact",
+      "name": "record artifact, tenant",
+      "partition": "tenant-a",
+      "plaintext": [
+        {
+          "text": "python record artifact, tenant, é"
+        },
+        {
+          "data": {
+            "from": "python"
+          },
+          "mediaType": "application/json"
+        }
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTBaLAkw3PwR0Z146hSobPzCXJk3XTYkPhBuB5aOzHt8dNIuUIR3IIG4XVH2WFnqrzlUFmEf1SuU0MKhtYzmlfr/ZOoPvUu2VEQIrRA/jeo=",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTBK/iFDc2y9Ejy3faS8bb8oKK6A28leO3/hotqZhRMYKTJQFLg/OBc1UKpj+5MmN/LSSFbpJxqHZ52SUd0dNpI9YQseHy57+1AjItcEhL7Xu5KUrAjD7eHVTg==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-2",
+      "where": "record"
+    },
+    {
+      "id": "m-ev",
+      "kind": "message",
+      "name": "logged message",
+      "partition": "",
+      "plaintext": [
+        {
+          "text": "python logged message, é"
+        },
+        {
+          "data": {
+            "from": "python"
+          },
+          "mediaType": "application/json"
+        }
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTBUa0Dh4c/bkZ7KCerVJTNN1urWnrOsznMoyv4ndrnlrGnb/xhUrYaEMzyWx2gZaOoQq1xmPMb67HPByefU4bExM44xUts=",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTCOhYLwoB4fKFX4k65+gY0WWVA4LkDxo24zkzzGKSCZodcKS03XKSuy1fw21vtQLZ8Ab4w/+gYp3klaLbv5atCwam6sl2hpYMlbXubGIRxmDIhecMGB32TaYw==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-3",
+      "where": 3
+    },
+    {
+      "id": "art-ev",
+      "kind": "artifact",
+      "name": "logged artifact, tenant",
+      "partition": "tenant-a",
+      "plaintext": [
+        {
+          "text": "python logged artifact, tenant, é"
+        },
+        {
+          "data": {
+            "from": "python"
+          },
+          "mediaType": "application/json"
+        }
+      ],
+      "stored": [
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTBmfF75oEPI29ErAgr5SmPCbZ2EHsrQYVp5n3RqF5VJ3cE/WIZsP94fmbukES0CqQAPoYDZkWDk+N82btB9CncrnpBIG/fS1AWpT3rMtlU=",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        },
+        {
+          "data": {
+            "sealedPart": {
+              "c": "CmZ4LTIwMjYtMTAvpTPWRU0RgWFr53ZuJOWlsfHmmYpvV+UK9+qpB7CInTnfy7VuIShlpgzgBudvKCpkyf66lJ0O+mj0qbvfsXRIGpAeD4c0IcZffVT95yqJBmSVjoMleJyHeA==",
+              "v": 1
+            }
+          },
+          "mediaType": "application/vnd.a2a-rust.sealed-part+json"
+        }
+      ],
+      "task_id": "task-4",
+      "where": 7
+    }
+  ]
+}

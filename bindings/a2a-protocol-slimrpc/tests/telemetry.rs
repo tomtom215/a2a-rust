@@ -146,7 +146,9 @@ async fn a_slimrpc_call_is_spanned_and_measured_with_its_status() {
                 "slimrpc".to_owned(),
                 some("lf.a2a.v1.A2AService/GetTask"),
                 some("NOT_FOUND"),
-                some("NOT_FOUND")
+                // The caller's mistake, answered correctly: not a server
+                // error on a gRPC-coded server span (`docs/rpc/grpc.md`).
+                None
             ),
         ]
     );

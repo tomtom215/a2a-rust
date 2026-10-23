@@ -93,6 +93,30 @@ catalogue above:
 | Qwen3.5-0.8B-Q4_0 | **Cannot.** Answered in prose asking for the service name. Forced with `tool_choice: "required"` it still emitted no tool call, and ran to `finish_reason: "length"` after 7,400+ tokens. |
 | Qwen3-1.7B-Q4_K_M | **Can.** First request came back `finish_reason: "tool_calls"` with `service_status({"service": "checkout"})`. |
 
+Re-measured 2026-10-20 on llama.cpp b11751 (commit `8466395`, `--jinja`),
+Qwen3-1.7B-Q4_K_M (sha256 `d2387ca2…`), 20 runs of each prompt through the
+agent over JSON-RPC:
+
+| Prompt | Before the 2026-10-20 change | After |
+|---|---|---|
+| billing (unknown service: two rounds) | 18 of 20 recovered with `list_services`; 1 wrote its call as text, which the server did not parse, so the caller got raw JSON; 1 told the caller to call the tool | 20 of 20 |
+| checkout (one call) | 10 of 10 called the tool; 2 reported an uptime the tool did not return | 20 of 20 called it; all 20 reported the tool's 259200 s |
+
+Qwen3.5-0.8B-Q4_0 on the same build, after the change, 10 runs of each: it
+now emits tool calls (9 of 10 billing runs made at least one, where the
+2026-09-19 build made none), but answers wrongly too often to rely on.
+Billing was right in 3 of 10: four put `payments-api`'s state under
+"billing", one asked for a `billing_service`, one called nothing. Checkout
+stated the right version in 7 of 10, and one run said the service did not
+exist. For tool calling, use Qwen3-1.7B or larger.
+
+The change: the loop runs a call the model wrote as its whole reply's text,
+when it names a declared tool (`src/leaked.rs`), and the preamble tells the
+model to call tools itself and to report their values as returned
+(`agent::PREAMBLE`). One run still converted the seconds to hours wrongly;
+the trace artifact is what lets a caller catch that. Counts this small show
+the failures are gone from these runs, not that they cannot happen.
+
 So the walkthrough below uses **Qwen3-1.7B** (Apache-2.0, ~1.2 GB). 0.8B is
 still fine for the plain-completion path, and the conformance run needs no
 model at all — but it will not demonstrate a single tool call, which is easy
@@ -125,7 +149,7 @@ curl -L -o model.gguf \
 # tool-call format. Without it the model never emits one.
 ./llama.cpp/build/bin/llama-server -m model.gguf --port 11434 --alias qwen3:1.7b \
   --jinja \
-  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+  -c 8192 --reasoning off &   # direct answers, no thinking preamble; 8K context bounds memory
 
 # 3. Point the rig agent at it
 export OPENAI_API_KEY=local              # any non-empty value

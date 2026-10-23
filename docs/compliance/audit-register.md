@@ -76,7 +76,7 @@ issuers shares a partition, and so does an API-key or bearer label equal to a
 JWT `sub` (the partition is not split by scheme). A validated JWT with no
 `sub` records no caller and, under the default `IdentifiedCallers`
 isolation, is served from the tenant's shared partition
-(`crates/a2a-protocol-server/src/handler/mod.rs:370-382`). No test covers two issuers.
+(`crates/a2a-protocol-server/src/handler/mod.rs:374-382`). No test covers two issuers.
 
 **Text.** §13.1 (line 3075): "Implementations **MUST** ensure appropriate
 scope limitation based on the authenticated caller's authorization
@@ -268,7 +268,7 @@ in `crates/a2a-protocol-server/tests/websocket_binding_spec.rs`; the pin test is
 ## R33 — a send stream's first frame waits for the executor
 
 **Now.** `crates/a2a-protocol-server/src/handler/messaging/respond.rs:140` holds the task snapshot as
-provisional; `crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1100-1102` sends it only
+provisional; `crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1103-1102` sends it only
 with the executor's first event, with no time bound.
 
 **Text.** §3.1.2 (line 212): "The implementation **MUST** provide immediate
@@ -286,7 +286,7 @@ for line 212 records the wait and this reasoning.
 
 ## R36(b) — a task snapshot may move a task back to `Submitted`
 
-**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:381-384` and
+**Was (at `9b08a860`).** `crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:374-384` and
 `crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:524-526` store an executor's `Task` snapshot without
 `can_transition_to`, which forbids re-entering `Submitted`
 (`crates/a2a-protocol-types/src/task.rs:318`) and is applied only to status updates. The store refuses only
@@ -427,7 +427,7 @@ that pinned `application/json`).
 ## R66 — a multicast member's lag report
 
 **Was (at `9b08a860`).** `bindings/a2a-protocol-slimrpc/src/multicast/fanout.rs:128-129` sends the member an `Err`
-that ends its stream (`crates/a2a-protocol-client/src/streaming/event_stream.rs:485-487`). The
+that ends its stream (`crates/a2a-protocol-client/src/streaming/event_stream.rs:524-487`). The
 error is `ClientError::Transport("N event(s) dropped…")`, not the typed
 `streamLagged` error the other bindings send.
 
@@ -610,7 +610,7 @@ behind, so a subscriber can receive events twice (not lose them).
 | §8.4.3 (line 2122), was medium: "Retrieve the public key using the `kid` and `jku` (or from a trusted key store)" | `kid` lookup in a caller-supplied JWKS, tested; `jku` decoded, never followed | **Done**: TESTED. The trusted-key-store branch is what is implemented. Following a card's own `jku` would let a card name the key that vouches for it. |
 | §12 (line 2977) and §5.4 (line 1194), was medium/low: custom bindings define "equivalent error code mappings that preserve the semantic meaning" | SLIMRPC follows its own spec's table (UNIMPLEMENTED where A2A's gRPC column says FAILED_PRECONDITION) | **Done**: both MUSTs TESTED. The text asks for an equivalent mapping that preserves meaning, not the gRPC column. The upstream report is drafted for the maintainer, not filed. |
 | §13.3 (line 3164): no card and no extended card | `-32007 ExtendedAgentCardNotConfigured` (`crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:83-87`, before the change) | **Done**: `UnsupportedOperationError`; a handler with neither card cannot serve the operation, and `-32007` asserts a capability it cannot know is declared. |
-| proto `Artifact.parts` (line 287): "Must contain at least one part" | an `append: true` chunk with no parts was accepted (`crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36-37`, before the change), and one for an unknown artifact id stored a zero-part artifact | **Done**: refused at the queue write and dropped by both processors. |
+| proto `Artifact.parts` (line 287): "Must contain at least one part" | an `append: true` chunk with no parts was accepted (`crates/a2a-protocol-server/src/streaming/event_queue/content.rs:37-37`, before the change), and one for an unknown artifact id stored a zero-part artifact | **Done**: refused at the queue write and dropped by both processors. |
 | App. A.2 (line 3421): clients prefer new names, dual-handle, warn on legacy forms | legacy enum spellings and `AgentCard.url` parsed; no fallback for `supportsAuthenticatedExtendedCard`; no warning; `url` not folded into `supportedInterfaces` | **Done** (`crates/a2a-protocol-client/src/legacy_card.rs`): a fetched or extended card's `url`, `preferredTransport` and `additionalInterfaces` fold into `supportedInterfaces`, `supportsAuthenticatedExtendedCard` and A.2.2's `supportsExtendedAgentCard` into `capabilities.extendedAgentCard`, and each is named in a `tracing` warning. Not done: A.2.1's `kind` discriminator on parts and events, which only a v0.3 interface sends, and the client never selects a v0.3 interface. |
 | §5.7 (line 1263): required arrays non-empty | `ListTasksResponse.tasks` may be empty (the spec contradicts itself); `HotReloadAgentCardHandler::update` does not validate | **Done**: `try_update` validates as `reload_from_json` does, and `update` is deprecated (one hand mutant, killed). The upstream report on `ListTasksResponse.tasks` is drafted for the maintainer, not filed; the entry stays PARTIAL on that contradiction alone. |
 | §8.1 (line 1970): a server MUST make an agent card available | JSON-RPC, REST and axum serve it; WebSocket and gRPC serve none | **Done**: the WebSocket listener peeks the request line and answers a card fetch as HTTP/1.1 (`dispatch/websocket/card.rs`); the gRPC router gains a `.well-known` service and accepts HTTP/1.1 when there is a card (`dispatch/grpc/well_known.rs`). Both answer through `dispatch/well_known.rs` with the HTTP dispatchers' card handler. 8 hand mutants, all killed. |

@@ -17,6 +17,9 @@ use a2a_protocol_server::push::{HttpPushSender, PushSender};
 
 use std::time::Duration;
 
+#[path = "support/raw_http.rs"]
+mod raw_http;
+
 /// Polls `condition` until it holds, panicking after a generous deadline.
 ///
 /// Replaces fixed "sleep then assert" waits: immune to scheduler stalls
@@ -68,15 +71,13 @@ async fn mock_server_recording_arrivals(
 
     let handle = tokio::spawn(async move {
         for _ in 0..5 {
-            let Ok((stream, _)) = listener.accept().await else {
+            let Ok((mut stream, _)) = listener.accept().await else {
                 break;
             };
             let arrivals = Arc::clone(&arrivals);
             tokio::spawn(async move {
                 arrivals.lock().unwrap().push(tokio::time::Instant::now());
-                stream.readable().await.unwrap();
-                let mut buf = vec![0u8; 4096];
-                let _ = stream.try_read(&mut buf);
+                let _ = raw_http::read_request(&mut stream).await;
 
                 let response = format!(
                     "HTTP/1.1 {status} OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -100,16 +101,14 @@ async fn mock_server(
     let handle = tokio::spawn(async move {
         // Accept up to 5 connections (enough for retry tests).
         for _ in 0..5 {
-            let Ok((stream, _)) = listener.accept().await else {
+            let Ok((mut stream, _)) = listener.accept().await else {
                 break;
             };
             let counter = Arc::clone(&request_counter);
             tokio::spawn(async move {
                 counter.fetch_add(1, Ordering::SeqCst);
                 // Wait for request data.
-                stream.readable().await.unwrap();
-                let mut buf = vec![0u8; 4096];
-                let _ = stream.try_read(&mut buf);
+                let _ = raw_http::read_request(&mut stream).await;
 
                 let response = format!(
                     "HTTP/1.1 {status} OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -132,15 +131,12 @@ async fn mock_server_with_headers(
 
     let handle = tokio::spawn(async move {
         for _ in 0..3 {
-            let Ok((stream, _)) = listener.accept().await else {
+            let Ok((mut stream, _)) = listener.accept().await else {
                 break;
             };
             let captured = Arc::clone(&captured);
             tokio::spawn(async move {
-                stream.readable().await.unwrap();
-                let mut buf = vec![0u8; 4096];
-                let n = stream.try_read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                let request = raw_http::read_request(&mut stream).await;
                 captured.lock().unwrap().push(request);
 
                 let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -886,11 +882,9 @@ async fn a_redirect_is_not_followed() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let redirecting = tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
+        while let Ok((mut stream, _)) = listener.accept().await {
             tokio::spawn(async move {
-                stream.readable().await.unwrap();
-                let mut buf = vec![0u8; 4096];
-                let _ = stream.try_read(&mut buf);
+                let _ = raw_http::read_request(&mut stream).await;
                 let response = format!(
                     "HTTP/1.1 302 Found\r\nLocation: http://{target}/stolen\r\n\
                      Content-Length: 0\r\nConnection: close\r\n\r\n"
@@ -930,11 +924,9 @@ async fn a_flooding_response_body_is_not_read() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let flooding = tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
+        while let Ok((mut stream, _)) = listener.accept().await {
             tokio::spawn(async move {
-                stream.readable().await.unwrap();
-                let mut buf = vec![0u8; 4096];
-                let _ = stream.try_read(&mut buf);
+                let _ = raw_http::read_request(&mut stream).await;
                 let head = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
                     50 * 1024 * 1024,

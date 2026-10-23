@@ -23,8 +23,8 @@ impl A2aClient {
     /// method.
     ///
     /// A client built from a card checks later calls against the
-    /// capabilities this card declares, in place of the public card's
-    /// (spec §3.1.11, §13.3).
+    /// capabilities and security requirements this card declares, in place
+    /// of the public card's (spec §3.1.11, §13.3).
     ///
     /// # Errors
     ///
@@ -57,6 +57,7 @@ impl A2aClient {
         let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
             .map_err(ClientError::Serialization)?;
         self.adopt_capabilities(&card);
+        self.interceptors.adopt_security(&card);
         Ok(card)
     }
 }

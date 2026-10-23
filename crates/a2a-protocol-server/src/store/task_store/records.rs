@@ -69,8 +69,11 @@ pub struct RecordedEvent {
 pub enum ArtifactDelta {
     /// `count` parts were appended to the end of the artifact at `index`.
     ///
-    /// Every part before the last `count` is untouched, so a store holding the
-    /// previous version only needs to copy the tail.
+    /// Every part before the last `count` is untouched, and so is everything
+    /// else about the artifact, its `metadata` included, so a store holding
+    /// the previous version only needs to copy the tail. An append that also
+    /// changes the metadata is written with `save`; the SQLite and PostgreSQL
+    /// stores write the tail alone.
     AppendedParts {
         /// Position of the artifact that grew.
         index: usize,

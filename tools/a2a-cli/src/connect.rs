@@ -107,7 +107,7 @@ async fn resolve_target(url: &str, opts: &GlobalOpts) -> Result<Target, CliError
         .await
         .map_err(|source| CliError::Discovery {
             url: url.to_owned(),
-            source,
+            source: Box::new(source),
         })?;
     // `from_card` takes the card's first interface this client supports
     // (spec §8.3.2) and moves endpoint and tenant to it as a pair;

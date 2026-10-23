@@ -35,6 +35,7 @@ command. "Exits" means a default run checks itself and exits with a status;
 | [resilient-agent](resilient-agent/) | Durability across a handler restart (SQLite stores reopened by a fresh handler, including a task cut off mid-stream); failure injection with the numbers the SDK reports; two replicas over in-memory and shared PostgreSQL stores. Each check states what the SDK does **not** do: no executor retry or resume, no push redelivery, no cross-replica events | `cargo run -p resilient-agent` | PostgreSQL, optionally | Exits |
 | [genai-agent](genai-agent/) | An LLM-backed agent through [genai](https://crates.io/crates/genai); all four bindings and the surface matrix | `cargo run -p genai-a2a-agent` | A model, optionally | Exits; `A2A_BIND_ADDR` serves |
 | [rig-agent](rig-agent/) | A rig-core agent with tool calling: a bounded tool loop over a two-tool catalogue, showing where tool calling sits relative to A2A. Passes the in-repo TCK (21 of 21 graded, 1 not applicable; gated by `tck.yml`) | `cargo run -p rig-a2a-agent` | A model, optionally | Exits; `A2A_BIND_ADDR` serves |
+| [tool-loop-agent](tool-loop-agent/) | Tool calling from the SDK alone: `ToolLoopExecutor` over `OpenAiChatModel` (feature `tool-loop`, ADR 0022), two service-inventory tools, asked one question through the A2A client; prints the answer and the `tool-trace` artifact | `cargo run -p tool-loop-agent -- "a question"` | A model (`TOOL_LOOP_BASE_URL`) | Exits |
 | [mcp-agent](mcp-agent/) | Tools over MCP: spawns an MCP server, discovers its tools with `tools/list`, and derives its card's skills from the answer. Ships the server too | `cargo build -p mcp-a2a-agent && cargo run -p mcp-a2a-agent --bin mcp-a2a-agent` | A model, optionally | Exits; `A2A_BIND_ADDR` serves |
 | [mcp-bridge](mcp-bridge/) | The reverse: an A2A agent callable as an MCP tool. One MCP tool per skill, A2A tasks mapped onto MCP tasks; progress, cancellation and `isError` all cross | `cargo build -p a2a-mcp-bridge && cargo run -p a2a-mcp-bridge --bin bridge-demo` | Nothing | Exits |
 | [langfuse-agent](langfuse-agent/) | Two agents in one Langfuse trace, exported by the SDK's own `Telemetry` with no tracing code in either agent | `cargo run -p langfuse-agent -- "a question"` | A self-hosted Langfuse | Exits |
@@ -45,13 +46,24 @@ command. "Exits" means a default run checks itself and exits with a status;
 directory, and `cargo run --bin` builds only the binary it runs, hence the
 `cargo build` first.
 
+**Telemetry.** Every binary here but two starts the SDK's `Telemetry` from the
+standard `OTEL_*` environment, as `langfuse-agent` does: set
+`OTEL_EXPORTER_OTLP_ENDPOINT` to a collector and its traces, metrics and logs
+go there (`OTEL_SERVICE_NAME` overrides the default service name, the
+binary's); leave it unset and nothing is built, so a plain `cargo run` needs
+no collector. The two: `hello-agent`, whose point is that the prelude alone
+says hello, and `mcp-agent`'s `tool_server`, an MCP server that runs no A2A
+code. So do `tck/sut`, the ITK agent in `itk/` and the `a2a` CLI.
+
 ## Which one to read
 
-- **Tool calling:** [`rig-agent`](rig-agent/). A2A has no tool concept, so the
-  loop lives between the executor and its model and the server never sees it.
-  The example shows the bounded loop, tool errors returned to the model rather
-  than failing the task, and a `tool-trace` artifact that makes the calls
-  visible to the caller.
+- **Tool calling:** [`tool-loop-agent`](tool-loop-agent/), with the SDK's
+  own loop (`server::tool_loop`, feature `tool-loop`), or
+  [`rig-agent`](rig-agent/), which writes the same loop out over rig-core.
+  A2A has no tool concept, so the loop lives between the executor and its
+  model and the server never sees it. Both show the bounded loop, tool errors
+  returned to the model rather than failing the task, and a `tool-trace`
+  artifact that makes the calls visible to the caller.
 - **Tools from an MCP server:** [`mcp-agent`](mcp-agent/), the same loop with
   the catalogue discovered at startup. Diff its `src/agent.rs` against
   `rig-agent`'s: only the tool source moves.

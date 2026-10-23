@@ -23,7 +23,9 @@ categories             = ["api-bindings"]
 # Without it a peer's card can parse one ULP off, so its canonical bytes — and
 # the signature over them — disagree with the signer's (RFC 8785 Appendix B;
 # audit T2).
-signing = ["dep:base64", "dep:ring", "serde_json/float_roundtrip"]
+# `x509-parser` reads the certificate a JWK's `x5c` carries, so a key whose
+# certificate has expired is not used to verify (spec §8.4.3).
+signing = ["dep:base64", "dep:ring", "dep:x509-parser", "serde_json/float_roundtrip"]
 ## Tamper-evident audit records: the record schema, SHA-256 hash chains,
 ## ES256/Ed25519-signed checkpoints and chain verification (ADR 0015). Pure
 ## data and verification; the server crate's `audit` feature writes them.
@@ -46,6 +48,7 @@ serde       = { workspace = true }
 serde_json  = { workspace = true }
 base64      = { version = "0.23", optional = true }
 ring        = { version = "0.17.12", optional = true }
+x509-parser = { version = ">=0.18, <0.19", optional = true, default-features = false }
 prost       = { workspace = true, optional = true }
 prost-types = { workspace = true, optional = true }
 time        = { workspace = true, optional = true }
@@ -63,6 +66,8 @@ proptest  = "1"
 criterion = { workspace = true }
 ring      = "0.17.12"
 base64    = "0.23"
+# Mints the X.509 certificates the `x5c` tests verify against.
+rcgen     = "0.14"
 
 [[bench]]
 name = "json_serde"

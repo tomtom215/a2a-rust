@@ -150,6 +150,18 @@ pub(crate) async fn record_approval(
     if let Some(by) = &approval.request.requested_by {
         r.detail.insert("requestedBy".to_owned(), by.clone().into());
     }
+    // Under a quorum, each approver's decision is a record of its own; these
+    // say where the count stood once it was made, and whether it reached
+    // the executor (a deny always does).
+    if approval.required > 1 {
+        r.detail
+            .insert("required".to_owned(), approval.required.into());
+        r.detail
+            .insert("approvedBy".to_owned(), approval.approvers.clone().into());
+        let reached = !approval.is_approved() || approval.approvers.len() >= approval.required;
+        r.detail
+            .insert("reachedExecutor".to_owned(), reached.into());
+    }
     let _ = interceptor::append_or_report(log, metrics, r).await;
 }
 

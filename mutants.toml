@@ -227,8 +227,8 @@ exclude_re = [
 # (ADR 0006, ROADMAP.md). The question came back with three equivalents that
 # no rewrite removes without a semver break, and was settled 2026-09-10:
 # `a2a-protocol-server` depends on `mutants` and those three functions carry
-# `#[mutants::skip]` with the argument as a comment (six functions as of
-# 2026-10-14; ADR 0006 and ROADMAP.md list them). In-source is the only
+# `#[mutants::skip]` with the argument as a comment (eight functions as of
+# 2026-10-23; ADR 0006 and ROADMAP.md list them). In-source is the only
 # place an exemption lives; this file still excludes nothing.
 
 # Previously this list held workarounds for equivalent mutations in

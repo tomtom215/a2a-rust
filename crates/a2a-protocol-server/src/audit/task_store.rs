@@ -202,6 +202,10 @@ impl TaskStore for AuditedTaskStore {
         self.inner.read_events(task_id, after_seq, limit)
     }
 
+    fn hold_events(&self, task_id: &TaskId, after: u64) -> Option<crate::store::EventHold> {
+        self.inner.hold_events(task_id, after)
+    }
+
     fn earliest_event_seq<'a>(&'a self, task_id: &'a TaskId) -> Fut<'a, Option<u64>> {
         self.inner.earliest_event_seq(task_id)
     }

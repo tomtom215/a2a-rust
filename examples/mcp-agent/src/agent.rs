@@ -120,11 +120,12 @@ impl<M: CompletionModel + Clone> McpAgent<M> {
     /// never stops calling tools.
     pub async fn prompt(&self, user_text: &str) -> Result<Answer, AgentError> {
         let catalogue = self.tools.definitions().to_vec();
+        let names: Vec<String> = catalogue.iter().map(|d| d.name.clone()).collect();
         let mut history: Vec<Message> = Vec::new();
         let mut turn = Message::user(user_text);
         let mut trace = Vec::new();
 
-        for _ in 0..MAX_TURNS {
+        for round in 0..MAX_TURNS {
             let response = self
                 .model
                 .completion_request(turn.clone())
@@ -134,8 +135,8 @@ impl<M: CompletionModel + Clone> McpAgent<M> {
                 .send()
                 .await?;
 
-            let calls: Vec<ToolCall> = response
-                .choice
+            let mut choice = response.choice.clone();
+            let mut calls: Vec<ToolCall> = choice
                 .iter()
                 .filter_map(|content| match content {
                     AssistantContent::ToolCall(call) => Some(call.clone()),
@@ -144,16 +145,21 @@ impl<M: CompletionModel + Clone> McpAgent<M> {
                 .collect();
 
             if calls.is_empty() {
-                return Ok(Answer {
-                    text: text_of(&response.choice),
-                    trace,
-                });
+                let text = text_of(&response.choice);
+                let Some(function) = crate::leaked::leaked_call(&text, &names) else {
+                    return Ok(Answer { text, trace });
+                };
+                // The model wrote the call as text: run it as the call it is,
+                // and keep it in history as one (see `leaked`).
+                let call = ToolCall::from_wire(format!("recovered-{round}"), function);
+                choice = vec![AssistantContent::ToolCall(call.clone())];
+                calls.push(call);
             }
 
             history.push(turn);
             history.push(Message::Assistant {
                 id: response.message_id.clone(),
-                content: response.choice.clone(),
+                content: choice,
             });
 
             let mut results = Vec::with_capacity(calls.len());

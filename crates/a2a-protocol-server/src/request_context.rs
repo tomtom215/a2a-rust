@@ -15,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::call_context::CallContext;
 
+pub use crate::content_check::ContentCheck;
+
 /// Context for a single agent execution request.
 ///
 /// Built by the [`RequestHandler`](crate::RequestHandler) and passed to
@@ -73,11 +75,17 @@ pub struct RequestContext {
     /// [`ApprovalGate`](crate::approval::ApprovalGate) has checked it.
     pub(crate) approval: Option<crate::approval::VerifiedApproval>,
 
+    /// See [`budget`](Self::budget).
+    pub(crate) budget: Option<a2a_protocol_types::budget::BudgetHandle>,
+
     /// See [`accepted_output_modes`](Self::accepted_output_modes).
     accepted_output_modes: Vec<String>,
 
     /// See [`referenced_tasks`](Self::referenced_tasks).
     referenced_tasks: Vec<Task>,
+
+    /// See [`content_check`](Self::content_check).
+    pub(crate) content_check: ContentCheck,
 }
 
 impl RequestContext {
@@ -93,8 +101,10 @@ impl RequestContext {
             cancellation_token: CancellationToken::new(),
             call_context: None,
             approval: None,
+            budget: None,
             accepted_output_modes: Vec::new(),
             referenced_tasks: Vec::new(),
+            content_check: ContentCheck::NotChecked,
         }
     }
 
@@ -110,6 +120,17 @@ impl RequestContext {
     #[must_use]
     pub fn referenced_tasks(&self) -> &[Task] {
         &self.referenced_tasks
+    }
+
+    /// What the server found when it checked the message's provenance
+    /// signature (ADR 0027): [`ContentCheck::NotChecked`] unless the handler
+    /// has keys (`RequestHandlerBuilder::with_content_keys`, feature
+    /// `signing`). A signature that does not verify is refused before the
+    /// executor runs, so an executor sees only `Verified`, `Unsigned` or
+    /// `NotChecked`.
+    #[must_use]
+    pub const fn content_check(&self) -> &ContentCheck {
+        &self.content_check
     }
 
     /// Sets the resolved referenced tasks; see
@@ -131,6 +152,29 @@ impl RequestContext {
     #[must_use]
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
+        self
+    }
+
+    /// The caller's budget for this turn (ADR 0023), its account started
+    /// when the send was admitted; `None` when the message carried none.
+    ///
+    /// [`remaining_time`](a2a_protocol_types::budget::BudgetHandle::remaining_time)
+    /// and [`remaining`](a2a_protocol_types::budget::BudgetHandle::remaining)
+    /// say how much more the turn may spend;
+    /// [`charge`](a2a_protocol_types::budget::BudgetHandle::charge) records
+    /// spend; [`grant`](a2a_protocol_types::budget::BudgetHandle::grant)
+    /// carves a delegated child's budget out of it. The handler holds the
+    /// turn to the deadline itself; meters are the executor's to charge.
+    #[must_use]
+    pub const fn budget(&self) -> Option<&a2a_protocol_types::budget::BudgetHandle> {
+        self.budget.as_ref()
+    }
+
+    /// Sets the turn's budget, as the handler does for a message that
+    /// carries one; for an executor driven directly, as in a test.
+    #[must_use]
+    pub fn with_budget(mut self, budget: a2a_protocol_types::budget::BudgetHandle) -> Self {
+        self.budget = Some(budget);
         self
     }
 

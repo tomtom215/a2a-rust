@@ -232,7 +232,7 @@ pub(crate) async fn start_runbook_agent() -> Result<AgentEndpoints, Box<dyn std:
         "Serves per-service runbook guidance, AI-summarized when a model is available",
         "runbook-lookup",
         RunbookExecutor {
-            client: genai::Client::default(),
+            client: crate::local_model::client()?,
             model: incident_model(),
         },
     )
@@ -249,7 +249,7 @@ pub(crate) async fn start_triage_agent(
         "Orchestrates incident triage: gathers evidence from specialist agents and produces an incident report",
         "incident-triage",
         TriageExecutor {
-            client: genai::Client::default(),
+            client: crate::local_model::client()?,
             model: incident_model(),
             logs_url,
             runbook_url,

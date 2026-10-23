@@ -122,10 +122,13 @@ use super::{Dispatcher, connections, pause_after_accept_error};
 
 mod idle;
 use idle::IdleTimeout;
+pub(super) use idle::Serving;
 
 mod connection;
 use connection::{Accepted, spawn_connection};
 
+mod plaintext;
+mod production;
 #[cfg(feature = "tls-rustls")]
 mod tls;
 
@@ -157,6 +160,10 @@ pub struct ServeReport {
     /// [`request_handler`](super::Dispatcher::request_handler), and so no
     /// tasks this server could end.
     pub tasks: Option<crate::handler::InFlightReport>,
+    /// Why the server refused to start, under
+    /// [`ServeConfig::production`]; it then accepted nothing. `None` when it
+    /// served.
+    pub refused: Option<String>,
 }
 
 /// A bound listener that has not started accepting yet.
@@ -270,10 +277,35 @@ impl Server {
             #[cfg(feature = "tls-rustls")]
             tls,
         } = self;
+        #[cfg(feature = "tls-rustls")]
+        let encrypted = tls.is_some();
+        #[cfg(not(feature = "tls-rustls"))]
+        let encrypted = false;
+        let undeclared = match (dispatcher.protocol_binding(), dispatcher.request_handler()) {
+            (Some(binding), Some(handler)) => handler.undeclared_binding(binding),
+            _ => None,
+        };
+        if let Some(why) =
+            production::refusal(&config, listener.local_addr().ok(), encrypted, undeclared)
+        {
+            trace_error!(reason = %why, "listener refused to start");
+            return ServeReport {
+                accepted: 0,
+                drained: true,
+                abandoned: 0,
+                tasks: None,
+                refused: Some(why),
+            };
+        }
         if let (Some(binding), Some(handler)) =
             (dispatcher.protocol_binding(), dispatcher.request_handler())
         {
             handler.warn_if_undeclared(binding);
+        }
+        if let Ok(addr) = listener.local_addr()
+            && !config.tls_terminated_in_front
+        {
+            plaintext::warn_if_plaintext(addr, encrypted);
         }
         let connections = connections::Connections::for_dispatcher(&dispatcher);
         let dispatcher = Arc::new(dispatcher);
@@ -387,6 +419,7 @@ async fn drain(
             drained: true,
             abandoned: 0,
             tasks: None,
+            refused: None,
         }
     } else {
         trace_warn!(
@@ -398,6 +431,7 @@ async fn drain(
             drained: false,
             abandoned: in_flight,
             tasks: None,
+            refused: None,
         }
     }
 }

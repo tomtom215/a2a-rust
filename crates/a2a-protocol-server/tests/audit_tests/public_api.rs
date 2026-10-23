@@ -180,6 +180,9 @@ async fn executor_timeout_causes_failure() {
         .on_send_message(make_send_params("slow"), false, None)
         .await;
 
+    // The blocking caller gets the task back `Failed`, not an error: the
+    // timeout ends the task, and an error would leave the caller unable to
+    // tell a timed-out run from a refused request.
     match result {
         Ok(SendMessageResult::Response(SendMessageResponse::Task(task))) => {
             assert_eq!(
@@ -188,10 +191,7 @@ async fn executor_timeout_causes_failure() {
                 "timed-out task should be Failed"
             );
         }
-        Err(_) => {
-            // Also acceptable -- the timeout error may propagate.
-        }
-        _ => panic!("expected failed task or error from timeout"),
+        other => panic!("expected the task, Failed, from a timeout; got {other:?}"),
     }
 }
 

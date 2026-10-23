@@ -125,8 +125,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<SendMessageResponse>(resp.result)
-            .map_err(ClientError::Serialization)
+        let response = serde_json::from_value::<SendMessageResponse>(resp.result)
+            .map_err(ClientError::Serialization)?;
+        self.content.response(&response)?;
+        Ok(response)
     }
 
     /// Sends a message and returns a streaming [`EventStream`] of progress

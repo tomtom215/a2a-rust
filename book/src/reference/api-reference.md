@@ -25,6 +25,7 @@ are rustdoc's job.
 | `artifact` | Artifact types for the A2A protocol |
 | `audit` | Tamper-evident audit records: schema, hash chains, signed checkpoints, `verify_chain` (`audit` feature) |
 | `auth_rejection` | Why a request was refused on authentication or authorization grounds |
+| `budget` | The budget extension: `Budget`, a deadline and named meters a delegated turn may spend, and `BudgetStatus`, what is left and spent (ADR 0023) |
 | `error` | A2A protocol error types |
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
@@ -235,6 +236,7 @@ are rustdoc's job.
 | `ClientConfig` | Configuration for an `A2aClient` instance |
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
+| `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
 | `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
@@ -317,7 +319,7 @@ are rustdoc's job.
 | Module | Contents |
 |--------|----------|
 | `agent_card` | Agent card HTTP handlers (static, dynamic, and caching utilities) |
-| `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest; `VerifiedApproval` is what the executor sees |
+| `approval` | `ApprovalGate`: admits an approval decision only from an allowed, authenticated approver, for the pending request and its digest, and with `with_quorum(n)` only once `n` distinct approvers have approved (recorded under `QUORUM_METADATA_KEY`); `VerifiedApproval` is what the executor sees |
 | `audit` | `AuditLog`, its stores, retention and legal holds; records every call, run, task event and cancel request (`audit` feature); `AuditPrivacy`, `AuditLog::with_privacy`, `reveal`, `digest_matches` and `erase_subject` protect who and what records name and erase a person (`audit` and `encryption`) |
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
@@ -331,7 +333,7 @@ are rustdoc's job.
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
 | `otel` | `OtelMetrics` (`otel` feature, on by default) and `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset; `otlp` feature) |
-| `profile` | `Profile::Auditable`: one call that turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature) |
+| `profile` | Deployment profiles, which combine. `Profile::Auditable` turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature). `Profile::Production` refuses a handler with no authenticator, halt store or lease store (ADR 0025) |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
@@ -340,6 +342,7 @@ are rustdoc's job.
 | `streaming` | Streaming infrastructure for SSE responses and event queues |
 | `tenant_config` | Per-tenant resource limits for multi-tenant A2A servers |
 | `tenant_resolver` | Tenant resolution for multi-tenant A2A servers |
+| `tool_loop` | Tool calling inside a task: the model/tool loop, its executor, and a chat-completions client (`tool-loop` feature, ADR 0022) |
 | `url_guard` | SSRF checks for URLs an agent fetches: `check_public_url`, `resolve_public_url` |
 
 ### Constants
@@ -372,6 +375,8 @@ are rustdoc's job.
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
 | `BindingSpan` | The per-call server span and `rpc.server.call.duration` for a binding outside this crate, as the in-crate bindings record theirs (ADR 0013) |
 | `CustomBinding` | How such a binding names itself: its `rpc.system.name`, its status for each `ServerError`, and optionally the status of a success |
+| `StreamEnd` | A response stream's claim on the call it answers (`BindingSpan::run_with`): the call is recorded when the stream ends, as cancelled if the claim is dropped |
+| `StreamOutcome` | How a response stream ended: completed, failed with an error, or abandoned |
 
 ### Traits
 
@@ -390,6 +395,8 @@ are rustdoc's job.
 | `Metrics` | Pluggable metrics observer (requests, latency, errors) |
 | `TenantResolver` | Extracts tenant from request context |
 | `RateLimitCounter` | A request counter every replica shares |
+| `ToolModel` | One completion turn of a model that can call tools: preamble, conversation and tool specs in, text and tool calls out (`tool-loop` feature) |
+| `Tool` | Something a model may call: a name, a description, a JSON Schema, `read_only` (default `false`) and `call(invocation)`, given the arguments and an idempotency key (`tool-loop` feature, ADR 0026) |
 
 ### Dispatchers
 
@@ -422,11 +429,25 @@ are rustdoc's job.
 | `agent_executor!` | Macro: generates an `AgentExecutor` implementation from a closure-like syntax |
 | `boxed_future` | Wraps an async expression into a pinned, boxed, `Send` future |
 
+### Tool Calling
+
+All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
+`ChatMessage`, `ModelError`, `LoopError`, …) is at `tool_loop::`.
+
+| Type | Description |
+|------|-------------|
+| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one |
+| `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted` |
+| `ToolSet` | The tools a loop offers; refuses two of one name |
+| `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls` |
+
 ### Built-in Implementations
 
 | Type | Description |
 |------|-------------|
 | `InMemoryTaskStore` | In-memory task store with TTL |
+| `EventHolds` | What attached streams still owe from each task's event log, so a bounded log keeps it (`store`; `TaskStore::hold_events`, spec §3.5.2) |
+| `EventHold` | One stream's hold on a task's log, raised as it delivers and released on drop (`store`) |
 | `EncryptedTaskStore` | Wraps any `TaskStore` and seals every part at rest, bound to where it sits (`store::encrypted`; `encryption` feature) |
 | `Aes256GcmCipher` | AES-256-GCM over a key ring for `EncryptedTaskStore`, and a `PushConfigCipher` (`encryption` feature) |
 | `InMemoryPushConfigStore` | In-memory push config store |
@@ -460,7 +481,7 @@ are rustdoc's job.
 | `Migration` | A single SQLite schema migration (`sqlite` feature) |
 | `MigrationRunner` | Runs schema migrations against a SQLite database (`sqlite` feature) |
 | `PgMigration` | A single PostgreSQL schema migration (`postgres` feature) |
-| `NoopMetrics` | No-op metrics implementation (default) |
+| `NoopMetrics` | No-op metrics implementation (the default without the `otel` feature) |
 | `OtelMetrics` | OpenTelemetry metrics (`otel` feature, on by default) |
 
 ### Streaming

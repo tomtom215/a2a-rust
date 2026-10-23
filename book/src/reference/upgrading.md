@@ -158,6 +158,23 @@ buckets, under the conventions' name. It was deprecated in 0.14.0. Units of
 counts are brace-annotated (`{request}`); the other Prometheus names are
 unchanged.
 
+### A signed agent card declares the budget extension
+
+The builder adds `https://a2a-rust.com/extensions/budget/v1` to every card,
+as it adds the failure taxonomy, and a signed card cannot be edited without
+breaking its signature, so `build()` refuses a signed card that does not
+declare it. Add it to `capabilities.extensions` (`required: false`) before
+signing. An unsigned card needs nothing.
+
+### `TenantLimits::max_stored_tasks` is gone
+
+The field, `TenantLimits::with_max_stored_tasks` and
+`TenantLimitsBuilder::max_stored_tasks` are removed. Nothing ever read them
+(see [0.9 → 0.10](#tenantlimitsmax_stored_tasks-is-deprecated)); a build that
+used them stops compiling where it used to warn. Give the tenant its own
+`TaskStoreConfig` with `TenantAwareInMemoryTaskStore::with_tenant_override`
+instead.
+
 ### `Telemetry` is the `otlp` feature; `otel` is on by default
 
 On `a2a-protocol-server` directly, `Telemetry`, the `Langfuse` preset and
@@ -454,7 +471,9 @@ missed from the task's event log and goes on (spec §3.5.2), on every store that
 keeps a log, which is every built-in one. A test that provokes `streamLagged`
 with a small `with_event_queue_capacity` no longer sees it there; also bound
 the log below what the stream misses
-(`TaskStoreConfig::with_max_events_per_task`). Lowering
+(`TaskStoreConfig::with_max_events_per_task`) and, since an attached stream
+now holds what it owes past that bound, leave it no room to
+(`with_max_held_events_factor(Some(1))`). Lowering
 `HandlerLimits::subscribe_replay_limit` no longer provokes it either: since
 0.15.0 the limit is the size of each read of the log, and a longer replay is
 read in pages.
@@ -1457,8 +1476,8 @@ let store = TenantAwareInMemoryTaskStore::new().with_tenant_override(
 ```
 
 The override applies to a partition created after the store is built; a
-tenant that already has one keeps it. The field is deprecated rather than
-removed and is still present as of 0.12.
+tenant that already has one keeps it. The field was deprecated rather than
+removed until 0.15.0, which removes it.
 
 The same release corrected two pieces of documentation that read as if
 something was enforced when it was not: `PerTenantConfig` and `TenantLimits`

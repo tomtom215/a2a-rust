@@ -77,6 +77,8 @@ pub struct ClientBuilder {
     /// the set the retry policy will re-send after an ambiguous failure, so a
     /// wrong `true` duplicates tasks against a server that ignores the key.
     pub(super) peer_honours_idempotency: bool,
+    /// What received content is checked against (ADR 0027).
+    pub(super) content: crate::content::ContentKeys,
     /// The card's interfaces, when this builder came from one; empty otherwise.
     ///
     /// Retained so that [`ClientBuilder::with_protocol_binding`] can move the
@@ -136,6 +138,7 @@ impl ClientBuilder {
             preferred_binding: None,
             retry_policy: None,
             peer_honours_idempotency: false,
+            content: crate::content::ContentKeys::default(),
             grpc_bare_address_scheme: crate::config::GrpcBareAddressScheme::default(),
             #[cfg(feature = "grpc-tls")]
             grpc_tls_config: None,
@@ -236,8 +239,9 @@ impl ClientBuilder {
         Ok(Self {
             endpoint,
             transport_override: None,
-            interceptors: InterceptorChain::new(),
+            interceptors: InterceptorChain::declaring(card),
             peer_honours_idempotency,
+            content: crate::content::ContentKeys::default(),
             config: ClientConfig {
                 // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
                 tenant,
@@ -575,6 +579,33 @@ impl ClientBuilder {
     #[must_use]
     pub const fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
         self.retry_policy = Some(policy);
+        self
+    }
+
+    /// Verifies the provenance signature (`a2a_protocol_types::provenance`)
+    /// of every artifact and agent message received from the agent against
+    /// `keys` (ADR 0027): in stream events, and in what `send_message`,
+    /// `get_task`, `list_tasks` and `cancel_task` return. Content whose
+    /// signature does not verify, because it was altered or signed by a key
+    /// not in the set, fails the call (or ends the stream) with
+    /// [`ClientError::ContentNotVerified`].
+    /// Unsigned content is returned as it is, unverified;
+    /// [`require_signed_content`](Self::require_signed_content) refuses it.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_content_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.content = crate::content::ContentKeys::new(keys);
+        self
+    }
+
+    /// Refuses unsigned content as well as altered content. Anyone able to
+    /// alter content can also remove its signature, so a caller that acts
+    /// only on content from known agents requires one. Needs
+    /// [`with_content_keys`](Self::with_content_keys), called before this.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn require_signed_content(mut self) -> Self {
+        self.content = self.content.requiring_signatures();
         self
     }
 

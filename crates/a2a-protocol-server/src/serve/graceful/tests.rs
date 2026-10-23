@@ -217,6 +217,56 @@ async fn timeouts_can_be_turned_off_without_breaking_the_connection() {
     serving.await.expect("join");
 }
 
+/// A request still being served is not an idle connection. A blocking
+/// `SendMessage` moves no bytes while its executor works, and the executor
+/// may run for `DEFAULT_EXECUTOR_TIMEOUT` (an hour); the idle timer closed the
+/// socket at 75s instead, so the client lost its answer while the task ran on
+/// (found 2026-10-20 driving a live model through the tool loop).
+#[tokio::test]
+async fn a_request_still_being_served_is_not_idle() {
+    const IDLE: Duration = Duration::from_millis(500);
+    let server = Server::bind("127.0.0.1:0")
+        .await
+        .expect("bind")
+        .with_config(ServeConfig::new().with_idle_timeout(Some(IDLE)));
+    let addr = server.local_addr().expect("addr");
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let serving = tokio::spawn(async move {
+        server
+            .serve_with_shutdown(SlowDispatcher::new(IDLE * 4), async {
+                rx.await.ok();
+            })
+            .await
+    });
+
+    // One keep-alive request on a raw socket, read to EOF: the answer must
+    // arrive although it took four idle windows, and the connection must
+    // still close once it sits idle afterwards, which is what says the
+    // request stopped being counted when it was answered.
+    let mut sock = tokio::net::TcpStream::connect(addr).await.expect("connect");
+    sock.write_all(b"GET / HTTP/1.1\r\nHost: test\r\n\r\n")
+        .await
+        .expect("send");
+    let started = std::time::Instant::now();
+    let mut seen = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), sock.read_to_end(&mut seen))
+        .await
+        .expect("an answered connection left idle must still be closed")
+        .expect("read");
+    let seen = String::from_utf8_lossy(&seen);
+    assert!(
+        seen.starts_with("HTTP/1.1 200"),
+        "the slow answer never arrived; the connection was cut while it was being served: {seen:?}"
+    );
+    assert!(
+        started.elapsed() >= IDLE * 4,
+        "answered before the dispatcher's delay"
+    );
+
+    tx.send(()).ok();
+    serving.await.expect("join");
+}
+
 /// A server built from a listener the caller bound serves on that listener:
 /// it reports the caller's address and answers a request sent there.
 #[tokio::test(flavor = "multi_thread")]
@@ -432,6 +482,7 @@ async fn shutdown_with_no_traffic_reports_a_clean_empty_drain() {
             abandoned: 0,
             // `SlowDispatcher` has no handler, so there are no tasks to end.
             tasks: None,
+            refused: None,
         }
     );
 }

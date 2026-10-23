@@ -139,6 +139,14 @@ pub struct Jwk {
     /// (spec §8.4.3: "Expired or revoked keys MUST NOT be used").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exp: Option<u64>,
+    /// The key's X.509 certificate chain (RFC 7517 §4.7): base64 (not
+    /// base64url) DER, the certificate holding this key first. A key with a
+    /// chain is used to verify only while that first certificate is valid
+    /// (`notBefore` through `notAfter`), and only if it holds this same key;
+    /// a chain that does not parse leaves the key unused. The chain is not
+    /// validated to a trust anchor, and revocation is not checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x5c: Option<Vec<String>>,
 }
 
 impl Jwk {
@@ -211,6 +219,7 @@ impl Jwk {
             alg: Some(key.alg().to_owned()),
             key_use: Some("sig".to_owned()),
             exp: None,
+            x5c: None,
         }
     }
 
@@ -240,9 +249,11 @@ impl Jwks {
 
     /// The usable keys a signature with this `kid` and `alg` may have been
     /// made with: those whose `kid` matches (every key, when the signature
-    /// names none), whose type is for `alg`, and that have not expired
-    /// ([`Jwk::exp`]). Keys that do not parse are skipped, so one malformed
-    /// entry does not disable the set.
+    /// names none), whose type is for `alg`, that have not expired
+    /// ([`Jwk::exp`]), and whose certificate, if they carry one
+    /// ([`Jwk::x5c`]), holds the same key and is within its validity. Keys
+    /// that do not parse are skipped, so one malformed entry does not
+    /// disable the set.
     ///
     /// A revoked key is one the set no longer lists (spec §8.4.3). Nothing
     /// here caches a set: fetch it again ([`fetch_jwks`] in the client) to
@@ -268,11 +279,19 @@ impl Jwks {
             .iter()
             .filter(|k| k.exp.is_none_or(|exp| now < exp))
             .filter(|k| kid.is_none() || k.kid.as_deref() == kid)
-            .filter_map(|k| k.verifying_key().ok())
+            .filter_map(|k| Some((k, k.verifying_key().ok()?)))
+            .filter(|(k, key)| {
+                k.x5c
+                    .as_deref()
+                    .is_none_or(|chain| x5c::admits(chain, key, now))
+            })
+            .map(|(_, key)| key)
             .filter(|k| k.alg() == alg)
             .collect()
     }
 }
+
+mod x5c;
 
 #[cfg(test)]
 mod tests;

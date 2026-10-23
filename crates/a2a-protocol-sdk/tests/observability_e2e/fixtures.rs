@@ -39,8 +39,13 @@ agent_executor!(Recorder, |ctx, queue| async {
 });
 
 /// An in-memory store that refuses to persist any non-initial state of a task
-/// in the context `persist-fail`, so the persistence-error path runs.
+/// in the context `persist-fail`, so the persistence-error path runs, and
+/// fails every read of the task [`STORE_DOWN`], so a call fails on the
+/// server's side.
 pub struct FailingStore(pub InMemoryTaskStore);
+
+/// The task id whose every read fails.
+pub const STORE_DOWN: &str = "store-down";
 
 pub type Fut<'a, T> = Pin<Box<dyn std::future::Future<Output = A2aResult<T>> + Send + 'a>>;
 
@@ -52,6 +57,9 @@ impl TaskStore for FailingStore {
         self.0.save(task)
     }
     fn get<'a>(&'a self, id: &'a TaskId) -> Fut<'a, Option<Task>> {
+        if id.as_ref() == STORE_DOWN {
+            return Box::pin(async { Err(A2aError::internal("injected store outage")) });
+        }
         self.0.get(id)
     }
     fn list<'a>(&'a self, params: &'a ListTasksParams) -> Fut<'a, TaskListResponse> {
@@ -90,8 +98,13 @@ impl MetricReader for SharedReader {
     }
 }
 
+/// The `traceparent` of each POST the webhook received, `None` for one that
+/// carried none.
+pub static WEBHOOK_TRACEPARENTS: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
+
 /// A webhook that accepts every POST, so a push delivery completes, and
-/// counts what it received.
+/// counts what it received — once it has read the request's headers into
+/// [`WEBHOOK_TRACEPARENTS`].
 pub async fn webhook(hits: Arc<std::sync::atomic::AtomicUsize>) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -102,11 +115,19 @@ pub async fn webhook(hits: Arc<std::sync::atomic::AtomicUsize>) -> String {
             let Ok((mut s, _)) = listener.accept().await else {
                 return;
             };
-            hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let hits = Arc::clone(&hits);
             tokio::spawn(async move {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = vec![0_u8; 64 * 1024];
-                let _ = s.read(&mut buf).await;
+                let n = s.read(&mut buf).await.unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]);
+                let traceparent = head.lines().find_map(|l| {
+                    let (name, value) = l.split_once(':')?;
+                    name.eq_ignore_ascii_case("traceparent")
+                        .then(|| value.trim().to_owned())
+                });
+                WEBHOOK_TRACEPARENTS.lock().expect("lock").push(traceparent);
+                hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let _ = s
                     .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
                     .await;
@@ -151,4 +172,34 @@ pub fn attr(span: &SpanData, key: &str) -> Option<String> {
         .iter()
         .find(|kv| kv.key.as_str() == key)
         .map(|kv| kv.value.to_string())
+}
+
+/// Each data point of an f64 histogram: its attributes, and its maximum.
+pub fn histogram_points(
+    metric: &opentelemetry_sdk::metrics::data::Metric,
+    gaps: &mut Vec<String>,
+) -> Vec<(std::collections::BTreeMap<String, String>, f64)> {
+    let opentelemetry_sdk::metrics::data::AggregatedMetrics::F64(
+        opentelemetry_sdk::metrics::data::MetricData::Histogram(h),
+    ) = metric.data()
+    else {
+        gaps.push(format!("{} is not an f64 histogram", metric.name()));
+        return Vec::new();
+    };
+    if metric.unit() != "s" {
+        gaps.push(format!(
+            "{} has unit {:?}, not \"s\"",
+            metric.name(),
+            metric.unit()
+        ));
+    }
+    h.data_points()
+        .map(|p| {
+            let attributes = p
+                .attributes()
+                .map(|kv| (kv.key.to_string(), kv.value.to_string()))
+                .collect();
+            (attributes, p.max().unwrap_or_default())
+        })
+        .collect()
 }

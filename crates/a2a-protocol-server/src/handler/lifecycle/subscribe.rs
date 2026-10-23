@@ -183,7 +183,7 @@ impl RequestHandler {
         resume_after: Option<u64>,
     ) -> ServerResult<InMemoryQueueReader> {
         let (reader, gap) = self
-            .snapshot_and_live(task_id, stored, shape.clone())
+            .held_snapshot_and_live(task_id, stored, shape.clone(), resume_after)
             .await?;
         let mut reader = self
             .with_stream_hooks(reader, task_id)
@@ -531,7 +531,7 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<InMemoryQueueReader> {
         let start = Instant::now();
-        trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
+        trace_info!(method = "SubscribeToTask", task_id = ?params.id, "handling resubscribe");
         #[cfg(feature = "tracing")]
         crate::rpc_span::record_task(&params.id, None);
         self.metrics.on_request("SubscribeToTask");
@@ -590,6 +590,9 @@ impl RequestHandler {
             }),
         )
         .await;
+
+        // Signed frame by frame as it is read (ADR 0027).
+        let result = result.map(|reader| reader.with_outbound(self.outbound.clone()));
 
         let elapsed = start.elapsed();
         match &result {
@@ -762,6 +765,7 @@ impl LogReplay {
     }
 }
 
+mod hold;
 #[cfg(test)]
 mod log_replay_tests;
 
@@ -1320,7 +1324,6 @@ mod tests {
 
     #[tokio::test]
     async fn resubscribe_error_path_records_error_metrics() {
-        // Triggers the Err branch in the metrics match (lines 60-63, 82).
         use crate::call_context::CallContext;
         use crate::interceptor::ServerInterceptor;
         use std::future::Future;

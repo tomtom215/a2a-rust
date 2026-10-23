@@ -33,6 +33,10 @@ fn task(id: &str) -> Task {
     }
 }
 
+fn limit() -> a2a_protocol_server::store::HistoryLimit {
+    a2a_protocol_server::store::HistoryLimit::new(100, usize::MAX)
+}
+
 async fn position(store: &dyn TaskStore, id: &TaskId) -> Option<u64> {
     store
         .get_with_position(id)
@@ -91,17 +95,26 @@ async fn keeps_the_applied_position(store: &dyn TaskStore) {
 
     let turn = [Message::user_text("m-1", "next")];
     store
-        .save_appending_history(
-            &t,
-            &turn,
-            a2a_protocol_server::store::HistoryLimit::new(100, usize::MAX),
-        )
+        .save_appending_history(&t, &turn, limit())
         .await
         .unwrap();
     assert_eq!(
         position(store, &id).await,
         Some(6),
         "kept by a history append"
+    );
+
+    // A continuation's save records the position of the read it was built
+    // from, which can be below the stored one: the stored position must
+    // follow it down, or it claims what the save just overwrote (2026-10-20,
+    // `tests/stale_write_position`).
+    AppliedPosition::scope(4, store.save_appending_history(&t, &turn, limit()))
+        .await
+        .unwrap();
+    assert_eq!(
+        position(store, &id).await,
+        Some(4),
+        "lowered by a scoped history append"
     );
 
     let (stored, _) = store.get_with_position(&id).await.unwrap().unwrap();

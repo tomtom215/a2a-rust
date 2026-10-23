@@ -24,7 +24,10 @@ publish     = false
 
 [dependencies]
 a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
-a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = ["grpc"] }
+# `otlp`: the SDK's `Telemetry`, which exports when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = ["grpc", "otlp"] }
+tracing-subscriber  = { version = ">=0.3.20, <0.4", default-features = false, features = ["registry", "std"] }
 a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false, features = ["grpc"] }
 tokio       = { version = ">=1.47.1, <2", features = ["macros", "rt-multi-thread", "net", "time", "signal", "io-util"] }
 serde_json  = { version = ">=1.0.145, <2" }

@@ -198,3 +198,31 @@ fn chain_debug_shows_its_count_and_plaintext_check() {
     assert!(shown.contains("http://agent.example"), "{shown}");
     assert!(!shown.contains("secret"), "{shown}");
 }
+
+/// The extended card replaces the security a chain checks against: a call
+/// the public card's requirements refuse goes once a card requiring
+/// nothing is adopted.
+#[tokio::test]
+async fn adopting_a_card_replaces_the_security_the_chain_checks() {
+    let card = |requirements: serde_json::Value| -> a2a_protocol_types::AgentCard {
+        serde_json::from_value(serde_json::json!({
+            "name": "a", "description": "d", "version": "1",
+            "supportedInterfaces": [
+                { "url": "https://a.example/rpc", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+            ],
+            "capabilities": {},
+            "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"],
+            "skills": [{ "id": "s", "name": "S", "description": "d", "tags": ["t"] }],
+            "securitySchemes": { "basic": { "httpAuthSecurityScheme": { "scheme": "Basic" } } },
+            "securityRequirements": requirements,
+        }))
+        .expect("card")
+    };
+    let mut chain =
+        InterceptorChain::declaring(&card(serde_json::json!([{ "schemes": { "basic": [] } }])));
+    chain.set_credential_preflight(crate::credential_preflight::CredentialPreflight::Refuse);
+    let mut bare = ClientRequest::new("GetTask", serde_json::Value::Null);
+    assert!(chain.run_before(&mut bare).await.is_err());
+    chain.adopt_security(&card(serde_json::json!([])));
+    assert!(chain.run_before(&mut bare).await.is_ok());
+}
