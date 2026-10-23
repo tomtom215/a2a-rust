@@ -76,9 +76,12 @@ fn card(capabilities: AgentCapabilities) -> AgentCard {
         capabilities,
         security_schemes: None,
         security_requirements: None,
-        default_input_modes: vec![],
-        default_output_modes: vec![],
-        skills: vec![],
+        // A card the client accepts when it arrives as an extended card.
+        default_input_modes: vec!["text/plain".into()],
+        default_output_modes: vec!["text/plain".into()],
+        skills: vec![
+            a2a_protocol_types::AgentSkill::new("echo", "Echo", "Echoes input").with_tags(["echo"]),
+        ],
         signatures: None,
     }
 }

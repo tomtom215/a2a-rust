@@ -84,6 +84,7 @@ impl A2aClient {
 
         let task =
             serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)?;
+        crate::received::task(METHOD, &task)?;
         self.content.task(&task)?;
         Ok(task)
     }
@@ -116,6 +117,7 @@ impl A2aClient {
 
         let page = serde_json::from_value::<TaskListResponse>(resp.result)
             .map_err(ClientError::Serialization)?;
+        crate::received::page(&page)?;
         self.content.page(&page)?;
         Ok(page)
     }
@@ -165,6 +167,7 @@ impl A2aClient {
 
         let task =
             serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)?;
+        crate::received::task(METHOD, &task)?;
         self.content.task(&task)?;
         Ok(task)
     }

@@ -281,6 +281,7 @@ pub(super) fn replicate(e: &ClientError) -> ClientError {
         ClientError::InsecureWebhook(s) => ClientError::InsecureWebhook(s.clone()),
         ClientError::InsecureTransport(s) => ClientError::InsecureTransport(s.clone()),
         ClientError::ContentNotVerified(s) => ClientError::ContentNotVerified(s.clone()),
+        ClientError::InvalidAgentResponse(s) => ClientError::InvalidAgentResponse(s.clone()),
         ClientError::CapabilityNotDeclared { method, capability } => {
             ClientError::CapabilityNotDeclared {
                 method: method.clone(),

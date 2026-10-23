@@ -24,6 +24,7 @@ fn card() -> AgentCard {
         "1.0.0",
         AgentInterface::jsonrpc("http://localhost:1"),
     )
+    .with_description("d")
     .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]))
 }
 

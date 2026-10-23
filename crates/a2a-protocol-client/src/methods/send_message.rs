@@ -127,6 +127,7 @@ impl A2aClient {
 
         let response = serde_json::from_value::<SendMessageResponse>(resp.result)
             .map_err(ClientError::Serialization)?;
+        crate::received::response(&response)?;
         self.content.response(&response)?;
         Ok(response)
     }

@@ -181,7 +181,8 @@ impl ClientError {
             | Self::InvalidAuthScheme(_)
             | Self::InsecureWebhook(_)
             | Self::InsecureTransport(_)
-            | Self::ContentNotVerified(_) => false,
+            | Self::ContentNotVerified(_)
+            | Self::InvalidAgentResponse(_) => false,
         }
     }
 }

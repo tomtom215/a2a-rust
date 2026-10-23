@@ -125,7 +125,7 @@ upstream = "Out of scope: backlog/archive task-30, \"Won't Do: Testing the A2A c
 scope = "Interfaces declaring 1.0.9 or 1.0.3 are chosen and spoken to exactly as 1.0 is, and the request names 1.0; the server accepts 1.0 with any patch."
 tests = [
   "crates/a2a-protocol-sdk/tests/binding_equivalence/version.rs::ver_client_002_a_patch_on_the_card_does_not_change_negotiation",
-  "crates/a2a-protocol-client/src/builder/selection_tests.rs::prefixed_and_missing_versions_count_as_compatible",
+  "crates/a2a-protocol-client/src/builder/selection_tests.rs::prefixed_versions_count_as_compatible",
   "crates/a2a-protocol-server/src/dispatch/version.rs::version_metadata_accepts_this_major_minor_with_any_patch",
 ]
 

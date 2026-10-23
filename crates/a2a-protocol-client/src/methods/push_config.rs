@@ -93,8 +93,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<TaskPushNotificationConfig>(resp.result)
-            .map_err(ClientError::Serialization)
+        let config = serde_json::from_value::<TaskPushNotificationConfig>(resp.result)
+            .map_err(ClientError::Serialization)?;
+        crate::received::push_config(METHOD, &config)?;
+        Ok(config)
     }
 
     /// Retrieves a push notification configuration by task ID and config ID.
@@ -131,8 +133,10 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<TaskPushNotificationConfig>(resp.result)
-            .map_err(ClientError::Serialization)
+        let config = serde_json::from_value::<TaskPushNotificationConfig>(resp.result)
+            .map_err(ClientError::Serialization)?;
+        crate::received::push_config(METHOD, &config)?;
+        Ok(config)
     }
 
     /// Lists push notification configurations for a task with pagination.
@@ -163,8 +167,12 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<ListPushConfigsResponse>(resp.result)
-            .map_err(ClientError::Serialization)
+        let page = serde_json::from_value::<ListPushConfigsResponse>(resp.result)
+            .map_err(ClientError::Serialization)?;
+        page.configs
+            .iter()
+            .try_for_each(|config| crate::received::push_config(METHOD, config))?;
+        Ok(page)
     }
 
     /// Deletes a push notification configuration.

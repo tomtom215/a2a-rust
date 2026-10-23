@@ -442,8 +442,9 @@ impl EventStream {
         // other error does (ADR 0027): nothing buffered behind it is
         // delivered, the body reader stops, and the refused event does not
         // count as delivered, so a resume from `last_event_id` replays it.
+        // So does an event missing a field a2a.proto marks REQUIRED.
         if let Some(Ok(event)) = &next
-            && let Err(e) = self.content.event(event)
+            && let Err(e) = crate::received::event(event).and_then(|()| self.content.event(event))
         {
             self.phase = Phase::Finished;
             self.parser = SseParser::new();

@@ -147,6 +147,19 @@ pub enum ClientError {
     /// one (`ClientBuilder::with_content_keys`, feature `signing`).
     /// Not retryable: the same content fails the same way.
     ContentNotVerified(String),
+
+    /// The agent sent an object `a2a.proto` does not allow: a field it marks
+    /// REQUIRED is missing or empty (spec §5.7), such as a task with no
+    /// `id`, a status in `TASK_STATE_UNSPECIFIED`, a message or artifact
+    /// with no parts, or an agent card the rules a server publishes by
+    /// would refuse (`AgentCard::validate`). Checked on every binding, and
+    /// on the card discovery and `GetExtendedAgentCard` fetch; the message
+    /// names the call and the field. Before 0.15 such an object was
+    /// returned as if valid, and over gRPC an absent field read as its
+    /// zero value. Not retryable: the agent sends the same object again.
+    /// An agent's object that does not parse at all is still
+    /// [`Serialization`](Self::Serialization).
+    InvalidAgentResponse(String),
 }
 
 impl fmt::Display for ClientError {
@@ -200,6 +213,7 @@ impl fmt::Display for ClientError {
                     "content from the agent failed its provenance check: {why}"
                 )
             }
+            Self::InvalidAgentResponse(why) => write!(f, "invalid agent response: {why}"),
             Self::InsecureWebhook(origin) => write!(
                 f,
                 "push config not sent: webhook {origin} is plaintext http:// to a \
@@ -308,7 +322,7 @@ impl From<A2aError> for ClientError {
 /// | `Protocol(e)` | `e.code`, with `e.message` and `e.data` unchanged | from the code |
 /// | `Protocol(e)` naming a retry delay (a downstream rate limit) | as above, with its delay | `Transient` |
 /// | anything [`is_retryable`](ClientError::is_retryable) — timeouts, connection failures, `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `InternalError` | `Transient` |
-/// | `Serialization` (the peer sent something unreadable) | `InvalidAgentResponse` | `Internal` |
+/// | `Serialization` or `InvalidAgentResponse` (the peer sent something unreadable, or missing a REQUIRED field) | `InvalidAgentResponse` | `Internal` |
 /// | everything else (bad endpoint, binding mismatch, other statuses, auth required) | `InternalError` | `Internal` |
 ///
 /// "Transient exactly when the client would retry" is deliberate: the
@@ -355,7 +369,9 @@ impl From<ClientError> for A2aError {
                 }
                 return inner;
             }
-            ClientError::Serialization(_) => ErrorCode::InvalidAgentResponse,
+            ClientError::Serialization(_) | ClientError::InvalidAgentResponse(_) => {
+                ErrorCode::InvalidAgentResponse
+            }
             _ => ErrorCode::InternalError,
         };
         let mut out = Self::new(code, format!("downstream A2A call failed: {}", chain(&e)));

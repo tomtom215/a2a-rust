@@ -128,6 +128,7 @@ mod extensions;
 mod legacy_card;
 mod loopback;
 mod plaintext;
+mod received;
 mod redact;
 #[cfg(test)]
 mod test_tracing;

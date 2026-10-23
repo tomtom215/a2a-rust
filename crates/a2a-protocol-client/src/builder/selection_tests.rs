@@ -90,11 +90,10 @@ fn a_card_with_no_compatible_version_is_refused_with_what_it_offers() {
 }
 
 /// a2a-go writes `v`-prefixed versions as readily as bare ones (its
-/// `makeTransportKey` adds the `v` when absent), and an empty version means
-/// the card did not say.
+/// `makeTransportKey` adds the `v` when absent).
 #[test]
-fn prefixed_and_missing_versions_count_as_compatible() {
-    for version in ["v1.0", "V1", "1", "1.0.0", "1.1-rc1", ""] {
+fn prefixed_versions_count_as_compatible() {
+    for version in ["v1.0", "V1", "1", "1.0.0", "1.1-rc1"] {
         let card = card(vec![
             iface(BINDING_JSONRPC, "0.3", "http://localhost:1111/v03"),
             iface(BINDING_JSONRPC, version, "http://localhost:1111/ok"),
@@ -102,6 +101,29 @@ fn prefixed_and_missing_versions_count_as_compatible() {
         let builder = ClientBuilder::from_card(&card).expect("from_card");
         assert_eq!(builder.endpoint, "http://localhost:1111/ok", "{version:?}");
     }
+}
+
+/// `protocolVersion` is REQUIRED (a2a.proto): an interface without one is
+/// passed over for one that states 1.x, and a card whose only interface
+/// states none is refused. Until 2026-10-23 an empty version counted as
+/// compatible, and the interface listed first was chosen.
+#[test]
+fn an_interface_without_a_protocol_version_is_passed_over() {
+    let both = card(vec![
+        iface(BINDING_JSONRPC, "", "http://localhost:1111/unstated"),
+        iface(BINDING_JSONRPC, "1.0", "http://localhost:1111/ok"),
+    ]);
+    let builder = ClientBuilder::from_card(&both).expect("from_card");
+    assert_eq!(builder.endpoint, "http://localhost:1111/ok");
+    let unstated = card(vec![iface(
+        BINDING_JSONRPC,
+        "",
+        "http://localhost:1111/unstated",
+    )]);
+    let Err(ClientError::InvalidEndpoint(msg)) = ClientBuilder::from_card(&unstated) else {
+        panic!("a card whose only interface states no version must be refused");
+    };
+    assert!(msg.contains("http://localhost:1111/unstated"), "{msg}");
 }
 
 /// The selector matched bindings ignoring case; `build()` did not, so a card
