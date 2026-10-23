@@ -39,6 +39,7 @@ are rustdoc's job.
 | `provenance` | Marks messages and artifacts as AI-generated and signs them (`mark_ai_generated`; `sign_content`, `verify_content` with the `signing` feature) |
 | `proto` | Canonical A2A protobuf message types (`lf.a2a.v1`) and conversions (`proto` feature) |
 | `push` | Push notification configuration types |
+| `required` | The REQUIRED fields of `a2a.proto` neither wire format's parser enforces, checked the same way at both ends (spec §5.7) |
 | `responses` | RPC method response types |
 | `security` | Security scheme types for A2A agent authentication |
 | `serde_helpers` | Serialization helpers for reducing allocation overhead |
@@ -522,6 +523,12 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `a2a_protocol_sdk::client` | All `a2a-protocol-client` exports |
 | `a2a_protocol_sdk::server` | All `a2a-protocol-server` exports |
 | `a2a_protocol_sdk::prelude` | Most commonly used types |
+
+### Telemetry
+
+| Item | Description |
+|------|-------------|
+| `Telemetry` | OpenTelemetry for the process, from the standard `OTEL_*` environment, exporting only what an endpoint is configured for (`otlp`, on by default; `a2a_protocol_server::otel::Telemetry`) |
 
 ### Prelude Contents
 
