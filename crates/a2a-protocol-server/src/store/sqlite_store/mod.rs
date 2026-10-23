@@ -499,7 +499,10 @@ const MULTI_PART_GUARD: &str = sql_write_allowed!(" AND ", "state", "?3");
 /// one whose `ALTER` loses is answered "duplicate column", which is the
 /// outcome it wanted, so the list is read again rather than the error
 /// returned.
-pub(crate) async fn add_applied_seq(pool: &SqlitePool, table: &str) -> Result<(), sqlx::Error> {
+pub(crate) async fn add_applied_seq(
+    pool: &SqlitePool,
+    table: &'static str,
+) -> Result<(), sqlx::Error> {
     if has_applied_seq(pool, table).await? {
         return Ok(());
     }
@@ -507,8 +510,9 @@ pub(crate) async fn add_applied_seq(pool: &SqlitePool, table: &str) -> Result<()
 }
 
 /// Whether `table` has the `applied_seq` column.
-async fn has_applied_seq(pool: &SqlitePool, table: &str) -> Result<bool, sqlx::Error> {
-    let columns = sqlx::query(&format!("PRAGMA table_info({table})"))
+async fn has_applied_seq(pool: &SqlitePool, table: &'static str) -> Result<bool, sqlx::Error> {
+    // `table` is `&'static str`, one of this crate's table names.
+    let columns = sqlx::query(sqlx::AssertSqlSafe(format!("PRAGMA table_info({table})")))
         .fetch_all(pool)
         .await?;
     Ok(columns
@@ -519,10 +523,10 @@ async fn has_applied_seq(pool: &SqlitePool, table: &str) -> Result<bool, sqlx::E
 /// The `ALTER` that [`add_applied_seq`] runs once it found the column
 /// missing. A failure is success when the column exists afterwards: that is
 /// the process that lost the race to another one adding it.
-async fn alter_add_applied_seq(pool: &SqlitePool, table: &str) -> Result<(), sqlx::Error> {
-    match sqlx::query(&format!(
+async fn alter_add_applied_seq(pool: &SqlitePool, table: &'static str) -> Result<(), sqlx::Error> {
+    match sqlx::query(sqlx::AssertSqlSafe(format!(
         "ALTER TABLE {table} ADD COLUMN applied_seq INTEGER"
-    ))
+    )))
     .execute(pool)
     .await
     {
@@ -766,9 +770,13 @@ impl TaskStore for SqliteTaskStore {
                 return Ok(false);
             };
 
-            let mut query = sqlx::query(stmt.sql.as_ref())
-                .bind(&stmt.payload)
-                .bind(task.id.0.as_str());
+            // Static unless several parts are appended at once, when the text
+            // varies only by integer positions (`artifact_delta_sql`).
+            let sql = match stmt.sql {
+                Cow::Borrowed(sql) => sqlx::query(sql),
+                Cow::Owned(sql) => sqlx::query(sqlx::AssertSqlSafe(sql)),
+            };
+            let mut query = sql.bind(&stmt.payload).bind(task.id.0.as_str());
             // Bound rather than interpolated, so the statement text — and the
             // plan SQLite caches for it — is the same for every artifact index.
             if let Some(index) = stmt.index {
@@ -984,7 +992,10 @@ impl TaskStore for SqliteTaskStore {
                         conditions.join(" AND ")
                     )
                 };
-                let mut count = sqlx::query_scalar::<_, i64>(&sql);
+                // sqlx 0.9 asks each runtime-built statement to be vouched for: the
+                // text is the static clauses above and integer placeholder positions;
+                // every caller-supplied value is a bind.
+                let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
                 for val in &bind_values {
                     count = count.bind(val);
                 }
@@ -1025,7 +1036,10 @@ impl TaskStore for SqliteTaskStore {
                  ORDER BY updated_at DESC, id DESC LIMIT ?{limit_param}"
             );
 
-            let mut query = sqlx::query_as::<_, (String, String)>(&sql);
+            // sqlx 0.9 asks each runtime-built statement to be vouched for: the
+            // text is the static clauses above and integer placeholder positions;
+            // every caller-supplied value is a bind.
+            let mut query = sqlx::query_as::<_, (String, String)>(sqlx::AssertSqlSafe(sql));
             for val in &bind_values {
                 query = query.bind(val);
             }

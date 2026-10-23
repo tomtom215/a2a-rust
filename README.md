@@ -19,7 +19,7 @@
 [![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
+[![MSRV](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org)
 [![A2A Conformance](https://img.shields.io/badge/official%20TCK-83%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomtom215/a2a-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/tomtom215/a2a-rust)
 
@@ -459,22 +459,24 @@ The server crate's public traits — `AgentExecutor`, `TaskStore`, `PushConfigSt
 
 ## Minimum Supported Rust Version
 
-Rust **1.88** or later (stable), edition 2024.
+Rust **1.94** or later (stable), edition 2024.
 
 **Policy.** The MSRV is treated as part of the public API: raising it is a
 **minor** version bump, never a patch, and the release notes say so. It is
-raised only when a language or standard-library feature earns it — not
-incidentally, because a transitive dependency moved. The edition-2024
+raised only when a language or standard-library feature earns it, or to
+adopt a new major version of a direct dependency — never because a
+transitive dependency moved. The edition-2024
 resolver selects dependency versions compatible with the declared
 `rust-version`, and CI builds and tests the workspace on exactly that
 toolchain. The full policy is in [STABILITY.md](STABILITY.md#5-minimum-supported-rust-version).
 
 **History.** The floor was 1.93 until 2026-09-09, when it was lowered to
-1.88 — the workspace had never needed anything newer, and 1.88 is the
-oldest toolchain the current dependency tree (`time`, `serde_with`,
-`darling`) declares support for. Lowering it further would mean holding
-those crates at older releases, a cost weighed against the adoption benefit
-on the [roadmap](ROADMAP.md).
+1.88 — the workspace had never needed anything newer, and 1.88 was the
+oldest toolchain the dependency tree (`time`, `serde_with`, `darling`)
+declared support for. 0.15.0 raises it to **1.94**, the oldest toolchain
+`sqlx` 0.9 supports, so the SQL stores move to sqlx's current major version
+in the release that already carries breaking changes (rustc 1.94.0 shipped
+in March 2026).
 
 **Depending on the git repository instead of crates.io.** Cargo older than
 1.85 cannot read an edition-2024 manifest, and for a git dependency it does
@@ -484,7 +486,7 @@ is where it always was. Measured 2026-09-24 against `v0.13.0` with
 `cargo generate-lockfile`: cargo 1.80.1 and 1.84.1 fail that way, and 1.85.0
 resolves. 1.84.1 understands `resolver = "3"`, so the resolver setting is
 not the cause; the edition is, and it applies from 0.12.0 on. Resolve and
-build with the toolchain you ship, 1.88 or later. Pinning by a short `rev`
+build with the toolchain you ship, 1.94 or later. Pinning by a short `rev`
 resolved on cargo 1.88, 1.96 and 1.98, with and without
 `net.git-fetch-with-cli`; a full 40-character SHA is still the safer pin,
 because a short one can become ambiguous as the repository grows.

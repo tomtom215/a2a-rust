@@ -106,11 +106,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
-// See `crates/a2a-protocol-server/src/lib.rs` for the full rationale behind this
-// allow — in short, the lint lands in clippy 1.95 but its suggested
-// `Duration::from_hours` fix requires Rust 1.95, while our MSRV is 1.88.
-#![allow(unknown_lints, clippy::duration_suboptimal_units)]
-
 // The README is this crate's crates.io page. Compiling its examples as
 // doctests keeps it true to the API: until 2026-09-23 nothing did, and it
 // documented methods that did not exist (audit C5, T8; escape class 1).

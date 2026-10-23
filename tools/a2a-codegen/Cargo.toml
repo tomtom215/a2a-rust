@@ -10,7 +10,7 @@ description = "Generates a2a-protocol-types' public types from a2a.proto (ADR 00
 # crates' graph and their `cargo deny` gate (ADR 0016).
 publish      = false
 edition      = "2024"
-rust-version = "1.88"
+rust-version = "1.94"
 license      = "Apache-2.0"
 
 [dependencies]

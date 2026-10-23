@@ -1104,7 +1104,7 @@ mod tests {
             // Keep the sender alive so the channel doesn't close.
             let _tx = tx;
             // Sleep forever — this will be aborted by EventStream::drop.
-            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+            tokio::time::sleep(Duration::from_hours(1)).await;
         });
         let abort_handle = handle.abort_handle();
         let stream = EventStream::with_abort_handle(rx, abort_handle);

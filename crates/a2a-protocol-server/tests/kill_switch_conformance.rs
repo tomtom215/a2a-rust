@@ -64,10 +64,12 @@ async fn the_postgres_halt_store_conforms() {
         .await
         .expect("connect");
     let name = format!("a2a_halt_conformance_{}", std::process::id());
-    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        .execute(&admin)
-        .await;
-    sqlx::query(&format!("CREATE DATABASE {name}"))
+    let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await;
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
         .execute(&admin)
         .await
         .expect("create database");
@@ -83,7 +85,9 @@ async fn the_postgres_halt_store_conforms() {
     };
     check_store(&open).await.assert_pass();
     check_handlers(&open).await.assert_pass();
-    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        .execute(&admin)
-        .await;
+    let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await;
 }

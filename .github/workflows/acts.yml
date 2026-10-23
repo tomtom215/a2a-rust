@@ -36,8 +36,11 @@ permissions:
   contents: read
 
 env:
-  # a2aproject/a2a-itk main on 2026-10-08; the revision acts/reports/2026-10-08 used.
-  A2A_ITK_REVISION: 82458ceac60208cc46ccbe52b68dbb8e1ca2614a
+  # a2aproject/a2a-itk main on 2026-10-23 (`bcce1a1`, a2a-itk#85). Moved from
+  # `82458ce` (2026-10-08, the revision acts/reports/2026-10-08 used); the five
+  # commits between change the harness's streaming Accept header and SSE
+  # detection (#79, #81) and add external-SUT runner flags (#84, #85).
+  A2A_ITK_REVISION: bcce1a15fdce343e2d816ee7e7119f68147385de
 
 jobs:
   acts:

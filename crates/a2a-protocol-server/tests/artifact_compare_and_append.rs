@@ -44,10 +44,12 @@ impl Db {
             .await
             .expect("connect");
         let name = format!("a2a_cas_{tag}_{}", std::process::id());
-        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-            .execute(&admin)
-            .await;
-        sqlx::query(&format!("CREATE DATABASE {name}"))
+        let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+        )))
+        .execute(&admin)
+        .await;
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
             .execute(&admin)
             .await
             .expect("create database");
@@ -64,10 +66,10 @@ impl Db {
     }
 
     async fn drop_db(self) {
-        let _ = sqlx::query(&format!(
+        let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP DATABASE IF EXISTS {} WITH (FORCE)",
             self.name
-        ))
+        )))
         .execute(&self.admin)
         .await;
         self.admin.close().await;

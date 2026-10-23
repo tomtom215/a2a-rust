@@ -99,15 +99,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
-// `clippy::duration_suboptimal_units` lands in clippy 0.1.95 (stable Rust
-// 1.95) and fires on `Duration::from_secs(3600)` / `_secs(7200)` /
-// `_secs(86400)`, suggesting `Duration::from_hours` / `from_days`. Those
-// constructors were themselves only stabilised in 1.95, so adopting the
-// suggested fix would break our MSRV (1.88). The `unknown_lints` allow
-// silences the "unknown lint name" warning when the lint itself does
-// not yet exist in clippy 0.1.88.
-#![allow(unknown_lints, clippy::duration_suboptimal_units)]
-
 // The README is this crate's crates.io page. Compiling its examples as
 // doctests keeps it true to the API: until 2026-09-23 nothing did, and it
 // documented methods that did not exist (audit C5, T8; escape class 1).

@@ -81,7 +81,8 @@ function processMessage(params) {
 
 // JSON-RPC handler
 app.post('/', (req, res) => {
-  const { jsonrpc, id, method, params } = req.body;
+  // Express 5 leaves req.body undefined (Express 4: {}) when no body was parsed.
+  const { jsonrpc, id, method, params } = req.body ?? {};
 
   if (jsonrpc !== '2.0') {
     return res.json({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } });
@@ -175,11 +176,11 @@ app.post('/', (req, res) => {
 
 // REST endpoints
 app.post('/message\\:send', (req, res) => {
-  res.json(processMessage(req.body));
+  res.json(processMessage(req.body ?? {}));
 });
 
 app.post('/message\\:stream', (req, res) => {
-  res.json(processMessage(req.body));
+  res.json(processMessage(req.body ?? {}));
 });
 
 app.get('/tasks/:id', (req, res) => {
@@ -203,8 +204,9 @@ app.post('/tasks/:id\\:cancel', (req, res) => {
 // Push notification config — create
 app.post('/tasks/:taskId/pushNotificationConfigs', (req, res) => {
   const taskId = req.params.taskId;
-  const configId = req.body.id || uuidv4();
-  const config = { ...req.body, id: configId, taskId };
+  const body = req.body ?? {};
+  const configId = body.id || uuidv4();
+  const config = { ...body, id: configId, taskId };
   pushConfigs.set(`${taskId}:${configId}`, config);
   res.json(config);
 });
@@ -236,6 +238,12 @@ app.use((req, res) => {
   res.status(404).json({ code: -32601, message: 'Not found' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Express 5 hands a bind failure (e.g. EADDRINUSE) to this callback instead
+// of throwing it, so check it rather than announcing a port we do not hold.
+app.listen(PORT, '0.0.0.0', (err) => {
+  if (err) {
+    console.error(`[ITK] JavaScript Echo Agent failed to listen on port ${PORT}: ${err.message}`);
+    process.exit(1);
+  }
   console.log(`[ITK] JavaScript Echo Agent listening on port ${PORT}`);
 });

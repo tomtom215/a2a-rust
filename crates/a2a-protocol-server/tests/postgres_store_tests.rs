@@ -87,7 +87,7 @@ impl TestDb {
             .connect(&admin_url)
             .await
             .expect("connect to admin database");
-        sqlx::query(&format!("CREATE DATABASE \"{name}\""))
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
             .execute(&admin)
             .await
             .expect("create scratch database");
@@ -108,10 +108,10 @@ impl TestDb {
             .await
             .expect("connect to admin database");
         // FORCE terminates any connection the store pool still holds.
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
             self.name
-        ))
+        )))
         .execute(&admin)
         .await
         .expect("drop scratch database");
@@ -207,10 +207,11 @@ async fn only_stored_value(url: &str, table: &str) -> serde_json::Value {
         .connect(url)
         .await
         .expect("connect");
-    let rows: Vec<serde_json::Value> = sqlx::query_scalar(&format!("SELECT data FROM {table}"))
-        .fetch_all(&pool)
-        .await
-        .expect("rows");
+    let rows: Vec<serde_json::Value> =
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT data FROM {table}")))
+            .fetch_all(&pool)
+            .await
+            .expect("rows");
     pool.close().await;
     assert_eq!(rows.len(), 1, "{rows:?}");
     rows.into_iter().next().unwrap()
@@ -1496,7 +1497,7 @@ async fn backdate(url: &str, table: &str, seconds: i64, tenant: Option<&str>) {
         ),
         None => format!("UPDATE {table} SET updated_at = now() - ($1 || ' seconds')::interval"),
     };
-    let mut q = sqlx::query(&sql).bind(seconds.to_string());
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).bind(seconds.to_string());
     if let Some(t) = tenant {
         q = q.bind(t);
     }

@@ -98,7 +98,7 @@ The test suite exercises 40+ SDK features including:
 
 ## Prerequisites
 
-- Rust 1.88+ (MSRV)
+- Rust 1.94+ (MSRV)
 - No external services — everything runs in-process
 
 ## License

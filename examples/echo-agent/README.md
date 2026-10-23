@@ -125,7 +125,7 @@ deployment template. `genai-agent` names the gRPC and WebSocket variables
 
 ## Prerequisites
 
-- Rust 1.88+ (MSRV)
+- Rust 1.94+ (MSRV)
 - No external services required — everything runs in-process
 
 ## License

@@ -141,11 +141,15 @@ removing an unsafe surface; those are documented as such.
 ## 5. Minimum supported Rust version
 
 The MSRV is part of the public API. It is raised only in a minor release,
-only for a language or standard-library feature that earns it, and the
-release notes say what that feature is. It is never raised because a
-transitive dependency moved: with the edition-2024 resolver, Cargo selects
-dependency versions compatible with the declared `rust-version`, and CI
-builds the workspace on that exact toolchain.
+only for a language or standard-library feature that earns it or to adopt a
+new major version of a direct dependency, and the release notes say which.
+It is never raised because a transitive dependency moved: with the
+edition-2024 resolver, Cargo selects dependency versions compatible with the
+declared `rust-version`, and CI builds the workspace on that exact
+toolchain. (The direct-dependency case was added on 2026-10-23, for 0.15.0,
+which raises the MSRV from 1.88 to 1.94 to take `sqlx` 0.9; folding that
+into the release that already breaks the API spares integrators a second
+breaking release later.)
 
 The current MSRV is in the workspace `Cargo.toml` (`rust-version`) and the
 README badge, which CI keeps consistent.

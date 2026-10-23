@@ -203,7 +203,7 @@ mod tests {
 
     /// A wall clock on a whole second, as an HTTP-date can say it.
     fn wall() -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000)
+        SystemTime::UNIX_EPOCH + Duration::from_hours(500_000)
     }
 
     #[test]

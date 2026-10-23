@@ -12,6 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **The MSRV is 1.94, and the SQL stores use `sqlx` 0.9** (server, SDK,
+  SLIMRPC binding; 2026-10-23). `sqlx` 0.9 needs Rust 1.94, and its pool
+  types are in the SQL stores' public constructors (`SqliteTaskStore`,
+  `PostgresTaskStore` and the rest take a `SqlitePool` / `PgPool`), so an
+  integrator building one from its own pool moves to `sqlx` 0.9 with this
+  release. `STABILITY.md` §5 now lets a minor release raise the MSRV to
+  adopt a direct dependency's major version, which is this case; it was
+  folded into 0.15.0 so that the stores' move does not need a second
+  breaking release. sqlx 0.9 refuses a statement built at run time unless
+  it is vouched for; the seventeen such statements in the library (the
+  `ListTasks` filters, retention, caller-key erasure, the audit key lookup,
+  the SQLite schema helpers and the several-part artifact append; counted
+  with `grep -rn AssertSqlSafe` outside tests) are built from static text,
+  `&'static str` names and integer positions only, and each is marked
+  `sqlx::AssertSqlSafe` with that reason. `pg_schema::apply` and the SQLite
+  `add_applied_seq` helper now take `&'static str`, so a run-time string
+  cannot reach them.
+
 - **Every agent card declares the budget extension** (server; ADR 0023).
   `https://a2a-rust.com/extensions/budget/v1` joins the failure taxonomy
   as an extension the builder adds to every card, never as required. A
@@ -2851,6 +2869,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`rsa` is no longer in any lockfile** (RUSTSEC-2023-0071, Marvin timing
+  side channel, no fixed release). It was in `Cargo.lock` only through
+  `sqlx-mysql` 0.8, a driver no feature enables, and `osv-scanner.toml`
+  waived it; `sqlx` 0.9 does not bring it, so the waiver is removed. CI's
+  Go toolchain moves from 1.26.9 to 1.26.10 for GO-2026-6809
+  (`crypto/x509`), which govulncheck reported reachable in all three Go
+  interop modules under `itk/`; with 1.26.10 it reports none.
+
 - **`tokio` requires 1.54.1; lockfiles move off this week's advisories**
   (client, server, SDK, SLIMRPC binding). `tokio` 1.54.0, yanked for a use-after-free race in `time::Interval` on
   the multi-threaded runtime (GHSA-5wjr-9356-4wc8; the server's halt sync
@@ -2950,6 +2976,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advisories back; the binding's `deny.toml` explains the entry. Update the
   binding's lockfile by package name, never with a blanket `cargo update`,
   which cannot keep a yanked version and downgrades rustls to 0.23.43.
+  Since 2026-10-23 it has none again: `agntcy-slim-mls` 0.5.1 accepts
+  `mls-rs-crypto-awslc` 0.26.0, so a plain `cargo update` takes
+  `agntcy-slim-rpc` 3.4.6 and the unyanked 0.26.0 with `rustls` staying at
+  0.23.46, and cargo-deny reports the entry as no longer encountered.
 
 - **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
   four rustls advisories on 2026-10-14, all patched in 0.23.46

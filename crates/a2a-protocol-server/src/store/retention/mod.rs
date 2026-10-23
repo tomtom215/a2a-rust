@@ -112,7 +112,7 @@ pub fn terminal_states() -> Vec<TaskState> {
 ///
 /// See [`RetentionPolicy::idempotency_key_max_age`] for what expiring a key
 /// costs.
-pub const DEFAULT_IDEMPOTENCY_KEY_MAX_AGE: Duration = Duration::from_secs(24 * 3600);
+pub const DEFAULT_IDEMPOTENCY_KEY_MAX_AGE: Duration = Duration::from_hours(24);
 
 /// How long terminal tasks are kept, and how aggressively they are removed.
 ///
@@ -406,7 +406,7 @@ mod key_age_tests {
             Some(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE),
             "keys accumulated for ever before this default existed"
         );
-        assert_eq!(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE, Duration::from_secs(86_400));
+        assert_eq!(DEFAULT_IDEMPOTENCY_KEY_MAX_AGE, Duration::from_hours(24));
     }
 
     /// The invariant the whole design rests on: a key outlives the task it
@@ -419,11 +419,11 @@ mod key_age_tests {
     /// rather than obeyed.
     #[test]
     fn a_key_age_below_the_task_age_is_raised_to_it() {
-        let policy = RetentionPolicy::new(Duration::from_secs(30 * 24 * 3600))
+        let policy = RetentionPolicy::new(Duration::from_hours(30 * 24))
             .with_idempotency_key_max_age(Some(Duration::from_secs(60)));
         assert_eq!(
             policy.effective_idempotency_key_max_age(),
-            Some(Duration::from_secs(30 * 24 * 3600)),
+            Some(Duration::from_hours(30 * 24)),
             "a key must not be swept while the task it names is still kept"
         );
         assert_eq!(
@@ -441,10 +441,10 @@ mod key_age_tests {
     #[test]
     fn a_key_age_above_the_task_age_is_used_as_given() {
         let policy = RetentionPolicy::new(Duration::from_secs(3600))
-            .with_idempotency_key_max_age(Some(Duration::from_secs(7 * 24 * 3600)));
+            .with_idempotency_key_max_age(Some(Duration::from_hours(7 * 24)));
         assert_eq!(
             policy.effective_idempotency_key_max_age(),
-            Some(Duration::from_secs(7 * 24 * 3600))
+            Some(Duration::from_hours(7 * 24))
         );
     }
 

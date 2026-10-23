@@ -62,7 +62,8 @@ pub async fn purge(
             report.complete = false;
             break;
         }
-        let deleted = sqlx::query(&sql)
+        // `table` is `&'static str`; the cut-off and batch are binds.
+        let deleted = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(&labels)
             .bind(&interval)
             .bind(batch)

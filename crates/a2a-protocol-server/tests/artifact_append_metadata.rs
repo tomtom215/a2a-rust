@@ -162,10 +162,12 @@ async fn the_postgres_store_keeps_appended_metadata() {
         .await
         .expect("connect");
     let name = format!("a2a_append_meta_{}", std::process::id());
-    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        .execute(&admin)
-        .await;
-    sqlx::query(&format!("CREATE DATABASE {name}"))
+    let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await;
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
         .execute(&admin)
         .await
         .expect("create database");
@@ -174,7 +176,9 @@ async fn the_postgres_store_keeps_appended_metadata() {
         .await
         .expect("store");
     keeps_appended_metadata(Arc::new(store)).await;
-    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        .execute(&admin)
-        .await;
+    let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await;
 }

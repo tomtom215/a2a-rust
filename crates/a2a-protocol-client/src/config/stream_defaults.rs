@@ -36,7 +36,7 @@ use std::time::Duration;
 /// [`A2aClient::subscribe_to_task`](crate::A2aClient::subscribe_to_task)
 /// picks it up — so the cost of a too-short bound is one resubscribe, while
 /// the cost of no bound is a consumer that never returns.
-pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
 /// Default for [`ClientConfig::stream_first_event_timeout`](crate::ClientConfig::stream_first_event_timeout):
 /// 5 minutes.
@@ -51,4 +51,4 @@ pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// takes. The 30 seconds this bound inherited from `stream_connect_timeout`
 /// cut such an agent off. Callers that know their agent answers at once can
 /// tighten it to fail fast.
-pub const DEFAULT_STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+pub const DEFAULT_STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_mins(5);

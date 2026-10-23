@@ -33,7 +33,7 @@ impl TaskBudget {
 
     /// Takes one slot for a new task; `false` when every slot is held.
     // Compare-exchange loops rather than `fetch_update`, which is deprecated
-    // on current stable in favour of `try_update`, a name the 1.88 MSRV does
+    // on current stable in favour of `try_update`, a name the 1.94 MSRV does
     // not have (as in `stale_reads.rs`).
     pub fn reserve(&self) -> bool {
         let mut held = self.held.load(Ordering::Acquire);

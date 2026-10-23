@@ -275,7 +275,7 @@ fn reserve_up_to(m: &Meter, asked: u64) -> Option<u64> {
 /// Applies `f` to `a` atomically and returns the value before. A
 /// compare-exchange loop rather than `fetch_update`, which current
 /// toolchains deprecate in favour of `try_update` — a name the crate's MSRV
-/// (1.88) does not have.
+/// (1.94) does not have stable.
 fn update(a: &AtomicU64, mut f: impl FnMut(u64) -> u64) -> u64 {
     let mut current = a.load(Ordering::Acquire);
     loop {
@@ -289,7 +289,7 @@ fn update(a: &AtomicU64, mut f: impl FnMut(u64) -> u64) -> u64 {
 fn far_future() -> Instant {
     // About 30 years: further than any turn runs, and representable on
     // every platform `Instant` supports.
-    Instant::now() + Duration::from_secs(30 * 365 * 24 * 3600)
+    Instant::now() + Duration::from_hours(30 * 365 * 24)
 }
 
 /// A child's budget, reserved out of its parent's until it is settled.

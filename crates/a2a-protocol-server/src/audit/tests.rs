@@ -134,7 +134,7 @@ async fn the_postgres_store_keeps_the_contract() {
         "a2a_audit_checkpoints",
         "a2a_audit_holds",
     ] {
-        sqlx::query(&format!("DELETE FROM {t}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {t}")))
             .execute(
                 &crate::store::postgres_store::pool::pg_pool(&url)
                     .await
@@ -292,9 +292,9 @@ async fn the_run_registry_forgets_the_oldest_past_its_bound() {
 
 #[test]
 fn six_months_is_the_longest_six_calendar_months() {
-    assert_eq!(SIX_MONTHS, Duration::from_secs(184 * 86_400));
+    assert_eq!(SIX_MONTHS, Duration::from_hours(184 * 24));
     assert_eq!(AuditRetention::six_months().keep_for, SIX_MONTHS);
-    assert!(AuditRetention::new(Duration::from_secs(183 * 86_400)).is_err());
+    assert!(AuditRetention::new(Duration::from_hours(183 * 24)).is_err());
     assert!(AuditRetention::new(SIX_MONTHS).is_ok());
 }
 
@@ -321,8 +321,7 @@ const Y2026: i64 = 1_767_225_600_000;
 #[tokio::test]
 async fn purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies() {
     let (log, _store) = aged_log(&[0, 10, 20, 200, 210]).await;
-    let retention =
-        AuditRetention::allowing_shorter_than_six_months(Duration::from_secs(30 * 86_400));
+    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_hours(30 * 24));
     // On day 60 the floor is day 30: days 0, 10 and 20 are past it.
     let report = log.purge(retention, Y2026 + 60 * DAY_MS).await.unwrap();
     assert_eq!(report.purged, vec![("c".to_owned(), 3, 3)]);
@@ -337,7 +336,7 @@ async fn purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies()
 #[tokio::test]
 async fn purge_never_deletes_the_newest_record() {
     let (log, _store) = aged_log(&[0, 1, 2]).await;
-    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_secs(86_400));
+    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_hours(24));
     let report = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
     assert_eq!(report.purged, vec![("c".to_owned(), 2, 2)]);
     assert_eq!(log.export("c").await.unwrap().len(), 1);
@@ -347,7 +346,7 @@ async fn purge_never_deletes_the_newest_record() {
 #[tokio::test]
 async fn a_legal_hold_stops_purge_until_released() {
     let (log, _store) = aged_log(&[0, 1, 2, 300]).await;
-    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_secs(86_400));
+    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_hours(24));
     log.place_hold("c", "litigation 2026-17").await.unwrap();
     let held = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
     assert_eq!(held.held, vec!["c".to_owned()]);

@@ -195,7 +195,7 @@ async fn the_postgres_store_keeps_subject_keys() {
     let admin = crate::store::postgres_store::pool::pg_pool(&admin_url)
         .await
         .unwrap();
-    sqlx::query(&format!("CREATE DATABASE \"{name}\""))
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
         .execute(&admin)
         .await
         .unwrap();
@@ -212,10 +212,12 @@ async fn the_postgres_store_keeps_subject_keys() {
         .await
         .unwrap();
     erases_through(Arc::new(store)).await;
-    sqlx::query(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
-        .execute(&admin)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await
+    .unwrap();
 }
 
 /// A store keeping every subject-key method's default.

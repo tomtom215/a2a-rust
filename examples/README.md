@@ -87,7 +87,7 @@ fifty lines, and is compiled and tested in CI:
 
 ## Prerequisites
 
-- Rust 1.88 or later (the MSRV).
+- Rust 1.94 or later (the MSRV).
 - No `protoc`: the build scripts use a vendored binary on Linux and macOS
   (x86_64 and aarch64) and Windows x86_64. Set `PROTOC` to use your own.
 - Anything else an example needs is in its README.

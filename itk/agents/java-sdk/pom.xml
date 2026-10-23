@@ -26,12 +26,15 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <a2a.sdk.version>1.4.0.Final</a2a.sdk.version>
-    <quarkus.platform.version>3.37.0</quarkus.platform.version>
-    <!-- Ahead of the Quarkus BOM so they win: 3.37.0 still resolves
+    <quarkus.platform.version>3.40.1.1</quarkus.platform.version>
+    <!-- Ahead of the Quarkus BOM so they win. Added when 3.37.0 resolved
          netty 4.1.135 and jackson-core 2.21.4, which carry advisories
-         osv.yml reports (2026-10-10). Drop each when the platform reaches it. -->
-    <netty.version>4.1.137.Final</netty.version>
-    <jackson.version>2.21.7</jackson.version>
+         osv.yml reports (2026-10-10). quarkus-bom 3.40.1.1 itself manages
+         netty 4.1.139.Final (equal to this pin) and jackson-core 2.21.7
+         (older than this pin), checked 2026-10-23. Drop each when the
+         platform reaches it. -->
+    <netty.version>4.1.139.Final</netty.version>
+    <jackson.version>2.22.4</jackson.version>
   </properties>
 
   <dependencyManagement>

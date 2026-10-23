@@ -5,11 +5,16 @@
 # which uvicorn's default loop/http="auto" then selects. Benchmarking the plain
 # asyncio + h11 path would understate the official SDK. The runner asserts both
 # are present and refuses to produce a result without them.
-a2a-sdk[http-server]==1.1.4
-uvicorn[standard]==0.53.0
+a2a-sdk[http-server]==1.2.3
+uvicorn[standard]==0.54.0
 httpx==0.28.1
 # Transitive, pinned at their fixed versions: anyio < 4.14.2 has
 # CVE-2026-63374 / CVE-2026-64847 and h11 < 0.16.0 has CVE-2025-43859
 # (OSV, checked 2026-10-12), and OSV-Scanner reports the floors it resolves.
 anyio>=4.14.2
 h11>=0.16.0
+# Likewise, from OSV-Scanner on 2026-10-23 after the a2a-sdk 1.2.3 bump:
+# certifi < 2026.10.19 has PYSEC-2026-4320 / GHSA-6q48-6c7w-9gw2 and
+# idna < 3.15 has PYSEC-2026-215 / GHSA-65pc-fj4g-8rjx.
+certifi>=2026.10.19
+idna>=3.15

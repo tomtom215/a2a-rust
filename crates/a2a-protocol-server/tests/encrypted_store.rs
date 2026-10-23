@@ -191,7 +191,7 @@ async fn the_postgres_stores_hold_only_sealed_parts() {
         .connect(&admin_url)
         .await
         .unwrap();
-    sqlx::query(&format!("CREATE DATABASE \"{name}\""))
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
         .execute(&admin)
         .await
         .unwrap();
@@ -200,10 +200,12 @@ async fn the_postgres_stores_hold_only_sealed_parts() {
     seals_at_rest(Arc::new(store)).await;
     let tenants = TenantAwarePostgresTaskStore::new(&url).await.unwrap();
     TenantContext::scope("acme", seals_at_rest(Arc::new(tenants))).await;
-    sqlx::query(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
-        .execute(&admin)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await
+    .unwrap();
 }
 
 /// Replies with the secret in a status message and an artifact.

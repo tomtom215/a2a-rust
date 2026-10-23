@@ -398,7 +398,10 @@ impl TaskStore for PostgresTaskStore {
                         conditions.join(" AND ")
                     )
                 };
-                let mut count = sqlx::query_scalar::<_, i64>(&sql);
+                // sqlx 0.9 asks each runtime-built statement to be vouched for: the
+                // text is the static clauses above and integer placeholder positions;
+                // every caller-supplied value is a bind.
+                let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
                 for val in &bind_values {
                     count = count.bind(val);
                 }
@@ -444,7 +447,11 @@ impl TaskStore for PostgresTaskStore {
                  data FROM tasks {where_clause} ORDER BY updated_at DESC, id DESC LIMIT {limit}"
             );
 
-            let mut query = sqlx::query_as::<_, (String, serde_json::Value)>(&sql);
+            // sqlx 0.9 asks each runtime-built statement to be vouched for: the
+            // text is the static clauses above and integer placeholder positions;
+            // every caller-supplied value is a bind.
+            let mut query =
+                sqlx::query_as::<_, (String, serde_json::Value)>(sqlx::AssertSqlSafe(sql));
             for val in &bind_values {
                 query = query.bind(val);
             }

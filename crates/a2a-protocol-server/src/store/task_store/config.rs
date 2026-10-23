@@ -59,7 +59,7 @@ pub const DEFAULT_MAX_EVENTS_PER_TASK: usize = 512;
 /// which is the SQL stores' equivalent — the two backends should not disagree
 /// about how long a retry is honoured. See
 /// [`TaskStoreConfig::idempotency_key_ttl`] for what expiring a key costs.
-pub const DEFAULT_IDEMPOTENCY_KEY_TTL: Duration = Duration::from_secs(24 * 3600);
+pub const DEFAULT_IDEMPOTENCY_KEY_TTL: Duration = Duration::from_hours(24);
 
 /// How many idempotency keys the in-memory store holds at most by default.
 ///

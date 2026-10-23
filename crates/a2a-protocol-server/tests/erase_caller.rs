@@ -201,7 +201,7 @@ async fn erase_caller_removes_a_callers_data_from_the_postgres_stores() {
         .connect(&admin_url)
         .await
         .expect("admin");
-    sqlx::query(&format!("CREATE DATABASE \"{name}\""))
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
         .execute(&admin)
         .await
         .expect("create");
@@ -226,8 +226,10 @@ async fn erase_caller_removes_a_callers_data_from_the_postgres_stores() {
         });
         alice_is_erased_and_bob_is_not(&h, erase).await;
     }
-    sqlx::query(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
-        .execute(&admin)
-        .await
-        .expect("drop");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await
+    .expect("drop");
 }
