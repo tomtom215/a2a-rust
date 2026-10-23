@@ -82,16 +82,34 @@ serde_json = "1"
 futures    = "0.3"
 tokio      = { version = ">=1.54.1, <2", features = ["rt", "rt-multi-thread", "sync", "macros", "signal", "time"] }
 thiserror  = "2"
+# `otlp` only: the binaries install SLIM's provider, `aws-lc-rs`, as the
+# process default (see `[features]`). Already in the graph through SLIM.
+rustls     = { version = "0.23", default-features = false, features = ["aws_lc_rs"], optional = true }
 
 [features]
 ## OTLP export for the `slim-node` binary and the `in_process` example: the
 ## SDK's `Telemetry`, configured from the standard `OTEL_*` environment, as
-## every other binary in the repository builds it. On by default, as
-## `a2a-protocol-sdk` turns it on; a library user who exports nothing, or
-## exports with a pipeline of their own, can leave it out with
-## `default-features = false`, and the binary then installs nothing.
-default = ["otlp"]
-otlp = ["a2a-protocol-server/otlp"]
+## every other binary in the repository builds it
+## (`cargo run --features otlp --bin slim-node`).
+##
+## Off by default, unlike in `a2a-protocol-sdk`, for two reasons measured
+## on 2026-10-23, both feature unification with SLIM's own dependencies:
+##
+## - the server's `otlp` links rustls with `ring` beside SLIM's `aws-lc-rs`,
+##   so rustls has no process-wide provider and SLIM's first TLS handshake
+##   panics ("Could not automatically determine the process-level
+##   CryptoProvider", `tests/remote_node_mtls.rs`). `slim-node`, the example
+##   and the test fixtures install `aws-lc-rs`, SLIM's own, which fixes it.
+## - it turns on tonic's TLS (`_tls-any`, `tls-ring`, through
+##   `opentelemetry-otlp`), and tonic then refuses the `https://` endpoint
+##   SLIM dials with its own connector: "Connecting to HTTPS without TLS
+##   enabled", retried forever. Nothing here can undo that, so with `otlp` a
+##   process cannot dial a SLIM node over TLS; `remote_node_tls.rs` and
+##   `remote_node_mtls.rs` hang. Plaintext and in-process fabrics, and
+##   `slim-node --listen` without TLS, work.
+##
+## So it is for the binaries, not for a library user's default build.
+otlp = ["a2a-protocol-server/otlp", "dep:rustls"]
 
 [[bin]]
 name = "slim-node"

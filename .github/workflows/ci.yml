@@ -1068,6 +1068,21 @@ jobs:
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo run --example in_process
 
+      # `otlp` is off by default (the crate's `[features]` says why: it
+      # links a second rustls provider and turns on tonic's TLS, which
+      # breaks SLIM's dialing of a TLS node), so the steps above never build
+      # `slim-node` or the example with the SDK's `Telemetry`. This does, and
+      # runs every suite that dials no TLS node: the node must read the
+      # `OTEL_*` environment, and the example must run.
+      - name: Test and example with the otlp feature
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: |
+          cargo clippy --all-targets --features otlp -- -D warnings
+          cargo test --features otlp --lib --bins --test e2e --test equivalence \
+            --test operations --test out_of_process --test remote_node \
+            --test telemetry -- --test-threads=1
+          cargo run --features otlp --example in_process
+
       # The SPIFFE suite runs against a real spire-server and spire-agent, not
       # a stub — SPIFFE identity means nothing unless the credential comes from
       # a real attesting authority. Those tests are #[ignore]d so a contributor
