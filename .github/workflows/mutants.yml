@@ -646,6 +646,17 @@ jobs:
           #
           # `--sharding round-robin`: see the matrix comment above for why
           # consecutive slices were replaced.
+          #
+          # The -E filter keeps out what `--run-ignored all` would otherwise
+          # run under every mutant without being able to catch one: the soak
+          # and swarm-scale binaries, and `what_protection_costs_an_append`, a
+          # measurement with no assertion that takes about 45s in this build.
+          # It met the 45s kill under 394 of the 918 server mutants of
+          # PR #178's run 39828884261, and for 245 of them it was the only
+          # failure: they were scored caught with the rest of the suite
+          # cancelled, so whether a test kills them was never measured, and
+          # each run left a different set unmeasured. The incremental job
+          # carries the same filter.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
             --shard ${{ matrix.shard }} \
@@ -655,7 +666,7 @@ jobs:
             --profile=mutants \
             --all-features \
             -- --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1147,7 +1158,7 @@ jobs:
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants -p <crate-name> --test-tool=nextest --profile=mutants \\"
               echo "  --all-features -- --run-ignored all \\"
-              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
               echo '```'
             } >> /tmp/final-summary.md
           fi
@@ -1421,7 +1432,7 @@ jobs:
             --profile=mutants \
             --all-features \
             -- --run-ignored all \
-               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))' \
+               -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))' \
                2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -1584,7 +1595,7 @@ jobs:
               echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
               echo "cargo mutants --file <path-to-file> --test-tool=nextest --profile=mutants \\"
               echo "  --all-features -- --run-ignored all \\"
-              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'"
+              echo "     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'"
               echo '```'
               echo ""
             fi

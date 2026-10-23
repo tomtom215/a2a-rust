@@ -463,10 +463,12 @@ export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgre
 #
 # The -E filter is part of "exactly". Both invocations in mutants.yml carry
 # it, because --run-ignored all otherwise picks up the soak and swarm-scale
-# binaries, whose tests run for 30 to 140 seconds EACH, once per mutant.
+# binaries, whose tests run for 30 to 140 seconds EACH, once per mutant, and
+# the audit cost measurement, which asserts nothing and, at the 45s test kill,
+# scored mutants as caught without the suite having run.
 cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants --all-features \
   -- --run-ignored all \
-     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'
+     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'
 
 # Test a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \

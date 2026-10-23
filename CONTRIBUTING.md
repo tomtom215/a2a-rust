@@ -412,7 +412,7 @@ export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgre
 # a narrower invocation measures a smaller feature set.
 cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
   --all-features -- --run-ignored all \
-     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale))'
+     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'
 
 # Run on a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \
