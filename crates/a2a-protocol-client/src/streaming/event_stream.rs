@@ -143,6 +143,10 @@ pub struct EventStream {
     call: Option<std::panic::AssertUnwindSafe<Box<call::StreamCall>>>,
     /// What each event's content is checked against (ADR 0027).
     content: crate::content::ContentKeys,
+    /// The JSON-RPC request id each success frame should echo (spec §9.4.2),
+    /// until a frame that does not is warned about. Set by the JSON-RPC HTTP
+    /// transport only; see [`EventStream::expecting_id`].
+    expected_id: Option<serde_json::Value>,
 }
 
 impl EventStream {
@@ -172,6 +176,7 @@ impl EventStream {
             #[cfg(feature = "tracing")]
             call: None,
             content: crate::content::ContentKeys::default(),
+            expected_id: None,
         }
     }
 
@@ -203,6 +208,7 @@ impl EventStream {
             #[cfg(feature = "tracing")]
             call: None,
             content: crate::content::ContentKeys::default(),
+            expected_id: None,
         }
     }
 
@@ -299,7 +305,25 @@ impl EventStream {
             #[cfg(feature = "tracing")]
             call: None,
             content: crate::content::ContentKeys::default(),
+            expected_id: None,
         }
+    }
+
+    /// Expects each JSON-RPC success frame to carry `id`, the request's.
+    ///
+    /// Spec §9.4.2 shows every frame of a `SendStreamingMessage` answer with
+    /// the request's id, as JSON-RPC 2.0 §5 requires of a response. A frame
+    /// that carries another is warned about, once per stream, and delivered:
+    /// on HTTP the stream is bound to its request by the response it arrives
+    /// in, not by the id, so the event cannot belong to another call. The
+    /// unary path refuses such a response, because there the id is all
+    /// there is to match; the WebSocket transport routes frames by id, so a
+    /// frame there cannot reach the wrong stream. Until 2026-10-23 a stream
+    /// frame's id was not read at all.
+    #[must_use]
+    pub(crate) fn expecting_id(mut self, id: serde_json::Value) -> Self {
+        self.expected_id = Some(id);
+        self
     }
 
     /// Sets whether SSE frames are wrapped in a JSON-RPC envelope.
@@ -620,6 +644,21 @@ impl EventStream {
 
             match envelope {
                 JsonRpcResponse::Success(ok) => {
+                    if self
+                        .expected_id
+                        .as_ref()
+                        .is_some_and(|expected| ok.id.as_ref() != Some(expected))
+                    {
+                        // Taken, so the stream warns once.
+                        let _expected = self.expected_id.take();
+                        trace_warn!(
+                            expected = ?_expected,
+                            got = ?ok.id,
+                            "JSON-RPC stream frame id mismatch: the frame does not echo \
+                             the request id (spec §9.4.2); delivered, since the HTTP \
+                             response binds it to this request"
+                        );
+                    }
                     self.record(&ok.result);
                     if is_terminal(&ok.result) {
                         self.phase = Phase::Finished;

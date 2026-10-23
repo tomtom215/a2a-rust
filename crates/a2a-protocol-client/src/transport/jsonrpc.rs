@@ -355,7 +355,7 @@ impl JsonRpcTransport {
     ) -> ClientResult<EventStream> {
         trace_info!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
 
-        let (_request_id, req) = self.build_request(method, params, extra_headers, true, query)?;
+        let (request_id, req) = self.build_request(method, params, extra_headers, true, query)?;
 
         // `stream_connect_timeout` bounds establishing the stream: headers,
         // and — when the answer is not a stream — the error body too, from
@@ -425,7 +425,8 @@ impl JsonRpcTransport {
         // `A2aClient` replaces this with `ClientConfig`'s value.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
-                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT)
+                .expecting_id(request_id),
         )
     }
 }

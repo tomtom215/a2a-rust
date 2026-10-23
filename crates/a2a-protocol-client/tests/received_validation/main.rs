@@ -14,6 +14,9 @@ mod cards;
 mod grpc;
 mod json;
 mod peers;
+#[cfg(feature = "tracing")]
+mod stream_ids;
+mod wire;
 
 use a2a_protocol_client::ClientError;
 

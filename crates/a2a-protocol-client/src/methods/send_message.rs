@@ -41,6 +41,21 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
         cfg.accepted_output_modes
             .clone_from(&config.accepted_output_modes);
     }
+    // a2a.proto, `SendMessageConfiguration.task_push_notification_config`:
+    // "Task id should be empty when sending this configuration in a
+    // SendMessage request"; the agent registers it for the task the message
+    // creates or continues. Cleared rather than refused, because
+    // `TaskPushNotificationConfig::new` takes a task id and callers pass one.
+    // Until 2026-10-23 it was sent as given.
+    if let Some(push) = cfg.task_push_notification_config.as_mut()
+        && let Some(_task_id) = push.task_id.take()
+    {
+        trace_debug!(
+            task_id = %_task_id,
+            "inline push config's taskId cleared before sending: a2a.proto says it \
+             should be empty in SendMessage"
+        );
+    }
     // Apply default tenant from client config (populated from AgentInterface).
     if params.tenant.is_none() {
         params.tenant.clone_from(&config.tenant);

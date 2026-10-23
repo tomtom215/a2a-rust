@@ -15,16 +15,17 @@ use tokio::net::{TcpListener, TcpStream};
 pub struct Answer {
     pub unary: serde_json::Value,
     pub events: Vec<serde_json::Value>,
+    /// The JSON-RPC id the HTTP peer's frames carry in place of the
+    /// request's.
+    pub frame_id: Option<serde_json::Value>,
 }
 
 /// A running peer: its URL, and each request's target and body.
-#[allow(dead_code)] // `seen` is for the wire-form tests
 pub struct Peer {
     pub url: String,
     pub seen: Arc<Mutex<Vec<String>>>,
 }
 
-#[allow(dead_code)] // for the wire-form tests
 impl Peer {
     pub fn last_request(&self) -> String {
         self.seen
@@ -107,7 +108,11 @@ async fn serve_http(
     };
     log.lock().unwrap().push(format!("{target} {body}"));
     let rpc: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-    let id = rpc.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let id = answer
+        .frame_id
+        .clone()
+        .or_else(|| rpc.get("id").cloned())
+        .unwrap_or(serde_json::Value::Null);
     let streaming = match flavour {
         Http::JsonRpc => matches!(
             rpc.get("method").and_then(serde_json::Value::as_str),

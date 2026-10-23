@@ -293,6 +293,35 @@ REQUIRED string is empty, such as an API key with no `name`. A
 returns an invalid card answers `500`, and `HotReloadAgentCardHandler` refuses
 to reload one and keeps serving the previous card.
 
+### The client refuses what `a2a.proto` does not allow
+
+Spec §5.7: implementations SHOULD reject a message missing a field the proto
+marks REQUIRED. The client now holds what it receives to the rules the server
+holds its own executors to, on every binding. A task with an empty `id`, a
+status in `TASK_STATE_UNSPECIFIED`, a message without a `messageId`, `role` or
+parts, an artifact without an `artifactId` or parts, a status or artifact
+update without its `taskId` or `contextId`, and a push config without a `url`
+fail the call with `ClientError::InvalidAgentResponse`, which names the call
+and the field; on a stream, the event ends the stream with that error. They
+used to be returned as if valid. Over gRPC such a field absent on the wire
+(proto3's `""` or `0`), or a card's absent `capabilities`, is refused by the
+conversion where it used to read as its zero value, and any answer the
+conversion refuses is now `InvalidAgentResponse` rather than `Transport`.
+
+An agent card fetched by `resolve_agent_card`, `fetch_card_from_url` or
+`CachingCardResolver`, or returned by `get_extended_agent_card`, must pass
+`AgentCard::validate` and `AgentCard::validate_security_schemes`, the checks
+`build()` runs above; the deprecated implicit and password OAuth flows'
+URLs must also be `https` (the proto: "The OAuth2 standard requires the use of
+TLS"). A refused extended card is not adopted. `ClientBuilder::from_card` does
+not validate the card it is given, but no longer selects an interface whose
+`protocolVersion` is empty.
+
+Two requests change on the wire: `list_tasks` sends `status_timestamp_after`
+in UTC with a `Z` (a value with an offset is rewritten; one that is not ISO
+8601 is refused, unsent, with `InvalidParams`), and an inline push config's
+`task_id` is no longer sent with `SendMessage`, as the proto asks.
+
 ### Push configs the server cannot honour are refused at creation
 
 A push config with an empty or scheme-less `url`, or with an authentication

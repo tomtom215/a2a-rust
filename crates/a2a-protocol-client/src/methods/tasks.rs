@@ -94,13 +94,26 @@ impl A2aClient {
     /// Calls the `ListTasks` JSON-RPC method. Results are paginated; use
     /// `params.page_token` to fetch subsequent pages.
     ///
+    /// `status_timestamp_after` is sent in the form spec §5.6.1 puts every
+    /// timestamp in, UTC with a `Z` suffix: a value with an offset
+    /// (`+02:00`) or a lower-case `t`/`z` is rewritten to it, at millisecond
+    /// precision, before any binding sends it (the gRPC conversion always
+    /// did). Until 2026-10-23 the JSON bindings sent it as given.
+    ///
     /// # Errors
     ///
-    /// Returns [`ClientError`] on transport or protocol errors.
+    /// Returns [`ClientError`] on transport or protocol errors, and, without
+    /// sending anything, `ClientError::Protocol` with `InvalidParams` when
+    /// `status_timestamp_after` is not an ISO 8601 date-time.
     pub async fn list_tasks(&self, mut params: ListTasksParams) -> ClientResult<TaskListResponse> {
         const METHOD: &str = "ListTasks";
 
         params.tenant = self.tenant_or_default(params.tenant.take());
+        params.status_timestamp_after = params
+            .status_timestamp_after
+            .take()
+            .map(|ts| super::status_timestamp::utc(&ts))
+            .transpose()?;
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
         let mut req = ClientRequest::new(METHOD, params_value);
