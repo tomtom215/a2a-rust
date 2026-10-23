@@ -149,17 +149,20 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-23, after WP-A and WP-B: TESTED 455, APPLICATION 32,
-  NOT_APPLICABLE 20, PARTIAL 3; 510 entries). The three PARTIAL entries,
-  each short of a MUST for a stated reason: §3.5.2, a stream lagging past
-  the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
+  authority on the counts (2026-10-23, after WP-A, WP-B and WP-C: TESTED
+  452, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 6; 510 entries). The six
+  PARTIAL entries, each short for a stated reason: §3.5.2, a stream lagging
+  past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
   itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
-  carries no error details (maintainer: stays PARTIAL until it does). The
-  APPLICATION and NOT_APPLICABLE entries were reviewed against the code and
-  the specification text on 2026-10-20 (*Next*, item 1). The checker now
-  also reads `impl_evidence`: a cited file must exist, a cited line be
-  inside it, a named symbol appear in it.
+  carries no error details (maintainer: stays PARTIAL until it does);
+  §3.1.2 (two entries), a Message an executor writes after the Task is
+  forwarded inside the task stream, which neither stream pattern allows
+  (the fix recommended: fold it into a status update's `message`); §7.6.1,
+  a message to a task in AUTH_REQUIRED is refused while its executor still
+  runs (recommended: document that the executor returns, PARTIAL naming
+  the conflict between the section's two SHOULDs). The APPLICATION and
+  NOT_APPLICABLE entries were reviewed on 2026-10-20 (*Next*, item 1).
 - **Ledger citations:** since `6202a56` every Rust citation is
   `path:line Symbol` at the symbol's definition line (non-Rust:
   `path:line "fragment"`), and the checker verifies that the symbol is
