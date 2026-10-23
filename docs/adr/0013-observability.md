@@ -348,3 +348,32 @@ binary's telemetry setup.
   (`examples/mcp-agent/src/bin/tool_server.rs`) speaks MCP over stdio, not
   A2A, and calls no SDK code. `hello-agent` and `tool-loop-agent` now build
   telemetry; the SLIMRPC binary and example are the binding's own change.
+
+## 2026-10-23: the tool loop's metrics
+
+The audit of every signal against the current conventions found the tool
+loop recording spans and no metrics. It now records the `GenAI` metrics
+under the names `semantic-conventions-genai` gives them at `9ffc7e0`:
+`gen_ai.client.inference.duration` and the two token families for a turn
+(not `gen_ai.client.operation.duration`, which those conventions now say
+"SHOULD NOT be reported for inference operations"),
+`gen_ai.execute_tool.duration` for a call, and `gen_ai.invoke_agent.*` for a
+run. Decided with it:
+
+- **Instruments are built at each measurement**, from the meter the loop was
+  given or the global provider's as it is then. A model turn takes hundreds
+  of milliseconds; building three or four instruments from the SDK's
+  registry is not visible beside that, and it is what lets a provider
+  installed after the loop was built still receive them, which caching an
+  instrument at construction would not.
+- **Abandoned work is recorded, as `cancelled`.** A turn or call ends three
+  ways: answered, failed, or dropped unfinished. The span and the
+  measurements are recorded on drop, so the third is not lost, and it is
+  marked rather than left looking successful.
+- **Token modality is `text`.** A `ChatRequest` carries text only, so every
+  token counted is a text token; were images added, this would have to
+  become what the provider reports, or `unknown`.
+- **The run's metrics are the loop's, not the executor's.** The executor's
+  `invoke_agent` span covers any executor; only the loop knows how many
+  turns and calls a run made, and a loop run outside an executor is still
+  an agent invocation.

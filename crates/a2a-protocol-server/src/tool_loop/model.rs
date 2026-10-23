@@ -162,6 +162,13 @@ pub struct ModelTurn {
     pub usage: Option<TokenUsage>,
     /// The model that answered, when the provider named it.
     pub response_model: Option<String>,
+    /// The provider's id for the completion, when it gave one; recorded as
+    /// `gen_ai.response.id`.
+    pub response_id: Option<String>,
+    /// Why the model stopped, as the provider spelled it (`stop`,
+    /// `tool_calls`, `length`, …); recorded as
+    /// `gen_ai.response.finish_reasons`.
+    pub finish_reason: Option<String>,
 }
 
 impl ModelTurn {
@@ -173,6 +180,8 @@ impl ModelTurn {
             tool_calls,
             usage: None,
             response_model: None,
+            response_id: None,
+            finish_reason: None,
         }
     }
 
@@ -187,6 +196,20 @@ impl ModelTurn {
     #[must_use]
     pub fn with_response_model(mut self, model: impl Into<String>) -> Self {
         self.response_model = Some(model.into());
+        self
+    }
+
+    /// Sets the provider's id for the completion.
+    #[must_use]
+    pub fn with_response_id(mut self, id: impl Into<String>) -> Self {
+        self.response_id = Some(id.into());
+        self
+    }
+
+    /// Sets why the model stopped, as the provider spelled it.
+    #[must_use]
+    pub fn with_finish_reason(mut self, reason: impl Into<String>) -> Self {
+        self.finish_reason = Some(reason.into());
         self
     }
 }
@@ -280,6 +303,13 @@ pub trait ToolModel: Send + Sync + 'static {
     /// `GenAI` conventions' well-known values (`openai`, `anthropic`,
     /// `gcp.gemini`, …) when one applies.
     fn provider_name(&self) -> &str;
+
+    /// Where the provider is served, as a host and port, recorded as
+    /// `server.address` and `server.port`. `None`, the default, records
+    /// neither: a model running in this process has no server.
+    fn server(&self) -> Option<(&str, u16)> {
+        None
+    }
 
     /// Runs one turn.
     ///

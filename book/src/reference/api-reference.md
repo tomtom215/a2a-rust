@@ -395,7 +395,7 @@ are rustdoc's job.
 | `Metrics` | Pluggable metrics observer (requests, latency, errors) |
 | `TenantResolver` | Extracts tenant from request context |
 | `RateLimitCounter` | A request counter every replica shares |
-| `ToolModel` | One completion turn of a model that can call tools: preamble, conversation and tool specs in, text and tool calls out (`tool-loop` feature) |
+| `ToolModel` | One completion turn of a model that can call tools: preamble, conversation and tool specs in, text and tool calls out, with the usage, model, id and finish reason the provider reported; `server()` says where it is served, for the spans (`tool-loop` feature) |
 | `Tool` | Something a model may call: a name, a description, a JSON Schema, `read_only` (default `false`) and `call(invocation)`, given the arguments and an idempotency key (`tool-loop` feature, ADR 0026) |
 
 ### Dispatchers
@@ -436,7 +436,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 
 | Type | Description |
 |------|-------------|
-| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one |
+| `ToolLoop` | Runs model turns until the model answers without a call, bounded by `with_max_turns` (default 8); tool errors go back to the model, and a call written as text is run as one; `with_agent_name` and `with_meter` for its `gen_ai.*` metrics |
 | `ToolLoopExecutor` | A `ToolLoop` as an `AgentExecutor`: `Working`, the `answer` and `tool-trace` artifacts, `Completed`; `Failed` as `internal` or `budget-exhausted` |
 | `ToolSet` | The tools a loop offers; refuses two of one name |
 | `OpenAiChatModel` | A `ToolModel` for `POST {base}/chat/completions` (OpenAI, llama-server, vLLM, Ollama) on the crate's hyper client; HTTPS with `tls-rustls` |

@@ -108,11 +108,13 @@ pub fn record_message(message: &a2a_protocol_types::message::Message) {
 /// favour (`gen-ai-output-messages.json` at `547934a`). A string array, which
 /// a `tracing` field cannot hold, so it goes through the OpenTelemetry span.
 #[cfg(feature = "otel")]
-pub fn record_finish_reason(span: &tracing::Span, reason: &'static str) {
+pub fn record_finish_reason(span: &tracing::Span, reason: &str) {
     use tracing_opentelemetry::OpenTelemetrySpanExt as _;
     span.set_attribute(
         "gen_ai.response.finish_reasons",
-        opentelemetry::Value::Array(vec![opentelemetry::StringValue::from(reason)].into()),
+        opentelemetry::Value::Array(
+            vec![opentelemetry::StringValue::from(reason.to_owned())].into(),
+        ),
     );
 }
 

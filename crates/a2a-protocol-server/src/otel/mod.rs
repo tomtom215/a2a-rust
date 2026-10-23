@@ -346,4 +346,6 @@ pub const RPC_DURATION_BUCKETS: [f64; 14] = [
 #[cfg(test)]
 mod rpc_tests;
 #[cfg(test)]
+pub(crate) mod test_reader;
+#[cfg(test)]
 mod tests;

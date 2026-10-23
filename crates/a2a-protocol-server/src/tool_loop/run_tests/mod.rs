@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::tool_loop::model::{ModelTurn, ToolSpec};
+use crate::tool_loop::model::{ModelError, ModelTurn, ToolSpec};
 use crate::tool_loop::tool::{DuplicateTool, Tool, ToolInvocation};
 
 /// What the scripted model saw on each turn.

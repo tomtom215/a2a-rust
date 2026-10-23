@@ -310,6 +310,43 @@ exactly the failure you want to see. (Until 2026-10-23 this paragraph called
 measured against a live Prometheus, the recording rule in
 `deploy/observability/` subtracts both.)
 
+### The tool loop's metrics
+
+A `ToolLoop` (`server::tool_loop`, feature `tool-loop`, with `otel`)
+records the OpenTelemetry `GenAI` conventions' metrics
+(`open-telemetry/semantic-conventions-genai` at `9ffc7e0`, all
+`development`), with their advisory buckets:
+
+| Instrument | Kind | Unit | Recorded |
+|---|---|---|---|
+| `gen_ai.client.inference.duration` | histogram | s | Each model turn |
+| `gen_ai.client.inference.usage.input_tokens` | counter | `{token}` | Each turn whose provider reported a non-zero count |
+| `gen_ai.client.inference.usage.output_tokens` | counter | `{token}` | Likewise |
+| `gen_ai.client.inference.operation.input_tokens` | histogram | `{token}` | Each turn whose provider reported a count |
+| `gen_ai.client.inference.operation.output_tokens` | histogram | `{token}` | Likewise |
+| `gen_ai.execute_tool.duration` | histogram | s | Each tool call that ran |
+| `gen_ai.invoke_agent.duration` | histogram | s | Each run of the loop |
+| `gen_ai.invoke_agent.inference_calls` | histogram | `{inference_call}` | Each run: how many turns it asked for |
+| `gen_ai.invoke_agent.tool_calls` | histogram | `{tool_call}` | Each run: how many calls it ran |
+
+A turn's instruments carry `gen_ai.operation.name` (`chat`),
+`gen_ai.provider.name`, `gen_ai.request.model`, and when known
+`gen_ai.response.model`, `server.address` and `server.port`; the usage
+counters add `gen_ai.token.modality` (`text`). A call's carries
+`gen_ai.tool.name` and `gen_ai.tool.type`; a run's, `gen_ai.request.model`
+and the name `ToolLoop::with_agent_name` gives it. `error.type` is the
+provider's failure for a turn (`ModelError::error_type`: the HTTP status,
+`timeout`, …), `unknown_tool`, `invalid_arguments`, `tool_error` or
+`tool_fatal` for a call, `turn_limit` or `budget_exhausted` for a run, and
+`cancelled` for any of them abandoned before it ended — its cancellation
+token fired, or the future running it was dropped, as an executor timeout
+does. `gen_ai.client.operation.duration` is not recorded: the conventions
+say it "SHOULD NOT be reported for inference operations".
+
+The metrics go to the global meter provider as it is when each is
+recorded, so `Telemetry` installed after the loop is built still receives
+them; `ToolLoop::with_meter` sends them elsewhere.
+
 ### What these become in Prometheus
 
 The dots are correct: OpenTelemetry names metrics this way
@@ -409,9 +446,9 @@ Stated so a green dashboard is not mistaken for a complete one:
   (The call's span does carry `a2a.tenant`.)
 * **Model calls are seen only through the tool loop.** An executor built on
   `server::tool_loop` (feature `tool-loop`) records a `chat` span per model
-  call and an `execute_tool` span per tool call, under `invoke_agent`. Any
-  other model client is invisible to the SDK: instrument it, or use a
-  framework that reports `chat` spans.
+  call and an `execute_tool` span per tool call, under `invoke_agent`, and
+  the `gen_ai.*` metrics above. Any other model client is invisible to the
+  SDK: instrument it, or use a framework that reports `chat` spans.
 
 ## Logs
 

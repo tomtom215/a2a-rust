@@ -16,6 +16,8 @@ mod agent_spans;
 mod certs;
 mod collector;
 mod tls_and_json;
+#[cfg(feature = "tool-loop")]
+mod tool_loop_spans;
 
 use std::time::{Duration, Instant};
 

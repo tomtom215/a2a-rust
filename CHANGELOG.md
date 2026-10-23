@@ -264,6 +264,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `the_cli_exports_its_calls_when_a_collector_is_named` (a metrics-only
   endpoint exports metrics alone).
 
+- **The tool loop's `GenAI` metrics and the rest of its `chat` span**
+  (server `tool-loop` with `otel`). Each model turn records
+  `gen_ai.client.inference.duration`, the `gen_ai.client.inference.usage.*`
+  token counters and `gen_ai.client.inference.operation.*` token histograms;
+  each tool call `gen_ai.execute_tool.duration`; each run
+  `gen_ai.invoke_agent.duration`, `.inference_calls` and `.tool_calls` — the
+  names `open-telemetry/semantic-conventions-genai` gives them at `9ffc7e0`,
+  with its advisory buckets. They go to the global meter provider as it is at
+  each measurement, or to `ToolLoop::with_meter`; `ToolLoop::with_agent_name`
+  sets `gen_ai.agent.name`. The `chat` span adds `gen_ai.response.id`,
+  `gen_ai.response.finish_reasons`, `server.address` and `server.port`, from
+  the new `ModelTurn::response_id` and `finish_reason` (read from the
+  completion by `OpenAiChatModel`) and the new `ToolModel::server`, whose
+  default reports none. A turn or call abandoned unfinished — cancelled, or
+  its future dropped, as an executor timeout does — is recorded with
+  `error.type` `cancelled`; before, its span ended looking successful.
+  Tests: `rpc_span::tool::tests::metrics` (eight, each proven to fail with
+  its behaviour removed), `the_response_id_and_finish_reason_are_read`,
+  `the_server_is_the_endpoints_host_and_port`, and
+  `a_turn_exports_its_chat_span_and_the_genai_metrics` (through `Telemetry`
+  to a stand-in OTLP collector).
+
 - **Prometheus rules and Grafana dashboards** (`deploy/observability/`): a
   Prometheus configuration for OTLP push and one for scraping an
   OpenTelemetry Collector (with the Collector's configuration), 13 recording

@@ -58,6 +58,8 @@ mod spawn;
 mod stream;
 #[cfg(feature = "tool-loop")]
 mod tool;
+#[cfg(all(feature = "tool-loop", feature = "otel"))]
+mod tool_metrics;
 mod webhook;
 
 #[cfg(feature = "tracing")]
@@ -86,7 +88,7 @@ pub use refusal::{record_if_refused, record_unrouted, refused};
 pub use spawn::{in_child_span, in_current_span};
 pub use stream::{StreamEnd, StreamOutcome, spanning_stream};
 #[cfg(feature = "tool-loop")]
-pub use tool::GenAiSpan;
+pub use tool::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the

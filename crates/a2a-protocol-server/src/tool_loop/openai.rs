@@ -253,6 +253,24 @@ impl ToolModel for OpenAiChatModel {
         "openai"
     }
 
+    /// The endpoint's host, without an IPv6 address's brackets, and its
+    /// port, or the scheme's when it names none.
+    fn server(&self) -> Option<(&str, u16)> {
+        let host = self.endpoint.host()?;
+        let host = host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(host);
+        let port = self.endpoint.port_u16().unwrap_or_else(|| {
+            if self.endpoint.scheme_str() == Some("https") {
+                443
+            } else {
+                80
+            }
+        });
+        Some((host, port))
+    }
+
     fn complete<'a>(
         &'a self,
         request: ChatRequest<'a>,
@@ -330,6 +348,7 @@ fn truncated(bytes: &[u8], limit: usize) -> String {
 
 #[derive(Deserialize)]
 struct Completion {
+    id: Option<String>,
     #[serde(default)]
     choices: Vec<Choice>,
     usage: Option<Usage>,
@@ -339,6 +358,7 @@ struct Completion {
 #[derive(Deserialize)]
 struct Choice {
     message: AssistantMessage,
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -399,6 +419,12 @@ fn parse_completion(body: &[u8]) -> Result<ModelTurn, ModelError> {
         })
         .collect();
     let mut turn = ModelTurn::new(text, calls);
+    if let Some(reason) = choice.finish_reason {
+        turn = turn.with_finish_reason(reason);
+    }
+    if let Some(id) = completion.id {
+        turn = turn.with_response_id(id);
+    }
     if let Some(usage) = completion.usage {
         turn = turn.with_usage(TokenUsage::new(
             usage.prompt_tokens,
@@ -412,78 +438,5 @@ fn parse_completion(body: &[u8]) -> Result<ModelTurn, ModelError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_error_body_is_cut_on_a_character_boundary() {
-        assert_eq!(truncated(b"short", 512), "short");
-        let long = "é".repeat(400); // 800 bytes
-        let cut = truncated(long.as_bytes(), 512);
-        assert_eq!(cut.len(), 512);
-        assert_eq!(truncated("aé".as_bytes(), 2), "a");
-    }
-
-    #[test]
-    fn content_parts_and_missing_fields_are_read() {
-        let turn = parse_completion(
-            br#"{"choices":[{"message":{"content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}}]}"#,
-        )
-        .expect("parses");
-        assert_eq!(turn.text, "ab");
-        assert!(turn.usage.is_none());
-        let turn = parse_completion(
-            br#"{"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"t"}}]}}]}"#,
-        )
-        .expect("parses");
-        assert_eq!(turn.tool_calls, vec![ToolCall::new("", "t", "")]);
-        assert!(matches!(
-            parse_completion(br#"{"choices":[]}"#),
-            Err(ModelError::InvalidResponse(_))
-        ));
-        assert!(matches!(
-            parse_completion(b"<html>"),
-            Err(ModelError::InvalidResponse(_))
-        ));
-    }
-
-    #[test]
-    fn a_base_url_that_cannot_work_is_refused_at_construction() {
-        assert!(matches!(
-            OpenAiChatModel::new("ftp://x/v1", "m"),
-            Err(ModelError::Config(_))
-        ));
-        assert!(matches!(
-            OpenAiChatModel::new("not a url", "m"),
-            Err(ModelError::Config(_))
-        ));
-        let ok = OpenAiChatModel::new("http://127.0.0.1:1/v1/", "m").expect("http is fine");
-        assert_eq!(
-            ok.endpoint.to_string(),
-            "http://127.0.0.1:1/v1/chat/completions"
-        );
-        #[cfg(not(feature = "tls-rustls"))]
-        assert!(matches!(
-            OpenAiChatModel::new("https://api.example/v1", "m"),
-            Err(ModelError::Config(e)) if e.contains("tls-rustls")
-        ));
-        #[cfg(feature = "tls-rustls")]
-        assert!(OpenAiChatModel::new("https://api.example/v1", "m").is_ok());
-    }
-
-    #[test]
-    fn the_api_key_is_not_in_debug_output() {
-        let model = OpenAiChatModel::new("http://127.0.0.1:1/v1", "m")
-            .expect("valid")
-            .with_api_key("sk-secret");
-        let debug = format!("{model:?}");
-        assert!(
-            !debug.contains("sk-secret"),
-            "Debug output carries the API key"
-        );
-        assert!(
-            debug.contains("[redacted]"),
-            "Debug output does not mark the key redacted"
-        );
-    }
-}
+#[path = "openai_tests.rs"]
+mod tests;
