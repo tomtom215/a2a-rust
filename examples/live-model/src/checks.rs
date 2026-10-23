@@ -127,7 +127,8 @@ async fn stream(
 }
 
 /// Streams the billing question on `binding`, verifying every signed part
-/// against the worker's key: the tool loop, streaming and provenance.
+/// against the worker's key: the tool loop, streaming and provenance. A
+/// completed run whose trace has no tool call is not exercised.
 pub async fn stream_on(worker: &Worker, binding: Binding) -> Result<(Verdict, String)> {
     let client = worker.client(binding, worker.keys.clone()).await?;
     let ask = Message::user_text(
@@ -137,10 +138,16 @@ pub async fn stream_on(worker: &Worker, binding: Binding) -> Result<(Verdict, St
     let (task, states) = stream(&client, ask, || None).await?;
     let answer = artifact_text(&task, ANSWER_ARTIFACT_ID);
     let trace = artifact_text(&task, TRACE_ARTIFACT_ID);
-    let verdict = if task.status.state == TaskState::Completed && !answer.trim().is_empty() {
-        Verdict::Pass
-    } else {
-        Verdict::Fail
+    // A model that answers without calling a tool has not exercised the
+    // loop, whatever it said.
+    let verdict = match (
+        task.status.state,
+        answer.trim().is_empty(),
+        trace.trim().is_empty(),
+    ) {
+        (TaskState::Completed, false, false) => Verdict::Pass,
+        (TaskState::Completed, false, true) => Verdict::NotExercised,
+        _ => Verdict::Fail,
     };
     Ok((
         verdict,

@@ -51,8 +51,18 @@ only: when something here is done, delete it rather than annotating it.
     that now test what they are cited for) and WP-B (the client validates
     every object and card it receives against a2a.proto's REQUIRED
     fields; the gRPC conversion refuses absent ones; wire forms) are
-    merged. WP-C (handler-wide conformance) and WP-D (SLIMRPC) are in
-    progress in worktrees.
+    merged. So are WP-C (handler-wide conformance: the executor sees only
+    card-declared extensions, `BadRequest` names the missing field, an
+    empty push url is `InvalidParams`) and WP-D (SLIMRPC: every operation
+    tested over the fabric, an equivalence suite against JSON-RPC, the
+    push-config list fixed, retryable errors prefixed, the server's
+    default telemetry, an opt-in `otlp` feature);
+  - `examples/live-model` (2026-10-23): the SDK end to end against a real
+    model through llama-server, ten checks (the tool loop streamed and
+    signature-verified on all four bindings, provenance refusal,
+    idempotency, budget exhaustion, delegation under a budget, halt,
+    quorum). Its README records the runs, the model, the quantization and
+    the llama.cpp build.
 - **Removing `sign_agent_card*` in 0.15.0 waives `STABILITY.md` §3**'s
   one-minor deprecation window for `sign_agent_card`, which shipped in 0.14.1
   and was deprecated only in 0.15.0 (`sign_agent_card_ed25519` never
@@ -192,18 +202,22 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **Merge WP-C and WP-D** when they report (their CHANGELOG fragments and
-   ledger rows; re-point moved citations, checking each one's text), then
-   the rest of the conformance list: the PARTIAL entries, MAY entries
-   relabelled SUPPORTED, and the TCK baseline (the drafts for
-   CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
+2. **The rest of the conformance list:** the six PARTIAL entries (§3.1.2
+   lines 20 and 22 want an executor-written message after the task folded
+   into a `TaskStatusUpdateEvent`'s `status.message`, which changes the
+   stream contract and needs an independent review; §7.6.1 line 227 is a
+   documentation fix; §12.4 waits on agntcy/slim), MAY entries relabelled
+   SUPPORTED, and the TCK baseline (the drafts for CORE-SEND-003 and
+   a2a-tck#231 are in `docs/upstream/`).
 3. **OpenTelemetry, still open:** store spans and
-   `db.client.operation.duration`, delegation spans, push
-   `http.client.request.duration` and the webhook receiver honouring
-   `traceparent`, refusal and agent-card spans, gRPC conversion failures
-   recorded as failures, instruments bound when built rather than when
-   recorded (`OtelMetrics`), a test that logs carry the trace id; then
-   `GenAI` panels on the dashboards.
+   `db.client.operation.duration`, push `http.client.request.duration`,
+   `server.address` and `network.peer.*` on server spans, refusal and
+   agent-card spans on the server, gRPC conversion failures recorded as
+   failures, a test that logs carry the trace id; then `GenAI` panels on
+   the dashboards. Done on this branch: the tool loop's `GenAI` metrics,
+   JSON-RPC client span attributes, the card-fetch and webhook-receiver
+   spans, delegation spawns kept in the parent's trace, and default
+   metrics that follow the global meter provider at each measurement.
 4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
    and the incremental gate across 20 (`mutants.yml`, measured from runs
    39193157308 and 39343090044). The three 2026-10-19 survivors were
@@ -257,6 +271,18 @@ only: when something here is done, delete it rather than annotating it.
   public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
+- **SLIMRPC `otlp` is opt-in, not on by default** (WP-D, 2026-10-23).
+  Measured: the server's `otlp` turns on tonic's TLS features through
+  `opentelemetry-otlp`, after which tonic refuses the `https://` endpoint
+  SLIM dials ("Connecting to HTTPS without TLS enabled") and the
+  `remote_node_tls`/`remote_node_mtls` suites hang; it also links rustls
+  with `ring` beside SLIM's `aws-lc-rs` (worked around by installing
+  `aws-lc-rs`). Making it a default needs either the server's `otlp` to
+  stop enabling tonic's TLS or a SLIM change; both are the maintainer's
+  call. The SLIMRPC error-details draft
+  (`docs/upstream/agntcy-slim-rpc-error-details.md`, every citation
+  re-read against agntcy-slim-rpc 3.4.6) is ready for the maintainer to
+  file.
 - **Publishing:** the SLIMRPC binding has never been published (0.7.0).
   `tck/sut` and `examples/mcp-bridge` are `publish = false`; CLI binaries
   wait on `vars.PUBLISH_CLI_BINARIES` (`packaging/README.md`).
