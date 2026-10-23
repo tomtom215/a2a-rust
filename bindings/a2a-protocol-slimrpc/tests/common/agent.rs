@@ -74,10 +74,15 @@ pub fn card(name: &SlimName) -> AgentCard {
 /// The agent: [`Echo`] behind [`card`], with a push config store and the
 /// bundled sender.
 pub fn handler(name: &SlimName) -> Arc<RequestHandler> {
+    handler_with_card(&card(name))
+}
+
+/// [`handler`], behind `card`.
+pub fn handler_with_card(card: &AgentCard) -> Arc<RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(Echo)
-            .with_agent_card(card(name))
-            .with_extended_agent_card(card(name))
+            .with_agent_card(card.clone())
+            .with_extended_agent_card(card.clone())
             .allow_unauthenticated_extended_card()
             .with_push_config_store(InMemoryPushConfigStore::new())
             .with_push_sender(HttpPushSender::new())
