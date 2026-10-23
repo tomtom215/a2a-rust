@@ -46,6 +46,7 @@
 //! ```
 
 mod builder;
+mod global;
 #[cfg(feature = "otlp")]
 mod pipeline;
 #[cfg(feature = "otlp")]
@@ -60,6 +61,7 @@ use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
+pub(crate) use global::GlobalOtelMetrics;
 #[cfg(feature = "otlp")]
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 #[cfg(feature = "otlp")]
@@ -345,7 +347,8 @@ pub const RPC_DURATION_BUCKETS: [f64; 14] = [
 
 #[cfg(test)]
 mod rpc_tests;
-#[cfg(test)]
+// Only the tool loop's metric tests read a meter back this way.
+#[cfg(all(test, feature = "tool-loop"))]
 pub(crate) mod test_reader;
 #[cfg(test)]
 mod tests;

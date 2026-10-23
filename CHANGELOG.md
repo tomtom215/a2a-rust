@@ -1428,6 +1428,20 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Behaviour Changes
 
+- **Default metrics follow the global meter provider at each measurement**
+  (server, client). A handler given no `with_metrics`, and every client's
+  `rpc.client.call.duration`, bound their instruments to the provider that
+  was global when the builder or client was created; one built before
+  `Telemetry` was installed recorded into the no-op meter for its whole
+  life. Both now ask for the global provider at each measurement and build
+  their instruments again when it has changed (a pointer comparison while
+  it has not). An `OtelMetrics` passed to `with_metrics` still records to
+  the meter it was built from. `scripts/check_otel_metrics_coverage.py` now
+  also requires the default to forward every `Metrics` callback. Tests:
+  server `default_metrics.rs` and client `call_metric_late_provider.rs`
+  (built first, then a provider installed, then replaced), each failing with
+  the old binding.
+
 - **An interface with an empty `protocolVersion` is no longer selected**
   (`ClientBuilder::from_card`); it counted as compatible ("the card did not
   say"). A card whose only interface states none is refused with

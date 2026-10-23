@@ -96,10 +96,12 @@ SDK — which is the distinction this two-minute step buys you.
 
 With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
 `Telemetry` exports it over OTLP. `otel` is a default feature, and with it a
-handler given no `with_metrics` records through `OtelMetrics` on the global
-meter provider as it stands when `RequestHandlerBuilder::new` runs: install
-the provider first (`Telemetry` does) and nothing else is needed. Before 0.15
-such a handler recorded nothing until given `with_metrics`.
+handler given no `with_metrics` records through `OtelMetrics` instruments on
+the global meter provider as it stands at each measurement, built again when
+the process installs another: install `Telemetry` before or after building the
+handler and nothing else is needed. The client's `rpc.client.call.duration`
+binds the same way. Before 0.15 such a handler recorded nothing until given
+`with_metrics`.
 
 ## Exporting with `Telemetry`
 

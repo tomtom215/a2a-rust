@@ -26,7 +26,10 @@ perfectly.
 # What this checks
 
 Every method on the `Metrics` trait must appear in `impl Metrics for
-OtelMetrics`. That is a coarse check — it cannot tell a real export from a stub
+OtelMetrics`, and in `impl Metrics for GlobalOtelMetrics` — the handler's
+default, which forwards each callback to an `OtelMetrics` on the provider that
+is global at the time, and drops any it does not forward exactly as an
+`OtelMetrics` would. That is a coarse check — it cannot tell a real export from a stub
 body — but it catches the failure that actually happened, which is a method
 nobody remembered to add. Any method deliberately not exported must be listed in
 `INTENTIONALLY_UNEXPORTED` below with a reason, which turns a silent omission
@@ -51,6 +54,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 TRAIT_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "metrics" / "mod.rs"
 OTEL_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "otel" / "mod.rs"
+GLOBAL_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "otel" / "global.rs"
 
 # Callbacks the OTLP exporter deliberately does not forward, each with the
 # reason. Empty today: every callback the trait defines is exported.
@@ -79,16 +83,16 @@ def trait_methods(path: Path) -> list[str]:
     return names
 
 
-def impl_methods(path: Path) -> list[str]:
-    """Method names inside `impl Metrics for OtelMetrics`."""
+def impl_methods(path: Path, ty: str = "OtelMetrics") -> list[str]:
+    """Method names inside `impl Metrics for <ty>`."""
     try:
         src = path.read_text(encoding="utf-8")
     except OSError as e:
         die(f"cannot read {path}: {e}")
 
-    start = src.find("impl Metrics for OtelMetrics {")
+    start = src.find(f"impl Metrics for {ty} {{")
     if start == -1:
-        die(f"no `impl Metrics for OtelMetrics` block found in {path}")
+        die(f"no `impl Metrics for {ty}` block found in {path}")
 
     # Walk braces so a method body containing `}` cannot end the block early.
     depth = 0
@@ -105,13 +109,23 @@ def impl_methods(path: Path) -> list[str]:
 
     names = re.findall(r"^\s{4}fn (\w+)\s*\(", src[body_start:i], re.M)
     if not names:
-        die(f"parsed zero methods from the OtelMetrics impl in {path}")
+        die(f"parsed zero methods from the {ty} impl in {path}")
     return names
 
 
 def main() -> int:
     declared = trait_methods(TRAIT_SRC)
     exported = set(impl_methods(OTEL_SRC))
+    forwarded = set(impl_methods(GLOBAL_SRC, "GlobalOtelMetrics"))
+    unforwarded = [
+        m for m in declared if m not in forwarded and m not in INTENTIONALLY_UNEXPORTED
+    ]
+    if unforwarded:
+        print(
+            f"FAIL — the handler's default, GlobalOtelMetrics, drops {len(unforwarded)} "
+            f"callback(s): {', '.join(unforwarded)}. Forward each to `self.current()`."
+        )
+        return 1
 
     print("OpenTelemetry exporter coverage of the Metrics trait")
     print(f"  trait declares : {len(declared)}")

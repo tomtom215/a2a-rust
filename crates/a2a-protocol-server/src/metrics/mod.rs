@@ -324,17 +324,19 @@ impl Metrics for NoopMetrics {}
 
 /// What a `RequestHandlerBuilder` records to unless given other metrics.
 ///
-/// With the `otel` feature (on by default), an
-/// [`OtelMetrics`](crate::otel::OtelMetrics) on the global meter provider as
-/// it stands when the builder is created: a process that installed one —
-/// `Telemetry` does — gets `rpc.server.call.duration` and the `a2a.server.*`
-/// instruments with nothing to enable, and one that installed none records
-/// into OpenTelemetry's no-op meter. Without the feature, [`NoopMetrics`].
+/// With the `otel` feature (on by default), the
+/// [`OtelMetrics`](crate::otel::OtelMetrics) instruments on the global meter
+/// provider as it stands at each measurement, rebuilt when the process
+/// installs another: one that installs `Telemetry` gets
+/// `rpc.server.call.duration` and the `a2a.server.*` instruments with
+/// nothing to enable, whether it built its handler before or after, and one
+/// that installed none records into OpenTelemetry's no-op meter. Without the
+/// feature, [`NoopMetrics`].
 #[must_use]
 pub(crate) fn default_metrics() -> Arc<dyn Metrics> {
     #[cfg(feature = "otel")]
     {
-        Arc::new(crate::otel::OtelMetricsBuilder::new().build())
+        Arc::new(crate::otel::GlobalOtelMetrics::new())
     }
     #[cfg(not(feature = "otel"))]
     {

@@ -624,7 +624,8 @@ impl RequestHandlerBuilder {
 
     /// Sets a metrics observer for handler activity.
     ///
-    /// Defaults to `OtelMetrics` on the global meter provider (`otel`), else `NoopMetrics`.
+    /// Defaults to `OtelMetrics` instruments on the global meter provider as
+    /// it stands at each measurement (`otel`), else `NoopMetrics`.
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
         self.metrics = Arc::new(metrics);

@@ -4,8 +4,8 @@
 //! A handler built with no `with_metrics` records to the global meter
 //! provider when the `otel` feature is on (the default): a process that
 //! installs a provider — `Telemetry` does — gets `rpc.server.call.duration`
-//! with nothing to enable. Its own test binary, because the provider is
-//! process-global.
+//! with nothing to enable, whenever it installs it. Its own test binary,
+//! because the provider is process-global.
 
 #![cfg(feature = "otel")]
 
@@ -45,25 +45,35 @@ impl MetricReader for SharedReader {
 struct Idle;
 agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
 
-#[tokio::test]
-async fn a_handler_records_to_the_global_provider_by_default() {
+/// A provider with a reader the test can collect from.
+fn provider() -> (SdkMeterProvider, Arc<ManualReader>) {
     let reader = Arc::new(ManualReader::builder().build());
     let provider = SdkMeterProvider::builder()
         .with_reader(SharedReader(Arc::clone(&reader)))
         .build();
-    opentelemetry::global::set_meter_provider(provider);
+    (provider, reader)
+}
 
-    let handler = RequestHandlerBuilder::new(Idle)
-        .without_agent_card()
-        .build()
-        .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+/// How many calls `reader`'s provider recorded in `rpc.server.call.duration`.
+fn calls(reader: &ManualReader) -> u64 {
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, HistogramDataPoint, MetricData};
+    let mut collected = ResourceMetrics::default();
+    reader.collect(&mut collected).expect("collect");
+    collected
+        .scope_metrics()
+        .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+        .filter(|m| m.name() == "rpc.server.call.duration")
+        .map(|m| match m.data() {
+            AggregatedMetrics::F64(MetricData::Histogram(h)) => {
+                h.data_points().map(HistogramDataPoint::count).sum()
+            }
+            _ => 0,
+        })
+        .sum()
+}
 
+/// One `GetTask` for a task that does not exist, over JSON-RPC.
+async fn call(addr: std::net::SocketAddr) {
     let body = r#"{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"no-such-task"}}"#;
     let request = format!(
         "POST / HTTP/1.1\r\nhost: {addr}\r\ncontent-type: application/json\r\n\
@@ -78,16 +88,45 @@ async fn a_handler_records_to_the_global_provider_by_default() {
         response.contains("-32001"),
         "the server did not answer TaskNotFound (-32001)"
     );
+}
 
-    let mut collected = ResourceMetrics::default();
-    reader.collect(&mut collected).expect("collect");
-    let names: Vec<String> = collected
-        .scope_metrics()
-        .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
-        .map(|m| m.name().to_owned())
-        .collect();
-    assert!(
-        names.iter().any(|n| n == "rpc.server.call.duration"),
-        "a handler with no metrics configured recorded nothing to the global provider: {names:?}"
+/// The handler is built, and serves, before any provider is installed; one
+/// installed later receives its calls, and so does one that replaces it.
+/// Before 0.15 the default bound its instruments when the builder was
+/// created, so a handler built before `Telemetry` recorded nothing all its
+/// life.
+#[tokio::test]
+async fn a_handler_records_to_the_global_provider_installed_after_it() {
+    let handler = RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .build()
+        .expect("handler");
+    let addr = a2a_protocol_server::serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::new(Arc::new(handler)),
+    )
+    .await
+    .expect("serve");
+    call(addr).await;
+
+    // Kept: dropping a provider's last handle shuts its reader down.
+    let (first, first_reader) = provider();
+    opentelemetry::global::set_meter_provider(first.clone());
+    call(addr).await;
+    assert_eq!(
+        calls(&first_reader),
+        1,
+        "the provider installed after the handler was built recorded no call"
+    );
+
+    let (second, second_reader) = provider();
+    opentelemetry::global::set_meter_provider(second.clone());
+    call(addr).await;
+    call(addr).await;
+    assert_eq!(calls(&second_reader), 2, "the replacing provider");
+    assert_eq!(
+        calls(&first_reader),
+        1,
+        "the replaced provider kept recording"
     );
 }
