@@ -107,6 +107,63 @@ async fn bind_equiv_003_every_binding_decodes_the_same_a2a_error() {
     }
 }
 
+/// Spec §3.3.2: an error carries a machine-readable code and a
+/// human-readable message, whatever the binding. Every fault above, decoded
+/// on every binding, has both: this SDK's clients pass each binding's
+/// message through (JSON-RPC `error.message`, HTTP+JSON `error.message`,
+/// the gRPC status message, the WebSocket frame's `error.message`), so an
+/// empty one here is an empty one on the wire. The two HTTP bindings are
+/// also read raw.
+#[tokio::test]
+async fn every_binding_s_error_carries_a_code_and_a_message() {
+    let agent = serve(false, true).await;
+    let done = send(&agent.client(Binding::JsonRpc, None).await, "finished")
+        .await
+        .expect("send")
+        .id
+        .0;
+    for binding in Binding::ALL {
+        let client = agent.client(binding, None).await;
+        let unknown = client.get_task(TaskQueryParams::new("no-such-task")).await;
+        let not_cancelable = client.cancel_task(&done).await;
+        for (fault, result) in [
+            ("GetTask, unknown id", unknown.map(drop)),
+            ("CancelTask, finished task", not_cancelable.map(drop)),
+        ] {
+            match result {
+                Err(ClientError::Protocol(e)) => {
+                    assert!(!e.message.trim().is_empty(), "{binding:?}, {fault}: {e:?}")
+                }
+                other => panic!("{binding:?}, {fault}: not an A2A error: {other:?}"),
+            }
+        }
+    }
+
+    let rpc = json!({"jsonrpc": "2.0", "id": 1, "method": "GetTask", "params": {"id": "nope"}});
+    let (_, answer) = raw(agent.url(Binding::JsonRpc), "POST", Some(rpc), Some("1.0")).await;
+    assert_eq!(
+        answer["error"]["code"],
+        ErrorCode::TaskNotFound.as_i32(),
+        "{answer}"
+    );
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .is_some_and(|m| !m.trim().is_empty()),
+        "JSON-RPC: {answer}"
+    );
+    let url = format!("{}/tasks/nope", agent.url(Binding::HttpJson));
+    let (status, answer) = raw(url, "GET", None, Some("1.0")).await;
+    assert_eq!(status, 404, "{answer}");
+    assert_eq!(answer["error"]["status"], "NOT_FOUND", "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .is_some_and(|m| !m.trim().is_empty()),
+        "HTTP+JSON: {answer}"
+    );
+}
+
 /// The protocol-specific half, read off the wire of the two HTTP bindings:
 /// JSON-RPC carries the A2A error code; HTTP+JSON carries §5.4's status and
 /// the error's `ErrorInfo` reason.

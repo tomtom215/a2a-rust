@@ -35,6 +35,13 @@ pub const TOKEN: &str = "bind-equiv-token";
 /// canceled; any other text is echoed back as an artifact and completes.
 pub const HOLD: &str = "hold";
 
+/// A message with this text writes [`NUMBERED`] artifacts, `a0`, `a1`, …,
+/// in that order, then completes.
+pub const COUNT: &str = "count";
+
+/// How many artifacts a [`COUNT`] message writes.
+pub const NUMBERED: usize = 16;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Binding {
     JsonRpc,
@@ -65,6 +72,18 @@ agent_executor!(Echo, |ctx, queue| async {
         // The default `cancel` writes `CANCELED` once the token fires.
         ctx.cancellation_token.cancelled().await;
         return Ok(());
+    }
+    if text == COUNT {
+        for n in 0..NUMBERED {
+            emit.artifact(
+                &format!("a{n}"),
+                vec![Part::text(n.to_string())],
+                None,
+                Some(true),
+            )
+            .await?;
+        }
+        return emit.status(TaskState::Completed).await;
     }
     emit.artifact("echo", vec![Part::text(text)], None, Some(true))
         .await?;

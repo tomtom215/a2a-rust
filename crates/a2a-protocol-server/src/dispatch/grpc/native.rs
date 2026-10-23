@@ -705,6 +705,57 @@ mod tests {
         );
     }
 
+    /// §3.6.2 / §3.2.6: a non-empty version this server does not serve is
+    /// refused over gRPC as on the other three bindings: `FAILED_PRECONDITION`
+    /// with `VERSION_NOT_SUPPORTED`, and a message naming the version (§3.3.2:
+    /// an error carries a human-readable message). Until 2026-10-23 only an
+    /// absent version was tested on this binding.
+    #[tokio::test]
+    async fn an_unsupported_version_is_refused_with_version_not_supported() {
+        use tonic_types::StatusExt as _;
+        let svc = A2aServiceImpl {
+            handler: Arc::new(
+                RequestHandlerBuilder::new(NoopExecutor)
+                    .with_agent_card(test_card())
+                    .with_push_sender(NoopSender)
+                    .build()
+                    .expect("default build should succeed"),
+            ),
+            config: GrpcConfig::default(),
+        };
+        let get = |version: &str| {
+            let mut request = Request::new(apb::GetTaskRequest {
+                tenant: String::new(),
+                id: "no-such-task".into(),
+                history_length: None,
+            });
+            request
+                .metadata_mut()
+                .insert("a2a-version", version.parse().expect("ASCII"));
+            request
+        };
+        for version in ["2.0", "0.3", "1.1"] {
+            let status = svc
+                .get_task(get(version))
+                .await
+                .expect_err("an unsupported version must be refused");
+            assert_eq!(status.code(), tonic::Code::FailedPrecondition, "{version}");
+            assert_eq!(
+                status
+                    .get_details_error_info()
+                    .expect("the refusal carries ErrorInfo")
+                    .reason,
+                "VERSION_NOT_SUPPORTED",
+                "{version}"
+            );
+            assert!(status.message().contains(version), "{version}: {status:?}");
+        }
+        // The control: the served version reaches the handler.
+        let status = svc.get_task(get("1.0")).await.expect_err("an unknown task");
+        assert_eq!(status.code(), tonic::Code::NotFound);
+        assert!(!status.message().is_empty(), "{status:?}");
+    }
+
     #[tokio::test]
     async fn list_tasks_returns_the_seeded_task() {
         let svc = service();

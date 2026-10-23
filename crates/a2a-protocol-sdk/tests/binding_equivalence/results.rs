@@ -10,13 +10,14 @@
 //! field for field, after each binding's wire encoding and this SDK's
 //! decoding of it.
 
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::params::{ListPushConfigsParams, ListTasksParams, TaskQueryParams};
 use a2a_protocol_types::parse_iso8601_to_unix_millis;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use serde_json::Value;
 
 use crate::functionality::{HOOK, drain, params, send};
-use crate::harness::{Binding, serve};
+use crate::harness::{Binding, COUNT, NUMBERED, serve};
 
 /// What the server mints per call, and so may differ between two calls
 /// that asked the same thing.
@@ -118,6 +119,37 @@ async fn bind_equiv_002_the_same_stream_carries_the_same_events_on_every_binding
         answers[0].1
     );
     all_equal(&answers, "SendStreamingMessage");
+}
+
+/// Spec §3.5.2: events are delivered "in the order they were generated",
+/// "regardless of protocol binding". The test above shows the bindings agree
+/// with each other; this shows each agrees with the agent: sixteen
+/// artifacts written `a0` to `a15` arrive as `a0` to `a15` on every binding,
+/// after the task and its `WORKING` update and before the final status.
+#[tokio::test]
+async fn bind_equiv_002_every_binding_delivers_events_in_generation_order() {
+    let agent = serve(false, true).await;
+    let expected: Vec<String> = (0..NUMBERED).map(|n| format!("a{n}")).collect();
+    for binding in Binding::ALL {
+        let client = agent.client(binding, None).await;
+        let events = drain(client.stream_message(params(COUNT)).await.unwrap())
+            .await
+            .unwrap_or_else(|e| panic!("{binding:?}: {e}"));
+        let shape: Vec<String> = events
+            .iter()
+            .map(|e| match e {
+                StreamResponse::Task(_) => "task".to_owned(),
+                StreamResponse::StatusUpdate(u) => format!("status:{}", u.status.state),
+                StreamResponse::ArtifactUpdate(a) => a.artifact.id.0.clone(),
+                StreamResponse::Message(_) => "message".to_owned(),
+                _ => "other".to_owned(),
+            })
+            .collect();
+        let mut want = vec!["task".to_owned(), "status:TASK_STATE_WORKING".to_owned()];
+        want.extend(expected.iter().cloned());
+        want.push("status:TASK_STATE_COMPLETED".to_owned());
+        assert_eq!(shape, want, "{binding:?}");
+    }
 }
 
 /// One task, read through each binding: `GetTask` (with and without a
