@@ -341,6 +341,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SLIMRPC: an agent card declares SLIM's authentication**
+  (`a2a-protocol-slimrpc`; A2A §13.3, SLIMRPC §8.4; WP-A, Medium).
+  `SlimPeerAuthInterceptor::declare_on(&mut card)` adds
+  `server::peer::security_scheme()` to `securitySchemes` under
+  `SECURITY_SCHEME_NAME` (`slimMls`), and for `required()` a security
+  requirement naming it. A2A has no scheme type for SLIM, so it is a
+  `mutualTlsSecurityScheme` whose description names SLIM, the kind whose
+  credential the transport proves for both peers. The interceptor now
+  answers `checks_scheme`: a mutual-TLS scheme and no other, so
+  `RequestHandlerBuilder::build` refuses `required()` behind a card whose
+  only scheme is one it cannot check, where it used to trust it for any.
+  Tests: `server/peer/tests.rs`
+  `declare_on_names_the_scheme_and_requires_it_only_when_required`,
+  `it_checks_the_scheme_it_declares_and_no_other`,
+  `the_handler_builds_only_behind_a_card_that_declares_slim` (the last two
+  fail without `checks_scheme`).
+
 - **A call's `SERVER` span carries its addresses** (server, `tracing`;
   `docs/rpc/rpc-spans.md`). `network.peer.address` and `network.peer.port`
   come from the connection the call arrived on, when the binding knows it.

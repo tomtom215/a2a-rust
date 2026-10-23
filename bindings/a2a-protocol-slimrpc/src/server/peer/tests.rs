@@ -260,3 +260,92 @@ async fn the_throttle_keys_a_verified_peer_by_its_address() {
         .await
         .expect("an unverified caller is not throttled");
 }
+
+/// A card for the declaration tests: one SLIMRPC interface, one skill.
+fn card() -> AgentCard {
+    serde_json::from_value(serde_json::json!({
+        "name": "slim agent",
+        "description": "test",
+        "version": "1.0.0",
+        "supportedInterfaces": [{
+            "url": "slim://org/ns/agent",
+            "protocolBinding": "SLIMRPC",
+            "protocolVersion": "1.0"
+        }],
+        "capabilities": {},
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": [{"id": "s", "name": "s", "description": "s", "tags": ["t"]}]
+    }))
+    .expect("a card")
+}
+
+/// SLIMRPC §8.4 and A2A §13.3: the card declares SLIM's authentication, as
+/// a mutual-TLS scheme, and a required interceptor also requires it.
+#[test]
+fn declare_on_names_the_scheme_and_requires_it_only_when_required() {
+    let mut open = card();
+    SlimPeerAuthInterceptor::new().declare_on(&mut open);
+    let schemes = open.security_schemes.as_ref().expect("schemes");
+    assert!(matches!(
+        schemes.get(SECURITY_SCHEME_NAME),
+        Some(SecurityScheme::MutualTls(s)) if s.description.as_deref().is_some_and(|d| d.contains("SLIM"))
+    ));
+    assert!(open.security_requirements.is_none());
+
+    let mut closed = card();
+    let auth = SlimPeerAuthInterceptor::required();
+    auth.declare_on(&mut closed);
+    auth.declare_on(&mut closed);
+    let requirements = closed.security_requirements.as_ref().expect("required");
+    assert_eq!(requirements.len(), 1, "declared twice, required once");
+    assert!(requirements[0].schemes.contains_key(SECURITY_SCHEME_NAME));
+}
+
+/// It checks the mutual-TLS scheme it declares, and no other kind.
+#[test]
+fn it_checks_the_scheme_it_declares_and_no_other() {
+    let auth = SlimPeerAuthInterceptor::required();
+    assert_eq!(auth.checks_scheme(&security_scheme()), Some(true));
+    let bearer: SecurityScheme = serde_json::from_value(serde_json::json!({
+        "httpAuthSecurityScheme": {"scheme": "Bearer"}
+    }))
+    .expect("a scheme");
+    assert_eq!(auth.checks_scheme(&bearer), Some(false));
+}
+
+/// The handler builds behind a card that declares it, and refuses one whose
+/// only scheme is a bearer token this interceptor cannot check (§13.3).
+#[test]
+fn the_handler_builds_only_behind_a_card_that_declares_slim() {
+    use a2a_protocol_server::RequestHandlerBuilder;
+    struct Idle;
+    a2a_protocol_server::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+    let auth = SlimPeerAuthInterceptor::required();
+
+    let mut declared = card();
+    auth.declare_on(&mut declared);
+    RequestHandlerBuilder::new(Idle)
+        .with_agent_card(declared)
+        .with_interceptor(auth)
+        .build()
+        .expect("SLIM declared");
+
+    let mut bearer_only = card();
+    bearer_only.security_schemes = Some(std::collections::HashMap::from([(
+        "bearer".to_owned(),
+        serde_json::from_value(serde_json::json!({
+            "httpAuthSecurityScheme": {"scheme": "Bearer"}
+        }))
+        .expect("a scheme"),
+    )]));
+    let refused = RequestHandlerBuilder::new(Idle)
+        .with_agent_card(bearer_only)
+        .with_interceptor(auth)
+        .build()
+        .expect_err("a bearer scheme does not describe a SLIM peer");
+    assert!(
+        refused.to_string().contains("none of the public card's"),
+        "{refused}"
+    );
+}

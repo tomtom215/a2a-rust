@@ -99,24 +99,11 @@ impl AgentExecutor for SigningExecutor {
 }
 
 /// [`agent_card`], declaring the peer authentication
-/// `SlimPeerAuthInterceptor::required()` enforces. Spec §13.3 has requests
-/// authenticated "using one of the schemes declared in the public
-/// `AgentCard.securitySchemes`", and since 0.15 the handler's build refuses
-/// an authenticating interceptor behind a card that declares none. A2A has
-/// no scheme for a SLIM MLS session; mutual TLS, the transport proving both
-/// peers' identities, is the nearest.
+/// `SlimPeerAuthInterceptor::required()` enforces, as the binding's own
+/// `declare_on` declares it (spec §13.3, SLIMRPC §8.4).
 pub fn peer_authenticated_card(name: &SlimName) -> AgentCard {
     let mut card = agent_card(name);
-    card.security_schemes = Some(std::collections::HashMap::from([(
-        "slimMls".to_owned(),
-        a2a_protocol_types::security::SecurityScheme::MutualTls(
-            a2a_protocol_types::security::MutualTlsSecurityScheme {
-                description: Some(
-                    "A SLIM session with MLS: the caller is the peer SLIM verified".into(),
-                ),
-            },
-        ),
-    )]));
+    a2a_protocol_slimrpc::SlimPeerAuthInterceptor::required().declare_on(&mut card);
     card
 }
 
