@@ -496,6 +496,16 @@ span, over HTTP or WebSocket, also carries `jsonrpc.protocol.version`
 request's id as `jsonrpc.request.id` (not for a notification or a `null` id),
 as `docs/rpc/json-rpc.md` asks.
 
+Its addresses follow `docs/rpc/rpc-spans.md`. `network.peer.address` and
+`network.peer.port` are the connection the call arrived on, when the
+binding knows it (the address `CallContext::peer_addr` returns).
+`server.address` and `server.port` are the address the client used: the
+request's `Host`, with the port only when `Host` names one. They are left
+unset on gRPC, whose metadata does not carry `:authority`, and for a `Host`
+that is not a valid authority; the conventions say not to fill them from the
+connection. None of the four is on `rpc.server.call.duration`: `Host` is the
+caller's to choose, and a metric attribute it chose is unbounded.
+
 It also carries the attributes of the **draft OpenTelemetry A2A
 conventions** — `open-telemetry/semantic-conventions-genai` pull request
 #195, read at `842a839`; open, and every attribute `development`, so these

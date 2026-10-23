@@ -358,6 +358,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A call's `SERVER` span carries its addresses** (server, `tracing`;
+  `docs/rpc/rpc-spans.md`). `network.peer.address` and `network.peer.port`
+  come from the connection the call arrived on, when the binding knows it.
+  `server.address` and `server.port` come from the request's `Host`, as the
+  conventions ask; they are left unset on gRPC and for a `Host` that is
+  not a valid authority. None of them is on the duration metric. Tests:
+  `rpc_span/address.rs`.
+
 - **`http.client.request.duration` for every webhook POST** (server,
   `otel`). Each push-notification attempt, retries included, is measured
   with the HTTP conventions' advisory buckets and the attributes of its

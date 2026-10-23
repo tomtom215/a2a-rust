@@ -1982,7 +1982,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/rpc_span/mod.rs:320 ServerSpan::call",
+    "crates/a2a-protocol-server/src/rpc_span/mod.rs:325 ServerSpan::call",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:298 SyncCollector::run",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:385 write_failure_event"

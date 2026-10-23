@@ -46,6 +46,8 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "tracing")]
 mod a2a;
+#[cfg(feature = "tracing")]
+mod address;
 mod agent;
 mod binding;
 mod call;
@@ -163,6 +165,9 @@ impl ServerSpan {
                 };
                 let span = call_span(name, system, qualified);
                 a2a::record_agent(&span, handler.agent_card.as_ref());
+                if let Some(headers) = headers {
+                    address::record(&span, headers);
+                }
                 if qualified == OTHER {
                     span.record(
                         "rpc.method_original",
@@ -417,6 +422,10 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
         error.type = tracing::field::Empty,
         http.request.method = tracing::field::Empty,
         http.route = tracing::field::Empty,
+        server.address = tracing::field::Empty,
+        server.port = tracing::field::Empty,
+        network.peer.address = tracing::field::Empty,
+        network.peer.port = tracing::field::Empty,
         a2a.method.name = a2a::method_name(qualified),
         a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
         a2a.tenant = tracing::field::Empty,
