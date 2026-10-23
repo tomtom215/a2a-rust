@@ -24,10 +24,18 @@ only: when something here is done, delete it rather than annotating it.
   `CHANGELOG.md` is `[Unreleased]`.
 - **Working branch:** `claude/zealous-fermat-f4kg9z`, started 2026-10-23
   from `main` at `4cadc2af` (pull request #178 merged that day), to make
-  0.15.0 release-ready. Not pushed yet: the maintainer asked for fixes to
-  be batched and pushed only after a long local verification, then the
-  labelled mutation run. `git log 4cadc2af..` lists its commits; each
-  message says what it changed and how it was verified. So far:
+  0.15.0 release-ready. First pushed 2026-10-23, after the local
+  verification the maintainer asked for: the workspace suite (327 test
+  binaries, 5965 passed, 0 failed), the server with all features and
+  PostgreSQL (181 binaries, 3436 passed, 0 failed), every clippy
+  invocation `ci.yml` names including `cargo hack --each-feature` (57
+  combinations), `cargo deny` advisories on all nine lockfiles, and the
+  SLIMRPC binding's steps except the SPIFFE suites, which need SPIRE (not
+  installed here). `ci.yml` runs on a push only to `main`, so it was
+  started with `workflow_dispatch`; the TCK and the labelled mutation gate
+  run only on a pull request, which waits for the maintainer.
+  `git log 4cadc2af..` lists the commits; each message says what it
+  changed and how it was verified. So far:
   - the tool-calling study scored, audited by reading every answer, and
     published (`docs/tool-calling-study.md`, `34f579d`);
   - every dependency refreshed in all nine lockfiles, the Python
