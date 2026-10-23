@@ -367,4 +367,6 @@ pub type ServerResult<T> = Result<T, ServerError>;
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+mod label_tests;
+#[cfg(test)]
 mod tests;
