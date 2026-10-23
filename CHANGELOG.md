@@ -2858,7 +2858,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and ITK lockfiles. `rustls-webpki` 0.103.15 (RUSTSEC-2026-0382, distrusted
   emSign intermediates) is replaced by 0.103.16 wherever it was locked, and
   the SDK-comparison harness's `webpki-root-certs` 1.0.9 (RUSTSEC-2026-0383)
-  by 1.0.10. In
+  by 1.0.10. The SLIMRPC lockfile's `ctutils` 0.4.3 (RUSTSEC-2026-0385,
+  mask generation and `u128` comparisons that could branch on secret values)
+  becomes 0.4.4; it arrives through the SLIM crates' `p256` and `ml-kem`,
+  and no other lockfile holds it. In
   CI's hash-locked Python tools, `certifi` 2026.7.22 (GHSA-6q48-6c7w-9gw2)
   becomes 2026.10.19 and `uv` 0.13.1 (GHSA-hq85-5cpj-mr62) becomes 0.13.5,
   for the same emSign root. The `tokio` requirement rises from 1.44.2 to
