@@ -12,6 +12,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **The client refuses an agent's object that a2a.proto does not allow
+  (`ClientError::InvalidAgentResponse`).** Spec §5.7: implementations SHOULD
+  reject messages missing a REQUIRED field. On every binding (JSON-RPC,
+  HTTP+JSON, WebSocket, gRPC) the tasks `get_task`/`cancel_task`/`list_tasks`
+  return, what `send_message` returns, every streamed event, and the push
+  configs the push-config calls return are checked against
+  `a2a_protocol_types::required`: a task with an empty `id`, a status in
+  `TASK_STATE_UNSPECIFIED`, a message with no `messageId`/`role`/parts, an
+  artifact with no `artifactId` or parts, a status/artifact update with no
+  `taskId`/`contextId`, a push config with no `url` or `authentication.scheme`
+  now fail the call with the new `ClientError::InvalidAgentResponse(String)`
+  naming the call and field (not retryable; converts to `ErrorCode::InvalidAgentResponse`).
+  A refused stream event ends the stream. They used to be returned as if valid.
+  What integrators see: calls to a non-conformant agent that used to succeed
+  now fail; match `InvalidAgentResponse` to tell this from a transport fault.
+  `ClientError` is `#[non_exhaustive]`, so adding the variant breaks no match.
+  Crates: `a2a-protocol-client`, `a2a-protocol-types`.
+  Tests: `crates/a2a-protocol-client/tests/received_validation/` (`json.rs`,
+  `grpc.rs`, `cards.rs`).
+- **Agent cards a client receives must pass `AgentCard::validate` and
+  `validate_security_schemes`.** `resolve_agent_card`, `fetch_card_from_url`,
+  `CachingCardResolver` and `get_extended_agent_card` refuse, with
+  `InvalidAgentResponse`, a card the server would refuse to publish (no
+  description, no skills, empty `provider.url`, a skill with no name, a
+  signature with no `signature`, an empty `protocolVersion`, a security
+  scheme with an empty REQUIRED string, ...). A refused extended card is not
+  adopted (its capabilities and security are not acted on).
+  `ClientBuilder::from_card` does not validate the card it is handed.
+  Crates: `a2a-protocol-client`. Tests:
+  `cards.rs a_discovered_card_that_breaks_a_publishing_rule_is_refused`,
+  `an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted`.
+- **The gRPC conversion refuses an absent REQUIRED field.** `TryFrom<pb::…>`
+  now returns `ConvertError { reason: "missing required field" }` for
+  `Task.id`, `TaskStatus.state` (0), `Message.message_id`/`role` (0),
+  `Artifact.artifact_id`, `TaskStatusUpdateEvent`/`TaskArtifactUpdateEvent`
+  `task_id`/`context_id`, `AgentCard.name`/`description`/`version`/
+  `capabilities` (no longer defaulted to the empty set), `AgentInterface`
+  `url`/`protocol_binding`/`protocol_version`, `AgentProvider`, `AgentSkill`
+  `id`/`name`/`description`, `AgentCardSignature` fields, `apiKey.name`,
+  `httpAuth.scheme`, `openIdConnectUrl` and the authorization-code,
+  client-credentials and device-code flows' URLs — the cases where the same
+  JSON without the key does not parse. A server answers such a gRPC request
+  `INVALID_ARGUMENT` with a `BadRequest` violation (it used to reach the
+  handler, which refused most of them with the same code). A client reports a
+  response its conversion refuses as `InvalidAgentResponse` (it was
+  `Transport`). Crates: `a2a-protocol-types`, `a2a-protocol-client`.
+  Tests: `crates/a2a-protocol-types/src/proto/convert/required_tests.rs`,
+  `card.rs agent_card_missing_capabilities_is_refused`,
+  `tests/proptest_proto_convert.rs unspecified_state_and_role_are_refused`.
+
 - **An authenticating interceptor needs a scheme declared in the public
   card, and an extended-card scheme must also be in the public card**
   (server; spec §13.3). §13.3: agents "MUST authenticate requests using one
@@ -297,6 +347,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`share_tasks_across_callers`).
 
 ### Added
+
+- **`a2a_protocol_types::required`**: `check_event`, `check_received_event`,
+  `check_task`, `check_response`, `check_push_config`, `check_card`,
+  `check_status`, `check_message`, `check_artifact` — the REQUIRED-field rules
+  both ends apply. **`ClientError::InvalidAgentResponse`**.
+
+The upgrading guide (`book/src/reference/upgrading.md`, 0.14 → 0.15) has a
+section "The client refuses what `a2a.proto` does not allow".
 
 - **`WebSocketDispatcher::with_agent_card_max_age` and
   `GrpcDispatcher::with_agent_card_max_age`** (server; spec §8.6.1). Both
@@ -1335,6 +1393,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#151). `Server::bind` now delegates to it.
 
 ### Behaviour Changes
+
+- **An interface with an empty `protocolVersion` is no longer selected**
+  (`ClientBuilder::from_card`); it counted as compatible ("the card did not
+  say"). A card whose only interface states none is refused with
+  `InvalidEndpoint` listing what it offers. Test:
+  `selection_tests.rs an_interface_without_a_protocol_version_is_passed_over`.
+- **`list_tasks` sends `status_timestamp_after` in UTC with `Z`** on every
+  binding: an offset or lower-case `t`/`z` is rewritten (millisecond
+  precision); an already canonical value is sent as given; a value that is
+  not ISO 8601 is refused unsent with `ClientError::Protocol(InvalidParams)`.
+  Test: `wire.rs list_tasks_sends_status_timestamp_after_in_utc`,
+  `list_tasks_refuses_a_timestamp_that_is_not_iso_8601_unsent`.
+- **An inline push config's `task_id` is no longer sent with `SendMessage`**
+  (a2a.proto: "Task id should be empty"); it is cleared, with a debug log,
+  rather than refused. Test: `wire.rs an_inline_push_configs_task_id_is_not_sent`.
+- **A JSON-RPC stream frame whose id does not echo the request's is warned
+  about** once per stream (§9.4.2) and still delivered. Tests:
+  `stream_ids.rs a_stream_frame_with_another_id_is_warned_about_once_and_delivered`,
+  `a_stream_frame_echoing_the_request_id_is_not_warned_about`.
+- **The HTTP+JSON client refuses a nested object bound for a query string**
+  (§11.5) with `ClientError::Transport`; none reaches it today because every
+  operation with one is `POST`. Test:
+  `query.rs build_query_string_refuses_a_nested_object`.
+- **Card validation refuses an `http://` URL in the deprecated implicit and
+  password OAuth flows** (proto: "The OAuth2 standard requires the use of
+  TLS"); publishing and receiving such a card both fail. Test:
+  `security_url_tests.rs the_deprecated_flows_urls_must_be_https`.
 
 - **`HttpPushSender` refuses to deliver without the configured
   credentials** (server; spec §13.2: agents MUST include the credentials

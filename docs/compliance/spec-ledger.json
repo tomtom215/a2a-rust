@@ -109,7 +109,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:186 implicit",
     "crates/a2a-protocol-types/src/generated/security.rs:201 password",
-    "crates/a2a-protocol-types/src/security.rs:570 wire_format_password_oauth_flow"
+    "crates/a2a-protocol-types/src/security.rs:595 wire_format_password_oauth_flow"
    ],
    "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed.",
    "auditor": "A",
@@ -129,7 +129,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:186 implicit",
     "crates/a2a-protocol-types/src/generated/security.rs:201 password",
-    "crates/a2a-protocol-types/src/security.rs:570 wire_format_password_oauth_flow",
+    "crates/a2a-protocol-types/src/security.rs:595 wire_format_password_oauth_flow",
     "crates/a2a-protocol-types/tests/optional_wire_forms.rs:53 implicit_flow_scopes_may_be_empty_or_omitted"
    ],
    "notes": "Both deprecated flows remain in the public enum and on the wire (wire_format_password_oauth_flow round-trips one); removal would be a semver-major change, which cargo-semver-checks gates in CI.",
@@ -1274,7 +1274,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:32 A2aClient::get_extended_agent_card",
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card",
     "crates/a2a-protocol-client/src/auth.rs:186 AuthInterceptor",
     "crates/a2a-protocol-client/src/auth.rs:276 AuthInterceptor::api_key",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call",
@@ -1340,15 +1340,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:32 A2aClient::get_extended_agent_card",
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card",
     "crates/a2a-protocol-client/src/client.rs:184 A2aClient::adopt_capabilities",
     "crates/a2a-protocol-client/src/discovery.rs:493 CachingCardResolver::install_extended_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:382 the_extended_card_replaces_the_capabilities_checked",
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:426 a_failed_extended_card_fetch_changes_nothing",
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:452 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1114 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:385 the_extended_card_replaces_the_capabilities_checked",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:429 a_failed_extended_card_fetch_changes_nothing",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:455 an_extended_card_does_not_turn_the_checks_on",
+    "crates/a2a-protocol-client/src/discovery.rs:1130 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "A",
@@ -2211,13 +2211,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/declared.rs:66 DeclaredCapabilities::require",
     "crates/a2a-protocol-client/src/client.rs:167 A2aClient::with_declared",
-    "crates/a2a-protocol-client/src/methods/send_message.rs:55 A2aClient::require_inline_push_declared",
+    "crates/a2a-protocol-client/src/methods/send_message.rs:70 A2aClient::require_inline_push_declared",
     "crates/a2a-protocol-client/src/builder/mod.rs:556 ClientBuilder::without_capability_checks"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:198 a_card_declaring_nothing_refuses_every_dependent_call_before_sending",
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:251 each_capability_gates_only_its_own_calls",
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:311 without_capability_checks_sends_what_the_card_does_not_declare",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:201 a_card_declaring_nothing_refuses_every_dependent_call_before_sending",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:254 each_capability_gates_only_its_own_calls",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:314 without_capability_checks_sends_what_the_card_does_not_declare",
     "crates/a2a-protocol-client/src/declared.rs:109 only_true_declares_a_capability"
    ],
    "notes": "A client built from a card refuses, before sending, every call that needs an optional capability the card does not set to true: streaming and resubscription (streaming), the four push-config methods and a send carrying an inline push config (pushNotifications), GetExtendedAgentCard (extendedAgentCard). The refusal is ClientError::CapabilityNotDeclared; nothing reaches the transport (tested against a recording transport for all ten call shapes). ClientBuilder::without_capability_checks and the CLI's --no-capability-check opt out; a client built from a bare URL has no card and checks nothing. Required extensions are not checked client-side: the client cannot know which it supports.",
@@ -2315,7 +2315,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/send_message.rs:104 A2aClient::send_message"
+    "crates/a2a-protocol-client/src/methods/send_message.rs:119 A2aClient::send_message"
    ],
    "test_evidence": [],
    "notes": "The client SDK never fills context_id itself; the caller builds the Message. Re-examined 2026-10-18, kept: whether to send a contextId of its own is a decision about the client's conversation, which only the caller can make; the SDK never generates one. Re-verified against the code 2026-10-20 (ledger audit): the citation named a blank line; it now names where the caller's params are serialized unchanged.",
@@ -2464,7 +2464,7 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/send_message.rs:104 A2aClient::send_message"
+    "crates/a2a-protocol-client/src/methods/send_message.rs:119 A2aClient::send_message"
    ],
    "test_evidence": [],
    "notes": "Client-side obligation; the server enforces it (line 614). Re-examined 2026-10-18, kept: which task a client means is the caller's knowledge; the server side of the same rule (TaskNotFound for an unknown taskId, §3.4.2 line 614) is TESTED. Re-verified against the code 2026-10-20 (ledger audit): the citation named a blank line; it now names where the caller's params are serialized unchanged.",
@@ -2879,7 +2879,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:484 rest_response_has_a2a_version_header",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1188 add_metadata_injects_a2a_version"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1210 add_metadata_injects_a2a_version"
    ],
    "notes": "A2A_VERSION = \"1.0\" used for headers and card builder; some test fixtures use \"1.0.0\" but no production path does.",
    "auditor": "B",
@@ -2895,12 +2895,12 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:134 is_served_version",
-    "crates/a2a-protocol-client/src/builder/selection.rs:42 protocol_major",
-    "crates/a2a-protocol-client/src/builder/selection.rs:51 is_compatible"
+    "crates/a2a-protocol-client/src/builder/selection.rs:44 protocol_major",
+    "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/version.rs:181 version_metadata_accepts_this_major_minor_with_any_patch",
-    "crates/a2a-protocol-client/src/builder/selection_tests.rs:96 prefixed_and_missing_versions_count_as_compatible"
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:95 prefixed_versions_count_as_compatible"
    ],
    "notes": "Neither side compares the patch. The server accepts a request whose A2A-Version names its Major.Minor, whatever follows (is_served_version). The client keeps the card's interfaces of protocol major 1 (is_compatible: \"1.0.0\" and \"1.1-rc1\" both count) in card order and sends 1.0, so it does not compare the minor either: a 1.1 interface listed first is chosen and addressed as 1.0.",
    "auditor": "B",
@@ -2924,9 +2924,9 @@
     "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs:188 SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1188 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1210 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
-    "crates/a2a-protocol-client/src/discovery.rs:1693 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
+    "crates/a2a-protocol-client/src/discovery.rs:1709 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:168 every_call_declares_the_protocol_version",
     "bindings/a2a-protocol-slimrpc/tests/multicast.rs:102 every_invited_agent_answers_and_is_identifiable (against the version-required default)",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:103 json_rpc_sends_the_extensions_asked_for",
@@ -3069,8 +3069,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection.rs:51 is_compatible",
-    "crates/a2a-protocol-client/src/builder/selection.rs:75 candidates",
+    "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
+    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates",
     "crates/a2a-protocol-server/src/dispatch/version.rs:62 validate_version_metadata"
    ],
    "test_evidence": [
@@ -3192,16 +3192,16 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:143 base64_to_bytes",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:156 timestamp_to_rfc3339",
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:173 base64_to_bytes",
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:186 timestamp_to_rfc3339",
     "crates/a2a-protocol-server/src/portable.rs:13 standard_base64",
     "crates/a2a-protocol-server/src/portable.rs:28 inexact_number",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:115 make_portable",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:81 make_portable",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:624 InMemoryQueueWriter::write_in_order"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/proto_golden_fixtures.rs:137 golden_fixtures_from_official_sdk_roundtrip",
-    "crates/a2a-protocol-types/tests/proptest_proto_convert.rs:228 task_wire_roundtrip (proptest domain->prost bytes->domain round trip; the block holds one such property per type)",
+    "crates/a2a-protocol-types/tests/proptest_proto_convert.rs:233 task_wire_roundtrip (proptest domain->prost bytes->domain round trip; the block holds one such property per type)",
     "crates/a2a-protocol-server/tests/portable_content.rs:82 a_raw_part_that_is_not_base64_is_refused",
     "crates/a2a-protocol-server/tests/portable_content.rs:92 a_raw_part_is_kept_in_standard_base64",
     "crates/a2a-protocol-server/tests/portable_content.rs:102 an_integer_protobuf_cannot_carry_exactly_is_refused_wherever_it_is",
@@ -3608,7 +3608,7 @@
     "crates/a2a-protocol-server/src/error/mod.rs:212 ServerError::retry_after",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:892 with_detail_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:904 with_detail_data"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:646 bind_equiv_003",
@@ -3616,8 +3616,8 @@
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:372 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1372 status_to_error_keeps_a_struct_detail_as_data",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1432 status_to_error_keeps_field_violations_as_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1394 status_to_error_keeps_a_struct_detail_as_data",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1454 status_to_error_keeps_field_violations_as_data"
    ],
    "notes": "Single ErrorCode table drives HTTP status, gRPC code and JSON-RPC code. A malformed query value on HTTP+JSON is InvalidParams as on JSON-RPC and gRPC (2026-10-13); it was read as absent. A gRPC error carries its data as the JSON bindings do (2026-10-13): a BadRequest as google.rpc.BadRequest, any other data as a google.protobuf.Struct detail, and a stream's error as a unary call's. gRPC dropped data, and a stream's error was INTERNAL \"event queue error\", so a lagged stream could not be told from an executor failure; the gRPC client decodes the details back into data.",
    "auditor": "C",
@@ -3703,8 +3703,8 @@
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection_tests.rs:139 an_unbuildable_first_choice_falls_back_to_the_next_interface",
-    "crates/a2a-protocol-client/src/builder/selection_tests.rs:153 sync_build_falls_back_past_grpc"
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:161 an_unbuildable_first_choice_falls_back_to_the_next_interface",
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:175 sync_build_falls_back_past_grpc"
    ],
    "notes": "Fallback is build-time only (next interface when the chosen one cannot be constructed); there is no runtime fallback on connection failure.",
    "auditor": "C",
@@ -4051,18 +4051,22 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:40 stamp_status"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:40 stamp_status",
+    "crates/a2a-protocol-client/src/methods/status_timestamp.rs:13 utc",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:108 A2aClient::list_tasks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:170 an_offset_timestamp_is_rewritten_in_utc",
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:179 a_timestamp_that_is_not_iso_8601_is_refused",
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:130 a_status_without_a_timestamp_is_stamped_in_iso_8601_utc",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:197 a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:197 a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept",
+    "crates/a2a-protocol-client/tests/received_validation/wire.rs:46 list_tasks_sends_status_timestamp_after_in_utc",
+    "crates/a2a-protocol-client/tests/received_validation/wire.rs:102 list_tasks_refuses_a_timestamp_that_is_not_iso_8601_unsent"
    ],
    "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue. Since 2026-10-13 a timestamp is kept as written only in the canonical shape (T, Z, no offset): a lower-case t or z is rewritten as an offset is, and the parser reads RFC 3339 exactly as the gRPC conversion does, so a value served over JSON is one gRPC can carry.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 1236,
@@ -4073,10 +4077,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:216 unix_millis_to_iso8601"
+    "crates/a2a-protocol-types/src/lib.rs:217 unix_millis_to_iso8601"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:502 utc_now_has_millisecond_precision_and_z_suffix"
+    "crates/a2a-protocol-types/src/lib.rs:503 utc_now_has_millisecond_precision_and_z_suffix"
    ],
    "notes": "utc_now_iso8601 formats YYYY-MM-DDTHH:mm:ss.sssZ.",
    "auditor": "C",
@@ -4091,19 +4095,19 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:252 parse_iso8601_to_unix_millis",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:143 base64_to_bytes",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:156 timestamp_to_rfc3339",
+    "crates/a2a-protocol-types/src/lib.rs:253 parse_iso8601_to_unix_millis",
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:173 base64_to_bytes",
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:186 timestamp_to_rfc3339",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:115 refuse_unlistable"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:516 utc_now_roundtrips_through_parser",
-    "crates/a2a-protocol-types/src/lib.rs:531 parse_epoch_and_known_instants",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:519 timestamp_parses_offset_and_normalizes_to_utc",
-    "crates/a2a-protocol-types/src/proto/convert/mod.rs:539 timestamp_rejects_invalid_string",
+    "crates/a2a-protocol-types/src/lib.rs:517 utc_now_roundtrips_through_parser",
+    "crates/a2a-protocol-types/src/lib.rs:532 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:549 timestamp_parses_offset_and_normalizes_to_utc",
+    "crates/a2a-protocol-types/src/proto/convert/mod.rs:569 timestamp_rejects_invalid_string",
     "crates/a2a-protocol-types/tests/timestamp_parity.rs:32 the_json_parser_reads_what_the_grpc_conversion_reads",
-    "crates/a2a-protocol-types/src/lib.rs:639 parse_refuses_what_rfc_3339_does_not_allow",
-    "crates/a2a-protocol-types/src/lib.rs:610 parse_accepts_pre_epoch_dates_back_to_year_0",
+    "crates/a2a-protocol-types/src/lib.rs:640 parse_refuses_what_rfc_3339_does_not_allow",
+    "crates/a2a-protocol-types/src/lib.rs:611 parse_accepts_pre_epoch_dates_back_to_year_0",
     "crates/a2a-protocol-server/tests/pre_epoch_timestamps.rs:85 list_tasks_accepts_a_pre_epoch_filter"
    ],
    "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed). Until 2026-10-13 the parser was lenient (whitespace, unpadded or signed fields, an offset without minutes, 02-30 rolled into March) and refused every pre-1970 instant, so the JSON and gRPC bindings disagreed on such values and a 1969 statusTimestampAfter was InvalidParams. It now reads exactly what the time crate's RFC 3339 parser reads, checked over 1,655,808 strings, and the formatter writes pre-1970 instants as themselves.",
@@ -4120,10 +4124,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:252 parse_iso8601_to_unix_millis"
+    "crates/a2a-protocol-types/src/lib.rs:253 parse_iso8601_to_unix_millis"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:531 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:532 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/tests/optional_wire_forms.rs:28 timestamp_without_or_with_zero_filled_fraction_names_the_same_instant"
    ],
    "notes": "Parser accepts with and without fractional seconds. Asserts a timestamp with no fraction, and with .0, .000 and .000000, parses to the same millisecond instant while a non-zero fraction is read; shown able to fail by making parse_iso8601_to_unix_millis refuse a timestamp without a fraction (2026-10-20).",
@@ -4140,18 +4144,22 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:40 stamp_status"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:40 stamp_status",
+    "crates/a2a-protocol-client/src/methods/status_timestamp.rs:13 utc",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:108 A2aClient::list_tasks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:170 an_offset_timestamp_is_rewritten_in_utc",
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:179 a_timestamp_that_is_not_iso_8601_is_refused",
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:130 a_status_without_a_timestamp_is_stamped_in_iso_8601_utc",
-    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:197 a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept"
+    "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:197 a_lower_case_timestamp_is_rewritten_and_a_pre_epoch_one_kept",
+    "crates/a2a-protocol-client/tests/received_validation/wire.rs:46 list_tasks_sends_status_timestamp_after_in_utc",
+    "crates/a2a-protocol-client/tests/received_validation/wire.rs:102 list_tasks_refuses_a_timestamp_that_is_not_iso_8601_unsent"
    ],
    "notes": "Every executor event passes the queue writer, which stamps an empty status timestamp with UTC now, rewrites one with a non-Z offset to the same instant in UTC (millisecond precision), and refuses one that does not parse as ISO 8601. Until 2026-10-10 an executor-set value went out unchanged on JSON-RPC/REST/WebSocket. Not covered: a Task an application writes straight to the task store, bypassing the queue. Since 2026-10-13 a timestamp is kept as written only in the canonical shape (T, Z, no offset): a lower-case t or z is rewritten as an offset is, and the parser reads RFC 3339 exactly as the gRPC conversion does, so a value served over JSON is one gRPC can carry.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 1259,
@@ -4218,10 +4226,10 @@
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:170 HotReloadAgentCardHandler::reload_from_json",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:31 check_required_fields"
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36 check_required_fields"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array",
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:285 validate_refuses_each_empty_required_array",
     "crates/a2a-protocol-server/src/handler/input_modes.rs:225 nothing_is_enforced_without_a_card_or_a_declaration_or_when_opted_out",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/tests.rs:48 an_invalid_produced_card_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:548 reload_from_json_refuses_an_invalid_card",
@@ -4600,16 +4608,16 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/discovery.rs:171 CardFetchOptions::with_signature_keys",
-    "crates/a2a-protocol-client/src/discovery.rs:712 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:713 verify_card_signatures",
     "crates/a2a-protocol-client/src/discovery.rs:389 CachingCardResolver::with_options",
     "crates/a2a-protocol-client/src/builder/signed.rs:33 ClientBuilder::from_signed_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:75 a_signed_card_is_verified_when_keys_are_supplied",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:103 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:151 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:187 a_caching_resolver_verifies_with_its_options",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:212 a_client_built_from_a_signed_card_verifies_it"
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:76 a_signed_card_is_verified_when_keys_are_supplied",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:104 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:152 a_card_signed_over_a_field_this_sdk_does_not_model_is_accepted",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:188 a_caching_resolver_verifies_with_its_options",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:213 a_client_built_from_a_signed_card_verifies_it"
    ],
    "notes": "With CardFetchOptions::with_signature_keys (feature signing), resolve_agent_card_with_options and fetch_card_from_url_with_options return a signed card only if one signature verifies against the caller's keys; a tampered card or one with no matching key fails the fetch, and so does an unsigned card unless with_require_signature(false), which verifies signatures only when present (until 2026-10-14 an unsigned card was returned, so removing a card's signatures let an altered card through; audit register R9). Since 2026-10-14 the other two ways a client gets a card take keys too: CachingCardResolver::with_options(CardFetchOptions), and ClientBuilder::from_signed_card(json, keys) for a card the caller holds, which verifies the JSON as given (audit register, §14 line 3344). Verification needs keys only the application can trust, so it is opt-in on every path; jku is never followed (the card cannot vouch for its own keys, §8.4.3 line 2122). Since 2026-10-14 the fetch verifies the card as received, before reading it into an AgentCard; it verified the typed card, so a correctly signed card from a peer that models a field this SDK does not was refused.",
    "auditor": "C",
@@ -4704,7 +4712,7 @@
     "crates/a2a-protocol-client/tests/legacy_card.rs:55 a_v03_card_is_read_with_its_interfaces_and_extended_card",
     "crates/a2a-protocol-client/tests/legacy_card_warning.rs:96 a_legacy_card_is_warned_about_and_a_current_one_is_not",
     "crates/a2a-protocol-client/src/legacy_card.rs:217 the_current_form_is_left_as_it_is",
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:179 a_legacy_extended_card_is_read_in_its_current_form"
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:185 a_legacy_extended_card_is_read_in_its_current_form"
    ],
    "notes": "New names emitted. Dual-handling: legacy enum spellings and AgentCard.url parse (types crate aliases); since 2026-10-14 a fetched or extended card's v0.3 url, preferredTransport and additionalInterfaces fold into supportedInterfaces, and supportsAuthenticatedExtendedCard or App. A.2.2's supportsExtendedAgentCard is read as capabilities.extendedAgentCard (a field the v1.0 form sets wins), with a tracing warning naming each legacy field (legacy_card.rs). Not handled: App. A.2.1's kind discriminator on parts and stream events, which only a v0.3 interface sends; interface selection never picks one (ClientBuilder::from_card passes over a 0.3 interface for a 1.x one and refuses a card with none), so the client receives no such object. Before: no fallback for the extended-card field, url parsed but not folded, and no warning.",
    "auditor": "C",
@@ -5079,7 +5087,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/follow.rs:109 A2aClient::follow_task",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:186 A2aClient::subscribe_to_task",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:202 A2aClient::subscribe_to_task",
     "crates/a2a-protocol-client/src/methods/push_config.rs:73 A2aClient::set_push_config",
     "crates/a2a-protocol-client/src/webhook/receiver.rs:74 WebhookReceiver"
    ],
@@ -5262,13 +5270,13 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:171 ClientBuilder::from_card",
-    "crates/a2a-protocol-client/src/builder/selection.rs:75 candidates"
+    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:849 from_card_follows_the_cards_order",
     "crates/a2a-protocol-client/src/builder/mod.rs:794 an_empty_preference_list_takes_the_cards_first_interface",
     "crates/a2a-protocol-client/src/builder/selection_tests.rs:55 a_v03_interface_listed_first_is_passed_over_for_v10",
-    "crates/a2a-protocol-client/src/builder/selection_tests.rs:139 an_unbuildable_first_choice_falls_back_to_the_next_interface"
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:161 an_unbuildable_first_choice_falls_back_to_the_next_interface"
    ],
    "notes": "from_card applies no binding preference (it passed ClientConfig::default().preferred_bindings = [\"JSONRPC\"] until 2026-10-12, so a card listing [HTTP+JSON, JSONRPC] got JSONRPC). Among interfaces for protocol major 1 the card's order decides, and build() moves past one it cannot construct, which is what 'first supported' requires. from_card_preferring ranks bindings only when the caller asks it to.",
    "auditor": "D",
@@ -5285,7 +5293,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:171 ClientBuilder::from_card",
-    "crates/a2a-protocol-client/src/builder/selection.rs:75 candidates"
+    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:849 from_card_follows_the_cards_order",
@@ -5327,16 +5335,16 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring",
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:32 A2aClient::get_extended_agent_card"
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:336 rest_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/src/builder/mod.rs:925 switching_binding_carries_that_interfaces_tenant",
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
-    "crates/a2a-protocol-client/src/methods/mod.rs:218 no_tenant_anywhere_leaves_the_field_absent"
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:219 no_tenant_anywhere_leaves_the_field_absent"
    ],
    "notes": "Per-request params.tenant overrides the card value (user choice). gRPC/WS round-trip not covered by the e2e test.",
    "auditor": "D",
@@ -5441,12 +5449,12 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:175 AgentCapabilities",
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:435 AgentCard::try_from",
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:502 AgentCard::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:537 AgentCard::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/presence/tests.rs:183 the_specification_example_canonicalizes_as_published",
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:623 an_explicitly_empty_url_keeps_its_presence"
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:658 an_explicitly_empty_url_keeps_its_presence"
    ],
    "notes": "Option<bool> Some(false) serializes `false`; no test pins the spec example's `\"pushNotifications\":false,\"streaming\":false` in canonical output. The gRPC card conversion keeps an explicitly set empty iconUrl or documentationUrl (both `optional string` in a2a.proto) since 2026-10-13; it mapped Some(\"\") to None both ways, so a card read over gRPC lost what a signature over the JSON card had covered.",
    "auditor": "D",
@@ -5676,7 +5684,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json",
     "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks",
-    "crates/a2a-protocol-client/src/discovery.rs:712 verify_card_signatures"
+    "crates/a2a-protocol-client/src/discovery.rs:713 verify_card_signatures"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/card_signature_as_received.rs:97 a_received_cards_defaults_are_dropped_before_canonicalizing",
@@ -5755,12 +5763,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:712 verify_card_signatures",
+    "crates/a2a-protocol-client/src/discovery.rs:713 verify_card_signatures",
     "crates/a2a-protocol-client/src/discovery.rs:187 CardFetchOptions::with_require_signature"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:75 a_signed_card_is_verified_when_keys_are_supplied",
-    "crates/a2a-protocol-client/tests/card_signature_verification.rs:103 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied"
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:76 a_signed_card_is_verified_when_keys_are_supplied",
+    "crates/a2a-protocol-client/tests/card_signature_verification.rs:104 a_card_whose_signatures_were_removed_is_refused_when_keys_are_supplied"
    ],
    "notes": "Re-examined 2026-10-18: card discovery verifies signatures once keys are supplied (with_signature_keys, with_require_signature, from_signed_card) and refuses a card whose signatures were stripped. Which keys to trust stays the application's.",
    "auditor": "D",
@@ -5872,9 +5880,9 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/agent_card_caching.rs:80 the_axum_agent_card_is_cacheable_like_the_rest_one",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:83 a_fresh_card_is_served_without_a_request",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:95 a_card_past_its_max_age_is_revalidated",
-    "crates/a2a-protocol-client/tests/card_revalidation.rs:66 a_cached_card_is_revalidated_with_its_validators"
+    "crates/a2a-protocol-client/tests/card_freshness.rs:84 a_fresh_card_is_served_without_a_request",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:96 a_card_past_its_max_age_is_revalidated",
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:67 a_cached_card_is_revalidated_with_its_validators"
    ],
    "notes": "Server: the public card is cacheable on JSON-RPC, REST and axum (Cache-Control max-age, ETag), the extended card revalidates (private, no-cache, Vary: Authorization, ETag). Client: since 2026-10-15 CachingCardResolver is an RFC 9111 private cache of the public card: a fresh card is returned without a request, a stale one is revalidated with If-None-Match / If-Modified-Since (details in 2225). resolve_agent_card, fetch_card_from_url and their _with_options / _with_path variants are one-shot free functions with no state to keep a cache in; their rustdoc says they are uncached and points to CachingCardResolver, the SDK's caching mechanism. Counted as met on that reading: a caller that fetches a card repeatedly has the cache to use. Server impl_evidence re-cited 2026-10-15 to the lines that set the headers; the axum lines cited before had moved.",
    "auditor": "D",
@@ -5980,24 +5988,24 @@
     "crates/a2a-protocol-client/src/discovery/freshness.rs:137 is_fresh"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/card_freshness.rs:83 a_fresh_card_is_served_without_a_request",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:95 a_card_past_its_max_age_is_revalidated",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:117 a_304_renews_the_cards_freshness",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:142 a_no_cache_card_is_revalidated_on_every_resolve",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:156 a_no_store_card_is_fetched_again_however_fresh",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:170 always_revalidate_ignores_max_age",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:186 a_card_without_a_validator_is_kept_while_fresh",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:204 age_reduces_the_remaining_freshness",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:217 a_date_an_hour_old_is_an_hours_age",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:274 with_options_starts_a_new_cache",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:84 a_fresh_card_is_served_without_a_request",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:96 a_card_past_its_max_age_is_revalidated",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:118 a_304_renews_the_cards_freshness",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:143 a_no_cache_card_is_revalidated_on_every_resolve",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:157 a_no_store_card_is_fetched_again_however_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:171 always_revalidate_ignores_max_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:187 a_card_without_a_validator_is_kept_while_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:205 age_reduces_the_remaining_freshness",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:218 a_date_an_hour_old_is_an_hours_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:275 with_options_starts_a_new_cache",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:236 expires_counts_from_date_and_max_age_wins_over_it",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:262 an_invalid_or_past_expires_is_stale",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:274 no_cache_and_vary_star_are_never_fresh",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:324 the_age_is_the_larger_of_apparent_and_corrected_age",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:374 fresh_means_strictly_before_the_end_of_the_lifetime",
-    "crates/a2a-protocol-client/tests/card_revalidation.rs:98 a_no_store_card_is_not_kept",
-    "crates/a2a-protocol-client/tests/card_revalidation.rs:150 a_304_replaces_the_stored_validators",
-    "crates/a2a-protocol-client/tests/card_revalidation.rs:179 a_no_store_304_leaves_nothing_stored"
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:99 a_no_store_card_is_not_kept",
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:151 a_304_replaces_the_stored_validators",
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:180 a_no_store_304_leaves_nothing_stored"
    ],
    "notes": "Since 2026-10-15 CachingCardResolver honours freshness (RFC 9111 §4.2): a stored card is returned without a request while its age is less than its freshness lifetime, the lifetime being max-age, else Expires minus Date (§4.2.1; an invalid Expires is in the past, §5.3), and the age max(apparent_age, Age + response_delay) plus the time since arrival (§4.2.3). A stale card is revalidated with its validators, which a 304 replaces (§4.3.4, since 2026-10-13); the 304's own Cache-Control / Expires set the new freshness. no-cache and Vary: * revalidate on every resolve (§5.2.2.4, §4.1); no-store is not stored (§5.2.2.5, since 2026-10-12); a card is kept only with a validator or a lifetime. s-maxage and proxy-revalidate are shared-cache only; private permits this cache; must-revalidate holds because a stale card is never returned. Vary naming fields needs no handling: one resolver sends the same request fields on every fetch, and with_options (since 2026-10-15) starts a new cache, so a card stored under one credential is never returned for another; the resolver fetches the public card only, and an extended card (Vary: Authorization) is installed by the caller. with_always_revalidate(true) restores revalidation on every resolve. Deliberate simplifications, documented in discovery/freshness.rs: a 304 without Cache-Control or Expires leaves the card stale (§4.3.4 would carry the stored ones over; RFC 9110 §15.4.5 requires the 304 to send them), a qualified no-cache=\"field\" counts as unqualified, and there is no heuristic freshness except the opt-in default (2227). resolve_agent_card / fetch_card_from_url keep no cache (see 2215).",
    "auditor": "D",
@@ -6017,8 +6025,8 @@
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/discovery.rs:916 fetch_card_with_metadata_304_returns_cached",
-    "crates/a2a-protocol-client/tests/card_revalidation.rs:66 a_cached_card_is_revalidated_with_its_validators"
+    "crates/a2a-protocol-client/src/discovery.rs:932 fetch_card_with_metadata_304_returns_cached",
+    "crates/a2a-protocol-client/tests/card_revalidation.rs:67 a_cached_card_is_revalidated_with_its_validators"
    ],
    "notes": "CachingCardResolver revalidates on every resolve with If-None-Match and If-Modified-Since from the cached response; a server that answers 304 only to a request carrying both validators sees them on the second fetch. Shown to fail with the If-None-Match header removed.",
    "auditor": "D",
@@ -6038,9 +6046,9 @@
     "crates/a2a-protocol-client/src/discovery/freshness.rs:126 Freshness::fresh_until"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/card_freshness.rs:230 no_default_lifetime_unless_asked_for",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:241 the_default_lifetime_keeps_a_card_with_no_caching_headers_fresh",
-    "crates/a2a-protocol-client/tests/card_freshness.rs:258 the_default_lifetime_does_not_override_max_age",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:231 no_default_lifetime_unless_asked_for",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:242 the_default_lifetime_keeps_a_card_with_no_caching_headers_fresh",
+    "crates/a2a-protocol-client/tests/card_freshness.rs:259 the_default_lifetime_does_not_override_max_age",
     "crates/a2a-protocol-client/src/discovery/freshness.rs:356 the_default_lifetime_fills_only_a_missing_one"
    ],
    "notes": "Since 2026-10-15, opt-in: CachingCardResolver::with_default_freshness(lifetime) gives a card whose response has no max-age and no Expires that freshness lifetime (RFC 9111 §4.2.2 heuristic freshness), less any Age it arrived with, capped at 2^31 s. It never applies to a no-cache, Vary: * or no-store response, and is off by default, so without it such a card is revalidated on every resolve. The tests assert with_default_freshness keeps a card served without caching headers fresh and fills only a missing lifetime; shown able to fail by ignoring the default lifetime in fresh_until (2026-10-20).",
@@ -6085,15 +6093,20 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:71 build_sse_message_frame",
     "crates/a2a-protocol-server/src/streaming/sse.rs:363 build_sse_response",
-    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:301 JsonRpcDispatcher::dispatch_single_request_http"
+    "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:301 JsonRpcDispatcher::dispatch_single_request_http",
+    "crates/a2a-protocol-client/src/streaming/event_stream.rs:324 EventStream::expecting_id",
+    "crates/a2a-protocol-client/src/streaming/event_stream.rs:639 EventStream::decode_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/sse.rs:662 build_sse_response_has_correct_headers",
-    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response"
+    "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response",
+    "crates/a2a-protocol-client/tests/received_validation/stream_ids.rs:72 a_stream_frame_with_another_id_is_warned_about_once_and_delivered",
+    "crates/a2a-protocol-client/tests/received_validation/stream_ids.rs:80 a_stream_frame_echoing_the_request_id_is_not_warned_about"
    ],
-   "notes": "Frames are `id: <seq>\\nevent: message\\ndata: {jsonrpc,id,result}`; the extra `id:`/`event:` SSE fields are permitted by SSE and do not change the §9.4.2 data shape. Pre-stream errors are returned as plain application/json (deliberate, TCK-driven, jsonrpc/mod.rs:90-97).",
+   "notes": "Frames are `id: <seq>\\nevent: message\\ndata: {jsonrpc,id,result}`; the extra `id:`/`event:` SSE fields are permitted by SSE and do not change the §9.4.2 data shape. Pre-stream errors are returned as plain application/json (deliberate, TCK-driven, jsonrpc/mod.rs:90-97). Decision 2026-10-23 (WP-B): a JSON-RPC stream frame whose id does not echo the request's is warned about once and still delivered; the HTTP response already ties the stream to its request.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 2242,
@@ -6408,8 +6421,8 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:237 extract_metadata_ascii_keys",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1188 add_metadata_injects_a2a_version",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1203 add_metadata_injects_extra_headers",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1210 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1225 add_metadata_injects_extra_headers",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
    "notes": "Client puts a2a-version plus all interceptor headers into tonic metadata. The server copies ASCII metadata into the header map that the handler reads.",
@@ -6430,7 +6443,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1213 add_metadata_fails_closed_on_invalid_header",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1235 add_metadata_fails_closed_on_invalid_header",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:237 extract_metadata_ascii_keys",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
@@ -6522,7 +6535,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:158 a2a_error_status_carries_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1451 status_to_error_prefers_error_info_reason",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1473 status_to_error_prefers_error_info_reason",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:372 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
@@ -6725,7 +6738,7 @@
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:243 parse_list_tasks_query",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:82 list_push_configs_params",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:556 handle_list_tasks",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19 build_query_string"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:655 parse_list_tasks_query_all_params",
@@ -6752,16 +6765,18 @@
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:65 parse_query_param_u32",
     "crates/a2a-protocol-types/src/generated/task.rs:21 TaskState",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19 build_query_string"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:680 parse_list_tasks_query_with_status",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:128 build_query_string_handles_bool",
-    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks_tests.rs:108 list_tasks_invalid_status_timestamp_after_is_invalid_params"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:146 build_query_string_handles_bool",
+    "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks_tests.rs:108 list_tasks_invalid_status_timestamp_after_is_invalid_params",
+    "crates/a2a-protocol-client/tests/received_validation/wire.rs:46 list_tasks_sends_status_timestamp_after_in_utc"
    ],
    "notes": "Server also accepts `1` for true and legacy lowercase enum aliases. Both are lenient extensions.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 2888,
@@ -6772,12 +6787,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19 build_query_string",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:41 push_pair",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:59 push_pair",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:96 parse_query_param"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:162 build_query_string_repeats_an_array_parameter"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:194 build_query_string_repeats_an_array_parameter"
    ],
    "notes": "No v1.0 GET or DELETE request has a repeated field, so this has no wire effect today. Since 2026-10-15 the client sends an array by repeating the parameter, one per element (the first form the MAY names); it JSON-encoded the array (ids=%5B1%2C2%5D), which matched neither form. The server has no repeated field to read: parse_query_param returns a parameter's first occurrence, which is right for the single-valued fields every v1.0 route takes. Counted as SUPPORTED on that reading: what this SDK sends follows the MAY, and there is nothing for it to receive. Asserts the client sends an array query parameter by repeating its name; shown able to fail by JSON-encoding the array again (2026-10-20).",
    "auditor": "E",
@@ -6794,15 +6809,16 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/rest/routing.rs:34 route_for",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:19 build_query_string"
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:32 build_query_string"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:153 build_query_string_handles_nested_object",
-    "crates/a2a-protocol-client/src/transport/rest/routing.rs:144 all_routes_match_spec_url_patterns"
+    "crates/a2a-protocol-client/src/transport/rest/routing.rs:144 all_routes_match_spec_url_patterns",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:181 build_query_string_refuses_a_nested_object"
    ],
    "notes": "Every operation with nested fields (SendMessage, CreateTaskPushNotificationConfig, CancelTask metadata) is routed POST, so the MUST holds by route design. build_query_string would still JSON-encode a nested object into the query instead of refusing it (test pins this), which is latent rather than wire-observable.",
    "auditor": "E",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 2894,
@@ -6813,13 +6829,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:61 encode_query_value",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:79 encode_query_value",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:96 parse_query_param",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:116 percent_decode"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:87 encode_query_value_encodes_special_chars",
-    "crates/a2a-protocol-client/src/transport/rest/query.rs:99 build_query_string_encodes_values",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:105 encode_query_value_encodes_special_chars",
+    "crates/a2a-protocol-client/src/transport/rest/query.rs:117 build_query_string_encodes_values",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:312 percent_decode_encoded_chars"
    ],
    "notes": "Client encodes everything except RFC 3986 unreserved chars. Server percent-decodes values (and `+` as space). Query keys are compared undecoded, which is harmless for the camelCase ASCII keys.",
@@ -7651,7 +7667,6 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/push/sender.rs:478 authorization_header",
     "crates/a2a-protocol-server/src/push/sender.rs:478 authorization_header"
    ],
    "test_evidence": [
@@ -8261,15 +8276,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:32 A2aClient::get_extended_agent_card",
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card",
     "crates/a2a-protocol-client/src/client.rs:184 A2aClient::adopt_capabilities",
     "crates/a2a-protocol-client/src/discovery.rs:493 CachingCardResolver::install_extended_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:382 the_extended_card_replaces_the_capabilities_checked",
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:426 a_failed_extended_card_fetch_changes_nothing",
-    "crates/a2a-protocol-client/tests/capability_check_tests.rs:452 an_extended_card_does_not_turn_the_checks_on",
-    "crates/a2a-protocol-client/src/discovery.rs:1114 an_installed_extended_card_is_served_until_cleared"
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:385 the_extended_card_replaces_the_capabilities_checked",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:429 a_failed_extended_card_fetch_changes_nothing",
+    "crates/a2a-protocol-client/tests/capability_check_tests.rs:455 an_extended_card_does_not_turn_the_checks_on",
+    "crates/a2a-protocol-client/src/discovery.rs:1130 an_installed_extended_card_is_served_until_cleared"
    ],
    "notes": "The SDK caches a card in two places. A2aClient caches the capabilities it checks calls against (DeclaredCapabilities, from the card it was built from); since 2026-10-13 get_extended_agent_card replaces them with the extended card's (A2aClient::adopt_capabilities), keeping extendedAgentCard declared, and only when the client checks at all. Before, it kept the public card's, so a capability only the extended card declared was refused locally with CapabilityNotDeclared. The other, the resolver's, is replaced when the application calls CachingCardResolver::install_extended_card, which serves the extended card from resolve() until clear_extended_card() or invalidate(); the application decides when the session ends.",
    "auditor": "F",
@@ -8990,14 +9005,17 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/create.rs:187 RequestHandler::register_inline_push_config"
+    "crates/a2a-protocol-server/src/handler/messaging/create.rs:187 RequestHandler::register_inline_push_config",
+    "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/inline_push_config_tests.rs:135 inline_config_is_registered_against_the_created_task"
+    "crates/a2a-protocol-server/tests/inline_push_config_tests.rs:135 inline_config_is_registered_against_the_created_task",
+    "crates/a2a-protocol-client/tests/received_validation/wire.rs:118 an_inline_push_configs_task_id_is_not_sent"
    ],
    "notes": "Server is tolerant: it overwrites the inline config's task_id with the created task (`task_id: Some(task_id.0.clone()), ..inline`). Client does not clear a caller-set taskId (lowercase 'should', client-side, harmless given server override).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 152,
@@ -9071,15 +9089,22 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/task.rs:67 Task",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:268 Task::try_from",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:50 A2aClient::read_task"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:290 Task::try_from",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:50 A2aClient::read_task",
+    "crates/a2a-protocol-types/src/required.rs:90 check_task",
+    "crates/a2a-protocol-client/src/received.rs:29 task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/tck_wire_format.rs:334 tck_task_camel_case_fields"
+    "crates/a2a-protocol-types/tests/tck_wire_format.rs:334 tck_task_camel_case_fields",
+    "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
+    "crates/a2a-protocol-client/tests/received_validation/grpc.rs:38 a_task_missing_a_required_value_is_refused_over_grpc",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:81 a_task_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:38 a_task_missing_a_required_value_is_refused"
    ],
    "notes": "Server: TaskId is non-optional and server-minted (uuid), always serialized. Client JSON: missing `id` -> ClientError::Serialization (refuses, no panic); client gRPC: proto3 empty string tolerated as TaskId(\"\"). Not a request field, so no server rejection applies.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 173,
@@ -9090,7 +9115,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:268 Task::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:290 Task::try_from",
     "crates/a2a-protocol-types/src/generated/task.rs:67 Task"
    ],
    "test_evidence": [
@@ -9110,10 +9135,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/task.rs:67 Task",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:268 Task::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:290 Task::try_from"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:683 task_without_status_is_rejected",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:705 task_without_status_is_rejected",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:334 tck_task_camel_case_fields",
     "crates/a2a-protocol-types/tests/required_fields.rs:239 a_task_needs_id_and_status_but_not_context_id"
    ],
@@ -9167,19 +9192,25 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/task.rs:95 TaskStatus",
     "crates/a2a-protocol-types/src/task.rs:265 TaskState::can_transition_to",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:238 TaskStatus::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:256 TaskStatus::try_from",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:472 SyncCollector::process_event",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:60 check_status"
+    "crates/a2a-protocol-types/src/required.rs:151 check_status",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:93 required_enum"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:973 process_event_invalid_state_transition_returns_error",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:91 tck_task_state_rejects_invalid",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
+    "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
+    "crates/a2a-protocol-client/tests/received_validation/json.rs:149 a_streamed_event_missing_a_required_value_ends_the_stream",
+    "crates/a2a-protocol-client/tests/received_validation/grpc.rs:38 a_task_missing_a_required_value_is_refused_over_grpc",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:81 a_task_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/tests/proptest_proto_convert.rs:276 unspecified_state_and_role_are_refused"
    ],
    "notes": "Always serialized; the queue writer refuses an executor status update or task snapshot in Unspecified (since 2026-10-14, audit register R36; a snapshot bypassed the transition rule, so one was stored and served), and the processors refuse a transition into it (can_transition_to rule 2), from a status update or, since 2026-10-14, a task snapshot (audit register R36(b)). Client JSON missing -> serde error; gRPC 0 decodes as Unspecified (tolerated).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 225,
@@ -9191,14 +9222,14 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/message.rs:367 PartVisitor::visit_map",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:96 Part::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:110 Part::try_from",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:53 parse_params",
     "crates/a2a-protocol-server/src/portable.rs:13 standard_base64",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:187 portable_parts"
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:153 portable_parts"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:273 tck_part_requires_content_field",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:612 part_without_content_is_rejected",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:634 part_without_content_is_rejected",
     "crates/a2a-protocol-types/src/message.rs:953 part_deserialize_rejects_multiple_content_members",
     "crates/a2a-protocol-server/tests/portable_content.rs:82 a_raw_part_that_is_not_base64_is_refused",
     "crates/a2a-protocol-server/tests/portable_content.rs:92 a_raw_part_is_kept_in_standard_base64",
@@ -9244,12 +9275,12 @@
     "crates/a2a-protocol-types/src/generated/message.rs:89 Message",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/handler/ids.rs:60 validate_id",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:153 Message::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:167 Message::try_from",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:53 parse_params",
     "crates/a2a-protocol-server/src/dispatch/rest/mod.rs:563 RestDispatcher::handle_cancel_task",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:21 bad_request_response",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1250 dispatch_simple",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:72 check_message"
+    "crates/a2a-protocol-types/src/required.rs:169 check_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:2378 an_empty_message_id_is_refused",
@@ -9272,9 +9303,9 @@
     "crates/a2a-protocol-types/src/generated/message.rs:89 Message",
     "crates/a2a-protocol-types/src/generated/message.rs:14 MessageRole",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:66 MessageRole::try_from",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:153 Message::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:167 Message::try_from",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:72 check_message"
+    "crates/a2a-protocol-types/src/required.rs:169 check_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:2401 an_unspecified_role_is_refused",
@@ -9296,7 +9327,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/message.rs:89 Message",
     "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:72 check_message"
+    "crates/a2a-protocol-types/src/required.rs:169 check_message"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/tests.rs:503 empty_message_parts_returns_invalid_params",
@@ -9339,18 +9370,21 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/artifact.rs:11 Artifact",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:202 Artifact::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:220 Artifact::try_from",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:98 check_artifact_id"
+    "crates/a2a-protocol-types/src/required.rs:193 check_artifact"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format",
-    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused"
+    "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
+    "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
+    "crates/a2a-protocol-client/tests/received_validation/grpc.rs:38 a_task_missing_a_required_value_is_refused_over_grpc",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:81 a_task_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "Always serialized as `artifactId` (non-optional). An executor-written artifact (update or snapshot) with an empty artifactId is refused at the queue writer since 2026-10-14 (R36); until then it was stored and served. Client JSON refuses an artifact without artifactId; gRPC tolerates \"\".",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-14)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 287,
@@ -9362,10 +9396,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:624 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:31 check_required_fields",
+    "crates/a2a-protocol-server/src/streaming/event_queue/content.rs:36 check_required_fields",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:132 process_event_with",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:472 SyncCollector::process_event",
-    "crates/a2a-protocol-types/src/artifact.rs:117 Artifact::validate"
+    "crates/a2a-protocol-types/src/artifact.rs:117 Artifact::validate",
+    "crates/a2a-protocol-types/src/required.rs:193 check_artifact"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
@@ -9373,12 +9408,15 @@
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1292 an_appended_chunk_with_no_parts_is_dropped",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1229 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
-    "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts"
+    "crates/a2a-protocol-server/tests/audit_tests/public_api.rs:129 artifact_validate_rejects_empty_parts",
+    "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
+    "crates/a2a-protocol-client/tests/received_validation/grpc.rs:38 a_task_missing_a_required_value_is_refused_over_grpc",
+    "crates/a2a-protocol-types/src/required/tests.rs:38 a_task_missing_a_required_value_is_refused"
    ],
    "notes": "An artifact update with no parts is refused at the event-queue write (InvalidParams to the executor), so live subscribers never see it, and both processors drop one from any other writer. Since 2026-10-14 this holds for an appended chunk too (approved in the audit register): appends were exempt, and an empty chunk for an artifact id the task did not hold was stored as a zero-part artifact. The queue test and both processor tests failed before the change. The impl citations were re-pointed by reading the code: three of the six before pointed at unrelated lines.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/funny-heisenberg-e6tl83 (2026-10-14)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 288,
@@ -9389,14 +9427,19 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/generated/artifact.rs:11 Artifact"
+    "crates/a2a-protocol-types/src/generated/artifact.rs:11 Artifact",
+    "crates/a2a-protocol-types/src/required.rs:193 check_artifact"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format"
+    "crates/a2a-protocol-types/tests/tck_wire_format.rs:1034 tck_artifact_golden_format",
+    "crates/a2a-protocol-client/tests/received_validation/json.rs:65 a_task_missing_a_required_value_is_refused_on_every_json_binding",
+    "crates/a2a-protocol-client/tests/received_validation/grpc.rs:38 a_task_missing_a_required_value_is_refused_over_grpc",
+    "crates/a2a-protocol-types/src/required/tests.rs:38 a_task_missing_a_required_value_is_refused"
    ],
    "notes": "Field always serialized (Vec, no skip); client tolerates absence via serde(default). Non-emptiness covered in the line-287 entry.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 298,
@@ -9411,7 +9454,7 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:14 TaskStatusUpdateEvent",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:333 TaskStatusUpdateEvent::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
@@ -9435,7 +9478,7 @@
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:14 TaskStatusUpdateEvent",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:333 TaskStatusUpdateEvent::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
@@ -9455,9 +9498,9 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:349 TaskStatusUpdateEvent::try_from",
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from",
     "crates/a2a-protocol-types/src/generated/events.rs:14 TaskStatusUpdateEvent",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:333 TaskStatusUpdateEvent::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:371 TaskStatusUpdateEvent::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:214 a_grpc_update_event_without_its_status_or_artifact_is_refused",
@@ -9482,7 +9525,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:279 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:333 TaskStatusUpdateEvent::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
@@ -9507,7 +9550,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:279 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:333 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:333 TaskStatusUpdateEvent::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_identity.rs:59 empty_ids_are_filled_and_foreign_ones_refused",
@@ -9528,7 +9571,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
-    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:362 TaskArtifactUpdateEvent::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/messaging.rs:384 TaskArtifactUpdateEvent::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:214 a_grpc_update_event_without_its_status_or_artifact_is_refused",
@@ -9610,19 +9653,27 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection.rs:51 is_compatible",
+    "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:92 an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:111 an_interface_without_a_protocol_version_is_passed_over",
+    "crates/a2a-protocol-client/src/builder/selection.rs:137 compatibility_is_major_one_and_never_unstated"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 343,
@@ -9633,19 +9684,27 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection.rs:51 is_compatible",
+    "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:92 an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:111 an_interface_without_a_protocol_version_is_passed_over",
+    "crates/a2a-protocol-client/src/builder/selection.rs:137 compatibility_is_major_one_and_never_unstated"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 346,
@@ -9657,15 +9716,15 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring",
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/tasks.rs:50 A2aClient::read_task",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:99 A2aClient::list_tasks",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:108 A2aClient::list_tasks",
     "crates/a2a-protocol-client/src/methods/push_config.rs:73 A2aClient::set_push_config",
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:32 A2aClient::get_extended_agent_card"
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:336 rest_client_from_card_carries_tenant_on_every_request",
     "crates/a2a-protocol-client/src/builder/mod.rs:1205 builder_from_card_preserves_tenant",
@@ -9684,19 +9743,27 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/builder/selection.rs:51 is_compatible",
+    "crates/a2a-protocol-client/src/builder/selection.rs:54 is_compatible",
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
-    "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface"
+    "crates/a2a-protocol-types/src/generated/agent_card.rs:16 AgentInterface",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:92 an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-client/src/builder/selection_tests.rs:111 an_interface_without_a_protocol_version_is_passed_over",
+    "crates/a2a-protocol-client/src/builder/selection.rs:137 compatibility_is_major_one_and_never_unstated"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 364,
@@ -9712,15 +9779,20 @@
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
-    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:219 validate_empty_name_returns_error"
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:219 validate_empty_name_returns_error",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused"
    ],
    "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty name, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 368,
@@ -9736,17 +9808,21 @@
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
-    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
     "crates/a2a-protocol-types/src/agent_card/builders/tests.rs:23 new_produces_a_card_that_validates_once_it_has_a_description_and_a_skill",
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused"
    ],
    "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty description, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15; AgentCard::new leaves it empty until with_description, and such a card was served with \"description\": \"\". Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 370,
@@ -9760,7 +9836,7 @@
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-types/src/generated/agent_card.rs:76 AgentCard",
-    "crates/a2a-protocol-client/src/builder/selection.rs:75 candidates"
+    "crates/a2a-protocol-client/src/builder/selection.rs:78 candidates"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:386 builder_rejects_empty_interfaces_in_card",
@@ -9785,17 +9861,21 @@
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
     "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
-    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
     "crates/a2a-protocol-types/src/agent_card/builders/tests.rs:45 a_card_with_an_empty_version_is_refused",
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version"
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:424 builder_rejects_a_card_without_a_description_or_version",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused"
    ],
    "notes": "Non-optional field, always serialized. AgentCard::validate refuses an empty version, and RequestHandlerBuilder::build, hot reload and the dynamic card handler run it. Refused since 0.15. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 379,
@@ -9807,14 +9887,19 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:76 AgentCard",
-    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
+    "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:446 AgentCard::try_from"
    ],
    "test_evidence": [
-    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields"
+    "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:684 agent_card_missing_capabilities_is_refused",
+    "crates/a2a-protocol-client/tests/received_validation/grpc.rs:116 an_extended_card_without_capabilities_is_refused_over_grpc",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "Non-optional field, always serialized. Client JSON refuses a card missing the key (gRPC GetExtendedAgentCard defaults a missing capabilities, card.rs:453).",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 387,
@@ -9829,15 +9914,19 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:285 validate_refuses_each_empty_required_array",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 389,
@@ -9852,15 +9941,19 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:285 validate_refuses_each_empty_required_array",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 393,
@@ -9875,17 +9968,20 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "tck/src/tests/agent_card.rs:21 test_agent_card_required_fields",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:124 a_card_that_does_not_validate_is_refused",
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:285 validate_refuses_each_empty_required_array",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "Vec without skip_serializing_if: always emitted; client tolerates absence via serde(default). AgentCard::validate refuses an empty list (spec §5.7: a required array MUST contain at least one element), and build(), hot reload and the dynamic card handler run it, so the SDK serves none empty. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 404,
@@ -9897,15 +9993,19 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:159 AgentProvider",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:512 provider_and_skills_present"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 407,
@@ -9917,15 +10017,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:159 AgentProvider",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:512 provider_and_skills_present"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 428,
@@ -9959,15 +10062,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:198 AgentSkill",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:512 provider_and_skills_present"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 439,
@@ -9979,15 +10085,19 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:198 AgentSkill",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:512 provider_and_skills_present"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 441,
@@ -9999,15 +10109,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:198 AgentSkill",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:512 provider_and_skills_present"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 443,
@@ -10019,14 +10132,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/agent_card.rs:198 AgentSkill",
-    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate"
+    "crates/a2a-protocol-types/src/agent_card/mod.rs:117 AgentCard::validate",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/agent_card/tests.rs:271 validate_refuses_each_empty_required_array"
+    "crates/a2a-protocol-types/src/agent_card/tests.rs:285 validate_refuses_each_empty_required_array",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A missing tags key parses as empty on purpose (ProtoJSON printers omit empty repeated fields, so official SDKs send skills without it); AgentCard::validate refuses an empty list, so this SDK never publishes one.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 459,
@@ -10057,11 +10174,13 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 462,
@@ -10092,11 +10211,14 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/agent_card/tests.rs:232 validate_refuses_each_empty_required_string",
-    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse"
+    "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
+    "crates/a2a-protocol-client/tests/received_validation/cards.rs:75 a_discovered_card_that_breaks_a_publishing_rule_is_refused",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats"
    ],
    "notes": "A card missing the key does not parse, and AgentCard::validate (run by RequestHandlerBuilder::build, the dynamic card handler and hot reload) refuses it empty. Both tests shown to fail with the check removed (serde(default) on provider.url; dropping the skill description and signature checks). Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
-   "source": "proto"
+   "source": "proto",
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 470,
@@ -10107,11 +10229,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -10193,7 +10315,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:98 ApiKeySecurityScheme",
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:244 api_key_location_from_str"
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:246 api_key_location_from_str"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10219,7 +10341,9 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
@@ -10227,12 +10351,14 @@
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
-    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:124 a_card_that_does_not_validate_is_refused"
+    "crates/a2a-protocol-server/src/agent_card/static_handler.rs:124 a_card_that_does_not_validate_is_refused",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-13)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 534,
@@ -10267,19 +10393,23 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 546,
@@ -10291,10 +10421,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/security.rs:133 OAuth2SecurityScheme",
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:267 SecurityScheme::try_from"
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:269 SecurityScheme::try_from"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/proto/convert/card.rs:702 oauth2_missing_flows_rejected"
+    "crates/a2a-protocol-types/src/proto/convert/card.rs:744 oauth2_missing_flows_rejected"
    ],
    "notes": "Always serialized; gRPC missing -> ConvertError; JSON missing -> serde error.",
    "auditor": "G",
@@ -10310,10 +10440,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:125 SecurityScheme::validate",
-    "crates/a2a-protocol-types/src/security.rs:357 is_https_url"
+    "crates/a2a-protocol-types/src/security.rs:382 is_https_url"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security_url_tests.rs:76 the_oauth2_metadata_url_must_be_https"
+    "crates/a2a-protocol-types/src/security_url_tests.rs:78 the_oauth2_metadata_url_must_be_https"
    ],
    "notes": "Since 2026-10-18 SecurityScheme::validate, which the server runs on every card it publishes (build, static, dynamic, hot-reload and per-caller handlers), refuses an oauth2MetadataUrl that is not an https URL. The client still does not fetch the metadata.",
    "auditor": "G",
@@ -10334,19 +10464,23 @@
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 585,
@@ -10358,23 +10492,26 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:125 SecurityScheme::validate",
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 587,
@@ -10386,23 +10523,26 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:125 SecurityScheme::validate",
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 591,
@@ -10418,7 +10558,7 @@
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:466 oauth_flows_without_a_scopes_key_parse_as_empty"
+    "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty"
    ],
    "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty.",
    "auditor": "G",
@@ -10467,23 +10607,26 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:125 SecurityScheme::validate",
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 604,
@@ -10499,7 +10642,7 @@
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:466 oauth_flows_without_a_scopes_key_parse_as_empty"
+    "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty"
    ],
    "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty.",
    "auditor": "G",
@@ -10515,15 +10658,17 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate"
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:348 tls"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security_url_tests.rs:46 every_flow_url_given_must_be_a_url"
+    "crates/a2a-protocol-types/src/security_url_tests.rs:48 every_flow_url_given_must_be_a_url",
+    "crates/a2a-protocol-types/src/security_url_tests.rs:109 the_deprecated_flows_urls_must_be_https"
    ],
-   "notes": "Since 2026-10-18 every flow URL a published card gives (this one included; it is not REQUIRED, so an empty one is not checked) must be in the form scheme://authority (security.rs is_url, a shape check, not a parse).",
+   "notes": "Since 2026-10-18 every flow URL a published card gives (this one included; it is not REQUIRED, so an empty one is not checked) must be in the form scheme://authority (security.rs is_url, a shape check, not a parse). The same line's \"The OAuth2 standard requires the use of TLS\" is enforced: an http:// URL fails validation (2026-10-23, WP-B).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 612,
@@ -10534,15 +10679,17 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate"
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:348 tls"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security_url_tests.rs:46 every_flow_url_given_must_be_a_url"
+    "crates/a2a-protocol-types/src/security_url_tests.rs:48 every_flow_url_given_must_be_a_url",
+    "crates/a2a-protocol-types/src/security_url_tests.rs:109 the_deprecated_flows_urls_must_be_https"
    ],
-   "notes": "As for authorization_url: checked for URL form when given, since 2026-10-18.",
+   "notes": "As for authorization_url: checked for URL form when given, since 2026-10-18. The same line's \"The OAuth2 standard requires the use of TLS\" is enforced: an http:// URL fails validation (2026-10-23, WP-B).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 616,
@@ -10556,7 +10703,7 @@
     "crates/a2a-protocol-types/src/generated/security.rs:273 ImplicitFlow"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:466 oauth_flows_without_a_scopes_key_parse_as_empty",
+    "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty",
     "crates/a2a-protocol-types/tests/optional_wire_forms.rs:53 implicit_flow_scopes_may_be_empty_or_omitted"
    ],
    "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty. Asserts an implicit flow with scopes omitted or {} parses to an empty map and an empty map round-trips; shown able to fail by removing #[serde(default)] from ImplicitFlow.scopes (2026-10-20).",
@@ -10573,15 +10720,17 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate"
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:348 tls"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security_url_tests.rs:46 every_flow_url_given_must_be_a_url"
+    "crates/a2a-protocol-types/src/security_url_tests.rs:48 every_flow_url_given_must_be_a_url",
+    "crates/a2a-protocol-types/src/security_url_tests.rs:109 the_deprecated_flows_urls_must_be_https"
    ],
-   "notes": "Checked for URL form when given, since 2026-10-18 (the deprecated flow's fields are not REQUIRED).",
+   "notes": "Checked for URL form when given, since 2026-10-18 (the deprecated flow's fields are not REQUIRED). The same line's \"The OAuth2 standard requires the use of TLS\" is enforced: an http:// URL fails validation (2026-10-23, WP-B).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 625,
@@ -10592,15 +10741,17 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate"
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:348 tls"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security_url_tests.rs:46 every_flow_url_given_must_be_a_url"
+    "crates/a2a-protocol-types/src/security_url_tests.rs:48 every_flow_url_given_must_be_a_url",
+    "crates/a2a-protocol-types/src/security_url_tests.rs:109 the_deprecated_flows_urls_must_be_https"
    ],
-   "notes": "Checked for URL form when given, since 2026-10-18.",
+   "notes": "Checked for URL form when given, since 2026-10-18. The same line's \"The OAuth2 standard requires the use of TLS\" is enforced: an http:// URL fails validation (2026-10-23, WP-B).",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 629,
@@ -10614,7 +10765,7 @@
     "crates/a2a-protocol-types/src/generated/security.rs:294 PasswordOAuthFlow"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:466 oauth_flows_without_a_scopes_key_parse_as_empty",
+    "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty",
     "crates/a2a-protocol-types/tests/optional_wire_forms.rs:78 password_flow_scopes_may_be_empty_or_omitted"
    ],
    "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty. Asserts a password flow with scopes omitted or {} parses to an empty map and an empty map round-trips; shown able to fail by removing #[serde(default)] from PasswordOAuthFlow.scopes (2026-10-20).",
@@ -10632,23 +10783,26 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:125 SecurityScheme::validate",
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 640,
@@ -10660,23 +10814,26 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/security.rs:125 SecurityScheme::validate",
-    "crates/a2a-protocol-types/src/security.rs:296 OAuthFlows::validate",
+    "crates/a2a-protocol-types/src/security.rs:299 OAuthFlows::validate",
     "crates/a2a-protocol-types/src/agent_card/mod.rs:186 AgentCard::validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:943 RequestHandlerBuilder::build",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:127 HotReloadAgentCardHandler::try_update",
-    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card"
+    "crates/a2a-protocol-server/src/agent_card/dynamic_handler/mod.rs:54 DynamicAgentCardHandler::valid_card",
+    "crates/a2a-protocol-types/src/required.rs:139 check_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
     "crates/a2a-protocol-server/src/builder.rs:1675 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
-    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served"
+    "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
+    "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
+    "crates/a2a-protocol-types/src/required/tests.rs:149 a_card_is_held_to_the_publishing_rules"
    ],
    "notes": "A card missing the key does not parse (tested for every scheme and flow field). Present but empty it parses, as it must: over gRPC an absent proto3 string arrives empty. Since 2026-10-12 AgentCard::validate_security_schemes refuses it, naming the field, and RequestHandlerBuilder::build, HotReloadAgentCardHandler::reload_from_json and DynamicAgentCardHandler (500) run it, so a server does not publish such a card. A client accepts a peer's card with the field empty; REQUIRED binds the card's producer. Before: AgentCard::validate is const and cannot walk the securitySchemes map, so nothing checked it. Since 2026-10-13 StaticAgentCardHandler::new runs the same checks (InvalidParams); a card handed to it directly was served unchecked.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/tender-cray-bsfw83 (2026-10-12)"
+   "changed_by": "claude/zealous-fermat-f4kg9z (2026-10-23, WP-B)"
   },
   {
    "spec_line": 644,
@@ -10692,7 +10849,7 @@
     "crates/a2a-protocol-client/src/discovery.rs:539 fetch_card_with_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/security.rs:466 oauth_flows_without_a_scopes_key_parse_as_empty"
+    "crates/a2a-protocol-types/src/security.rs:491 oauth_flows_without_a_scopes_key_parse_as_empty"
    ],
    "notes": "#[serde(default)] on every flow's scopes: an omitted (empty) map parses as empty.",
    "auditor": "G",
@@ -10709,11 +10866,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -10755,11 +10912,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -10843,11 +11000,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -10869,9 +11026,11 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
     "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params",
-    "crates/a2a-protocol-server/tests/optional_features/list_page_size.rs:24 list_tasks_may_return_fewer_than_the_page_size_asked_for"
+    "crates/a2a-protocol-server/tests/optional_features/list_page_size.rs:24 list_tasks_may_return_fewer_than_the_page_size_asked_for",
+    "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs:211 list_tasks_page_size_zero_is_invalid_params",
+    "crates/a2a-protocol-server/tests/support/list_proto.rs:36 list_follows_the_proto"
    ],
-   "notes": "A pageSize outside a2a.proto's 1 to 100 is InvalidParams (2026-10-13; it was clamped to 1000, and 0 read as 50). Within the range a store returns fewer only when configured with a max_page_size below the size asked; every built-in store caps at its max_page_size, DEFAULT_MAX_PAGE_SIZE (1000) by default. Asserts pageSize 4 against a store with max_page_size 2 returns pages of 2, 2, 1 with tokens and lists all 5 tasks once; shown able to fail by not capping the in-memory store's page at max_page_size ([4, 1]) (2026-10-20).",
+   "notes": "A pageSize outside a2a.proto's 1 to 100 is InvalidParams (2026-10-13; it was clamped to 1000, and 0 read as 50). Within the range a store returns fewer only when configured with a max_page_size below the size asked; every built-in store caps at its max_page_size, DEFAULT_MAX_PAGE_SIZE (1000) by default. Asserts pageSize 4 against a store with max_page_size 2 returns pages of 2, 2, 1 with tokens and lists all 5 tasks once; shown able to fail by not capping the in-memory store's page at max_page_size ([4, 1]) (2026-10-20). The neighbouring lines bound page_size to 1..100 with a default of 50; the cited tests assert all three (2026-10-23, WP-B).",
    "auditor": "G",
    "source": "proto",
    "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
@@ -10967,11 +11126,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11016,11 +11175,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11085,11 +11244,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11149,11 +11308,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11198,11 +11357,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
@@ -11240,11 +11399,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:31 A2aClient::tenant_or_default",
+    "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/builder/mod.rs:215 ClientBuilder::from_card_preferring"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/methods/mod.rs:153 card_tenant_is_sent_on_every_request",
+    "crates/a2a-protocol-client/src/methods/mod.rs:154 card_tenant_is_sent_on_every_request",
     "crates/a2a-protocol-client/tests/tenant_round_trip_tests.rs:313 jsonrpc_client_from_card_carries_tenant_on_every_request"
    ],
    "notes": "Same mechanism as the line-346 entry; the default comes from the card. Caveat: an explicit per-request tenant that differs from the card's value is sent as given (user override, not SDK-initiated).",
