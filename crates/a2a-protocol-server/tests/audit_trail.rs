@@ -152,6 +152,11 @@ async fn every_call_and_event_is_recorded_and_attributable() {
     assert_eq!(calls.len(), 3, "{records:#?}");
     assert_eq!(calls[0].outcome.as_ref().unwrap().status, "error");
     assert!(calls[0].actor.is_none(), "a refused caller has no identity");
+    assert_eq!(
+        calls[0].outcome.as_ref().unwrap().error.as_deref(),
+        Some("unauthenticated"),
+        "the refusal is named for what it was, not `protocol`"
+    );
     assert_eq!(calls[1].outcome.as_ref().unwrap().status, "ok");
     let alice = calls[1].actor.as_ref().unwrap();
     assert_eq!(alice.subject, "bearer:alice@example.test");

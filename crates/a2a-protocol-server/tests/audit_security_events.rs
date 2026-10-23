@@ -139,6 +139,13 @@ async fn an_authorization_denial_is_recorded_with_the_denied_caller() {
         "error",
         "{denied:#?}"
     );
+    // Denied, not unauthenticated: the credential was valid (spec §3.3.2).
+    // Both were recorded as `protocol` until 0.15.
+    assert_eq!(
+        denied.outcome.as_ref().unwrap().error.as_deref(),
+        Some("permission_denied"),
+        "{denied:#?}"
+    );
     // Who was denied: the authenticated caller, not an anonymous one.
     assert_eq!(
         denied.actor.as_ref().map(|a| a.subject.as_str()),

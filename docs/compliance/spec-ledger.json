@@ -1621,7 +1621,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-types/src/error.rs:32 ErrorCode",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:45 error_response_bytes",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:135 server_error_to_response",
@@ -1670,7 +1670,7 @@
     "crates/a2a-protocol-server/src/auth/mod.rs:404 BearerTokenAuthInterceptor::before",
     "crates/a2a-protocol-server/src/auth/mod.rs:272 ApiKeyAuthInterceptor::before",
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/handler/unreadable.rs:54 RequestHandler::admit_unreadable"
    ],
    "test_evidence": [
@@ -1755,7 +1755,7 @@
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
     "crates/a2a-protocol-server/src/auth/jwt.rs:355 JwtValidator::require_scope",
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
    "test_evidence": [
@@ -1933,14 +1933,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status",
     "crates/a2a-protocol-server/src/sql_error.rs:29 sql_error",
-    "crates/a2a-protocol-server/src/error/mod.rs:235 ServerError::not_retry_safe"
+    "crates/a2a-protocol-server/src/error/mod.rs:248 ServerError::not_retry_safe"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:330 server_error_overloaded_maps_to_503",
-    "crates/a2a-protocol-server/src/error/tests.rs:458 an_overload_body_names_resource_exhausted",
+    "crates/a2a-protocol-server/src/error/tests.rs:470 an_overload_body_names_resource_exhausted",
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs:84 a_throttled_rest_call_is_429_with_retry_after",
     "crates/a2a-protocol-server/tests/sql_transient_errors.rs:56 http_json_answers_a_starved_store_503_unavailable",
     "crates/a2a-protocol-server/tests/sql_transient_errors.rs:106 a_call_a_client_may_not_repeat_is_not_called_temporary"
@@ -2058,14 +2058,14 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
     "crates/a2a-protocol-types/src/error.rs:99 ErrorCode::a2a_reason",
-    "crates/a2a-protocol-server/src/error/mod.rs:287 ServerError::to_a2a_error"
+    "crates/a2a-protocol-server/src/error/mod.rs:300 ServerError::to_a2a_error"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:73 jsonrpc_invalid_params_name_the_field",
     "crates/a2a-protocol-types/src/error.rs:1092 a2a_reason_all_a2a_variants_distinct_and_non_empty",
     "crates/a2a-protocol-server/tests/bad_request_details.rs:109 a_handler_check_names_the_field_over_http_json",
     "crates/a2a-protocol-server/tests/bad_request_details.rs:124 a_handler_check_names_the_field_over_jsonrpc",
-    "crates/a2a-protocol-server/src/error/tests.rs:468 an_invalid_field_is_invalid_params_with_a_bad_request_detail"
+    "crates/a2a-protocol-server/src/error/tests.rs:480 an_invalid_field_is_invalid_params_with_a_bad_request_detail"
    ],
    "notes": "ErrorInfo on every A2A-specific error. Since ef31df9 a body or params that do not deserialize carry google.rpc.BadRequest with the field path (jsonrpc_error_details.rs, bad_request_details.rs). Since 2026-10-14 (audit register, the §3.3.2 row) the handler's own request checks carry a BadRequest naming the field too, through the new ServerError::InvalidField: ids (empty, too long, reference_task_ids), message.role, message.parts, every metadata and number-range check, a part's raw, the push config's required ids, taskId, url, authentication.scheme, token and credentials, ListTasks pageSize and statusTimestampAfter, and the REST query parameters. They named the field in the message only. Errors that name no single field (a per-task config limit, a card refused at build()) stay InvalidParams.",
    "auditor": "B",
@@ -3655,8 +3655,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
-    "crates/a2a-protocol-server/src/error/mod.rs:212 ServerError::retry_after",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:225 ServerError::retry_after",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail",
     "crates/a2a-protocol-client/src/transport/grpc.rs:904 with_detail_data"
@@ -3773,7 +3773,7 @@
     "crates/a2a-protocol-types/src/error.rs:32 ErrorCode",
     "crates/a2a-protocol-types/src/error.rs:198 ErrorCode::http_status",
     "crates/a2a-protocol-types/src/error.rs:217 ErrorCode::grpc_status",
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:141 error_response"
    ],
@@ -4645,12 +4645,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:595 verify_agent_card"
+    "crates/a2a-protocol-types/src/signing.rs:626 verify_agent_card"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:77 canonicalize_sorts_object_keys_lexicographically",
     "crates/a2a-protocol-types/tests/signing_tests.rs:315 sign_and_verify_roundtrip",
-    "crates/a2a-protocol-types/tests/signing_tests.rs:411 verify_rejects_tampered_card",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:412 verify_rejects_tampered_card",
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does"
    ],
    "notes": "Signing/verification in a2a-protocol-types::signing. The tests assert a card signed with ES256 verifies, a tampered card does not, and a card carrying signatures verifies against a key set; shown able to fail by making the JWS verification ignore its result (the rejection tests fail) and by trying only the first signature (the multi-signature test fails) (2026-10-20).",
@@ -4927,7 +4927,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:82 BEARER_CHALLENGE",
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
@@ -5426,7 +5426,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/tests/signing_tests.rs:315 sign_and_verify_roundtrip",
-    "crates/a2a-protocol-types/tests/signing_tests.rs:411 verify_rejects_tampered_card",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:412 verify_rejects_tampered_card",
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:150 a_jwks_verifies_by_kid_and_alg"
    ],
    "notes": "ES256 and EdDSA signers (signing feature). The tests assert ES256 and EdDSA signatures verify and a tampered card does not; shown able to fail by making the JWS verification ignore its result (2026-10-20).",
@@ -5452,7 +5452,7 @@
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:85 rfc8785_appendix_b_from_json_text",
     "crates/a2a-protocol-types/tests/rfc8785_vectors.rs:167 rfc8785_section_3_2_3_sort_order",
     "crates/a2a-protocol-types/tests/signing_tests.rs:315 sign_and_verify_roundtrip",
-    "crates/a2a-protocol-types/src/signing.rs:997 a_signature_with_crit_is_refused"
+    "crates/a2a-protocol-types/src/signing.rs:1028 a_signature_with_crit_is_refused"
    ],
    "notes": "JCS itself is implemented and vector-tested; see 2012/2016 for the pre-canonicalization default-stripping it is fed without.",
    "auditor": "D",
@@ -5600,7 +5600,7 @@
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:882 sign_and_verify_card_in_wire_shape"
+    "crates/a2a-protocol-types/src/signing.rs:913 sign_and_verify_card_in_wire_shape"
    ],
    "notes": "",
    "auditor": "D",
@@ -5619,8 +5619,8 @@
     "crates/a2a-protocol-types/src/signing.rs:399 sign_card_es256"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/signing_tests.rs:364 protected_header_carries_alg_typ_and_kid",
-    "crates/a2a-protocol-types/tests/signing_tests.rs:352 eddsa_protected_header_carries_alg_typ_and_kid"
+    "crates/a2a-protocol-types/tests/signing_tests.rs:365 protected_header_carries_alg_typ_and_kid",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:353 eddsa_protected_header_carries_alg_typ_and_kid"
    ],
    "notes": "",
    "auditor": "D",
@@ -5637,11 +5637,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:316 protected_header",
     "crates/a2a-protocol-types/src/signing.rs:399 sign_card_es256",
-    "crates/a2a-protocol-types/src/signing.rs:417 sign_card_ed25519"
+    "crates/a2a-protocol-types/src/signing.rs:448 sign_card_ed25519"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/signing_tests.rs:364 protected_header_carries_alg_typ_and_kid",
-    "crates/a2a-protocol-types/tests/signing_tests.rs:352 eddsa_protected_header_carries_alg_typ_and_kid",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:365 protected_header_carries_alg_typ_and_kid",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:353 eddsa_protected_header_carries_alg_typ_and_kid",
     "crates/a2a-protocol-types/tests/tck_card_signing.rs:157 card_sign_003_every_signer_writes_alg_and_kid"
    ],
    "notes": "sign_card_es256/sign_card_ed25519 take the kid as &str; the kid-optional sign_agent_card(_ed25519) were removed in 0.15.0.",
@@ -5661,8 +5661,8 @@
     "crates/a2a-protocol-types/src/signing.rs:316 protected_header"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/signing_tests.rs:364 protected_header_carries_alg_typ_and_kid",
-    "crates/a2a-protocol-types/tests/signing_tests.rs:352 eddsa_protected_header_carries_alg_typ_and_kid"
+    "crates/a2a-protocol-types/tests/signing_tests.rs:365 protected_header_carries_alg_typ_and_kid",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:353 eddsa_protected_header_carries_alg_typ_and_kid"
    ],
    "notes": "Both signers write `typ: \"JOSE\"` in the protected header (protected_header).",
    "auditor": "D",
@@ -5678,12 +5678,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:439 sign_card_es256_with_jku",
-    "crates/a2a-protocol-types/src/signing.rs:455 sign_card_ed25519_with_jku",
+    "crates/a2a-protocol-types/src/signing.rs:470 sign_card_es256_with_jku",
+    "crates/a2a-protocol-types/src/signing.rs:486 sign_card_ed25519_with_jku",
     "crates/a2a-protocol-types/src/signing.rs:316 protected_header"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:1072 signature_header_reads_jku_from_a_foreign_signer",
+    "crates/a2a-protocol-types/src/signing.rs:1103 signature_header_reads_jku_from_a_foreign_signer",
     "crates/a2a-protocol-types/tests/signing_jku.rs:46 the_jku_is_in_the_signed_header_and_the_card_still_verifies",
     "crates/a2a-protocol-types/tests/signing_jku.rs:85 a_jku_that_is_not_https_is_refused",
     "crates/a2a-protocol-types/tests/signing_jku.rs:76 ed25519_carries_the_jku_too"
@@ -5702,8 +5702,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:666 verify_card_with_jwks",
-    "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks"
+    "crates/a2a-protocol-types/src/signing.rs:697 verify_card_with_jwks",
+    "crates/a2a-protocol-types/src/signing.rs:718 verify_card_json_with_jwks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does"
@@ -5722,7 +5722,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:501 signature_header",
+    "crates/a2a-protocol-types/src/signing.rs:532 signature_header",
     "crates/a2a-protocol-types/src/signing/keys.rs:264 Jwks::candidates",
     "crates/a2a-protocol-client/src/jwks.rs:58 fetch_jwks"
    ],
@@ -5745,7 +5745,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json",
-    "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks",
+    "crates/a2a-protocol-types/src/signing.rs:718 verify_card_json_with_jwks",
     "crates/a2a-protocol-client/src/discovery.rs:739 verify_card_signatures"
    ],
    "test_evidence": [
@@ -5769,7 +5769,7 @@
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:882 sign_and_verify_card_in_wire_shape"
+    "crates/a2a-protocol-types/src/signing.rs:913 sign_and_verify_card_in_wire_shape"
    ],
    "notes": "",
    "auditor": "D",
@@ -5784,7 +5784,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks",
+    "crates/a2a-protocol-types/src/signing.rs:718 verify_card_json_with_jwks",
     "crates/a2a-protocol-types/src/signing.rs:90 canonicalize_card_json"
    ],
    "test_evidence": [
@@ -5803,13 +5803,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:713 verify_with",
-    "crates/a2a-protocol-types/src/signing.rs:501 signature_header"
+    "crates/a2a-protocol-types/src/signing.rs:744 verify_with",
+    "crates/a2a-protocol-types/src/signing.rs:532 signature_header"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/tests/signing_tests.rs:411 verify_rejects_tampered_card",
-    "crates/a2a-protocol-types/tests/signing_tests.rs:444 verify_rejects_wrong_public_key",
-    "crates/a2a-protocol-types/src/signing.rs:997 a_signature_with_crit_is_refused"
+    "crates/a2a-protocol-types/tests/signing_tests.rs:412 verify_rejects_tampered_card",
+    "crates/a2a-protocol-types/tests/signing_tests.rs:445 verify_rejects_wrong_public_key",
+    "crates/a2a-protocol-types/src/signing.rs:1028 a_signature_with_crit_is_refused"
    ],
    "notes": "The signature is JWS (RFC 7515), whose §4.1.11 makes a JWS naming in crit an extension the recipient does not understand invalid. This verifier understands none, so since 2026-10-13 any crit, in the protected header or the unprotected one (where it may not appear), is refused; it was ignored, and a signature with crit [\"exp\"] verified forever.",
    "auditor": "D",
@@ -5915,7 +5915,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:700 verify_any"
+    "crates/a2a-protocol-types/src/signing.rs:731 verify_any"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/signing/keys/tests.rs:254 a_card_verifies_when_any_of_its_signatures_does"
@@ -8753,7 +8753,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/audit_security_events.rs:119 an_authorization_denial_is_recorded_with_the_denied_caller",
-    "crates/a2a-protocol-server/tests/audit_security_events.rs:151 a_malformed_request_is_recorded_as_refused",
+    "crates/a2a-protocol-server/tests/audit_security_events.rs:158 a_malformed_request_is_recorded_as_refused",
     "crates/a2a-protocol-server/tests/audit_trail.rs:113 every_call_and_event_is_recorded_and_attributable"
    ],
    "notes": "Opt-in audit feature records every call with outcome.",
@@ -8793,8 +8793,8 @@
     "crates/a2a-protocol-server/src/audit/log.rs:46 AuditLog"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/audit_trail.rs:221 a_cancel_request_names_who_asked",
-    "crates/a2a-protocol-server/tests/audit_trail.rs:394 each_tenant_gets_its_own_chain"
+    "crates/a2a-protocol-server/tests/audit_trail.rs:226 a_cancel_request_names_who_asked",
+    "crates/a2a-protocol-server/tests/audit_trail.rs:399 each_tenant_gets_its_own_chain"
    ],
    "notes": "Hash-chained per-tenant audit log (feature `audit`, opt-in).",
    "auditor": "F",
@@ -8856,7 +8856,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:135 server_error_to_response",
     "crates/a2a-protocol-server/src/rate_limit/window.rs:36 RateLimitInterceptor::refusal",
-    "crates/a2a-protocol-server/src/error/mod.rs:176 ServerError::http_status"
+    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs:84 a_throttled_rest_call_is_429_with_retry_after",
@@ -11507,8 +11507,8 @@
     "crates/a2a-protocol-types/src/signing.rs:51 canonicalize"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/signing.rs:1171 canonicalize_sorts_keys_by_utf16_code_units",
-    "crates/a2a-protocol-types/src/signing.rs:1198 canonicalize_numbers_use_ecmascript_formatting"
+    "crates/a2a-protocol-types/src/signing.rs:1202 canonicalize_sorts_keys_by_utf16_code_units",
+    "crates/a2a-protocol-types/src/signing.rs:1229 canonicalize_numbers_use_ecmascript_formatting"
    ],
    "notes": "Added 2026-10-10: the auditors left this line without an entry.",
    "auditor": "M",

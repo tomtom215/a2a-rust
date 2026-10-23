@@ -1495,6 +1495,19 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Behaviour Changes
 
+- **A refused call is recorded, and counted, for why it was refused**
+  (server; spec §3.3.2; audit WP-A). `ServerError::metric_label`, which
+  names an error in the audit trail's `call` records and in
+  `a2a.server.errors`, answered `protocol` for every A2A error a binding
+  sent as it was, so a missing credential and a denied operation were one
+  record. It now answers `unauthenticated` or `permission_denied` for a
+  refused credential and the error code's label (`version_not_supported`,
+  `content_type_not_supported`, …) for any other. A dashboard or query that
+  matched `protocol` matches these instead. Tests: `error/tests.rs`
+  `a_protocol_error_is_labelled_for_what_it_says`;
+  `tests/audit_trail.rs`, `tests/audit_security_events.rs` (each fails with
+  the old label).
+
 - **SLIMRPC: the binding takes the server at its default features, and an
   opt-in `otlp` feature builds the SDK's `Telemetry` into `slim-node` and
   `examples/in_process`** (`a2a-protocol-slimrpc`). The server dependency

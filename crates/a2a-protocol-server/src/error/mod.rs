@@ -146,7 +146,20 @@ impl ServerError {
             Self::PushNotSupported => "push_not_supported",
             Self::Internal(_) => "internal",
             Self::MethodNotFound(_) => "method_not_found",
-            Self::Protocol(_) => "protocol",
+            // The A2A error the binding answers with, named by what it says:
+            // a refused credential by its kind (spec §3.3.2 tells the two
+            // apart, and so must an audit record or an alert on failed
+            // logins), anything else by its code. Until 0.15 every one was
+            // `protocol`, so a wrong password and a forbidden operation
+            // were one record (audit WP-A, 2026-10-23).
+            Self::Protocol(e) => match e.auth_rejection() {
+                Some(r) => match r.kind() {
+                    a2a_protocol_types::AuthRejectionKind::Unauthenticated => "unauthenticated",
+                    a2a_protocol_types::AuthRejectionKind::PermissionDenied => "permission_denied",
+                    _ => e.metric_label(),
+                },
+                None => e.metric_label(),
+            },
             Self::PayloadTooLarge(_) => "payload_too_large",
             Self::UnsupportedOperation(_) => "unsupported_operation",
             Self::InvalidStateTransition { .. } => "invalid_state_transition",

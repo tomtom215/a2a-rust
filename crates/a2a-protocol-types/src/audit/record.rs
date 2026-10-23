@@ -105,7 +105,8 @@ impl TraceRef {
 pub struct Outcome {
     /// `"ok"`, `"error"`, or `"cancelled"` (the caller went away unanswered).
     pub status: String,
-    /// The error's name, when it failed (`"TaskNotFound"`, `"Unauthenticated"`).
+    /// The error's label, when it failed (`"task_not_found"`,
+    /// `"unauthenticated"`, `"permission_denied"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
