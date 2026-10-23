@@ -46,9 +46,10 @@ only: when something here is done, delete it rather than annotating it.
   pending in `.github/workflows/`: the Regression Gate's 150% override for
   the payload serialize benchmarks (`b6bd6350`; the swing is the runner's,
   measured on byte-identical binaries) and a 1800s mutation build timeout
-  (`231f7d8e`). Open: `scripts/prove_gates_fail.sh` exits 2 because the
-  crypto-interop gate `bb7518b3` added has no registered defect injection;
-  CI does not run that script.
+  (`231f7d8e`). The crypto-interop gate `bb7518b3` added had no defect
+  injection, so `scripts/prove_gates_fail.sh` exited 2; it now has one (a
+  push config sealed under a context other than the stated one), as a
+  follow-up to this pull request.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the

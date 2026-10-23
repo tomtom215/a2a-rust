@@ -403,6 +403,8 @@ injection_for() {
             echo "advisory_floors" ;;
         *"check_lockfiles.sh"*)
             echo "lockfiles" ;;
+        *"crypto_interop/check.py"*)
+            echo "crypto_interop" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -548,6 +550,10 @@ expected_marker() {
         store_delta_forwarding) echo "overrides \`save_status_delta\` but not \`try_save_status_delta\`" ;;
         readme_doctests)  echo "crates/a2a-protocol-client/src/lib.rs: README.md is not included" ;;
         gate_reachability) echo "unreachable:ci.yml" ;;
+        # The AES-GCM tag refusing the stated context, not a fixture that
+        # failed to parse: a run red for a JSON or key error would prove
+        # nothing about the layout check.
+        crypto_interop)   echo "FAILED: InvalidTag" ;;
         # The probe step's own name, so a run that failed on some *other*
         # inventory drift — a job somebody added in the same branch, say — is
         # INCONCLUSIVE rather than counted as proof of this one.
@@ -955,6 +961,26 @@ PY
             sed -i 's/version = ">=0.23.46, <0.24"/version = ">=0.23, <0.24"/' "$client_toml"
             grep -q 'version = ">=0.23, <0.24"' "$client_toml" \
                 || { echo "advisory_floors: rustls requirement not found in $client_toml" >&2; return 1; }
+            ;;
+        crypto_interop)
+            # A push config the SDK sealed under a context other than the
+            # stated one: the record names tenant `acme`, the value was
+            # sealed for the default partition, as a store that stopped
+            # binding the tenant would write it. The sealed bytes are left
+            # as they are, so the value is still a valid AES-256-GCM seal;
+            # only the stated layout no longer opens it.
+            local fx=crates/a2a-protocol-server/tests/fixtures/crypto/rust_sealed.json
+            note_touched "$fx"
+            python3 - "$fx" <<'PY' || { echo "crypto_interop: no push config with the default partition in $fx" >&2; return 1; }
+import json, sys
+p = sys.argv[1]
+fx = json.load(open(p, encoding="utf-8"))
+push = [e for e in fx["push"] if e["partition"] == ""]
+if not push:
+    sys.exit(1)
+push[0]["partition"] = "acme"
+open(p, "w", encoding="utf-8").write(json.dumps(fx, indent=2, ensure_ascii=False) + "\n")
+PY
             ;;
         lockfiles)
             # Put `itk/Cargo.lock` back the way it was found on 2026-09-24:
