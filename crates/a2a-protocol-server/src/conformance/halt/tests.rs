@@ -35,6 +35,8 @@ enum Flaw {
     RemovesAll,
     /// A halt on everything is never kept.
     DropsAll,
+    /// A halt on tenant `all` is stored as the halt on everything.
+    MergesAll,
     /// Pushes writes, and a cancel for a task other than the one published.
     WrongCancel,
 }
@@ -80,6 +82,9 @@ impl HaltStore for Broken {
         }
         if self.flaw == Flaw::DropsAll && halt.scope == HaltScope::All {
             return Box::pin(async { Ok(()) });
+        }
+        if self.flaw == Flaw::MergesAll && halt.scope == HaltScope::Tenant("all".into()) {
+            halt.scope = HaltScope::All;
         }
         {
             let mut halts = self.halts.lock().unwrap();
@@ -192,6 +197,7 @@ async fn each_flaw_is_named() {
         (Flaw::KeepsRemoved, "a_removal_is_seen_by_another_handle"),
         (Flaw::RemovesAll, "a_remove_removes_exactly_its_scope"),
         (Flaw::DropsAll, "scopes_do_not_collide"),
+        (Flaw::MergesAll, "scopes_do_not_collide"),
         (Flaw::WrongCancel, "a_cancel_is_pushed_to_another_handle"),
         (Flaw::Mute, "a_write_is_pushed_to_another_handle"),
     ] {
