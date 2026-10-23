@@ -657,8 +657,10 @@ jobs:
           # cancelled, so whether a test kills them was never measured, and
           # each run left a different set unmeasured. The incremental job
           # carries the same filter.
+          # `--build-timeout 1800`: see the incremental job's invocation.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
+            --build-timeout 1800 \
             --shard ${{ matrix.shard }} \
             --sharding round-robin \
             --jobs 4 \
@@ -1421,10 +1423,20 @@ jobs:
           # because neither excludes anything. That symmetry is the point: an
           # exclusion applied to only one would make a PR pass a check the
           # weekly sweep then fails on, or the reverse.
+          # `--build-timeout 1800` bounds the build phase, which `--timeout`
+          # does not. On PR #178's run 39906625488 server shard 12 sat about an
+          # hour after a mutant's build printed "Finished" without cargo-mutants
+          # seeing the process exit, until the run was cancelled; uncapped it
+          # would have held the job to its 240-minute limit. That run's 890
+          # mutant builds took 298s median, 687s at the 99th percentile and
+          # 833s at most (four at once per runner), so 1800s is about twice the
+          # longest. A capped build is reported TIMEOUT, which the gate step
+          # lists as a warning naming the mutant. Both invocations carry it.
           cargo mutants --in-diff pr-src.diff \
             -p ${{ matrix.crate }} \
             --output . \
             --timeout 300 \
+            --build-timeout 1800 \
             --jobs 4 \
             --shard ${{ matrix.shard }}/${{ matrix.of }} \
             --sharding round-robin \
