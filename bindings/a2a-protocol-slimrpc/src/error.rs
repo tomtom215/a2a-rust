@@ -133,24 +133,26 @@ pub const fn error_code_to_rpc_code(code: ErrorCode) -> RpcCode {
 /// tells a client to give up rather than back off.
 #[must_use]
 pub fn server_error_to_rpc_error(err: &ServerError) -> RpcError {
-    if let ServerError::Overloaded(msg) = err {
-        return RpcError::resource_exhausted(msg.clone());
-    }
     let a2a = err.to_a2a_error();
-    // A rate-limit refusal (spec §13.4) is the same retryable signal, as on
-    // the gRPC binding. Its delay has no field to travel in: SLIMRPC errors
-    // carry no `RetryInfo`.
-    if a2a.retry_after().is_some() {
-        return RpcError::resource_exhausted(a2a.message);
+    // SLIMRPC spec §6.2: every error's message is "prefixed with the A2A
+    // error type name", the three retryable ones below included. They went
+    // out bare until 2026-10-23, so a client reading the prefix found none
+    // on exactly the errors it should retry.
+    let message = format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message);
+    // A resource-limit rejection (`Overloaded`) and a rate-limit refusal
+    // (spec §13.4) are the retryable overload signal, as on the gRPC
+    // binding. A rate limit's delay has no field to travel in: SLIMRPC
+    // errors carry no `RetryInfo`.
+    if matches!(err, ServerError::Overloaded(_)) || a2a.retry_after().is_some() {
+        return RpcError::resource_exhausted(message);
     }
     // Spec §3.3.2: a temporary failure is `UNAVAILABLE`, as on the gRPC
     // binding: a halted handler, or a store that cannot answer for now. Both
     // fell through to their A2A code, `INTERNAL`, which tells a client not to
     // retry.
     if matches!(err, ServerError::Halted(_)) || a2a.is_unavailable() {
-        return RpcError::new(RpcCode::Unavailable, a2a.message);
+        return RpcError::new(RpcCode::Unavailable, message);
     }
-    let message = format!("{}: {}", a2a_error_type_name(a2a.code), a2a.message);
     // A refused credential carries its A2A code (`InvalidRequest`) and, beside
     // it, which refusal it is (ADR 0014). The code alone would send
     // `INVALID_ARGUMENT`, and a client's `BearerAuthInterceptor` drops a token
@@ -392,6 +394,46 @@ mod tests {
         let err = server_error_to_rpc_error(&ServerError::Overloaded("too many tasks".into()));
 
         assert_eq!(err.code(), RpcCode::ResourceExhausted);
+    }
+
+    /// SLIMRPC spec §6.2: the message is "prefixed with the A2A error type
+    /// name" — on the retryable errors too, which each have a status of
+    /// their own but an A2A code (`InternalError`) like any other.
+    #[test]
+    fn retryable_errors_carry_the_a2a_type_name() {
+        for (err, code, message) in [
+            (
+                ServerError::Overloaded("too many tasks".into()),
+                RpcCode::ResourceExhausted,
+                "InternalError: too many tasks",
+            ),
+            (
+                ServerError::Protocol(A2aError::rate_limited(
+                    "slow down",
+                    std::time::Duration::from_secs(5),
+                )),
+                RpcCode::ResourceExhausted,
+                "InternalError: slow down",
+            ),
+            (
+                ServerError::Halted("incident".into()),
+                RpcCode::Unavailable,
+                "InternalError: halted: incident",
+            ),
+            (
+                ServerError::Protocol(A2aError::unavailable("database busy")),
+                RpcCode::Unavailable,
+                "InternalError: database busy",
+            ),
+        ] {
+            let wire = server_error_to_rpc_error(&err);
+            assert_eq!((wire.code(), wire.message()), (code, message), "{err}");
+            assert_eq!(
+                parse_error_type_name(wire.message()).map(|(c, _)| c),
+                Some(ErrorCode::InternalError),
+                "{err}: the prefix must parse back"
+            );
+        }
     }
 
     /// Transport conditions must stay retryable rather than becoming protocol
