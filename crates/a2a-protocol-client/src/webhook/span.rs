@@ -28,7 +28,10 @@ pub struct ReceiveSpan {
 
 impl ReceiveSpan {
     /// Opens it for a request with `headers`.
-    #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+    #[cfg_attr(
+        not(feature = "tracing"),
+        allow(unused_variables, clippy::missing_const_for_fn)
+    )]
     pub fn open(headers: &hyper::HeaderMap) -> Self {
         #[cfg(feature = "tracing")]
         {
