@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- **`serve::Server` is no longer `UnwindSafe` or `RefUnwindSafe` with
+  `tls-rustls`** (server; on by default in the SDK). The field holding
+  `Server::with_tls`'s configuration carries rustls' server configuration,
+  which implements neither. Code that sent a `Server` across
+  `std::panic::catch_unwind` wraps it in `AssertUnwindSafe`. Found by
+  `cargo-semver-checks` 0.51.0 against 0.14.1 (`auto_trait_impl_removed`),
+  the one break that run reported which this list did not name.
+
 - **The client refuses an agent's object that a2a.proto does not allow
   (`ClientError::InvalidAgentResponse`).** Spec §5.7: implementations SHOULD
   reject messages missing a REQUIRED field. On every binding (JSON-RPC,
