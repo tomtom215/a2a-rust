@@ -483,6 +483,13 @@ into this file: the commit that records it changes it.
 
 ## Lessons
 
+- A mutation run's "caught" is only as good as the test that failed. Read
+  the per-mutant logs in the shard artifacts (`mutation-report-*`,
+  `outcomes.json` and `log/`): on 2026-10-22 an assertion-free `#[ignore]`
+  measurement timing out at nextest's 45s kill had scored 245 of 610 server
+  catches, so each labelled run surfaced survivors the last had scored
+  caught (`640773fc`). A slow test that asserts nothing belongs in the
+  mutation filter beside the soak binaries.
 - A test passing and `cargo semver-checks` passing do not show a serde
   change preserves behaviour; parse fixed inputs with both builds.
 - The ledger checker verifies test names, not line text: after code moves,
