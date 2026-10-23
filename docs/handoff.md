@@ -219,8 +219,7 @@ only: when something here is done, delete it rather than annotating it.
    SUPPORTED, and the TCK baseline (the drafts for CORE-SEND-003 and
    a2a-tck#231 are in `docs/upstream/`).
 3. **OpenTelemetry, still open:** store spans and
-   `db.client.operation.duration`, refusal and agent-card spans on the
-   server; then
+   `db.client.operation.duration`; then
    `GenAI` panels on the dashboards. Done on this branch: `server.address`
    (from `Host`) and `network.peer.*` on server spans, a test that an
    exported log record carries its span's trace and span ids
@@ -282,6 +281,16 @@ only: when something here is done, delete it rather than annotating it.
   public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
+- **Spans for agent-card requests and pre-routing refusals** (2026-10-23).
+  Refusals are recorded in `rpc.server.call.duration` without a span, by
+  design (`rpc_span/refusal.rs`: the peer's trace context is unread and
+  most have no method). A card request has neither span nor metric. Adding
+  an HTTP `SERVER` span there needs three decisions: `url.scheme` is
+  Required by the HTTP conventions and the card handlers do not know it;
+  `InboundTracePolicy` lives on `RequestHandler`, which
+  `StaticAgentCardHandler` (and the dynamic and per-caller handlers) do not
+  hold; and every unauthenticated discovery request becomes a root span.
+  Not built until the maintainer decides.
 - **SLIMRPC `otlp` is opt-in, not on by default** (WP-D, 2026-10-23).
   Measured: the server's `otlp` turns on tonic's TLS features through
   `opentelemetry-otlp`, after which tonic refuses the `https://` endpoint
