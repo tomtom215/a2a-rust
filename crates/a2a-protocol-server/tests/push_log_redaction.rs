@@ -21,7 +21,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
 use a2a_protocol_server::push::{HttpPushSender, PushRetryPolicy, PushSender};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 const SECRET: &str = "s3cr3t-path-token";
@@ -30,16 +30,41 @@ const SECRET: &str = "s3cr3t-path-token";
 #[derive(Clone, Default)]
 struct Capture(Arc<Mutex<Vec<String>>>);
 
+struct Fields(String);
+impl tracing::field::Visit for Fields {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.push_str(&format!("{}={value:?} ", field.name()));
+    }
+}
+
 impl<S: tracing::Subscriber> Layer<S> for Capture {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
-        struct Fields(String);
-        impl tracing::field::Visit for Fields {
-            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-                self.0.push_str(&format!("{}={value:?} ", field.name()));
-            }
-        }
         let mut fields = Fields(String::new());
         event.record(&mut fields);
+        self.0.lock().unwrap().push(fields.0);
+    }
+
+    // Span fields too: a credential recorded on the delivery's span is as
+    // exported as one in an event.
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        _id: &tracing::span::Id,
+        _ctx: Context<'_, S>,
+    ) {
+        let mut fields = Fields(format!("span {} ", attrs.metadata().name()));
+        attrs.record(&mut fields);
+        self.0.lock().unwrap().push(fields.0);
+    }
+
+    fn on_record(
+        &self,
+        _id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        _ctx: Context<'_, S>,
+    ) {
+        let mut fields = Fields("span record ".to_owned());
+        values.record(&mut fields);
         self.0.lock().unwrap().push(fields.0);
     }
 }
@@ -55,6 +80,16 @@ fn event() -> StreamResponse {
 
 /// Sends one push to `url` with `sender` and returns every event it logged.
 fn logged_while_sending(sender: &HttpPushSender, url: &str, serve: bool) -> Vec<String> {
+    logged_while_sending_config(sender, url, serve, |_| {})
+}
+
+/// [`logged_while_sending`], with the config changed by `configure` first.
+fn logged_while_sending_config(
+    sender: &HttpPushSender,
+    url: &str,
+    serve: bool,
+    configure: impl FnOnce(&mut TaskPushNotificationConfig),
+) -> Vec<String> {
     let capture = Capture::default();
     let subscriber = tracing_subscriber::registry().with(capture.clone());
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -81,7 +116,8 @@ fn logged_while_sending(sender: &HttpPushSender, url: &str, serve: bool) -> Vec<
             } else {
                 drop(listener);
             }
-            let config = TaskPushNotificationConfig::new("t", url.clone());
+            let mut config = TaskPushNotificationConfig::new("t", url.clone());
+            configure(&mut config);
             let _ = sender.send(&url, &event(), &config).await;
         });
     });
@@ -133,5 +169,39 @@ fn a_connection_error_log_does_not_leak_the_secret_either() {
             !e.contains(SECRET),
             "a log line leaked the webhook secret: {e}"
         );
+    }
+}
+
+/// Spec §13.4: credentials are never logged. A config carrying a
+/// notification token and `Bearer` credentials is delivered, fails, and
+/// neither secret appears in any event or span field, at any level. The
+/// tests above set neither, so a line printing them would have passed them.
+#[test]
+fn the_token_and_credentials_are_never_logged() {
+    const TOKEN: &str = "notification-token-SECRET";
+    const CREDENTIAL: &str = "bearer-credential-SECRET";
+    let sender = HttpPushSender::new()
+        .allow_private_urls()
+        .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1));
+    for serve in [true, false] {
+        let events = logged_while_sending_config(&sender, "http://{addr}/hook", serve, |c| {
+            c.token = Some(TOKEN.to_owned());
+            c.authentication = Some(AuthenticationInfo {
+                scheme: "Bearer".to_owned(),
+                credentials: Some(CREDENTIAL.to_owned()),
+            });
+        });
+        assert!(
+            events
+                .iter()
+                .any(|e| e.contains("delivering push notification")),
+            "the delivery is logged: {events:#?}"
+        );
+        for e in &events {
+            assert!(
+                !e.contains("SECRET"),
+                "a log line leaked a push credential (served: {serve}): {e}"
+            );
+        }
     }
 }

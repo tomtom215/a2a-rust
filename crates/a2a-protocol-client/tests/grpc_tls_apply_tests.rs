@@ -180,3 +180,54 @@ async fn connect_failure_hint_appears_only_for_a_bare_address_dialled_by_policy(
         "a plaintext dial has no TLS hint to give: {err}"
     );
 }
+
+/// Spec §7.2: clients MUST verify the server's certificate. With no TLS
+/// configuration of its own the gRPC transport trusts the public roots
+/// (`ClientTlsConfig::with_enabled_roots`), so a server whose certificate
+/// a private CA issued is refused: the handshake never completes and
+/// `connect` fails. The control pins that CA, and the same server
+/// completes the handshake, so the refusal is the certificate's, not a
+/// listener that speaks no TLS.
+#[tokio::test]
+async fn a_server_certificate_from_an_untrusted_ca_is_refused() {
+    let certs = certs_for("localhost");
+    let (addr, handshaken) = tls_listener(&certs).await;
+    let endpoint = format!("https://localhost:{}", addr.port());
+
+    let refused = GrpcTransport::connect_with_config(
+        endpoint.clone(),
+        GrpcTransportConfig::default().with_connect_timeout(Duration::from_secs(5)),
+    )
+    .await;
+    assert!(
+        refused.is_err(),
+        "a certificate no trusted root issued must fail the connect"
+    );
+    // The server finishes its side of a handshake after the client's, so
+    // a handshake the client completed (and then gave up on, for want of
+    // HTTP/2 here) shows up a moment later. Nothing may show up at all.
+    for _ in 0..40 {
+        assert!(
+            !handshaken.load(Ordering::SeqCst),
+            "the server saw a completed handshake with an untrusted certificate"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    // Control: the same server, its CA pinned.
+    let config = GrpcTransportConfig::default()
+        .with_connect_timeout(Duration::from_secs(5))
+        .with_tls_config(
+            ClientTlsConfig::new()
+                .ca_certificate(Certificate::from_pem(certs.ca_pem.clone()))
+                .domain_name("localhost"),
+        );
+    let client = tokio::spawn(async move {
+        let _ = GrpcTransport::connect_with_config(endpoint, config).await;
+    });
+    assert!(
+        wait_for(&handshaken).await,
+        "with the CA pinned the same server completes the handshake"
+    );
+    client.abort();
+}
