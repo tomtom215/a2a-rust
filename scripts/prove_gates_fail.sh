@@ -534,7 +534,10 @@ expected_marker() {
         # workflow lists a target Cargo.toml lacks would prove the loud half,
         # which the runner's own build already catches.
         fuzz_matrix)      echo "no runner ever executes it" ;;
-        compliance_map)   echo "no \`fn verify_rejects_tampered_card\`" ;;
+        # Two defects, two markers, both required (see `marker_found`): a
+        # renamed test, and since 2026-10-23 a row left citing nothing.
+        compliance_map)   printf '%s\n%s\n' "no \`fn verify_rejects_tampered_card\`" \
+                              "AIA-50-1: cites neither a test nor a CI step" ;;
         spec_ledger)      echo "no \`fn a_message_only_stream_is_exactly_one_message\`" ;;
         tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
@@ -584,6 +587,17 @@ expected_marker() {
         test|test_always) echo "gate probe: injected failure" ;;
         *)                echo "__no_marker_defined__" ;;
     esac
+}
+
+# True when every line of the marker $1 occurs in the log $2. Most markers
+# are one line; a gate given two defects at once names one per line, and
+# each must be cited, so a run that reports only one is INCONCLUSIVE.
+marker_found() {
+    local line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        grep -qF -- "$line" "$2" || return 1
+    done <<<"$1"
 }
 
 apply_injection() {
@@ -858,7 +872,25 @@ PY
         # renames a test, everything still builds and passes, and the register
         # goes on citing it as evidence. Each register's own test is renamed.
         compliance_map)
-            rename_test crates/a2a-protocol-types/src/signing.rs verify_rejects_tampered_card ;;
+            rename_test crates/a2a-protocol-types/src/signing.rs verify_rejects_tampered_card
+            # And the defect the map's every-row-cites rule exists for: a row
+            # whose only citation is deleted, which the map rendered as a
+            # bare claim until 2026-10-23 and nothing noticed.
+            note_touched docs/compliance/controls.toml
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path("docs/compliance/controls.toml")
+s = p.read_text()
+old = (
+    'tests = [\n'
+    '  "crates/a2a-protocol-types/src/agent_card/builders/tests.rs::a_constructed_card_round_trips_through_json",\n'
+    ']\ngap = "The person interacts'
+)
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one AIA-50-1 citation block; found {s.count(old)}")
+p.write_text(s.replace(old, 'gap = "The person interacts'))
+PY
+            ;;
         spec_ledger)
             rename_test crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs \
                 a_message_only_stream_is_exactly_one_message ;;
@@ -1677,7 +1709,7 @@ for entry in "${ALL_GATES[@]}"; do
         #
         # So the log has to show the gate reacting to *this* defect.
         marker=$(expected_marker "$spec")
-        if grep -qF -- "$marker" "$log"; then
+        if marker_found "$marker" "$log"; then
             printf '  \033[32mPROVEN\033[0m  gate exited %s citing the injected defect (%ss)\n' \
                 "$broken_status" "$elapsed"
             PROVEN=$((PROVEN + 1))
