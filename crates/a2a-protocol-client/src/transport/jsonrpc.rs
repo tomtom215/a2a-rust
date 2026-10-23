@@ -183,6 +183,8 @@ impl JsonRpcTransport {
         query: &[(String, String)],
     ) -> ClientResult<(serde_json::Value, hyper::Request<Full<Bytes>>)> {
         let id = serde_json::Value::String(Uuid::new_v4().to_string());
+        #[cfg(feature = "tracing")]
+        crate::call_span::note_request_id(&id);
         let rpc_req = JsonRpcRequest::with_params(id.clone(), method, params);
         let body_bytes = serde_json::to_vec(&rpc_req).map_err(ClientError::Serialization)?;
 

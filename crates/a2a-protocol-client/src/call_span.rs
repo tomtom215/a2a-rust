@@ -138,7 +138,11 @@ impl CallSpan {
             otel.status_code = tracing::field::Empty,
             rpc.system.name = peer.system,
             rpc.method = qualified,
-            rpc.method_original = other.then_some(method),
+            // On JSON-RPC the method as sent (`SendMessage`) always differs
+            // from `rpc.method`, so it is Conditionally Required there.
+            rpc.method_original = (other || peer.system == Some("jsonrpc")).then_some(method),
+            jsonrpc.protocol.version = (peer.system == Some("jsonrpc")).then_some("2.0"),
+            jsonrpc.request.id = tracing::field::Empty,
             a2a.method.name = method,
             a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
             server.address = peer.address.as_deref(),
@@ -228,6 +232,14 @@ impl CallSpan {
         self.finish();
     }
 
+    /// Records `id`, the JSON-RPC id the call's response answers (once: a
+    /// field recorded twice is exported twice).
+    pub(crate) fn request_id(&self, id: Option<&str>) {
+        if let Some(id) = id {
+            self.span.record("jsonrpc.request.id", id);
+        }
+    }
+
     /// Records the call as failed with `error`.
     pub(crate) fn failed(self, error: &crate::error::ClientError) {
         if self.span.is_disabled() {
@@ -245,6 +257,40 @@ impl CallSpan {
             self.span.record("gen_ai.conversation.id", id.as_str());
         }
     }
+}
+
+#[cfg(feature = "tracing")]
+tokio::task_local! {
+    /// The JSON-RPC id the transport last sent for the call in this scope.
+    static REQUEST_ID: std::sync::Arc<std::sync::Mutex<Option<String>>>;
+}
+
+/// Notes `id`, the JSON-RPC id a transport is sending, for the call's
+/// `jsonrpc.request.id`. A retry sends a new id; the last one is the one
+/// the response answers, so it replaces the earlier. Outside a call (a
+/// transport used directly) there is no scope and nothing is noted.
+#[cfg(feature = "tracing")]
+pub fn note_request_id(id: &serde_json::Value) {
+    let rendered = match id {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => return,
+        other => other.to_string(),
+    };
+    let _ = REQUEST_ID.try_with(|slot| {
+        if let Ok(mut slot) = slot.lock() {
+            *slot = Some(rendered);
+        }
+    });
+}
+
+/// Runs `send` with a slot for its JSON-RPC id, and returns what it
+/// returned with the last id noted.
+#[cfg(feature = "tracing")]
+pub async fn noting_request_id<F: std::future::Future>(send: F) -> (F::Output, Option<String>) {
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let output = REQUEST_ID.scope(std::sync::Arc::clone(&slot), send).await;
+    let id = slot.lock().ok().and_then(|mut s| s.take());
+    (output, id)
 }
 
 /// Records how a call ended on its span: `rpc.status_code`, and for a
@@ -445,5 +491,7 @@ fn remote_context(
     Some(opentelemetry::Context::new().with_remote_span_context(context))
 }
 
+#[cfg(test)]
+mod jsonrpc_tests;
 #[cfg(test)]
 pub mod tests;

@@ -378,6 +378,19 @@ section "The client refuses what `a2a.proto` does not allow".
   `the_cli_exports_its_calls_when_a_collector_is_named` (a metrics-only
   endpoint exports metrics alone).
 
+- **A JSON-RPC client call's span carries `jsonrpc.protocol.version`,
+  `rpc.method_original` and `jsonrpc.request.id`** (client), as the
+  server's already did: `docs/rpc/json-rpc.md` makes the first two
+  Conditionally Required (the protocol's `2.0` is not the default `1.0`, and
+  the method as sent, `SendMessage`, differs from `rpc.method`) and the id
+  Recommended. Over HTTP and WebSocket; after a transport retry the id is
+  the last request's, recorded once. Before, `rpc.method_original` was
+  recorded only for a method outside the A2A service. Tests:
+  `call_span::jsonrpc_tests` (four), the WebSocket transport's
+  `build_rpc_request_notes_its_id_for_the_call_span`, and the SDK's
+  `observability_e2e`, which now requires the client span's id to equal the
+  id the server span recorded.
+
 - **The tool loop's `GenAI` metrics and the rest of its `chat` span**
   (server `tool-loop` with `otel`). Each model turn records
   `gen_ai.client.inference.duration`, the `gen_ai.client.inference.usage.*`

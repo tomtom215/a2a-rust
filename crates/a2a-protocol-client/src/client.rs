@@ -236,6 +236,11 @@ impl A2aClient {
         );
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
+        #[cfg(feature = "tracing")]
+        let (result, request_id) = crate::call_span::noting_request_id(send).await;
+        #[cfg(feature = "tracing")]
+        call.request_id(request_id.as_deref());
+        #[cfg(not(feature = "tracing"))]
         let result = send.await;
         #[cfg(feature = "otel")]
         self.measure(method, started, result.as_ref().err());
@@ -277,6 +282,11 @@ impl A2aClient {
         );
         #[cfg(feature = "tracing")]
         let send = tracing::Instrument::instrument(send, call.span.clone());
+        #[cfg(feature = "tracing")]
+        let (result, request_id) = crate::call_span::noting_request_id(send).await;
+        #[cfg(feature = "tracing")]
+        call.request_id(request_id.as_deref());
+        #[cfg(not(feature = "tracing"))]
         let result = send.await;
         // A stream's span stays open with the stream, and its duration runs:
         // the call lasts until the caller has finished consuming it

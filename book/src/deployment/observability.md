@@ -556,6 +556,10 @@ server span it causes (for a method outside the A2A service, `_OTHER`, it is
 named for its `rpc.system.name` and carries `rpc.method_original`), the same A2A attributes as far as the request and
 response show them, the agent's name, description and version when the
 client was built from its card, and `server.address` and `server.port`. A
+JSON-RPC call's span, over HTTP or WebSocket, carries what the server's does:
+`jsonrpc.protocol.version` (`2.0`), the method as sent as
+`rpc.method_original`, and the request's id as `jsonrpc.request.id` — after
+a retry, the id of the request the response answered. A
 streaming call's span covers consuming the stream, and is exported when the
 stream is dropped; it carries `rpc.status_code` as the client's metric does,
 and the error a stream ended on. As the draft conventions require of A2A instrumentation,

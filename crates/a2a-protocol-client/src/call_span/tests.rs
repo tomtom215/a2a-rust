@@ -119,7 +119,7 @@ pub fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> 
 }
 
 #[cfg(feature = "tracing")]
-fn peer_with(description: &str, version: &str) -> Peer {
+pub(super) fn peer_with(description: &str, version: &str) -> Peer {
     Peer::new(
         "JSONRPC",
         "http://agent.example:9000",
@@ -287,29 +287,6 @@ fn each_binding_reports_the_status_it_was_answered_with() {
         let s = Status::ok(system);
         assert_eq!((s.code.as_deref(), s.error), (ok, None), "{system:?}");
     }
-}
-
-/// A method outside the A2A service is `_OTHER`, as on the server: the span is
-/// named for its system and keeps the method as sent.
-#[cfg(feature = "tracing")]
-#[test]
-fn an_unknown_method_is_named_for_its_system() {
-    let fields = recorded(|| {
-        let call = CallSpan::open("message/send", &peer_with("", ""), &serde_json::json!({}));
-        call.succeeded(None);
-    });
-    let field = |k: &str| fields.get(k).map(String::as_str);
-    assert_eq!(field("otel.name"), Some("jsonrpc"));
-    assert_eq!(field("rpc.method"), Some("_OTHER"));
-    assert_eq!(field("rpc.method_original"), Some("message/send"));
-    let known = recorded(|| {
-        CallSpan::open("GetTask", &peer_with("", ""), &serde_json::json!({})).succeeded(None);
-    });
-    assert_eq!(
-        known.get("otel.name").map(String::as_str),
-        Some("lf.a2a.v1.A2AService/GetTask")
-    );
-    assert!(!known.contains_key("rpc.method_original"));
 }
 
 /// `f` with a `tracing-opentelemetry` layer recording every span, over the
