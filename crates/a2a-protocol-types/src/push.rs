@@ -37,11 +37,38 @@ impl core::fmt::Debug for TaskPushNotificationConfig {
             .field("tenant", &self.tenant)
             .field("id", &self.id)
             .field("task_id", &self.task_id)
-            .field("url", &self.url)
+            .field("url", &origin_for_debug(&self.url))
             .field("token", &self.token.as_ref().map(|_| "<redacted>"))
             .field("authentication", &self.authentication)
             .finish()
     }
+}
+
+/// Names a webhook URL as `scheme://host[:port]`, for `Debug`.
+///
+/// Webhook URLs routinely carry the secret in their path or query
+/// (`/hooks/<token>`, `?sig=…`) or userinfo, and a `{:?}` of a config lands
+/// in logs and panic messages. The same form, and the same placeholders,
+/// as the server's and the client's `origin_for_log`; this crate has no URI
+/// parser, so the authority is cut out by hand.
+fn origin_for_debug(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return "<webhook url without scheme or host>".to_owned();
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // Userinfo ends at the last `@` of the authority.
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let printable = |s: &str| {
+        s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+-.:[]_~%".contains(c))
+    };
+    if scheme.is_empty() || !printable(scheme) || !printable(host) {
+        return "<unparseable webhook url>".to_owned();
+    }
+    if host.is_empty() {
+        return "<webhook url without scheme or host>".to_owned();
+    }
+    format!("{scheme}://{host}")
 }
 
 impl TaskPushNotificationConfig {
@@ -292,7 +319,7 @@ mod tests {
             tenant: None,
             id: None,
             task_id: Some("t-1".into()),
-            url: "https://example.com/hook".into(),
+            url: "https://user:URL-PASSWORD@example.com:8443/hook/URL-SECRET?sig=URL-SIG".into(),
             token: Some("super-secret-shared-token".into()),
             authentication: Some(AuthenticationInfo {
                 scheme: "bearer".into(),
@@ -314,9 +341,15 @@ mod tests {
             dbg.contains("<redacted>"),
             "expected redaction marker: {dbg}"
         );
+        // The URL only as its origin: a webhook URL often carries the
+        // secret in its path, query or userinfo. Until 2026-10-23 it was
+        // printed whole.
+        for secret in ["URL-PASSWORD", "URL-SECRET", "URL-SIG", "/hook"] {
+            assert!(!dbg.contains(secret), "url secret {secret} leaked: {dbg}");
+        }
         assert!(
-            dbg.contains("https://example.com/hook"),
-            "url dropped: {dbg}"
+            dbg.contains("url: \"https://example.com:8443\""),
+            "url origin dropped: {dbg}"
         );
         assert!(dbg.contains("bearer"), "scheme dropped: {dbg}");
 
@@ -324,6 +357,27 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         assert!(json.contains("super-secret-shared-token"));
         assert!(json.contains("SECRET-BEARER-CREDENTIAL"));
+    }
+
+    #[test]
+    fn debug_url_never_echoes_what_it_cannot_cut() {
+        for (url, shown) in [
+            (
+                "http://127.0.0.1:8080/webhook/SECRET",
+                "http://127.0.0.1:8080",
+            ),
+            ("https://[::1]:9/SECRET", "https://[::1]:9"),
+            ("https://hooks.example/SECRET#frag", "https://hooks.example"),
+            ("not a url SECRET", "<webhook url without scheme or host>"),
+            ("/relative/SECRET", "<webhook url without scheme or host>"),
+            ("https://bad host SECRET/x", "<unparseable webhook url>"),
+            ("https:///SECRET", "<webhook url without scheme or host>"),
+        ] {
+            let cfg = TaskPushNotificationConfig::new("t", url);
+            let dbg = format!("{cfg:?}");
+            assert!(!dbg.contains("SECRET"), "{url}: {dbg}");
+            assert!(dbg.contains(&format!("url: \"{shown}\"")), "{url}: {dbg}");
+        }
     }
 
     #[test]
