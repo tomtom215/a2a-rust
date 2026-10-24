@@ -261,7 +261,7 @@ only: when something here is done, delete it rather than annotating it.
 5. **Official TCK** after any wire change: `--min-graded 88` full, 66
    minimal. Last run 2026-10-20 at `1305674b`, after the auth-ordering,
    streaming-span and WebSocket trace-context changes, against a2a-tck
-   `5daf014` (the workflow tracks `main`): full 88 graded, 81 passed, the
+   `5daf014` (the workflow tracks `main`; the seven baselined failures were re-read against `d4d6fae` on 2026-10-24, `official-tck-findings.md` §25): full 88 graded, 81 passed, the
    9 baselined (requirement, transport) failures and no other; minimal 66
    graded, 8 of the 9 baselined failing (STREAM-SUB-003 not graded there);
    required-extension CORE-CAP-004 passed on JSON-RPC and HTTP+JSON. All

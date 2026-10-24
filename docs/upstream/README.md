@@ -12,8 +12,8 @@ sent until the maintainer sends it; nothing here is posted automatically.
 | `a2a-tck-sse-001-report.md` | `a2aproject/a2a-tck` | Filed and fixed upstream |
 | `repro_tck_sse_bug.py` | `a2aproject/a2a-tck` | The minimal reproduction attached to the report above |
 | `a2a-tck-231-spec-pin-report.md` | `a2aproject/a2a-tck` | Filed 2026-09-01 as a2a-tck#231 |
-| `a2a-tck-231-section-11-1-comment.md` | `a2aproject/a2a-tck` #231 (comment) | Draft, not sent; verified 2026-10-23 at `d4d6fae` |
-| `a2a-tck-core-send-003-report.md` | `a2aproject/a2a-tck` | Draft, not sent; verified 2026-10-23 at `d4d6fae` |
+| `a2a-tck-231-section-11-1-comment.md` | `a2aproject/a2a-tck` #231 (comment) | Draft, not sent; verified at `d4d6fae` on 2026-10-23 and 2026-10-24; upstream PRs #238 and #258 already propose the regrade |
+| `a2a-tck-core-send-003-report.md` | `a2aproject/a2a-tck` | Draft, not sent; verified at `d4d6fae` on 2026-10-23 and 2026-10-24. Already tracked upstream as issue #202 (PRs #213, #203, #238): comment there rather than file |
 | `a2a-2200-patch-versioning-report.md` | `a2aproject/A2A` | Filed 2026-09-01 as A2A#2200 |
 | `semconv-genai-195-rust-implementation-notes.md` | `open-telemetry/semantic-conventions-genai` #195 | Draft, not sent |
 | `opentelemetry-rust-2008-tls-roots-comment.md` | `open-telemetry/opentelemetry-rust` #2008 | Draft, not sent |

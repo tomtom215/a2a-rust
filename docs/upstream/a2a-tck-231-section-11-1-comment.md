@@ -7,6 +7,15 @@
 (filed 2026-09-01, open, no maintainer response when checked on 2026-10-23),
 not a new issue: the cause is the same pin. The maintainer posts it.
 
+**Re-checked 2026-10-24 at `d4d6fae`:** unmerged pull requests #238
+(2026-09-06) and #258 (2026-10-19) already regrade §11.1: #238 makes
+`HTTP_JSON-SVC-001` a SHOULD on `application/a2a+json` and drops the
+Content-Type clause from `HTTP_JSON-ERR-001`; #258 accepts exactly
+`application/a2a+json` and also switches the suite's own requests to it. The
+comment's suggestion is therefore already proposed upstream; what it can add
+is the evidence below. It also omits the third check of the same clause,
+`tests/compatibility/http_json/test_error_handling.py:779`.
+
 Verified against a fresh clone of `a2a-tck` at `d4d6fae` (`main`,
 2026-10-22) on 2026-10-23, and against the A2A specification at tag `v1.0.1`
 (`3303592`, vendored in this repository as
