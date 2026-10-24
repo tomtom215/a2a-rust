@@ -563,12 +563,34 @@ section "The client refuses what `a2a.proto` does not allow".
 - **Prometheus rules and Grafana dashboards** (`deploy/observability/`): a
   Prometheus configuration for OTLP push and one for scraping an
   OpenTelemetry Collector (with the Collector's configuration), 13 recording
-  rules, 8 alerts with `promtool` unit tests, and two Grafana dashboards
-  (server and client) with provisioning. Built from the metric and label
-  names a live Prometheus 3.15.1 recorded from `tck/sut` and the `a2a` CLI,
-  not from the code; `scripts/check_dashboards.py` checks every rule and
-  every panel query against a running stack, and passed on both paths
-  (README: what was measured and the two panels left empty).
+  rules, 8 alerts with `promtool` unit tests, and three Grafana dashboards
+  (server, client and GenAI) with provisioning. Built from the metric and
+  label names a live Prometheus 3.15.1 recorded from `tck/sut`, the `a2a`
+  CLI and tool-loop agents against a local model, not from the code;
+  `scripts/check_dashboards.py` checks every rule and every panel query
+  against a running stack, and passed on both paths (README: what was
+  measured and the panels left empty). The GenAI dashboard charts the tool
+  loop's model calls, tokens, tool calls and agent runs; the server
+  dashboard's "Task store" row charts `db.client.operation.duration`.
+  Screenshots are in the README and the book's observability page.
+
+- **A database `CLIENT` span and `db.client.operation.duration` for each
+  task-store operation** (server; the OpenTelemetry database conventions,
+  `open-telemetry/semantic-conventions@55c98cf`). A store that names its
+  database through the new defaulted `TaskStore::database`, returning a
+  `StoreDatabase`, is wrapped by the handler: each trait operation is one
+  span named `{db.operation.name} {target}` with `db.system.name`,
+  `db.operation.name` (the method, such as `get` or `append_event`),
+  `db.namespace` and `server.address`/`server.port` where known, and on
+  failure `error.type` (`unavailable` for a temporary failure, otherwise
+  the A2A error code) with error status; the histogram carries the same
+  attributes. The SQLite stores answer `sqlite`; the PostgreSQL stores
+  `postgresql`, with the database name, host or socket, and a port other
+  than 5432 from the pool's options; the encrypted and audited wrappers
+  forward. The in-memory stores, and a custom store that does not
+  override `database`, record neither. Tests: `store_spans`,
+  `store_operation_duration`, and unit tests in `store::traced` and
+  `store::database`, each shown to fail with its behaviour removed.
 
 - **A quorum on the approval gate: `ApprovalGate::with_quorum(n)`** (server;
   EU AI Act Art. 14(5), control map row AIA-14-5, now `supported`). The gate

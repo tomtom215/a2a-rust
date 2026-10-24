@@ -42,9 +42,15 @@ only: when something here is done, delete it rather than annotating it.
     requirements, Actions, Go, npm and Maven pins; MSRV 1.94, which sqlx
     0.9 requires (`7a73bdc`; `STABILITY.md` §5 allows the raise);
   - Prometheus recording and alerting rules (with `promtool` tests) and
-    two Grafana dashboards, built from a live Prometheus 3.15.1 fed by the
-    repository's own binaries, directly over OTLP and through an
-    OpenTelemetry Collector (`deploy/observability/`, `c372919`);
+    three Grafana dashboards (server, client, GenAI), built from a live
+    Prometheus 3.15.1 fed by the repository's own binaries, directly over
+    OTLP and through an OpenTelemetry Collector (`deploy/observability/`,
+    `c372919`; GenAI and task-store panels, with screenshots in the README
+    and the book, 2026-10-24);
+  - a database `CLIENT` span and `db.client.operation.duration` for each
+    operation of a store that names its database (`TaskStore::database`;
+    the SQLite and PostgreSQL stores do), and `server.address` on a
+    WebSocket client's spans (`Transport::server_url`), 2026-10-24;
   - OpenTelemetry: a `service.instance.id` per process (`755b121`), export
     wherever an endpoint is configured in every binary (`988fb69`), the
     tool loop's `GenAI` metrics and the rest of its `chat` span
@@ -228,9 +234,12 @@ only: when something here is done, delete it rather than annotating it.
    227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
    MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
    CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
-3. **OpenTelemetry, still open:** store spans and
-   `db.client.operation.duration`; then
-   `GenAI` panels on the dashboards. Done on this branch: `server.address`
+3. **OpenTelemetry, still open:** `error.type` on a store span is the A2A
+   code or `unavailable`, not the database's SQLSTATE, which the
+   conventions prefer; carrying it would need the stores to keep it past
+   the `A2aError` conversion. Done on this branch: store spans and
+   `db.client.operation.duration`, the GenAI and task-store dashboard
+   panels, `server.address`
    (from `Host`) and `network.peer.*` on server spans, a test that an
    exported log record carries its span's trace and span ids
    (`telemetry_export`), push `http.client.request.duration`, gRPC
@@ -618,6 +627,14 @@ into this file: the commit that records it changes it.
   with none: `tracing` caches interest globally. Rebuilding the interest
   cache was not enough (`tests/card_span_over_tls.rs`, 2026-10-23: 9 of 20
   runs failed beside the other TLS tests, 20 of 20 passed alone).
+- Look at a dashboard before showing it to anyone. A short-lived process
+  exports each series once or twice, so `rate()` over it tapers to nothing,
+  and a process started without its `OTEL_*` environment exports nothing at
+  all; both read as an empty or dying panel. Feed a screenshot from a
+  long-lived process, confirm its series in Prometheus first
+  (`count by (job, instance)`), and wait a full window (2026-10-24: the
+  first capture had both faults, and a client legend that exposed the
+  WebSocket transport's missing `server.address`).
 - A `compile_fail` doctest needs a control that compiles.
 - A re-run after a fix must cover the binary that failed, not only the files
   edited.

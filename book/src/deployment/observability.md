@@ -457,12 +457,44 @@ exporter produces the same metric names, because it suffixes only units it
 can translate and translates neither form; the change corrects the metadata
 other exporters and backends read.
 
+## The dashboards
+
+[`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
+ships three Grafana dashboards, provisioned with Prometheus recording and
+alerting rules for the metrics on this page. Its README says how to point an
+agent at them. Each panel carries a description of what it shows; hover the
+ⓘ beside its title. The screenshots below are the dashboards as they ship,
+over 15 minutes of traffic from this repository's test harness: three
+tool-loop agents against a local model (one whose model answers, one whose
+model is unreachable, one whose model calls time out), and the `a2a` CLI calling the TCK's agent on every binding with
+push notifications to a working webhook and an unreachable one.
+
+**A2A server.** Calls per second and failed calls by binding and method;
+p50, p95 and p99 of non-streaming calls; errors by kind; requests without a
+response; active event queues; persistence errors; push deliveries by
+outcome; HTTP connections; and task-store operations and their p95 duration.
+Persistence errors are empty here because no store write failed.
+
+![The A2A server dashboard](../images/dashboards/a2a-server.png)
+
+**A2A client.** Calls per second, failed calls and failures by kind, by
+agent and binding, and the p95 of non-streaming calls, from
+`rpc.client.call.duration`.
+
+![The A2A client dashboard](../images/dashboards/a2a-client.png)
+
+**GenAI.** From the tool loop's `gen_ai.*` metrics: model calls by model
+and outcome, the failed share, and the duration of successful calls; tokens
+per second and per call; tool calls by tool and outcome, and their
+duration; agent runs by outcome, their duration, and the model and tool
+calls each run took.
+
+![The GenAI dashboard](../images/dashboards/a2a-genai.png)
+
 ## The four signals worth alerting on
 
-Ready-made Prometheus rules, alerts and Grafana dashboards for these signals,
-tested against a live Prometheus and Grafana fed by an agent from this
-repository, are in [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
-(its README says how to point an agent at them and what the test covered).
+The rules in [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
+alert on these, and the [dashboards](#the-dashboards) above chart them.
 
 **`errors` / `requests`.** The obvious one. Split by `method`: a rising error
 rate confined to `SendStreamingMessage` is a different incident from one across

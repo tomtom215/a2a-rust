@@ -75,11 +75,39 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **OpenTelemetry** | One call (`Telemetry`, the `otlp` feature, on by default in the SDK) exports **traces, metrics and logs** over OTLP/gRPC or OTLP/HTTP, configured by the standard `OTEL_*` environment. Server and client spans carry the draft OpenTelemetry A2A attributes; the executor is a GenAI `invoke_agent` span; each call's `traceparent` names the call's span, so a delegation chain is one trace. Metrics: request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** — a CI gate asserts the exporter forwards every `Metrics` callback |
+| **OpenTelemetry** | One call (`Telemetry`, the `otlp` feature, on by default in the SDK) exports **traces, metrics and logs** over OTLP/gRPC or OTLP/HTTP, configured by the standard `OTEL_*` environment. Server and client spans carry the draft OpenTelemetry A2A attributes; the executor is a GenAI `invoke_agent` span; each call's `traceparent` names the call's span, so a delegation chain is one trace. Metrics: request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** — a CI gate asserts the exporter forwards every `Metrics` callback. A SQLite or PostgreSQL task store gets a database `CLIENT` span and `db.client.operation.duration` for each operation |
 | **Langfuse** | `Telemetry::builder().with_langfuse(Langfuse::from_env()?)` — the same `LANGFUSE_*` variables as Langfuse's Python and JS SDKs; each agent run shows as an AGENT observation, each A2A context as a session ([book](book/src/deployment/langfuse.md), [`examples/langfuse-agent`](examples/langfuse-agent/)) |
 | **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, connection pool statistics, background persistence failures, and push-delivery outcomes. The last two are the paths a client cannot observe: a stream delivers its events whether or not the store accepted them |
 | **Tracing** | Structured logging via `tracing` crate, zero cost when disabled |
 | **Request ID propagation** | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
+| **Dashboards** | Prometheus recording and alerting rules and three Grafana dashboards (server, client, GenAI) in [`deploy/observability/`](deploy/observability/), each panel checked against a live Prometheus and Grafana fed by agents from this repository |
+
+The three dashboards as they ship, over 15 minutes of traffic from this
+repository's test harness: three tool-loop agents against a local model (one whose model answers, one whose
+model is unreachable, one whose model calls time out) and the `a2a` CLI calling the
+TCK's agent on every binding. The [book](book/src/deployment/observability.md#the-dashboards)
+says what each panel shows.
+
+<details>
+<summary><b>A2A server</b>: calls, failures and duration by binding and method; event queues, push deliveries, task-store operations</summary>
+
+![The A2A server dashboard](book/src/images/dashboards/a2a-server.png)
+
+</details>
+
+<details>
+<summary><b>A2A client</b>: calls, failures and duration by agent and binding</summary>
+
+![The A2A client dashboard](book/src/images/dashboards/a2a-client.png)
+
+</details>
+
+<details>
+<summary><b>GenAI</b>: model calls, tokens, tool calls and agent runs from the tool loop</summary>
+
+![The GenAI dashboard](book/src/images/dashboards/a2a-genai.png)
+
+</details>
 
 ### Security & Hardening
 

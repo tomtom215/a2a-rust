@@ -17,7 +17,7 @@ built from this repository, not derived from the code.
 | `prometheus/rules/a2a-recording.yml` | Recording rules: call rate, error ratio and latency quantiles per binding and method, unanswered requests, push-delivery outcomes, client-side calls |
 | `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent |
 | `prometheus/tests/a2a-alerts.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
-| `grafana/dashboards/a2a-server.json`, `a2a-client.json` | Two dashboards, folder "A2A", data source uid `a2a-prometheus` |
+| `grafana/dashboards/a2a-server.json`, `a2a-client.json`, `a2a-genai.json` | Three dashboards (server, client, and the tool loop's GenAI metrics), folder "A2A", data source uid `a2a-prometheus`; screenshots in `book/src/images/dashboards/` |
 | `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` |
 | `scripts/drive.sh`, `scripts/webhook_sink.py` | Traffic for a live check: every binding, errors, streams, push deliveries to a webhook that answers and one that does not |
 | `scripts/check_dashboards.py` | The live check: rules healthy and recording rules populated; every dashboard query returns data through Grafana's query API (or Prometheus's) |
@@ -86,6 +86,41 @@ persistence errors to count; and `tck/sut` serves HTTP with its own loop,
 while the connection-pool gauges are reported only by the SDK's `serve`,
 `serve_with_addr` and `Server::serve_with_shutdown` (the book's catalogue
 says so), so that panel needs an agent served that way.
+
+### The GenAI dashboard and the task-store row (2026-10-24)
+
+Measured on the same stack, with llama-server (llama.cpp `f5027fb`)
+serving Qwen3 1.7B (Q4_K_M) on a 4-vCPU container. The feed was one
+long-lived test process, not committed: it serves three tool-loop agents
+over JSON-RPC with `serve_with_addr` and SQLite task stores (one whose
+model answers, one whose model URL is unreachable, one whose model calls
+time out after 300 ms), and asks each in turn as an A2A client, exporting
+through `Telemetry` over OTLP. `scripts/drive.sh` ran beside it against
+`tck/sut`.
+
+- `check_dashboards.py`, same arguments: ok. 21 rules; 4 client, 21 GenAI
+  and 17 server queries, every one returning data except "Persistence
+  errors" (no store failed). "HTTP connections" had data this time, from
+  the process served with `serve_with_addr`.
+- The screenshots in the README and the book were taken at the end of a
+  15-minute window of this traffic, in Grafana's light theme.
+
+**A process that exits after one call cannot feed these panels.** Each
+series a short-lived process exports has one or two samples, so `rate()`
+over it tapers to nothing within the window, and a ratio over it is
+undefined; the GenAI ratio panel stayed empty while the agents ran as
+one-shot `examples/` binaries. Feed a check from a process that lives at
+least one window, and confirm its series in Prometheus before reading the
+panels (`count by (job, instance) ({__name__=~"gen_ai.*"})`).
+
+The harness's model ran on four CPU cores shared with builds, so its calls
+are slow: an agent call took 40 s to over 100 s. A quantile cannot read
+above its histogram's top bucket. The server's p99 flattens at 100 s, the
+top of the RPC conventions' buckets (0.1 ms to 100 s since 0.15; a first
+capture, with the old 5 ms to 10 s set, pinned every quantile at 10 s), and
+the GenAI model-call p99 at 81.92 s, the top of the GenAI conventions'
+buckets. A deployment whose calls run past those limits sees the limit, not
+the duration.
 
 The live check found two defects before anything was committed, both fixed
 here: the unanswered-requests rule first subtracted only responses, which

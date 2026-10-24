@@ -157,7 +157,7 @@
             "uid": "a2a-prometheus"
           },
           "expr": "a2a:rpc_client_error_ratio:rate5m{job=~\"$job\", server_address=~\"$server\"}",
-          "legendFormat": "{{server_address}}"
+          "legendFormat": "{{job}} {{server_address}}"
         }
       ],
       "fieldConfig": {

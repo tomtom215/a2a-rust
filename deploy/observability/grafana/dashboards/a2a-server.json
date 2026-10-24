@@ -1,7 +1,7 @@
 {
   "uid": "a2a-server",
   "title": "A2A server",
-  "description": "Rate, errors and duration of A2A calls served by a2a-rust agents, per binding and method, with the event-queue, push-delivery, persistence and connection-pool signals. Built on deploy/observability/prometheus/rules/a2a-recording.yml.",
+  "description": "Rate, errors and duration of A2A calls served by a2a-rust agents, per binding and method, with the event-queue, push-delivery, persistence, task-store and connection-pool signals. Built on deploy/observability/prometheus/rules/a2a-recording.yml.",
   "tags": [
     "a2a",
     "a2a-rust"
@@ -392,7 +392,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Requests without a response",
-      "description": "a2a.server.requests minus a2a.server.responses: panics, dropped connections, exits mid-request.",
+      "description": "a2a.server.requests minus a2a.server.responses: panics, dropped connections, exits mid-request. A request counts when it arrives and its response when it finishes, so while long calls run the value swings either side of zero; a value that stays above zero is the signal.",
       "datasource": {
         "type": "prometheus",
         "uid": "a2a-prometheus"
@@ -603,6 +603,103 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Task store",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Store operations per second, by operation and outcome",
+      "description": "Each TaskStore operation of a store that names its database (db.client.operation.duration): the SQLite and PostgreSQL stores, or a custom store that declares one. error.type is the A2A error code the store answered; ok when it succeeded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 52
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "label_replace(sum by (db_operation_name, error_type) (rate(db_client_operation_duration_seconds_count{job=~\"$job\"}[5m])), \"error_type\", \"ok\", \"error_type\", \"\")",
+          "legendFormat": "{{db_operation_name}} {{error_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Store operation duration (p95), by operation",
+      "description": "p95 of db.client.operation.duration over 5 minutes, successful and failed operations together: what each TaskStore operation costs a call.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 52
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (db_operation_name, le) (rate(db_client_operation_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "{{db_operation_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
         },
         "overrides": []
       },
