@@ -193,3 +193,10 @@ async fn a_streaming_call_is_measured_until_its_stream_is_dropped() {
         "measured {sum} s, held {HELD:?}"
     );
 }
+
+/// `Debug` names the type and nothing it holds: a provider is not printable
+/// and a histogram says nothing a reader of a client's `{:?}` can use.
+#[test]
+fn debug_names_the_type_only() {
+    assert_eq!(format!("{:?}", CallMetric::global()), "CallMetric { .. }");
+}
