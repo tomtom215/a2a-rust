@@ -108,6 +108,27 @@ A direct message response (for simple request/reply patterns):
 }
 ```
 
+A `Message` is the whole stream only when it is the executor's first event
+for a new task (spec §3.1.2: such a stream holds exactly one `Message`, with
+"no task tracking"). A follow-up to an existing task has no direct reply:
+every `Message` its executor writes, the first included, is sent as below,
+so the follow-up's stream begins with the `Task` (§3.7: agents "attach
+Messages to status update events"). If the executor answers a follow-up
+with messages alone and sets no state, the task goes back to waiting where
+it waited (`INPUT_REQUIRED` or `AUTH_REQUIRED`), with the last message as
+its status message. A `Message` the
+executor writes once the task stream has begun, after a status update, an
+artifact or a task snapshot, is sent as a status update that keeps the
+task's state and carries the message in `status.message`: a task stream
+holds status and artifact updates only. The task store appends it to the
+task's `history` as before and, while the task is not finished, holds it as
+the status message, as a client applying the update does: written while the
+task waits in `INPUT_REQUIRED` or `AUTH_REQUIRED`, it replaces the status
+message that asked for the input. Before any status the state is the one
+the turn began in, `SUBMITTED`. A `Message` written after the task's terminal
+status is stored in `history` and reaches no stream, as every stream has
+ended.
+
 ## Server-Side: Writing Events
 
 In your `AgentExecutor`, write events to the queue:

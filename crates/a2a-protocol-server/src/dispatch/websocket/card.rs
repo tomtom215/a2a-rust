@@ -113,13 +113,22 @@ fn decide(seen: &[u8]) -> Option<bool> {
 }
 
 /// Answers the connection's request over HTTP/1.1 and closes it.
-pub(super) async fn serve<IO>(stream: IO, card: Option<Arc<StaticAgentCardHandler>>)
-where
+pub(super) async fn serve<IO>(
+    stream: IO,
+    card: Option<Arc<StaticAgentCardHandler>>,
+    policy: crate::handler::InboundTracePolicy,
+    connection: crate::rpc_span::CardConnection,
+) where
     IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let service = hyper::service::service_fn(move |req| {
         let card = card.clone();
-        async move { Ok::<_, Infallible>(well_known::respond(card.as_deref(), &req)) }
+        async move {
+            let call = crate::rpc_span::CardCall::start(policy, &req, connection);
+            let resp = well_known::respond(card.as_deref(), &req);
+            call.finish(&resp);
+            Ok::<_, Infallible>(resp)
+        }
     });
     let _ = hyper::server::conn::http1::Builder::new()
         .keep_alive(false)

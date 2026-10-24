@@ -6,6 +6,7 @@
 //! Task storage backend.
 
 pub mod applied;
+pub(crate) mod database;
 #[cfg(feature = "encryption")]
 pub mod encrypted;
 pub mod halt;
@@ -15,6 +16,8 @@ pub mod retention;
 pub mod task_store;
 pub mod tenant;
 pub mod terminal;
+#[cfg(feature = "tracing")]
+pub(crate) mod traced;
 
 /// Shared opaque pagination cursor for the SQL-backed stores.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
@@ -51,6 +54,7 @@ mod event_log_sql;
 mod tenant_event_log;
 
 pub use applied::AppliedPosition;
+pub use database::StoreDatabase;
 pub use halt::{HaltSignal, HaltStore, InMemoryHaltStore, StoredHalt};
 pub use holds::{DEFAULT_MAX_HELD_EVENTS_FACTOR, EventHold, EventHolds};
 pub use lease::{InMemoryLeaseStore, LeaseStore};

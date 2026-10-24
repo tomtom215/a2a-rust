@@ -13,6 +13,7 @@ pub mod extended_card;
 pub mod follow;
 pub mod push_config;
 pub mod send_message;
+mod status_timestamp;
 pub mod tasks;
 
 impl crate::client::A2aClient {

@@ -46,6 +46,7 @@
 //! ```
 
 mod builder;
+mod global;
 #[cfg(feature = "otlp")]
 mod pipeline;
 #[cfg(feature = "otlp")]
@@ -60,6 +61,7 @@ use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use crate::metrics::{ConnectionPoolStats, Metrics, RpcCall};
 
 pub use builder::OtelMetricsBuilder;
+pub(crate) use global::GlobalOtelMetrics;
 #[cfg(feature = "otlp")]
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 #[cfg(feature = "otlp")]
@@ -334,16 +336,22 @@ impl Metrics for OtelMetrics {
     }
 }
 
-/// The explicit bucket boundaries, in seconds, the OpenTelemetry semantic
-/// conventions advise for `rpc.server.call.duration`
-/// (`docs/rpc/rpc-metrics.md`, read 2026-09-23).
-pub const RPC_DURATION_BUCKETS: [f64; 14] = [
-    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+/// The RPC call-duration buckets the semantic conventions advise, in seconds.
+///
+/// For `rpc.server.call.duration` and `rpc.client.call.duration`
+/// (`docs/rpc/rpc-metrics.md` at `55c98cf`, read 2026-10-24): 0.1 ms to
+/// 100 s. Until 0.15 these were the 5 ms to 10 s
+/// set the conventions advised at `838e414`, which put every call an agent
+/// took longer than ten seconds over in the last bucket.
+pub const RPC_DURATION_BUCKETS: [f64; 13] = [
+    0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0,
 ];
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod rpc_tests;
+#[cfg(test)]
+pub(crate) mod test_reader;
 #[cfg(test)]
 mod tests;

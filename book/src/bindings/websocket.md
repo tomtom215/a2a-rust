@@ -41,12 +41,24 @@ version may instead be sent as the `A2A-Version` query parameter of the
 upgrade URL (§3.6.1), for example `ws://host/?A2A-Version=1.0`. A header wins
 over the query parameter. No other parameter has a query-string fallback.
 
-**Value constraints.** Header names are lowercased. A header whose value is
-not valid UTF-8 is dropped, as on the HTTP bindings.
+**Value constraints.** Header names are lowercased. A header line whose value
+is not visible ASCII (printable ASCII, space and tab) is left out, as on the
+HTTP bindings; that includes valid UTF-8 outside ASCII, so `X-Name: café` is
+not seen. A header sent on several lines is one parameter, its remaining
+lines joined in order with `", "` (`"; "` for `Cookie`). `Last-Event-ID` is
+dropped: this binding has no resumption, and the upgrade's headers reach
+every call on the connection.
 
-**Reserved names.** The server adds one entry of its own, `:path`, holding the
-upgrade request's path (read by `PathSegmentTenantResolver`). A colon cannot
-start an HTTP/1 header name, so no client header can collide with it.
+**Reserved names.** The server adds entries of its own, each under a name
+starting with a colon. A colon cannot start an HTTP/1 header name, so no
+client header can collide with one.
+
+| Name | Holds |
+|---|---|
+| `:path` | the upgrade request's path (read by `PathSegmentTenantResolver`) |
+| `:peer-addr` | the address of the connection's peer (`CallContext::peer_addr`) |
+| `:peer-certificate` | the client's mutual-TLS certificate, DER in standard base64, when the listener serves TLS and the client presented one |
+| `:upgrade-traceparent`, `:upgrade-tracestate` | the upgrade request's `traceparent` and `tracestate`, moved here so that calls on the connection are not children of the request that opened it; each call's span links to that trace instead |
 
 **Consequence.** A parameter cannot vary per request. A client that needs a
 different `A2A-Extensions` value or credential for one call opens another

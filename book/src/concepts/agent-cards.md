@@ -195,7 +195,19 @@ use a2a_protocol_sdk::server::{BearerTokenAuthInterceptor, RequestHandlerBuilder
 let public = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
     .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true));
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
+    // Spec §13.3: requests are authenticated with a scheme the public card
+    // declares, here the one the bearer interceptor checks.
+    .with_security_schemes(std::collections::HashMap::from([(
+        "bearer".to_owned(),
+        a2a_protocol_types::security::SecurityScheme::Http(
+            a2a_protocol_types::security::HttpAuthSecurityScheme {
+                scheme: "Bearer".to_owned(),
+                description: None,
+                bearer_format: None,
+            },
+        ),
+    )]));
 let extended = public
     .clone()
     .with_skill(AgentSkill::new("billing", "Billing", "Account details").with_tags(["billing"]));
@@ -278,7 +290,19 @@ impl ExtendedCardProvider for BillingForFinance {
 let public = AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
     .with_description("An example agent")
     .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true));
+    .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
+    // Spec §13.3: requests are authenticated with a scheme the public card
+    // declares, here the one the bearer interceptor checks.
+    .with_security_schemes(std::collections::HashMap::from([(
+        "bearer".to_owned(),
+        a2a_protocol_types::security::SecurityScheme::Http(
+            a2a_protocol_types::security::HttpAuthSecurityScheme {
+                scheme: "Bearer".to_owned(),
+                description: None,
+                bearer_format: None,
+            },
+        ),
+    )]));
 let extended = public
     .clone()
     .with_skill(AgentSkill::new("billing", "Billing", "Account details").with_tags(["billing"]));
@@ -399,7 +423,7 @@ Agent card responses include standard HTTP caching headers (spec §8.6, RFC 9110
 |--------|---------|
 | `ETag` | Content hash for cache validation |
 | `Last-Modified` | Static handler only: when it loaded the card |
-| `Cache-Control` | `public, max-age=3600` (configurable) |
+| `Cache-Control` | `public, max-age=3600` (configurable: `DispatchConfig::with_agent_card_max_age`, and `with_agent_card_max_age` on `WebSocketDispatcher` and `GrpcDispatcher`) |
 
 Clients revalidate with `If-None-Match`, or with `If-Modified-Since` against the static handler. If the card hasn't changed, the server returns `304 Not Modified` with no body. The dynamic handler sends no `Last-Modified` and ignores `If-Modified-Since`: a card produced per request has no modification date, so the `ETag` is its only validator.
 

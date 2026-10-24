@@ -12,8 +12,9 @@
 //   - a streaming call to an unknown task over JSON-RPC comes back as a
 //     plain JSON 200 that a2a-go's SSE reader skips, so the Go caller sees an
 //     empty stream and a nil error (audit finding S2). That shape is the one
-//     the official a2a-tck requires, so it stays; the JSON-RPC check pins
-//     a2a-go's loss and goes red when a2a-go reads the error;
+//     the official a2a-tck requires, so it stays. a2a-go v2.6.0 lost the
+//     error; v2.7.0 reads it, so the check now requires TaskNotFound on
+//     every binding;
 //   - push deliveries carried a token header a2a-go does not read (S7);
 //   - an agent card with securityRequirements was unparseable by a2a-go (T1).
 //     This SDK now reads a2a-go's bare-array scopes and writes the spec's
@@ -271,19 +272,14 @@ func run(ctx context.Context, s *suite, c *a2aclient.Client, binding a2a.Transpo
 	orphan.TaskID = "does-not-exist"
 	streamErr := firstErrOrEmpty(c.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: orphan}))
 	subscribeErr := firstErrOrEmpty(c.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: "does-not-exist"}))
-	if binding == a2a.TransportProtocolJSONRPC {
-		// Over JSON-RPC this server answers a pre-stream error as a plain
-		// JSON-RPC error body, the shape the official a2a-tck requires
-		// (STREAM-SUB-003/004). a2a-go v2.5.0's client reads a streaming
-		// answer only as SSE, so it sees an empty stream and no error. That is
-		// a2a-go's to fix; pinned here so the day it is fixed this goes red
-		// and the strict expectation is restored.
-		s.expectLostByGo("SendStreamingMessage(missing task) [a2a-go drops it]", streamErr)
-		s.expectLostByGo("SubscribeToTask(missing) [a2a-go drops it]", subscribeErr)
-	} else {
-		s.expect("SendStreamingMessage(missing task) -> TaskNotFound", streamErr.err, a2a.ErrTaskNotFound)
-		s.expect("SubscribeToTask(missing) -> TaskNotFound", subscribeErr.err, a2a.ErrTaskNotFound)
-	}
+	// Over JSON-RPC this server answers a pre-stream error as a plain
+	// JSON-RPC error body (application/json), the shape the official a2a-tck
+	// requires (STREAM-SUB-003/004). a2a-go up to v2.6.0 read a streaming
+	// answer only as SSE and saw an empty stream with no error; v2.7.0
+	// (a2a-go #463) decodes that body, so every binding is held to
+	// TaskNotFound.
+	s.expect("SendStreamingMessage(missing task) -> TaskNotFound", streamErr.err, a2a.ErrTaskNotFound)
+	s.expect("SubscribeToTask(missing) -> TaskNotFound", subscribeErr.err, a2a.ErrTaskNotFound)
 
 	// ── Streaming ─────────────────────────────────────────────────────────
 	events, last, err := drain(c.SendStreamingMessage(ctx, text("stream me")))
@@ -393,21 +389,6 @@ func firstErrOrEmpty(seq func(func(a2a.Event, error) bool)) streamOutcome {
 		out.events++
 	}
 	return out
-}
-
-// expectLostByGo passes only on a2a-go's known behaviour for a JSON-RPC
-// pre-stream error: no events and no error. A TaskNotFound means a2a-go now
-// reads the error, which is the fix this pin waits for; anything else is a
-// real failure.
-func (s *suite) expectLostByGo(name string, got streamOutcome) {
-	switch {
-	case got.events == 0 && got.err == nil:
-		s.ok(name, "empty stream, nil error (known a2a-go divergence)")
-	case errors.Is(got.err, a2a.ErrTaskNotFound):
-		s.fail(name, "a2a-go now reports TaskNotFound: restore the strict expectation for JSON-RPC")
-	default:
-		s.fail(name, "events=%d err=%v", got.events, got.err)
-	}
 }
 
 func drain(seq func(func(a2a.Event, error) bool)) (int, a2a.Event, error) {

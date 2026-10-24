@@ -131,7 +131,7 @@ says the delegation was **not** exercised.
 
 ## Prerequisites
 
-- Rust 1.88+ (MSRV)
+- Rust 1.94+ (MSRV)
 - Worker agents from `itk/agents/` (Python, Node.js, Go, Java) — optional;
   the Rust worker needs only `cargo`
 

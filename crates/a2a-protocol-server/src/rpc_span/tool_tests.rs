@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
-use super::GenAiSpan;
+use super::{GenAiMeter, GenAiSpan, Reply};
 use crate::tool_loop::{
     ChatRequest, ModelError, ModelTurn, TokenUsage, Tool, ToolCall, ToolError, ToolInvocation,
     ToolLoop, ToolLoopExecutor, ToolModel, ToolSet,
@@ -101,8 +101,19 @@ fn recorded(body: impl FnOnce()) -> Vec<Recorded> {
 #[test]
 fn a_turn_is_a_chat_client_span_with_its_usage() {
     let spans = recorded(|| {
-        let span = GenAiSpan::chat("openai", "qwen3:1.7b");
-        span.answered(Some(120), Some(7), Some("qwen3-1.7b-q4"));
+        let span = GenAiSpan::chat(
+            "openai",
+            "qwen3:1.7b",
+            Some(("127.0.0.1", 8080)),
+            &GenAiMeter::default(),
+        );
+        span.answered(Reply {
+            input_tokens: Some(120),
+            output_tokens: Some(7),
+            response_model: Some("qwen3-1.7b-q4"),
+            response_id: Some("chatcmpl-1"),
+            finish_reason: Some("stop"),
+        });
     });
     let chat = &spans[0];
     assert_eq!(chat.get("otel.name"), Some("chat qwen3:1.7b"));
@@ -111,6 +122,9 @@ fn a_turn_is_a_chat_client_span_with_its_usage() {
     assert_eq!(chat.get("gen_ai.provider.name"), Some("openai"));
     assert_eq!(chat.get("gen_ai.request.model"), Some("qwen3:1.7b"));
     assert_eq!(chat.get("gen_ai.response.model"), Some("qwen3-1.7b-q4"));
+    assert_eq!(chat.get("gen_ai.response.id"), Some("chatcmpl-1"));
+    assert_eq!(chat.get("server.address"), Some("127.0.0.1"));
+    assert_eq!(chat.get("server.port"), Some("8080"));
     assert_eq!(chat.get("gen_ai.usage.input_tokens"), Some("120"));
     assert_eq!(chat.get("gen_ai.usage.output_tokens"), Some("7"));
     assert_eq!(chat.get("error.type"), None);
@@ -119,17 +133,22 @@ fn a_turn_is_a_chat_client_span_with_its_usage() {
 
 #[test]
 fn usage_the_provider_did_not_report_is_not_recorded() {
-    let spans = recorded(|| GenAiSpan::chat("openai", "m").answered(None, None, None));
+    let spans = recorded(|| {
+        GenAiSpan::chat("openai", "m", None, &GenAiMeter::default()).answered(Reply::default());
+    });
     assert_eq!(spans[0].get("gen_ai.usage.input_tokens"), None);
     assert_eq!(spans[0].get("gen_ai.usage.output_tokens"), None);
     assert_eq!(spans[0].get("gen_ai.response.model"), None);
+    assert_eq!(spans[0].get("gen_ai.response.id"), None);
+    assert_eq!(spans[0].get("server.address"), None);
+    assert_eq!(spans[0].get("error.type"), None);
 }
 
 #[test]
 fn a_failed_turn_or_call_records_its_error_type_and_status() {
     let spans = recorded(|| {
-        GenAiSpan::chat("openai", "m").failed("500");
-        GenAiSpan::tool("t", "c1", None).failed("tool_error");
+        GenAiSpan::chat("openai", "m", None, &GenAiMeter::default()).failed("500");
+        GenAiSpan::tool("t", "c1", None, &GenAiMeter::default()).failed("tool_error");
     });
     assert_eq!(spans[0].get("error.type"), Some("500"));
     assert_eq!(spans[0].get("otel.status_code"), Some("ERROR"));
@@ -140,11 +159,13 @@ fn a_failed_turn_or_call_records_its_error_type_and_status() {
 #[test]
 fn a_call_is_an_execute_tool_span_naming_the_tool_and_call() {
     let spans = recorded(|| {
-        drop(GenAiSpan::tool(
+        GenAiSpan::tool(
             "service_status",
             "call-7",
             Some("Look up a service"),
-        ));
+            &GenAiMeter::default(),
+        )
+        .succeeded();
     });
     let tool = &spans[0];
     assert_eq!(tool.get("otel.name"), Some("execute_tool service_status"));
@@ -261,3 +282,10 @@ fn inside_a_task_the_spans_nest_under_invoke_agent_and_carry_no_content() {
         }
     }
 }
+
+// `cfg(test)` again, though this file is test-only: it is how
+// `scripts/check_panic_paths.py` knows a `#[path]` module is a test's.
+#[cfg(feature = "otel")]
+#[cfg(test)]
+#[path = "tool_metrics_tests.rs"]
+mod metrics;

@@ -103,11 +103,14 @@ impl TenantAwarePostgresTaskStore {
                 "tenant_tasks",
                 "tenant_idempotency_keys",
             ] {
-                done.rows += sqlx::query(&format!("DELETE FROM {table} WHERE tenant_id = $1"))
-                    .bind(&partition)
-                    .execute(&mut *tx)
-                    .await?
-                    .rows_affected();
+                // `table` is one of the three literals above.
+                done.rows += sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "DELETE FROM {table} WHERE tenant_id = $1"
+                )))
+                .bind(&partition)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
             }
             done.partitions += 1;
         }

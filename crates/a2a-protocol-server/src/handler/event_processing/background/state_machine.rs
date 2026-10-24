@@ -429,50 +429,8 @@ pub(super) async fn process_event_with(
             Outcome::Persisted
         }
         Ok(StreamResponse::Message(msg)) => {
-            // Agent messages are part of the conversation record: append to
-            // Task.history (same cap as the send path) and persist.
-            let history = last_task.history.get_or_insert_with(Vec::new);
-            history.push(msg);
-            // The same limit, by count and by bytes, as the send path. What
-            // it dropped is kept so a failed save can undo exactly the append.
-            let dropped = crate::handler::messaging::TASK_HISTORY_LIMIT.trim_returning(history);
-            if let Err(e) = task_store.save(last_task).await {
-                if let Some(refused) = refusal(&e) {
-                    return refused;
-                }
-                trace_error!(
-                    task_id = %task_id,
-                    error = %e,
-                    "background processor: task store save failed for agent message; \
-                     reverting the appended message"
-                );
-                metrics
-                    .on_persistence_error(persistence_operation::HISTORY_APPEND, e.metric_label());
-                // This function's contract, stated on it: a failed save reverts
-                // the in-memory task so it stays consistent with what is
-                // persisted. Every other branch here does; this one did not,
-                // and the divergence used to be repaired by accident, because
-                // the *next* status transition wrote the whole task and carried
-                // the message with it. `save_status_delta` writes only the
-                // status, so that accident is gone and the divergence would
-                // have lasted until some unrelated full save.
-                //
-                // Reverting rather than reinstating the accident: the store is
-                // the record, a message it refused is not in the record, and a
-                // snapshot claiming otherwise is the "phantom state" the
-                // contract names.
-                //
-                // The trim always keeps the newest message, so the last entry
-                // is the one appended; what it dropped goes back in front.
-                // Until the byte bound (release audit F2), a trim that dropped
-                // anything left the appended message in place instead.
-                if let Some(history) = last_task.history.as_mut() {
-                    history.pop();
-                    history.splice(0..0, dropped);
-                }
-                return Outcome::NotPersisted;
-            }
-            Outcome::Persisted
+            // Agent messages are part of the conversation record.
+            append_message(msg, task_id, last_task, task_store, metrics).await
         }
         Ok(_) => Outcome::NotPersisted,
         Err(_e) => {
@@ -498,6 +456,141 @@ pub(super) async fn process_event_with(
             Outcome::Persisted
         }
     }
+}
+
+/// Appends an agent `msg` to `Task.history` (the same cap, by count and by
+/// bytes, as the send path) and persists the task; a failed save undoes
+/// exactly the append.
+#[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+async fn append_message(
+    msg: a2a_protocol_types::message::Message,
+    task_id: &TaskId,
+    last_task: &mut Task,
+    task_store: &dyn TaskStore,
+    metrics: &dyn crate::metrics::Metrics,
+) -> Outcome {
+    let had_history = last_task.history.is_some();
+    let history = last_task.history.get_or_insert_with(Vec::new);
+    history.push(msg);
+    // The same limit, by count and by bytes, as the send path. What
+    // it dropped is kept so a failed save can undo exactly the append.
+    let dropped = crate::handler::messaging::TASK_HISTORY_LIMIT.trim_returning(history);
+    if let Err(e) = task_store.save(last_task).await {
+        if let Some(refused) = refusal(&e) {
+            return refused;
+        }
+        trace_error!(
+            task_id = %task_id,
+            error = %e,
+            "background processor: task store save failed for agent message; \
+             reverting the appended message"
+        );
+        metrics.on_persistence_error(persistence_operation::HISTORY_APPEND, e.metric_label());
+        // This function's contract, stated on it: a failed save reverts
+        // the in-memory task so it stays consistent with what is
+        // persisted. Every other branch here does; this one did not,
+        // and the divergence used to be repaired by accident, because
+        // the *next* status transition wrote the whole task and carried
+        // the message with it. `save_status_delta` writes only the
+        // status, so that accident is gone and the divergence would
+        // have lasted until some unrelated full save.
+        //
+        // Reverting rather than reinstating the accident: the store is
+        // the record, a message it refused is not in the record, and a
+        // snapshot claiming otherwise is the "phantom state" the
+        // contract names.
+        //
+        // The trim always keeps the newest message, so the last entry
+        // is the one appended; what it dropped goes back in front.
+        // Until the byte bound (release audit F2), a trim that dropped
+        // anything left the appended message in place instead.
+        if let Some(history) = last_task.history.as_mut() {
+            history.pop();
+            history.splice(0..0, dropped);
+        }
+        // A task that had no history goes back to having none, not to an
+        // empty one.
+        if !had_history {
+            last_task.history = None;
+        }
+        return Outcome::NotPersisted;
+    }
+    Outcome::Persisted
+}
+
+/// [`process_event_with`] for an event as the queue delivered it: a status
+/// update the writer made of a mid-task `Message` (spec §3.1.2) goes to
+/// [`process_folded_message`] instead.
+pub(super) async fn process_queued_event(
+    event: a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
+    task_id: &TaskId,
+    last_task: &mut Task,
+    deps: BackgroundDeps<'_>,
+    on_persisted: Option<&(dyn Fn() + Send + Sync)>,
+) -> Outcome {
+    match event {
+        Ok(crate::streaming::StreamEvent {
+            folded_message: true,
+            event: StreamResponse::StatusUpdate(ref update),
+            ..
+        }) => process_folded_message(update, task_id, last_task, deps).await,
+        event => {
+            process_event_with(
+                event.map(|e| e.event),
+                task_id,
+                last_task,
+                deps,
+                on_persisted,
+            )
+            .await
+        }
+    }
+}
+
+/// A status update the writer made of a `Message` the agent wrote during its
+/// task (spec §3.1.2; `streaming::event_queue::message_fold`).
+///
+/// Recorded as the message it was: appended to `history`, as a `Message`
+/// event is. While the task is not finished it also becomes the stored
+/// status message, with the update's timestamp, as a client applying the
+/// update holds it, and push subscribers are sent the update the streams
+/// carried. The state is not touched and no transition is checked: the
+/// update keeps the state the turn last wrote, and `Submitted` may not move
+/// to itself.
+async fn process_folded_message(
+    update: &a2a_protocol_types::events::TaskStatusUpdateEvent,
+    task_id: &TaskId,
+    last_task: &mut Task,
+    deps: BackgroundDeps<'_>,
+) -> Outcome {
+    let Some(message) = update.status.message.clone() else {
+        return Outcome::NotPersisted;
+    };
+    let open = !last_task.status.state.is_terminal();
+    let prev_status = last_task.status.clone();
+    if open {
+        last_task.status.message = Some(message.clone());
+        last_task
+            .status
+            .timestamp
+            .clone_from(&update.status.timestamp);
+    }
+    let outcome = append_message(message, task_id, last_task, deps.task_store, deps.metrics).await;
+    if outcome == Outcome::NotPersisted {
+        last_task.status = prev_status;
+    }
+    if outcome == Outcome::Persisted && open {
+        deliver_push_bg(
+            task_id,
+            &StreamResponse::StatusUpdate(update.clone()),
+            deps.push_config_store,
+            deps.push_sender,
+            deps.limits,
+            deps.metrics,
+        )
+        .await;
+    }
+    outcome
 }
 
 #[cfg(test)]
@@ -1318,6 +1411,99 @@ mod tests {
             last_task.history.as_deref(),
             Some(full.as_slice()),
             "the history must be exactly what it was before the refused append"
+        );
+    }
+
+    /// A push sender that counts what it is asked to send.
+    #[derive(Default)]
+    struct Counts(std::sync::atomic::AtomicUsize);
+
+    impl crate::push::PushSender for Counts {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a StreamResponse,
+            _config: &'a a2a_protocol_types::push::TaskPushNotificationConfig,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>>
+        {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    /// Registers one webhook for `task_id`.
+    async fn register_webhook(store: &InMemoryPushConfigStore, task_id: &str) {
+        use crate::push::PushConfigStore as _;
+        store
+            .set(a2a_protocol_types::push::TaskPushNotificationConfig {
+                tenant: None,
+                id: Some("cfg".into()),
+                task_id: Some(task_id.into()),
+                url: "https://example.com/hook".into(),
+                token: None,
+                authentication: None,
+            })
+            .await
+            .expect("config");
+    }
+
+    /// A carried message (spec §3.1.2) the store refuses leaves the
+    /// in-memory task as it was: neither the status message nor the history
+    /// runs ahead of the store, and no push announces it.
+    #[tokio::test]
+    async fn a_failed_save_of_a_carried_message_reverts_status_and_history() {
+        use a2a_protocol_types::message::Message;
+
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        register_webhook(&push_store, "t-carried").await;
+        let pushes = Counts::default();
+        let task_id = TaskId::new("t-carried");
+        task_store
+            .inner
+            .save(&make_task("t-carried", TaskState::InputRequired))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-carried", TaskState::InputRequired);
+        last_task.status.message = Some(Message::agent_text("ask", "which file?"));
+        let before = last_task.clone();
+
+        let mut carried = crate::streaming::StreamEvent::at(
+            1,
+            StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: task_id.clone(),
+                context_id: ContextId::new("ctx-1"),
+                status: TaskStatus {
+                    state: TaskState::InputRequired,
+                    message: Some(Message::agent_text("refused", "this write will fail")),
+                    timestamp: Some("2026-10-23T00:00:00.000Z".into()),
+                },
+                metadata: None,
+            }),
+        );
+        carried.folded_message = true;
+        let outcome = process_queued_event(
+            Ok(carried),
+            &task_id,
+            &mut last_task,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: Some(&pushes),
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
+            None,
+        )
+        .await;
+
+        assert_eq!(outcome, Outcome::NotPersisted);
+        assert_eq!(last_task.status, before.status);
+        assert_eq!(last_task.history, before.history);
+        assert_eq!(
+            pushes.0.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "a message the store refused is not pushed"
         );
     }
 

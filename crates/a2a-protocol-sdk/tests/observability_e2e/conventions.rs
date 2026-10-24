@@ -124,6 +124,7 @@ pub fn check_parentage(
             trace_id
         )),
         Some(client) => {
+            check_client_jsonrpc(b, client, server, gaps);
             if client.parent_span_id.to_string() != parent_id {
                 gaps.push(format!(
                     "{b}: the client span's parent is {}, not the caller's {} (O8)",
@@ -140,6 +141,39 @@ pub fn check_parentage(
                     client.span_context.span_id()
                 ));
             }
+        }
+    }
+}
+
+/// `docs/rpc/json-rpc.md` asks the same of a JSON-RPC `CLIENT` span as of
+/// the server's: `jsonrpc.protocol.version` (Conditionally Required),
+/// `rpc.method_original` (the method as sent) and `jsonrpc.request.id`,
+/// which must be the id the server answered — the one its span recorded.
+/// The other bindings' client spans carry none of them.
+fn check_client_jsonrpc(b: &str, client: &SpanData, server: &SpanData, gaps: &mut Vec<String>) {
+    let keys = [
+        "jsonrpc.protocol.version",
+        "rpc.method_original",
+        "jsonrpc.request.id",
+    ];
+    if b != "JSONRPC" {
+        for key in keys {
+            if attr(client, key).is_some() {
+                gaps.push(format!("{b}: the client span carries {key}"));
+            }
+        }
+        return;
+    }
+    for (key, want) in [
+        ("jsonrpc.protocol.version", Some("2.0".to_owned())),
+        ("rpc.method_original", Some("SendMessage".to_owned())),
+        ("jsonrpc.request.id", attr(server, "jsonrpc.request.id")),
+    ] {
+        if want.as_deref().is_none_or(str::is_empty) || attr(client, key) != want {
+            gaps.push(format!(
+                "JSONRPC: the client span has {key} {:?}, not {want:?}",
+                attr(client, key)
+            ));
         }
     }
 }

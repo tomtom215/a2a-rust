@@ -6,13 +6,14 @@
 Three signals, often confused: **logs** say what happened in one request,
 **traces** say how one request travelled — through this agent and every agent
 it called — and **metrics** say what is happening across all of them. This SDK
-records all three. Logging and spans (`tracing`) are on by default and still
-need a subscriber; exporting them over OTLP (`otel`) is **off by default**.
-
-That default is deliberate. A protocol library that pulled in an OpenTelemetry
-exporter to serve one agent would be the wrong trade for most users. The cost
-is that "I see no metrics" is the single most common report against this crate,
-and the answer is almost always this page's first section.
+records all three, and since 0.15 all of it is on by default: spans and
+metrics are recorded through the OpenTelemetry API (`otel`), and the SDK crate
+ships the OTLP exporter (`otlp`). What stays the application's choice is
+where they go: nothing is exported until an endpoint is configured, and spans
+and logs need a `tracing` subscriber (`Telemetry::install_subscriber` installs
+one). If you see no metrics, the answer is almost always this page's first
+section. (Until 2026-10-23 this paragraph said exporting was off by default,
+which stopped being true in 0.15.)
 
 ## Turning them on
 
@@ -95,10 +96,12 @@ SDK — which is the distinction this two-minute step buys you.
 
 With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
 `Telemetry` exports it over OTLP. `otel` is a default feature, and with it a
-handler given no `with_metrics` records through `OtelMetrics` on the global
-meter provider as it stands when `RequestHandlerBuilder::new` runs: install
-the provider first (`Telemetry` does) and nothing else is needed. Before 0.15
-such a handler recorded nothing until given `with_metrics`.
+handler given no `with_metrics` records through `OtelMetrics` instruments on
+the global meter provider as it stands at each measurement, built again when
+the process installs another: install `Telemetry` before or after building the
+handler and nothing else is needed. The client's `rpc.client.call.duration`
+binds the same way. Before 0.15 such a handler recorded nothing until given
+`with_metrics`.
 
 ## Exporting with `Telemetry`
 
@@ -108,7 +111,32 @@ the W3C `tracecontext` and `baggage` propagators as the process-global ones,
 and returns a guard whose drop — or explicit `shutdown` — flushes all three.
 `telemetry.layer()` is the `tracing` layer that turns spans into OpenTelemetry
 spans and events into OpenTelemetry log records; add it next to whatever other
-layers you run.
+layers you run, or call `telemetry.install_subscriber()` to install it as the
+process's only subscriber (it never replaces one already set).
+
+A binary that must run as well without a collector as with one builds it with
+`with_export_where_configured()`: each signal is then built only when an
+endpoint names where it goes — `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_METRICS_` / `_LOGS_ENDPOINT`, or
+`with_otlp_endpoint` in code — and a signal with none has no exporter and no
+export thread. Every binary in this repository does this:
+
+```rust,no_run
+use a2a_protocol_server::otel::Telemetry;
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let telemetry = Telemetry::builder()
+    .with_default_service_name("my-agent")
+    .with_export_where_configured()
+    .build()?;
+telemetry.install_subscriber();
+# Ok(())
+# }
+```
+
+Each process also reports a `service.instance.id`, a random UUID unless
+`OTEL_RESOURCE_ATTRIBUTES` names one: it is what tells replicas of one
+service apart (Prometheus turns it into the `instance` label).
 
 It reads the environment as the OpenTelemetry specification defines it, and
 refuses a value it cannot act on rather than ignoring it:
@@ -209,9 +237,11 @@ treat them as the contract.
 | `a2a.server.pool.idle` | gauge | `{connection}` | Idle HTTP connections |
 | `a2a.server.pool.created` | counter | `{connection}` | Connections created since start |
 | `a2a.server.pool.closed` | counter | `{connection}` | Connections closed on error or timeout |
+| `db.client.operation.duration` | histogram | s | Each operation of a task store that names its database, by `db.operation.name` and outcome |
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
-instrument, with their advisory buckets (5 ms to 10 s) and attributes:
+instrument, with their advisory buckets (0.1 ms to 100 s; 5 ms to 10 s
+before 0.15) and attributes:
 `rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`,
 `grpc`, or `slimrpc` for `a2a-protocol-slimrpc`); `rpc.method`, the fully qualified method
 (`lf.a2a.v1.A2AService/SendMessage`) or `_OTHER` for one the server does not
@@ -274,10 +304,118 @@ and *idle* while it is open with none; `closed` counts connections that ended
 in an error or timeout. The gRPC and WebSocket dispatchers' own listeners,
 and a router you serve yourself, do not report them.
 
-`requests` and `responses` are separate on purpose. They are not redundant: the
-gap between them is requests that produced no response — a panicked executor, a
-dropped connection, a process that went away mid-request. A single counter
-would hide exactly the failure you want to see.
+`requests`, `responses` and `errors` are separate on purpose. A request ends in
+exactly one of the other two — a call answered with an error counts in
+`errors`, not in `responses` — so `requests − responses − errors` is the
+requests that produced no answer at all: a panicked executor, a dropped
+connection, a process that went away mid-request. A single counter would hide
+exactly the failure you want to see. (Until 2026-10-23 this paragraph called
+`requests − responses` that gap, which counts every error as unanswered;
+measured against a live Prometheus, the recording rule in
+`deploy/observability/` subtracts both.)
+
+### The tool loop's metrics
+
+A `ToolLoop` (`server::tool_loop`, feature `tool-loop`, with `otel`)
+records the OpenTelemetry `GenAI` conventions' metrics
+(`open-telemetry/semantic-conventions-genai` at `9ffc7e0`, all
+`development`), with their advisory buckets:
+
+| Instrument | Kind | Unit | Recorded |
+|---|---|---|---|
+| `gen_ai.client.inference.duration` | histogram | s | Each model turn |
+| `gen_ai.client.inference.usage.input_tokens` | counter | `{token}` | Each turn whose provider reported a non-zero count |
+| `gen_ai.client.inference.usage.output_tokens` | counter | `{token}` | Likewise |
+| `gen_ai.client.inference.operation.input_tokens` | histogram | `{token}` | Each turn whose provider reported a count |
+| `gen_ai.client.inference.operation.output_tokens` | histogram | `{token}` | Likewise |
+| `gen_ai.execute_tool.duration` | histogram | s | Each tool call that ran |
+| `gen_ai.invoke_agent.duration` | histogram | s | Each run of the loop |
+| `gen_ai.invoke_agent.inference_calls` | histogram | `{inference_call}` | Each run: how many turns it asked for |
+| `gen_ai.invoke_agent.tool_calls` | histogram | `{tool_call}` | Each run: how many calls it ran |
+
+A turn's instruments carry `gen_ai.operation.name` (`chat`),
+`gen_ai.provider.name`, `gen_ai.request.model`, and when known
+`gen_ai.response.model`, `server.address` and `server.port`; the usage
+counters add `gen_ai.token.modality` (`text`). A call's carries
+`gen_ai.tool.name` and `gen_ai.tool.type`; a run's, `gen_ai.request.model`
+and the name `ToolLoop::with_agent_name` gives it. `error.type` is the
+provider's failure for a turn (`ModelError::error_type`: the HTTP status,
+`timeout`, …), `unknown_tool`, `invalid_arguments`, `tool_error` or
+`tool_fatal` for a call, `turn_limit` or `budget_exhausted` for a run, and
+`cancelled` for any of them abandoned before it ended — its cancellation
+token fired, or the future running it was dropped, as an executor timeout
+does. `gen_ai.client.operation.duration` is not recorded: the conventions
+say it "SHOULD NOT be reported for inference operations".
+
+The metrics go to the global meter provider as it is when each is
+recorded, so `Telemetry` installed after the loop is built still receives
+them; `ToolLoop::with_meter` sends them elsewhere.
+
+### Agent-card requests
+
+A request for the card at `/.well-known/agent-card.json`, on any listener
+that serves it (JSON-RPC, HTTP+JSON, the axum router, WebSocket, gRPC), is an
+HTTP `SERVER` span named `GET /.well-known/agent-card.json` (or `HTTP` and
+the route for a method the conventions do not know) and a point in the HTTP
+conventions' `http.server.request.duration` (histogram, `s`, their advisory
+buckets), under the `a2a.server` scope. The span carries
+`http.request.method`, `url.path`, `url.scheme`, `http.route`,
+`http.response.status_code`, `network.protocol.version`, `network.peer.*`
+when the listener knows the connection, `server.address` and `server.port`
+from `Host`, and `user_agent.original`; a query is recorded only as
+`url.query="REDACTED"`. `url.scheme` is `https` when this server's TLS
+ended the connection. A 5xx sets `error.type` and the error status; a 4xx,
+as the conventions require of a server span, does not. The span follows
+`InboundTracePolicy` as a call's does. The metric carries only the method,
+scheme, route, status, protocol version and `error.type`, none of which a
+caller can choose freely.
+
+### Webhook deliveries
+
+With `otel`, each push-notification POST, every retry included, is
+measured in the HTTP conventions' `http.client.request.duration`
+(histogram, `s`, their advisory buckets of 5 ms to 10 s), under the
+`a2a.server` scope, on the global meter provider as it is at the
+measurement. Its attributes are those of the attempt's `POST` span:
+`http.request.method` (`POST`), `server.address`, `server.port`,
+`http.response.status_code` when a response came back, and `error.type`
+when the attempt failed: the status for a 4xx or 5xx, `timeout`, or
+`transport` for no response. The URL is not an attribute, because it would
+carry the receiver's secret and unbounded values. `a2a.server.push_deliveries`
+still counts each delivery's final outcome; this metric times each attempt.
+
+### Task-store operations
+
+A task store that names its database through `TaskStore::database` gets a
+`CLIENT` span around each of its operations and a point in the database
+conventions' `db.client.operation.duration` (histogram, `s`, their advisory
+buckets of 1 ms to 10 s; `otel` feature), under the `a2a.server` scope
+(`docs/db/database-spans.md` and `database-metrics.md`,
+`open-telemetry/semantic-conventions@55c98cf`). The SQLite and PostgreSQL
+stores, their tenant-aware forms, and the encrypted and audited wrappers
+around them name theirs; the in-memory stores run against no database and
+record neither. A custom store opts in by returning a `StoreDatabase`.
+
+One span is one `TaskStore` operation as the handler called it, whatever
+queries the store ran for it, as the conventions recommend for a
+higher-level API:
+
+| Attribute | Value |
+|---|---|
+| span name | `{db.operation.name} {db.namespace}`, or `{db.operation.name} {server.address}[:{server.port}]` without a namespace, or the operation alone |
+| `db.system.name` | `postgresql`, `sqlite`, or the custom store's |
+| `db.operation.name` | The trait method: `get`, `save_status_delta`, `append_event`, … |
+| `db.namespace` | PostgreSQL: the database name |
+| `server.address`, `server.port` | PostgreSQL: the host or socket path in the pool's options; the port only when it is not 5432 |
+| `error.type` | On failure: `unavailable` for a temporary one (a pool with no free connection, a locked SQLite file, a PostgreSQL connection error), otherwise the A2A error code the store answered (`-32603` internal); the span's status is set to error |
+
+`error.type` is not the database's SQLSTATE or result code, which the
+conventions prefer: the stores turn a database error into an `A2aError`
+before it reaches the trait, and whether it was temporary, and its A2A
+code, are what survive. The metric carries the same attributes. In Prometheus, fed over
+OTLP, it is `db_client_operation_duration_seconds`, with labels
+`db_system_name`, `db_operation_name` and, on failures, `error_type`
+(measured 2026-10-24 against Prometheus 3.15.1 with a SQLite store).
 
 ### What these become in Prometheus
 
@@ -319,7 +457,44 @@ exporter produces the same metric names, because it suffixes only units it
 can translate and translates neither form; the change corrects the metadata
 other exporters and backends read.
 
+## The dashboards
+
+[`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
+ships three Grafana dashboards, provisioned with Prometheus recording and
+alerting rules for the metrics on this page. Its README says how to point an
+agent at them. Each panel carries a description of what it shows; hover the
+ⓘ beside its title. The screenshots below are the dashboards as they ship,
+over 15 minutes of traffic from this repository's test harness: three
+tool-loop agents against a local model (one whose model answers, one whose
+model is unreachable, one whose model calls time out), and the `a2a` CLI calling the TCK's agent on every binding with
+push notifications to a working webhook and an unreachable one.
+
+**A2A server.** Calls per second and failed calls by binding and method;
+p50, p95 and p99 of non-streaming calls; errors by kind; requests without a
+response; active event queues; persistence errors; push deliveries by
+outcome; HTTP connections; and task-store operations and their p95 duration.
+Persistence errors are empty here because no store write failed.
+
+![The A2A server dashboard](../images/dashboards/a2a-server.png)
+
+**A2A client.** Calls per second, failed calls and failures by kind, by
+agent and binding, and the p95 of non-streaming calls, from
+`rpc.client.call.duration`.
+
+![The A2A client dashboard](../images/dashboards/a2a-client.png)
+
+**GenAI.** From the tool loop's `gen_ai.*` metrics: model calls by model
+and outcome, the failed share, and the duration of successful calls; tokens
+per second and per call; tool calls by tool and outcome, and their
+duration; agent runs by outcome, their duration, and the model and tool
+calls each run took.
+
+![The GenAI dashboard](../images/dashboards/a2a-genai.png)
+
 ## The four signals worth alerting on
+
+The rules in [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
+alert on these, and the [dashboards](#the-dashboards) above chart them.
 
 **`errors` / `requests`.** The obvious one. Split by `method`: a rising error
 rate confined to `SendStreamingMessage` is a different incident from one across
@@ -356,24 +531,26 @@ Stated so a green dashboard is not mistaken for a complete one:
 
 * **The executor has a span, not a metric.** Its time is the
   `invoke_agent` span's duration; no histogram records it.
-* **Task-store operations have no latency instrument and no span.**
-  `persistence_errors` counts failures, not slowness — a store degrading
-  toward a timeout shows up in request latency first, without saying it was
-  the store. The SQLite and PostgreSQL stores open no `db.*` client span:
-  sqlx 0.8 reports each statement as a `tracing` *event*, not a span
+* **A store's individual SQL statements have no span.** Each task-store
+  operation is one span and one `db.client.operation.duration` point (see
+  [Task-store operations](#task-store-operations)); the statements inside
+  it are not. sqlx 0.9 reports each as a `tracing` *event*, not a span
   (target `sqlx::query`, with the SQL as `db.statement` — placeholders, not
   the bound values — `rows_affected` and `elapsed_secs`), at `DEBUG`, or at
   `WARN` when it takes a second or more. Under `Telemetry` those events are
-  log records in the trace of the call or executor that ran them; the slow
-  ones at the default `INFO` log level, every one with
-  `TelemetryBuilder::with_log_level(Level::DEBUG)`.
+  log records in the trace of the operation that ran them; the slow ones at
+  the default `INFO` log level, every one with
+  `TelemetryBuilder::with_log_level(Level::DEBUG)`. A custom store that does
+  not override `TaskStore::database` has neither span nor duration.
 * **There is no per-tenant metric dimension.** A tenant hitting
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.
   (The call's span does carry `a2a.tenant`.)
-* **Model calls are not seen.** The SDK does not know which model your
-  executor calls. Instrument the model client itself — its spans nest under
-  `invoke_agent` — or use a framework that reports `chat` spans.
+* **Model calls are seen only through the tool loop.** An executor built on
+  `server::tool_loop` (feature `tool-loop`) records a `chat` span per model
+  call and an `execute_tool` span per tool call, under `invoke_agent`, and
+  the `gen_ai.*` metrics above. Any other model client is invisible to the
+  SDK: instrument it, or use a framework that reports `chat` spans.
 
 ## Logs
 
@@ -404,6 +581,16 @@ span, over HTTP or WebSocket, also carries `jsonrpc.protocol.version`
 (`2.0`), the method as sent (`SendMessage`) as `rpc.method_original`, and the
 request's id as `jsonrpc.request.id` (not for a notification or a `null` id),
 as `docs/rpc/json-rpc.md` asks.
+
+Its addresses follow `docs/rpc/rpc-spans.md`. `network.peer.address` and
+`network.peer.port` are the connection the call arrived on, when the
+binding knows it (the address `CallContext::peer_addr` returns).
+`server.address` and `server.port` are the address the client used: the
+request's `Host`, with the port only when `Host` names one. They are left
+unset on gRPC, whose metadata does not carry `:authority`, and for a `Host`
+that is not a valid authority; the conventions say not to fill them from the
+connection. None of the four is on `rpc.server.call.duration`: `Host` is the
+caller's to choose, and a metric attribute it chose is unbounded.
 
 It also carries the attributes of the **draft OpenTelemetry A2A
 conventions** — `open-telemetry/semantic-conventions-genai` pull request
@@ -481,10 +668,33 @@ server span it causes (for a method outside the A2A service, `_OTHER`, it is
 named for its `rpc.system.name` and carries `rpc.method_original`), the same A2A attributes as far as the request and
 response show them, the agent's name, description and version when the
 client was built from its card, and `server.address` and `server.port`. A
+JSON-RPC call's span, over HTTP or WebSocket, carries what the server's does:
+`jsonrpc.protocol.version` (`2.0`), the method as sent as
+`rpc.method_original`, and the request's id as `jsonrpc.request.id` — after
+a retry, the id of the request the response answered. A
 streaming call's span covers consuming the stream, and is exported when the
 stream is dropped; it carries `rpc.status_code` as the client's metric does,
 and the error a stream ended on. As the draft conventions require of A2A instrumentation,
 the client reports no `invoke_agent` span of its own.
+
+A `Delegation`'s lease renewals and the cancel it sends when dropped run
+on spawned tasks, in the span and ambient trace current when the delegation
+started, so their calls are in the delegating task's trace.
+
+**Fetching a card is a `GET` span**, the HTTP conventions' `CLIENT` span
+for a plain HTTP request: `http.request.method`, `url.full` (scheme, host,
+port and path; userinfo and the query are dropped), `server.address`,
+`server.port`, `http.response.status_code` (`304` for a revalidated card),
+and on failure `error.type` — the status, or `invalid_response` for a card
+a2a.proto's field rules refuse. **Checking a push notification**
+(`WebhookReceiver::receive`) is an `INTERNAL` span, `a2a.webhook.receive`,
+under whatever span the integrator's HTTP server recorded; when none is
+recorded it continues the `traceparent` the agent's push sender sent, so a
+notification is found under the task that caused it. It records
+`a2a.webhook.outcome` (`accepted`, `duplicate`, `rejected`), the task once
+the request authenticated, and for a rejection its kind as `error.type`
+(`unknown_token`, `bad_authorization`, …) — never the token, the
+credentials or the body.
 
 A span is exported when it closes, and `tracing` holds a span open until its
 children close, so a call's span reaches your backend once the work it

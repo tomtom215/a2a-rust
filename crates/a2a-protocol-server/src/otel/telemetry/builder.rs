@@ -20,6 +20,7 @@ pub struct TelemetryBuilder {
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
     install_globally: bool,
+    where_configured: bool,
     env: Arc<Env>,
 }
 
@@ -34,6 +35,7 @@ impl std::fmt::Debug for TelemetryBuilder {
             .field("endpoint", &self.endpoint)
             .field("protocol", &self.protocol)
             .field("langfuse", &self.langfuse)
+            .field("where_configured", &self.where_configured)
             .finish_non_exhaustive()
     }
 }
@@ -53,6 +55,7 @@ impl TelemetryBuilder {
             client_identity: None,
             langfuse: None,
             install_globally: true,
+            where_configured: false,
             env,
         }
     }
@@ -89,6 +92,26 @@ impl TelemetryBuilder {
     #[must_use]
     pub const fn with_logs(mut self, on: bool) -> Self {
         self.logs = Some(on);
+        self
+    }
+
+    /// Exports each signal only where an endpoint is configured for it: in
+    /// code ([`with_otlp_endpoint`](Self::with_otlp_endpoint), or
+    /// [`with_langfuse`](Self::with_langfuse) for traces), or in
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT`, or in the signal's own
+    /// `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` /
+    /// `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` /
+    /// `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`. A signal with none is not built:
+    /// no exporter, no export thread. For a binary that must run as well
+    /// with a collector as without one; without this, every signal is
+    /// exported, to `localhost` when nothing names an endpoint, as the
+    /// OpenTelemetry environment specification has it.
+    ///
+    /// [`with_traces`](Self::with_traces) and its siblings, set in code,
+    /// still win, and `OTEL_TRACES_EXPORTER` and its siblings win over both.
+    #[must_use]
+    pub const fn with_export_where_configured(mut self) -> Self {
+        self.where_configured = true;
         self
     }
 
@@ -195,7 +218,14 @@ impl TelemetryBuilder {
             Signal::Metrics => (self.metrics, self.langfuse.is_none()),
             Signal::Logs => (self.logs, self.langfuse.is_none()),
         };
-        config::exporter_enabled(&*self.env, signal, explicit.unwrap_or(preset_default))
+        let default = if self.where_configured {
+            let in_code =
+                self.endpoint.is_some() || (signal == Signal::Traces && self.langfuse.is_some());
+            preset_default && (in_code || signal.endpoint_in_env(&*self.env))
+        } else {
+            preset_default
+        };
+        config::exporter_enabled(&*self.env, signal, explicit.unwrap_or(default))
     }
 
     pub(super) fn target(&self, signal: Signal) -> Result<Target, TelemetryError> {
@@ -224,13 +254,18 @@ impl TelemetryBuilder {
             });
         }
         let protocol = config::protocol(env, signal, self.protocol)?;
+        // OTLP/HTTP leaves an unset endpoint to `opentelemetry-otlp`. gRPC
+        // resolves it here, because an `https://` one is dialled over this
+        // crate's own TLS connector, which needs the endpoint to build.
+        let endpoint = match self.endpoint.as_deref() {
+            Some(base) => Some(Target::endpoint_from_base(base, signal, protocol)),
+            None if protocol == OtlpProtocol::Grpc => signal.grpc_endpoint_in_env(env),
+            None => None,
+        };
         Ok(Target {
             signal,
             protocol,
-            endpoint: self
-                .endpoint
-                .as_deref()
-                .map(|base| Target::endpoint_from_base(base, signal, protocol)),
+            endpoint,
             headers: self.headers.clone(),
             timeout,
             ca_pem,
@@ -240,15 +275,28 @@ impl TelemetryBuilder {
 
     pub(super) fn resource(&self) -> Resource {
         // `Resource::builder` reads `OTEL_SERVICE_NAME` and
-        // `OTEL_RESOURCE_ATTRIBUTES` itself; the default is added only when
-        // they name no service, so it never overwrites them.
-        let builder = Resource::builder();
-        match &self.default_service_name {
-            Some(name) if !config::service_name_from_env(&*self.env) => {
-                builder.with_service_name(name.clone()).build()
-            }
-            _ => builder.build(),
+        // `OTEL_RESOURCE_ATTRIBUTES` itself; the defaults are added only when
+        // they name none, so they never overwrite them.
+        let mut builder = Resource::builder();
+        if let Some(name) = &self.default_service_name
+            && !config::service_name_from_env(&*self.env)
+        {
+            builder = builder.with_service_name(name.clone());
         }
+        // The conventions make `service.instance.id` the one attribute that
+        // tells two replicas of a service apart (`service.instance.id`,
+        // resource/service.md: "MUST be unique for each instance of the same
+        // service.namespace,service.name pair"). Prometheus turns it into
+        // `instance`, so without one every replica writes the same series.
+        // A random UUID is what the conventions recommend when nothing
+        // better names the process.
+        if !config::resource_attribute_from_env(&*self.env, "service.instance.id") {
+            builder = builder.with_attribute(opentelemetry::KeyValue::new(
+                "service.instance.id",
+                uuid::Uuid::new_v4().to_string(),
+            ));
+        }
+        builder.build()
     }
 
     /// Builds every enabled signal's exporter and provider.

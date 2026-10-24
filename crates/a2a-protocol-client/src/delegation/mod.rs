@@ -84,8 +84,10 @@ use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 
+mod origin;
 mod outcome;
 mod renewal;
+use origin::Origin;
 pub use outcome::{Delegated, Outcome};
 use renewal::Renewal;
 
@@ -122,6 +124,9 @@ pub struct Delegation {
     budget: Option<(ChildGrant, Option<BudgetStatus>)>,
     /// The child message's idempotency key, if it carried one.
     idempotency_key: Option<String>,
+    /// Where the delegation started: the span and ambient trace the work it
+    /// spawns — lease renewals, a cancel on drop — runs in.
+    origin: Origin,
 }
 
 impl Delegation {
@@ -162,6 +167,7 @@ impl Delegation {
             renewal: None,
             budget: None,
             idempotency_key,
+            origin: Origin::current(),
         })
     }
 
@@ -192,7 +198,7 @@ impl Delegation {
         a2a_protocol_types::lease::Lease::new(ttl).attach(&mut params.message);
         let tenant = params.tenant.clone();
         let mut this = Self::start(Arc::clone(&client), params).await?;
-        this.renewal = Some(Renewal::spawn(client, tenant, ttl));
+        this.renewal = Some(Renewal::spawn(client, tenant, ttl, &this.origin));
         Ok(this)
     }
 
@@ -235,7 +241,7 @@ impl Delegation {
                 return Err(e);
             }
         };
-        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl));
+        this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl, &this.origin));
         this.budget = Some((grant, None));
         Ok(this)
     }
@@ -441,8 +447,10 @@ impl Drop for Delegation {
             renewal: None,
             budget: None,
             idempotency_key: self.idempotency_key.take(),
+            origin: self.origin.clone(),
         };
-        rt.spawn(async move {
+        let origin = self.origin.clone();
+        rt.spawn(origin.carry(async move {
             let done = rest.cancel().await;
             trace_debug!(
                 task_id = ?done.task_id,
@@ -450,6 +458,6 @@ impl Drop for Delegation {
                 "delegation dropped before its child settled"
             );
             let _ = done;
-        });
+        }));
     }
 }

@@ -2102,6 +2102,12 @@ requires. That would test the suite's defect rather than this SDK.
 `expected_error`, the three pairs become unexpected passes and the gate fails
 until the entry is removed. Not reported upstream, by the maintainer's
 decision; the defect is recorded here and in the baseline's `_comment`.
+**Reversed 2026-10-23:** the maintainer asked for every baselined
+failure to have an upstream report; the draft, verified against
+`a2a-tck@d4d6fae`, is `docs/upstream/a2a-tck-core-send-003-report.md`, and a
+comment for #231 covering §23's two §11.1 rows is
+`docs/upstream/a2a-tck-231-section-11-1-comment.md`. Both wait for the
+maintainer to file.
 
 **Effect on the quoted tally.** The full profile still grades 88 MUSTs, now
 83 `PASS` and 5 `FAIL`. Across the three profiles the figure to quote is

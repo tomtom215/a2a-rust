@@ -7,9 +7,9 @@
 # reading the resolved graph, does not. Each entry below is one of those or a
 # mirror of a `deny.toml` ignore, with the evidence and a date on which the
 # entry stops applying and must be re-examined (`osv.yml`).
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2023-0071"
-ignoreUntil = 2027-01-08
-reason = "rsa 0.9.10 (Marvin timing side channel, no fixed release) is in Cargo.lock only as a dependency of sqlx-mysql, which no feature of any workspace crate enables: `cargo tree -i rsa --all-features --target all -e normal,build,dev` prints nothing (checked 2026-10-08)."
-
+#
+# No active waivers since 2026-10-23. The last, RUSTSEC-2023-0071 (`rsa`,
+# Marvin timing side channel, no fixed release), covered rsa 0.9.10, which
+# the lockfile carried only for sqlx-mysql 0.8, a driver no feature enables.
+# With sqlx 0.9 (0.15.0) `rsa` is in none of the repository's nine
+# Cargo.lock files.

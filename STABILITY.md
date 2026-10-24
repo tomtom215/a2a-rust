@@ -12,7 +12,21 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 ## 1. Where the project is
 
-The crates are at `0.15.0`, unreleased; `0.14.1` (2026-09-30) is the newest release. The account below was written at `0.13` (2026-09-20) and is not yet brought up to `0.14` and `0.15`, whose breaking changes are in `CHANGELOG.md`. Between `0.7.0` (2026-07-24) and `0.11.0`
+The crates are at `0.15.0`, unreleased; `0.14.1` (2026-09-30) is the newest
+release. `0.14.0` (2026-09-26) carried seven breaking changes and `0.14.1`,
+a patch, none. `0.15.0` carries 26, each under "Breaking Changes" in
+`CHANGELOG.md` with its migration (counted 2026-10-23 as that section's
+top-level entries). That number is deliberate: the maintainer chose on
+2026-10-23 to land every break then known in this one release, the minimum
+supported Rust version included (§5), rather than spread them over several.
+It also restarts §7's count again: `0.13.0`, `0.14.0` and `0.15.0` each
+break, so no release yet counts toward the two consecutive unbroken minors
+`1.0` needs. None waives §3's deprecation window: `sign_agent_card`, which
+can omit the `kid` spec §8.4.2 requires, is deprecated, refuses `None` as a
+specification correction (§2), and is removed in `0.16.0`.
+
+What follows is the account written at `0.13` (2026-09-20), kept as it was.
+Between `0.7.0` (2026-07-24) and `0.11.0`
 (2026-08-30) there were four minor releases in five weeks, and the changelog
 for that span names nine breaking changes. That cadence was appropriate while
 the A2A `v1.0` wire contract, the tenant model and the four bindings were
@@ -141,11 +155,15 @@ removing an unsafe surface; those are documented as such.
 ## 5. Minimum supported Rust version
 
 The MSRV is part of the public API. It is raised only in a minor release,
-only for a language or standard-library feature that earns it, and the
-release notes say what that feature is. It is never raised because a
-transitive dependency moved: with the edition-2024 resolver, Cargo selects
-dependency versions compatible with the declared `rust-version`, and CI
-builds the workspace on that exact toolchain.
+only for a language or standard-library feature that earns it or to adopt a
+new major version of a direct dependency, and the release notes say which.
+It is never raised because a transitive dependency moved: with the
+edition-2024 resolver, Cargo selects dependency versions compatible with the
+declared `rust-version`, and CI builds the workspace on that exact
+toolchain. (The direct-dependency case was added on 2026-10-23, for 0.15.0,
+which raises the MSRV from 1.88 to 1.94 to take `sqlx` 0.9; folding that
+into the release that already breaks the API spares integrators a second
+breaking release later.)
 
 The current MSRV is in the workspace `Cargo.toml` (`rust-version`) and the
 README badge, which CI keeps consistent.

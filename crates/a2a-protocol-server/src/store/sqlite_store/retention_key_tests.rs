@@ -156,7 +156,7 @@ async fn the_sweep_will_not_expire_a_key_younger_than_the_task_age() {
 
     let report = store
         .purge_expired(
-            &RetentionPolicy::new(Duration::from_secs(30 * 24 * 3600))
+            &RetentionPolicy::new(Duration::from_hours(30 * 24))
                 .with_idempotency_key_max_age(Some(Duration::from_secs(60))),
         )
         .await

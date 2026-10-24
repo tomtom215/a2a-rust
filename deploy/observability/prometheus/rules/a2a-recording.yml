@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Recording rules over the metrics a2a-rust emits, under the names Prometheus
+# gives them when it ingests OTLP (UnderscoreEscapingWithSuffixes) or scrapes
+# an OpenTelemetry Collector's Prometheus exporter: `rpc.server.call.duration`
+# becomes `rpc_server_call_duration_seconds_*`, attribute dots become
+# underscores (`rpc.system.name` -> `rpc_system_name`), and the resource's
+# service.name / service.instance.id become `job` / `instance`.
+#
+# The `error_type` label is set only on a call the OpenTelemetry RPC
+# conventions count as failed (a JSON-RPC error, an HTTP 5xx on HTTP+JSON,
+# one of six server-side gRPC codes), so an error ratio counts exactly those.
+
+groups:
+  - name: a2a-rpc-server
+    interval: 30s
+    rules:
+      - record: a2a:rpc_server_calls:rate5m
+        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count[5m]))
+      - record: a2a:rpc_server_errors:rate5m
+        expr: sum by (job, rpc_system_name, rpc_method) (rate(rpc_server_call_duration_seconds_count{error_type!=""}[5m]))
+      - record: a2a:rpc_server_error_ratio:rate5m
+        expr: |
+          sum by (job) (rate(rpc_server_call_duration_seconds_count{error_type!=""}[5m]))
+            /
+          sum by (job) (rate(rpc_server_call_duration_seconds_count[5m]))
+      # Streaming methods last as long as their stream, so latency quantiles
+      # are taken over unary calls only.
+      - record: a2a:rpc_server_unary_latency:p50_5m
+        expr: histogram_quantile(0.50, sum by (job, rpc_method, le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m])))
+      - record: a2a:rpc_server_unary_latency:p95_5m
+        expr: histogram_quantile(0.95, sum by (job, rpc_method, le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m])))
+      - record: a2a:rpc_server_unary_latency:p99_5m
+        expr: histogram_quantile(0.99, sum by (job, rpc_method, le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m])))
+
+  - name: a2a-server
+    interval: 30s
+    rules:
+      # Requests that produced neither a response nor an error: a panicked
+      # executor, a dropped connection, a process that went away
+      # mid-request. A request ends in exactly one of on_response or
+      # on_error, so both are subtracted.
+      - record: a2a:server_unanswered:rate5m
+        expr: |
+          sum by (job, instance) (rate(a2a_server_requests_total[5m]))
+            - sum by (job, instance) (rate(a2a_server_responses_total[5m]))
+            - (sum by (job, instance) (rate(a2a_server_errors_total[5m])) or sum by (job, instance) (rate(a2a_server_requests_total[5m])) * 0)
+      - record: a2a:server_errors_by_kind:rate5m
+        expr: sum by (job, method, error) (rate(a2a_server_errors_total[5m]))
+      - record: a2a:push_deliveries:rate5m
+        expr: sum by (job, outcome) (rate(a2a_server_push_deliveries_total[5m]))
+      - record: a2a:push_delivery_failure_ratio:rate5m
+        expr: |
+          sum by (job) (rate(a2a_server_push_deliveries_total{outcome!="delivered"}[5m]))
+            /
+          sum by (job) (rate(a2a_server_push_deliveries_total[5m]))
+
+  - name: a2a-rpc-client
+    interval: 30s
+    rules:
+      - record: a2a:rpc_client_calls:rate5m
+        expr: sum by (job, rpc_system_name, rpc_method, server_address) (rate(rpc_client_call_duration_seconds_count[5m]))
+      - record: a2a:rpc_client_error_ratio:rate5m
+        expr: |
+          sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count{error_type!=""}[5m]))
+            /
+          sum by (job, server_address) (rate(rpc_client_call_duration_seconds_count[5m]))
+      - record: a2a:rpc_client_unary_latency:p95_5m
+        expr: histogram_quantile(0.95, sum by (job, server_address, rpc_method, le) (rate(rpc_client_call_duration_seconds_bucket{rpc_method!~".*/(SendStreamingMessage|SubscribeToTask)"}[5m])))

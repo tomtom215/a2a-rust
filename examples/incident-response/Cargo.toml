@@ -42,10 +42,10 @@ a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["
 # All four bindings are hard dependencies, not features: this example asserts
 # a complete method x binding matrix, and behind a feature flag the default
 # build would quietly shrink the matrix and still report it full.
-# `otlp`: the SDK's `Telemetry`, which exports when
-# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+# `otlp`: the SDK's `Telemetry`, which exports each
+# signal an OTLP endpoint is configured for (`OTEL_EXPORTER_OTLP_ENDPOINT` or
+# the signal's own `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT`).
 a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "otlp"] }
-tracing-subscriber = { workspace = true }
 a2a-example-harness = { path = "../harness" }
 
 serde_json     = { workspace = true }

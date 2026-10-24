@@ -595,7 +595,7 @@ pub(crate) mod tests {
     #[test]
     fn format_http_date_next_day() {
         // 1970-01-02 00:00:00 = 86400 seconds
-        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(86400);
+        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_hours(24);
         let date = format_http_date(time);
         assert_eq!(date, "Fri, 02 Jan 1970 00:00:00 GMT");
     }

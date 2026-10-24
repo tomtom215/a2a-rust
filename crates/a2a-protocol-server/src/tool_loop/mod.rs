@@ -73,6 +73,7 @@
 
 mod executor;
 mod idempotency;
+mod loop_error;
 mod model;
 mod openai;
 mod recover;

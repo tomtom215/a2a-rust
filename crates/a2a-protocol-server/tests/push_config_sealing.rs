@@ -51,7 +51,7 @@ async fn pool() -> SqlitePool {
 }
 
 async fn rows(pool: &SqlitePool, table: &str) -> Vec<String> {
-    sqlx::query_scalar(&format!("SELECT data FROM {table}"))
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT data FROM {table}")))
         .fetch_all(pool)
         .await
         .expect("rows")

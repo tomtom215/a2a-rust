@@ -122,10 +122,10 @@ impl ExecutorSpan {
     }
 
     /// What watches the executor's writes on this span's behalf; `None` when
-    /// nothing is recorded.
+    /// nothing is recorded. A run that `continues` a task has no direct reply.
     #[cfg(feature = "tracing")]
-    pub fn recorder(&self) -> Option<OutputRecorder> {
-        (!self.untraced).then(|| OutputRecorder::new(self.span.clone(), self.settings))
+    pub fn recorder(&self, continues: bool) -> Option<OutputRecorder> {
+        (!self.untraced).then(|| OutputRecorder::new(self.span.clone(), self.settings, continues))
     }
 
     /// Runs `fut` — the executor's whole run — inside the span, carrying the
@@ -205,18 +205,18 @@ fn executor_span(
 pub struct OutputRecorder {
     span: tracing::Span,
     content: bool,
-    /// The agent's output so far as message parts, the bytes left, and
-    /// whether the turn has ended and been recorded.
-    output: Mutex<(Vec<Value>, usize, bool)>,
+    /// Output parts, bytes left, turn ended, and task stream (a continued
+    /// task, or task/status/artifact seen: a `Message` is no reply, §3.1.2).
+    output: Mutex<(Vec<Value>, usize, bool, bool)>,
 }
 
 #[cfg(feature = "tracing")]
 impl OutputRecorder {
-    pub const fn new(span: tracing::Span, settings: SpanSettings) -> Self {
+    pub const fn new(span: tracing::Span, settings: SpanSettings, continues: bool) -> Self {
         Self {
             span,
             content: settings.content,
-            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false)),
+            output: Mutex::new((Vec::new(), CONTENT_LIMIT, false, continues)),
         }
     }
 
@@ -253,11 +253,13 @@ impl OutputRecorder {
             StreamResponse::Message(m) => (None, Some(&m.parts), true),
             _ => (None, None, false),
         };
-        let ends_turn = reply || state.is_some_and(|s| s.is_terminal() || s.is_interrupted());
         let Ok(mut output) = self.output.lock() else {
             return;
         };
-        let (collected, budget, ended) = &mut *output;
+        let (collected, budget, ended, task_stream) = &mut *output;
+        let reply = reply && !*task_stream;
+        *task_stream |= !matches!(event, StreamResponse::Message(_));
+        let ends_turn = reply || state.is_some_and(|s| s.is_terminal() || s.is_interrupted());
         if *ended {
             return;
         }

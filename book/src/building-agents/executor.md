@@ -175,7 +175,15 @@ executor can then return, and continue on the client's next message, or
 wait for the credential on the same run: the stream stays open across
 `AUTH_REQUIRED` until the task ends, and after a blocking send, which answers
 at `AUTH_REQUIRED`, what the executor emits next is still stored, so a client
-polling `GetTask` sees the task finish. On the client side,
+polling `GetTask` sees the task finish. The two ways differ in what a
+message to the task does while it waits: spec §7.6.1 asks an agent to keep
+the stream open across `AUTH_REQUIRED` and also to accept messages to the
+task meanwhile, and one run cannot do both. A message sent while the
+executor is still running waits up to
+`HandlerLimits::executor_drain_timeout` (5 s by default) for the run to
+return, then is refused with `UnsupportedOperation` ("already being
+processed"). An executor that should accept the client's next message,
+the credential included, returns after `auth_required`. On the client side,
 `A2aClient::follow_task(id, poll_every)` follows such a task, by subscription
 when the agent can stream and by polling when it cannot (spec §7.6.2).
 

@@ -110,7 +110,7 @@ impl RequestHandler {
                     )
                     // The cancel's own call context, not the send's: an executor
                     // refusing a cancel needs to know who is asking to cancel.
-                    .with_call_context(call_ctx.clone());
+                    .with_call_context(self.executor_call_context(&call_ctx));
 
                     // Use a non-registering writer: if a live queue exists (an in-flight
                     // streaming task) the cancel event reaches its subscribers;

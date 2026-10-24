@@ -860,6 +860,11 @@ impl Transport for WebSocketTransport {
         Some("jsonrpc")
     }
 
+    /// The `ws://` or `wss://` URL the transport connects to.
+    fn server_url(&self) -> Option<&str> {
+        Some(&self.endpoint)
+    }
+
     fn send_request<'a>(
         &'a self,
         method: &'a str,
@@ -1236,6 +1241,8 @@ fn is_stream_terminal(text: &str) -> bool {
 
 fn build_rpc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
     let id = serde_json::Value::String(Uuid::new_v4().to_string());
+    #[cfg(feature = "tracing")]
+    crate::call_span::note_request_id(&id);
     JsonRpcRequest::with_params(id, method, params)
 }
 
@@ -1454,6 +1461,26 @@ mod tests {
         let id = req.id.as_value().expect("id should be present");
         assert!(id.is_string(), "id should be a string UUID");
         assert!(!id.as_str().unwrap().is_empty(), "id should not be empty");
+    }
+
+    /// The id a frame carries is the one the call's span records as
+    /// `jsonrpc.request.id` (`call_span.rs`).
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn build_rpc_request_notes_its_id_for_the_call_span() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let (req, noted) = runtime.block_on(crate::call_span::noting_request_id(async {
+            build_rpc_request("GetTask", serde_json::json!({}))
+        }));
+        let sent = req
+            .id
+            .as_value()
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned);
+        assert!(sent.is_some());
+        assert_eq!(noted, sent);
     }
 
     #[test]

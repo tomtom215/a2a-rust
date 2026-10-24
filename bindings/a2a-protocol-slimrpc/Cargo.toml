@@ -21,7 +21,7 @@
 name         = "a2a-protocol-slimrpc"
 version      = "0.7.0"
 edition      = "2024"
-rust-version = "1.88"
+rust-version = "1.94"
 license      = "Apache-2.0"
 authors      = ["Tom F."]
 repository   = "https://github.com/tomtom215/a2a-rust"
@@ -59,7 +59,13 @@ publish = true
 # packaged manifest.
 a2a-protocol-types  = { version = "0.15", path = "../../crates/a2a-protocol-types", features = ["proto"] }
 a2a-protocol-client = { version = "0.15", path = "../../crates/a2a-protocol-client", default-features = false }
-a2a-protocol-server = { version = "0.15", path = "../../crates/a2a-protocol-server", default-features = false }
+# At its defaults, `tracing` and `otel`, as every other crate here takes it:
+# each call's `SERVER` span and `rpc.server.call.duration` (ADR 0013) reach
+# whatever subscriber and OpenTelemetry provider the process installs. Until
+# 2026-10-23 this was `default-features = false`, left from before `tracing`
+# and `otel` were the server's defaults (2026-10-14), so a SLIMRPC call
+# recorded no span outside this crate's own tests.
+a2a-protocol-server = { version = "0.15", path = "../../crates/a2a-protocol-server" }
 
 # SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
 # types its constructors take.
@@ -76,6 +82,36 @@ serde_json = "1"
 futures    = "0.3"
 tokio      = { version = ">=1.54.1, <2", features = ["rt", "rt-multi-thread", "sync", "macros", "signal", "time"] }
 thiserror  = "2"
+# SLIM's TLS provider, `aws-lc-rs`, installed as the process default by
+# `install_crypto_provider` (`src/lib.rs`). Already in the graph through SLIM.
+rustls     = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+
+[features]
+default = ["otlp"]
+## OTLP export: the SDK's `Telemetry`, configured from the standard `OTEL_*`
+## environment, in the `slim-node` binary and the `in_process` example, as
+## every other binary in the repository builds it, and the server's OTLP
+## exporters for an application that builds its own.
+##
+## On by default since 2026-10-23. Two conflicts with SLIM's own
+## dependencies kept it off until then, both measured:
+##
+## - the server's `otlp` turned on tonic's TLS through `opentelemetry-otlp`,
+##   and tonic then refused the `https://` endpoint SLIM dials through its
+##   own connector ("Connecting to HTTPS without TLS enabled", retried
+##   forever; `remote_node_tls.rs` and `remote_node_mtls.rs` hung). The
+##   server's OTLP/gRPC now dials TLS through its own connector, so no tonic
+##   TLS is linked for it.
+## - the server links rustls with `ring` beside SLIM's `aws-lc-rs`, so rustls
+##   has no process-wide provider and SLIM's first TLS handshake panics
+##   ("Could not automatically determine the process-level CryptoProvider").
+##   `SlimRpcServer::builder().build()` and `SlimRpcTransport::builder()
+##   .connect()` install `aws-lc-rs` first when none is installed; code that
+##   connects a SLIM `Service` of its own before either calls
+##   `install_crypto_provider()` first.
+##
+## `default-features = false` drops the exporters and `Telemetry`.
+otlp = ["a2a-protocol-server/otlp"]
 
 [[bin]]
 name = "slim-node"
@@ -83,11 +119,9 @@ path = "src/bin/slim_node.rs"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
-# `tests/telemetry.rs`: the server's `tracing` feature, so the span each call
-# opens is compiled in and a test subscriber can read it, and `tracing` for
-# that subscriber. The server is the one in `[dependencies]` above; this adds
-# a feature to it in test builds only.
-a2a-protocol-server = { version = "0.15", path = "../../crates/a2a-protocol-server", default-features = false, features = ["tracing"] }
+# `tests/telemetry.rs` and the span tests read the server's spans through a
+# test subscriber: `tracing` for that subscriber. The server's `tracing`
+# feature is on through its defaults in `[dependencies]` above.
 tracing            = "0.1"
 rcgen              = "0.14"
 

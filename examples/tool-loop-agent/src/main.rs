@@ -159,6 +159,17 @@ fn model_from_env() -> Result<OpenAiChatModel, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // OpenTelemetry from the standard `OTEL_*` environment, for each signal
+    // an endpoint is configured for: the server's call span, the executor's
+    // `invoke_agent` span, a `chat` span per model call and an
+    // `execute_tool` span per tool call. Nothing is built without an
+    // endpoint. Kept until `main` returns, which flushes it.
+    let telemetry = Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_export_where_configured()
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    telemetry.install_subscriber();
     let prompt = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
     let prompt = if prompt.trim().is_empty() {
         DEFAULT_PROMPT.to_owned()

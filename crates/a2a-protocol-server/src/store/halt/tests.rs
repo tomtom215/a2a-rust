@@ -101,7 +101,7 @@ impl Scratch {
         let admin_url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
         let admin = sqlx::postgres::PgPool::connect(&admin_url).await.unwrap();
         let name = format!("a2a_halt_test_{}", uuid::Uuid::new_v4().simple());
-        sqlx::query(&format!("CREATE DATABASE {name}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
             .execute(&admin)
             .await
             .unwrap();
@@ -115,10 +115,10 @@ impl Scratch {
     }
 
     async fn drop_database(self) {
-        let _ = sqlx::query(&format!(
+        let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP DATABASE IF EXISTS {} WITH (FORCE)",
             self.name
-        ))
+        )))
         .execute(&self.admin)
         .await;
     }

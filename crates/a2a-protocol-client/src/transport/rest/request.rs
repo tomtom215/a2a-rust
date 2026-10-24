@@ -85,7 +85,7 @@ impl RestTransport {
 
         // For GET/DELETE, append remaining params as query string.
         if route.http_method == HttpMethod::Get || route.http_method == HttpMethod::Delete {
-            let query = build_query_string(&remaining);
+            let query = build_query_string(&remaining)?;
             if !query.is_empty() {
                 uri.push('?');
                 uri.push_str(&query);

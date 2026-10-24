@@ -13,7 +13,6 @@ license.workspace      = true
 
 [dependencies]
 a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk", features = ["axum"] }
-tracing-subscriber = { workspace = true }
 axum             = { version = "0.8", features = ["json", "query", "tokio", "http1"] }
 tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 

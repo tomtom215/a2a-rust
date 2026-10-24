@@ -31,7 +31,18 @@ agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
 async fn run(signing_key_pkcs8: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let card = AgentCard::new("agent", "1.0.0", AgentInterface::jsonrpc("https://agent.example/a2a"))
         .with_description("an agent other agents delegate to")
-        .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
+        .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]))
+        // Spec §13.3: the scheme the bearer interceptor checks.
+        .with_security_schemes(std::collections::HashMap::from([(
+            "bearer".to_owned(),
+            a2a_protocol_types::security::SecurityScheme::Http(
+                a2a_protocol_types::security::HttpAuthSecurityScheme {
+                    scheme: "Bearer".to_owned(),
+                    description: None,
+                    bearer_format: None,
+                },
+            ),
+        )]));
     let handler = RequestHandlerBuilder::new(Agent)
         .with_agent_card(card)
         .with_profile(Profile::Production)

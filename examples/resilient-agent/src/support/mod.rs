@@ -148,7 +148,7 @@ pub fn is_refusal(error: &ClientError) -> bool {
 ///
 /// A compare-exchange loop rather than `fetch_update`, which nightly
 /// (2026-09-09) deprecates in favour of `try_update`; `try_update` is not
-/// stable on the 1.88 MSRV.
+/// stable on the 1.94 MSRV.
 pub fn claim_one(counter: &AtomicU32) -> bool {
     let mut current = counter.load(Ordering::SeqCst);
     loop {

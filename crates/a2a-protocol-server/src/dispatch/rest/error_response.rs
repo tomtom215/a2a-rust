@@ -36,11 +36,14 @@ pub fn bad_request_response(
     )
 }
 
-/// The request field a data error is about, as `serde_path_to_error` spells
-/// the path (`message.parts[0].text`); `""` at the top level.
-fn violation_field(path: &serde_path_to_error::Path) -> String {
-    let field = path.to_string();
-    if field == "." { String::new() } else { field }
+/// The [`Unreadable::violation`] for a value that did not deserialize: the
+/// field `serde_path_to_error` names (with a missing key appended, see
+/// [`violation_field`](crate::streaming::sse::violation_field)) and the
+/// error's text.
+fn violation<E: std::fmt::Display>(path: &serde_path_to_error::Path, inner: &E) -> Unreadable {
+    let description = inner.to_string();
+    let field = crate::streaming::sse::violation_field(&path.to_string(), &description);
+    Unreadable::violation(&field, &description)
 }
 
 /// Deserializes request parameters from a parsed body. A value of the wrong
@@ -50,8 +53,7 @@ fn violation_field(path: &serde_path_to_error::Path) -> String {
 pub fn params_from_value<T: serde::de::DeserializeOwned>(
     value: serde_json::Value,
 ) -> Result<T, Unreadable> {
-    serde_path_to_error::deserialize(value)
-        .map_err(|e| Unreadable::violation(&violation_field(e.path()), &e.inner().to_string()))
+    serde_path_to_error::deserialize(value).map_err(|e| violation(e.path(), e.inner()))
 }
 
 /// Deserializes request parameters from raw body bytes. Malformed JSON is a
@@ -69,7 +71,7 @@ pub fn params_from_slice<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<
             let mut de = serde_json::Deserializer::from_slice(body);
             let tracked: Result<T, _> = serde_path_to_error::deserialize(&mut de);
             Err(match tracked {
-                Err(t) => Unreadable::violation(&violation_field(t.path()), &t.inner().to_string()),
+                Err(t) => violation(t.path(), t.inner()),
                 Ok(_) => Unreadable::violation("", &e.to_string()),
             })
         }

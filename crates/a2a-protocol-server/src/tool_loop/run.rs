@@ -11,10 +11,11 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::idempotency::{self, Secret};
-use super::model::{ChatMessage, ChatRequest, ModelError, ToolCall, ToolModel};
+pub use super::loop_error::LoopError;
+use super::model::{ChatMessage, ChatRequest, ToolCall, ToolModel};
 use super::recover;
 use super::tool::{ToolError, ToolInvocation, ToolSet};
-use crate::rpc_span::GenAiSpan;
+use crate::rpc_span::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 
 /// The turn bound when none is set.
 ///
@@ -34,45 +35,6 @@ pub struct Answer {
     /// result`. Empty when the model answered without calling anything.
     pub trace: Vec<String>,
 }
-
-/// Why a run produced no answer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum LoopError {
-    /// The model provider failed a turn.
-    Model(ModelError),
-    /// A tool returned [`ToolError::Fatal`].
-    Fatal {
-        /// The tool that failed.
-        tool: String,
-        /// What it said.
-        message: String,
-    },
-    /// The model asked for tools on every one of this many turns.
-    TurnLimit(usize),
-    /// The cancellation token fired.
-    Cancelled,
-    /// The caller's budget ran out: its deadline passed, or the model's
-    /// reported usage spent the [`TOKENS_METER`] (ADR 0023).
-    Budget(Exhausted),
-}
-
-impl fmt::Display for LoopError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Model(e) => e.fmt(f),
-            Self::Fatal { tool, message } => write!(f, "tool '{tool}' failed: {message}"),
-            Self::TurnLimit(turns) => write!(
-                f,
-                "the model asked for tools on all {turns} turns without answering"
-            ),
-            Self::Cancelled => f.write_str("cancelled"),
-            Self::Budget(e) => e.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for LoopError {}
 
 /// A model, the tools it may call, and the bounded loop between them.
 ///
@@ -95,6 +57,8 @@ pub struct ToolLoop {
     max_turns: usize,
     recover_text_calls: bool,
     secret: Secret,
+    agent_name: Option<String>,
+    meter: GenAiMeter,
 }
 
 impl fmt::Debug for ToolLoop {
@@ -104,6 +68,7 @@ impl fmt::Debug for ToolLoop {
             .field("tools", &self.tools)
             .field("max_turns", &self.max_turns)
             .field("recover_text_calls", &self.recover_text_calls)
+            .field("agent_name", &self.agent_name)
             .finish_non_exhaustive()
     }
 }
@@ -120,7 +85,27 @@ impl ToolLoop {
             max_turns: DEFAULT_MAX_TURNS,
             recover_text_calls: true,
             secret: idempotency::fresh_secret(),
+            agent_name: None,
+            meter: GenAiMeter::default(),
         }
+    }
+
+    /// Names the agent this loop is, recorded as `gen_ai.agent.name` on
+    /// the run's metrics.
+    #[must_use]
+    pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
+        self.agent_name = Some(name.into());
+        self
+    }
+
+    /// Records the loop's metrics (`gen_ai.client.inference.duration` and
+    /// the rest; ADR 0013) to `meter` rather than to the global provider's
+    /// meter, which is looked up each time one is recorded.
+    #[cfg(feature = "otel")]
+    #[must_use]
+    pub fn with_meter(mut self, meter: opentelemetry::metrics::Meter) -> Self {
+        self.meter = GenAiMeter::new(meter);
+        self
     }
 
     /// Sets the secret idempotency keys are derived under. Each loop draws
@@ -220,6 +205,27 @@ impl ToolLoop {
         cancel: &CancellationToken,
         budget: Option<&BudgetHandle>,
     ) -> Result<Answer, LoopError> {
+        let run = AgentRun::start(
+            &self.meter,
+            self.agent_name.as_deref(),
+            self.model.model_name(),
+        );
+        let result = self
+            .run_counted(&run, scope, user_text, cancel, budget)
+            .await;
+        run.ended(result.as_ref().err().map(LoopError::error_type).as_deref());
+        result
+    }
+
+    /// [`run_scoped`](Self::run_scoped), counting turns and calls in `run`.
+    async fn run_counted(
+        &self,
+        run: &AgentRun,
+        scope: &str,
+        user_text: &str,
+        cancel: &CancellationToken,
+        budget: Option<&BudgetHandle>,
+    ) -> Result<Answer, LoopError> {
         let specs = self.tools.specs();
         let names = self.tools.names();
         let mut messages = vec![ChatMessage::User(user_text.to_owned())];
@@ -233,6 +239,7 @@ impl ToolLoop {
                 return Err(LoopError::Cancelled);
             }
             out_of_time(budget)?;
+            run.inference_call();
             let reply = self
                 .turn(ChatRequest::new(&self.preamble, &messages, &specs), cancel)
                 .await?;
@@ -272,7 +279,7 @@ impl ToolLoop {
                 if cancel.is_cancelled() {
                     return Err(LoopError::Cancelled);
                 }
-                let content = self.call(&call, cancel, scope, &mut done).await?;
+                let content = self.call(run, &call, cancel, scope, &mut done).await?;
                 trace.push(format!("{}({}) -> {content}", call.name, call.arguments));
                 messages.push(ChatMessage::ToolResult {
                     call_id: call.id,
@@ -284,13 +291,24 @@ impl ToolLoop {
         Err(LoopError::TurnLimit(self.max_turns))
     }
 
+    /// The span of `call`, opened as it starts to run.
+    fn tool_span(&self, call: &ToolCall) -> GenAiSpan {
+        let description = self.tools.get(&call.name).map(|t| t.description());
+        GenAiSpan::tool(&call.name, &call.id, description, &self.meter)
+    }
+
     /// One model turn, in its span, abandoned if `cancel` fires.
     async fn turn(
         &self,
         request: ChatRequest<'_>,
         cancel: &CancellationToken,
     ) -> Result<super::model::ModelTurn, LoopError> {
-        let span = GenAiSpan::chat(self.model.provider_name(), self.model.model_name());
+        let span = GenAiSpan::chat(
+            self.model.provider_name(),
+            self.model.model_name(),
+            self.model.server(),
+            &self.meter,
+        );
         let result = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(LoopError::Cancelled),
@@ -299,11 +317,13 @@ impl ToolLoop {
         match result {
             Ok(reply) => {
                 let usage = reply.usage.unwrap_or_default();
-                span.answered(
-                    usage.input_tokens,
-                    usage.output_tokens,
-                    reply.response_model.as_deref(),
-                );
+                span.answered(Reply {
+                    input_tokens: usage.input_tokens,
+                    output_tokens: usage.output_tokens,
+                    response_model: reply.response_model.as_deref(),
+                    response_id: reply.response_id.as_deref(),
+                    finish_reason: reply.finish_reason.as_deref(),
+                });
                 Ok(reply)
             }
             Err(e) => {
@@ -317,9 +337,11 @@ impl ToolLoop {
     /// Runs one call in its span and returns what goes back to the model.
     /// Only [`ToolError::Fatal`] and cancellation are errors here. A call
     /// whose key is in `done` is not run: the earlier result is returned,
-    /// marked, and no span is opened, since nothing ran.
+    /// marked, and no span is opened and nothing counted in `run`, since
+    /// nothing ran.
     async fn call(
         &self,
+        run: &AgentRun,
         call: &ToolCall,
         cancel: &CancellationToken,
         scope: &str,
@@ -338,7 +360,8 @@ impl ToolLoop {
                 "not run again: an identical call already ran in this task and returned: {earlier}"
             ));
         }
-        let span = GenAiSpan::tool(&call.name, &call.id, tool.map(|t| t.description()));
+        run.tool_call();
+        let span = self.tool_span(call);
         let Some(tool) = tool else {
             span.failed("unknown_tool");
             return Ok(format!(
@@ -362,6 +385,7 @@ impl ToolLoop {
         };
         match result {
             Ok(output) => {
+                span.succeeded();
                 if !tool.read_only() {
                     done.insert(key, output.clone());
                 }

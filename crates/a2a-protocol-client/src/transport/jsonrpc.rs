@@ -183,6 +183,8 @@ impl JsonRpcTransport {
         query: &[(String, String)],
     ) -> ClientResult<(serde_json::Value, hyper::Request<Full<Bytes>>)> {
         let id = serde_json::Value::String(Uuid::new_v4().to_string());
+        #[cfg(feature = "tracing")]
+        crate::call_span::note_request_id(&id);
         let rpc_req = JsonRpcRequest::with_params(id.clone(), method, params);
         let body_bytes = serde_json::to_vec(&rpc_req).map_err(ClientError::Serialization)?;
 
@@ -355,7 +357,7 @@ impl JsonRpcTransport {
     ) -> ClientResult<EventStream> {
         trace_info!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
 
-        let (_request_id, req) = self.build_request(method, params, extra_headers, true, query)?;
+        let (request_id, req) = self.build_request(method, params, extra_headers, true, query)?;
 
         // `stream_connect_timeout` bounds establishing the stream: headers,
         // and — when the answer is not a stream — the error body too, from
@@ -425,7 +427,8 @@ impl JsonRpcTransport {
         // `A2aClient` replaces this with `ClientConfig`'s value.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
-                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT),
+                .with_first_event_timeout(crate::config::DEFAULT_STREAM_FIRST_EVENT_TIMEOUT)
+                .expecting_id(request_id),
         )
     }
 }

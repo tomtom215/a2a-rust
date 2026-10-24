@@ -10,9 +10,8 @@
 
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::extensions::AgentCardSignature;
-#[allow(deprecated)] // the kid-less tests below exercise it on purpose
 use a2a_protocol_types::signing::{
-    canonicalize, canonicalize_card, sign_agent_card, sign_card_es256, verify_agent_card,
+    canonicalize, canonicalize_card, sign_card_ed25519, sign_card_es256, verify_agent_card,
 };
 
 use base64::Engine;
@@ -310,7 +309,7 @@ fn canonicalize_card_has_no_extra_whitespace() {
     );
 }
 
-// ── T-1.3: sign_agent_card() and verify_agent_card() roundtrip ──────────────
+// ── T-1.3: sign_card_es256() and verify_agent_card() roundtrip ──────────────
 
 #[test]
 fn sign_and_verify_roundtrip() {
@@ -324,32 +323,40 @@ fn sign_and_verify_roundtrip() {
     verify_agent_card(&card, &sig, &pub_key).unwrap();
 }
 
-/// A foreign signer may still omit `kid`; verification must not depend on it.
+/// A foreign signer may still omit `kid`; verification must not depend on
+/// it. This SDK's signers always write one, so the signature is made by hand.
 #[test]
-#[allow(deprecated)]
 fn sign_and_verify_without_key_id() {
     let card = minimal_card();
     let (pkcs8, pub_key) = generate_es256_keypair();
 
-    let sig = sign_agent_card(&card, &pkcs8, None).unwrap();
+    let protected = URL_SAFE_NO_PAD.encode(br#"{"alg":"ES256","typ":"JOSE"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(canonicalize_card(&card).unwrap());
+    let rng = SystemRandom::new();
+    let key = EcdsaKeyPair::from_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &pkcs8, &rng);
+    let signed = key
+        .unwrap()
+        .sign(&rng, format!("{protected}.{payload}").as_bytes());
+    let signature = URL_SAFE_NO_PAD.encode(signed.unwrap().as_ref());
+    let sig = AgentCardSignature {
+        protected,
+        signature,
+        header: None,
+    };
     verify_agent_card(&card, &sig, &pub_key).unwrap();
 }
 
+/// §8.4.2: "The protected header MUST include" `alg`, `typ` and `kid`, for
+/// EdDSA too. `sign_agent_card_ed25519(.., None)`, added and removed within
+/// 0.15.0 and never published, wrote no `kid`.
 #[test]
-#[allow(deprecated)]
-fn the_deprecated_signer_omits_kid_when_given_none() {
-    let card = minimal_card();
-    let (pkcs8, _) = generate_es256_keypair();
-
-    let sig = sign_agent_card(&card, &pkcs8, None).unwrap();
-
-    let header_bytes = URL_SAFE_NO_PAD.decode(&sig.protected).unwrap();
-    let header: serde_json::Value = serde_json::from_slice(&header_bytes).unwrap();
-    assert_eq!(header["alg"], "ES256");
-    assert!(
-        header.get("kid").is_none(),
-        "kid should be absent when not provided"
-    );
+fn eddsa_protected_header_carries_alg_typ_and_kid() {
+    let pkcs8 = signature::Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+    let sig = sign_card_ed25519(&minimal_card(), pkcs8.as_ref(), "ed-key-1").unwrap();
+    let header: serde_json::Value =
+        serde_json::from_slice(&URL_SAFE_NO_PAD.decode(&sig.protected).unwrap()).unwrap();
+    let expected = serde_json::json!({"alg": "EdDSA", "typ": "JOSE", "kid": "ed-key-1"});
+    assert_eq!(header, expected);
 }
 
 /// §8.4.2: the protected header MUST carry `alg` and `kid`, and `typ`

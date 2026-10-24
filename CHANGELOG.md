@@ -10,7 +10,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known Limitations
+
+- **Several replicas sharing a store need session affinity.** Without every
+  turn of a task routed to one replica, two replicas can run the same task
+  at once (`the_single_writer_refusal_does_not_cross_replicas`), and a
+  continuation saved on one can overwrite what the other's turn wrote
+  meanwhile: the stored task loses it, though a subscriber still receives
+  the event (`tests/stale_write_position`). Compare-and-set task writes and
+  cross-replica single-writer admission would close it; they are planned,
+  not built. One replica, or several with affinity, is the supported
+  topology for 0.15 ([Running More Than One Replica](book/src/deployment/horizontal-scaling.md)).
+
 ### Breaking Changes
+
+- **`serve::Server` is no longer `UnwindSafe` or `RefUnwindSafe` with
+  `tls-rustls`** (server; on by default in the SDK). The field holding
+  `Server::with_tls`'s configuration carries rustls' server configuration,
+  which implements neither. Code that sent a `Server` across
+  `std::panic::catch_unwind` wraps it in `AssertUnwindSafe`. Found by
+  `cargo-semver-checks` 0.51.0 against 0.14.1 (`auto_trait_impl_removed`),
+  the one break that run reported which this list did not name.
+
+- **The client refuses an agent's object that a2a.proto does not allow
+  (`ClientError::InvalidAgentResponse`).** Spec §5.7: implementations SHOULD
+  reject messages missing a REQUIRED field. On every binding (JSON-RPC,
+  HTTP+JSON, WebSocket, gRPC) the tasks `get_task`/`cancel_task`/`list_tasks`
+  return, what `send_message` returns, every streamed event, and the push
+  configs the push-config calls return are checked against
+  `a2a_protocol_types::required`: a task with an empty `id`, a status in
+  `TASK_STATE_UNSPECIFIED`, a message with no `messageId`/`role`/parts, an
+  artifact with no `artifactId` or parts, a status/artifact update with no
+  `taskId`/`contextId`, a push config with no `url` or `authentication.scheme`
+  now fail the call with the new `ClientError::InvalidAgentResponse(String)`
+  naming the call and field (not retryable; converts to `ErrorCode::InvalidAgentResponse`).
+  A refused stream event ends the stream. They used to be returned as if valid.
+  What integrators see: calls to a non-conformant agent that used to succeed
+  now fail; match `InvalidAgentResponse` to tell this from a transport fault.
+  `ClientError` is `#[non_exhaustive]`, so adding the variant breaks no match.
+  Crates: `a2a-protocol-client`, `a2a-protocol-types`.
+  Tests: `crates/a2a-protocol-client/tests/received_validation/` (`json.rs`,
+  `grpc.rs`, `cards.rs`).
+- **Agent cards a client receives must pass `AgentCard::validate` and
+  `validate_security_schemes`.** `resolve_agent_card`, `fetch_card_from_url`,
+  `CachingCardResolver` and `get_extended_agent_card` refuse, with
+  `InvalidAgentResponse`, a card the server would refuse to publish (no
+  description, no skills, empty `provider.url`, a skill with no name, a
+  signature with no `signature`, an empty `protocolVersion`, a security
+  scheme with an empty REQUIRED string, ...). A refused extended card is not
+  adopted (its capabilities and security are not acted on).
+  `ClientBuilder::from_card` does not validate the card it is handed.
+  Crates: `a2a-protocol-client`. Tests:
+  `cards.rs a_discovered_card_that_breaks_a_publishing_rule_is_refused`,
+  `an_extended_card_that_breaks_a_publishing_rule_is_refused_and_not_adopted`.
+- **The gRPC conversion refuses an absent REQUIRED field.** `TryFrom<pb::…>`
+  now returns `ConvertError { reason: "missing required field" }` for
+  `Task.id`, `TaskStatus.state` (0), `Message.message_id`/`role` (0),
+  `Artifact.artifact_id`, `TaskStatusUpdateEvent`/`TaskArtifactUpdateEvent`
+  `task_id`/`context_id`, `AgentCard.name`/`description`/`version`/
+  `capabilities` (no longer defaulted to the empty set), `AgentInterface`
+  `url`/`protocol_binding`/`protocol_version`, `AgentProvider`, `AgentSkill`
+  `id`/`name`/`description`, `AgentCardSignature` fields, `apiKey.name`,
+  `httpAuth.scheme`, `openIdConnectUrl` and the authorization-code,
+  client-credentials and device-code flows' URLs — the cases where the same
+  JSON without the key does not parse. A server answers such a gRPC request
+  `INVALID_ARGUMENT` with a `BadRequest` violation (it used to reach the
+  handler, which refused most of them with the same code). A client reports a
+  response its conversion refuses as `InvalidAgentResponse` (it was
+  `Transport`). Crates: `a2a-protocol-types`, `a2a-protocol-client`.
+  Tests: `crates/a2a-protocol-types/src/proto/convert/required_tests.rs`,
+  `card.rs agent_card_missing_capabilities_is_refused`,
+  `tests/proptest_proto_convert.rs unspecified_state_and_role_are_refused`.
+
+- **An authenticating interceptor needs a scheme declared in the public
+  card, and an extended-card scheme must also be in the public card**
+  (server; spec §13.3). §13.3: agents "MUST authenticate requests using one
+  of the schemes declared in the public `AgentCard.securitySchemes`".
+  `RequestHandlerBuilder::build` compared the interceptors with the schemes
+  of the public and extended cards pooled, and passed when none were
+  declared, so a public card declaring nothing built behind any
+  authenticator, and a scheme declared only on the extended card passed for
+  the public card's. It now refuses, with `InvalidParams` naming §13.3:
+  (1) any authenticating interceptor (bundled or custom) behind a public
+  card that declares no `securitySchemes`; (2) a scheme the extended card
+  declares that the public card does not declare under the same name with
+  the same definition; (3) as before, an authenticator whose
+  `checks_scheme` answers `Some(false)` to every scheme, now of the public
+  card only. A custom authenticator that answers `None` (the trait default)
+  is still trusted to check one of the declared schemes: only its author
+  knows what it checks, and refusing it would refuse every custom
+  authenticator ever written. Without a public card (`without_agent_card`)
+  the extended card's schemes are checked as before.
+  **Migration:** declare the scheme your interceptor checks in the card you
+  pass to `with_agent_card`: for `BearerTokenAuthInterceptor` or
+  `JwtAuthInterceptor`, `securitySchemes: {"bearer": {"httpAuthSecurityScheme":
+  {"scheme": "Bearer"}}}` (in Rust,
+  `.with_security_schemes(HashMap::from([("bearer".into(),
+  SecurityScheme::Http(HttpAuthSecurityScheme { scheme: "Bearer".into(),
+  description: None, bearer_format: None }))]))`); for
+  `ApiKeyAuthInterceptor`, an `apiKeySecurityScheme` naming its header; for
+  `MutualTlsAuthInterceptor`, a `mutualTlsSecurityScheme`; and repeat every
+  extended-card scheme in the public card. The ITK agent now declares its
+  bearer scheme in every pass (it guards the extended card in every pass),
+  and the SLIMRPC binding's tests declare `mutualTlsSecurityScheme` for
+  `SlimPeerAuthInterceptor::required()`. Tests:
+  `auth::declared_tests::an_authenticator_behind_a_public_card_declaring_no_scheme_is_refused`,
+  `auth::declared_tests::a_scheme_declared_only_on_the_extended_card_is_refused`.
+
+- **The MSRV is 1.94, and the SQL stores use `sqlx` 0.9** (server, SDK,
+  SLIMRPC binding; 2026-10-23). `sqlx` 0.9 needs Rust 1.94, and its pool
+  types are in the SQL stores' public constructors (`SqliteTaskStore`,
+  `PostgresTaskStore` and the rest take a `SqlitePool` / `PgPool`), so an
+  integrator building one from its own pool moves to `sqlx` 0.9 with this
+  release. `STABILITY.md` §5 now lets a minor release raise the MSRV to
+  adopt a direct dependency's major version, which is this case; it was
+  folded into 0.15.0 so that the stores' move does not need a second
+  breaking release. sqlx 0.9 refuses a statement built at run time unless
+  it is vouched for; the seventeen such statements in the library (the
+  `ListTasks` filters, retention, caller-key erasure, the audit key lookup,
+  the SQLite schema helpers and the several-part artifact append; counted
+  with `grep -rn AssertSqlSafe` outside tests) are built from static text,
+  `&'static str` names and integer positions only, and each is marked
+  `sqlx::AssertSqlSafe` with that reason. `pg_schema::apply` and the SQLite
+  `add_applied_seq` helper now take `&'static str`, so a run-time string
+  cannot reach them.
 
 - **Every agent card declares the budget extension** (server; ADR 0023).
   `https://a2a-rust.com/extensions/budget/v1` joins the failure taxonomy
@@ -229,6 +352,245 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`share_tasks_across_callers`).
 
 ### Added
+
+- **Agent-card requests are traced and measured** (server, `tracing` and
+  `otel`; HTTP semantic conventions at `55c98cf`). A request for
+  `/.well-known/agent-card.json` on any listener that serves it (JSON-RPC,
+  HTTP+JSON, the axum router, WebSocket, gRPC) had no span and no metric. It
+  is now an HTTP `SERVER` span (`GET /.well-known/agent-card.json`; the
+  conventions' Required, Conditionally Required and Recommended attributes;
+  a query recorded only as `REDACTED`; error status for a 5xx and not a 4xx)
+  under the handler's `InboundTracePolicy`, and a point in
+  `http.server.request.duration` with bounded attributes. `url.scheme` is
+  `https` when this server's TLS ended the connection: `serve` now marks
+  such requests. Tests: `tests/card_request_telemetry.rs` (every listener,
+  each failing with its instrumentation removed);
+  `tests/card_span_over_tls.rs` (fails without the mark).
+
+- **Every control-map row cites a check; AIA-6 and AIA-53 no longer stand
+  uncited** (docs, CI; EU AI Act Art. 6, Art. 53).
+  - **"Is Your Agent High-Risk?"** (book, deployment): Article 6's two
+    routes, the 6(3) exception and the rule that profiling stays high-risk,
+    the 6(4) duty to document and register, which SDK feature answers which
+    high-risk obligation (Art. 12, 14, 15, 50(2)), and what stays the
+    provider's. Every article number and quoted condition was checked
+    against the Official Journal text (OJ L, 2024/1689). AIA-6 cites it
+    through `check_compliance_map.py`'s document claims.
+  - **`scripts/check_no_model_artifacts.py`**, a new `static-checks` step:
+    no published crate's `cargo package --list` holds a model-format file
+    or one over 10 MiB, and no dependency graph, every feature on, holds a
+    crate that loads or runs models. AIA-53's "contains no general-purpose
+    AI model" cites it. It fails on a `.gguf` planted in a crate, and
+    `prove_gates_fail.sh` carries that injection.
+
+- **SLIMRPC: an agent card declares SLIM's authentication**
+  (`a2a-protocol-slimrpc`; A2A §13.3, SLIMRPC §8.4; WP-A, Medium).
+  `SlimPeerAuthInterceptor::declare_on(&mut card)` adds
+  `server::peer::security_scheme()` to `securitySchemes` under
+  `SECURITY_SCHEME_NAME` (`slimMls`), and for `required()` a security
+  requirement naming it. A2A has no scheme type for SLIM, so it is a
+  `mutualTlsSecurityScheme` whose description names SLIM, the kind whose
+  credential the transport proves for both peers. The interceptor now
+  answers `checks_scheme`: a mutual-TLS scheme and no other, so
+  `RequestHandlerBuilder::build` refuses `required()` behind a card whose
+  only scheme is one it cannot check, where it used to trust it for any.
+  Tests: `server/peer/tests.rs`
+  `declare_on_names_the_scheme_and_requires_it_only_when_required`,
+  `it_checks_the_scheme_it_declares_and_no_other`,
+  `the_handler_builds_only_behind_a_card_that_declares_slim` (the last two
+  fail without `checks_scheme`).
+
+- **A call's `SERVER` span carries its addresses** (server, `tracing`;
+  `docs/rpc/rpc-spans.md`). `network.peer.address` and `network.peer.port`
+  come from the connection the call arrived on, when the binding knows it.
+  `server.address` and `server.port` come from the request's `Host`, as the
+  conventions ask; they are left unset on gRPC and for a `Host` that is
+  not a valid authority. None of them is on the duration metric. Tests:
+  `rpc_span/address.rs`.
+
+- **`http.client.request.duration` for every webhook POST** (server,
+  `otel`). Each push-notification attempt, retries included, is measured
+  with the HTTP conventions' advisory buckets and the attributes of its
+  `POST` span: `http.request.method`, `server.address`, `server.port`,
+  `http.response.status_code` when a response came back, and `error.type`
+  (the status for a 4xx or 5xx, `timeout`, or `transport`), on the global
+  meter provider as it is at the measurement. The URL is not an attribute.
+  Test: `tests/webhook_client_metrics.rs`
+  `every_webhook_attempt_is_measured_with_the_http_client_attributes`.
+
+- **`examples/live-model`: the SDK end to end against a real model.** A
+  check suite over any OpenAI-compatible endpoint (llama.cpp's
+  `llama-server`, vLLM, Ollama): the tool loop streamed and
+  signature-verified on JSON-RPC, HTTP+JSON, gRPC and WebSocket; a client
+  holding another key refusing the signed artifacts; a repeated
+  side-effecting call run once under its idempotency key; a one-token
+  budget exhausted; delegation under a budget; halt cancelling a working
+  run; and an approval quorum of two. Each check reports pass, fail or
+  not exercised. The README records the runs: model, quantization,
+  llama.cpp build and commands.
+
+- **SLIMRPC: every operation over the fabric, and an equivalence suite
+  against JSON-RPC** (`a2a-protocol-slimrpc`; spec §5.1, §12, §12.1).
+  `tests/operations.rs` drives ListTasks, CancelTask, SubscribeToTask and
+  the four push-config methods through the typed client, reads each error
+  path off the wire (status and type-name prefix), and checks that a
+  non-empty unsupported `A2A-Version` gets `VersionNotSupportedError`.
+  `tests/equivalence.rs` serves one `RequestHandler` over SLIMRPC and
+  JSON-RPC at once and checks equal tasks, events and cancelled tasks,
+  equal reads of one task and push config, and eight faults decoding to
+  the same `ErrorCode`. `docs/upstream/agntcy-slim-rpc-error-details.md`
+  drafts an issue for `agntcy/slim` (not filed): `RpcError::details`
+  never reaches the caller.
+
+- **Handler-wide conformance tests** (server `tests/handler_conformance/`,
+  SDK `tests/binding_equivalence/`): the required-extension refusal on every
+  operation through the handler, JSON-RPC and HTTP+JSON;
+  `ContentTypeNotSupported`, terminal-task and unknown-task refusals on the
+  streaming send; no store read before admission on any operation; another
+  caller's task and an unknown one answering identically on the wire; a
+  second cancel having the first's effect; nothing sent to a deleted push
+  config; progress reaching the stream while the executor runs; Get
+  returning the whole push config, which outlives the task's completion; a
+  streaming send's task events honouring `historyLength`; the empty
+  ListTasks page's wire form; artifact-update id binding; gRPC
+  `VersionNotSupported` for a non-empty unsupported version; every
+  binding's error carrying a code and a message; and events arriving in
+  generation order on every binding. Each was shown to fail with its
+  behaviour removed.
+
+- **Every control-map row cites what proves its claim, and CI enforces
+  it.** `docs/compliance/controls.toml` had 42 of 88 rows citing no test.
+  86 now cite a test or a CI step that proves what the row's `sdk` text
+  says the SDK offers; the two whose text says the SDK is not what the
+  provision governs (AIA-6, AIA-53) are listed with the reason in
+  `UNCITED` in `scripts/check_compliance_map.py`. A row whose claim is what
+  a document says (SECURITY.md's channels and timelines, the book's
+  chapters, ADR 0015, the licence) cites the map's CI step, and
+  `DOC_CLAIMS` quotes what each document must keep saying; the rendered map
+  lists every quote. `--check` fails on an uncited row, a stale `UNCITED`
+  entry, or a document that stops saying what is quoted, and
+  `scripts/prove_gates_fail.sh` proves the new rule. Every test the map
+  cites was run on 2026-10-23: 187, all passing, the PostgreSQL ones
+  included. New test: server
+  `audit::executor_detail_tests::an_executors_own_fields_are_recorded_in_the_tenants_chain`.
+
+- **`a2a_protocol_types::required`**: `check_event`, `check_received_event`,
+  `check_task`, `check_response`, `check_push_config`, `check_card`,
+  `check_status`, `check_message`, `check_artifact` — the REQUIRED-field rules
+  both ends apply. **`ClientError::InvalidAgentResponse`**.
+
+The upgrading guide (`book/src/reference/upgrading.md`, 0.14 → 0.15) has a
+section "The client refuses what `a2a.proto` does not allow".
+
+- **`WebSocketDispatcher::with_agent_card_max_age` and
+  `GrpcDispatcher::with_agent_card_max_age`** (server; spec §8.6.1). Both
+  listeners served the card with `max-age=3600` fixed; the default is
+  unchanged. Test:
+  `agent_card_on_every_listener::the_websocket_and_grpc_listeners_send_a_configurable_cache_control`.
+
+- **`TelemetryBuilder::with_export_where_configured` and
+  `Telemetry::install_subscriber`** (server `otlp`; SDK prelude). The first
+  builds each signal only when an endpoint is configured for it —
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
+  `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT`, or code — for a binary
+  that must run with or without a collector; the second installs the
+  telemetry's layer as the global `tracing` subscriber when traces or logs
+  were built, never replacing one. Every binary in the repository now uses
+  both; before, each read only `OTEL_EXPORTER_OTLP_ENDPOINT`, so a
+  metrics-only endpoint exported nothing. `Telemetry` is in the SDK's
+  prelude, and `hello-agent` and `tool-loop-agent`, which built no telemetry,
+  now do. Tests: `export_where_configured_builds_only_the_signals_with_an_endpoint`,
+  `installs_once_and_only_when_traces_or_logs_were_built`, and the CLI's
+  `the_cli_exports_its_calls_when_a_collector_is_named` (a metrics-only
+  endpoint exports metrics alone).
+
+- **A delegation's lease renewals and drop-time cancel are in the parent's
+  trace** (client). Both run on spawned tasks, which start with no current
+  span and no ambient `CurrentTrace`, so each of their calls began a trace
+  of its own. They now run in the span and ambient trace current when the
+  delegation started. Tests: `delegation_spans.rs` (two).
+
+- **Spans for a card fetch and for a push notification received**
+  (client). Fetching an agent card is the HTTP conventions' `CLIENT` span,
+  `GET`, with the method, the URL without userinfo or query, the server, the
+  response status and `error.type` on failure; it had none.
+  `WebhookReceiver::receive` runs in an `INTERNAL` span,
+  `a2a.webhook.receive`, which continues the push sender's `traceparent`
+  when the integrator's server recorded no span, and records the outcome,
+  the task and a rejection's kind, never a secret; before, a notification
+  started no span and its sender's trace ended at the POST. `error.type`
+  for `ClientError::InvalidAgentResponse` is now `invalid_response`, on call
+  spans and the call metric too, not `_OTHER`. Tests: `card_fetch_span.rs`
+  (three), `webhook_receiver_spans.rs` (three),
+  `card_span::tests::the_url_keeps_its_origin_and_path_and_drops_userinfo_and_query`,
+  `every_error_class_has_its_error_type`.
+
+- **A JSON-RPC client call's span carries `jsonrpc.protocol.version`,
+  `rpc.method_original` and `jsonrpc.request.id`** (client), as the
+  server's already did: `docs/rpc/json-rpc.md` makes the first two
+  Conditionally Required (the protocol's `2.0` is not the default `1.0`, and
+  the method as sent, `SendMessage`, differs from `rpc.method`) and the id
+  Recommended. Over HTTP and WebSocket; after a transport retry the id is
+  the last request's, recorded once. Before, `rpc.method_original` was
+  recorded only for a method outside the A2A service. Tests:
+  `call_span::jsonrpc_tests` (four), the WebSocket transport's
+  `build_rpc_request_notes_its_id_for_the_call_span`, and the SDK's
+  `observability_e2e`, which now requires the client span's id to equal the
+  id the server span recorded.
+
+- **The tool loop's `GenAI` metrics and the rest of its `chat` span**
+  (server `tool-loop` with `otel`). Each model turn records
+  `gen_ai.client.inference.duration`, the `gen_ai.client.inference.usage.*`
+  token counters and `gen_ai.client.inference.operation.*` token histograms;
+  each tool call `gen_ai.execute_tool.duration`; each run
+  `gen_ai.invoke_agent.duration`, `.inference_calls` and `.tool_calls` — the
+  names `open-telemetry/semantic-conventions-genai` gives them at `9ffc7e0`,
+  with its advisory buckets. They go to the global meter provider as it is at
+  each measurement, or to `ToolLoop::with_meter`; `ToolLoop::with_agent_name`
+  sets `gen_ai.agent.name`. The `chat` span adds `gen_ai.response.id`,
+  `gen_ai.response.finish_reasons`, `server.address` and `server.port`, from
+  the new `ModelTurn::response_id` and `finish_reason` (read from the
+  completion by `OpenAiChatModel`) and the new `ToolModel::server`, whose
+  default reports none. A turn or call abandoned unfinished — cancelled, or
+  its future dropped, as an executor timeout does — is recorded with
+  `error.type` `cancelled`; before, its span ended looking successful.
+  Tests: `rpc_span::tool::tests::metrics` (eight, each proven to fail with
+  its behaviour removed), `the_response_id_and_finish_reason_are_read`,
+  `the_server_is_the_endpoints_host_and_port`, and
+  `a_turn_exports_its_chat_span_and_the_genai_metrics` (through `Telemetry`
+  to a stand-in OTLP collector).
+
+- **Prometheus rules and Grafana dashboards** (`deploy/observability/`): a
+  Prometheus configuration for OTLP push and one for scraping an
+  OpenTelemetry Collector (with the Collector's configuration), 13 recording
+  rules, 8 alerts with `promtool` unit tests, and three Grafana dashboards
+  (server, client and GenAI) with provisioning. Built from the metric and
+  label names a live Prometheus 3.15.1 recorded from `tck/sut`, the `a2a`
+  CLI and tool-loop agents against a local model, not from the code;
+  `scripts/check_dashboards.py` checks every rule and every panel query
+  against a running stack, and passed on both paths (README: what was
+  measured and the panels left empty). The GenAI dashboard charts the tool
+  loop's model calls, tokens, tool calls and agent runs; the server
+  dashboard's "Task store" row charts `db.client.operation.duration`.
+  Screenshots are in the README and the book's observability page.
+
+- **A database `CLIENT` span and `db.client.operation.duration` for each
+  task-store operation** (server; the OpenTelemetry database conventions,
+  `open-telemetry/semantic-conventions@55c98cf`). A store that names its
+  database through the new defaulted `TaskStore::database`, returning a
+  `StoreDatabase`, is wrapped by the handler: each trait operation is one
+  span named `{db.operation.name} {target}` with `db.system.name`,
+  `db.operation.name` (the method, such as `get` or `append_event`),
+  `db.namespace` and `server.address`/`server.port` where known, and on
+  failure `error.type` (`unavailable` for a temporary failure, otherwise
+  the A2A error code) with error status; the histogram carries the same
+  attributes. The SQLite stores answer `sqlite`; the PostgreSQL stores
+  `postgresql`, with the database name, host or socket, and a port other
+  than 5432 from the pool's options; the encrypted and audited wrappers
+  forward. The in-memory stores, and a custom store that does not
+  override `database`, record neither. Tests: `store_spans`,
+  `store_operation_duration`, and unit tests in `store::traced` and
+  `store::database`, each shown to fail with its behaviour removed.
 
 - **A quorum on the approval gate: `ApprovalGate::with_quorum(n)`** (server;
   EU AI Act Art. 14(5), control map row AIA-14-5, now `supported`). The gate
@@ -1061,8 +1423,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     come back unchanged (`tests/content_provenance_e2e.rs`).
 - **Card verification with EdDSA and JWK Sets** (types and client;
   `signing`).
-  - `sign_agent_card_ed25519` signs with Ed25519, and verification accepts
-    EdDSA as well as ES256.
+  - `sign_card_ed25519` signs with Ed25519, and verification accepts EdDSA
+    as well as ES256.
   - `signing::{Jwk, Jwks, VerifyingKey}` and `verify_agent_card_with_jwks`
     select keys by `kid`. A key is only ever tried under the algorithm its
     type is for.
@@ -1213,6 +1575,207 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#151). `Server::bind` now delegates to it.
 
 ### Behaviour Changes
+
+- **`rpc.server.call.duration`, `rpc.client.call.duration` and
+  `a2a.server.request.duration` use the semantic conventions' current
+  advisory buckets, 0.1 ms to 100 s** (`docs/rpc/rpc-metrics.md` at
+  `55c98cf`), instead of the 5 ms to 10 s set they advised at `838e414`.
+  An agent call that waits on a model routinely takes longer than ten
+  seconds, and every such call fell in the last bucket, so a p95 or p99
+  read 10 s whatever the calls took (seen on the client dashboard over a
+  harness whose calls took 10 to 80 s). The bucket boundaries are part of
+  each series' identity: a stored histogram's quantiles across the upgrade
+  mix the two sets until the old series ages out. ADR 0013 records the
+  change. Tests: the boundaries asserted in `call_metric::tests`,
+  `otel::rpc_tests` and `observability_e2e`.
+
+- **A `Message` an executor writes during its task is streamed as a status
+  update** (server; spec §3.1.2, §3.5.2). A stream is exactly one `Message`
+  or a `Task` followed by status and artifact updates; a `Message` written
+  after the task stream began was forwarded as a `Message` inside it, which
+  is neither. The queue's writer now sends it as a `TaskStatusUpdateEvent`
+  that keeps the state the turn last wrote (or, before any status, the
+  state the turn began in) and carries the message in `status.message`. It
+  does so once, before the event takes its log position, so the send
+  stream, a `SubscribeToTask` stream and a resumed replay carry one payload
+  at that position. The store appends the message to `history` as before,
+  and, while the task is not finished, also holds it as the status message;
+  push subscribers are sent the update. A turn that continues an existing
+  task (a follow-up naming its `taskId`, §3.4.3) folds every `Message`, its
+  first included: §3.1.2 gives the message-only stream to the exchange with
+  "no task tracking", and §3.7 has an agent "attach Messages to status update
+  events" once a task exists. A follow-up answered with a `Message` now gets
+  a task stream (`Task`, then the status update) instead of a message-only
+  stream, and a blocking follow-up the `Task` with the message as its status
+  message instead of the bare `Message`; a `SubscribeToTask` stream on the
+  task gets the same status update. An executor that answers a follow-up
+  that way and sets no state leaves the task waiting where it waited
+  (`input-required` or `auth-required`), the reply as its status message:
+  the handler writes that state after the executor returns (not after a
+  caller's `CancelTask`). Left `Submitted`, the stream ended on a state a
+  client reads as an incomplete stream, and `Delegation` reported `Lost`
+  after cancelling the child; it now reports `Interrupted` with the reply.
+  An executor that answers a waiting task with an acknowledgement and
+  returns, meaning to finish out of band, now leaves the task waiting for
+  input rather than `Submitted`: set a state (`working`) to say otherwise.
+  Still unsettled, as before: a follow-up whose executor writes nothing, or
+  only artifacts, and one to a task an earlier turn left `working`. Push
+  subscribers get the reply twice, in the folded update and the re-park.
+  Found by the independent reviews (`tests/continuation_message.rs`,
+  `tests/continuation_span.rs`, `delegation_tests.rs`
+  `a_follow_up_answered_with_a_message_leaves_the_child_waiting`). Unchanged: a new task's first-event
+  `Message` is a direct reply, a `Message` after only messages on a new task
+  stays one, and one after the terminal status is stored and streamed to no
+  one. A client that
+  read mid-task `Message` events reads `status.message` on status updates
+  instead. With it: the executor's span no longer ends the turn's recorded
+  output at such a message (`rpc_span/span_tests.rs`
+  `a_mid_task_message_does_not_end_the_turn`); the audit trail's
+  `task.event` record of a status update that carries a message names the
+  message's id, as the record of a `Message` event did (`tests/audit_trail.rs`);
+  and a refused history append on a task with no history restores no
+  history rather than an empty one. Tests: `tests/mid_task_message.rs`,
+  `streaming/event_queue/message_fold.rs`, the processor and state-machine
+  unit tests named `carried`, `tests/event_processing_tests/streaming_mode.rs`;
+  each part was shown to fail with it disabled.
+
+- **A refused call is recorded, and counted, for why it was refused**
+  (server; spec §3.3.2; audit WP-A). `ServerError::metric_label`, which
+  names an error in the audit trail's `call` records and in
+  `a2a.server.errors`, answered `protocol` for every A2A error a binding
+  sent as it was, so a missing credential and a denied operation were one
+  record. It now answers `unauthenticated` or `permission_denied` for a
+  refused credential and the error code's label (`version_not_supported`,
+  `content_type_not_supported`, …) for any other. A dashboard or query that
+  matched `protocol` matches these instead. Tests: `error/label_tests.rs`
+  `a_protocol_error_is_labelled_for_what_it_says`;
+  `tests/audit_trail.rs`, `tests/audit_security_events.rs` (each fails with
+  the old label).
+
+- **SLIMRPC: the binding takes the server at its default features, and its
+  `otlp` feature, on by default, builds the SDK's `Telemetry` into
+  `slim-node` and `examples/in_process`** (`a2a-protocol-slimrpc`). The
+  server dependency was `default-features = false`, a leftover from before
+  `tracing` and `otel` were the server's defaults; a SLIMRPC call's `SERVER`
+  span and `rpc.server.call.duration` now reach the application's
+  subscriber and meter provider. The node builds `Telemetry` from the
+  `OTEL_*` environment, as every other binary does, and exits with status 2
+  on a configuration it cannot use. Two conflicts with SLIM's own
+  dependencies first kept `otlp` off by default, and both are fixed: the
+  server's OTLP/gRPC no longer links tonic's TLS (see the server entry
+  below), which had made tonic refuse the `https://` endpoint SLIM dials and
+  hang the TLS node suites; and `install_crypto_provider()`, which
+  `SlimRpcServerBuilder::build` and `SlimRpcTransportBuilder::connect` call,
+  installs SLIM's rustls provider when the process has none, since rustls
+  picks no default with `ring` and `aws-lc-rs` both linked and SLIM's first
+  handshake panicked. `default-features = false` drops `Telemetry` and the
+  exporters. Tests: `tests/out_of_process.rs`
+  `the_node_builds_telemetry_from_the_otel_environment`;
+  `tests/crypto_provider.rs` (fails without the builder's install);
+  `tests/remote_node_tls.rs` and `remote_node_mtls.rs` at default features
+  (hang with tonic's TLS linked, killed at 300 s).
+
+- **The server's OTLP/gRPC export dials TLS through its own connector**
+  (server, `otlp`). `opentelemetry-otlp` was built with tonic's TLS
+  (`tls-ring`, `tls-webpki-roots`), and tonic with any TLS feature refuses
+  an `https://` URI it holds no TLS config for, whoever dials it, which broke
+  a dependent dialling TLS through a connector of its own (SLIM's client).
+  An `https://` collector is now reached over the same rustls stack as
+  OTLP/HTTP: Mozilla's roots, the extra CAs, the client certificate, ALPN
+  `h2`, with tonic given the endpoint as `http://` and the connector always
+  dialling TLS. It works whether or not something else in the process turns
+  tonic's TLS on. Tests: `tests/telemetry_export` (all 31, the four gRPC TLS
+  ones included, in a test build that does link tonic's TLS).
+
+- **An executor's `RequestContext::activated_extensions()` lists only the
+  extensions the agent card declares** (server; spec §4.6.3: an extension
+  or version the agent does not support SHOULD be ignored for the
+  interaction). The response's `A2A-Extensions` header already echoed only
+  the declared set, but the executor was given the raw request list, so it
+  was told `…/ext/v2` was active when the card declared only `…/ext/v1`. The
+  `RequestContext` given to `execute` and `cancel` now carries the
+  intersection, in request order; interceptors (`CallContext::extensions`)
+  and the required-extension check still see the raw list, and without a
+  card the list passes through. An executor that read an undeclared
+  extension no longer finds it: declare it on the card. Tests:
+  `handler_conformance/extension_activation.rs` (three).
+- **A refused request's `google.rpc.BadRequest` names the missing field
+  itself, and the `SendMessage` ids by their wire paths** (server; spec
+  §5.7, §11.6). A missing key was reported at its parent (`message` for a
+  message without `role`, `""` for a request without `message` or `id`); it
+  is now `message.role`, `message.messageId`, `message`, `id`, `url`, on
+  JSON-RPC, WebSocket and HTTP+JSON. The `SendMessage` id checks named
+  `message.id`, `task_id`, `context_id` and `reference_task_ids`; they are
+  `message.messageId`, `message.taskId`, `message.contextId` and
+  `message.referenceTaskIds`, in the violation's `field` and the message
+  ("message.messageId must not be empty or whitespace-only"). A client
+  matching the old strings must use the new ones. Tests:
+  `handler_conformance/required_fields.rs` (two).
+- **An empty push-config `url` is `InvalidParams` naming `url`, checked
+  before the task lookup** (server). It reached the lookup first and
+  answered `TaskNotFoundError` for an unknown task, while the same request
+  without the key answered `InvalidParams`. Tests: `required_fields.rs`,
+  `set_push_config_rejects_an_empty_or_schemeless_url_when_private_urls_are_allowed`.
+
+- **Default metrics follow the global meter provider at each measurement**
+  (server, client). A handler given no `with_metrics`, and every client's
+  `rpc.client.call.duration`, bound their instruments to the provider that
+  was global when the builder or client was created; one built before
+  `Telemetry` was installed recorded into the no-op meter for its whole
+  life. Both now ask for the global provider at each measurement and build
+  their instruments again when it has changed (a pointer comparison while
+  it has not). An `OtelMetrics` passed to `with_metrics` still records to
+  the meter it was built from. `scripts/check_otel_metrics_coverage.py` now
+  also requires the default to forward every `Metrics` callback. Tests:
+  server `default_metrics.rs` and client `call_metric_late_provider.rs`
+  (built first, then a provider installed, then replaced), each failing with
+  the old binding.
+
+- **An interface with an empty `protocolVersion` is no longer selected**
+  (`ClientBuilder::from_card`); it counted as compatible ("the card did not
+  say"). A card whose only interface states none is refused with
+  `InvalidEndpoint` listing what it offers. Test:
+  `selection_tests.rs an_interface_without_a_protocol_version_is_passed_over`.
+- **`list_tasks` sends `status_timestamp_after` in UTC with `Z`** on every
+  binding: an offset or lower-case `t`/`z` is rewritten (millisecond
+  precision); an already canonical value is sent as given; a value that is
+  not ISO 8601 is refused unsent with `ClientError::Protocol(InvalidParams)`.
+  Test: `wire.rs list_tasks_sends_status_timestamp_after_in_utc`,
+  `list_tasks_refuses_a_timestamp_that_is_not_iso_8601_unsent`.
+- **An inline push config's `task_id` is no longer sent with `SendMessage`**
+  (a2a.proto: "Task id should be empty"); it is cleared, with a debug log,
+  rather than refused. Test: `wire.rs an_inline_push_configs_task_id_is_not_sent`.
+- **A JSON-RPC stream frame whose id does not echo the request's is warned
+  about** once per stream (§9.4.2) and still delivered. Tests:
+  `stream_ids.rs a_stream_frame_with_another_id_is_warned_about_once_and_delivered`,
+  `a_stream_frame_echoing_the_request_id_is_not_warned_about`.
+- **The HTTP+JSON client refuses a nested object bound for a query string**
+  (§11.5) with `ClientError::Transport`; none reaches it today because every
+  operation with one is `POST`. Test:
+  `query.rs build_query_string_refuses_a_nested_object`.
+- **Card validation refuses an `http://` URL in the deprecated implicit and
+  password OAuth flows** (proto: "The OAuth2 standard requires the use of
+  TLS"); publishing and receiving such a card both fail. Test:
+  `security_url_tests.rs the_deprecated_flows_urls_must_be_https`.
+
+- **`HttpPushSender` refuses to deliver without the configured
+  credentials** (server; spec §13.2: agents MUST include the credentials
+  `authentication` specifies). A stored config whose `authentication`
+  names a scheme other than `Bearer` or `Basic`, or carries no (or blank)
+  credentials, was delivered with no `Authorization` header; `send` now
+  returns `InvalidParams` naming §13.2 before connecting, and the delivery
+  path records the failure as for any other. Creation already refused such
+  configs, so only one that reached a store another way is affected; leave
+  `authentication` out for an unauthenticated webhook. The tests that pinned
+  the old behaviour are inverted:
+  `push_sender_tests::scheme_without_credentials_is_not_delivered`,
+  `unknown_scheme_is_not_delivered`, `empty_credentials_are_not_delivered`.
+
+- **`Telemetry` reports a `service.instance.id`** (server `otlp`): a random
+  UUID per process unless `OTEL_RESOURCE_ATTRIBUTES` names one. Replicas of
+  one service no longer export identical resources; in Prometheus each
+  becomes its own `instance`. Test:
+  `each_process_gets_an_instance_id_unless_the_environment_names_one`.
 
 - **A malformed request without a credential is refused as
   unauthenticated, on every binding** (server; spec §7.4, §3.3.2;
@@ -2047,6 +2610,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A WebSocket client's spans and `rpc.client.call.duration` carry
+  `server.address` and `server.port`** (client). A transport given to
+  `with_custom_transport`, as `WebSocketTransport` is, recorded neither, so
+  a dashboard could not tell its agents apart; found when the client
+  dashboard's failure-ratio panel showed a series with no agent. The new
+  defaulted `Transport::server_url` names the URL; `WebSocketTransport`
+  returns its endpoint (`ws`/`wss` default to ports 80 and 443), and
+  `build` and `build_grpc` both read it. Tests:
+  `a_custom_transport_names_its_system_and_keeps_the_agent`,
+  `a_custom_transport_given_to_build_grpc_names_its_system_and_address`
+  (the first coverage of `build_grpc`'s custom-transport branch) and
+  `ws_transport_names_its_rpc_system_jsonrpc`.
+
+- **gRPC: a call whose answer cannot be converted to protobuf is recorded
+  as failed** (server, `grpc`). SendMessage, GetTask, ListTasks,
+  CancelTask, GetExtendedAgentCard and a directly answered
+  SendStreamingMessage converted the handler's answer after the call's
+  span had ended, so the caller got `INTERNAL` while the span and
+  `rpc.server.call.duration` recorded `OK`. The conversion now runs inside
+  the call. Test: `dispatch/grpc/native.rs`
+  `an_answer_the_wire_cannot_carry_is_recorded_as_internal` (fails with the
+  conversion moved back after the span).
+
+- **SLIMRPC: `A2aClient::list_push_configs` works** (`a2a-protocol-slimrpc`;
+  spec §12.1). `SlimRpcTransport` answered ListTaskPushNotificationConfigs
+  with a bare list where the typed client expects the
+  `ListPushConfigsResponse` page, so every call failed with "invalid type:
+  map, expected a sequence" and `nextPageToken` was lost. Tests:
+  `tests/operations.rs` `push_configs_round_trip_over_the_fabric`,
+  `tests/equivalence.rs` `one_task_reads_the_same_through_slimrpc_and_jsonrpc`.
+
+- **SLIMRPC: retryable errors carry the A2A error type name**
+  (`a2a-protocol-slimrpc`; SLIMRPC §6.2). `RESOURCE_EXHAUSTED` (overload,
+  rate limit) and `UNAVAILABLE` (halt, store temporarily unavailable) went
+  out with a bare message; they now carry the `InternalError: ` prefix
+  §6.2 requires on every error. Status codes are unchanged. Test:
+  `src/error_tests.rs` `retryable_errors_carry_the_a2a_type_name`.
+
+- **SLIMRPC: a call whose answer cannot be converted to protobuf is
+  recorded as failed** (`a2a-protocol-slimrpc`). The unary methods
+  converted the handler's answer after the call's span ended, so the
+  caller got `INTERNAL` while the span and `rpc.server.call.duration`
+  recorded `OK`. The conversion now runs inside the span. Test:
+  `src/server/methods/tests.rs` `an_answer_the_wire_cannot_carry_fails_its_span`.
+
+- **The WebSocket binding page states the service-parameter rules the
+  dispatcher applies** (book; spec §12.3). It said a value "not valid UTF-8
+  is dropped" and listed only `:path`. Any header line that is not visible
+  ASCII is left out, valid UTF-8 such as `café` included; a header's lines
+  are joined with `", "` (`"; "` for `Cookie`); `Last-Event-ID` is dropped;
+  the reserved names are `:path`, `:peer-addr`, `:peer-certificate`,
+  `:upgrade-traceparent` and `:upgrade-tracestate`. Test:
+  `websocket_binding_spec.rs`
+  `the_service_parameters_are_the_visible_ascii_upgrade_headers_and_the_reserved_entries`.
+
+- **The control map no longer says a server interceptor can inspect or
+  filter content** (docs). `ServerInterceptor`'s hooks are given the
+  `CallContext` only (method, caller, tenant, task id, headers), never the
+  message. AIA-5-1 and AIA-5-1-ba-bb say a server interceptor can refuse a
+  call from its context and that content reaches only the executor;
+  ASI-MODEL and AIA-15-5 say a content filter runs in a client interceptor,
+  which is given each request's params and response's result, or in the
+  executor.
+
+- **Tests only: security tests that did not test what they were cited for** (server,
+  client). `auth_secret_redaction.rs` (the API-key and bearer interceptors'
+  `Debug`, including a derived-`Debug` byte rendering, and every event and
+  span they emit while accepting and refusing); `push_log_redaction.rs
+  the_token_and_credentials_are_never_logged` (a config with a token and
+  `Bearer` credentials, events and span fields); `push_sender_tests
+  a_webhook_that_never_answers_is_abandoned_at_the_timeout`;
+  `tls_protocol_versions.rs` (hand-written TLS 1.0/1.1 `ClientHello`s get a
+  fatal `protocol_version` alert from `Server::with_tls_pem`,
+  `WebSocketDispatcher::with_tls_pem` and `GrpcDispatcher::with_tls`, TLS
+  1.2 gets a `ServerHello` with an ECDHE AEAD suite, and the push sender
+  offers only TLS 1.3/1.2 and forward-secret AEAD suites);
+  `grpc_tls_apply_tests a_server_certificate_from_an_untrusted_ca_is_refused`
+  (client, with a pinned-CA control); `audit_security_events.rs` (an
+  authorization denial and a malformed request recorded with the caller);
+  `a2a_json_security_considerations.rs` (malformed content refused on
+  JSON-RPC and HTTP+JSON with the executor never run; another caller's task
+  answers as a missing one on both).
+
 - **Metadata on an appended artifact chunk is kept in SQLite and
   PostgreSQL** (server). Both event processors merge an appended chunk's
   `metadata` into the stored artifact and wrote the change as
@@ -2744,6 +3390,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- **`signing::sign_agent_card`** (types; spec §8.4.2), for
+  `sign_card_es256(card, key, key_id)`, whose `key_id` is a `&str`. Its
+  `key_id: Option<&str>` let a signature's protected header omit `kid`,
+  which §8.4.2 requires, so it now refuses `None` with `InvalidParams`
+  instead of writing a header without one: a specification correction
+  (`STABILITY.md` §2), which is the only change for a caller passing a key
+  id. Kept for the one minor release `STABILITY.md` §3 requires and removed
+  in 0.16.0. Test: `tests/sign_agent_card_deprecated.rs`.
+  (`sign_agent_card_ed25519`, its Ed25519 twin, was added and removed within
+  0.15.0 and never published; `sign_card_ed25519` is the Ed25519 signer.)
+
 - **`HotReloadAgentCardHandler::update`**, for **`try_update`** (server;
   spec §5.7: arrays marked as required MUST contain at least one element).
   `update` stored any card; `try_update` checks it as `reload_from_json`
@@ -2756,11 +3413,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could see. Rank bindings with `ClientBuilder::from_card_preferring`, and see
   the choice with `ClientBuilder::chosen_interface`. Kept for one minor
   release, as `STABILITY.md` requires.
-- **`signing::sign_agent_card` and `signing::sign_agent_card_ed25519`**,
-  whose `key_id: Option<&str>` let a signature omit `kid`, which §8.4.2
-  forbids. Use `sign_card_es256` and `sign_card_ed25519`: the same signature
-  with `key_id: &str`. They remain and still sign; removal follows the
-  deprecation window in `STABILITY.md` §3.
 - **`OAuthFlows::Implicit` and `OAuthFlows::Password`** (types), as the A2A
   1.0 proto marks both fields `deprecated`. They remain, parse and serialize
   as before (spec §1.4 keeps deprecated definitions until the next major
@@ -2851,6 +3503,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`TaskPushNotificationConfig`'s `Debug` prints the webhook's origin, not
+  its URL** (types; spec §13.2, §13.4). A webhook URL routinely carries the
+  receiver's secret in its path, query or userinfo; `{:?}` printed it whole,
+  into logs and panic messages, while the server's and client's own log
+  lines already printed only `scheme://host[:port]`. Tests:
+  `push::tests::debug_redacts_secrets_but_keeps_presence` (which asserted
+  the full URL and now asserts its absence),
+  `push::tests::debug_url_never_echoes_what_it_cannot_cut`.
+
+- **`rsa` is no longer in any lockfile** (RUSTSEC-2023-0071, Marvin timing
+  side channel, no fixed release). It was in `Cargo.lock` only through
+  `sqlx-mysql` 0.8, a driver no feature enables, and `osv-scanner.toml`
+  waived it; `sqlx` 0.9 does not bring it, so the waiver is removed. CI's
+  Go toolchain moves from 1.26.9 to 1.26.10 for GO-2026-6809
+  (`crypto/x509`), which govulncheck reported reachable in all three Go
+  interop modules under `itk/`; with 1.26.10 it reports none.
+
 - **`tokio` requires 1.54.1; lockfiles move off this week's advisories**
   (client, server, SDK, SLIMRPC binding). `tokio` 1.54.0, yanked for a use-after-free race in `time::Interval` on
   the multi-threaded runtime (GHSA-5wjr-9356-4wc8; the server's halt sync
@@ -2861,7 +3530,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by 1.0.10. The SLIMRPC lockfile's `ctutils` 0.4.3 (RUSTSEC-2026-0385,
   mask generation and `u128` comparisons that could branch on secret values)
   becomes 0.4.4; it arrives through the SLIM crates' `p256` and `ml-kem`,
-  and no other lockfile holds it. In
+  and no other lockfile holds it. Its `crypto-bigint` 0.7.5
+  (RUSTSEC-2026-0387, operations meant to be constant-time that could
+  branch on secret values) becomes 0.7.6; it arrives through
+  `agntcy-slim-auth`'s `p256`, and no other lockfile holds it either. In
   CI's hash-locked Python tools, `certifi` 2026.7.22 (GHSA-6q48-6c7w-9gw2)
   becomes 2026.10.19 and `uv` 0.13.1 (GHSA-hq85-5cpj-mr62) becomes 0.13.5,
   for the same emSign root. The `tokio` requirement rises from 1.44.2 to
@@ -2950,6 +3622,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advisories back; the binding's `deny.toml` explains the entry. Update the
   binding's lockfile by package name, never with a blanket `cargo update`,
   which cannot keep a yanked version and downgrades rustls to 0.23.43.
+  Since 2026-10-23 it has none again: `agntcy-slim-mls` 0.5.1 accepts
+  `mls-rs-crypto-awslc` 0.26.0, so a plain `cargo update` takes
+  `agntcy-slim-rpc` 3.4.6 and the unyanked 0.26.0 with `rustls` staying at
+  0.23.46, and cargo-deny reports the entry as no longer encountered.
 
 - **`rustls` 0.23.46 is the floor** (client, server, sdk). RustSec published
   four rustls advisories on 2026-10-14, all patched in 0.23.46
@@ -3062,6 +3738,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `try_with_hs256_secret`.
 
 ### Changed
+
+- **The book says what a message to an `AUTH_REQUIRED` task does while its
+  executor still runs** (spec §7.6.1): it waits up to
+  `executor_drain_timeout`, then is refused `UnsupportedOperation`, so an
+  executor that should accept the next message returns after
+  `auth_required`. Behaviour unchanged.
 
 - **`examples/deploy-agent` runs on jemalloc** (`tikv-jemallocator`, not
   on MSVC). On the echo benchmark jemalloc took unary throughput from 7,189

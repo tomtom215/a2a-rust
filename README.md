@@ -19,7 +19,7 @@
 [![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
+[![MSRV](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org)
 [![A2A Conformance](https://img.shields.io/badge/official%20TCK-83%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomtom215/a2a-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/tomtom215/a2a-rust)
 
@@ -75,11 +75,39 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **OpenTelemetry** | One call (`Telemetry`, the `otlp` feature, on by default in the SDK) exports **traces, metrics and logs** over OTLP/gRPC or OTLP/HTTP, configured by the standard `OTEL_*` environment. Server and client spans carry the draft OpenTelemetry A2A attributes; the executor is a GenAI `invoke_agent` span; each call's `traceparent` names the call's span, so a delegation chain is one trace. Metrics: request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** — a CI gate asserts the exporter forwards every `Metrics` callback |
+| **OpenTelemetry** | One call (`Telemetry`, the `otlp` feature, on by default in the SDK) exports **traces, metrics and logs** over OTLP/gRPC or OTLP/HTTP, configured by the standard `OTEL_*` environment. Server and client spans carry the draft OpenTelemetry A2A attributes; the executor is a GenAI `invoke_agent` span; each call's `traceparent` names the call's span, so a delegation chain is one trace. Metrics: request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** — a CI gate asserts the exporter forwards every `Metrics` callback. A SQLite or PostgreSQL task store gets a database `CLIENT` span and `db.client.operation.duration` for each operation |
 | **Langfuse** | `Telemetry::builder().with_langfuse(Langfuse::from_env()?)` — the same `LANGFUSE_*` variables as Langfuse's Python and JS SDKs; each agent run shows as an AGENT observation, each A2A context as a session ([book](book/src/deployment/langfuse.md), [`examples/langfuse-agent`](examples/langfuse-agent/)) |
 | **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, connection pool statistics, background persistence failures, and push-delivery outcomes. The last two are the paths a client cannot observe: a stream delivers its events whether or not the store accepted them |
 | **Tracing** | Structured logging via `tracing` crate, zero cost when disabled |
 | **Request ID propagation** | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
+| **Dashboards** | Prometheus recording and alerting rules and three Grafana dashboards (server, client, GenAI) in [`deploy/observability/`](deploy/observability/), each panel checked against a live Prometheus and Grafana fed by agents from this repository |
+
+The three dashboards as they ship, over 15 minutes of traffic from this
+repository's test harness: three tool-loop agents against a local model (one whose model answers, one whose
+model is unreachable, one whose model calls time out) and the `a2a` CLI calling the
+TCK's agent on every binding. The [book](book/src/deployment/observability.md#the-dashboards)
+says what each panel shows.
+
+<details>
+<summary><b>A2A server</b>: calls, failures and duration by binding and method; event queues, push deliveries, task-store operations</summary>
+
+![The A2A server dashboard](book/src/images/dashboards/a2a-server.png)
+
+</details>
+
+<details>
+<summary><b>A2A client</b>: calls, failures and duration by agent and binding</summary>
+
+![The A2A client dashboard](book/src/images/dashboards/a2a-client.png)
+
+</details>
+
+<details>
+<summary><b>GenAI</b>: model calls, tokens, tool calls and agent runs from the tool loop</summary>
+
+![The GenAI dashboard](book/src/images/dashboards/a2a-genai.png)
+
+</details>
 
 ### Security & Hardening
 
@@ -459,22 +487,24 @@ The server crate's public traits — `AgentExecutor`, `TaskStore`, `PushConfigSt
 
 ## Minimum Supported Rust Version
 
-Rust **1.88** or later (stable), edition 2024.
+Rust **1.94** or later (stable), edition 2024.
 
 **Policy.** The MSRV is treated as part of the public API: raising it is a
 **minor** version bump, never a patch, and the release notes say so. It is
-raised only when a language or standard-library feature earns it — not
-incidentally, because a transitive dependency moved. The edition-2024
+raised only when a language or standard-library feature earns it, or to
+adopt a new major version of a direct dependency — never because a
+transitive dependency moved. The edition-2024
 resolver selects dependency versions compatible with the declared
 `rust-version`, and CI builds and tests the workspace on exactly that
 toolchain. The full policy is in [STABILITY.md](STABILITY.md#5-minimum-supported-rust-version).
 
 **History.** The floor was 1.93 until 2026-09-09, when it was lowered to
-1.88 — the workspace had never needed anything newer, and 1.88 is the
-oldest toolchain the current dependency tree (`time`, `serde_with`,
-`darling`) declares support for. Lowering it further would mean holding
-those crates at older releases, a cost weighed against the adoption benefit
-on the [roadmap](ROADMAP.md).
+1.88 — the workspace had never needed anything newer, and 1.88 was the
+oldest toolchain the dependency tree (`time`, `serde_with`, `darling`)
+declared support for. 0.15.0 raises it to **1.94**, the oldest toolchain
+`sqlx` 0.9 supports, so the SQL stores move to sqlx's current major version
+in the release that already carries breaking changes (rustc 1.94.0 shipped
+in March 2026).
 
 **Depending on the git repository instead of crates.io.** Cargo older than
 1.85 cannot read an edition-2024 manifest, and for a git dependency it does
@@ -484,7 +514,7 @@ is where it always was. Measured 2026-09-24 against `v0.13.0` with
 `cargo generate-lockfile`: cargo 1.80.1 and 1.84.1 fail that way, and 1.85.0
 resolves. 1.84.1 understands `resolver = "3"`, so the resolver setting is
 not the cause; the edition is, and it applies from 0.12.0 on. Resolve and
-build with the toolchain you ship, 1.88 or later. Pinning by a short `rev`
+build with the toolchain you ship, 1.94 or later. Pinning by a short `rev`
 resolved on cargo 1.88, 1.96 and 1.98, with and without
 `net.git-fetch-with-cli`; a full 40-character SHA is still the safer pin,
 because a short one can become ambiguous as the repository grows.

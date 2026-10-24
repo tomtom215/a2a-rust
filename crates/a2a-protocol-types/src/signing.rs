@@ -309,14 +309,12 @@ fn write_canonical_string(s: &str, buf: &mut Vec<u8>) {
 
 // ── JWS Signing ─────────────────────────────────────────────────────────────
 
-/// The JWS protected header for a card signature (§8.4.2): `alg` and `kid`
-/// MUST be present and `typ` SHOULD be `"JOSE"`. `kid` is optional here only
-/// for the deprecated entry points that always allowed omitting it.
-fn protected_header(alg: &str, key_id: Option<&str>, jku: Option<&str>) -> A2aResult<String> {
-    let mut header = serde_json::json!({ "alg": alg, "typ": "JOSE" });
-    if let Some(kid) = key_id {
-        header["kid"] = serde_json::Value::String(kid.to_owned());
-    }
+/// The JWS protected header for a card signature (§8.4.2): `alg`, `typ` and
+/// `kid` MUST be present, and `typ` SHOULD be `"JOSE"`. Every signer takes
+/// the key id; the deprecated [`sign_agent_card`], whose key id is an
+/// `Option`, refuses `None`.
+fn protected_header(alg: &str, key_id: &str, jku: Option<&str>) -> A2aResult<String> {
+    let mut header = serde_json::json!({ "alg": alg, "typ": "JOSE", "kid": key_id });
     if let Some(jku) = jku {
         // RFC 7515 §4.1.2: the key set "MUST" be fetched over a connection
         // that provides integrity protection, and "the identity of the
@@ -336,7 +334,7 @@ fn protected_header(alg: &str, key_id: Option<&str>, jku: Option<&str>) -> A2aRe
 fn sign_es256(
     card: &AgentCard,
     pkcs8_key: &[u8],
-    key_id: Option<&str>,
+    key_id: &str,
     jku: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
     let canonical = canonicalize_card(card)?;
@@ -366,7 +364,7 @@ fn sign_es256(
 fn sign_ed25519(
     card: &AgentCard,
     pkcs8_key: &[u8],
-    key_id: Option<&str>,
+    key_id: &str,
     jku: Option<&str>,
 ) -> A2aResult<AgentCardSignature> {
     let key_pair = signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8_key)
@@ -403,7 +401,38 @@ pub fn sign_card_es256(
     pkcs8_key: &[u8],
     key_id: &str,
 ) -> A2aResult<AgentCardSignature> {
-    sign_es256(card, pkcs8_key, Some(key_id), None)
+    sign_es256(card, pkcs8_key, key_id, None)
+}
+
+/// Signs an [`AgentCard`] with ES256, as [`sign_card_es256`] does, for code
+/// written against 0.14.
+///
+/// Its `key_id` is an `Option`, and spec §8.4.2 requires `kid` in the
+/// protected header. In 0.14 `None` wrote a header without one, a signature
+/// a conforming verifier may refuse; since 0.15.0 `None` is refused instead,
+/// a specification correction (`STABILITY.md` §2). It is kept for the
+/// one-minor deprecation window `STABILITY.md` §3 gives, and is removed in
+/// 0.16.0.
+///
+/// # Errors
+///
+/// Invalid params when `key_id` is `None`; otherwise as [`sign_card_es256`].
+#[deprecated(
+    since = "0.15.0",
+    note = "use sign_card_es256(card, key, key_id), whose key id is required (spec §8.4.2)"
+)]
+pub fn sign_agent_card(
+    card: &AgentCard,
+    pkcs8_key: &[u8],
+    key_id: Option<&str>,
+) -> A2aResult<AgentCardSignature> {
+    let key_id = key_id.ok_or_else(|| {
+        A2aError::invalid_params(
+            "a card signature's protected header must carry kid (spec §8.4.2): \
+             pass a key id, or call sign_card_es256",
+        )
+    })?;
+    sign_card_es256(card, pkcs8_key, key_id)
 }
 
 /// Signs an [`AgentCard`] with Ed25519 (JWS `EdDSA`, RFC 8037), as
@@ -421,7 +450,7 @@ pub fn sign_card_ed25519(
     pkcs8_key: &[u8],
     key_id: &str,
 ) -> A2aResult<AgentCardSignature> {
-    sign_ed25519(card, pkcs8_key, Some(key_id), None)
+    sign_ed25519(card, pkcs8_key, key_id, None)
 }
 
 /// [`sign_card_es256`], with the JWK Set URL a verifier can fetch the key
@@ -444,7 +473,7 @@ pub fn sign_card_es256_with_jku(
     key_id: &str,
     jku: &str,
 ) -> A2aResult<AgentCardSignature> {
-    sign_es256(card, pkcs8_key, Some(key_id), Some(jku))
+    sign_es256(card, pkcs8_key, key_id, Some(jku))
 }
 
 /// [`sign_card_ed25519`], with `jku` in the protected header, as
@@ -460,49 +489,7 @@ pub fn sign_card_ed25519_with_jku(
     key_id: &str,
     jku: &str,
 ) -> A2aResult<AgentCardSignature> {
-    sign_ed25519(card, pkcs8_key, Some(key_id), Some(jku))
-}
-
-/// Signs an [`AgentCard`] with ES256; `key_id` may be omitted.
-///
-/// Omitting it produces a protected header without `kid`, which spec §8.4.2
-/// forbids, so this is deprecated in favour of [`sign_card_es256`], whose
-/// `kid` is not optional.
-///
-/// # Errors
-///
-/// Returns an error if canonicalization or signing fails.
-#[deprecated(
-    since = "0.15.0",
-    note = "§8.4.2 requires `kid`; use `sign_card_es256`, whose key id is not optional"
-)]
-pub fn sign_agent_card(
-    card: &AgentCard,
-    pkcs8_key: &[u8],
-    key_id: Option<&str>,
-) -> A2aResult<AgentCardSignature> {
-    sign_es256(card, pkcs8_key, key_id, None)
-}
-
-/// Signs an [`AgentCard`] with Ed25519; `key_id` may be omitted.
-///
-/// Deprecated for the same reason as [`sign_agent_card`]; use
-/// [`sign_card_ed25519`].
-///
-/// # Errors
-///
-/// Returns an error if canonicalization fails or the key is not Ed25519
-/// PKCS#8.
-#[deprecated(
-    since = "0.15.0",
-    note = "§8.4.2 requires `kid`; use `sign_card_ed25519`, whose key id is not optional"
-)]
-pub fn sign_agent_card_ed25519(
-    card: &AgentCard,
-    pkcs8_key: &[u8],
-    key_id: Option<&str>,
-) -> A2aResult<AgentCardSignature> {
-    sign_ed25519(card, pkcs8_key, key_id, None)
+    sign_ed25519(card, pkcs8_key, key_id, Some(jku))
 }
 
 // ── JWS protected header ────────────────────────────────────────────────────
@@ -1097,15 +1084,16 @@ mod tests {
         assert_eq!(header.jku, None);
     }
 
+    /// This SDK always writes `kid` (§8.4.2), but a foreign signer may not,
+    /// and reading such a header is not an error.
     #[test]
-    #[allow(deprecated)]
-    fn signature_header_kid_is_none_when_unsigned_with_one() {
-        let card = minimal_card();
-        let rng = SystemRandom::new();
-        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
-            .unwrap();
-        let sig = sign_agent_card(&card, pkcs8.as_ref(), None).unwrap();
-
+    fn signature_header_kid_is_none_for_a_foreign_signature_without_one() {
+        let header = serde_json::json!({"alg": "ES256", "typ": "JOSE"});
+        let sig = AgentCardSignature {
+            protected: URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap()),
+            signature: String::new(),
+            header: None,
+        };
         let header = signature_header(&sig).unwrap();
         assert_eq!(header.alg, "ES256");
         assert_eq!(header.kid, None);

@@ -624,7 +624,8 @@ impl RequestHandlerBuilder {
 
     /// Sets a metrics observer for handler activity.
     ///
-    /// Defaults to `OtelMetrics` on the global meter provider (`otel`), else `NoopMetrics`.
+    /// Defaults to `OtelMetrics` instruments on the global meter provider as
+    /// it stands at each measurement (`otel`), else `NoopMetrics`.
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
         self.metrics = Arc::new(metrics);
@@ -991,13 +992,18 @@ impl RequestHandlerBuilder {
         }
         // Spec §3.3.2, §7.4, §13.3: the authentication the cards declare is
         // the authentication the chain enforces.
+        crate::auth::declared::check(
+            public_card.map(|(_, card)| card),
+            extended_card.map(|(_, card)| card),
+            &self.interceptors,
+            self.auth_waivers.upstream,
+        )
+        .map_err(crate::error::ServerError::InvalidParams)?;
         let cards: Vec<&AgentCard> = public_card
             .into_iter()
             .chain(extended_card)
             .map(|(_, card)| card)
             .collect();
-        crate::auth::declared::check(&cards, &self.interceptors, self.auth_waivers.upstream)
-            .map_err(crate::error::ServerError::InvalidParams)?;
         // Spec §14, §13.3: a credential in a published card is disclosed.
         for (which, card) in public_card.into_iter().chain(extended_card) {
             let leaked = crate::agent_card::card_credentials(card);
@@ -1101,6 +1107,10 @@ impl RequestHandlerBuilder {
                 Arc::new(InMemoryTaskStore::with_config(task_store_config))
             }
         });
+        // Innermost, so a span measures the database and nothing wrapped
+        // around it; a store that names no database is left as it is.
+        #[cfg(feature = "tracing")]
+        let task_store = crate::store::traced::TracedTaskStore::wrap(task_store);
         #[cfg_attr(not(feature = "audit"), allow(unused_mut))]
         let mut interceptors = self.interceptors;
         #[cfg(feature = "audit")]

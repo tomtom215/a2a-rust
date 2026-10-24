@@ -247,6 +247,11 @@ impl RequestContext {
 
     /// The extension URIs the caller activated for this request, from the
     /// `A2A-Extensions` header (spec §14.2.2).
+    ///
+    /// With an agent card, only the URIs it declares, in request order: the
+    /// set the response's `A2A-Extensions` header echoes. An undeclared
+    /// extension or version is left out (spec §4.6.3, "ignore the extension
+    /// for that interaction"). With no card, the request's list unchanged.
     #[must_use]
     pub fn activated_extensions(&self) -> &[String] {
         self.call_context

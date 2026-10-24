@@ -26,6 +26,13 @@ behind it. This script makes the citations load-bearing.
     incomplete;
   * a cited CI step (`ci = [...]`) appears in no workflow under
     `.github/workflows/` — the string must occur verbatim in one;
+  * a row cites neither a test nor a CI step, whatever its status, unless it
+    is in `UNCITED` below with the reason it has nothing to cite (since
+    2026-10-23: every row cites what proves its `sdk` text), or is in
+    `UNCITED` and cites something after all;
+  * a row cites `DOC_STEP` (this script, run by CI) without an entry in
+    `DOC_CLAIMS`, or has an entry there without citing it, or a document an
+    entry names no longer says, word for word, what the entry quotes;
   * a row's status and fields disagree: `supported` backed by neither a test
     nor a CI step, `documented` with no evidence file, either of them with a
     gap text, any other status without one, a `remainder` on anything but
@@ -58,6 +65,136 @@ STATUSES = {
     "integrator": "Integrator's duty",
 }
 WORKFLOWS = [p.read_text(encoding="utf-8") for p in sorted((ROOT / ".github/workflows").glob("*.yml"))]
+
+# Rows whose `sdk` text says the SDK offers nothing toward the provision, so
+# there is no behaviour of the SDK's for a test to prove. Each says why. The
+# maintainer decides what, if anything, such a row should cite; until then it
+# is listed here rather than left to look like an oversight.
+UNCITED: dict[str, str] = {}
+
+# A row whose `sdk` text is a claim that a document says something cites
+# this, the command CI runs this script with, and `DOC_CLAIMS` says what each
+# document must still say. Whitespace is normalised, so rewrapping a
+# paragraph does not trip it; rewording does, which is the point.
+DOC_STEP = "python3 scripts/check_compliance_map.py --check"
+_SEC = "SECURITY.md"
+_BOOK_SEC = "book/src/deployment/security.md"
+_ADR15 = "docs/adr/0015-audit-trail.md"
+_LICENCE = [
+    ("LICENSE", "Apache License Version 2.0, January 2004"),
+    ("Cargo.toml", 'license = "Apache-2.0"'),
+] + [(f"crates/{c}/Cargo.toml", "license.workspace = true") for c in (
+    "a2a-protocol-types", "a2a-protocol-client", "a2a-protocol-server", "a2a-protocol-sdk")]
+_CHANNELS = [
+    (_SEC, "1. **GitHub Security Advisories (preferred):** Open a draft advisory"),
+    (_SEC, "2. **Email:** Send a detailed report to **tomf@tomtomtech.net**"),
+]
+_MANUFACTURERS = [
+    (_SEC, "## For manufacturers integrating these crates (EU Cyber Resilience Act)"),
+    (_SEC, "Say in the report that it is an Article 13(6) report; it gets the same "
+           "3-business-day acknowledgement as any other. If you have a fix, send it"),
+    (_SEC, "**Your legal deadlines win over our embargo.**"),
+    (_SEC, "do so on the law's timetable, and tell us at the same time"),
+]
+DOC_CLAIMS = {
+    "AIA-4": [
+        ("book/src/SUMMARY.md", "[Audit Trail](./deployment/audit.md)"),
+        ("book/src/SUMMARY.md", "[Human Oversight](./deployment/oversight.md)"),
+        ("book/src/SUMMARY.md", "[Provenance and Signatures](./deployment/provenance.md)"),
+        (_BOOK_SEC, "What this SDK guarantees, what it leaves to you, and what it does not do at all."),
+    ],
+    "AIA-13-3f": [
+        ("book/src/deployment/audit.md", "## What is recorded"),
+        ("book/src/deployment/audit.md", "Stores: `InMemoryAuditStore`"),
+        ("book/src/deployment/audit.md", "## The checkpoint key"),
+        ("book/src/deployment/audit.md", "An auditor should verify an export"),
+        ("book/src/deployment/audit.md", "## Following one task across agents"),
+        ("book/src/deployment/audit.md", "## Retention and legal holds"),
+        ("book/src/deployment/audit.md", "The design, its threat model and its measured cost are in"),
+        (_ADR15, "**What tamper evidence does not cover.**"),
+    ],
+    "AIA-2-12": _LICENCE,
+    "AIA-6": [
+        ("book/src/SUMMARY.md", "[Is Your Agent High-Risk?](./deployment/ai-act-classification.md)"),
+        ("book/src/deployment/ai-act-classification.md", "## The two routes to high-risk (Article 6)"),
+        ("book/src/deployment/ai-act-classification.md", "**An Annex III system that profiles natural persons is always high-risk.**"),
+        ("book/src/deployment/ai-act-classification.md", "Article 6(4): if you decide an Annex III system is not high-risk, you document that assessment before placing it on the market, register under Article 49(2)"),
+        ("book/src/deployment/ai-act-classification.md", "## If it is high-risk: what the SDK gives you"),
+        ("book/src/deployment/ai-act-classification.md", "## What stays yours"),
+    ],
+    "AIA-25-2-4": _LICENCE,
+    "CRA-13-6": _CHANNELS + _MANUFACTURERS,
+    "CRA-AI-II-2-4-8": [
+        (_SEC, "A fix for a vulnerability ships as a patch release of the current line "
+               "— `0.14.1` for GHSA-hr9h-6jvf-wvg6 is the precedent."),
+        (_SEC, "We follow a **90-day coordinated disclosure** timeline"),
+        ("CHANGELOG.md", "## [0.14.1] - 2026-09-30 ### Security - **`PathSegmentTenantResolver` "
+                         "let a caller choose its own tenant (GHSA-hr9h-6jvf-wvg6).**"),
+        ("CHANGELOG.md", "**If you cannot upgrade yet,** strip the inbound `path` header"),
+    ] + _LICENCE[:2],
+    "CRA-AI-II-5-6": _CHANNELS + _MANUFACTURERS[:2] + [
+        (_SEC, "This policy covers **every crate published from this repository**"),
+        (_SEC, "**`bindings/a2a-protocol-slimrpc`**, which is publishable and **is covered by this policy**"),
+        (_SEC, "we acknowledge within 3 business days"),
+        (_SEC, "**Day 1-14** -- We triage the issue"),
+        (_SEC, "We follow a **90-day coordinated disclosure** timeline"),
+        (_SEC, "We gratefully credit reporters"),
+        (_SEC, "There is no published PGP key for this project"),
+    ],
+    "CRA-AI-I-1": [
+        (_BOOK_SEC, "## What holds by construction"),
+        (_BOOK_SEC, "what it leaves to you"),
+        (_BOOK_SEC, "## Known gaps"),
+        ("book/src/deployment/production.md", "# Production Hardening"),
+    ],
+    "CRA-13-16-18": _CHANNELS + _MANUFACTURERS[:1] + [
+        (_SEC, "## Supported Versions"),
+        (_SEC, "## Disclosure Timeline"),
+        (_BOOK_SEC, "## What holds by construction"),
+        (_BOOK_SEC, "## Known gaps"),
+        ("book/src/SUMMARY.md", "[Production Hardening](./deployment/production.md)"),
+        ("book/src/SUMMARY.md", "[Audit Trail](./deployment/audit.md)"),
+        ("book/src/SUMMARY.md", "[Multi-Tenancy](./deployment/multi-tenancy.md)"),
+        ("book/src/SUMMARY.md", "[Provenance and Signatures](./deployment/provenance.md)"),
+    ],
+    "CRA-14": _MANUFACTURERS[2:],
+    "CRA-24": [
+        (_SEC, "These crates are free and open-source software published by an individual and not monetised"),
+        (_SEC, "an open-source software steward (Article 24) is a legal person, which an individual maintainer is not"),
+        (_SEC, "## Reporting a Vulnerability"),
+        (_SEC, "## Disclosure Timeline"),
+        (_SEC, "## Credit"),
+    ],
+    "GDPR-30": [
+        (_BOOK_SEC, "What it does not protect:"),
+        (_ADR15, "**What tamper evidence does not cover.**"),
+    ],
+    "GDPR-35": [
+        (_BOOK_SEC, "## Data at rest"),
+        (_BOOK_SEC, "What it does not protect:"),
+        (_BOOK_SEC, "## Known gaps"),
+        (_ADR15, "### What is recorded"),
+        (_ADR15, "### How records are made tamper-evident"),
+        (_ADR15, "**What tamper evidence does not cover.**"),
+        (_ADR15, "**What it does not do.** It does not unlink"),
+    ],
+}
+
+
+def normalised(text: str) -> str:
+    return " ".join(text.split())
+
+
+def doc_claims_hold(cid: str) -> list[str]:
+    """Each document `DOC_CLAIMS[cid]` names still says what it quotes."""
+    errors = []
+    for path, phrase in DOC_CLAIMS[cid]:
+        f = ROOT / path
+        if not f.is_file():
+            errors.append(f"{cid}: {path}, whose wording the row relies on, does not exist")
+        elif normalised(phrase) not in normalised(f.read_text(encoding="utf-8")):
+            errors.append(f"{cid}: {path} no longer says {phrase!r}")
+    return errors
 TEST_ATTR = re.compile(r"#\[\s*(?:tokio::|sqlx::)?test\b")
 
 
@@ -140,6 +277,20 @@ def validate(doc: dict) -> list[str]:
         gap = c.get("gap", "").strip()
         if status == "supported" and not (tests or ci):
             errors.append(f"{cid}: `supported` cites neither a test nor a CI step")
+        elif not (tests or ci) and cid not in UNCITED:
+            errors.append(
+                f"{cid}: cites neither a test nor a CI step that proves its `sdk` text; "
+                "cite one, or list the row in UNCITED with the reason it has none"
+            )
+        if cid in UNCITED and (tests or ci):
+            errors.append(f"{cid}: listed in UNCITED but cites evidence; remove it from UNCITED")
+        if DOC_STEP in ci:
+            if cid in DOC_CLAIMS:
+                errors += doc_claims_hold(cid)
+            else:
+                errors.append(f"{cid}: cites {DOC_STEP!r} but DOC_CLAIMS says nothing it checks")
+        elif cid in DOC_CLAIMS:
+            errors.append(f"{cid}: has DOC_CLAIMS but does not cite {DOC_STEP!r}")
         if status == "documented" and not c.get("evidence"):
             errors.append(f"{cid}: `documented` cites no evidence file")
         # `gap` is SDK work not done; `remainder` is what stays with the
@@ -169,6 +320,8 @@ def validate(doc: dict) -> list[str]:
             why = code_exists(ref)
             if why:
                 errors.append(f"{cid}: {why}")
+    for cid in sorted((set(UNCITED) | set(DOC_CLAIMS)) - seen):
+        errors.append(f"{cid}: named in UNCITED or DOC_CLAIMS but no such row")
     return errors
 
 
@@ -235,6 +388,20 @@ def render(doc: dict) -> str:
                 f"{reason(c)} |"
             )
         out.append("")
+    out += ["## What each cited document is checked to say", ""]
+    out += [
+        "Rows citing `" + DOC_STEP + "` rely on these documents saying, word for word"
+        " (whitespace aside), what is quoted here; CI fails when one stops.",
+        "",
+    ]
+    for c in doc["control"]:
+        for path, phrase in DOC_CLAIMS.get(c["id"], []):
+            out.append(f"- {c['id']}: `{path}` — `` {cell(phrase)} ``")
+    out.append("")
+    out += ["## Rows that cite nothing", ""]
+    for cid, why in UNCITED.items():
+        out.append(f"- {cid}: {why}")
+    out.append("")
     out += ["## Where each cited test lives", ""]
     for c in doc["control"]:
         for t in c.get("tests", []):

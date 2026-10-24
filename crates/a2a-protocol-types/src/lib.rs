@@ -134,6 +134,7 @@ pub mod params;
 pub mod proto;
 pub mod provenance;
 pub mod push;
+pub mod required;
 pub mod responses;
 pub mod security;
 pub mod serde_helpers;

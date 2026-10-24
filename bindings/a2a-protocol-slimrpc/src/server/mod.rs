@@ -123,6 +123,7 @@ impl SlimRpcServerBuilder {
     /// [`ServerBuildError`] if the SLIM service, identity or app cannot be
     /// created.
     pub fn build(self) -> Result<SlimRpcServer, ServerBuildError> {
+        crate::install_crypto_provider();
         let id = ID::new_with_name(
             Kind::new("slim").map_err(|e| ServerBuildError::Slim(e.to_string()))?,
             &self.name.service,

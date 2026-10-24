@@ -137,8 +137,11 @@ async fn streaming_mode_receives_all_events() {
     );
 }
 
+/// A `Message` written after the task is under way reaches the stream inside
+/// a status update that keeps the task's state (§3.1.2: a task stream holds
+/// status and artifact updates only). See `tests/mid_task_message.rs`.
 #[tokio::test]
-async fn streaming_mode_message_event_passes_through() {
+async fn streaming_mode_message_event_is_carried_in_a_status_update() {
     let handler = RequestHandlerBuilder::new(MessageEventExecutor)
         .without_agent_card()
         .build()
@@ -154,18 +157,25 @@ async fn streaming_mode_message_event_passes_through() {
         _ => panic!("expected Stream"),
     };
 
-    let mut saw_message = false;
-    let mut states = vec![];
+    let mut statuses = vec![];
     while let Some(event) = reader.read().await {
         match event.map(|e| e.event) {
-            Ok(StreamResponse::Message(_)) => saw_message = true,
-            Ok(StreamResponse::StatusUpdate(u)) => states.push(u.status.state),
+            Ok(StreamResponse::Message(m)) => panic!("a bare Message in a task stream: {m:?}"),
+            Ok(StreamResponse::StatusUpdate(u)) => {
+                statuses.push((u.status.state, u.status.message.map(|m| m.id.0)))
+            }
             _ => {}
         }
     }
 
-    assert!(saw_message, "should have seen Message event in stream");
-    assert_eq!(states, vec![TaskState::Working, TaskState::Completed]);
+    assert_eq!(
+        statuses,
+        vec![
+            (TaskState::Working, None),
+            (TaskState::Working, Some("msg-event".to_owned())),
+            (TaskState::Completed, None),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -266,10 +276,11 @@ async fn a_task_lifecycle_stream_begins_with_the_task() {
         shape_of(StatusExecutor).await,
         vec!["Task", "StatusUpdate", "StatusUpdate"]
     );
-    // A Message after the task is under way does not change the shape.
+    // A Message after the task is under way is carried in a status update,
+    // so the stream keeps the task-lifecycle shape.
     assert_eq!(
         shape_of(MessageEventExecutor).await,
-        vec!["Task", "StatusUpdate", "Message", "StatusUpdate"]
+        vec!["Task", "StatusUpdate", "StatusUpdate", "StatusUpdate"]
     );
 }
 

@@ -28,7 +28,10 @@ impl A2aClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError`] on transport or protocol errors.
+    /// Returns [`ClientError`] on transport or protocol errors, and
+    /// [`ClientError::InvalidAgentResponse`] for a card that breaks the rules
+    /// a server publishes one by (`AgentCard::validate`), in which case
+    /// nothing is adopted from it.
     pub async fn get_extended_agent_card(&self) -> ClientResult<AuthenticatedExtendedCardResponse> {
         const METHOD: &str = "GetExtendedAgentCard";
         self.require_declared(crate::declared::Capability::ExtendedAgentCard, METHOD)?;
@@ -56,6 +59,9 @@ impl A2aClient {
         crate::legacy_card::read_as_current(&mut result);
         let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
             .map_err(ClientError::Serialization)?;
+        // Before anything is adopted from it: a card a server would refuse to
+        // publish declares nothing this client should act on.
+        crate::received::card(METHOD, &card)?;
         self.adopt_capabilities(&card);
         self.interceptors.adopt_security(&card);
         Ok(card)

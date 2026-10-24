@@ -81,6 +81,17 @@ impl RequestHandler {
             return Err(ServerError::PushNotSupported);
         };
         super::ids::refuse_control_chars_in_push_config(&config)?;
+        // a2a.proto marks `url` REQUIRED (spec §5.7). A JSON request without
+        // the key is refused when it is read; an empty one, which is how an
+        // absent string arrives over gRPC, reached the task lookup first and
+        // answered `TaskNotFound` for an unknown task, so the same missing
+        // field answered differently by encoding.
+        if config.url.is_empty() {
+            return Err(ServerError::InvalidField {
+                field: "url".into(),
+                message: "url is required: the webhook to deliver to".into(),
+            });
+        }
 
         // SPEC §3.1.7: the target task MUST exist. Storing a config for a
         // task that was never created leaves an unroutable, orphaned config.
@@ -1170,8 +1181,16 @@ mod tests {
             let mut config = make_push_config("t-1");
             config.url = url.to_owned();
             let result = handler.on_set_push_config(config, None).await;
+            // An empty url is a missing REQUIRED field, named as one (and
+            // refused before the task lookup); a scheme-less one is a bad
+            // value. Both are InvalidParams on the wire.
+            let refused = if url.is_empty() {
+                matches!(&result, Err(crate::error::ServerError::InvalidField { field, .. }) if field == "url")
+            } else {
+                matches!(result, Err(crate::error::ServerError::InvalidParams(_)))
+            };
             assert!(
-                matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+                refused,
                 "url {url:?}: expected InvalidParams, got {result:?}"
             );
         }

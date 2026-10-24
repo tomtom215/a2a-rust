@@ -32,6 +32,7 @@ pub struct GrpcDispatcher {
     pub(super) completion_grace: Duration,
     pub(super) task_grace: Duration,
     pub(super) drain_timeout: Duration,
+    agent_card_max_age: u32,
     #[cfg(feature = "grpc-tls")]
     tls: Option<tonic::transport::ServerTlsConfig>,
 }
@@ -49,9 +50,21 @@ impl GrpcDispatcher {
             completion_grace: crate::serve::DEFAULT_COMPLETION_GRACE,
             task_grace: crate::serve::DEFAULT_TASK_GRACE,
             drain_timeout: crate::serve::DEFAULT_DRAIN_TIMEOUT,
+            agent_card_max_age: crate::dispatch::DEFAULT_AGENT_CARD_MAX_AGE,
             #[cfg(feature = "grpc-tls")]
             tls: None,
         }
+    }
+
+    /// Sets the `Cache-Control: max-age`, in seconds, this listener serves
+    /// the agent card with (spec §8.6.1: "appropriate for the agent's
+    /// expected update frequency"). Default 3600, as
+    /// [`DispatchConfig::with_agent_card_max_age`](crate::dispatch::DispatchConfig::with_agent_card_max_age)
+    /// for the HTTP dispatchers. Until 2026-10-23 it was 3600 here, fixed.
+    #[must_use]
+    pub const fn with_agent_card_max_age(mut self, seconds: u32) -> Self {
+        self.agent_card_max_age = seconds;
+        self
     }
 
     /// Caps the connections served at once. Default: **unbounded**.
@@ -296,7 +309,8 @@ impl GrpcDispatcher {
         self.handler.warn_if_undeclared("GRPC");
         // Spec §8.1: the agent card on this listener too; a card fetch is
         // usually HTTP/1.1. See `well_known`.
-        let card = crate::dispatch::well_known::card_handler(&self.handler);
+        let card =
+            crate::dispatch::well_known::card_handler(&self.handler, self.agent_card_max_age);
         let mut server = tonic::transport::Server::builder()
             .concurrency_limit_per_connection(self.config.concurrency_limit)
             .accept_http1(card.is_some());
@@ -317,9 +331,28 @@ impl GrpcDispatcher {
         }
         let router = server.add_service(self.into_service());
         Ok(match card {
-            Some(card) => router.add_service(super::well_known::WellKnownCard(card)),
+            Some(card) => router.add_service(super::well_known::WellKnownCard {
+                card,
+                policy: self.handler.inbound_trace_policy,
+                tls: self.serves_tls(),
+            }),
             None => router,
         })
+    }
+}
+
+impl GrpcDispatcher {
+    /// Whether this listener serves TLS.
+    #[allow(clippy::unused_self)]
+    const fn serves_tls(&self) -> bool {
+        #[cfg(feature = "grpc-tls")]
+        {
+            self.tls.is_some()
+        }
+        #[cfg(not(feature = "grpc-tls"))]
+        {
+            false
+        }
     }
 }
 
@@ -351,7 +384,8 @@ impl std::fmt::Debug for GrpcDispatcher {
             .field("max_connections", &self.max_connections)
             .field("completion_grace", &self.completion_grace)
             .field("task_grace", &self.task_grace)
-            .field("drain_timeout", &self.drain_timeout);
+            .field("drain_timeout", &self.drain_timeout)
+            .field("agent_card_max_age", &self.agent_card_max_age);
         #[cfg(feature = "grpc-tls")]
         s.field("tls", &self.tls.is_some());
         s.finish()
@@ -361,6 +395,27 @@ impl std::fmt::Debug for GrpcDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whether the listener serves TLS, which the agent card's span records
+    /// as `url.scheme`, is whether it was given a TLS configuration.
+    #[cfg(feature = "grpc-tls")]
+    #[test]
+    fn it_serves_tls_exactly_when_given_a_tls_configuration() {
+        use crate::RequestHandlerBuilder;
+        use crate::agent_executor;
+        struct DummyExec;
+        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
+        let plain = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
+        assert!(!plain.serves_tls());
+        let tls = plain.with_tls(tonic::transport::ServerTlsConfig::new());
+        assert!(tls.serves_tls());
+    }
 
     // ── Connection-level bounds ──────────────────────────────────────────
     //

@@ -1,0 +1,1830 @@
+{
+ "label": "qwen3-1.7b-q4_k_m",
+ "thinking": "off",
+ "n": 30,
+ "seed_base": 2000,
+ "max_tokens": 4096,
+ "sampler": {
+  "temperature": 0.8,
+  "top_k": 40,
+  "top_p": 0.95,
+  "min_p": 0.05
+ },
+ "max_turns": 6,
+ "key_order": "serde",
+ "harness_sha256": "8e769614eaf2368bb45d523016637885af4de3641fc8561f4179bb75abc4dfd9",
+ "turn_timeout_secs": 1800,
+ "server": {
+  "model_path": "/opt/models/qwen3-1.7b-q4_k_m.gguf",
+  "build_info": "b1-f5027fb",
+  "chat_template_sha256": "87a2728cb8dc9fe424d624542f6060ec05a1d285ebbec578bb078900e33396b5"
+ },
+ "runs": [
+  {
+   "kind": "checkout",
+   "seed": 2000,
+   "turns": [
+    {
+     "seed": 16000,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16001,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16002,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 29.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2001,
+   "turns": [
+    {
+     "seed": 16008,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      },
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-0-1"
+      }
+     ]
+    },
+    {
+     "seed": 16009,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 25.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2002,
+   "turns": [
+    {
+     "seed": 16016,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16017,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16018,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 22.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2003,
+   "turns": [
+    {
+     "seed": 16024,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16025,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16026,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+   "secs": 23.1
+  },
+  {
+   "kind": "checkout",
+   "seed": 2004,
+   "turns": [
+    {
+     "seed": 16032,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16033,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16034,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+   "secs": 22.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2005,
+   "turns": [
+    {
+     "seed": 16040,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16041,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16042,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 18.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2006,
+   "turns": [
+    {
+     "seed": 16048,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16049,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16050,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 27.3
+  },
+  {
+   "kind": "checkout",
+   "seed": 2007,
+   "turns": [
+    {
+     "seed": 16056,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16057,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16058,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 31.3
+  },
+  {
+   "kind": "checkout",
+   "seed": 2008,
+   "turns": [
+    {
+     "seed": 16064,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16065,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16066,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+   "secs": 65.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2009,
+   "turns": [
+    {
+     "seed": 16072,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16073,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16074,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 68.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2010,
+   "turns": [
+    {
+     "seed": 16080,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16081,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16082,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 51.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2011,
+   "turns": [
+    {
+     "seed": 16088,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16089,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16090,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 27.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2012,
+   "turns": [
+    {
+     "seed": 16096,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16097,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16098,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 19.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2013,
+   "turns": [
+    {
+     "seed": 16104,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16105,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16106,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 26.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2014,
+   "turns": [
+    {
+     "seed": 16112,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16113,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16114,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 28.5
+  },
+  {
+   "kind": "checkout",
+   "seed": 2015,
+   "turns": [
+    {
+     "seed": 16120,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16121,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16122,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+   "secs": 28.6
+  },
+  {
+   "kind": "checkout",
+   "seed": 2016,
+   "turns": [
+    {
+     "seed": 16128,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16129,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16130,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 28.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2017,
+   "turns": [
+    {
+     "seed": 16136,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      },
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-0-1"
+      }
+     ]
+    },
+    {
+     "seed": 16137,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (78 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (78 hours).",
+   "secs": 25.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2018,
+   "turns": [
+    {
+     "seed": 16144,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      },
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-0-1"
+      }
+     ]
+    },
+    {
+     "seed": 16145,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 26.3
+  },
+  {
+   "kind": "checkout",
+   "seed": 2019,
+   "turns": [
+    {
+     "seed": 16152,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16153,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16154,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently healthy. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently healthy. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 28.0
+  },
+  {
+   "kind": "checkout",
+   "seed": 2020,
+   "turns": [
+    {
+     "seed": 16160,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16161,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16162,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 18.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2021,
+   "turns": [
+    {
+     "seed": 16168,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16169,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16170,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 27.7
+  },
+  {
+   "kind": "checkout",
+   "seed": 2022,
+   "turns": [
+    {
+     "seed": 16176,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16177,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16178,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 31.7
+  },
+  {
+   "kind": "checkout",
+   "seed": 2023,
+   "turns": [
+    {
+     "seed": 16184,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16185,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16186,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is **2.8.0**, and it has been running for **259200 seconds** (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is **2.8.0**, and it has been running for **259200 seconds** (which is 72 hours).",
+   "secs": 31.4
+  },
+  {
+   "kind": "checkout",
+   "seed": 2024,
+   "turns": [
+    {
+     "seed": 16192,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16193,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16194,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been up for 259200 seconds (approximately 72 hours).",
+   "secs": 32.3
+  },
+  {
+   "kind": "checkout",
+   "seed": 2025,
+   "turns": [
+    {
+     "seed": 16200,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16201,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16202,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 32.5
+  },
+  {
+   "kind": "checkout",
+   "seed": 2026,
+   "turns": [
+    {
+     "seed": 16208,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16209,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16210,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. It is deployed version 2.8.0 and has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. It is deployed version 2.8.0 and has been running for 259200 seconds (which is 72 hours).",
+   "secs": 24.5
+  },
+  {
+   "kind": "checkout",
+   "seed": 2027,
+   "turns": [
+    {
+     "seed": 16216,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16217,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16218,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is in a healthy state. Its current version is 2.8.0, and it has been running for 259200 seconds (approximately 72 hours).",
+   "secs": 29.8
+  },
+  {
+   "kind": "checkout",
+   "seed": 2028,
+   "turns": [
+    {
+     "seed": 16224,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16225,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16226,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 44.2
+  },
+  {
+   "kind": "checkout",
+   "seed": 2029,
+   "turns": [
+    {
+     "seed": 16232,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "list_services",
+        "arguments": "{}"
+       },
+       "id": "call-0-0"
+      }
+     ]
+    },
+    {
+     "seed": 16233,
+     "finish_reason": "tool_calls",
+     "reasoning_chars": 0,
+     "content": "",
+     "tool_calls": [
+      {
+       "type": "function",
+       "function": {
+        "name": "service_status",
+        "arguments": "{\"service\": \"checkout\"}"
+       },
+       "id": "call-1-0"
+      }
+     ]
+    },
+    {
+     "seed": 16234,
+     "finish_reason": "stop",
+     "reasoning_chars": 0,
+     "content": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+     "tool_calls": []
+    }
+   ],
+   "trace": [
+    {
+     "name": "list_services",
+     "arguments": {},
+     "result": "[\"payments-api\",\"checkout\",\"search\"]"
+    },
+    {
+     "name": "service_status",
+     "arguments": {
+      "service": "checkout"
+     },
+     "result": "{\"service\":\"checkout\",\"state\":\"healthy\",\"uptimeSeconds\":259200,\"version\":\"2.8.0\"}"
+    }
+   ],
+   "final": "The checkout service is currently in a healthy state. Its version is 2.8.0, and it has been running for 259200 seconds (which is 72 hours).",
+   "secs": 34.3
+  }
+ ]
+}

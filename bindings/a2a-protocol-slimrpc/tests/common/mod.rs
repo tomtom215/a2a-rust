@@ -13,6 +13,7 @@
 
 #![allow(dead_code)] // Each suite uses a different subset.
 
+pub mod agent;
 pub mod spire;
 pub mod tls;
 
@@ -97,6 +98,15 @@ impl AgentExecutor for SigningExecutor {
     }
 }
 
+/// [`agent_card`], declaring the peer authentication
+/// `SlimPeerAuthInterceptor::required()` enforces, as the binding's own
+/// `declare_on` declares it (spec §13.3, SLIMRPC §8.4).
+pub fn peer_authenticated_card(name: &SlimName) -> AgentCard {
+    let mut card = agent_card(name);
+    a2a_protocol_slimrpc::SlimPeerAuthInterceptor::required().declare_on(&mut card);
+    card
+}
+
 /// An agent card advertising `name` over SLIMRPC.
 pub fn agent_card(name: &SlimName) -> AgentCard {
     AgentCard {
@@ -174,6 +184,9 @@ pub fn free_port() -> u16 {
 
 /// A SLIM service named for the test that owns it.
 pub fn service(test_name: &str) -> Arc<Service> {
+    // rustls has two providers linked and picks neither, so SLIM's TLS
+    // would panic without a default; install SLIM's own, as `slim-node` does.
+    a2a_protocol_slimrpc::install_crypto_provider();
     let id = ID::new_with_name(Kind::new("slim").expect("kind"), test_name).expect("id");
     Arc::new(Service::new(id))
 }

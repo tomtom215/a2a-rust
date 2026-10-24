@@ -119,7 +119,7 @@ pub fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> 
 }
 
 #[cfg(feature = "tracing")]
-fn peer_with(description: &str, version: &str) -> Peer {
+pub(super) fn peer_with(description: &str, version: &str) -> Peer {
     Peer::new(
         "JSONRPC",
         "http://agent.example:9000",
@@ -230,6 +230,10 @@ fn every_error_class_has_its_error_type() {
             },
             "auth_required",
         ),
+        (
+            E::InvalidAgentResponse("no skill".into()),
+            "invalid_response",
+        ),
         (E::ProtocolBindingMismatch("x".into()), "_OTHER"),
     ] {
         assert_eq!(error_type(&error), expected, "{error:?}");
@@ -287,29 +291,6 @@ fn each_binding_reports_the_status_it_was_answered_with() {
         let s = Status::ok(system);
         assert_eq!((s.code.as_deref(), s.error), (ok, None), "{system:?}");
     }
-}
-
-/// A method outside the A2A service is `_OTHER`, as on the server: the span is
-/// named for its system and keeps the method as sent.
-#[cfg(feature = "tracing")]
-#[test]
-fn an_unknown_method_is_named_for_its_system() {
-    let fields = recorded(|| {
-        let call = CallSpan::open("message/send", &peer_with("", ""), &serde_json::json!({}));
-        call.succeeded(None);
-    });
-    let field = |k: &str| fields.get(k).map(String::as_str);
-    assert_eq!(field("otel.name"), Some("jsonrpc"));
-    assert_eq!(field("rpc.method"), Some("_OTHER"));
-    assert_eq!(field("rpc.method_original"), Some("message/send"));
-    let known = recorded(|| {
-        CallSpan::open("GetTask", &peer_with("", ""), &serde_json::json!({})).succeeded(None);
-    });
-    assert_eq!(
-        known.get("otel.name").map(String::as_str),
-        Some("lf.a2a.v1.A2AService/GetTask")
-    );
-    assert!(!known.contains_key("rpc.method_original"));
 }
 
 /// `f` with a `tracing-opentelemetry` layer recording every span, over the
@@ -411,90 +392,5 @@ fn a_current_trace_is_the_parent_only_without_a_recorded_span() {
     assert_ne!(sent.trace_id(), ambient.trace_id());
 }
 
-/// A transport that answers every call with one task, naming its system as
-/// told.
 #[cfg(feature = "tracing")]
-struct Named(Option<&'static str>);
-#[cfg(feature = "tracing")]
-impl crate::transport::Transport for Named {
-    fn send_request<'a>(
-        &'a self,
-        _method: &'a str,
-        _params: serde_json::Value,
-        _headers: &'a std::collections::HashMap<String, String>,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = crate::error::ClientResult<serde_json::Value>>
-                + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async {
-            Ok(serde_json::json!({"id": "t1", "contextId": "c1",
-                "status": {"state": "TASK_STATE_COMPLETED"}}))
-        })
-    }
-    fn send_streaming_request<'a>(
-        &'a self,
-        _method: &'a str,
-        _params: serde_json::Value,
-        _headers: &'a std::collections::HashMap<String, String>,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = crate::error::ClientResult<crate::streaming::EventStream>,
-                > + Send
-                + 'a,
-        >,
-    > {
-        Box::pin(async { Err(crate::error::ClientError::Transport("unused".into())) })
-    }
-    fn rpc_system(&self) -> Option<&'static str> {
-        self.0
-    }
-}
-
-/// A transport given to `with_custom_transport` names its own
-/// `rpc.system.name`, with a retry policy too (the builder reads the name
-/// before wrapping the transport in retries), and the span keeps the agent
-/// from the card; one that names none records none.
-#[cfg(feature = "tracing")]
-#[test]
-fn a_custom_transport_names_its_system_and_keeps_the_agent() {
-    use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
-
-    let card = AgentCard::new(
-        "worker",
-        "1",
-        AgentInterface::jsonrpc("http://agent.example"),
-    )
-    .with_description("d")
-    .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
-    let call = |system: Option<&'static str>, retry: bool| {
-        let mut builder = crate::ClientBuilder::from_card(&card)
-            .unwrap()
-            .with_custom_transport(Named(system));
-        if retry {
-            builder = builder.with_retry_policy(crate::RetryPolicy::default());
-        }
-        let client = builder.build().unwrap();
-        recorded(|| {
-            tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap()
-                .block_on(client.get_task(a2a_protocol_types::TaskQueryParams {
-                    tenant: None,
-                    id: "t1".into(),
-                    history_length: None,
-                }))
-                .unwrap();
-        })
-    };
-    for retry in [false, true] {
-        let fields = call(Some("slimrpc"), retry);
-        let field = |k: &str| fields.get(k).map(String::as_str);
-        assert_eq!(field("rpc.system.name"), Some("slimrpc"), "retry: {retry}");
-        assert_eq!(field("gen_ai.agent.name"), Some("worker"), "retry: {retry}");
-    }
-    assert_eq!(call(None, false).get("rpc.system.name"), None);
-}
+mod custom_transport;

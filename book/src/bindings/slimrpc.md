@@ -137,6 +137,27 @@ caller it would be a claim the handler reads as fact. This is separate from the
 SLIM transport identity below (SPIFFE/MLS or a static token), which
 authenticates the app to the SLIM fabric, not the caller to the agent.
 
+`SlimPeerAuthInterceptor` authenticates by the peer SLIM verified for an MLS
+session instead: `new()` names each such caller, `required()` also refuses a
+call without one. A2A §13.3 has requests authenticated with a scheme the
+public card declares, and SLIMRPC §8.4 asks the card to say that SLIM
+provides authentication, so declare it with the interceptor itself:
+
+```rust,ignore
+let auth = SlimPeerAuthInterceptor::required();
+auth.declare_on(&mut card); // securitySchemes.slimMls, and a requirement for it
+let handler = RequestHandlerBuilder::new(executor)
+    .with_agent_card(card)
+    .with_interceptor(auth)
+    .build()?;
+```
+
+A2A has no scheme type for SLIM, so `security_scheme()` declares a
+`mutualTlsSecurityScheme` whose description names SLIM: of A2A's kinds, the
+one whose credential the transport proves for both peers. The handler's build
+refuses `required()` behind a card that declares only a bearer or API-key
+scheme, which it cannot check.
+
 The server reads `a2a-version` as the HTTP bindings read the header: absent or
 empty means 0.3 (A2A §3.6.2), which it refuses with `VersionNotSupportedError`.
 `SlimRpcServer::with_require_version(false)` serves such a call as 1.0 instead,

@@ -230,7 +230,7 @@ type Breaker = fn(&mut AgentCard);
 /// publish (proto3 cannot tell an empty string from an absent one).
 #[test]
 fn validate_refuses_each_empty_required_string() {
-    let cases: [(&str, Breaker); 7] = [
+    let cases: [(&str, Breaker); 10] = [
         ("url, protocolBinding", |c| {
             c.supported_interfaces[0].url.clear();
         }),
@@ -241,6 +241,7 @@ fn validate_refuses_each_empty_required_string() {
             c.supported_interfaces[0].protocol_version.clear();
         }),
         ("id, name and description", |c| c.skills[0].id.clear()),
+        ("id, name and description", |c| c.skills[0].name.clear()),
         ("id, name and description", |c| {
             c.skills[0].description.clear();
         }),
@@ -250,10 +251,23 @@ fn validate_refuses_each_empty_required_string() {
                 url: "https://example.com".into(),
             });
         }),
+        ("organization and a url", |c| {
+            c.provider = Some(AgentProvider {
+                organization: "Example".into(),
+                url: String::new(),
+            });
+        }),
         ("protected header", |c| {
             c.signatures = Some(vec![crate::extensions::AgentCardSignature {
                 protected: String::new(),
                 signature: "s".into(),
+                header: None,
+            }]);
+        }),
+        ("protected header and signature", |c| {
+            c.signatures = Some(vec![crate::extensions::AgentCardSignature {
+                protected: "p".into(),
+                signature: String::new(),
                 header: None,
             }]);
         }),

@@ -5,7 +5,7 @@ RUN mvn dependency:go-offline -q
 COPY src src
 RUN mvn package -q -DskipTests
 
-FROM eclipse-temurin:17-jre-alpine@sha256:3c472129dc75a8d1d7a3f2df5b2093a8077e4493deff046754d4764d0371de63
+FROM eclipse-temurin:17-jre-alpine@sha256:c4a33e6ddb738fe4be0a28a613ea0940cec42d25d7263c3e2238c43354cb19b0
 COPY --from=build /app/target/*.jar /app.jar
 COPY --from=build /app/target/dependency/* /libs/
 EXPOSE 9103

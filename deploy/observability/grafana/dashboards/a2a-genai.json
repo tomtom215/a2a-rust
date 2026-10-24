@@ -1,0 +1,656 @@
+{
+  "uid": "a2a-genai",
+  "title": "A2A agents: GenAI",
+  "description": "The SDK tool loop's model calls, tokens, tool calls and agent runs, from the OpenTelemetry GenAI metrics it emits (server::tool_loop; the book's observability page lists them). Queries the raw series; a deployment that keeps them long can add recording rules beside prometheus/rules/a2a-recording.yml.",
+  "tags": [
+    "a2a",
+    "a2a-rust",
+    "genai"
+  ],
+  "editable": true,
+  "schemaVersion": 41,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Agent (service.name)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "a2a-prometheus"
+        },
+        "query": {
+          "query": "label_values(target_info, job)",
+          "refId": "job-q"
+        },
+        "definition": "label_values(target_info, job)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "a2a-prometheus"
+        },
+        "query": {
+          "query": "label_values(target_info{job=~\"$job\"}, instance)",
+          "refId": "instance-q"
+        },
+        "definition": "label_values(target_info{job=~\"$job\"}, instance)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Model calls",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Model calls per second, by model and outcome",
+      "description": "One per model turn the tool loop made (gen_ai.client.inference.duration's count). error_type is ok for a turn that succeeded, else the provider error: the HTTP status, timeout, transport, invalid_response, response_too_large, configuration, cancelled.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "label_replace(sum by (gen_ai_request_model, error_type) (rate(gen_ai_client_inference_duration_seconds_count{job=~\"$job\"}[5m])), \"error_type\", \"ok\", \"error_type\", \"\")",
+          "legendFormat": "{{gen_ai_request_model}} {{error_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Failed model calls (ratio)",
+      "description": "Model turns that failed, as a share of all turns.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum(rate(gen_ai_client_inference_duration_seconds_count{job=~\"$job\", error_type!=\"\"}[5m])) / sum(rate(gen_ai_client_inference_duration_seconds_count{job=~\"$job\"}[5m]))",
+          "legendFormat": "failed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Model call duration, successful calls",
+      "description": "gen_ai.client.inference.duration of the turns that succeeded, per requested model: the provider's time to answer, tool calls excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_inference_duration_seconds_bucket{job=~\"$job\", error_type=\"\"}[5m])))",
+          "legendFormat": "p50 {{gen_ai_request_model}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_inference_duration_seconds_bucket{job=~\"$job\", error_type=\"\"}[5m])))",
+          "legendFormat": "p95 {{gen_ai_request_model}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_client_inference_duration_seconds_bucket{job=~\"$job\", error_type=\"\"}[5m])))",
+          "legendFormat": "p99 {{gen_ai_request_model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Tokens",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Tokens per second, input and output",
+      "description": "gen_ai.client.inference.usage.{input,output}_tokens, as the provider reported them; a turn whose response carried no usage adds nothing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (gen_ai_request_model) (rate(gen_ai_client_inference_usage_input_tokens_total{job=~\"$job\"}[5m]))",
+          "legendFormat": "input {{gen_ai_request_model}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (gen_ai_request_model) (rate(gen_ai_client_inference_usage_output_tokens_total{job=~\"$job\"}[5m]))",
+          "legendFormat": "output {{gen_ai_request_model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Tokens per model call",
+      "description": "gen_ai.client.inference.operation.{input,output}_tokens: the prompt a turn sent (it grows with each tool round) and the completion it got back.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gen_ai_client_inference_operation_input_tokens_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50 input"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_inference_operation_input_tokens_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95 input"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gen_ai_client_inference_operation_output_tokens_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50 output"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_inference_operation_output_tokens_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95 output"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Tool calls",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Tool calls per second, by tool and outcome",
+      "description": "One per tool call that ran (gen_ai.execute_tool.duration's count). error_type: unknown_tool, invalid_arguments, tool_error (returned to the model, which may recover), tool_fatal (ends the run), cancelled; ok when the tool answered.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "label_replace(sum by (gen_ai_tool_name, error_type) (rate(gen_ai_execute_tool_duration_seconds_count{job=~\"$job\"}[5m])), \"error_type\", \"ok\", \"error_type\", \"\")",
+          "legendFormat": "{{gen_ai_tool_name}} {{error_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Tool call duration",
+      "description": "gen_ai.execute_tool.duration per tool, every outcome.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, gen_ai_tool_name) (rate(gen_ai_execute_tool_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50 {{gen_ai_tool_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_tool_name) (rate(gen_ai_execute_tool_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95 {{gen_ai_tool_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Agent runs",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Agent runs per second, by outcome",
+      "description": "One per run of the tool loop (gen_ai.invoke_agent.duration's count). error_type: the model's error when a turn failed, tool_fatal, turn_limit, budget_exhausted, cancelled; ok for a run that answered.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "label_replace(sum by (error_type) (rate(gen_ai_invoke_agent_duration_seconds_count{job=~\"$job\"}[5m])), \"error_type\", \"ok\", \"error_type\", \"\")",
+          "legendFormat": "{{error_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Agent run duration",
+      "description": "gen_ai.invoke_agent.duration of every run: model turns and tool calls together.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gen_ai_invoke_agent_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_invoke_agent_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Model calls and tool calls per run",
+      "description": "gen_ai.invoke_agent.inference_calls and .tool_calls: how many rounds a run took. A rising p95 is a model looping on its tools.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gen_ai_invoke_agent_inference_calls_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50 model calls"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_invoke_agent_inference_calls_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95 model calls"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gen_ai_invoke_agent_tool_calls_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50 tool calls"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_invoke_agent_tool_calls_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95 tool calls"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

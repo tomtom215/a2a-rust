@@ -44,71 +44,8 @@ pub fn agent_identity(card: &AgentCard) -> Arc<(String, String, String)> {
     ))
 }
 
-/// What a client knows about the agent it calls, for its spans.
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(not(feature = "tracing"), allow(dead_code))]
-pub struct Peer {
-    /// `rpc.system.name`, when the client chose the transport.
-    pub(crate) system: Option<&'static str>,
-    pub(crate) address: Option<String>,
-    pub(crate) port: Option<u16>,
-    /// Name, description and version, from the card.
-    pub(crate) agent: Option<Arc<(String, String, String)>>,
-    /// Whether the transport carries per-request headers, so a
-    /// `traceparent` set for one call reaches the agent with that call.
-    #[cfg_attr(not(feature = "otel"), allow(dead_code))]
-    pub(crate) carries_headers: bool,
-}
-
-impl Peer {
-    /// The peer of a client given a transport of its own: the system the
-    /// transport names and the agent from the card, if any. The address is
-    /// the transport's own business, so it is not recorded, and no
-    /// `traceparent` is set, since such a transport may carry no headers.
-    pub(crate) fn custom(
-        system: Option<&'static str>,
-        agent: Option<Arc<(String, String, String)>>,
-    ) -> Self {
-        Self {
-            system,
-            agent,
-            ..Self::default()
-        }
-    }
-
-    /// The peer of a client this crate built a transport for.
-    pub(crate) fn new(
-        binding: &str,
-        endpoint: &str,
-        agent: Option<Arc<(String, String, String)>>,
-    ) -> Self {
-        let system = match binding.to_ascii_uppercase().as_str() {
-            "JSONRPC" => Some("jsonrpc"),
-            "HTTP+JSON" | "REST" => Some("a2a_http_json"),
-            "GRPC" => Some("grpc"),
-            _ => None,
-        };
-        let uri = endpoint.parse::<hyper::Uri>().ok();
-        let address = uri
-            .as_ref()
-            .and_then(|u| u.host())
-            .map(|h| h.trim_matches(['[', ']']).to_owned());
-        let port = uri.as_ref().and_then(|u| {
-            u.port_u16().or_else(|| match u.scheme_str() {
-                Some("https") => Some(443),
-                Some("http") => Some(80),
-                _ => None,
-            })
-        });
-        Self {
-            system,
-            address,
-            port,
-            agent,
-            carries_headers: system.is_some(),
-        }
-    }
-}
+mod peer;
+pub use peer::Peer;
 
 /// A call's span, from open to the recording of its outcome.
 #[cfg(feature = "tracing")]
@@ -138,7 +75,11 @@ impl CallSpan {
             otel.status_code = tracing::field::Empty,
             rpc.system.name = peer.system,
             rpc.method = qualified,
-            rpc.method_original = other.then_some(method),
+            // On JSON-RPC the method as sent (`SendMessage`) always differs
+            // from `rpc.method`, so it is Conditionally Required there.
+            rpc.method_original = (other || peer.system == Some("jsonrpc")).then_some(method),
+            jsonrpc.protocol.version = (peer.system == Some("jsonrpc")).then_some("2.0"),
+            jsonrpc.request.id = tracing::field::Empty,
             a2a.method.name = method,
             a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
             server.address = peer.address.as_deref(),
@@ -228,6 +169,14 @@ impl CallSpan {
         self.finish();
     }
 
+    /// Records `id`, the JSON-RPC id the call's response answers (once: a
+    /// field recorded twice is exported twice).
+    pub(crate) fn request_id(&self, id: Option<&str>) {
+        if let Some(id) = id {
+            self.span.record("jsonrpc.request.id", id);
+        }
+    }
+
     /// Records the call as failed with `error`.
     pub(crate) fn failed(self, error: &crate::error::ClientError) {
         if self.span.is_disabled() {
@@ -245,6 +194,40 @@ impl CallSpan {
             self.span.record("gen_ai.conversation.id", id.as_str());
         }
     }
+}
+
+#[cfg(feature = "tracing")]
+tokio::task_local! {
+    /// The JSON-RPC id the transport last sent for the call in this scope.
+    static REQUEST_ID: std::sync::Arc<std::sync::Mutex<Option<String>>>;
+}
+
+/// Notes `id`, the JSON-RPC id a transport is sending, for the call's
+/// `jsonrpc.request.id`. A retry sends a new id; the last one is the one
+/// the response answers, so it replaces the earlier. Outside a call (a
+/// transport used directly) there is no scope and nothing is noted.
+#[cfg(feature = "tracing")]
+pub fn note_request_id(id: &serde_json::Value) {
+    let rendered = match id {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => return,
+        other => other.to_string(),
+    };
+    let _ = REQUEST_ID.try_with(|slot| {
+        if let Ok(mut slot) = slot.lock() {
+            *slot = Some(rendered);
+        }
+    });
+}
+
+/// Runs `send` with a slot for its JSON-RPC id, and returns what it
+/// returned with the last id noted.
+#[cfg(feature = "tracing")]
+pub async fn noting_request_id<F: std::future::Future>(send: F) -> (F::Output, Option<String>) {
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let output = REQUEST_ID.scope(std::sync::Arc::clone(&slot), send).await;
+    let id = slot.lock().ok().and_then(|mut s| s.take());
+    (output, id)
 }
 
 /// Records how a call ended on its span: `rpc.status_code`, and for a
@@ -355,7 +338,7 @@ pub fn qualified(method: &str) -> &'static str {
 /// HTTP status, or what went wrong — `error.type` when the binding has no
 /// status for it ([`Status::failed`]).
 #[cfg(feature = "tracing")]
-fn error_type(error: &crate::error::ClientError) -> String {
+pub fn error_type(error: &crate::error::ClientError) -> String {
     use crate::error::ClientError as E;
     match error {
         E::Protocol(e) => e.code.as_i32().to_string(),
@@ -365,6 +348,7 @@ fn error_type(error: &crate::error::ClientError) -> String {
         E::Serialization(_) => "serialization".to_owned(),
         E::InvalidEndpoint(_) => "invalid_endpoint".to_owned(),
         E::AuthRequired { .. } => "auth_required".to_owned(),
+        E::InvalidAgentResponse(_) => "invalid_response".to_owned(),
         _ => "_OTHER".to_owned(),
     }
 }
@@ -425,7 +409,7 @@ pub fn propagate(
 }
 
 #[cfg(feature = "otel")]
-fn remote_context(
+pub fn remote_context(
     trace: &a2a_protocol_types::trace_context::TraceContext,
 ) -> Option<opentelemetry::Context> {
     use opentelemetry::trace::{
@@ -445,5 +429,7 @@ fn remote_context(
     Some(opentelemetry::Context::new().with_remote_span_context(context))
 }
 
+#[cfg(test)]
+mod jsonrpc_tests;
 #[cfg(test)]
 pub mod tests;

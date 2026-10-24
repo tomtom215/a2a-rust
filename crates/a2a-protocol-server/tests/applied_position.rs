@@ -298,16 +298,18 @@ async fn scratch_postgres(prefix: &str) -> (String, impl AsyncFnOnce()) {
         .connect(&admin_url)
         .await
         .expect("admin");
-    sqlx::query(&format!("CREATE DATABASE \"{name}\""))
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
         .execute(&admin)
         .await
         .expect("create");
     let url = format!("{base}/{name}");
     (url, async move || {
-        sqlx::query(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
-            .execute(&admin)
-            .await
-            .expect("drop");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"
+        )))
+        .execute(&admin)
+        .await
+        .expect("drop");
     })
 }
 

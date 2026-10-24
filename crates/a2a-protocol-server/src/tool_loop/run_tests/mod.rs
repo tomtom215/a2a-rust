@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::tool_loop::model::{ModelTurn, ToolSpec};
+use crate::tool_loop::model::{ModelError, ModelTurn, ToolSpec};
 use crate::tool_loop::tool::{DuplicateTool, Tool, ToolInvocation};
 
 /// What the scripted model saw on each turn.
@@ -222,3 +222,11 @@ mod cancel;
 mod idempotency;
 mod recovery;
 mod turns;
+
+/// A model that does not say where it is served records no server: the
+/// default is `None`, not an empty host.
+#[test]
+fn a_model_names_no_server_unless_it_says_where_it_is_served() {
+    let (model, _) = Scripted::new(vec![]);
+    assert_eq!(model.server(), None);
+}

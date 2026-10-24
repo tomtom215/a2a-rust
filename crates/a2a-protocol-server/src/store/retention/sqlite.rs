@@ -59,7 +59,8 @@ pub async fn purge(
             report.complete = false;
             break;
         }
-        let mut query = sqlx::query(&delete_sql);
+        // `table` is `&'static str`; the cut-off and batch are binds.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(delete_sql.as_str()));
         for label in &labels {
             query = query.bind(label);
         }
@@ -122,7 +123,7 @@ pub async fn purge(
             // rows should not undo it on the side tables. Each statement's own
             // doc comment says what its batch counts — rows are not always the
             // unit, because two of these tables are `WITHOUT ROWID`.
-            let deleted = sqlx::query(sweep)
+            let deleted = sqlx::query(*sweep)
                 .bind(batch)
                 .execute(pool)
                 .await?

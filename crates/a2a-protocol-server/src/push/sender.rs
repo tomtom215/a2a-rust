@@ -460,6 +460,58 @@ fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
     Ok(())
 }
 
+/// The `Authorization` value `config.authentication` asks for, if it asks
+/// for one.
+///
+/// Auth scheme names are case-insensitive (RFC 9110 §11.1), so "Bearer" and
+/// "BASIC" match; the canonical capitalization is emitted regardless of how
+/// the scheme was spelled.
+///
+/// # Errors
+///
+/// A scheme other than `Bearer` or `Basic`, or one without credentials
+/// (empty counts as none: a config stored before creation refused it would
+/// otherwise send a bare `Bearer `). Spec §13.2: agents MUST include the
+/// credentials the config specifies, so a webhook is never sent a request
+/// without them. Creating such a config is refused already; this catches
+/// one that reached the store some other way.
+fn authorization_header(config: &TaskPushNotificationConfig) -> A2aResult<Option<String>> {
+    let Some(auth) = config.authentication.as_ref() else {
+        return Ok(None);
+    };
+    let prefix = if auth.scheme.eq_ignore_ascii_case("bearer") {
+        "Bearer"
+    } else if auth.scheme.eq_ignore_ascii_case("basic") {
+        "Basic"
+    } else {
+        trace_warn!(
+            scheme = auth.scheme.as_str(),
+            "unknown push authentication scheme; not delivering"
+        );
+        return Err(A2aError::invalid_params(format!(
+            "push config authentication scheme {:?} is not one this sender can send \
+             (Bearer or Basic); not delivering without the credentials the config \
+             specifies (spec §13.2)",
+            auth.scheme
+        )));
+    };
+    let credentials = auth
+        .credentials
+        .as_deref()
+        .filter(|c| !c.trim().is_empty())
+        .ok_or_else(|| {
+            trace_warn!(
+                scheme = auth.scheme.as_str(),
+                "push authentication scheme has no credentials; not delivering"
+            );
+            A2aError::invalid_params(format!(
+                "push config authentication scheme {prefix} has no credentials; not \
+                 delivering without the credentials the config specifies (spec §13.2)"
+            ))
+        })?;
+    Ok(Some(format!("{prefix} {credentials}")))
+}
+
 #[allow(clippy::manual_async_fn, clippy::too_many_lines)]
 impl PushSender for HttpPushSender {
     /// `max_attempts` requests at `request_timeout` each, plus the backoff
@@ -577,6 +629,11 @@ impl PushSender for HttpPushSender {
             if let Some(ref token) = config.token {
                 validate_header_value(token, "notification token")?;
             }
+            // Spec §13.2: agents MUST include the credentials
+            // `config.authentication` specifies. One this sender cannot send
+            // refuses the delivery; until 2026-10-23 it delivered without
+            // any `Authorization` header.
+            let authorization = authorization_header(config)?;
 
             let body_bytes: Bytes = serde_json::to_vec(event)
                 .map(Bytes::from)
@@ -612,41 +669,8 @@ impl PushSender for HttpPushSender {
                     builder = builder.uri(url);
                 }
 
-                // Set authentication headers from config. Auth scheme names are
-                // case-insensitive per RFC 9110 §11.1, so "Bearer"/"BASIC"
-                // configs must match; the canonical capitalization is emitted
-                // regardless of how the scheme was spelled. A scheme without a
-                // credential value cannot produce an auth header — skip it
-                // rather than sending an empty "Bearer "/"Basic " header.
-                if let Some(ref auth) = config.authentication {
-                    let canonical_scheme = if auth.scheme.eq_ignore_ascii_case("bearer") {
-                        Some("Bearer")
-                    } else if auth.scheme.eq_ignore_ascii_case("basic") {
-                        Some("Basic")
-                    } else {
-                        None
-                    };
-                    // Empty counts as none: a config stored before creation
-                    // refused it would otherwise send a bare `Bearer `.
-                    let credentials = auth.credentials.as_deref().filter(|c| !c.trim().is_empty());
-                    match (canonical_scheme, credentials) {
-                        (Some(prefix), Some(credentials)) => {
-                            builder =
-                                builder.header("authorization", format!("{prefix} {credentials}"));
-                        }
-                        (Some(_), None) => {
-                            trace_warn!(
-                                scheme = auth.scheme.as_str(),
-                                "authentication scheme has no credentials; no auth header set"
-                            );
-                        }
-                        (None, _) => {
-                            trace_warn!(
-                                scheme = auth.scheme.as_str(),
-                                "unknown authentication scheme; no auth header set"
-                            );
-                        }
-                    }
+                if let Some(value) = authorization.as_deref() {
+                    builder = builder.header("authorization", value);
                 }
 
                 // Set the notification token header if present — under both

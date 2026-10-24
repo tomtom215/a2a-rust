@@ -16,6 +16,8 @@
 //! `Expires`, `Age`) and revalidates a stale one with `If-None-Match` /
 //! `If-Modified-Since`. The free functions fetch once and cache nothing.
 
+#[cfg(feature = "tracing")]
+mod card_span;
 mod freshness;
 
 use std::collections::HashMap;
@@ -532,15 +534,37 @@ async fn fetch_card(
     Ok(card)
 }
 
-/// Fetches the card, conditionally when `cached` holds validators, and
-/// returns it with the validators and freshness of the response (a `304`'s
-/// validators fall back to the stored ones).
-#[allow(clippy::too_many_lines)]
+/// The validators and freshness a fetch returns with the card.
+type Fetched = (AgentCard, Option<String>, Option<String>, Freshness);
+
+/// [`fetch_inner`] in the HTTP conventions' `CLIENT` span for the `GET`
+/// (`card_span.rs`).
 async fn fetch_card_with_metadata(
     url: &str,
     cached: Option<&CachedCard>,
     options: &CardFetchOptions,
-) -> ClientResult<(AgentCard, Option<String>, Option<String>, Freshness)> {
+) -> ClientResult<Fetched> {
+    #[cfg(feature = "tracing")]
+    {
+        let span = card_span::open(url);
+        let result =
+            tracing::Instrument::instrument(fetch_inner(url, cached, options), span.clone()).await;
+        card_span::ended(&span, result.as_ref().err());
+        result
+    }
+    #[cfg(not(feature = "tracing"))]
+    fetch_inner(url, cached, options).await
+}
+
+/// Fetches the card, conditionally when `cached` holds validators, and
+/// returns it with the validators and freshness of the response (a `304`'s
+/// validators fall back to the stored ones).
+#[allow(clippy::too_many_lines)]
+async fn fetch_inner(
+    url: &str,
+    cached: Option<&CachedCard>,
+    options: &CardFetchOptions,
+) -> ClientResult<Fetched> {
     #[cfg(not(feature = "tls-rustls"))]
     let client: Client<HttpConnector, Full<Bytes>> = {
         let mut connector = HttpConnector::new();
@@ -601,6 +625,8 @@ async fn fetch_card_with_metadata(
         .map_err(|e| ClientError::HttpClient(e.to_string()))?;
 
     let status = resp.status();
+    #[cfg(feature = "tracing")]
+    tracing::Span::current().record("http.response.status_code", status.as_u16());
     let retry_after = crate::error::parse_retry_after(resp.headers());
 
     // Extract caching headers before consuming the response body.
@@ -696,6 +722,7 @@ async fn fetch_card_with_metadata(
         serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
     crate::legacy_card::read_as_current(&mut card);
     let card = serde_json::from_value::<AgentCard>(card).map_err(ClientError::Serialization)?;
+    crate::received::card(url, &card)?;
     Ok((card, etag, last_modified, freshness))
 }
 
@@ -746,6 +773,21 @@ pub(crate) fn verify_card_signatures(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What every card served here needs to pass the client's check of a
+    /// received card (`AgentCard::validate`): a description and a skill.
+    fn valid(card: a2a_protocol_types::AgentCard) -> a2a_protocol_types::AgentCard {
+        let card = if card.description.is_empty() {
+            card.with_description("A test agent")
+        } else {
+            card
+        };
+        card.with_skill(echo_skill())
+    }
+
+    fn echo_skill() -> a2a_protocol_types::AgentSkill {
+        a2a_protocol_types::AgentSkill::new("echo", "Echo", "Echoes input").with_tags(["echo"])
+    }
 
     /// No headers, the default budget: what the plain functions send.
     fn no_options() -> CardFetchOptions {
@@ -978,11 +1020,11 @@ mod tests {
     async fn fetch_card_with_metadata_200_parses_card() {
         use a2a_protocol_types::{AgentCard, AgentInterface};
 
-        let card = AgentCard::new(
+        let card = valid(AgentCard::new(
             "test-agent",
             "1.0",
             AgentInterface::jsonrpc("http://localhost:9090"),
-        )
+        ))
         .with_description("A test");
         let card_json = serde_json::to_string(&card).unwrap();
 
@@ -1050,9 +1092,9 @@ mod tests {
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
             security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![echo_skill()],
             signatures: None,
         };
         let card_json = serde_json::to_string(&card).unwrap();
@@ -1131,9 +1173,9 @@ mod tests {
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
             security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![echo_skill()],
             signatures: None,
         };
 
@@ -1192,9 +1234,9 @@ mod tests {
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
             security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![echo_skill()],
             signatures: None,
         };
         let card_json = serde_json::to_string(&card).unwrap();
@@ -1255,9 +1297,9 @@ mod tests {
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
             security_requirements: None,
-            default_input_modes: vec![],
-            default_output_modes: vec![],
-            skills: vec![],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![echo_skill()],
             signatures: None,
         };
         let card_json = serde_json::to_string(&card).unwrap();
@@ -1306,11 +1348,11 @@ mod tests {
     async fn resolve_agent_card_fetches_the_well_known_card() {
         use a2a_protocol_types::{AgentCard, AgentInterface};
 
-        let card = AgentCard::new(
+        let card = valid(AgentCard::new(
             "well-known-test",
             "1.0.0",
             AgentInterface::jsonrpc("http://localhost:9090"),
-        );
+        ));
         let card_json = serde_json::to_string(&card).unwrap();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1650,11 +1692,11 @@ mod tests {
     async fn a_card_behind_a_required_header_needs_the_options_variant() {
         use a2a_protocol_types::{AgentCard, AgentInterface};
 
-        let card = AgentCard::new(
+        let card = valid(AgentCard::new(
             "gated",
             "1.0",
             AgentInterface::jsonrpc("http://localhost:9090"),
-        );
+        ));
         let addr = spawn_gated_card_server(
             serde_json::to_string(&card).unwrap(),
             "authorization",
@@ -1693,11 +1735,11 @@ mod tests {
     async fn the_card_fetch_sends_its_a2a_version_unless_the_caller_does() {
         use a2a_protocol_types::{AgentCard, AgentInterface};
 
-        let card = serde_json::to_string(&AgentCard::new(
+        let card = serde_json::to_string(&valid(AgentCard::new(
             "versioned",
             "1.0",
             AgentInterface::jsonrpc("http://localhost:9090"),
-        ))
+        )))
         .unwrap();
 
         let addr = spawn_gated_card_server(card.clone(), "a2a-version", "1.0").await;

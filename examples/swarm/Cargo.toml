@@ -14,10 +14,10 @@ license.workspace      = true
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
-# `otlp`: the SDK's `Telemetry`, which exports when
-# `OTEL_EXPORTER_OTLP_ENDPOINT` names a collector.
+# `otlp`: the SDK's `Telemetry`, which exports each
+# signal an OTLP endpoint is configured for (`OTEL_EXPORTER_OTLP_ENDPOINT` or
+# the signal's own `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT`).
 a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["otlp"] }
-tracing-subscriber = { workspace = true }
 tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 tokio-util     = { version = ">=0.7, <0.8" }
 hyper          = { workspace = true }

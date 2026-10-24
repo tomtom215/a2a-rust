@@ -300,25 +300,17 @@ async fn main() {
 }
 
 /// The SDK's telemetry from the standard `OTEL_*` environment, set up as in
-/// `examples/langfuse-agent`: with `OTEL_EXPORTER_OTLP_ENDPOINT` naming a
-/// collector, traces, metrics and logs go there; without it nothing is built
-/// or installed — no exporter, no export thread, no subscriber. Keep it for
-/// the life of the process: dropping it flushes.
+/// `examples/langfuse-agent`: with an OTLP endpoint configured for a signal
+/// (`OTEL_EXPORTER_OTLP_ENDPOINT`, or that signal's own
+/// `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT`), the signal goes there; without one
+/// nothing is built or installed — no exporter, no export thread, no
+/// subscriber. Keep it for the life of the process: dropping it flushes.
 fn telemetry() -> a2a_protocol_server::otel::Telemetry {
-    use tracing_subscriber::layer::SubscriberExt as _;
-    use tracing_subscriber::util::SubscriberInitExt as _;
-    let export = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some();
     let telemetry = a2a_protocol_server::otel::Telemetry::builder()
         .with_default_service_name(env!("CARGO_BIN_NAME"))
-        .with_traces(export)
-        .with_metrics(export)
-        .with_logs(export)
+        .with_export_where_configured()
         .build()
         .expect("the OTEL_* environment names a configuration Telemetry cannot use");
-    if telemetry.tracer_provider().is_some() || telemetry.logger_provider().is_some() {
-        tracing_subscriber::registry()
-            .with(telemetry.layer())
-            .init();
-    }
+    telemetry.install_subscriber();
     telemetry
 }

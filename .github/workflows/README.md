@@ -50,7 +50,7 @@ values, so job renames here silently drop the requirement there:
   - `Clippy (stable, <os>)` for `ubuntu-latest`, `macos-latest` and
     `windows-latest`
   - `Feature matrix (cargo-hack, each feature)`
-  - `Test (<rust>, <os>)` for `stable` and `1.88` on each of those three OSes
+  - `Test (<rust>, <os>)` for `stable` and `1.94` on each of those three OSes
   - `Documentation`
   - `cargo-deny`
   - `Package validation`
@@ -104,7 +104,7 @@ file does not record whether each is meant to stay off it:
 
 The CI workflow tests across multiple configurations:
 
-- **Rust versions**: stable + MSRV (1.88) for tests; clippy runs on stable only, since lint verdicts change between clippy versions
+- **Rust versions**: stable + MSRV (1.94) for tests; clippy runs on stable only, since lint verdicts change between clippy versions
 - **Platforms**: Linux, macOS, Windows for clippy and tests; every other job on Linux
 - **Feature combinations** (the `Test` job, each a step of its own; some
   scoped to one crate): default, `signing`, `tracing`, `tls-rustls` (client,

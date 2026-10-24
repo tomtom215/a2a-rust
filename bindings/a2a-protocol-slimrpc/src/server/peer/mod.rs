@@ -78,7 +78,11 @@ use std::pin::Pin;
 use std::sync::OnceLock;
 
 use a2a_protocol_server::{CallContext, ServerInterceptor};
+use a2a_protocol_types::agent_card::AgentCard;
 use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::security::{
+    MutualTlsSecurityScheme, SecurityRequirement, SecurityScheme, StringList,
+};
 
 /// The header key under which the server records the verified subject
 /// (`sub`) of the peer that sent a request.
@@ -95,6 +99,32 @@ pub const AUTH_SCHEME: &str = "slim";
 /// The challenge a [`SlimPeerAuthInterceptor::required`] refusal names: the
 /// caller must reach the agent over a SLIM session with MLS.
 pub const CHALLENGE: &str = "SLIM-MLS";
+
+/// The name [`SlimPeerAuthInterceptor::declare_on`] gives [`security_scheme`]
+/// in a card's `securitySchemes`.
+pub const SECURITY_SCHEME_NAME: &str = "slimMls";
+
+/// The security scheme an agent card declares for a SLIM session with MLS,
+/// the authentication [`SlimPeerAuthInterceptor`] checks.
+///
+/// A2A §13.3: "Agents MUST authenticate requests using one of the schemes
+/// declared in the public `AgentCard.securitySchemes`"; SLIMRPC §8.4: an
+/// agent "SHOULD document in their Agent Card that authentication is
+/// provided by the SLIM network layer", and `securitySchemes` "MAY include
+/// a reference to SLIM identity". A2A defines no scheme for SLIM. Mutual
+/// TLS, whose credential the transport proves for both peers before any
+/// request, is the one that describes it; the description says it is
+/// SLIM's.
+#[must_use]
+pub fn security_scheme() -> SecurityScheme {
+    SecurityScheme::MutualTls(MutualTlsSecurityScheme {
+        description: Some(
+            "A SLIM session with MLS (SLIMRPC §8): the SLIM network authenticates both \
+             peers, and the caller is the peer SLIM verified"
+                .to_owned(),
+        ),
+    })
+}
 
 /// The identity [`SlimPeerAuthInterceptor`] records for a peer SLIM verified
 /// as `subject`, from `issuer`: `slim:<issuer>:<subject>`.
@@ -232,6 +262,33 @@ impl SlimPeerAuthInterceptor {
     pub const fn required() -> Self {
         Self { required: true }
     }
+
+    /// Declares in `card` the authentication this interceptor checks:
+    /// [`security_scheme`] under [`SECURITY_SCHEME_NAME`] in
+    /// `securitySchemes`, and, when it is [`required`](Self::required), a
+    /// `securityRequirements` entry naming it, so a client reading the card
+    /// knows it must call over a SLIM session with MLS. An entry already
+    /// there under the name is replaced; other schemes and requirements are
+    /// kept.
+    pub fn declare_on(&self, card: &mut AgentCard) {
+        card.security_schemes
+            .get_or_insert_with(Default::default)
+            .insert(SECURITY_SCHEME_NAME.to_owned(), security_scheme());
+        if self.required {
+            let requirements = card.security_requirements.get_or_insert_with(Vec::new);
+            let named = |r: &SecurityRequirement| {
+                r.schemes.len() == 1 && r.schemes.contains_key(SECURITY_SCHEME_NAME)
+            };
+            if !requirements.iter().any(named) {
+                requirements.push(SecurityRequirement {
+                    schemes: std::collections::HashMap::from([(
+                        SECURITY_SCHEME_NAME.to_owned(),
+                        StringList { list: Vec::new() },
+                    )]),
+                });
+            }
+        }
+    }
 }
 
 impl ServerInterceptor for SlimPeerAuthInterceptor {
@@ -267,6 +324,14 @@ impl ServerInterceptor for SlimPeerAuthInterceptor {
 
     fn authenticates(&self) -> bool {
         self.required
+    }
+
+    /// A mutual-TLS scheme, as [`security_scheme`] declares SLIM's, and no
+    /// other kind: a card declaring only a bearer or API-key scheme does not
+    /// describe the credential this checks, and the handler's build refuses
+    /// it (spec §13.3).
+    fn checks_scheme(&self, scheme: &SecurityScheme) -> Option<bool> {
+        Some(matches!(scheme, SecurityScheme::MutualTls(_)))
     }
 }
 

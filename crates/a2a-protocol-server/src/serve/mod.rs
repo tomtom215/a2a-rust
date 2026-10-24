@@ -186,6 +186,11 @@ pub async fn serve(
     Ok(())
 }
 
+/// Marks a request whose connection this server's TLS terminated, for the
+/// telemetry that records `url.scheme` (`rpc_span::CardCall`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OverTls;
+
 /// The per-connection service: dispatches each request with its connection's
 /// [`PeerAddr`](crate::PeerAddr), and its client's
 /// [`PeerCertificate`](crate::PeerCertificate) when its TLS handshake carried
@@ -196,6 +201,7 @@ fn service<D: Dispatcher>(
     serving: graceful::Serving,
     peer: SocketAddr,
     certificate: Option<crate::PeerCertificate>,
+    tls: bool,
 ) -> impl hyper::service::Service<
     hyper::Request<Incoming>,
     Response = DispatchResponse,
@@ -204,6 +210,9 @@ fn service<D: Dispatcher>(
 > + Clone {
     hyper::service::service_fn(move |mut req: hyper::Request<Incoming>| {
         req.extensions_mut().insert(crate::PeerAddr(peer));
+        if tls {
+            req.extensions_mut().insert(OverTls);
+        }
         if let Some(certificate) = &certificate {
             req.extensions_mut().insert(certificate.clone());
         }

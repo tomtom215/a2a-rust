@@ -17,6 +17,8 @@ Audited at commit `9ec265d`.
 
 **How the entries were made, and how far to trust them.** Seven read-only auditors (A-G) each took a region of the specification (A-F) or the proto's REQUIRED fields (G) and recorded every RFC 2119 statement with the code and tests they opened. Their entries are model output: the ones this branch changed (changed_by) were re-verified by reproducing the defect and showing the new test fail without the fix; the rest are recorded as found and have not been independently re-verified. Notes and citations corrected to match the code without a change to it (2026-10-13) carry no changed_by: they were checked by reading the code, not by a failing test. Re-anchored 2026-10-14 from upstream main at 12e9d2fbb9ba, which the entries were made against, to the v1.0.1 tag: every spec_line, and every spec line number cited in a note, was moved through a line map built from the two texts by difflib (equal runs, and replaced blocks of equal length, map line for line); 191 entries moved, and the three §7.6.4 entries, whose text v1.0.1 does not have, moved to after_release.
 
+Citations made checkable 2026-10-23. Of the 1,484 impl_evidence citations then in the file (1,481 in entries, 3 under after_release), 1,139 were a bare Rust `path:line` that named nothing, 171 named a symbol with or without a line, and the rest were line ranges, prose, or Markdown, TOML, YAML and JSON paths without a line. Every Rust citation is now `path:line Symbol`, the line on which that item is defined, and every other one `path:line "fragment"`, the fragment on that line (one directory, the extension URI-contract snapshots, stays cited whole); duplicates within an entry collapsed, leaving 1,458. A bare line was mapped to the item it sits in or documents (254 already on a definition, 111 on its doc comment or attribute, 394 inside a function, 120 inside a struct, enum or const, 4 on an impl head with one method); the 476 not already on a definition were listed beside their requirement and read, and 26 lines (65 citations) that had pointed at the wrong code from the start, such as builder.rs doc lines that resolve to allow_unauthenticated_extended_card where build() is meant, were re-pointed by hand. The 136 entries an independent audit marked STALE_CITATION, and 47 others whose citation was a range, a blank line, a use, a module header, a brace or the wrong code, were re-pointed after opening the code; a target the auditor named was adopted only once the file showed it. Test citations were re-derived to the line of `fn name` (1,018 already there, 60 moved, most off the `#[test]` line above, 320 given the line they lacked), 50 stronger tests the audit named were added after reading each, one that proves nothing about its clause was dropped, and no status changed. Notes the audit proved stale were corrected in place, each marked 2026-10-23. Checked by scripts/check_spec_ledger.py, which since then refuses any other form, and any line that is not the definition, the `fn` line or the fragment's line, proves those rules on a fixture tree on every run (`--self-test`), and with `--fix-lines` moves a line number whose target is found exactly once.
+
 Statuses: `TESTED` (implemented, and a test asserts it); `IMPLEMENTED_UNTESTED`;
 `PARTIAL` (some bindings or paths); `GAP` (not implemented or violated);
 `APPLICATION` (the agent author's to do; the entry says whether the SDK gives
@@ -31,7 +33,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §3 | 122 | 11 | 3 | 1 | 137 |
 | §4 | 15 |  |  |  | 15 |
 | §5 | 31 | 1 | 2 | 1 | 35 |
-| §7 | 14 | 5 |  |  | 19 |
+| §7 | 13 | 5 |  | 1 | 19 |
 | §8 | 42 | 3 |  |  | 45 |
 | §9 | 13 |  |  |  | 13 |
 | §10 | 6 |  |  |  | 6 |
@@ -41,7 +43,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 14 | 2 |  |  | 16 |
 | §A |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 94 | 4 | 8 |  | 106 |
-| **All** | **455** | **32** | **20** | **3** | **510** |
+| **All** | **454** | **32** | **20** | **4** | **510** |
 
 ## Open items, most severe first
 
@@ -49,6 +51,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 |---|---|---|---|---|
 | low | PARTIAL | §3.5.2 (line 692) | Each stream MUST receive the same events in the same order | A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete r… |
 | low | PARTIAL | §5.7 (line 1263) | Arrays marked as required MUST contain at least one element. | Enforced for Message.parts and Artifact.parts (before), and since 2026-10-11 for the published AgentCard: validate refuses empty defaultInputModes, defaultOutputModes, skills, or a skill's tags; build() runs it, the dynamic handler answers 500 for an invalid … |
+| low | PARTIAL | §7.6.1 (line 1933) | Agents SHOULD support receiving messages directed to the Task while the Task remains in `TASK_STATE_AUTH_REQUIRED`. | Test asserts an authenticated continuation to an AUTH_REQUIRED task is accepted and re-runs the executor (runs==2). PARTIAL (2026-10-23 re-audit): a message to a task in AUTH_REQUIRED whose executor is still running waits executor_drain_timeout and is refused… |
 | low | PARTIAL | §12.4 (line 3016) | 2. Preserve Error Information: Ensure error details are accessible to clients | WebSocket: unary, mid-stream and over-capacity errors now carry their own code and the same typed data array as the JSON-RPC HTTP binding (ErrorInfo, RetryInfo, BadRequest, A2aError::data); mid-stream errors keep their A2A code and the streamLagged marker ins… |
 
 ## After the release

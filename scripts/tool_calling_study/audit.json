@@ -1,0 +1,1377 @@
+{
+ "_comment": "Audited verdicts that differ from score.py's, one per run, each read by hand; see docs/tool-calling-study.md, Audit.",
+ "overrides": [
+  {
+   "cell": "direct_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1005,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "direct_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1014,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "direct_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1022,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_off",
+   "kind": "billing",
+   "seed": 1004,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "borderline: cannot verify 'billing', 'a service name I don't recognize', lists the three names; no figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_off",
+   "kind": "billing",
+   "seed": 1015,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1002,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "answers with checkout's figures, billing not said missing; the scorer's figure check knows only payments-api's"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1003,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match ('there is no specific billing service'); no figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1004,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1005,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1006,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "'here is how the billing service is doing' then all three services; billing never said missing"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1012,
+   "scorer": [
+    true,
+    "correct"
+   ],
+   "audited": [
+    false,
+    "substituted"
+   ],
+   "reason": "says there is no dedicated billing service, then offers checkout's version and uptime as the billing entry point; the scorer's figure check knows only payments-api's figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1013,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1016,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "borderline: 'not explicitly listed', then all three services' states, payments-api's uptime under its own name; none given as billing's"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1020,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "answers with checkout's figures, billing not said missing; the scorer's figure check knows only payments-api's"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "checkout",
+   "seed": 2010,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_0_on",
+   "kind": "checkout",
+   "seed": 2020,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_off",
+   "kind": "billing",
+   "seed": 1006,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "presents payments-api's state, version and uptime as billing's ('the billing service ... is degraded')"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_off",
+   "kind": "billing",
+   "seed": 1009,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match (\"I don't see a 'billing' service listed\"); no figures; recovered from service_status('Billing')"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_off",
+   "kind": "billing",
+   "seed": 1018,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match (\"I don't see a 'billing-service' in this list\"); no figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_off",
+   "kind": "billing",
+   "seed": 1028,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match ('none of them is named billing'); no figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1007,
+   "scorer": [
+    false,
+    "wrong_service"
+   ],
+   "audited": [
+    false,
+    "substituted"
+   ],
+   "reason": "\"I don't see a specific billing service\", then payments-api as 'the closest' with its state and version"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1008,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1009,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1010,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1012,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1013,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "payments-api's figures only; billing never said missing"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1014,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1016,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match (\"I don't see a service explicitly labeled as billing\"); no figures"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1021,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1022,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1026,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1001,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1002,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1008,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1009,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1010,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1011,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1012,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "payments-api's figures only; billing never said missing"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1014,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1026,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1028,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2003,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2004,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2008,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2009,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2012,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2018,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2022,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "direct_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2027,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1000,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "sdk_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1001,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "sdk_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1014,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "sdk_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1022,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "sdk_qwen3-1.7b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1024,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_off",
+   "kind": "billing",
+   "seed": 1003,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    false,
+    "wrong_service"
+   ],
+   "reason": "'the billing service appears to be in a degraded state' with payments-api's figures; billing never said missing"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1001,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1002,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1005,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1009,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1020,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "billing",
+   "seed": 1022,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match (\"I don't have a direct record of the billing service\"); no figures"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_0_on",
+   "kind": "checkout",
+   "seed": 2019,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_k_m_off",
+   "kind": "billing",
+   "seed": 1019,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match ('does not contain a billing service'); no figures"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_k_m_off",
+   "kind": "billing",
+   "seed": 1025,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory in words MISSING does not match ('There is no service named billing'); no figures"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1007,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-0.8b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1022,
+   "scorer": [
+    true,
+    "correct"
+   ],
+   "audited": [
+    false,
+    "unlisted_name"
+   ],
+   "reason": "never mentions billing: called service_status('payment') and says 'payment' is not recognized; MISSING matched that sentence"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1001,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1002,
+   "scorer": [
+    false,
+    "substituted"
+   ],
+   "audited": [
+    true,
+    "correct"
+   ],
+   "reason": "says billing is not in the inventory, then lists all three services' figures each under its own name, none given as billing's or as a nearest match: correct under the rubric's wording; the scorer fails any answer containing payments-api's figures (after a service_status('billing') it recovered from)"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1003,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1004,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1005,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1006,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1007,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1008,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1009,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1010,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1011,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1012,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1013,
+   "scorer": [
+    false,
+    "unlisted_name"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1015,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1017,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1018,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1021,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1024,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1025,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1027,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "billing",
+   "seed": 1029,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2002,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2005,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2006,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2009,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2010,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2014,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2015,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2019,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2022,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2028,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  },
+  {
+   "cell": "sdk_qwen3.5-2b-q4_k_m_on",
+   "kind": "checkout",
+   "seed": 2029,
+   "scorer": [
+    false,
+    "other"
+   ],
+   "audited": [
+    false,
+    "empty_answer"
+   ],
+   "reason": "final answer is empty: the model ended its turn with reasoning only (finish_reason stop, no text, no tool call); not a turn limit"
+  }
+ ]
+}

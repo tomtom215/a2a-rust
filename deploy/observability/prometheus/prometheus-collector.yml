@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Prometheus scraping a2a-rust metrics from an OpenTelemetry Collector's
+# Prometheus exporter (../otel-collector/config.yaml), the alternative to
+# pushing OTLP into Prometheus directly (prometheus.yml).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - rules/*.yml
+
+scrape_configs:
+  - job_name: otel-collector
+    # The exporter labels each series with the agent's own job
+    # (service.name) and instance (service.instance.id); without
+    # honor_labels Prometheus replaces them with the collector's, and every
+    # agent's series would read job="otel-collector".
+    honor_labels: true
+    static_configs:
+      - targets: ["otel-collector:8889"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

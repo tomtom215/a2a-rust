@@ -610,8 +610,10 @@ impl GrpcTransport {
                     .send_message(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
-                let domain: a2a_protocol_types::responses::SendMessageResponse =
-                    resp.into_inner().try_into().map_err(convert_error)?;
+                let domain: a2a_protocol_types::responses::SendMessageResponse = resp
+                    .into_inner()
+                    .try_into()
+                    .map_err(|e| invalid_response(method, &e))?;
                 Self::to_json(&domain)
             }
             "GetTask" => {
@@ -621,8 +623,10 @@ impl GrpcTransport {
                     .get_task(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
-                let domain: a2a_protocol_types::task::Task =
-                    resp.into_inner().try_into().map_err(convert_error)?;
+                let domain: a2a_protocol_types::task::Task = resp
+                    .into_inner()
+                    .try_into()
+                    .map_err(|e| invalid_response(method, &e))?;
                 Self::to_json(&domain)
             }
             "ListTasks" => {
@@ -632,8 +636,10 @@ impl GrpcTransport {
                     .list_tasks(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
-                let domain: a2a_protocol_types::responses::TaskListResponse =
-                    resp.into_inner().try_into().map_err(convert_error)?;
+                let domain: a2a_protocol_types::responses::TaskListResponse = resp
+                    .into_inner()
+                    .try_into()
+                    .map_err(|e| invalid_response(method, &e))?;
                 Self::to_json(&domain)
             }
             "CancelTask" => {
@@ -643,8 +649,10 @@ impl GrpcTransport {
                     .cancel_task(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
-                let domain: a2a_protocol_types::task::Task =
-                    resp.into_inner().try_into().map_err(convert_error)?;
+                let domain: a2a_protocol_types::task::Task = resp
+                    .into_inner()
+                    .try_into()
+                    .map_err(|e| invalid_response(method, &e))?;
                 Self::to_json(&domain)
             }
             "CreateTaskPushNotificationConfig" => {
@@ -708,8 +716,10 @@ impl GrpcTransport {
                     .get_extended_agent_card(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
-                let domain: a2a_protocol_types::agent_card::AgentCard =
-                    resp.into_inner().try_into().map_err(convert_error)?;
+                let domain: a2a_protocol_types::agent_card::AgentCard = resp
+                    .into_inner()
+                    .try_into()
+                    .map_err(|e| invalid_response(method, &e))?;
                 Self::to_json(&domain)
             }
             other => Err(ClientError::Protocol(a2a_protocol_types::A2aError::new(
@@ -830,14 +840,16 @@ async fn grpc_stream_reader_task<S>(
     loop {
         match stream.next().await {
             Some(Ok(pb_event)) => {
-                let event: a2a_protocol_types::events::StreamResponse =
-                    match pb_event.try_into().map_err(convert_error) {
-                        Ok(e) => e,
-                        Err(err) => {
-                            let _ = tx.send(Err(err)).await;
-                            break;
-                        }
-                    };
+                let event: a2a_protocol_types::events::StreamResponse = match pb_event
+                    .try_into()
+                    .map_err(|e| invalid_response("streamed event", &e))
+                {
+                    Ok(e) => e,
+                    Err(err) => {
+                        let _ = tx.send(Err(err)).await;
+                        break;
+                    }
+                };
                 let json_str = match serde_json::to_string(&event) {
                     Ok(s) => s,
                     Err(e) => {
@@ -935,10 +947,20 @@ fn is_truncation(status: &tonic::Status) -> bool {
             .starts_with("protocol error: missing grpc-status trailer")
 }
 
-/// Maps a protobuf conversion failure to a non-retryable transport error.
+/// Maps a protobuf conversion failure of a request to a non-retryable
+/// transport error.
 #[allow(clippy::needless_pass_by_value)]
 fn convert_error(err: ConvertError) -> ClientError {
     ClientError::Transport(format!("protobuf conversion failed: {err}"))
+}
+
+/// Maps a conversion failure of what the agent sent, the response to
+/// `what`, to [`ClientError::InvalidAgentResponse`]: a field `a2a.proto`
+/// marks REQUIRED absent (proto3's `""` or `0`), or a value the domain type
+/// cannot hold. Until 2026-10-23 it was a transport error, as a request's
+/// own conversion failure is.
+fn invalid_response(what: &str, err: &ConvertError) -> ClientError {
+    ClientError::InvalidAgentResponse(format!("{what} over gRPC: {err}"))
 }
 
 const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::ErrorCode {
@@ -1594,6 +1616,8 @@ mod tests {
     async fn grpc_stream_reader_task_rejects_empty_payload() {
         // A StreamResponse with no payload cannot convert to the domain
         // union; the reader must surface a non-retryable error and stop.
+        // The agent's fault, so `InvalidAgentResponse` since 2026-10-23 (it
+        // was `Transport`, as a request's own conversion failure still is).
         let payloads = vec![Ok(apb::StreamResponse { payload: None })];
         let stream = tonic::codegen::tokio_stream::iter(payloads);
         let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
@@ -1602,13 +1626,14 @@ mod tests {
 
         let chunk = rx.recv().await.expect("expected an error chunk");
         match chunk {
-            Err(ClientError::Transport(msg)) => {
+            Err(e @ ClientError::InvalidAgentResponse(_)) => {
+                assert!(!e.is_retryable());
                 assert!(
-                    msg.contains("streamResponse.payload"),
-                    "msg should name the field: {msg}"
+                    e.to_string().contains("streamResponse.payload"),
+                    "msg should name the field: {e}"
                 );
             }
-            other => panic!("expected Transport error, got {other:?}"),
+            other => panic!("expected InvalidAgentResponse, got {other:?}"),
         }
     }
 

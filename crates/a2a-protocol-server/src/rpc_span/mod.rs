@@ -46,9 +46,12 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "tracing")]
 mod a2a;
+#[cfg(feature = "tracing")]
+mod address;
 mod agent;
 mod binding;
 mod call;
+mod card;
 mod link;
 mod names;
 #[cfg(feature = "otel")]
@@ -58,6 +61,8 @@ mod spawn;
 mod stream;
 #[cfg(feature = "tool-loop")]
 mod tool;
+#[cfg(all(feature = "tool-loop", feature = "otel"))]
+mod tool_metrics;
 mod webhook;
 
 #[cfg(feature = "tracing")]
@@ -73,6 +78,7 @@ pub use agent::OutputRecorder;
 pub use agent::{ExecutorSpan, SpanSettings};
 pub use binding::{BindingSpan, CustomBinding};
 use call::{Call, Pending};
+pub use card::{CardCall, CardConnection};
 #[cfg(feature = "tracing")]
 use names::OTHER;
 pub use names::{RpcSystem, WireStatus, a2a_method};
@@ -86,7 +92,7 @@ pub use refusal::{record_if_refused, record_unrouted, refused};
 pub use spawn::{in_child_span, in_current_span};
 pub use stream::{StreamEnd, StreamOutcome, spanning_stream};
 #[cfg(feature = "tool-loop")]
-pub use tool::GenAiSpan;
+pub use tool::{AgentRun, GenAiMeter, GenAiSpan, Reply};
 pub use webhook::WebhookSpan;
 
 /// The longest `rpc.method_original` recorded. The conventions ask for the
@@ -125,7 +131,7 @@ tokio::task_local! {
 
 /// Whether the code running now belongs to a call that records no spans.
 #[cfg(feature = "tracing")]
-fn untraced() -> bool {
+pub fn untraced() -> bool {
     UNTRACED.try_with(|u| *u).unwrap_or(false)
 }
 
@@ -161,6 +167,9 @@ impl ServerSpan {
                 };
                 let span = call_span(name, system, qualified);
                 a2a::record_agent(&span, handler.agent_card.as_ref());
+                if let Some(headers) = headers {
+                    address::record(&span, headers);
+                }
                 if qualified == OTHER {
                     span.record(
                         "rpc.method_original",
@@ -415,6 +424,10 @@ fn call_span(name: &str, system: RpcSystem, qualified: &'static str) -> tracing:
         error.type = tracing::field::Empty,
         http.request.method = tracing::field::Empty,
         http.route = tracing::field::Empty,
+        server.address = tracing::field::Empty,
+        server.port = tracing::field::Empty,
+        network.peer.address = tracing::field::Empty,
+        network.peer.port = tracing::field::Empty,
         a2a.method.name = a2a::method_name(qualified),
         a2a.protocol.version = a2a_protocol_types::A2A_VERSION,
         a2a.tenant = tracing::field::Empty,

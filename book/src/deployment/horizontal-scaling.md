@@ -24,10 +24,18 @@ test fails rather than this page quietly becoming wrong.
 | A second send to a running task is refused | **No** — each replica admits one | Admission state is per-handler |
 | A task one replica finished stays finished | **Yes** | The store refuses to move a terminal task |
 | `CancelTask` stops an executor running on another replica | **At its next write** | The refused write is the only signal |
+| A continuation's save keeps what another replica's turn wrote meanwhile | **No** — the stored task loses it; a subscriber still receives the event | No compare-and-set write (`tests/stale_write_position`) |
 
 Sharing a task store gets you most of the way. What it does not cover is
 streaming, rate limiting, and who may write to a running task — and only rate
 limiting has a complete fix.
+
+**What 0.15 supports.** One replica, or several sharing a store **with every
+turn of a task routed to one replica** (session affinity on the task or
+context ID, below). Without affinity, two replicas can run the same task at
+once and a write can be lost, as the last two rows say; this release does not
+prevent it. Closing it needs compare-and-set task writes and single-writer
+admission across replicas, both planned and neither built.
 
 ## Share the store
 

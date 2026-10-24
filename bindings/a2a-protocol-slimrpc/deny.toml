@@ -99,10 +99,9 @@ allow = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked  = "deny"
-# One active ignore, the yanked mls-rs-crypto-awslc 0.25.1 (below). Five
-# earlier ones were removed on 2026-10-15, when the binding moved
-# from agntcy-slim-rpc 2.3.0 to 3.4.1 (audit register R13), each because its
-# own removal condition was met:
+# No active ignore since 2026-10-23. Six entries were removed, each when its
+# own removal condition was met. Five on 2026-10-15, when the binding moved
+# from agntcy-slim-rpc 2.3.0 to 3.4.1 (audit register R13):
 #
 # RUSTSEC-2026-0285 (rustls < 0.23.45), added 2026-09-16, and
 # RUSTSEC-2026-0346, -0348 and -0349 (rustls < 0.23.46), added 2026-10-14.
@@ -138,13 +137,14 @@ yanked  = "deny"
 #   `=1.16.3`, which holds rustls below 0.23.45 and so brings back
 #   RUSTSEC-2026-0285, -0346, -0348 and -0349 (see above). A yank with no
 #   stated defect is the lesser risk than four known ones.
-#   Remove when an agntcy-slim-mls release accepts mls-rs-crypto-awslc
-#   0.26 (or a non-yanked 0.25.x appears) and the binding moves to it; the
-#   check is `cargo deny ... check advisories` reporting this entry as
-#   not encountered.
-ignore  = [
-    { crate = "mls-rs-crypto-awslc@0.25.1", reason = "yanked 2026-10-19 with no stated defect; 0.25.0 reintroduces four rustls advisories; see the comment above" },
-]
+#   The condition to remove it was an agntcy-slim-mls release accepting
+#   mls-rs-crypto-awslc 0.26 and the binding moving to it. agntcy-slim-mls
+#   0.5.1 does: on 2026-10-23 a plain `cargo update` here took
+#   agntcy-slim-rpc 3.4.3 -> 3.4.6, agntcy-slim-mls 0.4.11 -> 0.5.1 and
+#   mls-rs-crypto-awslc 0.25.1 -> 0.26.0, leaving rustls at 0.23.46 and
+#   aws-lc-rs at 1.18.1, and cargo-deny 0.20 then reported this entry as
+#   "yanked crate not detected" with advisories ok. Removed that day.
+ignore  = []
 
 # ---------------------------------------------------------------------------
 # Banned crates

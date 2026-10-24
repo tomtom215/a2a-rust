@@ -21,6 +21,7 @@ members = [
     "examples/incident-response",
     "examples/mcp-agent",
     "examples/tool-loop-agent",
+    "examples/live-model",
     "examples/mcp-bridge",
     "examples/resilient-agent",
     "examples/swarm",
@@ -34,7 +35,7 @@ members = [
 
 [workspace.package]
 edition      = "2024"
-rust-version = "1.88"
+rust-version = "1.94"
 license      = "Apache-2.0"
 authors      = ["Tom F."]
 repository   = "https://github.com/tomtom215/a2a-rust"
@@ -87,7 +88,7 @@ time = { version = "0.3.47", default-features = false, features = ["parsing", "f
 # `a2a-protocol-server`'s `sqlite` and `postgres` features each add their own,
 # so a PostgreSQL-only build does not compile SQLite (release audit F25).
 [workspace.dependencies.sqlx]
-version = "0.8.1"
+version = "0.9"
 default-features = false
 features = ["runtime-tokio"]
 

@@ -8,7 +8,7 @@
 
 use super::{
     ConvertError, base64_to_bytes, bytes_to_base64, metadata_from_proto, metadata_to_proto,
-    none_if_empty, none_if_false, rfc3339_to_timestamp, timestamp_to_rfc3339,
+    none_if_empty, none_if_false, required, rfc3339_to_timestamp, timestamp_to_rfc3339,
 };
 use crate::artifact::{Artifact, ArtifactId};
 use crate::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
@@ -88,6 +88,20 @@ fn role_from_i32(value: i32, field: &'static str) -> Result<MessageRole, Convert
         .try_into()
 }
 
+/// A REQUIRED enum field: proto3 reads an absent one as `0`, the
+/// `UNSPECIFIED` value, which is refused as JSON refuses the missing key.
+fn required_enum<T: PartialEq + Copy>(
+    value: T,
+    unspecified: T,
+    field: &'static str,
+) -> Result<T, ConvertError> {
+    if value == unspecified {
+        Err(ConvertError::missing(field))
+    } else {
+        Ok(value)
+    }
+}
+
 // ── Part ────────────────────────────────────────────────────────────────────
 
 impl TryFrom<pb::Part> for Part {
@@ -152,8 +166,12 @@ impl TryFrom<pb::Message> for Message {
 
     fn try_from(value: pb::Message) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: MessageId(value.message_id),
-            role: role_from_i32(value.role, "message.role")?,
+            id: MessageId(required(value.message_id, "message.messageId")?),
+            role: required_enum(
+                role_from_i32(value.role, "message.role")?,
+                MessageRole::Unspecified,
+                "message.role",
+            )?,
             parts: parts_from_proto(value.parts)?,
             task_id: none_if_empty(value.task_id).map(TaskId),
             context_id: none_if_empty(value.context_id).map(ContextId),
@@ -201,7 +219,7 @@ impl TryFrom<pb::Artifact> for Artifact {
 
     fn try_from(value: pb::Artifact) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: ArtifactId(value.artifact_id),
+            id: ArtifactId(required(value.artifact_id, "artifact.artifactId")?),
             name: none_if_empty(value.name),
             description: none_if_empty(value.description),
             parts: parts_from_proto(value.parts)?,
@@ -237,7 +255,11 @@ impl TryFrom<pb::TaskStatus> for TaskStatus {
 
     fn try_from(value: pb::TaskStatus) -> Result<Self, Self::Error> {
         Ok(Self {
-            state: task_state_from_i32(value.state, "status.state")?,
+            state: required_enum(
+                task_state_from_i32(value.state, "status.state")?,
+                TaskState::Unspecified,
+                "status.state",
+            )?,
             message: value.message.map(TryInto::try_into).transpose()?,
             timestamp: value
                 .timestamp
@@ -267,7 +289,7 @@ impl TryFrom<pb::Task> for Task {
 
     fn try_from(value: pb::Task) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: TaskId(value.id),
+            id: TaskId(required(value.id, "task.id")?),
             context_id: ContextId(value.context_id),
             status: value
                 .status
@@ -332,8 +354,8 @@ impl TryFrom<pb::TaskStatusUpdateEvent> for TaskStatusUpdateEvent {
 
     fn try_from(value: pb::TaskStatusUpdateEvent) -> Result<Self, Self::Error> {
         Ok(Self {
-            task_id: TaskId(value.task_id),
-            context_id: ContextId(value.context_id),
+            task_id: TaskId(required(value.task_id, "statusUpdate.taskId")?),
+            context_id: ContextId(required(value.context_id, "statusUpdate.contextId")?),
             status: value
                 .status
                 .ok_or_else(|| ConvertError::missing("statusUpdate.status"))?
@@ -361,8 +383,8 @@ impl TryFrom<pb::TaskArtifactUpdateEvent> for TaskArtifactUpdateEvent {
 
     fn try_from(value: pb::TaskArtifactUpdateEvent) -> Result<Self, Self::Error> {
         Ok(Self {
-            task_id: TaskId(value.task_id),
-            context_id: ContextId(value.context_id),
+            task_id: TaskId(required(value.task_id, "artifactUpdate.taskId")?),
+            context_id: ContextId(required(value.context_id, "artifactUpdate.contextId")?),
             artifact: value
                 .artifact
                 .ok_or_else(|| ConvertError::missing("artifactUpdate.artifact"))?

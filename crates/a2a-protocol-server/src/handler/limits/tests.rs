@@ -77,13 +77,13 @@ fn builder_chaining() {
         .with_max_id_length(512)
         .with_max_metadata_size(500_000)
         .with_max_cancellation_tokens(1_000)
-        .with_max_token_age(Duration::from_secs(1800))
+        .with_max_token_age(Duration::from_mins(30))
         .with_push_delivery_timeout(Duration::from_secs(15));
 
     assert_eq!(limits.max_id_length, 512);
     assert_eq!(limits.max_metadata_size, 500_000);
     assert_eq!(limits.max_cancellation_tokens, 1_000);
-    assert_eq!(limits.max_token_age, Duration::from_secs(1800));
+    assert_eq!(limits.max_token_age, Duration::from_mins(30));
     assert_eq!(limits.push_delivery_timeout, Duration::from_secs(15));
 }
 

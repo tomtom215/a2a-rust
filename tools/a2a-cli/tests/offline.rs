@@ -49,7 +49,8 @@ fn jwks_file(dir: &Path, kid: &str) -> PathBuf {
 
 const CARD: &str = r#"{"name":"signed","description":"d","version":"1",
   "supportedInterfaces":[{"url":"https://agent.example","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],
-  "capabilities":{},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[]}"#;
+  "capabilities":{},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],
+  "skills":[{"id":"s","name":"s","description":"d","tags":["t"]}]}"#;
 
 #[test]
 fn a_card_signed_by_the_cli_verifies_and_a_changed_one_does_not() {

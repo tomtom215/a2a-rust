@@ -355,3 +355,85 @@ async fn a_streaming_call_is_recorded_when_its_stream_ends() {
         [(cancelled.clone(), cancelled)]
     );
 }
+
+/// Every field recorded on a span after it opened, by name.
+#[derive(Clone, Default)]
+struct SpanRecords(std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SpanRecords {
+    fn on_record(
+        &self,
+        _: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        _: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        struct Fields<'a>(&'a mut Vec<(String, String)>);
+        impl tracing::field::Visit for Fields<'_> {
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                self.0.push((field.name().to_owned(), value.to_owned()));
+            }
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                self.0.push((field.name().to_owned(), format!("{value:?}")));
+            }
+        }
+        values.record(&mut Fields(&mut self.0.lock().unwrap()));
+    }
+}
+
+/// A task whose status timestamp is not RFC 3339, which the protobuf
+/// `Timestamp` cannot carry: the agent answered something the wire cannot.
+fn task_with_status_timestamp(timestamp: &str) -> a2a_protocol_types::Task {
+    serde_json::from_value(serde_json::json!({
+        "id": "t-1",
+        "contextId": "c-1",
+        "status": {"state": "TASK_STATE_WORKING", "timestamp": timestamp},
+    }))
+    .expect("a task")
+}
+
+/// A call whose answer cannot be converted for the wire is a failed call:
+/// the caller gets `INTERNAL`, and the span and `rpc.server.call.duration`
+/// say so rather than `OK`. The control converts and is recorded `OK`.
+#[tokio::test(flavor = "current_thread")]
+async fn an_answer_the_wire_cannot_carry_fails_its_span() {
+    use tracing_subscriber::layer::SubscriberExt as _;
+    let spans = SpanRecords::default();
+    let _guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(spans.clone()));
+    let recorded = Recorded::default();
+    let handler = recorded_handler(&recorded);
+    let headers = HashMap::new();
+
+    let good = task_with_status_timestamp("2026-10-23T12:00:00Z");
+    unary::<_, pb::Task>(&handler, method::GET_TASK, &headers, async { Ok(good) })
+        .await
+        .expect("a task the wire can carry");
+    let some = |s: &str| Some(s.to_owned());
+    assert_eq!(*recorded.lock().unwrap(), [(some("OK"), None)]);
+    assert_eq!(
+        std::mem::take(&mut *spans.0.lock().unwrap()),
+        [("rpc.status_code".to_owned(), "OK".to_owned())]
+    );
+
+    let bad = task_with_status_timestamp("not a timestamp");
+    let err = unary::<_, pb::Task>(&handler, method::GET_TASK, &headers, async { Ok(bad) })
+        .await
+        .expect_err("the timestamp cannot be converted");
+    assert_eq!(err.code(), slim_rpc::RpcCode::Internal, "{err:?}");
+    assert!(err.message().starts_with("InternalError: "), "{err:?}");
+    assert_eq!(
+        recorded.lock().unwrap()[1..],
+        [(some("INTERNAL"), some("INTERNAL"))]
+    );
+    let fields = spans.0.lock().unwrap().clone();
+    for field in [
+        ("rpc.status_code", "INTERNAL"),
+        ("error.type", "INTERNAL"),
+        ("otel.status_code", "ERROR"),
+    ] {
+        assert!(
+            fields.contains(&(field.0.to_owned(), field.1.to_owned())),
+            "{field:?} not recorded among {fields:?}"
+        );
+    }
+}

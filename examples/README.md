@@ -36,6 +36,7 @@ command. "Exits" means a default run checks itself and exits with a status;
 | [genai-agent](genai-agent/) | An LLM-backed agent through [genai](https://crates.io/crates/genai); all four bindings and the surface matrix | `cargo run -p genai-a2a-agent` | A model, optionally | Exits; `A2A_BIND_ADDR` serves |
 | [rig-agent](rig-agent/) | A rig-core agent with tool calling: a bounded tool loop over a two-tool catalogue, showing where tool calling sits relative to A2A. Passes the in-repo TCK (21 of 21 graded, 1 not applicable; gated by `tck.yml`) | `cargo run -p rig-a2a-agent` | A model, optionally | Exits; `A2A_BIND_ADDR` serves |
 | [tool-loop-agent](tool-loop-agent/) | Tool calling from the SDK alone: `ToolLoopExecutor` over `OpenAiChatModel` (feature `tool-loop`, ADR 0022), two service-inventory tools, asked one question through the A2A client; prints the answer and the `tool-trace` artifact | `cargo run -p tool-loop-agent -- "a question"` | A model (`TOOL_LOOP_BASE_URL`) | Exits |
+| [live-model](live-model/) | The SDK end to end against a real model: the tool loop streamed and signature-verified on all four bindings, provenance refusal, idempotency, budget exhaustion, delegation under a budget, halt and an approval quorum of two, each reported pass, fail or not exercised. The README records runs with Qwen3-1.7B and Qwen3.5-2B on llama-server | `cargo run --release -p live-model` | A model (`LIVE_BASE_URL`) | Exits |
 | [mcp-agent](mcp-agent/) | Tools over MCP: spawns an MCP server, discovers its tools with `tools/list`, and derives its card's skills from the answer. Ships the server too | `cargo build -p mcp-a2a-agent && cargo run -p mcp-a2a-agent --bin mcp-a2a-agent` | A model, optionally | Exits; `A2A_BIND_ADDR` serves |
 | [mcp-bridge](mcp-bridge/) | The reverse: an A2A agent callable as an MCP tool. One MCP tool per skill, A2A tasks mapped onto MCP tasks; progress, cancellation and `isError` all cross | `cargo build -p a2a-mcp-bridge && cargo run -p a2a-mcp-bridge --bin bridge-demo` | Nothing | Exits |
 | [langfuse-agent](langfuse-agent/) | Two agents in one Langfuse trace, exported by the SDK's own `Telemetry` with no tracing code in either agent | `cargo run -p langfuse-agent -- "a question"` | A self-hosted Langfuse | Exits |
@@ -87,7 +88,7 @@ fifty lines, and is compiled and tested in CI:
 
 ## Prerequisites
 
-- Rust 1.88 or later (the MSRV).
+- Rust 1.94 or later (the MSRV).
 - No `protoc`: the build scripts use a vendored binary on Linux and macOS
   (x86_64 and aarch64) and Windows x86_64. Set `PROTOC` to use your own.
 - Anything else an example needs is in its README.

@@ -37,10 +37,9 @@ a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["
 # versions already present — no duplicate and no new license.
 clap       = { version = ">=4.5, <5", features = ["derive"] }
 # Telemetry only: the SDK's `Telemetry` (`otlp`), which exports this process's
-# CLIENT spans and `rpc.client.call.duration` when `OTEL_EXPORTER_OTLP_ENDPOINT`
-# names a collector. No serving code is used.
+# CLIENT spans and `rpc.client.call.duration` when an OTLP endpoint is
+# configured. No serving code is used.
 a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["otlp"] }
-tracing-subscriber  = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros"] }

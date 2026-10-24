@@ -258,6 +258,29 @@ pub(crate) fn bad_request_detail(field: &str, description: &str) -> serde_json::
     })
 }
 
+/// The field a deserialization error is about, from the path
+/// `serde_path_to_error` gives (`message.parts[0].text`, `.` at the top
+/// level) and the error's text.
+///
+/// A missing key is reported at the object that lacks it: `message` for a
+/// message without `role`, the request itself for a request without
+/// `message`. So the violation named the parent, or nothing at all, and
+/// only its description named the field (spec §5.7: REQUIRED fields; §11.6:
+/// the `BadRequest` names "the offending field"). The missing key is
+/// appended to the path here, giving `message.role` and `message`.
+pub(crate) fn violation_field(path: &str, description: &str) -> String {
+    let parent = if path == "." { "" } else { path };
+    let missing = description
+        .strip_prefix("missing field `")
+        .and_then(|rest| rest.split_once('`'))
+        .map(|(name, _)| name);
+    match missing {
+        Some(name) if parent.is_empty() => name.to_owned(),
+        Some(name) => format!("{parent}.{name}"),
+        None => parent.to_owned(),
+    }
+}
+
 /// `InvalidParams` for parameters that did not deserialize as `T`, carrying a
 /// [`bad_request_detail`] that names the field. Re-parses `params` with path
 /// tracking, so call it on the failure path only.
@@ -267,9 +290,11 @@ pub(crate) fn invalid_params_for<T: serde::de::DeserializeOwned>(
 ) -> crate::error::ServerError {
     let (field, description) = match serde_path_to_error::deserialize::<_, T>(params) {
         Err(e) => {
-            let path = e.path().to_string();
-            let field = if path == "." { String::new() } else { path };
-            (field, e.inner().to_string())
+            let description = e.inner().to_string();
+            (
+                violation_field(&e.path().to_string(), &description),
+                description,
+            )
         }
         Ok(_) => (String::new(), err.to_string()),
     };

@@ -305,6 +305,18 @@ pub trait Transport: Send + Sync + 'static {
     fn rpc_system(&self) -> Option<&'static str> {
         None
     }
+
+    /// The URL this transport's calls go to, from which each call's span and
+    /// `rpc.client.call.duration` take `server.address` and `server.port`
+    /// when the transport was given to
+    /// [`ClientBuilder::with_custom_transport`](crate::ClientBuilder::with_custom_transport).
+    /// The default, `None`, records neither, so a dashboard cannot tell this
+    /// client's agents apart; a transport whose peer has no URL (SLIMRPC
+    /// names a SLIM identity) takes it. A transport the builder makes for a
+    /// card's binding is addressed by the builder, not by this.
+    fn server_url(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// The refusal of a transport that cannot put parameters in a query string.

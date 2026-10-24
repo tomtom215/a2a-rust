@@ -29,7 +29,7 @@ default = ["tracing", "otel"]
 ##
 ## Also `RequestHandlerBuilder::with_content_signer`, which signs every agent
 ## message and artifact the server serves (ADR 0027). The server never signs
-## the card it serves: sign it with `sign_agent_card` before handing it to
+## the card it serves: sign it with `sign_card_es256` before handing it to
 ## `RequestHandlerBuilder`, as `examples/incident-response` does.
 signing = ["a2a-protocol-types/signing"]
 ## Structured logging via the `tracing` crate (on by default; compiled out
@@ -79,7 +79,7 @@ otlp = [
     "otel",
     "dep:opentelemetry_sdk", "dep:opentelemetry-otlp",
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
-    "dep:http",
+    "dep:http", "dep:tonic", "dep:tower-service",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
 ]
 ## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`,
@@ -166,6 +166,9 @@ sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.30, <0.31", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink", "alloc"] }
 tonic             = { workspace = true, optional = true }
+# `otlp`: the connector that dials OTLP/gRPC's TLS itself. Already in the
+# graph through hyper and tonic.
+tower-service     = { version = "0.3", optional = true }
 tonic-prost       = { workspace = true, optional = true }
 tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
@@ -185,7 +188,12 @@ opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", 
 # (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
 # reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
 # gRPC exporter the same ring provider and Mozilla roots the client uses.
-opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs", "tls-ring", "tls-webpki-roots"] }
+# No tonic TLS feature: OTLP/gRPC to an `https://` collector runs over this
+# crate's own rustls connector (`otel::telemetry::exporters`). With tonic's
+# TLS compiled in, tonic refuses every `https://` channel it was not given a
+# TLS config for, which broke a dependent dialling TLS through a connector of
+# its own (the SLIMRPC binding's SLIM client, 2026-10-23).
+opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs"] }
 opentelemetry-http = { version = "0.33", optional = true, default-features = false }
 opentelemetry-appender-tracing = { version = "0.33", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
@@ -240,7 +248,9 @@ tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features =
 # serve the OTLP gRPC services.
 opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "metrics", "logs", "with-serde"] }
 prost = { workspace = true }
-tonic = { workspace = true }
+# `tls-ring` for the stand-in collector's TLS listener; `Telemetry` itself
+# links no tonic TLS (see `opentelemetry-otlp` above).
+tonic = { workspace = true, features = ["tls-ring"] }
 tokio-stream = { workspace = true, features = ["net"] }
 rustls-pki-types = { version = ">=1.9, <2" }
 

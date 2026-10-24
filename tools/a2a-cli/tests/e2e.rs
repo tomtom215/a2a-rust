@@ -376,45 +376,72 @@ async fn collector() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
 
 /// With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the CLI exports the call it made
 /// — its `CLIENT` span, and `rpc.client.call.duration` — before it exits;
-/// without it, it sends nothing anywhere.
+/// with only a signal's own endpoint set, it exports that signal alone; and
+/// with neither, it sends nothing anywhere.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_cli_exports_its_calls_when_a_collector_is_named() {
     let url = start_agent().await;
     let (endpoint, paths) = collector().await;
-    let run = |with_endpoint: bool| {
-        let (url, endpoint) = (url.clone(), endpoint.clone());
+    // The variables to set, beyond clearing the ones the test runner may carry.
+    let run = |vars: Vec<(&'static str, String)>| {
+        let url = url.clone();
         tokio::task::spawn_blocking(move || {
             let mut command = Command::new(env!("CARGO_BIN_EXE_a2a"));
-            command
-                .args(["send", &url, "hello"])
-                .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
-                .env_remove("OTEL_TRACES_EXPORTER")
-                .env_remove("OTEL_METRICS_EXPORTER")
-                .env_remove("OTEL_LOGS_EXPORTER")
-                .env_remove("OTEL_SDK_DISABLED");
-            if with_endpoint {
-                command
-                    .env("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint)
-                    .env("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
+            command.args(["send", &url, "hello"]);
+            for name in [
+                "OTEL_EXPORTER_OTLP_ENDPOINT",
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+                "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+                "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+                "OTEL_TRACES_EXPORTER",
+                "OTEL_METRICS_EXPORTER",
+                "OTEL_LOGS_EXPORTER",
+                "OTEL_SDK_DISABLED",
+            ] {
+                command.env_remove(name);
+            }
+            command.env("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
+            for (name, value) in vars {
+                command.env(name, value);
             }
             command.output().expect("spawn a2a")
         })
     };
 
-    let out = run(false).await.expect("join");
+    let out = run(vec![]).await.expect("join");
     assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
     assert!(
         paths.lock().expect("lock").is_empty(),
         "exported with no collector named"
     );
 
-    let out = run(true).await.expect("join");
+    let out = run(vec![("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint.clone())])
+        .await
+        .expect("join");
     assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
-    let paths = paths.lock().expect("lock").clone();
+    let seen = std::mem::take(&mut *paths.lock().expect("lock"));
     for signal in ["/v1/traces", "/v1/metrics"] {
         assert!(
-            paths.iter().any(|p| p == signal),
-            "nothing exported to {signal}: {paths:?}"
+            seen.iter().any(|p| p == signal),
+            "nothing exported to {signal}: {seen:?}"
         );
     }
+
+    // A signal's own variable is its full URL, path included.
+    let out = run(vec![(
+        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+        format!("{endpoint}/v1/metrics"),
+    )])
+    .await
+    .expect("join");
+    assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
+    let seen = paths.lock().expect("lock").clone();
+    assert!(
+        seen.iter().any(|p| p == "/v1/metrics"),
+        "a metrics endpoint alone exported no metrics: {seen:?}"
+    );
+    assert!(
+        seen.iter().all(|p| p == "/v1/metrics"),
+        "only metrics had an endpoint: {seen:?}"
+    );
 }

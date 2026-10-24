@@ -5,10 +5,23 @@
 
 Measured 2026-10-20 to 2026-10-22, by `scripts/tool_calling_study/`.
 
-**Draft.** The method below is fixed and all 16 cells have run (2026-10-22;
-the runs and their provenance are in `scripts/tool_calling_study/runs/`),
-but no cell has been scored or audited. There are no results here yet, and none should be read
-into the raw files before the audit.
+Scored and audited 2026-10-23. The runs and their provenance are in
+`scripts/tool_calling_study/runs/`; every number below comes from
+`score.py`, `audit.json` and `compare.py` in that directory, run as
+*Reproducing it* shows.
+
+**The answer, in one paragraph.** At 30 runs a prompt per cell, no
+difference between asking a model directly and asking it through this SDK
+was detected in how often it answered correctly: across the 16 comparisons
+the smallest two-sided Fisher p is 0.095 and every Holm-adjusted p is 1.
+That is not a proof that the arms are equivalent. With 30 runs a side the
+95% intervals on the difference are wide — up to ±0.2 to ±0.4 — so an
+effect of that size in either direction is not excluded. The one large
+difference on a secondary measure, a wrong uptime in 30 of 30 direct
+answers against 7 of 30 through the SDK on Qwen3-1.7B, did not survive a
+follow-up: on another host the same llama.cpp build, model file, harness
+and seeds gave 3 of 30, so it belongs to the serving host, not to the SDK
+(*Follow-up*, below).
 
 ## The question
 
@@ -128,8 +141,145 @@ not checkout's 259,200 s in any unit (`uptime wrong`), beside `correct`
 rather than in it, because the prompt does not ask for the uptime.
 Intervals are Wilson score intervals at 95%.
 
-The rubric's verdicts are to be audited by reading every answer before any
-result is published here.
+The rubric's verdicts were audited by reading every answer before any
+result was published here (*Audit*, below).
+
+## Results
+
+Audited verdicts (`score.py`'s, with `audit.json`'s 98 corrections). "SDK −
+direct" is the SDK arm's correct rate minus the direct arm's, with a
+Newcombe hybrid-score 95% interval; p-values are two-sided Fisher exact,
+Holm-adjusted within each table's family. The first table answers the
+study's question. The other two were chosen after the runs were read, so
+they are exploratory and their p-values say less than they appear to.
+
+### Correct answers (the study's question; Holm over 16)
+| Model | Thinking | Prompt | Direct | SDK | SDK − direct [95% CI] | Fisher p | Holm p |
+|---|---|---|---:|---:|---|---:|---:|
+| qwen3.5-0.8b-q4_0 | off | billing | 5/30 | 10/30 | +0.17 [-0.05, +0.37] | 0.233 | 1 |
+| qwen3.5-0.8b-q4_0 | off | checkout | 24/30 | 17/30 | -0.23 [-0.44, +0.00] | 0.0946 | 1 |
+| qwen3.5-0.8b-q4_0 | on | billing | 8/30 | 6/30 | -0.07 [-0.27, +0.15] | 0.761 | 1 |
+| qwen3.5-0.8b-q4_0 | on | checkout | 25/30 | 26/30 | +0.03 [-0.15, +0.22] | 1 | 1 |
+| qwen3.5-0.8b-q4_k_m | off | billing | 5/30 | 8/30 | +0.10 [-0.11, +0.30] | 0.532 | 1 |
+| qwen3.5-0.8b-q4_k_m | off | checkout | 22/30 | 24/30 | +0.07 [-0.15, +0.27] | 0.761 | 1 |
+| qwen3.5-0.8b-q4_k_m | on | billing | 1/30 | 0/30 | -0.03 [-0.17, +0.08] | 1 | 1 |
+| qwen3.5-0.8b-q4_k_m | on | checkout | 30/30 | 28/30 | -0.07 [-0.21, +0.06] | 0.492 | 1 |
+| qwen3-1.7b-q4_k_m | off | billing | 30/30 | 30/30 | +0.00 [-0.11, +0.11] | 1 | 1 |
+| qwen3-1.7b-q4_k_m | off | checkout | 30/30 | 30/30 | +0.00 [-0.11, +0.11] | 1 | 1 |
+| qwen3-1.7b-q4_k_m | on | billing | 20/30 | 25/30 | +0.17 [-0.05, +0.37] | 0.233 | 1 |
+| qwen3-1.7b-q4_k_m | on | checkout | 30/30 | 30/30 | +0.00 [-0.11, +0.11] | 1 | 1 |
+| qwen3.5-2b-q4_k_m | off | billing | 0/30 | 1/30 | +0.03 [-0.08, +0.17] | 1 | 1 |
+| qwen3.5-2b-q4_k_m | off | checkout | 30/30 | 30/30 | +0.00 [-0.11, +0.11] | 1 | 1 |
+| qwen3.5-2b-q4_k_m | on | billing | 1/30 | 1/30 | +0.00 [-0.14, +0.14] | 1 | 1 |
+| qwen3.5-2b-q4_k_m | on | checkout | 22/30 | 19/30 | -0.10 [-0.32, +0.13] | 0.58 | 1 |
+
+### Checkout answers stating a wrong uptime (exploratory; Holm over 8)
+| Model | Thinking | Prompt | Direct | SDK | SDK − direct [95% CI] | Fisher p | Holm p |
+|---|---|---|---:|---:|---|---:|---:|
+| qwen3.5-0.8b-q4_0 | off | checkout | 0/30 | 1/30 | +0.03 [-0.08, +0.17] | 1 | 1 |
+| qwen3.5-0.8b-q4_0 | on | checkout | 3/30 | 4/30 | +0.03 [-0.14, +0.21] | 1 | 1 |
+| qwen3.5-0.8b-q4_k_m | off | checkout | 1/30 | 0/30 | -0.03 [-0.17, +0.08] | 1 | 1 |
+| qwen3.5-0.8b-q4_k_m | on | checkout | 0/30 | 4/30 | +0.13 [-0.01, +0.30] | 0.112 | 0.787 |
+| qwen3-1.7b-q4_k_m | off | checkout | 30/30 | 7/30 | -0.77 [-0.88, -0.56] | 1.74e-10 | 1.39e-09 |
+| qwen3-1.7b-q4_k_m | on | checkout | 13/30 | 8/30 | -0.17 [-0.38, +0.07] | 0.279 | 1 |
+| qwen3.5-2b-q4_k_m | off | checkout | 0/30 | 2/30 | +0.07 [-0.06, +0.21] | 0.492 | 1 |
+| qwen3.5-2b-q4_k_m | on | checkout | 0/30 | 1/30 | +0.03 [-0.08, +0.17] | 1 | 1 |
+
+### Empty answers, thinking on, both prompts (exploratory; Holm over 4)
+| Model | Thinking | Prompt | Direct | SDK | SDK − direct [95% CI] | Fisher p | Holm p |
+|---|---|---|---:|---:|---|---:|---:|
+| qwen3.5-0.8b-q4_0 | on | both | 4/60 | 6/60 | +0.03 [-0.07, +0.14] | 0.743 | 1 |
+| qwen3.5-0.8b-q4_k_m | on | both | 8/60 | 1/60 | -0.12 [-0.23, -0.02] | 0.0322 | 0.0966 |
+| qwen3-1.7b-q4_k_m | on | both | 0/60 | 0/60 | +0.00 [-0.06, +0.06] | 1 | 1 |
+| qwen3.5-2b-q4_k_m | on | both | 17/60 | 31/60 | +0.23 [+0.06, +0.39] | 0.015 | 0.0601 |
+
+What the tables say, and do not:
+
+- **Correct answers.** No cell differs detectably. Where both arms are near
+  a ceiling or a floor (Qwen3-1.7B thinking off, Qwen3.5-2B billing) they
+  agree to within one run; elsewhere they move within each other's
+  intervals.
+- **Billing is the hard prompt for every model but Qwen3-1.7B.** Most
+  failures, in both arms, are a model presenting `payments-api` as the
+  billing service (`wrong_service`), which is what the rig-agent README
+  reports.
+- **Empty answers.** With thinking on, a model sometimes ends its turn with
+  reasoning only: no text and no tool call. Qwen3.5-2B did this in 17 of
+  60 direct runs and 31 of 60 SDK runs; Qwen3.5-0.8B (Q4_K_M) in 8 and 1,
+  the other way. Neither survives correction across the four models, and
+  the two go in opposite directions. The SDK passes the model's empty
+  content through as an empty `answer` artifact; it neither causes nor
+  hides the behaviour, which a caller can detect.
+- **Uptime.** See the follow-up.
+
+## Audit
+
+`score.py` was written before any run was scored, and is kept as written:
+its verdicts are this study's raw scoring. The audit read every answer
+against the rubric's text. Four graders, each given the rubric and the
+inventory but not the scorer (language-model agents run for this audit),
+each read every run of four cells — all 960 — and recorded a verdict per
+run. Their verdicts were diffed mechanically against the scorer's: 22
+disagreed on correctness and 76 on the failure class only, none on uptime.
+Every one of those 98 answers was then read again before deciding it. The
+decision for each, with its reason, is in `scripts/tool_calling_study/audit.json`;
+`score.py --audit audit.json` applies them and still prints its own count
+beside each row.
+
+What the audit changed:
+
+- **21 runs the scorer failed are correct**, by the rubric's wording.
+  Eleven say billing is not in the inventory and then list all three
+  services' figures, each under its own name: the scorer fails any answer
+  that contains `payments-api`'s figures, but the rubric fails only figures
+  given *as billing's*. Eight refuse in words the scorer's `MISSING`
+  pattern does not match ("I don't see a 'billing' service listed", "there
+  is no specific billing service") and give no figures. Two are borderline
+  and marked so in their reason: one says billing is "not explicitly
+  listed" before an overview of all three, one that it cannot verify a
+  name it does not recognise.
+- **2 runs the scorer passed are not correct.** One offers `checkout`'s
+  version and uptime as billing's entry point (the scorer's figure check
+  knows only `payments-api`'s figures); one never mentions billing and says
+  that `payment` is not recognised, which `MISSING` matched.
+- **75 runs keep their verdict but change class.** 67 are a new class,
+  `empty_answer`, for the empty final answers above: the rubric had no
+  class for them, and the scorer filed them under `other` (or a class
+  reached through an earlier tool call). The other 8 are billing failures
+  whose class the scorer computed in a different order from the one its
+  own docstring states.
+
+The audit cannot catch an answer that the scorer and a grader both got
+wrong in the same way; only a second, independent read of all 960 would.
+Changing correctness on 23 of 960 runs moves no comparison across a
+significance threshold (the raw scores are `score.py` without `--audit`).
+
+## Follow-up: the uptime difference belongs to the host
+
+On Qwen3-1.7B with thinking off, every direct-arm checkout answer stated an
+uptime of 7,200 seconds ("2 hours") although the tool returned 259,200;
+through the SDK 7 of 30 did. The arms differ by construction in the seed
+scheme and in the key order of the tool's result (*The two arms*), so the
+gap could have come from either. Measured 2026-10-23, on a different host
+(4 vCPU Intel Xeon at 2.10 GHz, where the study ran on one at 2.80 GHz;
+llama.cpp built with `GGML_NATIVE=ON`, `-c 8192 -t 2 --jinja`), the
+direct arm's checkout prompt, seeds 2000-2029, thinking off, one request
+at a time (`runs/followup/`):
+
+| llama.cpp | Result key order | Wrong uptime | Byte-identical to the study's run |
+|---|---|---:|---:|
+| `8466395` (b11751, the study's) | rig-agent's | 3/30 | 0/30 |
+| `f5027fb` (b11836) | rig-agent's | 3/30 | 0/30 |
+| `f5027fb` (b11836) | the SDK's (serde) | 1/30 | — |
+
+The study's own build, model file (SHA-256 checked), harness and seeds gave
+3 of 30 where the study's host gave 30 of 30 (Fisher p = 9.2e-14), and
+none of the 30 runs replayed byte for byte. Key order made no detectable
+difference (3 against 1, p = 0.61). So the 30 of 30 was a property of that
+host's arithmetic, not of anything the SDK does, and the replay this
+document's method claims (8 of 8 identical) holds on one host only: CPU
+features change llama.cpp's kernels and so its floating-point results. Not
+run: the SDK arm on the second host.
 
 ## Reproducing it
 
@@ -137,7 +287,15 @@ result is published here.
 cargo build --release -p tool-loop-agent
 scripts/tool_calling_study/study.sh /path/to/llama-server /path/to/models OUT_DIR target/release/tool-loop-agent
 python3 -I scripts/tool_calling_study/score.py OUT_DIR/direct_*.json OUT_DIR/sdk_*.json
+# this study's audited tables:
+python3 -I scripts/tool_calling_study/score.py --audit scripts/tool_calling_study/audit.json \
+  scripts/tool_calling_study/runs/direct_*.json scripts/tool_calling_study/runs/sdk_*.json
+python3 -I scripts/tool_calling_study/compare.py scripts/tool_calling_study/runs \
+  scripts/tool_calling_study/audit.json
 ```
+
+The follow-up: `run.py --prompts checkout --seed-base 2000 --n 30
+--thinking off --key-order rig|serde` against one `llama-server` per build.
 
 `study.sh` starts the servers two at a time and runs each server's four
 cells through `drive.sh` and `cell.py`, which skip finished cells and fill

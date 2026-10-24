@@ -181,12 +181,19 @@ impl RestDispatcher {
         // every method on it is the card's to answer (`405` for all but GET
         // and HEAD).
         if path == "/.well-known/agent-card.json" {
-            return self
+            let call = crate::rpc_span::CardCall::start(
+                self.handler.inbound_trace_policy,
+                &req,
+                super::card_connection(req.extensions()),
+            );
+            let resp = self
                 .card_handler
                 .as_ref()
                 .map_or_else(not_found_response, |h| {
                     h.handle(&req).map(http_body_util::BodyExt::boxed)
                 });
+            call.finish(&resp);
+            return resp;
         }
 
         // Validate the A2A-Version header per spec §3.6.2: absent or empty

@@ -15,7 +15,10 @@
 mod agent_spans;
 mod certs;
 mod collector;
+mod logs;
 mod tls_and_json;
+#[cfg(feature = "tool-loop")]
+mod tool_loop_spans;
 
 use std::time::{Duration, Instant};
 
@@ -25,7 +28,7 @@ use collector::{Collector, attr, unreachable};
 use opentelemetry::metrics::MeterProvider as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-fn builder(base: &str, protocol: OtlpProtocol) -> TelemetryBuilder {
+pub(crate) fn builder(base: &str, protocol: OtlpProtocol) -> TelemetryBuilder {
     Telemetry::builder()
         .install_globally(false)
         .with_otlp_endpoint(base)
@@ -35,7 +38,7 @@ fn builder(base: &str, protocol: OtlpProtocol) -> TelemetryBuilder {
 
 /// Records one span carrying an attribute, one `INFO` event inside it, one
 /// `DEBUG` event, and one counter increment.
-fn record_one_of_each(telemetry: &Telemetry) {
+pub(crate) fn record_one_of_each(telemetry: &Telemetry) {
     let subscriber = tracing_subscriber::registry().with(telemetry.layer());
     tracing::subscriber::with_default(subscriber, || {
         let span = tracing::info_span!("unit-of-work", answer = 42);

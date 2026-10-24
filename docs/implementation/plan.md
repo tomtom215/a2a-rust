@@ -5,7 +5,7 @@
 > **Note:** Some details are outdated (e.g., line counts, test counts, directory names). As of v0.4.0, `TaskState` serialization uses `SCREAMING_SNAKE_CASE` as the primary format (e.g., `"TASK_STATE_COMPLETED"`), with lowercase as deserialization aliases for backward compatibility. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
 
 **Protocol Version:** A2A v1.0.0
-**Target Rust Version:** 1.88+ (MSRV; edition 2024)
+**Target Rust Version:** 1.94+ (MSRV; edition 2024)
 **License:** Apache-2.0
 **Status:** All 9 phases complete
 

@@ -21,6 +21,7 @@ use a2a_protocol_server::error::{ServerError, ServerResult};
 use a2a_protocol_server::{CallContext, RequestHandler, agent_executor};
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::error::A2aError;
+use a2a_protocol_types::security::{HttpAuthSecurityScheme, SecurityScheme};
 
 struct Idle;
 agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
@@ -34,6 +35,14 @@ fn public() -> AgentCard {
     .with_description("serves each caller its own extended card")
     .with_skill(AgentSkill::new("chat", "Chat", "d").with_tags(["t"]))
     .with_capabilities(AgentCapabilities::none().with_extended_agent_card(true))
+    .with_security_schemes(HashMap::from([(
+        "bearer".to_owned(),
+        SecurityScheme::Http(HttpAuthSecurityScheme {
+            scheme: "Bearer".to_owned(),
+            description: None,
+            bearer_format: None,
+        }),
+    )]))
 }
 
 /// The public card plus a billing skill.

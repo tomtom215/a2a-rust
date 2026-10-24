@@ -200,6 +200,36 @@ URLs (user information, or a query parameter named like a secret such as
 `InvalidParams` on `authentication.credentials`; leave `authentication` out
 for an unauthenticated webhook.
 
+### An authenticator needs a scheme declared in the public card
+
+Spec §13.3: agents "MUST authenticate requests using one of the schemes
+declared in the public `AgentCard.securitySchemes`". `build()` now refuses an
+authenticating interceptor (bundled or custom) behind a public card that
+declares no `securitySchemes`, and a scheme declared on the extended card but
+not, the same, on the public one. Declare the scheme your interceptor checks
+in the public card: an `httpAuthSecurityScheme` with scheme `Bearer` for
+`BearerTokenAuthInterceptor` or `JwtAuthInterceptor`, an
+`apiKeySecurityScheme` naming the header for `ApiKeyAuthInterceptor`, a
+`mutualTlsSecurityScheme` for `MutualTlsAuthInterceptor`
+([Authentication](../building-agents/authentication.md#api-key--static-bearer-token)
+shows one), and repeat any extended-card scheme in the public card.
+
+### A push config the sender cannot authenticate is not delivered
+
+Spec §13.2: agents MUST send the credentials `authentication` specifies.
+`HttpPushSender::send` used to deliver with no `Authorization` header when a
+stored config named a scheme other than `Bearer` or `Basic`, or no
+credentials; it now refuses the delivery with `InvalidParams`. Creation
+already refused such configs, so only one stored another way is affected.
+
+### `sign_agent_card` is deprecated, and refuses `None`
+
+It takes `key_id: Option<&str>`, and in 0.14 `None` wrote a protected
+header without `kid`, which spec §8.4.2 requires; it now returns
+`InvalidParams` for `None`. It is removed in 0.16. Call
+`sign_card_es256(card, key, key_id)`, whose `key_id` is a `&str`; with a key
+id the signature is the same. For Ed25519, `sign_card_ed25519`.
+
 ### `ConvertError` and `SseParseError` are `#[non_exhaustive]`
 
 Build a `ConvertError` with `ConvertError::new(field, reason)`, and give a
@@ -263,6 +293,35 @@ REQUIRED string is empty, such as an API key with no `name`. A
 `DynamicAgentCardHandler` whose producer
 returns an invalid card answers `500`, and `HotReloadAgentCardHandler` refuses
 to reload one and keeps serving the previous card.
+
+### The client refuses what `a2a.proto` does not allow
+
+Spec §5.7: implementations SHOULD reject a message missing a field the proto
+marks REQUIRED. The client now holds what it receives to the rules the server
+holds its own executors to, on every binding. A task with an empty `id`, a
+status in `TASK_STATE_UNSPECIFIED`, a message without a `messageId`, `role` or
+parts, an artifact without an `artifactId` or parts, a status or artifact
+update without its `taskId` or `contextId`, and a push config without a `url`
+fail the call with `ClientError::InvalidAgentResponse`, which names the call
+and the field; on a stream, the event ends the stream with that error. They
+used to be returned as if valid. Over gRPC such a field absent on the wire
+(proto3's `""` or `0`), or a card's absent `capabilities`, is refused by the
+conversion where it used to read as its zero value, and any answer the
+conversion refuses is now `InvalidAgentResponse` rather than `Transport`.
+
+An agent card fetched by `resolve_agent_card`, `fetch_card_from_url` or
+`CachingCardResolver`, or returned by `get_extended_agent_card`, must pass
+`AgentCard::validate` and `AgentCard::validate_security_schemes`, the checks
+`build()` runs above; the deprecated implicit and password OAuth flows'
+URLs must also be `https` (the proto: "The OAuth2 standard requires the use of
+TLS"). A refused extended card is not adopted. `ClientBuilder::from_card` does
+not validate the card it is given, but no longer selects an interface whose
+`protocolVersion` is empty.
+
+Two requests change on the wire: `list_tasks` sends `status_timestamp_after`
+in UTC with a `Z` (a value with an offset is rewritten; one that is not ISO
+8601 is refused, unsent, with `InvalidParams`), and an inline push config's
+`task_id` is no longer sent with `SendMessage`, as the proto asks.
 
 ### Push configs the server cannot honour are refused at creation
 
@@ -398,6 +457,16 @@ callers are meant to see each other's tasks, say so:
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+#         .with_security_schemes(std::collections::HashMap::from([(
+#             "bearer".to_owned(),
+#             a2a_protocol_types::security::SecurityScheme::Http(
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
+#                     scheme: "Bearer".to_owned(),
+#                     description: None,
+#                     bearer_format: None,
+#                 },
+#             ),
+#         )]))
 # }
 # use a2a_protocol_sdk::prelude::*;
 # use a2a_protocol_sdk::server::InMemoryTaskStore;

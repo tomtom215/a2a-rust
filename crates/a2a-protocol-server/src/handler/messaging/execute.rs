@@ -27,6 +27,8 @@ use crate::request_context::RequestContext;
 use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter};
 
 use super::super::budget;
+#[cfg(feature = "tracing")]
+use super::create::continues;
 use super::terminal::TerminalTracking;
 
 use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
@@ -269,7 +271,7 @@ impl RequestHandler {
             &ctx.message,
         );
         #[cfg(feature = "tracing")]
-        let recorder = span.recorder();
+        let recorder = span.recorder(continues(&ctx.task_id, ctx.stored_task.as_ref()));
         span.instrument(tenant.scope(async move {
             // Owned by this future, so the slot is returned when the executor
             // finishes, fails, panics, or is aborted.
@@ -297,28 +299,10 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout)
             })
             .await;
-            if let Err((ref e, class)) = result {
-                write_failure_event(&writer, &ctx, e, class).await;
-            } else if (shutdown.is_cancelled() || turn.is_halted()) && !writer.terminal_written() {
-                // Shut down or halted, not cancelled by a caller:
-                // `CancelTask` runs this hook itself, and cancels only the
-                // task's own child token. The executor saw its token and returned without a
-                // terminal state, so end the task the way `CancelTask`
-                // would — the hook, or after a hook that writes none
-                // `cancel_with`, writes `Canceled` — and every stream still
-                // open on it gets a terminal event instead of simply
-                // stopping. After `execute` returned, never beside
-                // it: an executor that wrote its own terminal state while
-                // the hook wrote another would have the second rejected as
-                // an invalid transition and the task marked `Failed`.
-                if let Err(_e) = writer.cancel_with(executor.as_ref(), &ctx).await {
-                    trace_warn!(
-                        task_id = %ctx.task_id,
-                        error = %_e,
-                        "cancel hook failed during shutdown"
-                    );
-                }
-            }
+            let stopped = shutdown.is_cancelled() || turn.is_halted();
+            writer
+                .finish_run(executor.as_ref(), &ctx, result, stopped)
+                .await;
             // The queue is released, and a continuation admitted, only once
             // the turn's events are logged and stored: its numbering resumes
             // from the log, and the task row has one writer at a time.
@@ -382,7 +366,7 @@ async fn run_executor(
 /// — and every `GetTask` after it — returns a `Failed` task that says why.
 /// `metadata.error` is where streaming callers have always read it, and it
 /// stays for them.
-async fn write_failure_event(
+pub(super) async fn write_failure_event(
     writer: &dyn EventQueueWriter,
     ctx: &RequestContext,
     error: &A2aError,

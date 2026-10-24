@@ -74,6 +74,30 @@ impl Signal {
         }
     }
 
+    /// Whether an OTLP endpoint is configured for this signal in the
+    /// environment: its own `OTEL_EXPORTER_OTLP_{SIGNAL}_ENDPOINT`, or the
+    /// general `OTEL_EXPORTER_OTLP_ENDPOINT`.
+    pub(super) fn endpoint_in_env(self, env: &Env) -> bool {
+        self.otlp_var(env, "ENDPOINT").is_some()
+    }
+
+    /// The OTLP/gRPC endpoint the environment configures for this signal,
+    /// as `opentelemetry-otlp` reads it: the signal's own variable, then the
+    /// general one, used as given. One with no scheme gets `http://` when
+    /// `OTEL_EXPORTER_OTLP_{SIGNAL_}INSECURE` is `true` and `https://`
+    /// otherwise.
+    pub(super) fn grpc_endpoint_in_env(self, env: &Env) -> Option<String> {
+        let (_, endpoint) = self.otlp_var(env, "ENDPOINT")?;
+        if endpoint.contains("://") {
+            return Some(endpoint);
+        }
+        let insecure = self
+            .otlp_var(env, "INSECURE")
+            .is_some_and(|(_, v)| v.trim().eq_ignore_ascii_case("true"));
+        let scheme = if insecure { "http" } else { "https" };
+        Some(format!("{scheme}://{endpoint}"))
+    }
+
     /// The signal-specific variable, falling back to the general one.
     fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
         let specific = format!("OTEL_EXPORTER_OTLP_{}_{suffix}", self.upper());
@@ -255,13 +279,17 @@ pub(super) fn client_identity_files(
 /// Whether the environment names the service, in which case it wins over
 /// [`TelemetryBuilder::with_default_service_name`](super::TelemetryBuilder::with_default_service_name).
 pub(super) fn service_name_from_env(env: &Env) -> bool {
-    env("OTEL_SERVICE_NAME").is_some()
-        || env("OTEL_RESOURCE_ATTRIBUTES").is_some_and(|attrs| {
-            attrs
-                .split(',')
-                .filter_map(|kv| kv.split_once('='))
-                .any(|(k, _)| k.trim() == "service.name")
-        })
+    env("OTEL_SERVICE_NAME").is_some() || resource_attribute_from_env(env, "service.name")
+}
+
+/// Whether `OTEL_RESOURCE_ATTRIBUTES` sets `key`.
+pub(super) fn resource_attribute_from_env(env: &Env, key: &str) -> bool {
+    env("OTEL_RESOURCE_ATTRIBUTES").is_some_and(|attrs| {
+        attrs
+            .split(',')
+            .filter_map(|kv| kv.split_once('='))
+            .any(|(k, _)| k.trim() == key)
+    })
 }
 
 #[cfg(test)]

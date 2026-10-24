@@ -2387,7 +2387,7 @@ async fn an_empty_message_id_is_refused() {
 
     match err {
         ServerError::InvalidField { message: msg, .. } => assert!(
-            msg.contains("message.id"),
+            msg.contains("message.messageId"),
             "the error must name the field the caller has to fix, got: {msg}"
         ),
         other => panic!("expected InvalidParams, got {other:?}"),
@@ -2429,7 +2429,7 @@ async fn an_over_long_message_id_is_refused() {
 
     match err {
         ServerError::InvalidField { message: msg, .. } => assert!(
-            msg.contains("message.id"),
+            msg.contains("message.messageId"),
             "the error must name the field the caller has to fix, got: {msg}"
         ),
         other => panic!("expected InvalidParams, got {other:?}"),
@@ -2509,7 +2509,7 @@ async fn an_id_past_the_floor_is_still_refused_when_the_limit_is_tight() {
         .await
         .expect_err("37 characters is past the 36-character floor and must be refused");
     assert!(
-        matches!(err, ServerError::InvalidField { message: ref msg, .. } if msg.contains("message.id")),
+        matches!(err, ServerError::InvalidField { message: ref msg, .. } if msg.contains("message.messageId")),
         "the error must still name the field, got: {err:?}"
     );
 }

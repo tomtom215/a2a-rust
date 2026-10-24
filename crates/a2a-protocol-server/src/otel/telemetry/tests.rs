@@ -60,6 +60,56 @@ fn every_signal_is_on_by_default_and_each_variable_turns_one_off() {
     );
 }
 
+/// `with_export_where_configured`: a signal is built only when an endpoint
+/// names where it goes — the general variable, the signal's own variable,
+/// or code — and the per-signal exporter variables still win.
+#[test]
+fn export_where_configured_builds_only_the_signals_with_an_endpoint() {
+    let providers = |t: &Telemetry| {
+        (
+            t.tracer_provider().is_some(),
+            t.meter_provider().is_some(),
+            t.logger_provider().is_some(),
+        )
+    };
+    let none = with_env(&[])
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&none), (false, false, false));
+    let all = with_env(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")])
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&all), (true, true, true));
+    let metrics_only = with_env(&[("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://127.0.0.1:9")])
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&metrics_only), (false, true, false));
+    let in_code = with_env(&[])
+        .with_otlp_endpoint("http://127.0.0.1:9")
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&in_code), (true, true, true));
+    let langfuse = with_env(&[])
+        .with_langfuse(Langfuse::new("http://127.0.0.1:9", "pk", "sk"))
+        .with_export_where_configured()
+        .build()
+        .unwrap();
+    assert_eq!(providers(&langfuse), (true, false, false));
+    let turned_off = with_env(&[
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ])
+    .with_export_where_configured()
+    .with_metrics(false)
+    .build()
+    .unwrap();
+    assert_eq!(providers(&turned_off), (true, false, false));
+}
+
 #[test]
 fn langfuse_defaults_metrics_and_logs_off_and_the_environment_can_restore_them() {
     let lf = Langfuse::new("http://127.0.0.1:9", "pk", "sk");
@@ -144,6 +194,22 @@ fn the_default_service_name_applies_only_when_the_environment_names_none() {
         .map(|v| v.to_string())
         .unwrap_or_default();
     assert_ne!(name, "code-default");
+}
+
+/// Two processes of one service report different `service.instance.id`s
+/// unless the environment names one, which then wins.
+#[test]
+fn each_process_gets_an_instance_id_unless_the_environment_names_one() {
+    let key = opentelemetry::Key::new("service.instance.id");
+    let a = with_env(&[]).resource().get(&key).map(|v| v.to_string());
+    let b = with_env(&[]).resource().get(&key).map(|v| v.to_string());
+    let a = a.expect("an instance id by default");
+    assert!(uuid::Uuid::parse_str(&a).is_ok(), "{a}");
+    assert_ne!(Some(a), b, "two telemetries must not share an instance id");
+    // The injected environment names one, so none is generated; the
+    // process environment, which `Resource` reads, names none here.
+    let named = with_env(&[("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=pod-7")]).resource();
+    assert_eq!(named.get(&key), None);
 }
 
 #[test]
@@ -328,4 +394,49 @@ fn a_client_identity_that_is_not_pem_fails_the_build() {
             "{protocol:?}: {err}"
         );
     }
+}
+
+/// OTLP/gRPC with no endpoint in code takes the environment's, as
+/// `opentelemetry-otlp` reads it: the signal's variable before the general
+/// one, a scheme added from `INSECURE` when it has none; OTLP/HTTP leaves an
+/// unset endpoint to the exporter.
+#[test]
+fn a_grpc_endpoint_comes_from_the_environment_and_an_http_one_is_left_unset() {
+    let endpoint =
+        |pairs: &[(&str, &str)]| with_env(pairs).target(Signal::Metrics).unwrap().endpoint;
+    let grpc = ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc");
+    let general = ("OTEL_EXPORTER_OTLP_ENDPOINT", "collector:4317");
+    assert_eq!(
+        endpoint(&[grpc, general]).as_deref(),
+        Some("https://collector:4317")
+    );
+    assert_eq!(
+        endpoint(&[grpc, general, ("OTEL_EXPORTER_OTLP_INSECURE", " TRUE ")]).as_deref(),
+        Some("http://collector:4317")
+    );
+    assert_eq!(
+        endpoint(&[
+            grpc,
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c.example:4317")
+        ])
+        .as_deref(),
+        Some("http://c.example:4317")
+    );
+    assert_eq!(
+        endpoint(&[
+            grpc,
+            general,
+            (
+                "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+                "https://metrics.example:4317"
+            ),
+        ])
+        .as_deref(),
+        Some("https://metrics.example:4317")
+    );
+    assert_eq!(endpoint(&[grpc]), None);
+    assert_eq!(
+        endpoint(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"), general]),
+        None
+    );
 }

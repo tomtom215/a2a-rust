@@ -6,8 +6,10 @@
 // and verify. Security hardening and best practices are non-negotiable. — Tom F.
 
 //! The URL requirements a2a.proto puts on security schemes: each OAuth flow
-//! URL "MUST be in the form of a URL", and `oauth2_metadata_url` "TLS is
-//! required". Checked when a card is published (`validate_security_schemes`).
+//! URL "MUST be in the form of a URL", `oauth2_metadata_url` "TLS is
+//! required", and the implicit and password flows' URLs "The OAuth2 standard
+//! requires the use of TLS". Checked when a card is published, and when a
+//! client receives one (`validate_security_schemes`).
 
 use super::{SecurityScheme, is_https_url, is_url};
 
@@ -99,4 +101,30 @@ fn an_openid_connect_url_must_be_a_url() {
     let good = scheme(serde_json::json!({"openIdConnectSecurityScheme": {
         "openIdConnectUrl": "https://idp.example/.well-known/openid-configuration"}}));
     assert_eq!(good.validate(), Ok(()));
+}
+
+/// a2a.proto, of every URL of the deprecated implicit and password flows:
+/// "The OAuth2 standard requires the use of TLS".
+#[test]
+fn the_deprecated_flows_urls_must_be_https() {
+    for flow in [
+        serde_json::json!({"implicit": {"authorizationUrl": "http://a.example/auth", "scopes": {}}}),
+        serde_json::json!({"implicit": {"authorizationUrl": "https://a.example/auth",
+            "refreshUrl": "http://a.example/refresh", "scopes": {}}}),
+        serde_json::json!({"password": {"tokenUrl": "http://a.example/token", "scopes": {}}}),
+        serde_json::json!({"password": {"tokenUrl": "https://a.example/token",
+            "refreshUrl": "http://a.example/refresh", "scopes": {}}}),
+    ] {
+        let s = scheme(serde_json::json!({"oauth2SecurityScheme": {"flows": &flow}}));
+        let err = s.validate().expect_err("plaintext OAuth URL accepted");
+        assert!(err.contains("must be https"), "{flow}: {err}");
+    }
+    for flow in [
+        serde_json::json!({"implicit": {"authorizationUrl": "HTTPS://a.example/auth",
+            "refreshUrl": "https://a.example/refresh", "scopes": {}}}),
+        serde_json::json!({"password": {"tokenUrl": "https://a.example/token", "scopes": {}}}),
+    ] {
+        let s = scheme(serde_json::json!({"oauth2SecurityScheme": {"flows": &flow}}));
+        assert_eq!(s.validate(), Ok(()), "{flow}");
+    }
 }

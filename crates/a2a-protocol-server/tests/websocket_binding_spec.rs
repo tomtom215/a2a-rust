@@ -386,3 +386,105 @@ async fn a_refused_permission_carries_no_challenge() {
     );
     assert_eq!(v["error"]["data"].as_array().map(Vec::len), Some(2), "{v}");
 }
+
+/// Records the service parameters each call carried.
+struct SeenHeaders(Arc<std::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>);
+
+impl ServerInterceptor for SeenHeaders {
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.0.lock().unwrap().push(ctx.http_headers().clone());
+        Box::pin(async { Ok(()) })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// §2 "Value constraints" and "Reserved names", as the page states them: a
+/// header line that is not visible ASCII is left out, valid UTF-8 such as
+/// `café` included; a header's lines are joined with `", "`; the server's
+/// own entries are `:path`, `:peer-addr` and `:upgrade-traceparent` /
+/// `:upgrade-tracestate` (where the upgrade's trace context goes), and
+/// `Last-Event-ID` is dropped. `:peer-certificate` needs a mutual-TLS
+/// listener; `mtls_caller_identity.rs` covers what it carries. No client can
+/// send any of these names, since a colon cannot start an HTTP/1 field name.
+#[tokio::test]
+async fn the_service_parameters_are_the_visible_ascii_upgrade_headers_and_the_reserved_entries() {
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let addr = serve(
+        RequestHandlerBuilder::new(Done)
+            .without_agent_card()
+            .with_interceptor(SeenHeaders(Arc::clone(&seen))),
+    )
+    .await;
+    let traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+    let mut req = format!("ws://{addr}/agents/a")
+        .into_client_request()
+        .unwrap();
+    let h = req.headers_mut();
+    h.insert("a2a-version", "1.0".parse().unwrap());
+    h.insert(
+        "x-utf8",
+        tokio_tungstenite::tungstenite::http::HeaderValue::from_bytes("café".as_bytes()).unwrap(),
+    );
+    h.insert("x-ascii", "plain value".parse().unwrap());
+    h.append("x-lines", "one".parse().unwrap());
+    h.append("x-lines", "two".parse().unwrap());
+    h.append(
+        "x-mixed",
+        tokio_tungstenite::tungstenite::http::HeaderValue::from_bytes("naïve".as_bytes()).unwrap(),
+    );
+    h.append("x-mixed", "kept".parse().unwrap());
+    h.insert("traceparent", traceparent.parse().unwrap());
+    h.insert("tracestate", "k=v".parse().unwrap());
+    h.insert("last-event-id", "7".parse().unwrap());
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let v = call(
+        &mut ws,
+        json!({"jsonrpc": "2.0", "id": "1", "method": "GetTask", "params": {"id": "t-1"}}),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], -32001,
+        "the call reached the handler: {v}"
+    );
+
+    let headers = seen.lock().unwrap().pop().expect("the call's headers");
+    assert!(!headers.contains_key("x-utf8"), "{headers:?}");
+    assert_eq!(
+        headers.get("x-ascii").map(String::as_str),
+        Some("plain value")
+    );
+    assert_eq!(headers.get("x-lines").map(String::as_str), Some("one, two"));
+    assert_eq!(headers.get("x-mixed").map(String::as_str), Some("kept"));
+    assert_eq!(headers.get(":path").map(String::as_str), Some("/agents/a"));
+    assert!(
+        headers
+            .get(":peer-addr")
+            .is_some_and(|a| a.starts_with("127.0.0.1:")),
+        "{headers:?}"
+    );
+    assert_eq!(
+        headers.get(":upgrade-traceparent").map(String::as_str),
+        Some(traceparent)
+    );
+    assert_eq!(
+        headers.get(":upgrade-tracestate").map(String::as_str),
+        Some("k=v")
+    );
+    for gone in [
+        "traceparent",
+        "tracestate",
+        "last-event-id",
+        ":peer-certificate",
+    ] {
+        assert!(!headers.contains_key(gone), "{gone}: {headers:?}");
+    }
+}

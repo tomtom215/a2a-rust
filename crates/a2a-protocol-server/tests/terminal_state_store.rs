@@ -394,10 +394,12 @@ mod postgres {
             let pool = sqlx::postgres::PgPool::connect(&admin_url)
                 .await
                 .expect("connect to admin database");
-            let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-                .execute(&pool)
-                .await;
-            sqlx::query(&format!("CREATE DATABASE {name}"))
+            let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+                "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+            )))
+            .execute(&pool)
+            .await;
+            sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
                 .execute(&pool)
                 .await
                 .expect("create scratch database");
@@ -412,10 +414,10 @@ mod postgres {
 
         async fn drop_db(self) {
             if let Ok(pool) = sqlx::postgres::PgPool::connect(&self.admin_url).await {
-                let _ = sqlx::query(&format!(
+                let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
                     "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
                     self.name
-                ))
+                )))
                 .execute(&pool)
                 .await;
                 pool.close().await;

@@ -5,6 +5,8 @@
 
 //! Query string building and percent-encoding for REST transport URIs.
 
+use crate::error::{ClientError, ClientResult};
+
 /// Builds a URL query string from a JSON object's non-null fields.
 ///
 /// Values are percent-encoded per RFC 3986 to avoid query-string
@@ -16,22 +18,38 @@
 /// 2026-10-15 it was sent as one JSON-encoded value (`ids=%5B1%2C2%5D`),
 /// which neither form the specification names matches. No v1.0 GET or
 /// DELETE request has a repeated field today; this is what one would get.
-pub(super) fn build_query_string(params: &serde_json::Value) -> String {
+///
+/// A nested object is refused, not written: §11.5, "Nested Objects: Not
+/// supported in query parameters; operations requiring nested objects
+/// **MUST** use POST with a request body". Every operation with one is
+/// routed `POST` (`routing.rs`, pinned by `all_routes_match_spec_url_patterns`),
+/// so this guards that table: until 2026-10-23 an object was JSON-encoded
+/// into the query, and a test pinned it.
+///
+/// # Errors
+///
+/// [`ClientError::Transport`] naming the parameter that holds an object.
+pub(super) fn build_query_string(params: &serde_json::Value) -> ClientResult<String> {
     let Some(obj) = params.as_object() else {
-        return String::new();
+        return Ok(String::new());
     };
     let mut parts = Vec::new();
     for (k, v) in obj {
-        match v {
-            serde_json::Value::Array(items) => {
-                for item in items {
-                    push_pair(&mut parts, k, item);
-                }
+        let items = match v {
+            serde_json::Value::Array(items) => items.as_slice(),
+            _ => std::slice::from_ref(v),
+        };
+        for item in items {
+            if item.is_object() {
+                return Err(ClientError::Transport(format!(
+                    "query parameter {k:?} is an object; spec §11.5 allows no nested \
+                     object in a query (an operation with one is sent as POST)"
+                )));
             }
-            _ => push_pair(&mut parts, k, v),
+            push_pair(&mut parts, k, item);
         }
     }
-    parts.join("&")
+    Ok(parts.join("&"))
 }
 
 /// Appends `key=value` to `parts`, percent-encoded. Null values are skipped;
@@ -101,7 +119,7 @@ mod tests {
             "filter": "status=active&role=admin",
             "name": "John Doe"
         });
-        let qs = build_query_string(&params);
+        let qs = build_query_string(&params).unwrap();
         // Values should be percent-encoded
         assert!(qs.contains("filter=status%3Dactive%26role%3Dadmin"));
         assert!(qs.contains("name=John%20Doe"));
@@ -112,7 +130,7 @@ mod tests {
     #[test]
     fn build_query_string_skips_null() {
         let params = serde_json::json!({"a": null, "b": "hello"});
-        let qs = build_query_string(&params);
+        let qs = build_query_string(&params).unwrap();
         assert!(!qs.contains("a="), "null values should be skipped");
         assert!(qs.contains("b=hello"), "non-null values should be present");
     }
@@ -120,53 +138,67 @@ mod tests {
     #[test]
     fn build_query_string_handles_number() {
         let params = serde_json::json!({"count": 42});
-        let qs = build_query_string(&params);
+        let qs = build_query_string(&params).unwrap();
         assert_eq!(qs, "count=42");
     }
 
     #[test]
     fn build_query_string_handles_bool() {
         let params = serde_json::json!({"active": true});
-        let qs = build_query_string(&params);
+        let qs = build_query_string(&params).unwrap();
         assert_eq!(qs, "active=true");
     }
 
     #[test]
     fn build_query_string_handles_false() {
         let params = serde_json::json!({"active": false});
-        let qs = build_query_string(&params);
+        let qs = build_query_string(&params).unwrap();
         assert_eq!(qs, "active=false");
     }
 
     /// Covers line 12: non-object input returns empty string.
     #[test]
     fn build_query_string_non_object_returns_empty() {
-        assert_eq!(build_query_string(&serde_json::json!("string")), "");
-        assert_eq!(build_query_string(&serde_json::json!(42)), "");
-        assert_eq!(build_query_string(&serde_json::json!(null)), "");
-        assert_eq!(build_query_string(&serde_json::json!(true)), "");
-        assert_eq!(build_query_string(&serde_json::json!([1, 2, 3])), "");
+        assert_eq!(
+            build_query_string(&serde_json::json!("string")).unwrap(),
+            ""
+        );
+        assert_eq!(build_query_string(&serde_json::json!(42)).unwrap(), "");
+        assert_eq!(build_query_string(&serde_json::json!(null)).unwrap(), "");
+        assert_eq!(build_query_string(&serde_json::json!(true)).unwrap(), "");
+        assert_eq!(
+            build_query_string(&serde_json::json!([1, 2, 3])).unwrap(),
+            ""
+        );
     }
 
-    /// Covers lines 21-23: nested object/array values are JSON-serialized.
+    /// §11.5: "Nested Objects: Not supported in query parameters". Until
+    /// 2026-10-23 this test pinned the opposite, an object JSON-encoded into
+    /// the query; none is sent because every operation with one is POST
+    /// (`routing.rs` `all_routes_match_spec_url_patterns`), and one that
+    /// reached a query now fails the call instead.
     #[test]
-    fn build_query_string_handles_nested_object() {
-        let params = serde_json::json!({"data": {"key": "val"}});
-        let qs = build_query_string(&params);
-        // The nested object should be serialized to JSON and percent-encoded
-        assert!(qs.starts_with("data="), "should have data key: {qs}");
-        assert!(qs.contains("%22key%22"), "should contain encoded key: {qs}");
+    fn build_query_string_refuses_a_nested_object() {
+        for params in [
+            serde_json::json!({"data": {"key": "val"}}),
+            serde_json::json!({"data": [1, {"key": "val"}]}),
+        ] {
+            let Err(ClientError::Transport(msg)) = build_query_string(&params) else {
+                panic!("an object in a query must be refused: {params}");
+            };
+            assert!(msg.contains("\"data\"") && msg.contains("§11.5"), "{msg}");
+        }
     }
 
     #[test]
     fn build_query_string_repeats_an_array_parameter() {
         // §11.5: a repeated field repeats its parameter, one per element.
         let params = serde_json::json!({"ids": [1, 2, 3]});
-        assert_eq!(build_query_string(&params), "ids=1&ids=2&ids=3");
+        assert_eq!(build_query_string(&params).unwrap(), "ids=1&ids=2&ids=3");
         let params = serde_json::json!({"tag": ["a b", null, "c&d"]});
-        assert_eq!(build_query_string(&params), "tag=a%20b&tag=c%26d");
+        assert_eq!(build_query_string(&params).unwrap(), "tag=a%20b&tag=c%26d");
         let params = serde_json::json!({"tag": []});
-        assert_eq!(build_query_string(&params), "");
+        assert_eq!(build_query_string(&params).unwrap(), "");
     }
 
     #[test]

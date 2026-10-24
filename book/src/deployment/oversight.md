@@ -152,6 +152,16 @@ On the server, `with_approval_gate` decides which decisions reach the executor:
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+#         .with_security_schemes(std::collections::HashMap::from([(
+#             "bearer".to_owned(),
+#             a2a_protocol_types::security::SecurityScheme::Http(
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
+#                     scheme: "Bearer".to_owned(),
+#                     description: None,
+#                     bearer_format: None,
+#                 },
+#             ),
+#         )]))
 # }
 use a2a_protocol_server::approval::ApprovalGate;
 use a2a_protocol_server::auth::caller_id;

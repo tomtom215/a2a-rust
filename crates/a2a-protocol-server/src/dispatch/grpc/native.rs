@@ -38,6 +38,48 @@ fn bad_response(err: ConvertError) -> Status {
     Status::internal(format!("response not representable in protobuf: {err}"))
 }
 
+/// How a call that reached the handler failed: with the handler's error,
+/// or with an answer the protobuf binding cannot represent. The answer is
+/// converted inside the call's span, so the second is recorded as the
+/// `INTERNAL` it is sent as; converting after the span ended recorded `OK`.
+#[derive(Debug)]
+enum Failure {
+    Handler(crate::error::ServerError),
+    Response(Status),
+}
+
+impl crate::rpc_span::WireStatus for Failure {
+    fn wire_status(&self, system: crate::rpc_span::RpcSystem) -> std::borrow::Cow<'static, str> {
+        match self {
+            Self::Handler(e) => e.wire_status(system),
+            Self::Response(_) => std::borrow::Cow::Borrowed("INTERNAL"),
+        }
+    }
+}
+
+impl From<crate::error::ServerError> for Failure {
+    fn from(e: crate::error::ServerError) -> Self {
+        Self::Handler(e)
+    }
+}
+
+impl From<Failure> for Status {
+    fn from(failure: Failure) -> Self {
+        match failure {
+            Failure::Handler(e) => server_error_to_status(&e),
+            Failure::Response(status) => status,
+        }
+    }
+}
+
+/// `value` as its protobuf answer, or the `INTERNAL` failure it is sent as.
+fn to_proto<T, P>(value: T) -> Result<P, Failure>
+where
+    P: TryFrom<T, Error = ConvertError>,
+{
+    P::try_from(value).map_err(|e| Failure::Response(bad_response(e)))
+}
+
 /// Wraps a unary send-message result into a single-element stream payload.
 fn send_result_to_stream(
     resp: a2a_protocol_types::responses::SendMessageResponse,
@@ -116,6 +158,24 @@ pub struct A2aServiceImpl {
 }
 
 impl A2aServiceImpl {
+    /// Runs `call` in the method's span, its answer converted inside it.
+    async fn unary<F, T, P>(
+        &self,
+        method: &str,
+        headers: &std::collections::HashMap<String, String>,
+        call: F,
+    ) -> Result<Response<P>, Status>
+    where
+        F: std::future::Future<Output = Result<T, Failure>>,
+        P: TryFrom<T, Error = ConvertError>,
+    {
+        self.rpc_span(method, headers)
+            .run(async { to_proto(call.await?) })
+            .await
+            .map(Response::new)
+            .map_err(Status::from)
+    }
+
     /// The span one gRPC call runs in (ADR 0013).
     fn rpc_span(
         &self,
@@ -141,19 +201,19 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<apb::SendMessageResponse>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::MessageSendParams) =
             self.admit("SendMessage", request, convert).await?;
-        match self
-            .rpc_span("SendMessage", &headers)
-            .run(self.handler.on_send_message(params, false, Some(&headers)))
-            .await
-        {
-            Ok(SendMessageResult::Response(resp)) => {
-                Ok(Response::new(resp.try_into().map_err(bad_response)?))
+        let call = async {
+            match self
+                .handler
+                .on_send_message(params, false, Some(&headers))
+                .await?
+            {
+                SendMessageResult::Response(resp) => Ok(resp),
+                SendMessageResult::Stream(_) => Err(Failure::Response(Status::internal(
+                    "unexpected stream response for unary call",
+                ))),
             }
-            Ok(SendMessageResult::Stream(_)) => Err(Status::internal(
-                "unexpected stream response for unary call",
-            )),
-            Err(e) => Err(server_error_to_status(&e)),
-        }
+        };
+        self.unary("SendMessage", &headers, call).await
     }
 
     type SendStreamingMessageStream = NativeStream;
@@ -165,18 +225,27 @@ impl A2aService for A2aServiceImpl {
         let (headers, params): (_, a2a_protocol_types::params::MessageSendParams) =
             self.admit("SendStreamingMessage", request, convert).await?;
         let capacity = self.config.stream_channel_capacity;
-        let call = self.handler.on_send_message(params, true, Some(&headers));
-        let then = |out| match out {
-            Ok(SendMessageResult::Stream(reader)) => {
-                Ok(Response::new(reader_to_native_stream(reader, capacity)))
+        // A direct answer is converted inside the call, so a conversion
+        // failure is recorded as the failure it is sent as.
+        let call = async {
+            match self
+                .handler
+                .on_send_message(params, true, Some(&headers))
+                .await?
+            {
+                SendMessageResult::Stream(reader) => Ok(Err(reader)),
+                SendMessageResult::Response(resp) => send_result_to_stream(resp)
+                    .map(Ok)
+                    .map_err(|e| Failure::Response(bad_response(e))),
             }
-            Ok(SendMessageResult::Response(resp)) => {
+        };
+        let then = |out: Result<_, Failure>| match out? {
+            Err(reader) => Ok(Response::new(reader_to_native_stream(reader, capacity))),
+            Ok(payload) => {
                 // Wrap single response as a one-element stream.
-                let payload = send_result_to_stream(resp).map_err(bad_response)?;
                 let stream = Box::pin(tokio_stream::once(Ok(payload)));
                 Ok(Response::new(stream as NativeStream))
             }
-            Err(e) => Err(server_error_to_status(&e)),
         };
         self.rpc_span("SendStreamingMessage", &headers)
             .run_with(call, then)
@@ -191,14 +260,8 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<apb::Task>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::TaskQueryParams) =
             self.admit("GetTask", request, convert).await?;
-        match self
-            .rpc_span("GetTask", &headers)
-            .run(self.handler.on_get_task(params, Some(&headers)))
-            .await
-        {
-            Ok(task) => Ok(Response::new(task.try_into().map_err(bad_response)?)),
-            Err(e) => Err(server_error_to_status(&e)),
-        }
+        let call = async { Ok(self.handler.on_get_task(params, Some(&headers)).await?) };
+        self.unary("GetTask", &headers, call).await
     }
 
     async fn list_tasks(
@@ -207,14 +270,8 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<apb::ListTasksResponse>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::ListTasksParams) =
             self.admit("ListTasks", request, convert).await?;
-        match self
-            .rpc_span("ListTasks", &headers)
-            .run(self.handler.on_list_tasks(params, Some(&headers)))
-            .await
-        {
-            Ok(resp) => Ok(Response::new(resp.try_into().map_err(bad_response)?)),
-            Err(e) => Err(server_error_to_status(&e)),
-        }
+        let call = async { Ok(self.handler.on_list_tasks(params, Some(&headers)).await?) };
+        self.unary("ListTasks", &headers, call).await
     }
 
     async fn cancel_task(
@@ -223,14 +280,8 @@ impl A2aService for A2aServiceImpl {
     ) -> Result<Response<apb::Task>, Status> {
         let (headers, params): (_, a2a_protocol_types::params::CancelTaskParams) =
             self.admit("CancelTask", request, convert).await?;
-        match self
-            .rpc_span("CancelTask", &headers)
-            .run(self.handler.on_cancel_task(params, Some(&headers)))
-            .await
-        {
-            Ok(task) => Ok(Response::new(task.try_into().map_err(bad_response)?)),
-            Err(e) => Err(server_error_to_status(&e)),
-        }
+        let call = async { Ok(self.handler.on_cancel_task(params, Some(&headers)).await?) };
+        self.unary("CancelTask", &headers, call).await
     }
 
     type SubscribeToTaskStream = NativeStream;
@@ -346,14 +397,13 @@ impl A2aService for A2aServiceImpl {
         let (headers, ()) = self
             .admit("GetExtendedAgentCard", request, |_| Ok(()))
             .await?;
-        match self
-            .rpc_span("GetExtendedAgentCard", &headers)
-            .run(self.handler.on_get_extended_agent_card(Some(&headers)))
-            .await
-        {
-            Ok(card) => Ok(Response::new(card.try_into().map_err(bad_response)?)),
-            Err(e) => Err(server_error_to_status(&e)),
-        }
+        let call = async {
+            Ok(self
+                .handler
+                .on_get_extended_agent_card(Some(&headers))
+                .await?)
+        };
+        self.unary("GetExtendedAgentCard", &headers, call).await
     }
 }
 
@@ -705,6 +755,57 @@ mod tests {
         );
     }
 
+    /// §3.6.2 / §3.2.6: a non-empty version this server does not serve is
+    /// refused over gRPC as on the other three bindings: `FAILED_PRECONDITION`
+    /// with `VERSION_NOT_SUPPORTED`, and a message naming the version (§3.3.2:
+    /// an error carries a human-readable message). Until 2026-10-23 only an
+    /// absent version was tested on this binding.
+    #[tokio::test]
+    async fn an_unsupported_version_is_refused_with_version_not_supported() {
+        use tonic_types::StatusExt as _;
+        let svc = A2aServiceImpl {
+            handler: Arc::new(
+                RequestHandlerBuilder::new(NoopExecutor)
+                    .with_agent_card(test_card())
+                    .with_push_sender(NoopSender)
+                    .build()
+                    .expect("default build should succeed"),
+            ),
+            config: GrpcConfig::default(),
+        };
+        let get = |version: &str| {
+            let mut request = Request::new(apb::GetTaskRequest {
+                tenant: String::new(),
+                id: "no-such-task".into(),
+                history_length: None,
+            });
+            request
+                .metadata_mut()
+                .insert("a2a-version", version.parse().expect("ASCII"));
+            request
+        };
+        for version in ["2.0", "0.3", "1.1"] {
+            let status = svc
+                .get_task(get(version))
+                .await
+                .expect_err("an unsupported version must be refused");
+            assert_eq!(status.code(), tonic::Code::FailedPrecondition, "{version}");
+            assert_eq!(
+                status
+                    .get_details_error_info()
+                    .expect("the refusal carries ErrorInfo")
+                    .reason,
+                "VERSION_NOT_SUPPORTED",
+                "{version}"
+            );
+            assert!(status.message().contains(version), "{version}: {status:?}");
+        }
+        // The control: the served version reaches the handler.
+        let status = svc.get_task(get("1.0")).await.expect_err("an unknown task");
+        assert_eq!(status.code(), tonic::Code::NotFound);
+        assert!(!status.message().is_empty(), "{status:?}");
+    }
+
     #[tokio::test]
     async fn list_tasks_returns_the_seeded_task() {
         let svc = service();
@@ -983,6 +1084,78 @@ mod tests {
         assert_eq!(
             card.name, "native-grpc-test-agent",
             "a default card would carry an empty name"
+        );
+    }
+
+    /// Each call as `rpc.server.call.duration` records it: its status code
+    /// and error type.
+    #[derive(Clone, Default)]
+    struct Calls(Arc<std::sync::Mutex<Vec<Recorded>>>);
+
+    /// One call's status code and error type.
+    type Recorded = (Option<String>, Option<String>);
+
+    impl crate::metrics::Metrics for Calls {
+        fn on_rpc_call(&self, call: &crate::metrics::RpcCall<'_>) {
+            self.0.lock().unwrap().push((
+                call.status_code.map(str::to_owned),
+                call.error_type.map(str::to_owned),
+            ));
+        }
+    }
+
+    /// A stored task whose status timestamp is `timestamp`. One that is not
+    /// RFC 3339 is an answer the protobuf `Timestamp` cannot carry.
+    async fn stored_task(svc: &A2aServiceImpl, id: &str, timestamp: &str) {
+        let task: a2a_protocol_types::task::Task = serde_json::from_value(serde_json::json!({
+            "id": id,
+            "contextId": "c-1",
+            "status": {"state": "TASK_STATE_WORKING", "timestamp": timestamp},
+        }))
+        .expect("a task");
+        svc.handler.task_store.save(&task).await.expect("saved");
+    }
+
+    /// An answer the wire cannot carry is a failed call: the caller gets
+    /// `INTERNAL`, and so does the call's record. It was converted after the
+    /// span ended and recorded `OK`. The control converts and records `OK`.
+    #[tokio::test]
+    async fn an_answer_the_wire_cannot_carry_is_recorded_as_internal() {
+        let calls = Calls::default();
+        let svc = A2aServiceImpl {
+            handler: Arc::new(
+                RequestHandlerBuilder::new(NoopExecutor)
+                    .with_agent_card(test_card())
+                    .with_push_sender(NoopSender)
+                    .with_metrics(calls.clone())
+                    .build()
+                    .expect("handler"),
+            ),
+            config: GrpcConfig::default().with_require_version_header(false),
+        };
+        stored_task(&svc, "good", "2026-10-23T12:00:00Z").await;
+        stored_task(&svc, "bad", "not a timestamp").await;
+        let get = |id: &str| {
+            Request::new(apb::GetTaskRequest {
+                id: id.into(),
+                ..Default::default()
+            })
+        };
+
+        svc.get_task(get("good"))
+            .await
+            .expect("the control converts");
+        let err = svc.get_task(get("bad")).await.expect_err("cannot convert");
+        assert_eq!(err.code(), tonic::Code::Internal, "{err:?}");
+        assert!(
+            err.message()
+                .starts_with("response not representable in protobuf"),
+            "{err:?}"
+        );
+        let some = |s: &str| Some(s.to_owned());
+        assert_eq!(
+            *calls.0.lock().unwrap(),
+            [(some("OK"), None), (some("INTERNAL"), some("INTERNAL"))]
         );
     }
 }

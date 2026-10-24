@@ -161,8 +161,8 @@ async fn the_handler_sees_the_callers_spiffe_id() {
     let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
     let handler = Arc::new(
         a2a_protocol_server::RequestHandlerBuilder::new(common::SigningExecutor::new("echo_agent"))
-            .with_agent_card(common::agent_card(&agent))
-            .with_extended_agent_card(common::agent_card(&agent))
+            .with_agent_card(common::peer_authenticated_card(&agent))
+            .with_extended_agent_card(common::peer_authenticated_card(&agent))
             .with_interceptor(SlimPeerAuthInterceptor::required())
             .with_interceptor(common::Recorder(Arc::clone(&seen)))
             .build()

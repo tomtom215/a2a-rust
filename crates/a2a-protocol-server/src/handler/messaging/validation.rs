@@ -129,6 +129,13 @@ impl RequestHandler {
         // Validate incoming IDs: reject empty/whitespace-only values, control
         // characters and excessively long values (AP-1; spec §14).
         //
+        // Each is named by its path on the wire, as a key missing from the
+        // JSON is (`message.messageId`) and as every other operation names
+        // its ids (`taskId`, `contextId`). Until 2026-10-23 these four used
+        // the Rust names (`message.id`, `task_id`, `context_id`,
+        // `reference_task_ids`), so the same field had two names in the
+        // `BadRequest` detail depending on whether it was absent or empty.
+        //
         // `message.id` is checked with the same rule as the other two. It was
         // not, and it is the one that reaches furthest: it is stored verbatim
         // in `idempotency_keys.message_id`, it keys the history de-duplication
@@ -146,21 +153,21 @@ impl RequestHandler {
         // See that method for the whole account.
         validate_id(
             &params.message.id.0,
-            "message.id",
+            "message.messageId",
             self.limits.effective_max_message_id_length(),
         )?;
         if let Some(ref ctx_id) = params.message.context_id {
-            validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
+            validate_id(&ctx_id.0, "message.contextId", self.limits.max_id_length)?;
         }
         if let Some(ref task_id) = params.message.task_id {
-            validate_id(&task_id.0, "task_id", self.limits.max_id_length)?;
+            validate_id(&task_id.0, "message.taskId", self.limits.max_id_length)?;
         }
         // Task ids like `task_id`, so the same checks (spec §13.4); they were
         // stored unchecked.
         for reference in params.message.reference_task_ids.iter().flatten() {
             validate_id(
                 &reference.0,
-                "reference_task_ids",
+                "message.referenceTaskIds",
                 self.limits.max_id_length,
             )?;
         }

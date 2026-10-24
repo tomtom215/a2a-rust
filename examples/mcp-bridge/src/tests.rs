@@ -417,10 +417,13 @@ async fn a_card_the_bridge_cannot_map_refuses_to_start() {
     // An MCP server that came up with an empty tool list would look, to its
     // caller, exactly like an agent with nothing to offer. This SDK's server
     // refuses to publish such a card (spec §5.7), so the card comes from a
-    // bare socket, as a non-conformant third-party agent would serve it.
+    // bare socket, as a non-conformant third-party agent would serve it. The
+    // client's discovery refuses it first, as a2a.proto requires a skill;
+    // the bridge's own check (`a_card_with_no_skills_is_refused`) is
+    // for a card handed to the mapping directly.
     let url = serve_raw_card_without_skills().await;
     match A2aBridge::connect(&url).await {
-        Err(BridgeError::Mapping(MappingError::NoSkills)) => {}
+        Err(BridgeError::Discovery(e)) if e.to_string().contains("at least one skill") => {}
         Err(other) => panic!("wrong refusal: {other}"),
         Ok(_) => panic!("a card with no skills is not bridgeable"),
     }

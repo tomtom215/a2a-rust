@@ -389,7 +389,8 @@ impl PostgresAuditStore {
         let sql = format!(
             "SELECT lookup, sid, wrapped FROM a2a_audit_subject_keys WHERE chain = $1 AND {column} = $2"
         );
-        let row = sqlx::query(&sql)
+        // `column` is a `&'static str` this impl passes; the values are binds.
+        let row = sqlx::query(sqlx::AssertSqlSafe(sql))
             .bind(chain)
             .bind(value)
             .fetch_optional(&self.pool)

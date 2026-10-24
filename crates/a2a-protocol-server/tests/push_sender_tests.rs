@@ -468,64 +468,56 @@ async fn bearer_auth_header_is_sent() {
     handle.abort();
 }
 
-/// A scheme with no credential value cannot produce a header; the request
-/// must go out without one rather than with an empty `Bearer `.
-#[tokio::test]
-async fn scheme_without_credentials_sends_no_auth_header() {
+/// Sends with `authentication` set and returns the error, asserting that
+/// the webhook was never sent a request.
+async fn refused_delivery(authentication: AuthenticationInfo) -> String {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
-
     let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "bearer".into(),
-        credentials: None,
-    });
-
-    sender.send(&url, &status_event(), &config).await.unwrap();
-    wait_for("the mock server to capture the request", || {
-        !captured.lock().unwrap().is_empty()
-    })
-    .await;
-
-    let reqs = captured.lock().unwrap();
-    let req = reqs[0].to_ascii_lowercase();
+    config.authentication = Some(authentication);
+    let err = sender
+        .send(&url, &status_event(), &config)
+        .await
+        .expect_err("spec §13.2: never delivered without the configured credentials");
+    // `send` refuses before it connects, so nothing can arrive later.
     assert!(
-        !req.contains("authorization:"),
-        "no credentials must mean no Authorization header, got: {req}"
+        captured.lock().unwrap().is_empty(),
+        "the webhook was sent a request"
     );
     handle.abort();
+    err.to_string()
 }
 
-/// An unknown scheme is not guessed at: the request goes out without an
-/// Authorization header rather than with a made-up one.
+/// Spec §13.2: agents MUST include the credentials `authentication`
+/// specifies. A scheme with no credential value cannot produce them, so the
+/// delivery is refused. Until 2026-10-23 the request went out with no
+/// `Authorization` header.
 #[tokio::test]
-async fn unknown_scheme_sends_no_auth_header() {
-    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
-
-    let sender = HttpPushSender::new().allow_private_urls();
-    let url = format!("http://{addr}/webhook");
-    let mut config = base_config(&url);
-    config.authentication = Some(AuthenticationInfo {
-        scheme: "digest".into(),
-        credentials: Some("opaque".into()),
-    });
-
-    sender.send(&url, &status_event(), &config).await.unwrap();
-    wait_for("the mock server to capture the request", || {
-        !captured.lock().unwrap().is_empty()
+async fn scheme_without_credentials_is_not_delivered() {
+    let err = refused_delivery(AuthenticationInfo {
+        scheme: "bearer".into(),
+        credentials: None,
     })
     .await;
-
-    let reqs = captured.lock().unwrap();
-    let req = reqs[0].to_ascii_lowercase();
     assert!(
-        !req.contains("authorization:"),
-        "an unknown scheme must not produce an Authorization header, got: {req}"
+        err.contains("no credentials") && err.contains("§13.2"),
+        "{err}"
     );
-    handle.abort();
+}
+
+/// An unknown scheme is not guessed at, and not dropped either: the
+/// delivery is refused (spec §13.2). Until 2026-10-23 the request went out
+/// with no `Authorization` header.
+#[tokio::test]
+async fn unknown_scheme_is_not_delivered() {
+    let err = refused_delivery(AuthenticationInfo {
+        scheme: "digest".into(),
+        credentials: Some("opaque".into()),
+    })
+    .await;
+    assert!(err.contains("\"digest\"") && err.contains("§13.2"), "{err}");
 }
 
 #[tokio::test]
@@ -955,29 +947,66 @@ async fn a_flooding_response_body_is_not_read() {
     flooding.abort();
 }
 
-/// A config stored with empty credentials sends no `Authorization`, rather
-/// than a bare `Bearer ` with nothing after it. Creation refuses such a
-/// config since 2026-10-18; this covers one stored before that.
+/// A config stored with empty credentials is not delivered, rather than
+/// sent a bare `Bearer ` or no `Authorization` at all (spec §13.2).
+/// Creation refuses such a config since 2026-10-18; this covers one stored
+/// before that.
 #[tokio::test]
-async fn empty_credentials_send_no_authorization_header() {
-    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
-    let sender = HttpPushSender::new().allow_private_urls();
-    let url = format!("http://{addr}/webhook");
-    let mut config = base_config(&url);
-    config.authentication = Some(a2a_protocol_types::push::AuthenticationInfo {
+async fn empty_credentials_are_not_delivered() {
+    let err = refused_delivery(AuthenticationInfo {
         scheme: "Bearer".into(),
         credentials: Some("  ".into()),
+    })
+    .await;
+    assert!(err.contains("no credentials"), "{err}");
+}
+
+/// Spec §13.2: agents SHOULD use reasonable timeouts for webhook requests.
+/// A webhook that accepts the connection and never answers is abandoned
+/// once the request timeout passes, not waited on. The cited tests only
+/// compared the timeout constant with 10..=30 s; this one fails if
+/// `send` stops applying it.
+#[tokio::test]
+async fn a_webhook_that_never_answers_is_abandoned_at_the_timeout() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&accepted);
+    let hung = tokio::spawn(async move {
+        let mut held = Vec::new();
+        loop {
+            let (socket, _) = listener.accept().await.unwrap();
+            seen.fetch_add(1, Ordering::SeqCst);
+            // Read nothing, answer nothing, close nothing.
+            held.push(socket);
+        }
     });
-    sender
-        .send(&url, &status_event(), &config)
-        .await
-        .expect("delivered");
-    wait_for("the request", || !captured.lock().unwrap().is_empty()).await;
-    let request = captured.lock().unwrap()[0].clone();
+    let sender = HttpPushSender::with_timeout(Duration::from_millis(300))
+        .allow_private_urls()
+        .with_retry_policy(
+            a2a_protocol_server::push::PushRetryPolicy::default().with_max_attempts(1),
+        );
+    let url = format!("http://{addr}/webhook");
+    let started = std::time::Instant::now();
+    // The outer bound turns a sender that waits forever into a failure
+    // rather than a hung test.
+    let err = tokio::time::timeout(
+        Duration::from_secs(10),
+        sender.send(&url, &status_event(), &base_config(&url)),
+    )
+    .await
+    .expect("send must give up on its own, at the request timeout")
+    .expect_err("an unanswered webhook is not a delivery");
+    let elapsed = started.elapsed();
+    assert!(err.to_string().contains("timed out"), "{err}");
     assert!(
-        header_values(&request, "authorization").is_empty(),
-        "{request}"
+        elapsed >= Duration::from_millis(300) && elapsed < Duration::from_secs(5),
+        "abandoned after {elapsed:?}, with a 300 ms timeout"
     );
-    handle.abort();
+    assert_eq!(
+        accepted.load(Ordering::SeqCst),
+        1,
+        "the request did connect"
+    );
+    hung.abort();
 }

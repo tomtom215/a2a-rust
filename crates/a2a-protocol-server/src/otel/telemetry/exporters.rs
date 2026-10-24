@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig, Identity};
 use rustls_pki_types::pem::PemObject as _;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
@@ -73,7 +72,8 @@ impl Target {
         }
     }
 
-    /// The rustls configuration for OTLP/HTTP: Mozilla's roots, plus the
+    /// The rustls configuration for OTLP/HTTP and for OTLP/gRPC over TLS:
+    /// Mozilla's roots, plus the
     /// extra CAs, and the client certificate when there is one, with `ring` chosen explicitly so a process that links a
     /// second provider does not make rustls panic choosing one (the client
     /// crate's `tls.rs` records the same trap).
@@ -119,27 +119,41 @@ impl Target {
         Ok(certs)
     }
 
-    /// The tonic TLS configuration. `opentelemetry-otlp` builds an empty
-    /// `ClientTlsConfig` for an `https://` endpoint when given none, and
-    /// tonic enables no roots for an empty one (`with_webpki_roots` defaults
-    /// to off, tonic 0.14.6), so every handshake would fail. TLS applies only
-    /// to an `https://` endpoint; a plaintext one stays plaintext.
+    /// The OTLP/gRPC endpoint: the configured or environment one, else
+    /// the conventional plaintext `http://localhost:4317`.
+    fn grpc_endpoint(&self) -> String {
+        self.endpoint
+            .clone()
+            .unwrap_or_else(|| "http://localhost:4317".to_owned())
+    }
+
+    /// A tonic channel to an `https://` collector over this crate's rustls
+    /// stack: the roots, extra CAs and client certificate
+    /// [`rustls_config`](Self::rustls_config) builds, offering ALPN `h2`
+    /// (`enable_http2`, which refuses a config that sets ALPN itself).
     ///
-    /// tonic takes PEM and parses it only at the first handshake, so each is
-    /// parsed here first, to fail the build rather than every export. tonic
-    /// does not check that the key is the certificate's before connecting;
-    /// a mismatched pair fails the handshake.
-    fn grpc_tls(&self) -> Result<ClientTlsConfig, TelemetryError> {
-        let mut tls = ClientTlsConfig::new().with_webpki_roots();
-        if !self.ca_pem.is_empty() {
-            self.extra_cas()?;
-            tls = tls.ca_certificate(Certificate::from_pem(&self.ca_pem));
-        }
-        if let Some(identity) = &self.client_identity {
-            identity.parse()?;
-            tls = tls.identity(Identity::from_pem(&identity.cert_pem, &identity.key_pem));
-        }
-        Ok(tls)
+    /// tonic is given the endpoint as `http://` and [`DialsTls`] dials it as
+    /// `https`. With any tonic TLS feature compiled in, as an application's
+    /// own tonic or the client crate's gRPC TLS can turn on, tonic refuses an
+    /// `https://` URI it holds no TLS config for ("Connecting to HTTPS without
+    /// TLS enabled", tonic 0.14.6 `connector.rs`), whoever dials it. TLS is
+    /// not optional on this path: the connector is `https_only`. The channel
+    /// connects on first use.
+    fn grpc_channel(&self, endpoint: &str) -> Result<tonic::transport::Channel, TelemetryError> {
+        let tls = self.rustls_config()?;
+        let mut tcp = hyper_util::client::legacy::connect::HttpConnector::new();
+        tcp.enforce_http(false);
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls)
+            .https_only()
+            .enable_http2()
+            .wrap_connector(tcp);
+        let plain = format!("http://{}", endpoint.trim_start_matches("https://"));
+        let channel = tonic::transport::Endpoint::from_shared(plain)
+            .map_err(|e| TelemetryError::config("OTLP endpoint", endpoint, e.to_string()))?;
+        Ok(channel
+            .timeout(self.timeout)
+            .connect_with_connector_lazy(DialsTls(connector)))
     }
 
     fn grpc_metadata(
@@ -163,6 +177,39 @@ impl Target {
     }
 }
 
+/// The OTLP/gRPC connector: dials every URI it is given as `https`, through
+/// a TLS connector. See [`Target::grpc_channel`].
+#[derive(Clone)]
+struct DialsTls(hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>);
+
+impl tower_service::Service<http::Uri> for DialsTls {
+    type Response = <hyper_rustls::HttpsConnector<
+        hyper_util::client::legacy::connect::HttpConnector,
+    > as tower_service::Service<http::Uri>>::Response;
+    type Error = <hyper_rustls::HttpsConnector<
+        hyper_util::client::legacy::connect::HttpConnector,
+    > as tower_service::Service<http::Uri>>::Error;
+    type Future = <hyper_rustls::HttpsConnector<
+        hyper_util::client::legacy::connect::HttpConnector,
+    > as tower_service::Service<http::Uri>>::Future;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
+    }
+
+    fn call(&mut self, uri: http::Uri) -> Self::Future {
+        let mut parts = uri.into_parts();
+        parts.scheme = Some(http::uri::Scheme::HTTPS);
+        // Rebuilt from a URI that parsed, with only the scheme changed; the
+        // fallback cannot be reached, and would be refused as not https.
+        let uri = http::Uri::from_parts(parts).unwrap_or_default();
+        self.0.call(uri)
+    }
+}
+
 /// Builds `$exporter` (`SpanExporter`, `MetricExporter` or `LogExporter`) for
 /// `$target`. The three builders share their configuration traits but no
 /// common type, so this is a macro rather than a generic function.
@@ -178,13 +225,15 @@ macro_rules! build_exporter {
                 // tonic spawns the channel's worker while the exporter is
                 // built; inside this guard it spawns onto the export runtime.
                 let _entered = runtime.handle().enter();
+                let endpoint = target.grpc_endpoint();
                 let mut builder = <$exporter>::builder()
                     .with_tonic()
-                    .with_tls_config(target.grpc_tls()?)
                     .with_timeout(target.timeout);
-                if let Some(endpoint) = &target.endpoint {
-                    builder = builder.with_endpoint(endpoint.clone());
-                }
+                builder = if endpoint.starts_with("https://") {
+                    builder.with_channel(target.grpc_channel(&endpoint)?)
+                } else {
+                    builder.with_endpoint(endpoint)
+                };
                 if !target.headers.is_empty() {
                     builder = builder.with_metadata(target.grpc_metadata()?);
                 }

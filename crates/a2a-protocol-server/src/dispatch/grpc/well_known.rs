@@ -27,7 +27,13 @@ use crate::dispatch::well_known;
 
 /// The `.well-known` service; see the [module docs](self).
 #[derive(Clone)]
-pub(super) struct WellKnownCard(pub(super) Arc<StaticAgentCardHandler>);
+pub(super) struct WellKnownCard {
+    pub(super) card: Arc<StaticAgentCardHandler>,
+    pub(super) policy: crate::handler::InboundTracePolicy,
+    /// Whether the listener serves TLS, so whether this server's TLS
+    /// terminated the request's connection.
+    pub(super) tls: bool,
+}
 
 impl tonic::server::NamedService for WellKnownCard {
     const NAME: &'static str = ".well-known";
@@ -48,6 +54,27 @@ impl tonic::codegen::Service<hyper::Request<tonic::body::Body>> for WellKnownCar
     }
 
     fn call(&mut self, req: hyper::Request<tonic::body::Body>) -> Self::Future {
-        ready(Ok(well_known::respond(Some(&self.0), &req)))
+        let extensions = req.extensions();
+        let peer = extensions
+            .get::<tonic::transport::server::TcpConnectInfo>()
+            .and_then(tonic::transport::server::TcpConnectInfo::remote_addr);
+        // Over TLS tonic records the connection's TCP info inside its TLS
+        // info.
+        #[cfg(feature = "grpc-tls")]
+        let peer = peer.or_else(|| {
+            extensions
+                    .get::<tonic::transport::server::TlsConnectInfo<
+                        tonic::transport::server::TcpConnectInfo,
+                    >>()
+                    .and_then(|info| info.get_ref().remote_addr())
+        });
+        let connection = crate::rpc_span::CardConnection {
+            peer,
+            tls: self.tls,
+        };
+        let call = crate::rpc_span::CardCall::start(self.policy, &req, connection);
+        let resp = well_known::respond(Some(&self.card), &req);
+        call.finish(&resp);
+        ready(Ok(resp))
     }
 }

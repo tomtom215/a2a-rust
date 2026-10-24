@@ -251,6 +251,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
         true
     }
 
+    fn database(&self) -> Option<crate::store::StoreDatabase> {
+        Some(crate::store::StoreDatabase::sqlite())
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,
@@ -474,7 +478,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                     "SELECT COUNT(*) FROM tenant_tasks WHERE {}",
                     conditions.join(" AND ")
                 );
-                let mut count = sqlx::query_scalar::<_, i64>(&sql);
+                // sqlx 0.9 asks each runtime-built statement to be vouched for: the
+                // text is the static clauses above and integer placeholder positions;
+                // every caller-supplied value is a bind.
+                let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
                 for val in &bind_values {
                     count = count.bind(val);
                 }
@@ -510,7 +517,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                  ORDER BY updated_at DESC, id DESC LIMIT {limit}"
             );
 
-            let mut query = sqlx::query_as::<_, (String, String)>(&sql);
+            // sqlx 0.9 asks each runtime-built statement to be vouched for: the
+            // text is the static clauses above and integer placeholder positions;
+            // every caller-supplied value is a bind.
+            let mut query = sqlx::query_as::<_, (String, String)>(sqlx::AssertSqlSafe(sql));
             for val in &bind_values {
                 query = query.bind(val);
             }

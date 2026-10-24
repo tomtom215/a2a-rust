@@ -9,11 +9,34 @@
 
 use super::*;
 use crate::agent_card::AgentCard;
-#[allow(deprecated)] // the kid-less tests below exercise it on purpose
 use crate::signing::{
-    sign_agent_card, sign_card_ed25519, sign_card_es256, verify_agent_card,
-    verify_agent_card_with_jwks, verify_card_with_jwks,
+    sign_card_ed25519, sign_card_es256, verify_agent_card, verify_agent_card_with_jwks,
+    verify_card_with_jwks,
 };
+
+/// An ES256 signature over `card` whose protected header has no `kid`, as a
+/// foreign signer may write: this SDK's signers always write one (§8.4.2).
+fn es256_without_kid(card: &AgentCard, pkcs8: &[u8]) -> crate::extensions::AgentCardSignature {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let protected = URL_SAFE_NO_PAD.encode(br#"{"alg":"ES256","typ":"JOSE"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(crate::signing::canonicalize_card(card).unwrap());
+    let rng = ring::rand::SystemRandom::new();
+    let key = ring::signature::EcdsaKeyPair::from_pkcs8(
+        &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+        pkcs8,
+        &rng,
+    )
+    .unwrap();
+    let signature = key
+        .sign(&rng, format!("{protected}.{payload}").as_bytes())
+        .unwrap();
+    crate::extensions::AgentCardSignature {
+        protected,
+        signature: URL_SAFE_NO_PAD.encode(signature.as_ref()),
+        header: None,
+    }
+}
 
 fn hex(s: &str) -> Vec<u8> {
     (0..s.len())
@@ -124,7 +147,6 @@ fn a_jwk_round_trips_to_the_same_key() {
 }
 
 #[test]
-#[allow(deprecated)] // signs without `kid`, as a foreign signer still may
 fn a_jwks_verifies_by_kid_and_alg() {
     let (set, _, _) = jwks();
     let es_sig = sign_card_es256(&card(), &hex(P256_PKCS8), "es-1").unwrap();
@@ -132,7 +154,7 @@ fn a_jwks_verifies_by_kid_and_alg() {
     let eddsa_signature = sign_card_ed25519(&card(), &hex(ED_PKCS8), "ed-1").unwrap();
     verify_agent_card_with_jwks(&card(), &eddsa_signature, &set).unwrap();
     // No kid: every key of the right type is a candidate.
-    let anon = sign_agent_card(&card(), &hex(P256_PKCS8), None).unwrap();
+    let anon = es256_without_kid(&card(), &hex(P256_PKCS8));
     verify_agent_card_with_jwks(&card(), &anon, &set).unwrap();
 
     let unknown = sign_card_es256(&card(), &hex(P256_PKCS8), "es-2").unwrap();

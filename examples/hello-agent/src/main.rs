@@ -59,6 +59,18 @@ fn card(url: &str) -> AgentCard {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    // OpenTelemetry from the standard `OTEL_*` environment: with
+    // `OTEL_EXPORTER_OTLP_ENDPOINT` set, traces, metrics and logs go there;
+    // without it nothing is built. Built before the handler, whose metrics
+    // bind the global meter provider it installs; dropped at exit, which
+    // flushes.
+    let telemetry = Telemetry::builder()
+        .with_default_service_name("hello-agent")
+        .with_export_where_configured()
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    telemetry.install_subscriber();
+
     let url = "http://127.0.0.1:3000";
     let handler = std::sync::Arc::new(
         RequestHandlerBuilder::new(HelloAgent)

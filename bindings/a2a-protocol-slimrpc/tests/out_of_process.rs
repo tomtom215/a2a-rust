@@ -237,3 +237,46 @@ fn the_node_requires_a_listen_address() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--listen is required"));
 }
+
+/// The node builds the SDK's telemetry from the `OTEL_*` environment, as
+/// every other binary in the repository does: an endpoint configured with a
+/// protocol `Telemetry` cannot use stops it before it listens, with the
+/// variable named. A node that never read the environment would start, and
+/// is killed here at the deadline instead.
+#[cfg(feature = "otlp")]
+#[test]
+fn the_node_builds_telemetry_from_the_otel_environment() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_slim-node"))
+        .args(["--listen", &format!("127.0.0.1:{}", common::free_port())])
+        .env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
+        .env("OTEL_EXPORTER_OTLP_PROTOCOL", "carrier-pigeon")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the slim-node binary");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("poll the node") {
+            break status;
+        }
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the node ignored the OTEL_* environment and kept running");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let output = child.wait_with_output().expect("the node's output");
+
+    assert_eq!(status.code(), Some(2), "a configuration error");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("OTEL_EXPORTER_OTLP_PROTOCOL") && stderr.contains("carrier-pigeon"),
+        "it must name the variable and its value, said: {stderr}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("listening on"),
+        "it must not start listening"
+    );
+}

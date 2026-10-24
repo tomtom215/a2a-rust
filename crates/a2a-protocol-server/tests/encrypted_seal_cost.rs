@@ -138,10 +138,12 @@ async fn postgres_appends_cost_one_seal_each() {
         .await
         .expect("connect");
     let name = format!("a2a_seal_cost_{}", std::process::id());
-    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        .execute(&admin)
-        .await;
-    sqlx::query(&format!("CREATE DATABASE {name}"))
+    let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await;
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
         .execute(&admin)
         .await
         .expect("create");
@@ -150,9 +152,11 @@ async fn postgres_appends_cost_one_seal_each() {
         .await
         .expect("store");
     appends_cost_one_seal_each(Arc::new(store)).await;
-    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        .execute(&admin)
-        .await;
+    let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+    )))
+    .execute(&admin)
+    .await;
     admin.close().await;
 }
 

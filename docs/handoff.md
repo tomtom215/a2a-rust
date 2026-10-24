@@ -22,34 +22,82 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Working branch:** `claude/jolly-hypatia-lsr7uv`, started 2026-10-20
-  from `main` at `6c90d0b` (pull request #173 merged that day), pushed.
-  `git log 6c90d0b..` lists its commits; each message says what it changed
-  and how it was verified. Wrapped up for a pull request on 2026-10-22,
-  because container restarts kept killing long work: the study's raw runs
-  were moved out of scratch space into the repository and the method
-  committed as a draft; the study then finished (*Next*, item 2). Pull
-  request #178 is open with the `mutation-test` label. The commits after it
-  went up fix what its CI found, each message naming the check. From
-  `1ebec172` on they add tests for the mutants each labelled incremental
-  mutation run left surviving (51, then 9, then 2 and one equivalent
-  mutant skipped with its argument, then 13 and a second equivalent on
-  `fcd73c5e`, the first run after `640773fc`, then 1 on `9557b24d`; each
-  commit lists its batch),
-  and `1ebec172` fixes the kill-switch harness passing a store that widened
-  a tenant's halt. Before `640773fc` a measurement's timeout scored a
-  different set of server mutants caught in each run, which is why each
-  run found survivors the last had not; on `fcd73c5e` all 571 catches in
-  the 19 finished server shards were real test failures, and on `9557b24d`
-  612 of 614, the other two a mutant's own test hanging and a mutant whose
-  killing tests a PostgreSQL timeout cancelled (checked by hand). Also
-  pending in `.github/workflows/`: the Regression Gate's 150% override for
-  the payload serialize benchmarks (`b6bd6350`; the swing is the runner's,
-  measured on byte-identical binaries) and a 1800s mutation build timeout
-  (`231f7d8e`). The crypto-interop gate `bb7518b3` added had no defect
-  injection, so `scripts/prove_gates_fail.sh` exited 2; it now has one (a
-  push config sealed under a context other than the stated one), as a
-  follow-up to this pull request.
+- **Working branch:** `claude/zealous-fermat-f4kg9z`, started 2026-10-23
+  from `main` at `4cadc2af` (pull request #178 merged that day), to make
+  0.15.0 release-ready. First pushed 2026-10-23, after the local
+  verification the maintainer asked for: the workspace suite (327 test
+  binaries, 5965 passed, 0 failed), the server with all features and
+  PostgreSQL (181 binaries, 3436 passed, 0 failed), every clippy
+  invocation `ci.yml` names including `cargo hack --each-feature` (57
+  combinations), `cargo deny` advisories on all nine lockfiles, and the
+  SLIMRPC binding's steps except the SPIFFE suites, which need SPIRE (not
+  installed here). `ci.yml` runs on a push only to `main`, so it was
+  started with `workflow_dispatch`; the TCK and the labelled mutation gate
+  run only on a pull request, which waits for the maintainer.
+  `git log 4cadc2af..` lists the commits; each message says what it
+  changed and how it was verified. So far:
+  - the tool-calling study scored, audited by reading every answer, and
+    published (`docs/tool-calling-study.md`, `34f579d`);
+  - every dependency refreshed in all nine lockfiles, the Python
+    requirements, Actions, Go, npm and Maven pins; MSRV 1.94, which sqlx
+    0.9 requires (`7a73bdc`; `STABILITY.md` §5 allows the raise);
+  - Prometheus recording and alerting rules (with `promtool` tests) and
+    three Grafana dashboards (server, client, GenAI), built from a live
+    Prometheus 3.15.1 fed by the repository's own binaries, directly over
+    OTLP and through an OpenTelemetry Collector (`deploy/observability/`,
+    `c372919`; GenAI and task-store panels, with screenshots in the README
+    and the book, 2026-10-24);
+  - a database `CLIENT` span and `db.client.operation.duration` for each
+    operation of a store that names its database (`TaskStore::database`;
+    the SQLite and PostgreSQL stores do), and `server.address` on a
+    WebSocket client's spans (`Transport::server_url`), 2026-10-24;
+  - OpenTelemetry: a `service.instance.id` per process (`755b121`), export
+    wherever an endpoint is configured in every binary (`988fb69`), the
+    tool loop's `GenAI` metrics and the rest of its `chat` span
+    (`d118aaf`);
+  - the spec ledger cites code by symbol at its definition line, and the
+    checker verifies it (`6202a56`);
+  - a re-audit of all 510 ledger entries against the v1.0.1 text found
+    273 confirmed as written; its defects are being fixed in work
+    packages. WP-A (server security: §13.3 schemes on the public card,
+    §13.2 push credentials, push config `Debug`, the kid-optional signers
+    removed, card `max-age` on WebSocket and gRPC, eleven security tests
+    that now test what they are cited for) and WP-B (the client validates
+    every object and card it receives against a2a.proto's REQUIRED
+    fields; the gRPC conversion refuses absent ones; wire forms) are
+    merged. So are WP-C (handler-wide conformance: the executor sees only
+    card-declared extensions, `BadRequest` names the missing field, an
+    empty push url is `InvalidParams`) and WP-D (SLIMRPC: every operation
+    tested over the fabric, an equivalence suite against JSON-RPC, the
+    push-config list fixed, retryable errors prefixed, the server's
+    default telemetry, an `otlp` feature, on by default since the TLS
+    conflicts below were fixed);
+  - `examples/live-model` (2026-10-23): the SDK end to end against a real
+    model through llama-server, ten checks (the tool loop streamed and
+    signature-verified on all four bindings, provenance refusal,
+    idempotency, budget exhaustion, delegation under a budget, halt,
+    quorum). Its README records the runs, the model, the quantization and
+    the llama.cpp build. The other model-backed examples were run the same
+    day against the same llama-server (b11836, Qwen3-1.7B Q4_K_M, alias
+    `qwen3:1.7b` on port 11434, release builds): `tool-loop-agent` (billing
+    question: right, two rounds), `incident-response` (exit 0, Act 4 44 of
+    44 cells, Act 5 16 of 16 with `A2A_TEST_POSTGRES_URL`), `genai-agent`
+    (44 of 44, LLM leg exercised), `mcp-agent` (exit 0; 1 of 2 answers
+    used the MCP tools, and the billing answer, which called none, is
+    invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
+    `rig-agent` (44 of 44 on its second run; see the 30 s timeout under
+    *Open engineering*). Logs were not committed.
+  - §3.1.2 (2026-10-23): a `Message` an executor writes once its task
+    stream has begun is sent as a status update carrying it, folded once
+    at the queue's writer (`streaming/event_queue/message_fold.rs`),
+    reviewed independently; a follow-up to an existing task folds its
+    first `Message` too (the maintainer's decision, reviewed again).
+- **`sign_agent_card` is deprecated, not removed** (2026-10-23): it shipped
+  in 0.14.1, so `STABILITY.md` §3 keeps it for one minor release. It now
+  refuses `key_id: None`, which wrote a header without the `kid` §8.4.2
+  requires (a specification correction, §2), and goes in 0.16.0.
+  `sign_agent_card_ed25519` never shipped and stays removed. No §3 waiver
+  remains.
 - **Built on this branch (2026-10-20):** ADR 0022's tool loop
   (`server::tool_loop`, feature `tool-loop`; `examples/tool-loop-agent`,
   whose README records the live run); the §3.5.2 holds, with the
@@ -67,11 +115,25 @@ only: when something here is done, delete it rather than annotating it.
   mutation sweep of the crypto modules (210 mutants, the 2 missed rewritten
   so they are killed). `book/src/deployment/security.md`, "How this is
   verified".
-- **Control map (2026-10-21):** 88 rows after the GDPR and CRA pass
-  (`63418d93`). Every test it cites was run that day, Postgres-ignored ones
-  included against a local PostgreSQL 16: 170 distinct tests across 50
-  targets, all passing. `check_compliance_map.py` only checks that a cited
-  test exists, so rerun them after editing a cited file.
+- **Control map (2026-10-23):** 88 rows, every one citing a test or CI step
+  that proves the row's `sdk` text; `check_compliance_map.py --check` fails
+  on a row that cites nothing (`UNCITED` is empty: AIA-6 cites the book's
+  "Is Your Agent High-Risk?" through `DOC_CLAIMS`, AIA-53 cites
+  `check_no_model_artifacts.py`) and on a document that stops saying what
+  `DOC_CLAIMS` quotes. All 187 cited tests were run 2026-10-23,
+  PostgreSQL-ignored ones included, all passing. The checker verifies that
+  a cited test exists, not that it passes: rerun them after editing a cited
+  file. On 2026-10-23 the requirement text of every AI Act row claiming SDK
+  support (12-1, 12-2, 12-3, 13-3f, 14-1-3, 14-4a, 14-4d, 14-4e, 14-5,
+  15-4, 15-5, 19-26-6, and the unamended parts of 50-2 and 72-2) was
+  compared with Regulation (EU) 2024/1689 as published (OJ PDF, SHA-256
+  `bba63044…`, the same file as 2026-10-15, fetched with `curl -H 'Accept:
+  application/pdf' -H 'Accept-Language: eng'
+  http://publications.europa.eu/resource/celex/32024R1689`; EUR-Lex
+  answers 202): all consistent, Art. 14(5)'s two-person verification and
+  its law-enforcement exception included. What the rows say Regulation
+  (EU) 2026/1744 changed was not re-checked: that text is not fetchable
+  here.
 - **Built on this branch (2026-10-22):** kill-switch conformance,
   `conformance::halt::{check_store, check_handlers}` (feature
   `conformance`): 8 store checks and 9 end-to-end replica checks, tested
@@ -125,28 +187,30 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-21: TESTED 455, APPLICATION 32,
-  NOT_APPLICABLE 20, PARTIAL 3; 510 entries). The three PARTIAL entries,
-  each short of a MUST for a stated reason: §3.5.2, a stream lagging past
-  the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
+  authority on the counts (2026-10-23, after WP-A, WP-B and WP-C: TESTED
+  454, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 4; 510 entries, after
+  the writer fold of 2026-10-23). The four PARTIAL entries, each short for
+  a stated reason: §3.5.2, a stream lagging
+  past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
   itself on an empty `ListTasksResponse.tasks`; §12.4, agntcy-slim-rpc
-  carries no error details (maintainer: stays PARTIAL until it does). The
-  APPLICATION and NOT_APPLICABLE entries were reviewed against the code and
-  the specification text on 2026-10-20 (*Next*, item 1). The checker now
-  also reads `impl_evidence`: a cited file must exist, a cited line be
-  inside it, a named symbol appear in it.
-- **Ledger citations drift:** the checker verifies test names, not line
-  text, so any edit above a cited line moves its citation silently. After
-  editing a cited file, re-derive test lines by name and map
-  `impl_evidence` lines by their text in the version they came from
-  (2026-10-20: a three-way merge re-derived 2,341 that way; one, §5.1's
-  `grpc/dispatcher.rs:888`, had pointed past the end of a 444-line file
-  since `7deff577`).
-- **CI on `main` at `6c90d0b`:** every workflow green except CI, cancelled:
-  `Example surface coverage` ran out of its 20 minutes compiling `swarm`,
-  every earlier step green. Split into two jobs on this branch
-  (`example-surface-ops`).
+  carries no error details (maintainer: stays PARTIAL until it does);
+  §7.6.1,
+  a message to a task in AUTH_REQUIRED is refused while its executor still
+  runs (recommended: document that the executor returns, PARTIAL naming
+  the conflict between the section's two SHOULDs). The APPLICATION and
+  NOT_APPLICABLE entries were reviewed on 2026-10-20 (*Next*, item 1).
+- **Ledger citations:** since `6202a56` every Rust citation is
+  `path:line Symbol` at the symbol's definition line (non-Rust:
+  `path:line "fragment"`), and the checker verifies that the symbol is
+  defined at that line. After a code move, `check_spec_ledger.py
+  --fix-lines` re-points the citations it can; where a symbol is defined
+  twice in a file (`TryFrom` both ways) it cannot, and each must be
+  re-pointed by hand to the same impl it named before (2026-10-23: 23
+  after WP-B, each checked against the old file).
+- **CI on `main` at `4cadc2af`:** all fifteen push workflows green
+  (checked 2026-10-23). The scheduled OSV-Scanner runs failed on the older
+  head `6c90d0b`, before the merge; the merge's push run passed.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
 
@@ -165,23 +229,24 @@ only: when something here is done, delete it rather than annotating it.
    bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
    `spec_line` N is line N + 31 of the vendored file (the header ends at
    line 30, then one blank line).
-2. **Finish the tool-calling study.** It answers whether this SDK's loop
-   changes what a model does with tools, against the same model asked
-   directly: direct and SDK arms over four GGUFs, 30 seeds of each of two
-   prompts a cell, 16 cells. The runs are in
-   `scripts/tool_calling_study/runs/`, whose README gives each cell's
-   state and provenance; `docs/tool-calling-study.md` holds the method,
-   marked as a draft with no results. All 16 cells completed on
-   2026-10-22, every SDK cell with the one binary `01dce94e…`; 5 runs
-   recorded errors (listed in the runs README). In order:
-   1. Score with `score.py`, then audit every answer against the rubric
-      by reading it, recording each disagreement with the scorer.
-   2. Write the results into the doc with Wilson intervals, and remove its
-      draft notice.
-3. **OpenTelemetry, batch B:** telemetry initialised in every example,
-   `tck/sut`, the ITK agents and the CLI; streaming span lifetime; a span per
-   WebSocket frame; a client call-duration metric; store spans; SLIMRPC's
-   gRPC error classification. Started 2026-10-20.
+2. **The rest of the conformance list:** the four PARTIAL entries (§3.5.2,
+   §5.7; §7.6.1, line
+   227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
+   MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
+   CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
+3. **OpenTelemetry, still open:** `error.type` on a store span is the A2A
+   code or `unavailable`, not the database's SQLSTATE, which the
+   conventions prefer; carrying it would need the stores to keep it past
+   the `A2aError` conversion. Done on this branch: store spans and
+   `db.client.operation.duration`, the GenAI and task-store dashboard
+   panels, `server.address`
+   (from `Host`) and `network.peer.*` on server spans, a test that an
+   exported log record carries its span's trace and span ids
+   (`telemetry_export`), push `http.client.request.duration`, gRPC
+   conversion failures recorded as failures, the tool loop's `GenAI` metrics,
+   JSON-RPC client span attributes, the card-fetch and webhook-receiver
+   spans, delegation spawns kept in the parent's trace, and default
+   metrics that follow the global meter provider at each measurement.
 4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
    and the incremental gate across 20 (`mutants.yml`, measured from runs
    39193157308 and 39343090044). The three 2026-10-19 survivors were
@@ -206,10 +271,8 @@ only: when something here is done, delete it rather than annotating it.
   not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. CRA rows
   CRA-AI-I-2a, CRA-AI-II-2-4-8 and CRA-14 carry it as a gap. Filing is an
   upstream action, so it waits for the maintainer.
-- **`STABILITY.md` §1** still gives the account written at 0.13; its
-  version sentence now says so. Bring it up to 0.14 and 0.15 at release
-  prep.
-- **Compare-and-set for task writes (cross-replica).** The 2026-10-20 fix
+- **Compare-and-set for task writes (cross-replica).** *Decided 2026-10-24:
+  not for 0.15.0; 0.16 (see Decisions).* The 2026-10-20 fix
   makes a stale continuation save record the position of its read, so a
   subscriber replays the event it overwrote, but only until the continuing
   turn's first fold stores a position past it again; the stored task keeps
@@ -235,6 +298,34 @@ only: when something here is done, delete it rather than annotating it.
   public about it while it is open.
 - **The OpenSSF Best Practices badge** is not registered;
   `docs/openssf-best-practices.md` has the answers.
+- **§3.1.2, decided (2026-10-23):** the maintainer chose the spec's
+  reading that a follow-up to an existing task has no direct reply (§3.1.2
+  "no task tracking", §3.7 "Status Messages"): a turn that continues a task
+  folds every `Message`, its first included (`create::continues`,
+  `message_fold`), so the follow-up's stream and every subscriber's carry
+  the same status update; one answered with messages alone and no state is
+  re-parked where it waited (`TerminalTracking::repark_if_silent`; the
+  review found the task otherwise left `Submitted`, which the SDK's client
+  read as an incomplete stream and `Delegation` as `Lost`). Ledger 206 is
+  TESTED. Left by design: a client
+  that found a brand-new task's id and subscribed before its first-event
+  `Message` (a direct reply, as §3.1.2 allows) receives it bare. Also
+  decided in the fold and open to revisiting: a message written while the
+  task is parked (`input-required`, `auth-required`) replaces the stored
+  status message (the prompt, or §7.6.1's explanation) as a client applying
+  the update would; the size limit applies to the status update, about 150
+  bytes more than the bare message; the fold uses the state the executor
+  last wrote, so after a status the processor refused (task stored
+  `Failed`) a later message still streams in the refused state.
+- **SLIMRPC `otlp` is on by default** (2026-10-23). The two conflicts that
+  kept it opt-in are fixed: the server's OTLP/gRPC dials TLS through its own
+  rustls connector, so tonic's TLS is not linked for it (with it linked,
+  tonic refused SLIM's `https://` dial and `remote_node_tls` hung, re-measured
+  with a 300 s bound); and the binding's builders install SLIM's rustls
+  provider when the process has none (`install_crypto_provider`). The
+  SLIMRPC error-details draft (`docs/upstream/agntcy-slim-rpc-error-details.md`,
+  every citation re-read against agntcy-slim-rpc 3.4.6) is ready for the
+  maintainer to file.
 - **Publishing:** the SLIMRPC binding has never been published (0.7.0).
   `tck/sut` and `examples/mcp-bridge` are `publish = false`; CLI binaries
   wait on `vars.PUBLISH_CLI_BINARIES` (`packaging/README.md`).
@@ -252,6 +343,21 @@ only: when something here is done, delete it rather than annotating it.
 ## Open engineering, not committed
 
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
+
+- **Examples time out a CPU-served model at the client's 30 s default**
+  (found 2026-10-23, low, examples only). Every transport defaults to a
+  30 s request timeout, and the model-backed examples build their clients
+  with it (`examples/{rig-agent,genai-agent,agent-team,multi-lang-team}/
+  src/surface.rs` `client_for`, `examples/incident-response/src/agents.rs`
+  and `serving.rs`). With Qwen3-1.7B on four CPU cores and several runs
+  in flight, a model turn took up to 64 s (llama-server's own timings):
+  `rig-agent`'s first run lost SendMessage over WebSocket and the five
+  cells after it (exit 1; 44 of 44 on a re-run), and in 2 of 3
+  `incident-response` runs the runbook leg timed out, which the demo
+  prints inside the report and still exits 0. Proposed: one longer
+  timeout for these examples' clients, every binding included (gRPC's and
+  WebSocket's transports take their own). Not built: it touches five
+  examples, beyond this branch's scope without the maintainer's say.
 
 - **Cross-replica:** single-writer admission (pinned by a test in
   `tests/multi_replica.rs` that is ignored by default). A continuation's
@@ -320,24 +426,24 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
 ## Waivers and their removal tests
 
-The SLIMRPC binding's `deny.toml` ignores one entry since 2026-10-19: the
-yanked `mls-rs-crypto-awslc` 0.25.1, which its comment explains (0.25.0
-would bring back four rustls advisories). **Never run a blanket `cargo
-update` in the binding:** it cannot keep a yanked version, so it downgrades
-agntcy-slim-* (3.4.3 to 3.4.2), aws-lc-rs and rustls (0.23.46 to 0.23.43)
-back into those advisories. Update named packages with `cargo update -p`.
-On 2026-10-20 agntcy-slim-rpc 3.4.5 still could not be taken: every
-agntcy-slim-auth after 0.17.6 requires the yanked `^0.25.1`.
-The root `deny.toml` ignores nothing since 2026-10-20, when the
-examples moved to genai 0.7 and `paste` left the graph. The root
-`osv-scanner.toml` keeps RUSTSEC-2023-0071 (`rsa`, in `Cargo.lock` through
-`sqlx-mysql` but resolved by no feature; re-checked 2026-10-20).
+No waivers anywhere since 2026-10-23. The SLIMRPC binding's `deny.toml`
+ignored the yanked `mls-rs-crypto-awslc` 0.25.1 until agntcy-slim-mls 0.5.1
+accepted 0.26; a plain `cargo update` in the binding then took
+agntcy-slim-rpc 3.4.6 and kept rustls at 0.23.46 (its comment has the
+history). The root `osv-scanner.toml` dropped RUSTSEC-2023-0071 when sqlx
+0.9 removed `rsa` from every lockfile. Before updating the binding, still
+read `cargo deny check advisories` after the update, not before.
 
 ## Decisions the maintainer made
 
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
 
+- **2026-10-24:** multi-replica high availability is not a requirement for
+  0.15.0. It ships as a documented limitation (CHANGELOG "Known
+  Limitations", the book's horizontal-scaling page): the supported topology
+  is one replica, or several with session affinity per task. Compare-and-set
+  writes and cross-replica single-writer admission move to 0.16.
 - **2026-10-08:** commits are authored as Tom F. with sign-off; release tags
   are signed with the maintainer's own SSH or GPG key and CI verifies them;
   new distribution channels (the CLI, Homebrew, winget) are drafted in-repo
@@ -468,11 +574,18 @@ into this file: the commit that records it changes it.
   The `postgres` role's password is not always `postgres` in a fresh
   container (scram auth refused it on 2026-10-20): set it with
   `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`.
-- **llama.cpp** b11751 (`8466395`) is built at `/opt/llama/src/build/bin`;
-  the study's GGUFs are in `/opt/models` (hashes in the study). Use
-  `-c 8192` (the default context sized the KV cache to ~4.6 GB and the OOM
-  killer took the server), and send one request at a time to a server whose
-  results must replay.
+- **llama.cpp:** b11836 (`f5027fb`) at `/opt/llama/src/build/bin`, and
+  the study's b11751 (`8466395`) at `/opt/llama/old`; GGUFs in
+  `/opt/models` (hashes in the study). Use `-c 8192` (the default context
+  sized the KV cache to ~4.6 GB and the OOM killer took the server), and
+  send one request at a time to a server whose results must replay. A
+  replay is host-dependent: the same binary and seed gave different
+  answers on a 2.10 GHz and a 2.80 GHz host (`GGML_NATIVE`), which is
+  what the study's uptime gap turned out to be.
+- **A local OTLP collector breaks one test:**
+  `otel_pipeline_default_endpoint` expects its flush to the default
+  endpoint to fail, and fails whenever something listens on 4317. Stop the
+  `deploy/observability/` stack before running the server suite.
 - **No Docker daemon** in the cloud container, so `itk/docker-compose.yml`
   cannot be run here.
 - `pkill -f` and `pgrep -f` match their own shell's command line, which
@@ -505,15 +618,40 @@ into this file: the commit that records it changes it.
   mutation filter beside the soak binaries.
 - A test passing and `cargo semver-checks` passing do not show a serde
   change preserves behaviour; parse fixed inputs with both builds.
-- The ledger checker verifies test names, not line text: after code moves,
-  re-point `impl_evidence` citations from a diff and check each one's text.
+- After code moves, re-point ledger citations with `--fix-lines` and
+  check by hand every one it cannot place: the checker knows where a
+  symbol is defined, not which of two same-named impls a citation meant.
 - Count before writing a number into a document, and say what was counted.
+- A test that reads spans through a thread-local subscriber needs a test
+  binary of its own when other tests in its binary reach the same callsite
+  with none: `tracing` caches interest globally. Rebuilding the interest
+  cache was not enough (`tests/card_span_over_tls.rs`, 2026-10-23: 9 of 20
+  runs failed beside the other TLS tests, 20 of 20 passed alone).
+- Look at a dashboard before showing it to anyone. A short-lived process
+  exports each series once or twice, so `rate()` over it tapers to nothing,
+  and a process started without its `OTEL_*` environment exports nothing at
+  all; both read as an empty or dying panel. Feed a screenshot from a
+  long-lived process, confirm its series in Prometheus first
+  (`count by (job, instance)`), and wait a full window (2026-10-24: the
+  first capture had both faults, and a client legend that exposed the
+  WebSocket transport's missing `server.address`).
 - A `compile_fail` doctest needs a control that compiles.
 - A re-run after a fix must cover the binary that failed, not only the files
   edited.
 - An independent review before committing found two defects in R69 that the
   change's own tests and 23 hand mutants did not; budget for one on any
-  change to the stream or store contract.
+  change to the stream or store contract. It did again on 2026-10-23: a
+  per-reader §3.1.2 fold passed its tests and broke §3.5.2 on resume; the
+  writer fold that replaced it was reviewed the same way, and the review's
+  findings (a failed write still setting the fold's state, the agent span
+  ending at a mid-task message, the audit record losing the message id, a
+  revert leaving `history: []`) were fixed with a test each.
+- The workspace suite and the all-features server suite in one target
+  directory exceed this container's disk allowance; delete `target/debug`
+  between them (2026-10-23). Building with `CARGO_INCREMENTAL=0
+  CARGO_PROFILE_DEV_DEBUG=line-tables-only
+  CARGO_PROFILE_TEST_DEBUG=line-tables-only` keeps the server's ~180 test
+  binaries well under it; full debuginfo filled it at 14 GB of `deps`.
 - Run every clippy invocation CI runs, not only `--all-features`: a type
   used by an always-compiled store from a module gated on `sqlite` built
   with all features and nowhere else (2026-10-18).
@@ -562,6 +700,23 @@ into this file: the commit that records it changes it.
   long driver resumable and check that its server is ready before each
   chunk (a restart script that did not filled two cells with failed runs
   in seconds, 2026-10-22).
+
+- A subagent's "fails at HEAD too" is a claim about the environment as
+  much as the code: two agents reported `otel_pipeline_default_endpoint`
+  as pre-existing; it failed because a collector of mine held port 4317
+  (2026-10-23).
+- An agent's report written as an untracked file in its worktree is
+  deleted with the worktree: copy what is not yet applied before
+  `git worktree remove --force`.
+- A defect-injection script that restores a file from a backup restores
+  its old modification time too, older than the build, so Cargo reuses the
+  binary built with the defect: the next "green" or "red" run is about the
+  defect, not the code. Touch every restored file (`os.utime`), or edit the
+  crate, before trusting a run after one (2026-10-23).
+- A stricter client breaks the repository's own fixtures outside the
+  crate it changed: after WP-B, the CLI's and the MCP bridge's tests
+  served cards without skills. Run the whole workspace, not the crates a
+  package touched, before merging it.
 
 ## History
 

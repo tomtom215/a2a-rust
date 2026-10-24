@@ -78,7 +78,7 @@ impl TaskStore for StaleReads {
             let mut task = self.inner.get(id).await?;
             // A compare-exchange loop rather than `fetch_update`, which is
             // deprecated on nightly in favour of `try_update` — a name the
-            // crate's MSRV (1.88) does not have.
+            // crate's MSRV (1.94) does not have stable.
             let mut n = self.stale.load(Ordering::SeqCst);
             let stale = loop {
                 let next = match n {

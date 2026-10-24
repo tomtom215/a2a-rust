@@ -18,7 +18,10 @@
 #   outside the root workspace with its own Cargo.lock, because
 #   `agntcy-slim-rpc` pulls 379 transitive dependencies including a native C
 #   crypto build. Adding it to `a2a-book-tests` would drag all of that into
-#   every CI test run to compile three snippets. Those snippets are kept in
+#   every CI test run to compile four snippets. Those snippets are kept in
 #   step with the crate's own README and its test suite, which do compile.
-# total: 3
-3	book/src/bindings/slimrpc.md
+#   The fourth (2026-10-23), declaring SLIM's authentication on a card, is
+#   the calls `server/peer/tests.rs`
+#   `the_handler_builds_only_behind_a_card_that_declares_slim` compiles.
+# total: 4
+4	book/src/bindings/slimrpc.md

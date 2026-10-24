@@ -28,7 +28,7 @@ use super::store::LegalHold;
 
 /// Six months, rounded up: the longest six consecutive calendar months
 /// (July–December) are 184 days.
-pub const SIX_MONTHS: Duration = Duration::from_secs(184 * 24 * 60 * 60);
+pub const SIX_MONTHS: Duration = Duration::from_hours(184 * 24);
 
 /// How long records must be kept before [`AuditLog::purge`] may delete them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

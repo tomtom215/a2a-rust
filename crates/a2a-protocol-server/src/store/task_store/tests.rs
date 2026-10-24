@@ -138,7 +138,7 @@ fn task_store_config_default_values() {
     // client's retry window and let a send execute twice.
     assert_eq!(
         super::DEFAULT_IDEMPOTENCY_KEY_TTL,
-        Duration::from_secs(86_400),
+        Duration::from_hours(24),
         "one day, matching the SQL stores' DEFAULT_IDEMPOTENCY_KEY_MAX_AGE"
     );
     assert_eq!(

@@ -361,7 +361,7 @@ mod tests {
         ];
         for grant in cases {
             let mut m = Message::user_text("m", "hi");
-            m.metadata = Some(serde_json::json!({ BUDGET_METADATA_KEY: grant.clone() }));
+            m.metadata = Some(serde_json::json!({ BUDGET_METADATA_KEY: grant }));
             let err = Budget::read(&m).unwrap_err();
             assert_eq!(err.code, ErrorCode::InvalidParams, "{grant}");
         }

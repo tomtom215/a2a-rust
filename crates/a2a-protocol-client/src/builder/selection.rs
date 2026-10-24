@@ -10,8 +10,10 @@
 //! 1. **Protocol version first.** Only interfaces whose `protocolVersion`
 //!    has the major this SDK speaks ([`SUPPORTED_PROTOCOL_MAJOR`], from
 //!    [`A2A_VERSION`](a2a_protocol_types::A2A_VERSION) `"1.0"`) are
-//!    candidates. An empty version counts as compatible: the card did not
-//!    say. A leading `v` is allowed (`"v1.0"`), as a2a-go's
+//!    candidates. An empty version does not: `protocolVersion` is REQUIRED
+//!    (a2a.proto), so an interface without one is not one this SDK can
+//!    know it speaks (until 2026-10-23 it counted as compatible, "the card
+//!    did not say"). A leading `v` is allowed (`"v1.0"`), as a2a-go's
 //!    `makeTransportKey` allows it. An interface for another major speaks
 //!    another protocol, so connecting to it only moves the failure to the
 //!    first call — and a2a-go agents that also serve v0.3 list that
@@ -48,8 +50,9 @@ pub(super) fn protocol_major(version: &str) -> Option<u32> {
 }
 
 /// Whether an interface advertising `version` speaks this SDK's protocol.
+/// An empty version has no major, so it does not.
 pub(super) fn is_compatible(version: &str) -> bool {
-    version.is_empty() || protocol_major(version) == Some(SUPPORTED_PROTOCOL_MAJOR)
+    protocol_major(version) == Some(SUPPORTED_PROTOCOL_MAJOR)
 }
 
 /// The canonical name of a binding this SDK implements, matched ignoring
@@ -128,10 +131,12 @@ mod tests {
         assert_eq!(protocol_major(""), None);
     }
 
+    /// a2a.proto marks `protocolVersion` REQUIRED: an interface without
+    /// one is not compatible (until 2026-10-23 this pinned the opposite).
     #[test]
-    fn compatibility_is_major_one_or_unstated() {
+    fn compatibility_is_major_one_and_never_unstated() {
         assert!(is_compatible("1.0"));
-        assert!(is_compatible(""));
+        assert!(!is_compatible(""));
         assert!(!is_compatible("0.3"));
         assert!(!is_compatible("2.0"));
         assert!(!is_compatible("11.0"), "11 is not 1");

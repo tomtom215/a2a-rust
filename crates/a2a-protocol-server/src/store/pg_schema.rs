@@ -74,11 +74,11 @@ pub const ADD_APPLIED_SEQ_TO_TENANT_TASKS: &str = "DO $$ BEGIN \
 ///
 /// Returns the first database error; the transaction is rolled back and
 /// nothing it created is kept.
-pub async fn apply(pool: &PgPool, statements: &[&str]) -> Result<(), sqlx::Error> {
+pub async fn apply(pool: &PgPool, statements: &[&'static str]) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
     lock(&mut tx).await?;
     for statement in statements {
-        sqlx::query(statement).execute(&mut *tx).await?;
+        sqlx::query(*statement).execute(&mut *tx).await?;
     }
     tx.commit().await
 }

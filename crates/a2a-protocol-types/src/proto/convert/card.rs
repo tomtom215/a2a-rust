@@ -8,7 +8,9 @@
 
 use std::collections::HashMap;
 
-use super::{ConvertError, metadata_from_proto, metadata_to_proto, none_if_empty, none_if_false};
+use super::{
+    ConvertError, metadata_from_proto, metadata_to_proto, none_if_empty, none_if_false, required,
+};
 use crate::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};
 use crate::extensions::{AgentCardSignature, AgentExtension};
 use crate::proto as pb;
@@ -26,9 +28,9 @@ impl TryFrom<pb::AgentInterface> for AgentInterface {
 
     fn try_from(value: pb::AgentInterface) -> Result<Self, Self::Error> {
         Ok(Self {
-            url: value.url,
-            protocol_binding: value.protocol_binding,
-            protocol_version: value.protocol_version,
+            url: required(value.url, "agentInterface.url")?,
+            protocol_binding: required(value.protocol_binding, "agentInterface.protocolBinding")?,
+            protocol_version: required(value.protocol_version, "agentInterface.protocolVersion")?,
             tenant: none_if_empty(value.tenant),
         })
     }
@@ -182,8 +184,8 @@ impl TryFrom<pb::AgentCardSignature> for AgentCardSignature {
 
     fn try_from(value: pb::AgentCardSignature) -> Result<Self, Self::Error> {
         Ok(Self {
-            protected: value.protected,
-            signature: value.signature,
+            protected: required(value.protected, "signature.protected")?,
+            signature: required(value.signature, "signature.signature")?,
             header: metadata_from_proto(value.header, "signature.header")?,
         })
     }
@@ -272,11 +274,11 @@ impl TryFrom<pb::SecurityScheme> for SecurityScheme {
         {
             Scheme::ApiKeySecurityScheme(s) => Ok(Self::ApiKey(ApiKeySecurityScheme {
                 location: api_key_location_from_str(&s.location)?,
-                name: s.name,
+                name: required(s.name, "apiKey.name")?,
                 description: none_if_empty(s.description),
             })),
             Scheme::HttpAuthSecurityScheme(s) => Ok(Self::Http(HttpAuthSecurityScheme {
-                scheme: s.scheme,
+                scheme: required(s.scheme, "httpAuth.scheme")?,
                 bearer_format: none_if_empty(s.bearer_format),
                 description: none_if_empty(s.description),
             })),
@@ -293,7 +295,10 @@ impl TryFrom<pb::SecurityScheme> for SecurityScheme {
             }
             Scheme::OpenIdConnectSecurityScheme(s) => {
                 Ok(Self::OpenIdConnect(OpenIdConnectSecurityScheme {
-                    open_id_connect_url: s.open_id_connect_url,
+                    open_id_connect_url: required(
+                        s.open_id_connect_url,
+                        "openIdConnect.openIdConnectUrl",
+                    )?,
                     description: none_if_empty(s.description),
                 }))
             }
@@ -354,20 +359,26 @@ impl TryFrom<pb::OAuthFlows> for OAuthFlows {
             .ok_or_else(|| ConvertError::missing("oauth2.flows.flow"))?
         {
             Flow::AuthorizationCode(f) => Ok(Self::AuthorizationCode(AuthorizationCodeFlow {
-                authorization_url: f.authorization_url,
-                token_url: f.token_url,
+                authorization_url: required(
+                    f.authorization_url,
+                    "authorizationCode.authorizationUrl",
+                )?,
+                token_url: required(f.token_url, "authorizationCode.tokenUrl")?,
                 refresh_url: none_if_empty(f.refresh_url),
                 scopes: f.scopes.into_iter().collect(),
                 pkce_required: none_if_false(f.pkce_required),
             })),
             Flow::ClientCredentials(f) => Ok(Self::ClientCredentials(ClientCredentialsFlow {
-                token_url: f.token_url,
+                token_url: required(f.token_url, "clientCredentials.tokenUrl")?,
                 refresh_url: none_if_empty(f.refresh_url),
                 scopes: f.scopes.into_iter().collect(),
             })),
             Flow::DeviceCode(f) => Ok(Self::DeviceCode(DeviceCodeFlow {
-                device_authorization_url: f.device_authorization_url,
-                token_url: f.token_url,
+                device_authorization_url: required(
+                    f.device_authorization_url,
+                    "deviceCode.deviceAuthorizationUrl",
+                )?,
+                token_url: required(f.token_url, "deviceCode.tokenUrl")?,
                 refresh_url: none_if_empty(f.refresh_url),
                 scopes: f.scopes.into_iter().collect(),
             })),
@@ -437,11 +448,12 @@ impl TryFrom<pb::AgentCard> for AgentCard {
         // convenience field; the domain type derives it from the first
         // supported interface, matching its documented semantics.
         let url = value.supported_interfaces.first().map(|i| i.url.clone());
+        provider_and_skills_present(&value)?;
         Ok(Self {
-            name: value.name,
+            name: required(value.name, "agentCard.name")?,
             url,
-            description: value.description,
-            version: value.version,
+            description: required(value.description, "agentCard.description")?,
+            version: required(value.version, "agentCard.version")?,
             supported_interfaces: value
                 .supported_interfaces
                 .into_iter()
@@ -450,13 +462,12 @@ impl TryFrom<pb::AgentCard> for AgentCard {
             default_input_modes: value.default_input_modes,
             default_output_modes: value.default_output_modes,
             skills: value.skills.into_iter().map(Into::into).collect(),
-            // The domain type has no "absent capabilities" state; a missing
-            // message maps to the empty capability set.
+            // REQUIRED, and JSON refuses a card without the key; until
+            // 2026-10-23 an absent message was read as the empty set here.
             capabilities: value
                 .capabilities
-                .map(TryInto::try_into)
-                .transpose()?
-                .unwrap_or_default(),
+                .ok_or_else(|| ConvertError::missing("agentCard.capabilities"))?
+                .try_into()?,
             provider: value.provider.map(Into::into),
             // `optional string`: an explicitly set "" is kept (§5.7).
             icon_url: value.icon_url,
@@ -493,6 +504,30 @@ impl TryFrom<pb::AgentCard> for AgentCard {
                 )
             },
         })
+    }
+}
+
+/// `AgentProvider` and `AgentSkill` convert infallibly (`From`), so their
+/// REQUIRED strings are checked on the card.
+fn provider_and_skills_present(card: &pb::AgentCard) -> Result<(), ConvertError> {
+    if let Some(provider) = &card.provider {
+        required_ref(&provider.url, "agentProvider.url")?;
+        required_ref(&provider.organization, "agentProvider.organization")?;
+    }
+    for skill in &card.skills {
+        required_ref(&skill.id, "agentSkill.id")?;
+        required_ref(&skill.name, "agentSkill.name")?;
+        required_ref(&skill.description, "agentSkill.description")?;
+    }
+    Ok(())
+}
+
+/// [`required`] for a field that is not moved out.
+fn required_ref(s: &str, field: &'static str) -> Result<(), ConvertError> {
+    if s.is_empty() {
+        Err(ConvertError::missing(field))
+    } else {
+        Ok(())
     }
 }
 
@@ -642,13 +677,20 @@ mod tests {
         assert_eq!(back.url.as_deref(), Some("https://api.example.com/a2a/v1"));
     }
 
+    /// `AgentCard.capabilities` is REQUIRED, and a JSON card without the
+    /// key does not parse; until 2026-10-23 this test pinned the opposite,
+    /// an absent message read as the empty capability set.
     #[test]
-    fn agent_card_missing_capabilities_defaults() {
+    fn agent_card_missing_capabilities_is_refused() {
         let card = sample_card();
-        let mut proto: pb::AgentCard = card.try_into().unwrap();
+        let mut proto: pb::AgentCard = card.clone().try_into().unwrap();
         proto.capabilities = None;
-        let back: AgentCard = proto.try_into().unwrap();
-        assert_eq!(back.capabilities.streaming, None);
+        let err = AgentCard::try_from(proto).unwrap_err();
+        assert_eq!(err.field, "agentCard.capabilities");
+        assert_eq!(err.reason, "missing required field");
+        let mut json = serde_json::to_value(&card).unwrap();
+        json.as_object_mut().unwrap().remove("capabilities");
+        assert!(serde_json::from_value::<AgentCard>(json).is_err());
     }
 
     #[test]

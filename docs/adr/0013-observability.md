@@ -42,6 +42,12 @@ The semantic conventions this ADR commits to were read from the
 - `rpc.server.call.duration`: histogram, unit `s`, stability
   release-candidate, advisory buckets
   `[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]`.
+  *Changed 2026-10-24:* at `55c98cf` the conventions advise
+  `[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100]`
+  for both `rpc.server.call.duration` and `rpc.client.call.duration`, and
+  both histograms use it from 0.15. The old set's top bucket was 10 s, so
+  a dashboard's p95 of agent calls that wait on a model read 10 s whatever
+  they took.
 - RPC server span: kind `SERVER`, named `{rpc.method}`; `rpc.system.name`
   required; `rpc.method` the fully-qualified logical method, or `_OTHER`
   for one the server does not recognise; `error.type` required on failure.
@@ -320,3 +326,60 @@ still in `a2a-protocol-sdk` only. Read against
   second), not a span. Wrapping each of the stores' 232 statements, in 27
   files, several recorded over the 500-line limit, was not done; the book's
   "What is not measured" says what an operator gets instead.
+
+## 2026-10-23: export where configured, one instance id per process
+
+Found by pointing the repository's own binaries at a live Prometheus and an
+OpenTelemetry Collector (`deploy/observability/`), and by an audit of every
+binary's telemetry setup.
+
+- **Every process reports a `service.instance.id`.** `Telemetry` set none
+  unless `OTEL_RESOURCE_ATTRIBUTES` named one, so replicas of one service
+  exported identical resources; Prometheus maps the attribute to `instance`,
+  and CLI runs without one wrote series with no `instance` at all. It now
+  adds a random UUID when the environment names none, as the conventions
+  recommend and as the Collector does for itself.
+- **`with_export_where_configured()`** builds a signal only when an endpoint
+  names where it goes: `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
+  `OTEL_EXPORTER_OTLP_{SIGNAL}_ENDPOINT`, or code. The seventeen binaries
+  that had decided this themselves read only the general variable, so a
+  metrics-only endpoint exported nothing; each now calls this instead.
+  `install_subscriber()` replaces the registry-and-layer block sixteen of
+  them repeated, and lets `hello-agent` keep its one dependency (the SDK
+  prelude exports `Telemetry` under the default `otlp` feature).
+- **Binaries without telemetry, by decision:** the in-repo TCK runner
+  (`tck/src/main.rs`) depends on no SDK crate by design — a conformance kit
+  that imported the implementation would share its misreadings — so it has
+  no `Telemetry` to build; the MCP tool server
+  (`examples/mcp-agent/src/bin/tool_server.rs`) speaks MCP over stdio, not
+  A2A, and calls no SDK code. `hello-agent` and `tool-loop-agent` now build
+  telemetry; the SLIMRPC binary and example are the binding's own change.
+
+## 2026-10-23: the tool loop's metrics
+
+The audit of every signal against the current conventions found the tool
+loop recording spans and no metrics. It now records the `GenAI` metrics
+under the names `semantic-conventions-genai` gives them at `9ffc7e0`:
+`gen_ai.client.inference.duration` and the two token families for a turn
+(not `gen_ai.client.operation.duration`, which those conventions now say
+"SHOULD NOT be reported for inference operations"),
+`gen_ai.execute_tool.duration` for a call, and `gen_ai.invoke_agent.*` for a
+run. Decided with it:
+
+- **Instruments are built at each measurement**, from the meter the loop was
+  given or the global provider's as it is then. A model turn takes hundreds
+  of milliseconds; building three or four instruments from the SDK's
+  registry is not visible beside that, and it is what lets a provider
+  installed after the loop was built still receive them, which caching an
+  instrument at construction would not.
+- **Abandoned work is recorded, as `cancelled`.** A turn or call ends three
+  ways: answered, failed, or dropped unfinished. The span and the
+  measurements are recorded on drop, so the third is not lost, and it is
+  marked rather than left looking successful.
+- **Token modality is `text`.** A `ChatRequest` carries text only, so every
+  token counted is a text token; were images added, this would have to
+  become what the provider reports, or `unknown`.
+- **The run's metrics are the loop's, not the executor's.** The executor's
+  `invoke_agent` span covers any executor; only the loop knows how many
+  turns and calls a run made, and a loop run outside an executor is still
+  an agent invocation.

@@ -38,6 +38,16 @@ without being another copy of it.
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+#         .with_security_schemes(std::collections::HashMap::from([(
+#             "bearer".to_owned(),
+#             a2a_protocol_types::security::SecurityScheme::Http(
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
+#                     scheme: "Bearer".to_owned(),
+#                     description: None,
+#                     bearer_format: None,
+#                 },
+#             ),
+#         )]))
 # }
 use std::sync::Arc;
 use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};
@@ -76,7 +86,12 @@ a label (`with_labelled_tokens`, `with_labelled_keys`), or use JWT. The
 subject is the scheme and the name together: `bearer:<label>`,
 `api-key:<label>`, or `jwt:<issuer>:<sub>` (`auth::caller_id` builds each). The recording interceptor is placed first in the
 chain whatever order you add interceptors in, so refused calls are recorded
-too.
+too. A refused call's `outcome.error` says why, with the label
+`a2a.server.errors` uses: `unauthenticated` for a missing or invalid
+credential, `permission_denied` for a valid one that does not permit the
+operation (spec §3.3.2), and otherwise the A2A error's own label
+(`task_not_found`, `invalid_params`, `version_not_supported`, …). Before
+0.15.0 every refusal an interceptor made was recorded as `protocol`.
 
 Stores: `InMemoryAuditStore` (tests, or a deployment that ships records
 elsewhere), `SqliteAuditStore` with `sqlite`, `PostgresAuditStore` with
@@ -105,6 +120,16 @@ missing:
 #         .with_description("An example agent")
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+#         .with_security_schemes(std::collections::HashMap::from([(
+#             "bearer".to_owned(),
+#             a2a_protocol_types::security::SecurityScheme::Http(
+#                 a2a_protocol_types::security::HttpAuthSecurityScheme {
+#                     scheme: "Bearer".to_owned(),
+#                     description: None,
+#                     bearer_format: None,
+#                 },
+#             ),
+#         )]))
 # }
 use std::sync::Arc;
 use a2a_protocol_server::audit::{AuditLog, SqliteAuditStore};

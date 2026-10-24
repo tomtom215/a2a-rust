@@ -241,6 +241,10 @@ impl TaskStore for EncryptedTaskStore {
         self.inner.supports_idempotency()
     }
 
+    fn database(&self) -> Option<crate::store::StoreDatabase> {
+        self.inner.database()
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,

@@ -211,6 +211,52 @@ fn plain_card(url: &str, name: &str) -> AgentCard {
     card
 }
 
+/// `card` declaring `scheme` under `name`, and requiring it. Spec §13.3:
+/// requests are authenticated "using one of the schemes declared in the
+/// public `AgentCard`", so the handler's build refuses an authenticating
+/// interceptor whose scheme the card does not declare.
+fn secured(
+    mut card: AgentCard,
+    name: &str,
+    scheme: a2a_protocol_types::security::SecurityScheme,
+) -> AgentCard {
+    use a2a_protocol_types::security::{SecurityRequirement, StringList};
+    card.security_schemes = Some(std::iter::once((name.to_owned(), scheme)).collect());
+    card.security_requirements = Some(vec![SecurityRequirement {
+        schemes: std::iter::once((name.to_owned(), StringList { list: vec![] })).collect(),
+    }]);
+    card
+}
+
+/// [`plain_card`], requiring a bearer token (`BearerTokenAuthInterceptor`,
+/// `JwtAuthInterceptor`).
+fn bearer_card(url: &str, name: &str) -> AgentCard {
+    use a2a_protocol_types::security::{HttpAuthSecurityScheme, SecurityScheme};
+    secured(
+        plain_card(url, name),
+        "bearer",
+        SecurityScheme::Http(HttpAuthSecurityScheme {
+            scheme: "Bearer".to_owned(),
+            description: None,
+            bearer_format: None,
+        }),
+    )
+}
+
+/// [`plain_card`], requiring an API key in `header` (`ApiKeyAuthInterceptor`).
+fn api_key_card(url: &str, name: &str, header: &str) -> AgentCard {
+    use a2a_protocol_types::security::{ApiKeyLocation, ApiKeySecurityScheme, SecurityScheme};
+    secured(
+        plain_card(url, name),
+        "apiKey",
+        SecurityScheme::ApiKey(ApiKeySecurityScheme {
+            location: ApiKeyLocation::Header,
+            name: header.to_owned(),
+            description: None,
+        }),
+    )
+}
+
 /// Injects a fixed header on every outbound call.
 ///
 /// This is the client half of header-derived multi-tenancy: the SDK's

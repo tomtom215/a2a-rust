@@ -35,6 +35,12 @@ use crate::streaming::event_queue::{
 pub(super) struct Run {
     outcome: RunOutcome,
     events: Vec<StreamResponse>,
+    /// Every state the executor's status updates moved the task to, in
+    /// order. A status update the queue made of a mid-task `Message` (spec
+    /// §3.1.2) is in `events` but not here: it carries the message in the
+    /// state the task is already in, and the handler checks no transition
+    /// for it.
+    statuses: Vec<TaskState>,
     /// What the executor wrote and the queue refused, such as an artifact
     /// with no id. The queue checks REQUIRED fields itself since
     /// 2026-10-14, so a check that read `events` alone saw nothing wrong.
@@ -67,17 +73,6 @@ pub(super) enum RunOutcome {
 /// waits, rather than twice it.
 pub(super) const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Every emitted status, in order.
-pub(super) fn states(events: &[StreamResponse]) -> Vec<TaskState> {
-    events
-        .iter()
-        .filter_map(|e| match e {
-            StreamResponse::StatusUpdate(u) => Some(u.status.state),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Reads the queue until it closes, reporting whether anything was dropped.
 ///
 /// Drained *concurrently* with the executor rather than after it. The queue's
@@ -89,17 +84,40 @@ pub(super) fn states(events: &[StreamResponse]) -> Vec<TaskState> {
 /// Reads the raw channel, not a subscriber's reader: a reader closes at the
 /// terminal state (§3.1.2), and `nothing_after_terminal` has to see what an
 /// executor writes after it.
-async fn drain(mut rx: tokio::sync::broadcast::Receiver<Shared>) -> (Vec<StreamResponse>, bool) {
-    let mut events = Vec::new();
+async fn drain(mut rx: tokio::sync::broadcast::Receiver<Shared>) -> Drained {
+    let mut drained = Drained::default();
     loop {
         match rx.recv().await {
             Ok(shared) => match unshare(shared) {
-                Ok(event) => events.push(event.event),
-                Err(_) => return (events, true),
+                Ok(event) => {
+                    if let StreamResponse::StatusUpdate(u) = &event.event
+                        && !event.folded_message
+                    {
+                        drained.statuses.push(u.status.state);
+                    }
+                    drained.events.push(event.event);
+                }
+                Err(_) => return drained.truncated(),
             },
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => return (events, false),
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => return (events, true),
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return drained,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => return drained.truncated(),
         }
+    }
+}
+
+/// What [`drain`] read: the events, the states among them (see
+/// [`Run::statuses`]), and whether the read stopped short.
+#[derive(Default)]
+struct Drained {
+    events: Vec<StreamResponse>,
+    statuses: Vec<TaskState>,
+    truncated: bool,
+}
+
+impl Drained {
+    const fn truncated(mut self) -> Self {
+        self.truncated = true;
+        self
     }
 }
 
@@ -191,6 +209,9 @@ impl Run {
         cancel_mid_run: bool,
     ) -> Self {
         let (writer, _reader) = new_in_memory_queue();
+        // As the send path binds it: a turn begins `Submitted`, the state a
+        // mid-task `Message` is carried in before any status (§3.1.2).
+        writer.bind_state(TaskState::Submitted, false);
         let rx = writer.raw_subscribe();
         let writer = Arc::new(writer);
         let exec = Arc::clone(executor);
@@ -231,11 +252,15 @@ impl Run {
             }
         };
         drop(writer);
-        let (events, truncated) = match tokio::time::timeout_at(deadline, drainer).await {
+        let Drained {
+            events,
+            statuses,
+            truncated,
+        } = match tokio::time::timeout_at(deadline, drainer).await {
             Ok(Ok(collected)) => collected,
             // The drain could not finish. Reporting the events collected so
             // far as complete would grade a hole, so say it is incomplete.
-            _ => (Vec::new(), true),
+            _ => Drained::default().truncated(),
         };
         let refused = std::mem::take(
             &mut *refused
@@ -245,6 +270,7 @@ impl Run {
         Self {
             outcome,
             events,
+            statuses,
             refused,
             truncated,
         }
@@ -312,9 +338,9 @@ pub(super) async fn cancel_succeeds(
         );
     };
     drop(writer);
-    let (events, _truncated) = match tokio::time::timeout_at(deadline, drainer).await {
-        Ok(Ok(collected)) => collected,
-        _ => (Vec::new(), true),
+    let statuses = match tokio::time::timeout_at(deadline, drainer).await {
+        Ok(Ok(collected)) => collected.statuses,
+        _ => Vec::new(),
     };
 
     match joined {
@@ -329,7 +355,7 @@ pub(super) async fn cancel_succeeds(
         }
         Ok(Err(e)) => CheckResult::fail(NAME, format!("cancel returned Err({e})")),
         Ok(Ok(())) => {
-            if states(&events).iter().any(|s| s.is_terminal()) {
+            if statuses.iter().any(|s| s.is_terminal()) {
                 CheckResult::pass(NAME, "emitted a terminal status")
             } else {
                 CheckResult::pass(

@@ -69,6 +69,7 @@
     - [Langfuse](./deployment/langfuse.md)
 - [Audit Trail](./deployment/audit.md)
 - [Human Oversight](./deployment/oversight.md)
+- [Is Your Agent High-Risk?](./deployment/ai-act-classification.md)
 - [Provenance and Signatures](./deployment/provenance.md)
 - [Troubleshooting](./deployment/troubleshooting.md)
 - [Running More Than One Replica](./deployment/horizontal-scaling.md)

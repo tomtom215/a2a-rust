@@ -1,5 +1,5 @@
 module github.com/tomtom215/a2a-rust/itk/agents/go-agent
 
-go 1.26.9
+go 1.26.10
 
 require github.com/google/uuid v1.6.0

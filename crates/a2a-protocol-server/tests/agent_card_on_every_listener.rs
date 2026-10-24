@@ -160,3 +160,80 @@ async fn a_card_request_sent_in_pieces_is_still_the_card() {
     assert!(text.starts_with("HTTP/1.1 200"), "{text}");
     assert_is_card(text.split_once("\r\n\r\n").map_or("", |(_, b)| b));
 }
+
+/// The value of response header `name` in `response`, case-insensitively.
+fn header(response: &str, name: &str) -> Option<String> {
+    response
+        .split("\r\n\r\n")
+        .next()?
+        .lines()
+        .skip(1)
+        .find_map(|line| {
+            let (k, v) = line.split_once(':')?;
+            k.trim()
+                .eq_ignore_ascii_case(name)
+                .then(|| v.trim().to_owned())
+        })
+}
+
+/// The whole response to a card request on a fresh connection.
+async fn card_response(addr: std::net::SocketAddr) -> String {
+    let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+    s.write_all(
+        b"GET /.well-known/agent-card.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+    )
+    .await
+    .unwrap();
+    let mut out = Vec::new();
+    tokio::time::timeout(std::time::Duration::from_secs(5), s.read_to_end(&mut out))
+        .await
+        .expect("answered and closed")
+        .unwrap();
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Spec §8.6.1: the card SHOULD be served with `Cache-Control` and a
+/// `max-age` "appropriate for the agent's expected update frequency", and
+/// with an `ETag`. The WebSocket and gRPC listeners send both, with the
+/// HTTP dispatchers' default, and `with_agent_card_max_age` sets it. Until
+/// 2026-10-23 both listeners sent 3600 with no way to change it.
+#[tokio::test]
+async fn the_websocket_and_grpc_listeners_send_a_configurable_cache_control() {
+    let ws = |max_age: Option<u32>| {
+        let d = WebSocketDispatcher::new(handler(true));
+        let d = match max_age {
+            Some(s) => d.with_agent_card_max_age(s),
+            None => d,
+        };
+        async move { Arc::new(d).serve_with_addr("127.0.0.1:0").await.unwrap() }
+    };
+    let grpc = |max_age: Option<u32>| {
+        let d = GrpcDispatcher::new(handler(true), GrpcConfig::default());
+        let d = match max_age {
+            Some(s) => d.with_agent_card_max_age(s),
+            None => d,
+        };
+        async move { d.serve_with_addr("127.0.0.1:0").await.unwrap() }
+    };
+    for (listener, default, set) in [
+        ("websocket", ws(None).await, ws(Some(60)).await),
+        ("grpc", grpc(None).await, grpc(Some(60)).await),
+    ] {
+        let response = card_response(default).await;
+        assert_eq!(
+            header(&response, "cache-control").as_deref(),
+            Some("public, max-age=3600"),
+            "{listener}: {response}"
+        );
+        assert!(
+            header(&response, "etag").is_some_and(|e| !e.is_empty()),
+            "{listener}: {response}"
+        );
+        let response = card_response(set).await;
+        assert_eq!(
+            header(&response, "cache-control").as_deref(),
+            Some("public, max-age=60"),
+            "{listener}: {response}"
+        );
+    }
+}

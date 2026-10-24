@@ -12,12 +12,15 @@
 //! canonical protobuf request, calling the matching `RequestHandler::on_*`, and
 //! encoding the response.
 
+use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use a2a_protocol_server::streaming::EventQueueReader as _;
 use a2a_protocol_server::{
-    BindingSpan, CustomBinding, RequestHandler, SendMessageResult, StreamEnd, StreamOutcome,
+    BindingSpan, CustomBinding, InMemoryQueueReader, RequestHandler, SendMessageResult,
+    ServerError, ServerResult, StreamEnd, StreamOutcome,
 };
 use a2a_protocol_types::proto as pb;
 use futures::StreamExt;
@@ -96,27 +99,28 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let result =
-                    BindingSpan::open(&h.handler, SLIMRPC, method::SEND_MESSAGE, Some(&headers))
-                        .run(h.handler.on_send_message(params, false, Some(&headers)))
-                        .await
-                        .map_err(|e| server_error_to_rpc_error(&e))?;
-
-                // Blocking sends never return a stream; `SendMessageResult` is
-                // shared with the streaming entry point, so the stream arm is
-                // unreachable rather than merely unexpected.
-                let response = match result {
-                    SendMessageResult::Response(r) => r,
-                    SendMessageResult::Stream(_) => {
-                        return Err(RpcError::internal(
-                            "InternalError: blocking send produced a stream",
-                        ));
+                let send = async {
+                    // Blocking sends never return a stream; `SendMessageResult`
+                    // is shared with the streaming entry point, so the stream
+                    // arm is unreachable rather than merely unexpected.
+                    match h
+                        .handler
+                        .on_send_message(params, false, Some(&headers))
+                        .await?
+                    {
+                        SendMessageResult::Response(r) => Ok(r),
+                        SendMessageResult::Stream(_) => Err(ServerError::Internal(
+                            "blocking send produced a stream".into(),
+                        )),
                     }
                 };
-                let proto: pb::SendMessageResponse = response
-                    .try_into()
-                    .map_err(|e| RpcError::internal(format!("InternalError: {e}")))?;
-                Ok(Pb(proto))
+                unary::<_, pb::SendMessageResponse>(
+                    &h.handler,
+                    method::SEND_MESSAGE,
+                    &headers,
+                    send,
+                )
+                .await
             }
         },
     );
@@ -134,6 +138,21 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
+                // A streaming send that produced a single response still has
+                // to reach the client as a stream, so it becomes a one-event
+                // one, converted inside the call so a failure is its outcome.
+                let send = async {
+                    match h
+                        .handler
+                        .on_send_message(params, true, Some(&headers))
+                        .await?
+                    {
+                        SendMessageResult::Stream(reader) => Ok(Answer::Stream(reader)),
+                        SendMessageResult::Response(response) => {
+                            to_proto(response).map(Answer::One)
+                        }
+                    }
+                };
                 // A stream claims the call, which then ends with it.
                 let (result, end) = BindingSpan::open(
                     &h.handler,
@@ -141,27 +160,15 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     method::SEND_STREAMING_MESSAGE,
                     Some(&headers),
                 )
-                .run_with(
-                    h.handler.on_send_message(params, true, Some(&headers)),
-                    |out| {
-                        let streams = matches!(out, Ok(SendMessageResult::Stream(_)));
-                        (out, streams.then(StreamEnd::claim).flatten())
-                    },
-                )
+                .run_with(send, |out| {
+                    let streams = matches!(out, Ok(Answer::Stream(_)));
+                    (out, streams.then(StreamEnd::claim).flatten())
+                })
                 .await;
-                let result = result.map_err(|e| server_error_to_rpc_error(&e))?;
 
-                match result {
-                    SendMessageResult::Stream(reader) => Ok(event_stream(reader, end)),
-                    // A streaming send that produced a single response still
-                    // has to reach the client as a stream, so it becomes a
-                    // one-event one.
-                    SendMessageResult::Response(response) => {
-                        let proto: pb::SendMessageResponse = response
-                            .try_into()
-                            .map_err(|e| RpcError::internal(format!("InternalError: {e}")))?;
-                        Ok(single_response_stream(proto))
-                    }
+                match result.map_err(|e| server_error_to_rpc_error(&e))? {
+                    Answer::Stream(reader) => Ok(event_stream(reader, end)),
+                    Answer::One(proto) => Ok(single_response_stream(proto)),
                 }
             }
         },
@@ -180,12 +187,8 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let task = BindingSpan::open(&h.handler, SLIMRPC, method::GET_TASK, Some(&headers))
-                    .run(h.handler.on_get_task(params, Some(&headers)))
-                    .await
-                    .map_err(|e| server_error_to_rpc_error(&e))?;
-                let proto: pb::Task = to_proto(task)?;
-                Ok(Pb(proto))
+                let get = h.handler.on_get_task(params, Some(&headers));
+                unary::<_, pb::Task>(&h.handler, method::GET_TASK, &headers, get).await
             }
         },
     );
@@ -203,13 +206,9 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let list =
-                    BindingSpan::open(&h.handler, SLIMRPC, method::LIST_TASKS, Some(&headers))
-                        .run(h.handler.on_list_tasks(params, Some(&headers)))
-                        .await
-                        .map_err(|e| server_error_to_rpc_error(&e))?;
-                let proto: pb::ListTasksResponse = to_proto(list)?;
-                Ok(Pb(proto))
+                let list = h.handler.on_list_tasks(params, Some(&headers));
+                unary::<_, pb::ListTasksResponse>(&h.handler, method::LIST_TASKS, &headers, list)
+                    .await
             }
         },
     );
@@ -227,13 +226,8 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
                     .into_inner()
                     .try_into()
                     .map_err(|e| RpcError::invalid_argument(format!("InvalidParamsError: {e}")))?;
-                let task =
-                    BindingSpan::open(&h.handler, SLIMRPC, method::CANCEL_TASK, Some(&headers))
-                        .run(h.handler.on_cancel_task(params, Some(&headers)))
-                        .await
-                        .map_err(|e| server_error_to_rpc_error(&e))?;
-                let proto: pb::Task = to_proto(task)?;
-                Ok(Pb(proto))
+                let cancel = h.handler.on_cancel_task(params, Some(&headers));
+                unary::<_, pb::Task>(&h.handler, method::CANCEL_TASK, &headers, cancel).await
             }
         },
     );
@@ -375,30 +369,61 @@ pub(super) fn register_a2a_methods(server: &mut Server, state: &Arc<Served>) {
             let h = Arc::clone(&h);
             async move {
                 let headers = h.headers(&ctx)?;
-                let card = BindingSpan::open(
+                let card = h.handler.on_get_extended_agent_card(Some(&headers));
+                unary::<_, pb::AgentCard>(
                     &h.handler,
-                    SLIMRPC,
                     method::GET_EXTENDED_AGENT_CARD,
-                    Some(&headers),
+                    &headers,
+                    card,
                 )
-                .run(h.handler.on_get_extended_agent_card(Some(&headers)))
                 .await
-                .map_err(|e| server_error_to_rpc_error(&e))?;
-                let proto: pb::AgentCard = to_proto(card)?;
-                Ok(Pb(proto))
             }
         },
     );
 }
 
-/// Converts a domain value to its protobuf form, reporting failure as an
-/// internal error — the agent produced something the wire cannot carry.
-fn to_proto<D, P>(value: D) -> Result<P, RpcError>
+/// Runs one unary call in its span, converting its answer to protobuf inside
+/// the span too, then maps a failure to the error SLIMRPC sends.
+///
+/// The conversion is part of the call: an answer the wire cannot carry is
+/// what the caller receives, as `INTERNAL`. Until 2026-10-23 it ran after
+/// the span had ended, so such a call was recorded `OK` — on the span and in
+/// `rpc.server.call.duration` — while the caller was sent an error.
+async fn unary<D, P>(
+    handler: &RequestHandler,
+    method: &str,
+    headers: &HashMap<String, String>,
+    call: impl Future<Output = ServerResult<D>>,
+) -> Result<Pb<P>, RpcError>
 where
     P: TryFrom<D>,
     <P as TryFrom<D>>::Error: std::fmt::Display,
 {
-    P::try_from(value).map_err(|e| RpcError::internal(format!("InternalError: {e}")))
+    BindingSpan::open(handler, SLIMRPC, method, Some(headers))
+        .run(async move { to_proto(call.await?) })
+        .await
+        .map(Pb)
+        .map_err(|e| server_error_to_rpc_error(&e))
+}
+
+/// Converts a domain value to its protobuf form, reporting failure as an
+/// internal error — the agent produced something the wire cannot carry.
+fn to_proto<D, P>(value: D) -> ServerResult<P>
+where
+    P: TryFrom<D>,
+    <P as TryFrom<D>>::Error: std::fmt::Display,
+{
+    P::try_from(value).map_err(|e| ServerError::Internal(e.to_string()))
+}
+
+/// What a streaming send answered: a live queue, or a single response the
+/// agent gave directly, already in its wire form. Lives for one call, on
+/// its way to a stream, so boxing the larger variant would buy an
+/// allocation per stream and nothing else.
+#[allow(clippy::large_enum_variant)]
+enum Answer {
+    Stream(InMemoryQueueReader),
+    One(pb::SendMessageResponse),
 }
 
 /// SLIM carries no "absent" for a `string` field, so an empty tenant means
@@ -430,10 +455,7 @@ type EventStream = futures::stream::BoxStream<'static, Result<Pb<pb::StreamRespo
 /// `end` is the call the stream answers, which ends with it: completed when
 /// the reader is, failed with the first error sent, and cancelled if the
 /// stream is dropped first (`a2a_protocol_server::StreamEnd`).
-fn event_stream(
-    reader: a2a_protocol_server::InMemoryQueueReader,
-    end: Option<StreamEnd>,
-) -> EventStream {
+fn event_stream(reader: InMemoryQueueReader, end: Option<StreamEnd>) -> EventStream {
     futures::stream::unfold((reader, end), |(mut reader, mut end)| async move {
         let Some(event) = reader.read().await else {
             if let Some(end) = end.take() {
