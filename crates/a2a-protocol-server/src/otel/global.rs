@@ -143,6 +143,16 @@ mod tests {
         Arc::clone(&PROVIDER)
     }
 
+    /// The debug form names the type and nothing it holds (the mutation gate
+    /// found it untested).
+    #[test]
+    fn debug_names_the_type_only() {
+        assert_eq!(
+            format!("{:?}", GlobalOtelMetrics::new()),
+            "GlobalOtelMetrics { .. }"
+        );
+    }
+
     /// Every callback reaches the provider's instruments: each one, emptied,
     /// leaves its instrument unrecorded (the mutation gate found five that
     /// could be).
