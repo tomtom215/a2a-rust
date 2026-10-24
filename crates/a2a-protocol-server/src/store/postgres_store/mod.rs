@@ -208,6 +208,27 @@ impl PostgresTaskStore {
 mod tests {
     use super::*;
 
+    /// The store names PostgreSQL and where its pool connects, for its spans
+    /// and `db.client.operation.duration`. Built over a lazy pool, which
+    /// connects to nothing until a query runs.
+    #[tokio::test]
+    async fn the_store_names_postgresql_and_its_pool_s_target() {
+        use crate::store::TaskStore as _;
+        let store = PostgresTaskStore {
+            pool: PgPool::connect_lazy("postgres://u:p@db.internal:6543/a2a").unwrap(),
+            max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+            metrics: crate::metrics::MetricsHandle::default(),
+        };
+        assert_eq!(
+            store.database(),
+            Some(
+                crate::store::StoreDatabase::new("postgresql")
+                    .with_namespace("a2a")
+                    .with_server("db.internal", Some(6543))
+            )
+        );
+    }
+
     #[test]
     fn to_a2a_error_formats_message() {
         let pg_err = sqlx::Error::RowNotFound;
