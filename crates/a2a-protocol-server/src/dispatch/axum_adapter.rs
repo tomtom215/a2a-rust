@@ -248,14 +248,16 @@ impl axum::extract::FromRequest<A2aState> for TimedBody {
             // A body over `DefaultBodyLimit` (413), or a broken stream: axum's
             // status, in the AIP-193 shape `RestDispatcher` answers with.
             // Until 2026-10-14 axum's plain-text rejection went out as it was.
-            Ok(Err(rejection)) => Err(plain_error(
+            // Marked refused, so `validate_a2a_request` records the call with
+            // the status it was answered (nothing recorded these before).
+            Ok(Err(rejection)) => Err(crate::rpc_span::refused(plain_error(
                 rejection.status().as_u16(),
                 &rejection.body_text(),
-            )),
-            Err(_) => Err(plain_error(
+            ))),
+            Err(_) => Err(crate::rpc_span::refused(plain_error(
                 408,
                 &format!("request body not fully received within {deadline:?}"),
-            )),
+            ))),
         }
     }
 }
@@ -395,17 +397,23 @@ async fn handle_tasks_catchall(
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
         ("GET", [id]) if !id.contains(':') => {
-            let history_length =
-                match super::rest::query::parse_query_param_u32(query, "historyLength") {
-                    Ok(history_length) => history_length,
-                    Err(e) => return refuse_unreadable(&state, "GetTask", &hdrs, e).await,
-                };
+            // Parsed inside the call, so a `historyLength` that is not a
+            // number is recorded as `GetTask` refused, as `RestDispatcher`
+            // records it.
             rpc_call(
                 &state.handler,
                 "GetTask",
                 (method.as_str(), "/tasks/{id}"),
                 &hdrs,
-                handle_get_task_inner(&state, &dec(id), tenant, history_length, &hdrs),
+                async {
+                    match super::rest::query::parse_query_param_u32(query, "historyLength") {
+                        Ok(history_length) => {
+                            handle_get_task_inner(&state, &dec(id), tenant, history_length, &hdrs)
+                                .await
+                        }
+                        Err(e) => refuse_unreadable(&state, "GetTask", &hdrs, e).await,
+                    }
+                },
             )
             .await
         }
@@ -562,17 +570,21 @@ async fn handle_list_tasks(
     // same malformed values (spec §5.1, §13.4); this route read its own map,
     // dropping what did not parse, and took `includeArtifacts=1` as absent.
     let query = query.unwrap_or_default();
-    let params =
-        match super::rest::query::parse_list_tasks_query(&query, query_tenant(&query).as_deref()) {
-            Ok(params) => params,
-            Err(e) => return refuse_unreadable(&state, "ListTasks", &hdrs, e).await,
-        };
     rpc_call(
         &state.handler,
         "ListTasks",
         ("GET", "/tasks"),
         &hdrs,
         async {
+            // Inside the call, so a query that does not parse is recorded as
+            // `ListTasks` refused, as `RestDispatcher` records it.
+            let params = match super::rest::query::parse_list_tasks_query(
+                &query,
+                query_tenant(&query).as_deref(),
+            ) {
+                Ok(params) => params,
+                Err(e) => return refuse_unreadable(&state, "ListTasks", &hdrs, e).await,
+            };
             match state.handler.on_list_tasks(params, Some(&hdrs)).await {
                 Ok(result) => a2a_json(&result),
                 Err(e) => handler_error_to_response(&e),

@@ -282,9 +282,14 @@ only: when something here is done, delete it rather than annotating it.
    OpenTelemetry default beside a custom `Metrics` and `agent-team` and
    `resilient-agent` use it (M1), and `incident-response` puts the global
    meter provider back after its two OpenTelemetry checks (M2). Still open: the SLIMRPC multicast fan-out has
-   no span or duration (H3); axum `TimedBody` and two `refuse_unreadable` paths,
-   WebSocket binary/busy/handshake/oversize refusals, SLIMRPC refusals before
-   the span, and tonic's own refusals record nothing (M5 to M8); client
+   no span or duration (H3); WebSocket upgrade refusals (`Origin`,
+   `A2A-Version`, timeout) and oversize-message closes are logged but not
+   metered (M6, the rest of it; M5 and the binary and busy answers are
+   fixed); SLIMRPC refusals before the span (M7: they need `record_unrouted`
+   and `RpcSystem` public, an API decision) and the refusals tonic itself
+   makes (an oversize message, an unknown method, the connection limit; M8: a
+   tower layer that can tell them from calls the service ran) record
+   nothing; client
    dropped calls, early-dropped streams and retries are not visible (M9,
    M10); push-config, audit, halt, lease and retention stores have no DB
    span (M11); card fetch, JWKS and token exchange have no duration metric

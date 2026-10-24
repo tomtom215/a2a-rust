@@ -3478,6 +3478,28 @@ section "The client refuses what `a2a.proto` does not allow".
   Test: `hardening/observability.rs`
   `the_checks_leave_the_global_meter_provider_as_they_found_it` (fails with
   the restore removed from both checks).
+- **Six answers the axum router and the WebSocket server gave were recorded
+  nowhere** (server). Not in `rpc.server.call.duration`, so a dashboard's
+  error ratio and its status breakdown missed them. The axum router's
+  `TimedBody` extractor answered a body over `max_request_body_size` (413) and
+  one not received in `body_read_timeout` (408) with a response nothing
+  marked, and a `historyLength` or list query that did not parse was refused
+  outside the recorded call; the WebSocket server answered a binary frame
+  (-32700) and a request over the 64 a connection may run at once (-32603)
+  without recording either. The axum body rejections are now marked as
+  refused, so the validating layer records them with their status; the two
+  query parses run inside the recorded call, so `GetTask` and `ListTasks` are
+  recorded refused, as `RestDispatcher` records the same requests; the
+  WebSocket answers are recorded with their code. Tests:
+  `tests/dispatch_tests/rpc_calls.rs`
+  `the_axum_router_records_a_body_over_its_limit_and_one_never_finished` and
+  `the_axum_router_records_an_unreadable_query_as_the_method_refused` (the
+  second compares the router with `RestDispatcher`), and `websocket.rs`
+  `ws_binary_and_busy_answers_are_recorded`; each fails with its fix
+  removed. Still unrecorded: a WebSocket upgrade refused for its `Origin` or
+  `A2A-Version` or timed out (logged, not metered), and a message over the
+  size cap, which tungstenite refuses by closing the connection with no
+  JSON-RPC answer.
 - **A gRPC client built from `GrpcTransport::connect` recorded no span and no
   duration** (client, `grpc`). Handed to `with_custom_transport`, the route
   the book documents for configuring the transport yourself, `GrpcTransport`
