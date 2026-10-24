@@ -3647,6 +3647,22 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Performance
 
+- **A blocking send costs no more CPU than in 0.14.1; telemetry compiled in
+  by default is about 5% of it** (measured, not a change). On
+  `send_latency_breakdown`, `diag/send/echo_3_events/single_worker`
+  (release profile, one pinned core of a shared 4-vCPU Xeon at 2.10 GHz,
+  rustc 1.99.1, medians of 8 interleaved rounds): 0.14.1 106.2 µs
+  (102.0–114.0), this tree 102.0 µs (101.0–115.9), this tree without
+  `tracing` and `otel` 95.7 µs (87.4–106.0). The ranges overlap, so the
+  first pair says "not slower", not "faster". With nothing installed, the
+  default `tracing` and `otel` cost 4.6% and 6.6% of a send in two runs;
+  `default-features = false` removes it. The `default` comment of the server
+  crate said "a level check" until this. Against `6ce5dc9a` (2026-10-12, a
+  commit that was 13.9% faster than 0.14.1 in the same run) this tree is
+  11.5–16.0% slower in four runs, with no step between them larger than
+  the noise; the cause was not isolated. Method, every run and its spread:
+  `docs/readiness-bar.md`, "the CPU cost of a blocking send".
+
 - **A send's context lookup copies one history, not ten** (server; ADR
   0017). `find_task_by_context` listed up to ten tasks of the context
   whole, to choose one. It now lists them with `history_length: Some(0)`,

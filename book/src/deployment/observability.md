@@ -734,7 +734,10 @@ Recording is not free. On a loopback JSON-RPC round trip with a trivial
 executor, a `tracing-opentelemetry` layer recording every span cost about
 65 µs a call more than before these spans and attributes (323 → 388 µs, the
 median of three rounds; ADR 0013 has the conditions). With no layer
-installed the difference was inside the run-to-run noise.
+installed, and `tracing` and `otel` on as they are by default, a blocking
+send cost 4.6% and 6.6% more CPU than the same build without them (two
+runs, one pinned core; `docs/readiness-bar.md`, "the CPU cost of a blocking
+send"), the ranges overlapping; `default-features = false` removes it.
 
 With the `otel` feature and a `tracing-opentelemetry` layer installed, a
 well-formed inbound `traceparent` is the `SERVER` span's remote parent, and

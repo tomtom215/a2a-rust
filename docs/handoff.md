@@ -281,7 +281,10 @@ only: when something here is done, delete it rather than annotating it.
    README claims are corrected; `with_additional_metrics` keeps the
    OpenTelemetry default beside a custom `Metrics` and `agent-team` and
    `resilient-agent` use it (M1), and `incident-response` puts the global
-   meter provider back after its two OpenTelemetry checks (M2). Still open: the SLIMRPC multicast fan-out has
+   meter provider back after its two OpenTelemetry checks (M2); the client
+   records a call as it ended for the caller: a dropped call and an
+   early-dropped stream are `cancelled`, a refused answer is a failure (M9 a,
+   b, d; `call_span/in_flight.rs`). Still open: the SLIMRPC multicast fan-out has
    no span or duration (H3); WebSocket upgrade refusals (`Origin`,
    `A2A-Version`, timeout) and oversize-message closes are logged but not
    metered (M6, the rest of it; M5 and the binary and busy answers are
@@ -433,10 +436,15 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
   ids, states, timestamps, `metadata` and order unprotected, and its seal
   limit is per process while the true budget is per key across processes.
-- **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
-  WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
-  measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
-  10K tasks.
+- **Measurement:** `docs/readiness-bar.md` records no measurement of its rows
+  R1 to R7, C1 to C5 and F1 to F5 (WS3, WS4, WS5: each unmet, not assumed);
+  the 0.9–1.8 µs `ListTasks` gap at 10K tasks is unmeasured. The send
+  slowdown is measured (2026-10-24, pinned core, interleaved rounds, five
+  runs; the section "the CPU cost of a blocking send"): not slower than
+  0.14.1 (102.0 against 106.2 µs), 11.5–16.0% slower than `6ce5dc9a`, which
+  was 13.9% faster than 0.14.1; this branch's share is inside the noise
+  (+1.4%, 12 rounds); default telemetry is 4.6–6.6% of a send. Cause of the
+  rise since `6ce5dc9a`: not isolated.
 - **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
   `scripts/go_sdk_interop.sh` last passed both directions 2026-10-20 at
   `4101bb55`, after the auth-ordering change: leg 1 52 checks, leg 1b
@@ -456,7 +464,17 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   records unlinkable from each other, which needs a per-record handle, a
   format change; erasure serialised across replicas, which needs the
   compare-and-set writes of 0.16 (decided); attribution of a tenant's shared
-  partition, which has no caller to attribute it to.
+  partition, which has no caller to attribute it to. A reading of each of
+  the 29 partial rows' `gap` (2026-10-24, a judgement, not a check) found
+  none that SDK code alone moves to supported: the gaps are an integrator's
+  or a model provider's (AIA-15-4, AIA-15-5, AIA-50-2, CRA-13-16-18,
+  CRA-AI-I-2b, -2d, -2f, -2h-2i, -2j, -2k, -2l, GDPR-5-1f-32-1b, ASI03,
+  ASI07, ASI08, ASI10), a default settled as off (GDPR-25-2), the
+  protocol's (no method to correct or delete a task: GDPR-5-1d-16,
+  GDPR-5-1e), something only the maintainer can supply (the RustSec entry
+  CRA-AI-I-2a and CRA-AI-II-2-4-8, a release key CRA-AI-II-7), or a feature
+  that would narrow the row without closing it (GDPR-15-20, GDPR-18-21,
+  CRA-AI-I-2e, CRA-AI-I-2m, ASI04, AIA-14-4e, GDPR-5-2).
 - **Release bar, measured 2026-10-24 at the tree of `567babe`:** `cargo
   semver-checks --release-type patch` (the default skips a 0.14 to 0.15 bump
   as already major) against the published 0.14.1, all features, four crates:
@@ -627,7 +645,15 @@ into this file: the commit that records it changes it.
   (`find target/debug/deps -maxdepth 1 -type f -perm -u+x ! -name '*.so' !
   -name '*.d' -delete`; 14.7 GB of 20 GB were test executables). When the
   harness prints "Disk full ... 0 MB free", its output is lost: free space
-  first, then re-run.
+  first, then re-run (a command that prints nothing, not even a trailing
+  `echo`, is that symptom). `target/debug/deps` also keeps every build of the
+  workspace crates, one per feature set and profile: `cargo clean -p
+  a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p
+  a2a-protocol-sdk` removed 10.6 GiB of 172 stale builds of the server crate
+  alone (2026-10-24) and costs only those crates' recompilation. Do not run
+  a script that prunes `target/debug/incremental` while another `cargo` is
+  building in the same tree: the build fails with `failed to move dependency
+  graph`.
 - **`check_file_lengths.sh` counts tracked files only:** run it after
   `git add`, or a new file over 500 lines passes unseen (it did:
   `tests/provenance_signing.rs`, 533 lines, at `69163dec`).
