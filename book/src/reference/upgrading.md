@@ -3,10 +3,15 @@
 
 # Upgrading Between Minor Versions
 
-As of 2026-09-26, with 0.14.0 prepared. The newest minor boundary this page
-covers is 0.13 → 0.14, whose breaking section is `## [0.14.0]` in
-[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
-(0.12.1 is a patch and breaks nothing, so it has no section of its own here.)
+The newest minor boundary this page covers is 0.14 → 0.15, whose breaking
+section is `## [Unreleased]` in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md),
+which becomes `## [0.15.0]` when it ships. (A patch such as 0.14.1 breaks
+nothing, so it has no section of its own here.) A test,
+`book-tests/tests/upgrading_guide.rs`, fails when the changelog calls a
+release from 0.7 on breaking and this page has no `## X.Y → X.Z` section for
+its boundary (A2A v1.0.1 §1.4: migration guidance MUST be provided when
+introducing major breaking changes).
 
 This page is the migration guide the 191 KB changelog is not. One section per
 minor boundary that broke something, newest first; each names what breaks,

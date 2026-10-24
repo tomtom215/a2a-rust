@@ -67,16 +67,21 @@
    "spec_line": 112,
    "section": "§1.4",
    "keyword": "MUST",
-   "binds": "spec-authors",
+   "binds": "both",
    "requirement": "Migration guidance MUST be provided via an ancillary document when introducing major breaking changes.",
-   "status": "NOT_APPLICABLE",
+   "status": "TESTED",
    "severity": null,
-   "impl_evidence": [],
-   "test_evidence": [],
-   "notes": "Binds the specification maintainers. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation.",
+   "impl_evidence": [
+    "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
+    "CHANGELOG.md:25 \"### Breaking Changes\""
+   ],
+   "test_evidence": [
+    "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
+   ],
+   "notes": "Read as the sibling at spec line 115 is read, binding the SDK as well as the specification project (independent re-audit 2026-10-24: both bullets are unattributed passives in one list, and the one between them, 114, names SDKs). The SDK's migration guidance is book/src/reference/upgrading.md, one section per breaking minor boundary from 0.6 -> 0.7 on, whose Rust 'after' blocks a2a-book-tests compiles; before 0.7 the changelog's Breaking Changes sections are the guidance. book-tests/tests/upgrading_guide.rs fails when CHANGELOG.md calls a release from 0.7 on breaking (a '### Breaking' heading; [Unreleased] counts as the crates' version) and the guide has no '## X.Y -> X.Z' heading for its boundary: shown 2026-10-24 by renaming the 0.12 -> 0.13 heading, which names it as missing. Previously NOT_APPLICABLE (binds the specification project), re-examined 2026-10-18 and kept.",
    "auditor": "A",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 113,
@@ -111,9 +116,10 @@
     "crates/a2a-protocol-types/src/generated/security.rs:201 password",
     "crates/a2a-protocol-types/src/security.rs:595 wire_format_password_oauth_flow"
    ],
-   "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed.",
+   "notes": "The two proto-deprecated OAuth flows (implicit, password) are kept so cards declaring them parse, and since 2026-10-11 carry #[deprecated] as the proto fields do. Two compile_fail doctests deny(deprecated) on each variant; removing the attribute makes the doctest compile and fail (shown). No v1.0 field was renamed, so no renamed-field aliases are needed. Appendix A's renamed messages (re-audit 2026-10-24): the six legacy names it lists were never this SDK's to alias. All 19 published a2a-protocol-types releases (0.2.0 to 0.14.1, downloaded from crates.io and searched) define MessageSendParams, SendMessageResponse and StreamResponse and none of SendMessageSuccessResponse, SendStreamingMessageSuccessResponse, SetTaskPushNotificationConfigRequest, ListTaskPushNotificationConfigSuccessResponse or GetAuthenticatedExtendedCardRequest; the SDK's Rust name for the proto's SendMessageRequest is the legacy MessageSendParams in every release (codegen.toml [types]), so no name it published was renamed or removed. That measurement is a one-off, not a test.",
    "auditor": "A",
-   "source": "spec"
+   "source": "spec",
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 115,
@@ -4763,10 +4769,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Spec-document anchor requirement. Re-examined 2026-10-18, kept: binds the specification project (its documents, website or process), not an implementation. Corrected reason 2026-10-20 (ledger audit): the lifecycle below this line also marks legacy names deprecated in SDKs and schemas, so it is not about the specification's documents alone; it is NOT_APPLICABLE because every removal version it states is 0.5.0 or earlier, which v1.0.1 is past. The SDK's own alias duty is the separate entry at spec line 114 (TESTED).",
+   "notes": "Spec-document anchor requirement and a floor on the removal of legacy names. Re-examined 2026-10-18, kept. Reason corrected 2026-10-24 (re-audit; the 2026-10-20 reason, that every removal version is 0.5.0 or earlier, misread the table, whose '>= 0.5.0' is a lower bound): the anchors half binds the specification's own documents; the names half is a floor on removing names the publisher keeps, and this SDK published none of the five legacy names that differ from its own (all 19 a2a-protocol-types releases searched, see the entry at spec line 114), while MessageSendParams, the sixth, is its current name for SendMessageRequest. Nothing of the appendix is the SDK's to keep resolvable. The SDK's own alias duty is the entry at spec line 114.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 3417,

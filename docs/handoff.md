@@ -185,9 +185,11 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-23, after WP-A, WP-B and WP-C: TESTED
-  454, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 4; 510 entries, after
-  the writer fold of 2026-10-23). The four PARTIAL entries, each short for
+  authority on the counts (2026-10-24: TESTED 455, APPLICATION 32,
+  NOT_APPLICABLE 19, PARTIAL 4; 510 entries). Re-audited 2026-10-24: the 20
+  NOT_APPLICABLE entries were read again against the v1.0.1 text by an
+  independent reader (18 agreed; §1.4's migration-guidance MUST at line 112
+  moved to TESTED, with a drift test; Appendix A's note rewritten). The four PARTIAL entries, each short for
   a stated reason: §3.5.2, a stream lagging
   past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
