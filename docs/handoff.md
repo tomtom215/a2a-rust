@@ -22,20 +22,16 @@ only: when something here is done, delete it rather than annotating it.
 - **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
   four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
   `CHANGELOG.md` is `[Unreleased]`.
-- **Working branch:** `claude/zealous-fermat-f4kg9z`, started 2026-10-23
-  from `main` at `4cadc2af` (pull request #178 merged that day), to make
-  0.15.0 release-ready. First pushed 2026-10-23, after the local
-  verification the maintainer asked for: the workspace suite (327 test
-  binaries, 5965 passed, 0 failed), the server with all features and
-  PostgreSQL (181 binaries, 3436 passed, 0 failed), every clippy
-  invocation `ci.yml` names including `cargo hack --each-feature` (57
-  combinations), `cargo deny` advisories on all nine lockfiles, and the
-  SLIMRPC binding's steps except the SPIFFE suites, which need SPIRE (not
-  installed here). `ci.yml` runs on a push only to `main`, so it was
-  started with `workflow_dispatch`; the TCK and the labelled mutation gate
-  run only on a pull request, which waits for the maintainer.
-  `git log 4cadc2af..` lists the commits; each message says what it
-  changed and how it was verified. So far:
+- **Working branch:** `claude/sleepy-knuth-3lnx7k`, started 2026-10-24
+  from `main` at `2781bb69`, the merge of pull request #179. `git log
+  2781bb69..` lists what it holds that `main` lacks.
+- **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
+  2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
+  `6707f4d` had 104 check runs, 98 success and 6 skipped by their own
+  workflows' conditions (`repos/tomtom215/a2a-rust/commits/6707f4d/
+  check-runs`, `total_count`, counted 2026-10-24), the labelled mutation
+  gate among them. `git log 4cadc2af..2781bb69` lists the commits; each
+  message says what it changed and how it was verified. In sum:
   - the tool-calling study scored, audited by reading every answer, and
     published (`docs/tool-calling-study.md`, `34f579d`);
   - every dependency refreshed in all nine lockfiles, the Python
@@ -85,8 +81,10 @@ only: when something here is done, delete it rather than annotating it.
     (44 of 44, LLM leg exercised), `mcp-agent` (exit 0; 1 of 2 answers
     used the MCP tools, and the billing answer, which called none, is
     invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
-    `rig-agent` (44 of 44 on its second run; see the 30 s timeout under
-    *Open engineering*). Logs were not committed.
+    `rig-agent` (44 of 44 on its second run; its first lost SendMessage over
+    WebSocket to the clients' 30 s default timeout, which `84d37e1` replaced
+    with one 300 s `MODEL_CALL_TIMEOUT` per example on every binding).
+    Logs were not committed.
   - §3.1.2 (2026-10-23): a `Message` an executor writes once its task
     stream has begun is sent as a status update carrying it, folded once
     at the queue's writer (`streaming/event_queue/message_fold.rs`),
@@ -208,9 +206,17 @@ only: when something here is done, delete it rather than annotating it.
   twice in a file (`TryFrom` both ways) it cannot, and each must be
   re-pointed by hand to the same impl it named before (2026-10-23: 23
   after WP-B, each checked against the old file).
-- **CI on `main` at `4cadc2af`:** all fifteen push workflows green
-  (checked 2026-10-23). The scheduled OSV-Scanner runs failed on the older
-  head `6c90d0b`, before the merge; the merge's push run passed.
+- **CI on `main` at `2781bb69`** (the fifteen push workflows, read with
+  `gh api repos/tomtom215/a2a-rust/actions/runs?head_sha=…`, 2026-10-24
+  13:40 UTC): DCO, Scorecard, ITK, OSV-Scanner, Verification, Deploy
+  Documentation, Official TCK, Soak, ACTS, Fuzz, TCK and CodeQL passed; CI,
+  Coverage and Benchmarks were still running. The scheduled OSV-Scanner
+  runs failed on 10-21, 10-22 and 10-23 at head `6c90d0b`
+  (RUSTSEC-2026-0381/0382/0383: rustls-webpki 0.103.15, webpki-roots and
+  webpki-root-certs 1.0.9, in four lockfiles) and on 10-24 at head
+  `4cadc2a` (RUSTSEC-2026-0387: crypto-bigint 0.7.5 in the SLIMRPC
+  lockfile). Each cause was read in the job log; #179 fixed all of them
+  (`8d7e878` the last) and OSV-Scanner passed on the merge.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
 
@@ -344,21 +350,6 @@ only: when something here is done, delete it rather than annotating it.
 
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
-- **Examples time out a CPU-served model at the client's 30 s default**
-  (found 2026-10-23, low, examples only). Every transport defaults to a
-  30 s request timeout, and the model-backed examples build their clients
-  with it (`examples/{rig-agent,genai-agent,agent-team,multi-lang-team}/
-  src/surface.rs` `client_for`, `examples/incident-response/src/agents.rs`
-  and `serving.rs`). With Qwen3-1.7B on four CPU cores and several runs
-  in flight, a model turn took up to 64 s (llama-server's own timings):
-  `rig-agent`'s first run lost SendMessage over WebSocket and the five
-  cells after it (exit 1; 44 of 44 on a re-run), and in 2 of 3
-  `incident-response` runs the runbook leg timed out, which the demo
-  prints inside the report and still exits 0. Proposed: one longer
-  timeout for these examples' clients, every binding included (gRPC's and
-  WebSocket's transports take their own). Not built: it touches five
-  examples, beyond this branch's scope without the maintainer's say.
-
 - **Cross-replica:** single-writer admission (pinned by a test in
   `tests/multi_replica.rs` that is ignored by default). A continuation's
   save on one replica still overwrites an artifact another replica's
@@ -421,8 +412,9 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on
   crates.io (checked 2026-10-20), and moves when 0.15.0 is published;
-  `prove_workflow_gates_fail.py` needs `ssh-keygen`, absent in the cloud
-  container (apt has no candidate), so it did not run here on 2026-10-20.
+  `prove_workflow_gates_fail.py` needs `ssh-keygen`: a fresh cloud container
+  has none, and `apt-get install openssh-client` finds no candidate until
+  `apt-get update` has run (it installed 1:9.6p1 after one, 2026-10-24).
 
 ## Waivers and their removal tests
 
