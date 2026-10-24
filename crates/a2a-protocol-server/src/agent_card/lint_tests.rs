@@ -91,6 +91,19 @@ fn an_unregistered_http_auth_scheme_is_reported() {
     assert!(w[0].contains("securitySchemes.odd") && w[0].contains("\"Token\""));
 }
 
+/// IANA's page has two tables. The schemes are the first; `iso-kam3-*` are
+/// the algorithms of the `Mutual` scheme, in the second, and are not
+/// themselves schemes a card may name.
+#[test]
+fn a_mutual_authentication_algorithm_is_not_a_scheme() {
+    let w = card_warnings(&card(&json!({"securitySchemes": {
+        "mutual": {"httpAuthSecurityScheme": {"scheme": "Mutual"}},
+        "algorithm": {"httpAuthSecurityScheme": {"scheme": "iso-kam3-ec-p256-sha256"}}
+    }})));
+    assert_eq!(w.len(), 1, "{w:#?}");
+    assert!(w[0].contains("securitySchemes.algorithm"), "{w:#?}");
+}
+
 #[test]
 fn an_extension_uri_without_a_version_is_reported() {
     let w = card_warnings(&card(&json!({"capabilities": {"extensions": [

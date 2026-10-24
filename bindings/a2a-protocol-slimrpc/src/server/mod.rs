@@ -198,6 +198,12 @@ impl SlimRpcServer {
         // name over `connection_id` itself. The *caller* side is the half that
         // does need work, because nothing announces a client's own name — see
         // `SlimRpcTransport::from_app_with_connection`.
+        // Spec §5.2: an agent MUST declare every binding it serves. The
+        // card is the handler's, so this is where it is checked, as every
+        // listener in `a2a-protocol-server` checks its own; a warning rather
+        // than a refusal, as there (`ServeConfig::production()` refuses only
+        // for `Server`, ADR 0025).
+        handler.warn_if_undeclared(crate::binding::SLIMRPC_PROTOCOL_BINDING);
         let mut server = Server::new_with_connection_and_runtime(
             app.clone(),
             app.app_name().clone(),

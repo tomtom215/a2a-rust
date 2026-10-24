@@ -224,24 +224,34 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Next, in order
 
-1. **After the APPLICATION and NOT_APPLICABLE review** (2026-10-20, all
-   54 against the v1.0.1 text, tag `3303592`, and the code; about 130 note
-   claims checked, 8 not verifiable from the repository): 35 kept as they
-   were, 16 kept with wrong or stale note claims and citations corrected,
-   §14 line 3244 split (what the SDK consumes is TESTED; content an agent
-   forwards stays APPLICATION), and §4.6.3 1139 and §5.8 1297 moved to
-   TESTED by URI-contract golden tests (`uri_contracts.rs`,
-   `uri_contract_websocket.rs`). Its suggestions were built the same day:
-   the `wss://` lint fix, the axum `A2aRouter` §5.2 warning, and `Server`'s
-   plaintext warning (§7.1). Left: a public form of the §5.2 check for
-   bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
-   `spec_line` N is line N + 31 of the vendored file (the header ends at
-   line 30, then one blank line).
-2. **The rest of the conformance list:** the four PARTIAL entries (§3.5.2,
-   §5.7; §7.6.1, line
-   227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
-   MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
-   CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
+1. **The APPLICATION and NOT_APPLICABLE entries** were reviewed twice, the
+   second time on 2026-10-24 by independent readers (32 and 20 entries
+   against the v1.0.1 text and the code): no APPLICATION entry changed
+   status (29 of 32 agreed; three notes were stale and are corrected), and
+   NOT_APPLICABLE lost one (§1.4's migration-guidance MUST, now TESTED by
+   `book-tests/tests/upgrading_guide.rs`). Built from the findings: the §5.2
+   check is public (`RequestHandler::undeclared_binding`,
+   `warn_if_undeclared`) and `SlimRpcServer` calls it; every listener's call
+   is pinned by a test; the lint's IANA allowlist lost four tokens that are
+   not schemes. Still not built: a plaintext warning on the WebSocket and
+   gRPC listeners (only `Server` has one) and the ADR 0025 refusal for
+   them, `CombinedDispatcher` and SLIMRPC. `spec_line` N is line N + 31 of
+   the vendored file (the header ends at line 30, then one blank line).
+2. **The four PARTIAL entries cannot all be closed from this repository.**
+   §12.4 waits on agntcy-slim-rpc (3.4.6, the newest release, drops error
+   details; draft `docs/upstream/agntcy-slim-rpc-error-details.md`); §5.7 is
+   a contradiction inside the specification (a REQUIRED array that a
+   no-match listing leaves empty; draft
+   `docs/upstream/a2a-required-empty-array-report.md`); §3.5.2 is short by a
+   design limit (a stream lagging past the held-events ceiling ends with
+   `streamLagged`); §7.6.1 is short by a design conflict between the
+   section's two SHOULDs (an executor still waiting for an out-of-band
+   credential cannot also take the next message; closing it means an
+   executor mailbox, an ADR and a decision). The TCK baseline was re-read
+   against a2a-tck `d4d6fae` on 2026-10-24: all seven still fail on a defect
+   of the suite (`official-tck-findings.md` §25), and upstream already
+   tracks CORE-SEND-003 as issue #202. MAY entries relabelled SUPPORTED are
+   not started.
 3. **OpenTelemetry, still open:** `error.type` on a store span is the A2A
    code or `unavailable`, not the database's SQLSTATE, which the
    conventions prefer; carrying it would need the stores to keep it past

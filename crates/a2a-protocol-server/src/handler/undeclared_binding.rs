@@ -16,7 +16,17 @@ impl RequestHandler {
     /// handler's static agent card declares no interface with that
     /// `protocolBinding`; `None` when it does, or when the card is produced
     /// elsewhere (a dynamic handler, no card).
-    pub(crate) fn undeclared_binding(&self, binding: &str) -> Option<String> {
+    ///
+    /// Every listener in this crate asks this when it starts. A binding
+    /// implemented outside it (`a2a-protocol-slimrpc`) asks it the same way,
+    /// with the `protocolBinding` string it advertises, and decides whether
+    /// the answer is a warning ([`warn_if_undeclared`](Self::warn_if_undeclared))
+    /// or a refusal.
+    ///
+    /// Not asking costs a card that does not list a transport the agent
+    /// serves: a client that reads the card never finds it.
+    #[must_use]
+    pub fn undeclared_binding(&self, binding: &str) -> Option<String> {
         let card = self.agent_card.as_ref()?;
         (!card
             .supported_interfaces
@@ -31,8 +41,11 @@ impl RequestHandler {
         })
     }
 
-    /// Logs [`undeclared_binding`](Self::undeclared_binding) as a warning.
-    pub(crate) fn warn_if_undeclared(&self, binding: &str) {
+    /// Logs [`undeclared_binding`](Self::undeclared_binding) as a warning
+    /// (target `a2a_protocol_server`, message `undeclared binding`, fields
+    /// `binding` and `reason`), as this crate's listeners do. Nothing is
+    /// logged without the `tracing` feature.
+    pub fn warn_if_undeclared(&self, binding: &str) {
         if let Some(_why) = self.undeclared_binding(binding) {
             trace_warn!(binding, reason = %_why, "undeclared binding");
         }

@@ -2420,10 +2420,10 @@
     "crates/a2a-protocol-server/src/handler/context_lookup_tests.rs:159 the_live_task_is_chosen_and_read_whole",
     "crates/a2a-protocol-server/src/handler/context_lookup_tests.rs:132 the_found_task_is_whole_on_either_kind_of_store"
    ],
-   "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's. Re-examined 2026-10-18, kept: the SDK keys storage, locks and continuation on contextId and gives the executor the context's latest task (RequestContext::stored_task); what a conversational session means is the agent's. Re-verified against the code 2026-10-20 (ledger audit): multi_turn_same_context_id asserted only that both sends succeed; the context_lookup_tests that pin the grouping replace it.",
+   "notes": "SDK groups by context (find_task_by_context, per-context lock) and passes context_id to the executor; conversational semantics are the agent's. Re-examined 2026-10-18, kept: the SDK keys storage, locks and continuation on contextId and gives the executor the context's latest task (RequestContext::stored_task); what a conversational session means is the agent's. Re-verified against the code 2026-10-20 (ledger audit): multi_turn_same_context_id asserted only that both sends succeed; the context_lookup_tests that pin the grouping replace it. Re-audited 2026-10-24: the executor sees one task for the context, the most recently updated non-terminal one among the ten most recent, else the most recent (find_task_by_context); a task forked in a context starts with clean history and artifacts. The cited tests pin that lookup, not 'the same conversational session', which no test could.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 601,
@@ -2710,11 +2710,13 @@
     "crates/a2a-protocol-server/src/handler/helpers.rs:294 RequestHandler::find_task_by_context",
     "crates/a2a-protocol-server/src/request_context.rs:146 RequestContext::with_stored_task"
    ],
-   "test_evidence": [],
-   "notes": "The handler gives the executor the latest task stored for the message's contextId as RequestContext::stored_task, with its history, on every send that names a context; using it for relevance is the agent's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The requirement binds the agent's reasoning; the SDK's hook is RequestContext::stored_task for the message's contextId.",
+   "test_evidence": [
+    "crates/a2a-protocol-server/src/handler/context_lookup_tests.rs:132 the_found_task_is_whole_on_either_kind_of_store"
+   ],
+   "notes": "The handler gives the executor the latest task stored for the message's contextId as RequestContext::stored_task, with its history, on every send that names a context; using it for relevance is the agent's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The requirement binds the agent's reasoning; the SDK's hook is RequestContext::stored_task for the message's contextId. Re-audited 2026-10-24: the lookup behind it is pinned by context_lookup_tests; no test asserts that a new task (no taskId) in an existing context reaches the executor with the prior task as stored_task.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 683,
@@ -3218,10 +3220,10 @@
    "severity": null,
    "impl_evidence": [],
    "test_evidence": [],
-   "notes": "Design guidance for agent/client authors; not testable in the SDK. Re-examined 2026-10-18, kept: a design rule for agent and client authors; the SDK's own critical signals do not depend on message delivery: the failure class and an approval request ride in the metadata of the task's status message, which is stored as Task.status.message and returned by GetTask; provenance rides on Message and Artifact metadata (failure.rs, approval.rs, provenance.rs). Corrected 2026-10-20 (ledger audit): the note said Task.status and task metadata, and none of them uses Task.metadata.",
+   "notes": "Design guidance for agent/client authors; not testable in the SDK. Re-examined 2026-10-18, kept: a design rule for agent and client authors; the SDK's own critical signals do not depend on message delivery: the failure class and an approval request ride in the metadata of the task's status message, which is stored as Task.status.message and returned by GetTask; provenance rides on Message and Artifact metadata (failure.rs, approval.rs, provenance.rs). Corrected 2026-10-20 (ledger audit): the note said Task.status and task metadata, and none of them uses Task.metadata. Re-audited 2026-10-24: what makes the SDK's critical signals defensible is that they are Task state re-readable by GetTask (TaskStatus.message), not that they avoid Messages: 'do not depend on stream delivery'. The delegation helper reads the failure class from the streamed terminal status and, on a broken stream, reports Outcome::Lost without re-reading it with GetTask, so the class is lost with the stream; safe degradation, not a violation.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 764,
@@ -3503,7 +3505,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:63 card_warnings",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:62 card_warnings",
     "crates/a2a-protocol-types/src/approval.rs:60 APPROVAL_EXTENSION_URI",
     "crates/a2a-protocol-types/src/failure.rs:61 FAILURE_EXTENSION_URI",
     "crates/a2a-protocol-types/src/idempotency.rs:62 IDEMPOTENCY_EXTENSION_URI",
@@ -3511,7 +3513,7 @@
     "crates/a2a-protocol-types/src/provenance.rs:63 PROVENANCE_EXTENSION_URI"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:95 an_extension_uri_without_a_version_is_reported"
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:108 an_extension_uri_without_a_version_is_reported"
    ],
    "notes": "The five extensions the SDK authors (failure, provenance, idempotency, lease, approval; lease was missing from the count until 2026-10-20) carry /v1 in their URIs; since 2026-10-18 build() warns about a card extension URI with no version in it (no digit at all, a deliberately loose test). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The SDK's own extensions carry /v1, and build() reports any card extension URI without a version (tested).",
    "auditor": "C",
@@ -3738,22 +3740,30 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:35 RequestHandler::warn_if_undeclared",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:48 RequestHandler::warn_if_undeclared",
     "crates/a2a-protocol-server/src/serve/mod.rs:111 Dispatcher::protocol_binding",
     "crates/a2a-protocol-server/src/serve/graceful/mod.rs:269 Server::serve_with_shutdown",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:442 WebSocketDispatcher::accept_loop",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:306 GrpcDispatcher::build_router",
-    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:153 A2aRouter::into_router"
+    "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:153 A2aRouter::into_router",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:29 RequestHandler::undeclared_binding",
+    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:186 SlimRpcServer::from_app_with_connection"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported",
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:93 the_http_dispatchers_name_their_bindings",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:72 the_axum_router_warns_about_an_undeclared_binding"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:72 the_axum_router_warns_about_an_undeclared_binding",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:153 the_combined_dispatcher_warns_for_the_binding_the_card_lacks",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:172 the_server_warns_when_it_starts_for_a_binding_the_card_lacks",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:191 the_websocket_listener_warns_when_it_starts_for_a_binding_the_card_lacks",
+    "crates/a2a-protocol-server/src/dispatch/grpc/undeclared_tests.rs:20 building_the_router_warns_when_the_card_does_not_declare_grpc",
+    "bindings/a2a-protocol-slimrpc/tests/undeclared_binding.rs:80 a_server_whose_card_does_not_declare_slimrpc_warns",
+    "bindings/a2a-protocol-slimrpc/tests/undeclared_binding.rs:96 a_server_whose_card_declares_slimrpc_does_not"
    ],
-   "notes": "Since 2026-10-18 every SDK listener (Server for JSON-RPC and HTTP+JSON through Dispatcher::protocol_binding, WebSocket, gRPC) warns when it starts if the handler's static card declares no interface with its binding. A warning, not a refusal: many deployments and fixtures serve a card from one listener that names others, and a dynamic card is produced elsewhere. Declaring is the agent author's; the SDK reports the omission it can see. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. The card is the author's; the SDK's hook is the startup warning for a served binding the card omits (tested), deliberately not a refusal. Re-verified against the code 2026-10-20 (ledger audit): 'every SDK listener' overstated it: the axum adapter (A2aRouter) did not check, and now warns as the others do (undeclared_binding_tests the_axum_router_warns_about_an_undeclared_binding); the SLIMRPC server still does not, since warn_if_undeclared is pub(crate) and the binding is outside the crate.",
+   "notes": "Declaring is the card author's. The SDK's hook is the check every listener runs when it starts, public since 2026-10-24 so that a binding outside this crate can run it too (RequestHandler::undeclared_binding, warn_if_undeclared): Server (JSON-RPC and HTTP+JSON, through Dispatcher::protocol_binding), CombinedDispatcher, the axum A2aRouter, the WebSocket listener, the gRPC router build, and the SLIMRPC server (SlimRpcServer::from_app) each warn when the handler's static card declares no interface with their binding; a dynamic card is produced elsewhere and is not checked. By default a warning, because many deployments and fixtures serve a card from one listener that names others. Under ServeConfig::production() (ADR 0025, 2026-10-21) Server refuses to start and accepts nothing for an undeclared binding (tests/production_listener.rs an_undeclared_binding_is_refused_even_on_loopback); that covers Server with the JSON-RPC or REST dispatcher only, and CombinedDispatcher, the WebSocket and gRPC listeners and SLIMRPC warn without refusing. Every call site is pinned by a test that fails with the call removed (shown 2026-10-24 by removing each: the four in this crate together, and SLIMRPC's alone). History: the axum adapter did not check until 2026-10-20 and the SLIMRPC server did not until 2026-10-24; the earlier note's 'tested' covered only the predicate and the axum router (independent re-audit, 2026-10-24). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY.",
    "auditor": "C",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 1157,
@@ -4386,7 +4396,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:63 card_warnings",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:62 card_warnings",
     "crates/a2a-protocol-types/src/lib.rs:89 WEBSOCKET_BINDING_URI"
    ],
    "test_evidence": [
@@ -4630,15 +4640,15 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:178 card_credentials",
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:194 publishable",
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:255 carries_credential",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:177 card_credentials",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:193 publishable",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:254 carries_credential",
     "crates/a2a-protocol-server/src/builder.rs:944 RequestHandlerBuilder::build"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/file_url_ssrf.rs:114 build_refuses_a_card_carrying_a_credential",
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:123 a_credential_in_any_card_url_is_found_and_refused",
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:147 an_internal_host_is_reported"
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:136 a_credential_in_any_card_url_is_found_and_refused",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:160 an_internal_host_is_reported"
    ],
    "notes": "Re-examined 2026-10-18: a card carrying a credential in any URL (user information, or a query parameter named like a secret) is refused by build(), the static, dynamic and hot-reload handlers and per-caller extended cards; a URL naming an internal host (private address, .internal, .local, .lan, .corp, .intranet) is reported by card_warnings, which build() logs. Residual, the author's: a credential or internal detail in free text (a description, metadata) is not detected, since nothing distinguishes it from prose.",
    "auditor": "C",
@@ -4855,7 +4865,7 @@
    "spec_line": 1879,
    "section": "§7.1",
    "keyword": "MUST",
-   "binds": "server",
+   "binds": "both",
    "requirement": "Production deployments **MUST** use encrypted communication (HTTPS for HTTP-based bindings, TLS for gRPC).",
    "status": "APPLICATION",
    "severity": null,
@@ -4872,12 +4882,13 @@
     "crates/a2a-protocol-sdk/tests/grpc_server_tls_e2e.rs:214 tls_client_round_trips_through_the_tls_dispatcher",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
     "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:47 plaintext_beyond_loopback_is_warned_about",
-    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:115 loopback_or_tls_is_not"
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:115 loopback_or_tls_is_not",
+    "crates/a2a-protocol-server/tests/production_listener.rs:56 plaintext_beyond_loopback_is_refused_and_nothing_is_accepted"
    ],
-   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Since 2026-10-20 Server also warns once at start when it serves plaintext on an address that is not loopback (serve/graceful/plaintext.rs plaintext_warning); a warning, because TLS is often terminated in front.",
+   "notes": "Binds production deployments. Since 2026-10-18 every listener the SDK starts can terminate TLS itself: Server::with_tls / with_tls_pem for JSON-RPC and REST (feature tls-rustls, since 2026-10-14), WebSocketDispatcher::with_tls / with_tls_pem for wss:// (2026-10-18), GrpcDispatcher::with_tls (grpc-tls); the client speaks HTTPS and wss:// by default (tls-rustls). The axum adapter leaves the listener, and so TLS, to the operator. Whether a deployment is production, and terminates TLS here or in front, stays the deployer's, because the requirement is on the deployment. Until 2026-10-18 these notes said the JSON-RPC/REST/WebSocket listeners were plaintext only; that was stale for HTTP after Server::with_tls (2026-10-14) and is no longer true for WebSocket. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds production deployments; the SDK's hook is TLS on every listener and client (tested), which the deployer turns on. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Since 2026-10-20 Server also warns once at start when it serves plaintext on an address that is not loopback (serve/graceful/plaintext.rs plaintext_warning); a warning, because TLS is often terminated in front. Since 2026-10-21 (ADR 0025) ServeConfig::production() makes Server refuse to start on plaintext beyond loopback, accepting nothing, unless with_tls_terminated_in_front is set (tests/production_listener.rs plaintext_beyond_loopback_is_refused_and_nothing_is_accepted, tls_terminated_in_front_serves_beyond_loopback); the refusal and the plaintext warning are Server's alone: the WebSocket and gRPC listeners neither warn about plaintext nor refuse it, and CombinedDispatcher is not covered by the refusal. Re-audited 2026-10-24: the sentence binds the deployment, since what 'production' means is the deployer's; this entry and the one for the same sentence at §7.1/§13.4 carry the same binds.",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 1879,
@@ -5285,17 +5296,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:944 RequestHandlerBuilder::build",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:19 RequestHandler::undeclared_binding",
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:63 card_warnings"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:29 RequestHandler::undeclared_binding",
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:62 card_warnings"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported",
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:40 interface_urls_must_be_absolute_and_https_off_loopback"
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:40 interface_urls_must_be_absolute_and_https_off_loopback",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:217 building_a_handler_logs_what_the_card_lint_finds"
    ],
-   "notes": "build() refuses an interface with an empty url, binding or version (AgentCard::validate); since 2026-10-18 a served binding the card does not declare, and an interface URL that is not absolute, are warned about. Accuracy of the content stays the author's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Card content is the author's; the SDK refuses an incomplete interface and warns about undeclared bindings and non-absolute URLs (tested).",
+   "notes": "build() refuses an interface with an empty url, binding or version (AgentCard::validate); since 2026-10-18 a served binding the card does not declare, and an interface URL that is not absolute, are warned about. Accuracy of the content stays the author's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Card content is the author's; the SDK refuses an incomplete interface and warns about undeclared bindings and non-absolute URLs (tested). Re-audited 2026-10-24: that build() logs the card lint is pinned by undeclared_binding_tests building_a_handler_logs_what_the_card_lint_finds (it had no test); only a static card is validated here, a dynamic one is produced elsewhere; ADR 0025's production refusal covers an undeclared binding for Server (see §5.2).",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 1988,
@@ -5306,15 +5318,21 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:19 RequestHandler::undeclared_binding"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:29 RequestHandler::undeclared_binding"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:153 the_combined_dispatcher_warns_for_the_binding_the_card_lacks",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:172 the_server_warns_when_it_starts_for_a_binding_the_card_lacks",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:191 the_websocket_listener_warns_when_it_starts_for_a_binding_the_card_lacks",
+    "crates/a2a-protocol-server/src/dispatch/grpc/undeclared_tests.rs:20 building_the_router_warns_when_the_card_does_not_declare_grpc",
+    "bindings/a2a-protocol-slimrpc/tests/undeclared_binding.rs:80 a_server_whose_card_does_not_declare_slimrpc_warns",
+    "bindings/a2a-protocol-slimrpc/tests/undeclared_binding.rs:96 a_server_whose_card_declares_slimrpc_does_not"
    ],
-   "notes": "A listener serving a binding the card omits is warned about (since 2026-10-18), which covers 'all'; the order is the agent's stated preference and the client honours it (from_card). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1984: the order and completeness of supportedInterfaces are the author's; the SDK warns about an omitted binding (tested).",
+   "notes": "A listener serving a binding the card omits is warned about (since 2026-10-18), which covers 'all'; the order is the agent's stated preference and the client honours it (from_card). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1984: the order and completeness of supportedInterfaces are the author's; the SDK warns about an omitted binding (tested). Corrected 2026-10-24 (independent re-audit): 'which covers all' overstated it. The check compares the served binding's string with the card's protocolBinding values; it ignores protocolVersion, url and tenant, so a card declaring JSON-RPC at version 0.3 only still passes while the server serves 1.x, and the order cannot be checked at all. The call sites are now each tested (see §5.2).",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 1990,
@@ -5326,17 +5344,18 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/agent_card/builders.rs:76 AgentInterface::jsonrpc",
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:63 card_warnings",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:19 RequestHandler::undeclared_binding"
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:62 card_warnings",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:29 RequestHandler::undeclared_binding"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:40 interface_urls_must_be_absolute_and_https_off_loopback",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:217 building_a_handler_logs_what_the_card_lint_finds"
    ],
-   "notes": "AgentInterface::jsonrpc/grpc/rest emit the spec spellings; build() warns (since 2026-10-18) about a non-absolute or plaintext interface URL and a listener whose binding the card omits. Whether the URL is reachable behind proxies is the deployer's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1984.",
+   "notes": "AgentInterface::jsonrpc/grpc/rest emit the spec spellings; build() warns (since 2026-10-18) about a non-absolute or plaintext interface URL and a listener whose binding the card omits. Whether the URL is reachable behind proxies is the deployer's. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1984. Re-audited 2026-10-24: that build() emits the warnings is pinned by building_a_handler_logs_what_the_card_lint_finds; the URL's accuracy (host, proxy prefix, the JSON-RPC mount path) is not knowable to the SDK.",
    "auditor": "D",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 1991,
@@ -7497,16 +7516,17 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/lib.rs:89 WEBSOCKET_BINDING_URI",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:442 WebSocketDispatcher::accept_loop",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:35 RequestHandler::warn_if_undeclared",
-    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:19 RequestHandler::undeclared_binding"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:48 RequestHandler::warn_if_undeclared",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:29 RequestHandler::undeclared_binding"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported"
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:45 a_binding_the_card_does_not_declare_is_reported",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:191 the_websocket_listener_warns_when_it_starts_for_a_binding_the_card_lacks"
    ],
-   "notes": "WEBSOCKET_BINDING_URI and AgentInterface::new(url, uri) give the declaration; since 2026-10-18 the WebSocket listener warns when it starts if the static card does not declare it. The dispatcher never edits the card (a signed card cannot be edited). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Declaring the binding is the card author's; the SDK provides WEBSOCKET_BINDING_URI and warns when the WebSocket listener's binding is undeclared (tested).",
+   "notes": "WEBSOCKET_BINDING_URI and AgentInterface::new(url, uri) give the declaration; since 2026-10-18 the WebSocket listener warns when it starts if the static card does not declare it. The dispatcher never edits the card (a signed card cannot be edited). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Declaring the binding is the card author's; the SDK provides WEBSOCKET_BINDING_URI and warns when the WebSocket listener's binding is undeclared (tested). Re-audited 2026-10-24: the WebSocket listener's warning is now pinned by its own test (the_websocket_listener_warns_when_it_starts_for_a_binding_the_card_lacks, which fails with the call removed); the earlier 'tested' cited the shared predicate with HTTP+JSON. ADR 0025's production refusal does not reach the WebSocket listener.",
    "auditor": "E",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 3042,
@@ -7519,7 +7539,7 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/binding.rs:37 SLIMRPC_PROTOCOL_BINDING",
     "bindings/a2a-protocol-slimrpc/src/binding.rs:207 SlimName::to_agent_interface",
-    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:268 SlimRpcServer::agent_interface"
+    "bindings/a2a-protocol-slimrpc/src/server/mod.rs:274 SlimRpcServer::agent_interface"
    ],
    "test_evidence": [
     "bindings/a2a-protocol-slimrpc/tests/e2e.rs:293 extended_agent_card_advertises_the_slimrpc_binding"
@@ -8348,11 +8368,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/builder.rs:944 RequestHandlerBuilder::build",
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:194 publishable"
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:193 publishable"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:123 a_credential_in_any_card_url_is_found_and_refused",
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:147 an_internal_host_is_reported"
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:136 a_credential_in_any_card_url_is_found_and_refused",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:160 an_internal_host_is_reported"
    ],
    "notes": "Re-examined 2026-10-18: the extended card goes through the same checks as the public one (see §14 3341): an unmasked credential in a URL is refused at build() and by per-caller extended cards, and an internal service URL is reported by card_warnings. Residual, the author's: free text is not inspected.",
    "auditor": "F",
@@ -8487,12 +8507,13 @@
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:101 a_wss_endpoint_is_reached_with_the_configured_roots",
     "crates/a2a-protocol-client/tests/ws_tls_tests.rs:118 a_wss_endpoint_with_an_untrusted_certificate_is_refused",
     "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:47 plaintext_beyond_loopback_is_warned_about",
-    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:115 loopback_or_tls_is_not"
+    "crates/a2a-protocol-server/src/serve/graceful/plaintext.rs:115 loopback_or_tls_is_not",
+    "crates/a2a-protocol-server/tests/production_listener.rs:56 plaintext_beyond_loopback_is_refused_and_nothing_is_accepted"
    ],
-   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Since 2026-10-20 Server also warns once at start when it serves plaintext on an address that is not loopback (serve/graceful/plaintext.rs plaintext_warning); a warning, because TLS is often terminated in front.",
+   "notes": "Same requirement as §7.1. Every SDK listener can terminate TLS (Server::with_tls for HTTP, WebSocketDispatcher::with_tls since 2026-10-18, GrpcDispatcher::with_tls) and the client reaches https:// and wss:// with verified roots. Using them in production is the deployment's duty. The earlier note (the built-in hyper serve()/WebSocket listeners are plaintext only) was stale for HTTP since Server::with_tls (2026-10-14) and is fixed for WebSocket; serve()/serve_with_addr themselves stay plaintext and run on Server since 2026-10-18, so TLS is Server::bind(..).with_tls(..). Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. As 1879. Re-verified against the code 2026-10-20 (ledger audit): every TLS entry point named re-checked; the stray 'SUPPORTED' wording removed (the status is APPLICATION); Server::with_tls's line re-pointed. Since 2026-10-20 Server also warns once at start when it serves plaintext on an address that is not loopback (serve/graceful/plaintext.rs plaintext_warning); a warning, because TLS is often terminated in front. Since 2026-10-21 (ADR 0025) ServeConfig::production() makes Server refuse to start on plaintext beyond loopback, accepting nothing, unless with_tls_terminated_in_front is set (tests/production_listener.rs plaintext_beyond_loopback_is_refused_and_nothing_is_accepted, tls_terminated_in_front_serves_beyond_loopback); the refusal and the plaintext warning are Server's alone: the WebSocket and gRPC listeners neither warn about plaintext nor refuse it, and CombinedDispatcher is not covered by the refusal. Re-audited 2026-10-24: the sentence binds the deployment, since what 'production' means is the deployer's; this entry and the one for the same sentence at §7.1/§13.4 carry the same binds.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 3174,
@@ -8811,10 +8832,10 @@
     "crates/a2a-protocol-server/src/auth/throttle.rs:135 AuthFailureThrottle"
    ],
    "test_evidence": [],
-   "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle. Re-verified against the code 2026-10-20 (ledger audit): the citation named a ListTasks log line; it now names the signals the note lists.",
+   "notes": "SDK exposes Metrics (on_request/on_error/on_latency per method) and OTel; anomaly detection is the operator's. Re-examined 2026-10-18, kept: what counts as unusual is deployment policy. The SDK emits the signals: per-method Metrics, ServerInterceptor::on_complete with the caller, OTel spans and metrics, RateLimitInterceptor, AuthFailureThrottle. Re-verified against the code 2026-10-20 (ledger audit): the citation named a ListTasks log line; it now names the signals the note lists. Re-audited 2026-10-24: RateLimitInterceptor and AuthFailureThrottle refuse requests and neither logs nor calls Metrics itself, so their refusals show through the generic on_error and the audit log; Metrics::on_request is per method, per-caller counts need on_complete or the audit log.",
    "auditor": "F",
    "source": "spec",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 3196,
@@ -9754,15 +9775,16 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:63 card_warnings"
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:62 card_warnings"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:40 interface_urls_must_be_absolute_and_https_off_loopback"
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:40 interface_urls_must_be_absolute_and_https_off_loopback",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:217 building_a_handler_logs_what_the_card_lint_finds"
    ],
-   "notes": "Binds production deployments. build() warns (since 2026-10-18) when an interface URL is not absolute, or not https on a host other than loopback; not refused, because a bare gRPC host:port and local test cards are in use. The earlier note (builder only rejects an empty list) was stale: build() runs AgentCard::validate, which refuses an empty url, binding or version. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds the card author in production; build() warns about a non-absolute or plaintext non-loopback interface URL (tested).",
+   "notes": "Binds production deployments. build() warns (since 2026-10-18) when an interface URL is not absolute, or not https on a host other than loopback; not refused, because a bare gRPC host:port and local test cards are in use. The earlier note (builder only rejects an empty list) was stale: build() runs AgentCard::validate, which refuses an empty url, binding or version. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds the card author in production; build() warns about a non-absolute or plaintext non-loopback interface URL (tested). Re-audited 2026-10-24: that build() emits the warning is pinned by undeclared_binding_tests building_a_handler_logs_what_the_card_lint_finds.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 339,
@@ -10489,15 +10511,17 @@
    "status": "APPLICATION",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint.rs:63 card_warnings"
+    "crates/a2a-protocol-server/src/agent_card/lint.rs:62 card_warnings"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:85 an_unregistered_http_auth_scheme_is_reported"
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:85 an_unregistered_http_auth_scheme_is_reported",
+    "crates/a2a-protocol-server/src/agent_card/lint_tests.rs:98 a_mutual_authentication_algorithm_is_not_a_scheme",
+    "crates/a2a-protocol-server/src/handler/undeclared_binding_tests.rs:217 building_a_handler_logs_what_the_card_lint_finds"
    ],
-   "notes": "A lowercase should on the card author. Since 2026-10-18 build() warns, through agent_card::card_warnings, about an HTTP scheme not in the IANA registry as read on 2026-10-18 (registry updated 2025-02-18), compared without regard to case. A warning, not a refusal: a scheme registered later is legitimate. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds the card author; build() warns about an HTTP scheme outside the IANA registry (tested).",
+   "notes": "A lowercase should on the card author. Since 2026-10-18 build() warns, through agent_card::card_warnings, about an HTTP scheme not in the IANA registry as read on 2026-10-18 (registry updated 2025-02-18), compared without regard to case. A warning, not a refusal: a scheme registered later is legitimate. Status corrected 2026-10-18 from SUPPORTED, which the ledger reserves for MAY. Binds the card author; build() warns about an HTTP scheme outside the IANA registry (tested). Corrected 2026-10-24 (independent re-audit, IANA's page read again): the allowlist held four iso-kam3-* tokens, which are the algorithms of the Mutual scheme in the page's second table ('HTTP Mutual Authentication Algorithms'), not schemes, so the lint accepted a scheme IANA does not register; removed (a_mutual_authentication_algorithm_is_not_a_scheme). The 14 scheme names are unchanged.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 535,
@@ -10712,10 +10736,10 @@
     "crates/a2a-protocol-client/src/token_provider.rs:139 TokenProvider"
    ],
    "test_evidence": [],
-   "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider. Re-examined 2026-10-18, kept: the SDK runs no authorization-code flow (client credentials and static tokens only); an application that does plugs in a TokenProvider and owns PKCE. Corrected 2026-10-20 (ledger audit): besides client credentials and static tokens the SDK has RFC 8693 token exchange (token_provider/exchange.rs TokenExchange); it has no authorization-code flow and no PKCE code (no pkce, code_verifier or authorization_code anywhere), so the classification holds.",
+   "notes": "Client SDK implements only client-credentials/static tokens (no authorization-code flow, no PKCE code); applications plug a TokenProvider. Re-examined 2026-10-18, kept: the SDK runs no authorization-code flow (client credentials and static tokens only); an application that does plugs in a TokenProvider and owns PKCE. Corrected 2026-10-20 (ledger audit): besides client credentials and static tokens the SDK has RFC 8693 token exchange (token_provider/exchange.rs TokenExchange); it has no authorization-code flow and no PKCE code (none in the client crate or the bindings; the types crate models AuthorizationCodeFlow and pkce_required as card data, security.rs and proto/convert/card.rs, and runs no flow), so the classification holds.",
    "auditor": "G",
    "source": "proto",
-   "changed_by": "claude/charming-lamport-yp20d6 (2026-10-18)"
+   "changed_by": "claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 600,

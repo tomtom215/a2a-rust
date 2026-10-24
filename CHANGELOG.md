@@ -1574,6 +1574,13 @@ section "The client refuses what `a2a.proto` does not allow".
   `IPV6_V6ONLY`, a custom backlog) and binding before dropping privileges
   (#151). `Server::bind` now delegates to it.
 
+- **`RequestHandler::undeclared_binding` and `warn_if_undeclared` are
+  public** (spec §5.2: an agent MUST declare every protocol it serves). Every
+  listener in this crate runs the check when it starts; a binding outside it
+  could not. `SlimRpcServer` now runs it with its own `protocolBinding`, so a
+  SLIMRPC agent whose card omits SLIMRPC is warned about at construction, as
+  the other listeners' agents are.
+
 ### Behaviour Changes
 
 - **`rpc.server.call.duration`, `rpc.client.call.duration` and
@@ -3387,6 +3394,21 @@ section "The client refuses what `a2a.proto` does not allow".
   persistence channel the background processor already used, so a slow
   collector makes the executor wait (bounded by the write timeout) instead
   of dropping events. Measured after: 600 of 600 in 60 of 60 sends.
+
+- **A subscription that could not replay what its snapshot lacked went on
+  live and skipped those events with no `streamLagged`** (spec §3.5.2: each
+  stream MUST receive the same events in the same order). When the store had
+  not applied the queue's events within `subscribe_replay_catchup`, the
+  `SubscribeToTask` snapshot reflected fewer positions than the live
+  receiver started after, and the log was replayed to cover them; a store
+  without an event log, an unreadable or holed log, and a log that no longer
+  reached back each returned early instead. The stream now yields the
+  snapshot and then `streamLagged` counting the positions between. A resume
+  against a whole snapshot is unchanged.
+- **The agent-card lint accepted `iso-kam3-*` as HTTP authentication
+  schemes.** They are the algorithms of the `Mutual` scheme, in IANA's second
+  table, not registered schemes; removed from the allowlist, so a card naming
+  one is warned about.
 
 ### Deprecated
 

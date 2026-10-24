@@ -117,3 +117,113 @@ fn a_custom_dispatcher_names_no_binding_by_default() {
     }
     assert_eq!(Custom.protocol_binding(), None);
 }
+
+// ── Every listener asks, and none is trusted to ──────────────────────────
+//
+// The ledger's §5.2 note said "tested" for the check, which covered the
+// predicate and the axum router. These pin the other listeners' call sites
+// (independent re-audit, 2026-10-24): each warns for a card that does not
+// declare its binding, and stays silent for one that does.
+
+fn card_declaring(interfaces: impl IntoIterator<Item = AgentInterface>) -> AgentCard {
+    let mut interfaces = interfaces.into_iter();
+    let first = interfaces.next().expect("at least one interface");
+    interfaces.fold(
+        AgentCard::new("a", "1", first)
+            .with_description("d")
+            .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"])),
+        AgentCard::with_interface,
+    )
+}
+
+/// Runs `future` on a runtime of its own while warnings are captured.
+#[cfg(feature = "tracing")]
+fn warnings_while(future: impl std::future::Future<Output = ()>) -> Vec<String> {
+    crate::handler::shutdown::tests::warning::warnings_during(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(future);
+    })
+}
+
+#[cfg(feature = "tracing")]
+#[test]
+fn the_combined_dispatcher_warns_for_the_binding_the_card_lacks() {
+    let jsonrpc_only = warnings_while(async {
+        let _ = crate::CombinedDispatcher::new(handler(Some(jsonrpc_card())));
+    });
+    assert_eq!(jsonrpc_only, ["undeclared binding"], "HTTP+JSON only");
+    let both = card_declaring([
+        AgentInterface::jsonrpc("https://a.example/rpc"),
+        AgentInterface::rest("https://a.example"),
+    ]);
+    let declared = warnings_while(async {
+        let _ = crate::CombinedDispatcher::new(handler(Some(both)));
+    });
+    assert!(declared.is_empty(), "{declared:?}");
+}
+
+/// `Server` asks with the dispatcher's own binding when it starts, and a
+/// listener with nothing to ask about (a custom dispatcher) is silent.
+#[cfg(feature = "tracing")]
+#[test]
+fn the_server_warns_when_it_starts_for_a_binding_the_card_lacks() {
+    let serve = |card: AgentCard| async move {
+        let server = crate::serve::Server::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let _ = server
+            .serve_with_shutdown(JsonRpcDispatcher::new(handler(Some(card))), async {})
+            .await;
+    };
+    let rest_only = warnings_while(serve(card_declaring([AgentInterface::rest(
+        "https://a.example",
+    )])));
+    assert_eq!(rest_only, ["undeclared binding"], "{rest_only:?}");
+    let declared = warnings_while(serve(jsonrpc_card()));
+    assert!(declared.is_empty(), "{declared:?}");
+}
+
+#[cfg(all(feature = "tracing", feature = "websocket"))]
+#[test]
+fn the_websocket_listener_warns_when_it_starts_for_a_binding_the_card_lacks() {
+    let serve = |card: AgentCard| async move {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let _ = std::sync::Arc::new(crate::WebSocketDispatcher::new(handler(Some(card))))
+            .serve_with_shutdown(listener, async {})
+            .await;
+    };
+    let undeclared = warnings_while(serve(jsonrpc_card()));
+    assert_eq!(undeclared, ["undeclared binding"], "{undeclared:?}");
+    let ws = card_declaring([AgentInterface::new(
+        "https://a.example/ws",
+        a2a_protocol_types::WEBSOCKET_BINDING_URI,
+    )]);
+    let declared = warnings_while(serve(ws));
+    assert!(declared.is_empty(), "{declared:?}");
+}
+
+/// `build()` reports what the card lint finds (an interface URL that is not
+/// https off loopback, a scheme IANA has not registered, …) as a warning
+/// each, and a clean card as none. The lint itself is tested in
+/// `agent_card::lint_tests`; this is the call that makes it speak
+/// (independent re-audit, 2026-10-24: nothing tested that `build()` logs).
+#[cfg(feature = "tracing")]
+#[test]
+fn building_a_handler_logs_what_the_card_lint_finds() {
+    let warnings = |card: AgentCard| {
+        crate::handler::warnings_during(|| {
+            let _ = handler(Some(card));
+        })
+    };
+    let plaintext = AgentCard::new("a", "1", AgentInterface::jsonrpc("http://a.example/rpc"))
+        .with_description("d")
+        .with_skill(AgentSkill::new("s", "S", "d").with_tags(["t"]));
+    assert_eq!(warnings(plaintext), ["agent card"]);
+    let clean = warnings(jsonrpc_card());
+    assert!(clean.is_empty(), "{clean:?}");
+}
