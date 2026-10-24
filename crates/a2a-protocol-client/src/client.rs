@@ -217,7 +217,7 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<serde_json::Value> {
         let params = std::mem::take(&mut req.params);
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "tracing")]
         let started = std::time::Instant::now();
         #[cfg(feature = "tracing")]
         let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
@@ -228,6 +228,8 @@ impl A2aClient {
             self.config.propagate_trace,
             &mut req.extra_headers,
         );
+        #[cfg(feature = "tracing")]
+        let abandoned = crate::call_span::Abandoned::new(self, method, &call.span, started);
         let send = self.transport.send_request_with_query(
             method,
             params,
@@ -238,6 +240,8 @@ impl A2aClient {
         let send = tracing::Instrument::instrument(send, call.span.clone());
         #[cfg(feature = "tracing")]
         let (result, request_id) = crate::call_span::noting_request_id(send).await;
+        #[cfg(feature = "tracing")]
+        abandoned.finish();
         #[cfg(feature = "tracing")]
         call.request_id(request_id.as_deref());
         #[cfg(not(feature = "tracing"))]
@@ -263,7 +267,7 @@ impl A2aClient {
         req: &mut ClientRequest,
     ) -> ClientResult<EventStream> {
         let params = std::mem::take(&mut req.params);
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "tracing")]
         let started = std::time::Instant::now();
         #[cfg(feature = "tracing")]
         let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
@@ -274,6 +278,8 @@ impl A2aClient {
             self.config.propagate_trace,
             &mut req.extra_headers,
         );
+        #[cfg(feature = "tracing")]
+        let abandoned = crate::call_span::Abandoned::new(self, method, &call.span, started);
         let send = self.transport.send_streaming_request_with_query(
             method,
             params,
@@ -284,6 +290,8 @@ impl A2aClient {
         let send = tracing::Instrument::instrument(send, call.span.clone());
         #[cfg(feature = "tracing")]
         let (result, request_id) = crate::call_span::noting_request_id(send).await;
+        #[cfg(feature = "tracing")]
+        abandoned.finish();
         #[cfg(feature = "tracing")]
         call.request_id(request_id.as_deref());
         #[cfg(not(feature = "tracing"))]

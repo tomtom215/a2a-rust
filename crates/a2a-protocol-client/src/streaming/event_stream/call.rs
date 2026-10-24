@@ -67,6 +67,15 @@ impl StreamCall {
             self.failed = Some(Status::failed(self.system, error));
         }
     }
+
+    /// The caller dropped the stream before it ended: the call was cut short
+    /// (`cancelled`, as the server records a peer that goes away), unless it
+    /// had already failed.
+    pub(super) fn abandon(&mut self) {
+        if self.failed.is_none() {
+            self.failed = Some(Status::cancelled());
+        }
+    }
 }
 
 impl Drop for StreamCall {

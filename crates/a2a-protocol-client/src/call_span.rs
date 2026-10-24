@@ -47,6 +47,11 @@ pub fn agent_identity(card: &AgentCard) -> Arc<(String, String, String)> {
 mod peer;
 pub use peer::Peer;
 
+#[cfg(feature = "tracing")]
+mod abandoned;
+#[cfg(feature = "tracing")]
+pub use abandoned::Abandoned;
+
 /// A call's span, from open to the recording of its outcome.
 #[cfg(feature = "tracing")]
 #[derive(Debug)]

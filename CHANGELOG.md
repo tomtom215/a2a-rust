@@ -2689,6 +2689,24 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Fixed
 
+- **A client call the caller drops, and a stream it drops early, are
+  recorded as `cancelled`** (client, `tracing`/`otel`). A call dropped
+  while waiting for its agent (a `tokio::time::timeout`, a `select!`) ran
+  nothing after its `.await`: its span ended with no status and
+  `rpc.client.call.duration` held no point, so the calls callers gave up on
+  were the ones the telemetry could not see. A stream dropped before its
+  final event or the end of its body was recorded as a success. Both now
+  end their span with `error.type` `cancelled` and `ERROR` status and
+  record their duration with that `error.type`, as the server records a
+  peer that goes away. A stream read to its end is unchanged. The
+  interceptors' error hook does not run for a dropped call (a destructor
+  cannot await it). Tests: `call_metric/tests.rs`
+  `a_call_the_caller_drops_is_recorded_as_cancelled` and
+  `a_stream_dropped_before_it_ended_is_recorded_as_cancelled`; the guard's
+  own in `call_span/abandoned.rs`. Each was written failing first (no point
+  recorded; success recorded), and three mutations of the guard and one of
+  the stream's phase check are each caught.
+
 - **A WebSocket client's spans and `rpc.client.call.duration` carry
   `server.address` and `server.port`** (client). A transport given to
   `with_custom_transport`, as `WebSocketTransport` is, recorded neither, so

@@ -290,8 +290,8 @@ only: when something here is done, delete it rather than annotating it.
    makes (an oversize message, an unknown method, the connection limit; M8: a
    tower layer that can tell them from calls the service ran) record
    nothing; client
-   dropped calls, early-dropped streams and retries are not visible (M9,
-   M10); push-config, audit, halt, lease and retention stores have no DB
+   retries are not visible (M10; dropped calls and early-dropped streams are
+   now recorded as `cancelled`, M9); push-config, audit, halt, lease and retention stores have no DB
    span (M11); card fetch, JWKS and token exchange have no duration metric
    (M12); the per-operation by binding matrix (M15) is now asserted for all
    eleven operations on JSON-RPC, HTTP+JSON, gRPC and WebSocket

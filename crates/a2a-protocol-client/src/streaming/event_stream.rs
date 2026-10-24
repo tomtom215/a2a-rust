@@ -704,6 +704,12 @@ impl EventStream {
 
 impl Drop for EventStream {
     fn drop(&mut self) {
+        #[cfg(feature = "tracing")]
+        if self.phase != Phase::Finished
+            && let Some(call) = self.call.as_mut()
+        {
+            call.0.abandon();
+        }
         if let Some(handle) = self.abort_handle.take() {
             handle.abort();
         }

@@ -82,18 +82,18 @@ agent_executor!(Done, |ctx, queue| async {
         .await
 });
 
-/// A JSON-RPC client of a fresh server, recording into a fresh reader.
-async fn client() -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
-    let handler = RequestHandlerBuilder::new(Done)
-        .without_agent_card()
-        .build()
-        .expect("handler");
-    let addr = a2a_protocol_server::serve_with_addr(
-        "127.0.0.1:0",
-        JsonRpcDispatcher::new(Arc::new(handler)),
-    )
-    .await
-    .expect("serve");
+/// Says it is working and then never finishes, so its stream ends only when
+/// the caller drops it.
+struct Endless;
+agent_executor!(Endless, |ctx, queue| async {
+    a2a_protocol_server::EventEmitter::new(ctx, queue)
+        .status(a2a_protocol_types::TaskState::Working)
+        .await?;
+    std::future::pending().await
+});
+
+/// A JSON-RPC client of `addr`, recording into a fresh reader.
+fn client_of(addr: std::net::SocketAddr) -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
     let reader = Arc::new(ManualReader::builder().build());
     let provider = SdkMeterProvider::builder()
         .with_reader(SharedReader(Arc::clone(&reader)))
@@ -104,6 +104,46 @@ async fn client() -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
         .expect("client");
     client.metric = CallMetric::from_meter(&meter);
     (client, reader, provider, addr.port())
+}
+
+/// A JSON-RPC client of a fresh server, recording into a fresh reader.
+async fn client() -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
+    client_running(Done).await
+}
+
+/// [`client`], of a server running `executor`.
+async fn client_running(
+    executor: impl a2a_protocol_server::AgentExecutor,
+) -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
+    let handler = RequestHandlerBuilder::new(executor)
+        .without_agent_card()
+        .build()
+        .expect("handler");
+    let addr = a2a_protocol_server::serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::new(Arc::new(handler)),
+    )
+    .await
+    .expect("serve");
+    client_of(addr)
+}
+
+/// An address that accepts a connection and never answers it, so a call to
+/// it ends only when the caller gives up.
+async fn silent_peer() -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        while let Ok((socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let _held = socket;
+                std::future::pending::<()>().await;
+            });
+        }
+    });
+    addr
 }
 
 fn send() -> MessageSendParams {
@@ -191,6 +231,79 @@ async fn a_streaming_call_is_measured_until_its_stream_is_dropped() {
     assert!(
         *sum >= HELD.as_secs_f64(),
         "measured {sum} s, held {HELD:?}"
+    );
+}
+
+/// A call the caller gives up on — its future dropped by a timeout or a
+/// `select!` — is recorded, as `cancelled` and with the time it ran, as the
+/// server records a call whose peer went away. Unary and streaming alike: a
+/// stream is dropped before it opens, here.
+#[tokio::test]
+async fn a_call_the_caller_drops_is_recorded_as_cancelled() {
+    const WAITED: Duration = Duration::from_millis(60);
+    let addr = silent_peer().await;
+    let (client, reader, _provider, port) = client_of(addr);
+    let port = port.to_string();
+
+    let sent = tokio::time::timeout(WAITED, client.send_message(send())).await;
+    assert!(sent.is_err(), "the peer never answers");
+    let streamed = tokio::time::timeout(WAITED, client.stream_message(send())).await;
+    assert!(streamed.is_err(), "the peer never answers");
+
+    let seen = points(&reader);
+    let want = |method: &str| {
+        attrs(&[
+            ("rpc.system.name", "jsonrpc"),
+            ("rpc.method", method),
+            ("error.type", "cancelled"),
+            ("server.address", "127.0.0.1"),
+            ("server.port", port.as_str()),
+        ])
+    };
+    let mut wanted = vec![
+        want("lf.a2a.v1.A2AService/SendMessage"),
+        want("lf.a2a.v1.A2AService/SendStreamingMessage"),
+    ];
+    wanted.sort();
+    let mut names: Vec<_> = seen.iter().map(|p| p.0.clone()).collect();
+    names.sort();
+    assert_eq!(names, wanted, "{seen:?}");
+    for (attributes, count, sum) in &seen {
+        assert_eq!(*count, 1, "{attributes:?}");
+        assert!(
+            *sum >= WAITED.as_secs_f64(),
+            "{attributes:?} measured {sum} s, waited {WAITED:?}"
+        );
+    }
+}
+
+/// A stream the caller drops before it has ended — before a final event or
+/// the end of the body — is a call the caller cut short, and is recorded as
+/// `cancelled` when it is dropped, as the server records the same stream
+/// when its peer goes away. One read to the end is not (see
+/// `a_streaming_call_is_measured_until_its_stream_is_dropped`).
+#[tokio::test]
+async fn a_stream_dropped_before_it_ended_is_recorded_as_cancelled() {
+    let (client, reader, _provider, _) = client_running(Endless).await;
+    let mut stream = client.stream_message(send()).await.expect("stream");
+    stream.next().await.expect("an event").expect("ok");
+    assert!(points(&reader).is_empty(), "recorded before the drop");
+    drop(stream);
+
+    let points = points(&reader);
+    assert_eq!(points.len(), 1, "{points:?}");
+    let (attributes, count, _) = &points[0];
+    assert_eq!(*count, 1);
+    assert!(
+        attributes.contains(&("error.type".to_owned(), "cancelled".to_owned())),
+        "{attributes:?}"
+    );
+    assert!(
+        attributes.contains(&(
+            "rpc.method".to_owned(),
+            "lf.a2a.v1.A2AService/SendStreamingMessage".to_owned()
+        )),
+        "{attributes:?}"
     );
 }
 
