@@ -3470,7 +3470,10 @@ section "The client refuses what `a2a.proto` does not allow".
   by 1.0.10. The SLIMRPC lockfile's `ctutils` 0.4.3 (RUSTSEC-2026-0385,
   mask generation and `u128` comparisons that could branch on secret values)
   becomes 0.4.4; it arrives through the SLIM crates' `p256` and `ml-kem`,
-  and no other lockfile holds it. In
+  and no other lockfile holds it. Its `crypto-bigint` 0.7.5
+  (RUSTSEC-2026-0387, operations meant to be constant-time that could
+  branch on secret values) becomes 0.7.6; it arrives through
+  `agntcy-slim-auth`'s `p256`, and no other lockfile holds it either. In
   CI's hash-locked Python tools, `certifi` 2026.7.22 (GHSA-6q48-6c7w-9gw2)
   becomes 2026.10.19 and `uv` 0.13.1 (GHSA-hq85-5cpj-mr62) becomes 0.13.5,
   for the same emSign root. The `tokio` requirement rises from 1.44.2 to
