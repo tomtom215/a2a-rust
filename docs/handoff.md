@@ -264,7 +264,33 @@ only: when something here is done, delete it rather than annotating it.
    conversion failures recorded as failures, the tool loop's `GenAI` metrics,
    JSON-RPC client span attributes, the card-fetch and webhook-receiver
    spans, delegation spawns kept in the parent's trace, and default
-   metrics that follow the global meter provider at each measurement.
+   metrics that follow the global meter provider at each measurement; the
+   task store a handler builds for itself reports to the handler's `Metrics`
+   (`handler/default_store_metrics_tests.rs`), and a tenant refusal is
+   counted as an answered error by all ten methods
+   (`handler/tenant_refusal_metrics_tests.rs`; without it
+   `A2ARequestsUnanswered` fired on refusals).
+   **Open from the 2026-10-24 wiring audit** (a read-only static reading of
+   the tree at `9a14939`; no binary was run, so each is a reading, not a
+   measurement; the report is not in the repository): `examples/live-model`
+   starts no `Telemetry` (H1); `a2a-tck` has none by design and is
+   undocumented as exempt (H2); the SLIMRPC multicast fan-out has no span or
+   duration (H3); the SLIMRPC binding builds `a2a-protocol-client` with
+   `tracing`/`otel` off (H4) and so does `itk` (M13); `agent-team` and
+   `resilient-agent` pass a custom `Metrics` that replaces the OpenTelemetry
+   default (M1); `incident-response` Act 5 replaces and shuts down the global
+   meter provider (M2); axum `TimedBody` and two `refuse_unreadable` paths,
+   WebSocket binary/busy/handshake/oversize refusals, SLIMRPC refusals before
+   the span, and tonic's own refusals record nothing (M5 to M8); client
+   dropped calls, early-dropped streams and retries are not visible (M9,
+   M10); push-config, audit, halt, lease and retention stores have no DB
+   span (M11); card fetch, JWKS and token exchange have no duration metric
+   (M12); no gate fails a `fn main` that starts no `Telemetry`, and the
+   per-operation by binding matrix is asserted for three operations only
+   (M14, M15); and 13 low items (L1 to L13: stale doc lines in
+   `examples/README.md` and `deploy/observability/README.md`, an
+   `OTEL_*_EXPORTER=prometheus` env that panics every binary, no flush on
+   SIGTERM for four binaries, and the rest).
 4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
    and the incremental gate across 20 (`mutants.yml`, measured from runs
    39193157308 and 39343090044). The three 2026-10-19 survivors were

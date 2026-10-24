@@ -8,6 +8,7 @@
 //! The tenant a request runs in, resolved before its call is admitted.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use super::RequestHandler;
 use crate::error::ServerResult;
@@ -53,6 +54,27 @@ impl RequestHandler {
             Ok(tenant) => Ok(tenant),
             Err(e) => Err(Box::pin(self.refuse_unreadable(method, headers, e)).await),
         }
+    }
+
+    /// [`resolve_tenant`](Self::resolve_tenant) for a method that has already
+    /// counted its request: a refusal is an answer, so it is counted as an
+    /// error with its latency, as every later failure of the method is.
+    /// Without this a refused request was left among those `on_request`
+    /// counted and nothing answered, which is what `A2ARequestsUnanswered`
+    /// alerts on.
+    pub(crate) async fn resolve_tenant_counted(
+        &self,
+        start: Instant,
+        method: &str,
+        headers: Option<&HashMap<String, String>>,
+        client_tenant: Option<&str>,
+    ) -> ServerResult<String> {
+        let resolved = self.resolve_tenant(method, headers, client_tenant).await;
+        if let Err(e) = &resolved {
+            self.metrics.on_error(method, e.metric_label());
+            self.metrics.on_latency(method, start.elapsed());
+        }
+        resolved
     }
 
     /// [`resolve_tenant`](Self::resolve_tenant) without the admission of a

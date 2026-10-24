@@ -1098,13 +1098,26 @@ impl RequestHandlerBuilder {
         // Isolation needs a store that partitions, so an unset one is the
         // tenant-aware kind then.
         let task_store_config = self.task_store_config;
+        // The default store reports what only a store can see (an event that
+        // never reached the log, a hold's ceiling dropping one) to the
+        // handler's metrics. Left at its default it reported to nothing, and
+        // those counts, the only sign an event was lost, never left the
+        // process (independent audit, 2026-10-24). A store the caller
+        // supplies keeps the metrics the caller gave it.
+        let store_metrics = crate::metrics::MetricsHandle::from_arc(Arc::clone(&self.metrics));
         let task_store = self.task_store.unwrap_or_else(|| {
             if isolate_callers {
-                Arc::new(crate::store::TenantAwareInMemoryTaskStore::with_config(
-                    crate::store::TenantStoreConfig::default().with_per_tenant(task_store_config),
-                ))
+                Arc::new(
+                    crate::store::TenantAwareInMemoryTaskStore::with_config(
+                        crate::store::TenantStoreConfig::default()
+                            .with_per_tenant(task_store_config),
+                    )
+                    .with_metrics(store_metrics),
+                )
             } else {
-                Arc::new(InMemoryTaskStore::with_config(task_store_config))
+                Arc::new(
+                    InMemoryTaskStore::with_config(task_store_config).with_metrics(store_metrics),
+                )
             }
         });
         // Innermost, so a span measures the database and nothing wrapped

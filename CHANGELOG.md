@@ -3409,6 +3409,25 @@ section "The client refuses what `a2a.proto` does not allow".
   schemes.** They are the algorithms of the `Mutual` scheme, in IANA's second
   table, not registered schemes; removed from the allowlist, so a card naming
   one is warned about.
+- **The task store a handler builds for itself reported to no metrics**
+  (server). `RequestHandlerBuilder::build` made the default (and the
+  caller-isolated default) store with the no-op `Metrics`, so on a handler
+  with no store of its own the one sign that an event was lost, an append
+  for a task the store no longer held (`a2a.server.persistence_errors{operation=event_append,
+  error=task_absent}`), reached no exporter. The store now reports to the
+  handler's `Metrics`. Tests: `handler/default_store_metrics_tests.rs`
+  (the default and the caller-isolated default; both fail without the fix).
+- **A request the tenant rule refused was counted as received and never as
+  answered** (server). Under `require_resolved_tenant()`, or a resolver that
+  disagrees with the client's tenant, `SendMessage`, `SendStreamingMessage`,
+  `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask` and the four push
+  configuration methods returned from resolving the tenant after counting
+  `on_request` and before any `on_error` or `on_latency`, so
+  `a2a:server_unanswered:rate5m` and `A2ARequestsUnanswered` read every
+  refusal as a request the server never answered. The refusal is now counted
+  as an error with its latency, like every later failure. Test:
+  `handler/tenant_refusal_metrics_tests.rs` (all ten methods; each of the
+  nine call sites fails it when reverted on its own).
 
 ### Deprecated
 

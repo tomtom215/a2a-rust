@@ -552,7 +552,7 @@ impl RequestHandler {
         self.metrics.on_request("SubscribeToTask");
 
         let tenant = self
-            .resolve_tenant("SubscribeToTask", headers, params.tenant.as_deref())
+            .resolve_tenant_counted(start, "SubscribeToTask", headers, params.tenant.as_deref())
             .await?;
         // Boxed: `SubscribeToTask` is a cold, once-per-stream path, and
         // inlining this body pushed the JSON-RPC and REST dispatch futures

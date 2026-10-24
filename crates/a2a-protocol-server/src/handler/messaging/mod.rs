@@ -125,7 +125,7 @@ impl RequestHandler {
         self.metrics.on_request(method_name);
 
         let tenant = self
-            .resolve_tenant(method_name, headers, params.tenant.as_deref())
+            .resolve_tenant_counted(start, method_name, headers, params.tenant.as_deref())
             .await?;
         // Boxed: the send path's state is larger than clippy's
         // `large_futures` bound, and every binding awaits this.

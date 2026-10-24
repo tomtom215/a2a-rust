@@ -440,9 +440,13 @@ mod context_lookup_cost;
 #[cfg(test)]
 mod context_lookup_tests;
 #[cfg(test)]
+mod default_store_metrics_tests;
+#[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]
 mod tenant_limits_tests;
+#[cfg(test)]
+mod tenant_refusal_metrics_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
