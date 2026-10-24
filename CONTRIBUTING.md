@@ -241,8 +241,9 @@ no `protoc`.
 
 ## Extending a public trait
 
-`a2a-protocol-server` exposes eleven public traits, and **none of them are
-sealed**. That is deliberate: they are the extension points the architecture
+`a2a-protocol-server` exposes twenty public traits with every feature on
+(fifteen with the defaults; counted from the files `cargo doc` writes, which
+list only traits reachable from outside), and **none of them are sealed**. That is deliberate: they are the extension points the architecture
 depends on. `AgentExecutor` is the whole point of the SDK; `TaskStore`,
 `PushConfigStore`, `PushSender`, `TenantResolver` and `AgentCardProducer` let a
 deployment substitute its own infrastructure; `Metrics` lets it substitute its

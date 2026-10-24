@@ -419,10 +419,11 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   then writers behind a flag), so it waits. The book tells deployers to
   give each replica its share of the limit meanwhile.
 - **Tool loop:** spans record no content, because the handler's
-  content-capture setting does not reach an executor; a `Failed` status
-  carries up to 512 bytes of the provider's error body to the A2A caller;
-  `CONTRIBUTING.md` still says the server has "eleven public traits"
-  (21 `pub trait`s on 2026-10-20).
+  content-capture setting does not reach an executor (the caller-facing
+  `Failed` message no longer carries the provider's error body, 2026-10-24).
+  `CONTRIBUTING.md` says twenty public traits with every feature and fifteen
+  by default (2026-10-24, from `cargo doc`'s `trait.*.html`; a grep of `pub
+  trait` gives 21, one of them unreachable).
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive
   in backups and logs, erasure is not serialised across replicas.

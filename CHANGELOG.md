@@ -3530,6 +3530,24 @@ section "The client refuses what `a2a.proto` does not allow".
   `A2A-Version` or timed out (logged, not metered), and a message over the
   size cap, which tungstenite refuses by closing the connection with no
   JSON-RPC answer.
+- **A tool-loop run that failed on the model provider told the A2A caller
+  what the provider had sent back** (server, `tool-loop`). `ToolLoopExecutor`
+  failed the task with the error's full text: up to 512 bytes of the
+  provider's response body for a non-2xx status (which can echo the prompt or
+  name an account or a quota), and, for a connection failure, the provider's
+  URL. The caller is another agent or a person across the network, not the
+  operator. The task now fails with `the model provider answered HTTP {status}`,
+  `could not reach the model provider`, `the model provider's answer could
+  not be read` or `the model client is misconfigured`, and the full error is
+  logged at WARN for the operator. A tool's own message, a timeout and an
+  error a `ToolModel` returns as `Other` go through unchanged, and
+  `ModelError`'s `Display`, for code calling the loop directly, is unchanged.
+  Tests: `tool_loop/loop_error.rs`
+  `the_caller_is_told_the_kind_of_failure_not_what_the_provider_sent`,
+  `tests/tool_loop/executor.rs`
+  `a_provider_failure_fails_the_task_as_internal_with_the_status_and_not_the_body`
+  and `a_transport_failure_does_not_tell_the_caller_where_the_provider_is`.
+
 - **A gRPC client built from `GrpcTransport::connect` recorded no span and no
   duration** (client, `grpc`). Handed to `with_custom_transport`, the route
   the book documents for configuring the transport yourself, `GrpcTransport`
