@@ -359,6 +359,37 @@ mod tests {
         assert_eq!(error_type(&A2aError::task_not_found("t")), "-32001");
     }
 
+    /// The wrapper forwards every `TaskStore` method, the defaulted ones
+    /// included, so wrapping a store changes nothing but what is recorded
+    /// (CONTRIBUTING.md, "A default is not free").
+    #[test]
+    fn the_traced_task_store_overrides_every_task_store_method() {
+        // A Windows checkout may have CRLF line endings.
+        let trait_src = include_str!("task_store/mod.rs").replace("\r\n", "\n");
+        let wrapper_src = include_str!("traced.rs").replace("\r\n", "\n");
+        let methods = |src: &str, start: &str| -> Vec<String> {
+            let body = &src[src.find(start).unwrap()..];
+            let end = body.find("\n}\n").unwrap();
+            body[..end]
+                .lines()
+                .filter_map(|l| l.trim_start().strip_prefix("fn "))
+                .map(|l| l.split(['<', '(']).next().unwrap().to_owned())
+                .collect()
+        };
+        let wanted = methods(&trait_src, "pub trait TaskStore");
+        let have = methods(&wrapper_src, "impl TaskStore for TracedTaskStore");
+        assert!(
+            wanted.len() >= 20,
+            "parsed {} trait methods: {wanted:?}",
+            wanted.len()
+        );
+        let missing: Vec<&String> = wanted.iter().filter(|m| !have.contains(m)).collect();
+        assert!(
+            missing.is_empty(),
+            "TracedTaskStore does not forward {missing:?}"
+        );
+    }
+
     #[test]
     fn only_a_store_that_names_its_database_is_wrapped() {
         let bare: Arc<dyn TaskStore> = Arc::new(InMemoryTaskStore::new());
