@@ -241,6 +241,23 @@ pub trait TaskStore: Send + Sync + 'static {
         false
     }
 
+    /// The database this store runs against, which the handler names in a
+    /// `CLIENT` span around each of the store's operations and measures in
+    /// `db.client.operation.duration` (the OpenTelemetry database
+    /// conventions; `crate::store::traced`).
+    ///
+    /// Defaults to `None`, which records neither: a store that keeps its
+    /// tasks in a database but does not override this gets no span and no
+    /// latency for any operation, so a slow or failing database shows up only
+    /// as slow or failing calls. The in-memory stores take the default, as
+    /// they run against no database. The bundled SQL stores answer
+    /// `postgresql` or `sqlite`.
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn database(&self) -> Option<crate::store::StoreDatabase> {
+        None
+    }
+
     /// Atomically claims `key` for `task_id` on behalf of `message_id`.
     ///
     /// Concurrent claims of one key must resolve to exactly one

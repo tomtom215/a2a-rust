@@ -237,6 +237,7 @@ treat them as the contract.
 | `a2a.server.pool.idle` | gauge | `{connection}` | Idle HTTP connections |
 | `a2a.server.pool.created` | counter | `{connection}` | Connections created since start |
 | `a2a.server.pool.closed` | counter | `{connection}` | Connections closed on error or timeout |
+| `db.client.operation.duration` | histogram | s | Each operation of a task store that names its database, by `db.operation.name` and outcome |
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
 instrument, with their advisory buckets (5 ms to 10 s) and attributes:
@@ -382,6 +383,39 @@ when the attempt failed: the status for a 4xx or 5xx, `timeout`, or
 carry the receiver's secret and unbounded values. `a2a.server.push_deliveries`
 still counts each delivery's final outcome; this metric times each attempt.
 
+### Task-store operations
+
+A task store that names its database through `TaskStore::database` gets a
+`CLIENT` span around each of its operations and a point in the database
+conventions' `db.client.operation.duration` (histogram, `s`, their advisory
+buckets of 1 ms to 10 s; `otel` feature), under the `a2a.server` scope
+(`docs/db/database-spans.md` and `database-metrics.md`,
+`open-telemetry/semantic-conventions@55c98cf`). The SQLite and PostgreSQL
+stores, their tenant-aware forms, and the encrypted and audited wrappers
+around them name theirs; the in-memory stores run against no database and
+record neither. A custom store opts in by returning a `StoreDatabase`.
+
+One span is one `TaskStore` operation as the handler called it, whatever
+queries the store ran for it, as the conventions recommend for a
+higher-level API:
+
+| Attribute | Value |
+|---|---|
+| span name | `{db.operation.name} {db.namespace}`, or `{db.operation.name} {server.address}[:{server.port}]` without a namespace, or the operation alone |
+| `db.system.name` | `postgresql`, `sqlite`, or the custom store's |
+| `db.operation.name` | The trait method: `get`, `save_status_delta`, `append_event`, … |
+| `db.namespace` | PostgreSQL: the database name |
+| `server.address`, `server.port` | PostgreSQL: the host or socket path in the pool's options; the port only when it is not 5432 |
+| `error.type` | On failure: `unavailable` for a temporary one (a pool with no free connection, a locked SQLite file, a PostgreSQL connection error), otherwise the A2A error code the store answered (`-32603` internal); the span's status is set to error |
+
+`error.type` is not the database's SQLSTATE or result code, which the
+conventions prefer: the stores turn a database error into an `A2aError`
+before it reaches the trait, and whether it was temporary, and its A2A
+code, are what survive. The metric carries the same attributes. In Prometheus, fed over
+OTLP, it is `db_client_operation_duration_seconds`, with labels
+`db_system_name`, `db_operation_name` and, on failures, `error_type`
+(measured 2026-10-24 against Prometheus 3.15.1 with a SQLite store).
+
 ### What these become in Prometheus
 
 The dots are correct: OpenTelemetry names metrics this way
@@ -464,17 +498,17 @@ Stated so a green dashboard is not mistaken for a complete one:
 
 * **The executor has a span, not a metric.** Its time is the
   `invoke_agent` span's duration; no histogram records it.
-* **Task-store operations have no latency instrument and no span.**
-  `persistence_errors` counts failures, not slowness — a store degrading
-  toward a timeout shows up in request latency first, without saying it was
-  the store. The SQLite and PostgreSQL stores open no `db.*` client span:
-  sqlx 0.8 reports each statement as a `tracing` *event*, not a span
+* **A store's individual SQL statements have no span.** Each task-store
+  operation is one span and one `db.client.operation.duration` point (see
+  [Task-store operations](#task-store-operations)); the statements inside
+  it are not. sqlx 0.9 reports each as a `tracing` *event*, not a span
   (target `sqlx::query`, with the SQL as `db.statement` — placeholders, not
   the bound values — `rows_affected` and `elapsed_secs`), at `DEBUG`, or at
   `WARN` when it takes a second or more. Under `Telemetry` those events are
-  log records in the trace of the call or executor that ran them; the slow
-  ones at the default `INFO` log level, every one with
-  `TelemetryBuilder::with_log_level(Level::DEBUG)`.
+  log records in the trace of the operation that ran them; the slow ones at
+  the default `INFO` log level, every one with
+  `TelemetryBuilder::with_log_level(Level::DEBUG)`. A custom store that does
+  not override `TaskStore::database` has neither span nor duration.
 * **There is no per-tenant metric dimension.** A tenant hitting
   `max_concurrent_tasks` shows as `Overloaded` errors in the aggregate; see
   [Multi-Tenancy](./multi-tenancy.md) for what the limits actually are.

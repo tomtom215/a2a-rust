@@ -251,6 +251,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
         true
     }
 
+    fn database(&self) -> Option<crate::store::StoreDatabase> {
+        Some(crate::store::StoreDatabase::sqlite())
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,

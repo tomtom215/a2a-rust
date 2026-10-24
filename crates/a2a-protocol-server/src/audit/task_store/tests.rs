@@ -155,6 +155,14 @@ fn the_wrapper_reports_the_wrapped_stores_capabilities() {
     let tenanted = wrap(Arc::new(crate::store::TenantAwareInMemoryTaskStore::new()));
     assert!(tenanted.isolates_tenants());
     assert!(tenanted.supports_idempotency());
+    assert_eq!(plain.database(), None);
+    let declared = wrap(Arc::new(crate::store::database::DeclaresDatabase(
+        InMemoryTaskStore::new(),
+    )));
+    assert_eq!(
+        declared.database(),
+        Some(crate::store::database::DeclaresDatabase::declared())
+    );
 }
 
 /// A stream reading through the audit wrapper holds the wrapped store's log.

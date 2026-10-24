@@ -1107,6 +1107,10 @@ impl RequestHandlerBuilder {
                 Arc::new(InMemoryTaskStore::with_config(task_store_config))
             }
         });
+        // Innermost, so a span measures the database and nothing wrapped
+        // around it; a store that names no database is left as it is.
+        #[cfg(feature = "tracing")]
+        let task_store = crate::store::traced::TracedTaskStore::wrap(task_store);
         #[cfg_attr(not(feature = "audit"), allow(unused_mut))]
         let mut interceptors = self.interceptors;
         #[cfg(feature = "audit")]

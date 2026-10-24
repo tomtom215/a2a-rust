@@ -36,6 +36,10 @@ impl TaskStore for PostgresTaskStore {
         true
     }
 
+    fn database(&self) -> Option<crate::store::StoreDatabase> {
+        Some(crate::store::StoreDatabase::postgres(&self.pool))
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,

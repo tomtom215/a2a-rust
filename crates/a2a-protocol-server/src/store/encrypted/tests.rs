@@ -392,6 +392,15 @@ async fn the_capabilities_are_the_wrapped_stores() {
         cipher("k1", 1).into_arc(),
     );
     assert!(tenants.isolates_tenants());
+    assert_eq!(store.database(), None);
+    let declared = EncryptedTaskStore::new(
+        crate::store::database::DeclaresDatabase(InMemoryTaskStore::new()),
+        cipher("k1", 1).into_arc(),
+    );
+    assert_eq!(
+        declared.database(),
+        Some(crate::store::database::DeclaresDatabase::declared())
+    );
 
     store.save(&task("t1")).await.unwrap();
     assert_eq!(store.count().await.unwrap(), 1);

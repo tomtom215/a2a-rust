@@ -131,7 +131,7 @@ tokio::task_local! {
 
 /// Whether the code running now belongs to a call that records no spans.
 #[cfg(feature = "tracing")]
-fn untraced() -> bool {
+pub fn untraced() -> bool {
     UNTRACED.try_with(|u| *u).unwrap_or(false)
 }
 
