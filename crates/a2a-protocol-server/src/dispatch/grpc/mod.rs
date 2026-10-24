@@ -61,7 +61,7 @@ mod dispatcher;
 mod helpers;
 mod native;
 mod shutdown;
-#[cfg(all(test, feature = "tracing"))]
+#[cfg(test)]
 mod undeclared_tests;
 mod well_known;
 

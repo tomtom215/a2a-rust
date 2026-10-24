@@ -576,7 +576,7 @@ code = [
 ]
 tests = [
   "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
-  "crates/a2a-protocol-server/src/audit/tests.rs::a_legal_hold_stops_purge_until_released",
+  "crates/a2a-protocol-server/src/audit/tests/holds.rs::a_legal_hold_stops_purge_until_released",
   "crates/a2a-protocol-server/src/audit/tests.rs::six_months_is_the_longest_six_calendar_months",
   "crates/a2a-protocol-types/src/audit/tests.rs::a_signed_anchor_lets_a_purged_chain_verify",
 ]
@@ -927,7 +927,7 @@ id = "CRA-AI-I-2m"
 source = "cra"
 provision = "Annex I, Part I(2)(m); Annex II(8)(d)"
 requirement = "Products give users the possibility to securely and easily remove on a permanent basis all data and settings, and ensure that data transferable to other products or systems is transferred securely; users are told how to decommission the product securely and remove user data."
-sdk = "`TaskStore::delete` erases a task with its event log and artifact journal; `purge_expired` removes terminal tasks past an age; under caller isolation `erase_caller` removes everything one caller's partitions hold (tasks, events, idempotency keys, webhooks) on the in-memory and SQL stores; `AuditLog::purge` removes audit records past the retention floor, refused under a legal hold; `erase_subject` erases one person from an audit chain by destroying their key, the SQLite audit store overwriting the freed page; `AuditLog::export` exports a chain that verifies on its own."
+sdk = "`TaskStore::delete` erases a task with its event log and artifact journal; `purge_expired` removes terminal tasks past an age; under caller isolation `erase_caller` removes everything one caller's partitions hold (tasks, events, idempotency keys, webhooks) on the in-memory and SQL stores; `AuditLog::purge` removes audit records past the retention floor, refused under a legal hold; `erase_subject` erases one person from an audit chain by destroying their key, the SQLite audit store overwriting the freed page; every SQLite store zeroes deleted content in the database file (`secure_delete` on each pooled connection); `AuditLog::export` exports a chain that verifies on its own."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/store/tenant/store.rs::TenantAwareInMemoryTaskStore::erase_caller",
@@ -943,8 +943,9 @@ tests = [
   "crates/a2a-protocol-server/tests/erase_caller.rs::erase_caller_removes_a_callers_data_from_the_sqlite_stores",
   "crates/a2a-protocol-server/src/audit/tests.rs::purge_deletes_only_what_is_past_the_floor_and_the_rest_still_verifies",
   "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_destroys_one_persons_key_and_leaves_the_chain_whole",
+  "crates/a2a-protocol-server/src/sqlite_pool.rs::a_deleted_row_does_not_stay_in_the_database_file",
 ]
-gap = "Deleting from the SQL task and push-config stores is an ordinary `DELETE`: the bytes can stay in free pages, the write-ahead log, dead tuples and backups until overwritten or vacuumed (only the audit subject-key table sets SQLite's `secure_delete`), unless the data was sealed with `EncryptedTaskStore` and its key is destroyed. Tasks in a tenant's shared partition belong to no caller and are found only by id. There is no export of tasks or push configs. Removing all of a product's data and settings, and its decommissioning instructions, are the integrator's."
+gap = "The SQLite stores zero deleted content in the database file but not in the write-ahead log, which keeps a page's earlier image until a checkpoint truncates it, nor in a backup or a copy of the file; the PostgreSQL stores use an ordinary `DELETE`, so the bytes stay as dead tuples until vacuumed and in backups. Data sealed with `EncryptedTaskStore` is unreadable wherever it remains once its key is destroyed. Tasks in a tenant's shared partition belong to no caller and are found only by id. There is no export of tasks or push configs. Removing all of a product's data and settings, and its decommissioning instructions, are the integrator's."
 
 [[control]]
 id = "CRA-AI-II-2-4-8"
@@ -1138,7 +1139,7 @@ tests = [
   "crates/a2a-protocol-server/src/audit/privacy/tests.rs::erasure_is_refused_under_a_legal_hold_and_stays_in_its_chain",
   "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::retention_drops_the_keys_no_record_names_any_longer",
 ]
-gap = "Erasure is the operator's to start: the A2A protocol has no method a caller can use to delete a task. The task store knows a task by the caller who made it, not by the people it concerns: `erase_caller` erases one caller's data, but a task about someone else is found only by id, and tasks in a tenant's shared partition (`share_tasks_across_callers`, unlabelled credentials, or written before caller isolation) are attributed to no one. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them). A legal hold covers a tenant's whole chain, so it refuses every erasure there; across replicas an erasure, a hold and an append are not serialised (ADR 0015). Copies in backups and logs survive until they expire or are overwritten, and restoring a backup taken before an erasure brings the data back. Task-store erasures leave no audit record (GDPR-5-2), and copies sent to other agents or webhooks are not reached (GDPR-17-2-19)."
+gap = "Erasure is the operator's to start: the A2A protocol has no method a caller can use to delete a task. The task store knows a task by the caller who made it, not by the people it concerns: `erase_caller` erases one caller's data, but a task about someone else is found only by id, and tasks in a tenant's shared partition (`share_tasks_across_callers`, unlabelled credentials, or written before caller isolation) are attributed to no one. An erased person's audit records stay linkable to each other by their common handle, and records written before protection was on cannot be erased (`erase_subject` reports them). A legal hold covers a tenant's whole chain, so it refuses every erasure there; across replicas an erasure, a hold and an append are not serialised (ADR 0015). Copies in backups and logs survive until they expire or are overwritten, and restoring a backup taken before an erasure brings the data back. A task-store erasure is on record only through the audited store or `AuditLog::record_erasure` (GDPR-5-2), and copies sent to other agents or webhooks are not reached (GDPR-17-2-19)."
 
 [[control]]
 id = "GDPR-5-1a-6"
@@ -1222,16 +1223,22 @@ id = "GDPR-5-2"
 source = "gdpr"
 provision = "Art. 5(2), 24(1)"
 requirement = "The controller is responsible for, and able to demonstrate, compliance with the principles of Art. 5(1), implementing technical and organisational measures to ensure and demonstrate that processing is performed in accordance with the Regulation."
-sdk = "With the `audit` feature, evidence of what the server did: every call (refused ones included), run, task event and cancel request, each admitted approval with its approver, each halt and resume with the operator and reason, and each `erase_subject` with who asked for it, written before the key is deleted so a failure part way is still on record. Records are in a hash chain per tenant with signed checkpoints that an auditor verifies offline, with a key obtained independently, through `verify_chain` or `a2a audit verify`."
+sdk = "With the `audit` feature, evidence of what the server did: every call (refused ones included), run, task event and cancel request, each admitted approval with its approver, each halt and resume with the operator and reason, each `erase_subject` with who asked for it, written before the key is deleted so a failure part way is still on record, each task deleted through the audited store (`task.deleted`: the id, never the content), each legal hold placed or released with who did it (`hold.placed`, `hold.released`), and each `purge_expired` or `erase_caller` an operator reports through `AuditLog::record_erasure` (`erasure`: who, the scope and the counts, the erased caller sealed under their own key). Records are in a hash chain per tenant with signed checkpoints that an auditor verifies offline, with a key obtained independently, through `verify_chain` or `a2a audit verify`."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::append",
   "crates/a2a-protocol-server/src/audit/log.rs::AuditLog::verify",
   "crates/a2a-protocol-types/src/audit/chain.rs::verify_chain",
   "crates/a2a-protocol-server/src/audit/privacy/log.rs::AuditLog::erase_subject",
+  "crates/a2a-protocol-server/src/audit/retention.rs::AuditLog::place_hold",
+  "crates/a2a-protocol-server/src/audit/retention.rs::AuditLog::release_hold",
+  "crates/a2a-protocol-server/src/audit/retention.rs::AuditLog::record_erasure",
 ]
 tests = [
   "crates/a2a-protocol-server/tests/audit_trail.rs::every_call_and_event_is_recorded_and_attributable",
+  "crates/a2a-protocol-server/src/audit/task_store/tests.rs::deleting_a_task_is_a_chain_record_and_deleting_nothing_is_not",
+  "crates/a2a-protocol-server/src/audit/tests/holds.rs::placing_and_releasing_a_hold_are_chain_records_naming_the_person",
+  "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::an_operator_erasure_names_the_operator_and_seals_the_caller",
   "crates/a2a-protocol-server/src/approval/tests.rs::an_admitted_decision_is_audited_with_the_approver",
   "crates/a2a-protocol-server/src/handler/halt/tests.rs::a_halt_and_a_resume_are_recorded_with_the_operator",
   "crates/a2a-protocol-server/src/audit/privacy/tests/erasure.rs::an_erasure_names_who_asked_for_it_and_only_the_sids",
@@ -1239,7 +1246,7 @@ tests = [
   "tools/a2a-cli/tests/offline.rs::an_exported_chain_verifies_and_an_edited_one_names_where_it_breaks",
 ]
 evidence = ["docs/adr/0015-audit-trail.md", "book/src/deployment/audit.md"]
-gap = "Deletions in the task and push-config stores leave no audit record: `TaskStore::delete`, `purge_expired` and `erase_caller` are not recorded (the audited task store forwards `delete` unrecorded), so the SDK gives no evidence that a task-store erasure was carried out. A legal hold is stored with its reason and time but not who placed it, and placing or releasing one is not a chain record. Record times come from the server's clock. Demonstrating compliance with Art. 5(1) as a whole is the controller's: the records show what the server did, not why."
+gap = "`purge_expired` and `erase_caller` are calls on a concrete store, made by an operator outside any request, so no wrapper sees them: they are on record only if the operator then calls `AuditLog::record_erasure` with what they returned, and nothing makes them. `TaskStore::delete` is recorded only through the audited task store (`with_audit`); a delete on a bare store, and the in-memory store's own eviction of an old task, are not. A record is written after the erasure it describes, so a crash between the two leaves an erasure with no record. Record times come from the server's clock. Demonstrating compliance with Art. 5(1) as a whole is the controller's: the records show what the server did, not why."
 
 [[control]]
 id = "GDPR-9-10"
@@ -1315,7 +1322,7 @@ tests = [
   "crates/a2a-protocol-server/tests/interceptor_tests.rs::error_in_before_stops_chain",
   "crates/a2a-protocol-server/tests/credential_rotation.rs::a_bearer_token_is_rotated_and_revoked_while_serving",
   "crates/a2a-protocol-server/src/handler/halt/tests.rs::halting_a_tenant_cancels_its_tasks_and_refuses_its_sends",
-  "crates/a2a-protocol-server/src/audit/tests.rs::a_legal_hold_stops_purge_until_released",
+  "crates/a2a-protocol-server/src/audit/tests/holds.rs::a_legal_hold_stops_purge_until_released",
 ]
 gap = "No store can mark a task, a caller's partition or a person's data as restricted, so the SDK cannot keep data stored while refusing every other use of them: a refusal has to be built per caller in an interceptor, and a halt acts on a whole tenant. A legal hold covers a whole audit chain, not one person's records. Weighing an objection against the controller's grounds, and informing the data subject before a restriction is lifted (Art. 18(3)), are the controller's."
 

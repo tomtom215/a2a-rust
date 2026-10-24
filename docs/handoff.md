@@ -452,7 +452,16 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   `docs/compliance/control-map.md`, counted from `controls.toml` 2026-10-24;
   `check_compliance_map.py` prints no counts). This line said 13, 2, 11 and
   22 until then, which matched no version of the file we could find. The
-  partial rows' remaining gaps are in each row's `gap`.
+  partial rows' remaining gaps are in each row's `gap`. Narrowed on
+  2026-10-24 (no row changed status): task deletions, erasures and legal
+  holds are audit records (GDPR-5-2) and the SQLite stores zero deleted
+  content in the file (CRA-AI-I-2m). Not built, and the reason each: a
+  per-caller export (GDPR-15-20); a bounded cancel deadline (AIA-14-4e);
+  sealing `metadata` in `EncryptedTaskStore` (CRA-AI-I-2e); erased audit
+  records unlinkable from each other, which needs a per-record handle, a
+  format change; erasure serialised across replicas, which needs the
+  compare-and-set writes of 0.16 (decided); attribution of a tenant's shared
+  partition, which has no caller to attribute it to.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on

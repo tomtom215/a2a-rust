@@ -43,7 +43,7 @@ const DEK_LEN: usize = 32;
 const SID_LEN: usize = 16;
 
 /// The detail fields that name a person, sealed under that person's key.
-const PERSON_FIELDS: [&str; 1] = ["requestedBy"];
+const PERSON_FIELDS: [&str; 2] = ["requestedBy", "erasedCaller"];
 /// The detail field listing the agents that acted for the actor (RFC 8693,
 /// ADR 0021): each element names a person or agent and is sealed under its
 /// own key, in the context `actors/<index>`.

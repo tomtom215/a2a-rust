@@ -219,8 +219,9 @@ Nothing is deleted unless you call `purge`, and it never deletes:
   days, the longest six consecutive calendar months; a shorter floor has to be
   asked for by name (`allowing_shorter_than_six_months`);
 - a chain's newest record;
-- anything in a chain under a legal hold (`log.place_hold(chain, reason)`
-  until `log.release_hold(chain)`).
+- anything in a chain under a legal hold (`log.place_hold(chain, reason, by)`
+  until `log.release_hold(chain, by)`); each is a record in the chain,
+  `hold.placed` or `hold.released`, naming `by`.
 
 ```rust,no_run
 # use a2a_protocol_server::audit::{AuditLog, AuditRetention};
@@ -308,6 +309,36 @@ What erasure does not do, stated in full in ADR 0015's amendment:
 It also costs: an append took 17.6 µs plain and 47.2 µs protected on the
 in-memory store, 296 µs and 521 µs on a SQLite file (ADR 0015 gives the
 method). Retention drops the keys of people no remaining record names.
+
+### Erasure of tasks is on record too
+
+Removing a task is something a controller has to be able to show (GDPR Art.
+5(2)), so the chain records it:
+
+- a task deleted through the audited task store (`with_audit`) is a
+  `task.deleted` record naming the task, its context and the tenant, and
+  nothing it held; deleting a task that is not there records nothing;
+- `purge_expired` and `erase_caller` are calls you make on a concrete store,
+  outside any request, so nothing wraps them. Report what they returned:
+
+  ```rust,ignore
+  let swept = store.purge_expired(&policy).await?;
+  log.record_erasure("acme", "operator:dpo", Erased::Expired { tasks: swept.tasks_deleted }).await?;
+
+  let gone = store.erase_caller("bearer:alice@example.test").await;
+  log.record_erasure("acme", "operator:dpo", Erased::Caller {
+      caller: "bearer:alice@example.test",
+      partitions: gone.partitions,
+      rows: gone.rows,
+  }).await?;
+  ```
+
+  The `erasure` record names who, the scope and the counts. The erased
+  caller is in a field `with_privacy` seals under that caller's own key, so
+  erasing them from the chain later (`erase_subject`) takes their name out of
+  the record of their own erasure. The record is written after the erasure,
+  and nothing makes you write it;
+- a legal hold is `hold.placed` or `hold.released`, naming who did it.
 
 ## Required mode
 

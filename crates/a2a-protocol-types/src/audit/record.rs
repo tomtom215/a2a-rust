@@ -48,6 +48,18 @@ pub mod kind {
     /// A person's audit key was destroyed, erasing them from every record
     /// sealed under it; names only the records' random handle (`sid`).
     pub const SUBJECT_ERASED: &str = "subject.erased";
+    /// A task, with its event log and artifact journal, was deleted through
+    /// the audited task store. Names the task and the tenant, never its
+    /// content.
+    pub const TASK_DELETED: &str = "task.deleted";
+    /// An operator removed data from the task or push-configuration stores
+    /// (`purge_expired`, `erase_caller`) and said so through
+    /// `AuditLog::record_erasure`: what was removed, by count, and by whom.
+    pub const ERASURE: &str = "erasure";
+    /// A legal hold was placed on the chain, by the person named.
+    pub const HOLD_PLACED: &str = "hold.placed";
+    /// A legal hold on the chain was released, by the person named.
+    pub const HOLD_RELEASED: &str = "hold.released";
 }
 
 /// Who a call was made by, as authentication established it.

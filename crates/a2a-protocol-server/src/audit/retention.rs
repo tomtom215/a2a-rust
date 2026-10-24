@@ -21,6 +21,7 @@
 
 use std::time::Duration;
 
+use a2a_protocol_types::audit::{Actor, AuditRecord, kind};
 use a2a_protocol_types::error::{A2aError, A2aResult};
 
 use super::log::AuditLog;
@@ -72,6 +73,28 @@ impl AuditRetention {
     }
 }
 
+/// What an operator's erasure removed, for [`AuditLog::record_erasure`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Erased<'a> {
+    /// A `purge_expired` sweep: the terminal tasks past their age that it
+    /// deleted (`PurgeReport::tasks_deleted`).
+    Expired {
+        /// Task rows deleted.
+        tasks: u64,
+    },
+    /// An `erase_caller`: everything one caller's partitions held
+    /// (`CallerErasure`).
+    Caller {
+        /// The caller erased.
+        caller: &'a str,
+        /// Caller partitions removed.
+        partitions: u64,
+        /// Rows removed.
+        rows: u64,
+    },
+}
+
 /// What [`AuditLog::purge`] did to each chain.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -87,16 +110,26 @@ pub struct PurgeReport {
 
 impl AuditLog {
     /// Places a legal hold on `chain`: until it is released, [`purge`](Self::purge)
-    /// deletes nothing from it.
+    /// deletes nothing from it, and [`erase_subject`](Self::erase_subject)
+    /// refuses.
+    ///
+    /// `by` is the person placing it. The hold is recorded in the chain first,
+    /// as `hold.placed` naming `by` and the reason, so a hold that was placed
+    /// is on record even if storing it then fails, and a hold on record can
+    /// be told from a chain that was only ever purged.
     ///
     /// # Errors
     ///
     /// Returns an error when the store fails.
-    pub async fn place_hold(&self, chain: &str, reason: &str) -> A2aResult<()> {
+    pub async fn place_hold(&self, chain: &str, reason: &str, by: &str) -> A2aResult<()> {
         // Under the chain's lock, so an erasure in this process sees the
         // hold or finishes before it.
         let lock = self.chain_lock(chain);
         let _guard = lock.lock().await;
+        let mut record = AuditRecord::new(chain, kind::HOLD_PLACED);
+        record.actor = Some(Actor::new(by, Some("operator".to_owned())));
+        record.detail.insert("reason".to_owned(), reason.into());
+        self.append_locked(record).await?;
         self.store()
             .place_hold(&LegalHold {
                 chain: chain.to_owned(),
@@ -108,11 +141,79 @@ impl AuditLog {
 
     /// Releases the hold on `chain`; returns whether there was one.
     ///
+    /// When there was, `by` is recorded in the chain as `hold.released`
+    /// before the hold is dropped.
+    ///
     /// # Errors
     ///
     /// Returns an error when the store fails.
-    pub async fn release_hold(&self, chain: &str) -> A2aResult<bool> {
+    pub async fn release_hold(&self, chain: &str, by: &str) -> A2aResult<bool> {
+        let lock = self.chain_lock(chain);
+        let _guard = lock.lock().await;
+        if !self
+            .store()
+            .holds()
+            .await?
+            .iter()
+            .any(|hold| hold.chain == chain)
+        {
+            return Ok(false);
+        }
+        let mut record = AuditRecord::new(chain, kind::HOLD_RELEASED);
+        record.actor = Some(Actor::new(by, Some("operator".to_owned())));
+        self.append_locked(record).await?;
         self.store().release_hold(chain).await
+    }
+
+    /// Records, in `chain`, that `by` removed data from the task or
+    /// push-configuration stores, and how much.
+    ///
+    /// `purge_expired` and `erase_caller` are calls on a concrete store, made
+    /// by an operator outside any request, so no audited wrapper sees them.
+    /// Call this with what they returned; the record, `erasure`, names `by`,
+    /// the scope and the counts, and for a caller the person erased in a
+    /// field that [`with_privacy`](Self::with_privacy) seals under that
+    /// person's key, so erasing the person later takes the name out of the
+    /// record too. Use the chain the product records operator actions in
+    /// (`halt` and `erase_subject` take the tenant's).
+    ///
+    /// Written after the erasure it describes, so a record is evidence that
+    /// the erasure happened, not a promise that it will; a crash between the
+    /// two leaves an erasure with no record, which only the operator's own
+    /// log can show.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the store fails.
+    pub async fn record_erasure(
+        &self,
+        chain: &str,
+        by: &str,
+        erased: Erased<'_>,
+    ) -> A2aResult<AuditRecord> {
+        let mut record = AuditRecord::new(chain, kind::ERASURE);
+        record.actor = Some(Actor::new(by, Some("operator".to_owned())));
+        match erased {
+            Erased::Expired { tasks } => {
+                record.detail.insert("scope".to_owned(), "expired".into());
+                record.detail.insert("tasks".to_owned(), tasks.into());
+            }
+            Erased::Caller {
+                caller,
+                partitions,
+                rows,
+            } => {
+                record.detail.insert("scope".to_owned(), "caller".into());
+                record
+                    .detail
+                    .insert("erasedCaller".to_owned(), caller.into());
+                record
+                    .detail
+                    .insert("partitions".to_owned(), partitions.into());
+                record.detail.insert("rows".to_owned(), rows.into());
+            }
+        }
+        self.append(record).await
     }
 
     /// Deletes, from every chain without a legal hold, the records sealed

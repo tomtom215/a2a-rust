@@ -206,6 +206,14 @@ maintainer approved closing them on 2026-10-16, crypto-shredding included.
   before protection was on, which it cannot reach.
 - Retention deletes, under each chain's lock, the subject keys no remaining
   record names.
+- Erasure of task data is recorded (2026-10-24): `task.deleted` from the
+  audited task store, `erasure` from `AuditLog::record_erasure` for the
+  operator's `purge_expired` and `erase_caller` (the erased caller in
+  `erasedCaller`, sealed under that caller's key), and `hold.placed` and
+  `hold.released` naming the person. `place_hold` and `release_hold` take
+  `by`. All four kinds are new in 0.15 and extend `a2a-audit/1` as record
+  kinds do: the hash covers the kind, and a verifier that does not know one
+  still verifies the chain.
 
 The chain's hashes are taken over the protected values, so `verify_chain`
 needs no key, before or after an erasure. `AuditLog::reveal` opens a record

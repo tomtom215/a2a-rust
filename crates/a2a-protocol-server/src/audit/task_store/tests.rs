@@ -180,3 +180,46 @@ fn a_hold_is_taken_on_the_wrapped_store() {
     assert_eq!(inner.holds.floor(&id), Some(2));
     drop(hold);
 }
+
+/// Deleting a task through the audited store is on record: the task, its
+/// context and the tenant, nothing of what it held (GDPR Art. 5(2)).
+/// Deleting one that is not there records nothing, because nothing was
+/// deleted.
+#[tokio::test]
+async fn deleting_a_task_is_a_chain_record_and_deleting_nothing_is_not() {
+    let log = Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new())));
+    let store = AuditedTaskStore {
+        inner: Arc::new(InMemoryTaskStore::new()),
+        log: Arc::clone(&log),
+        metrics: Arc::new(NoopMetrics),
+    };
+    let task = Task {
+        id: TaskId::new("t-1"),
+        context_id: ContextId::new("c-1"),
+        status: TaskStatus::new(TaskState::Completed),
+        history: Some(vec![Message::user_text(
+            "m-1",
+            "a secret the record must not hold",
+        )]),
+        artifacts: None,
+        metadata: None,
+    };
+    store.save(&task).await.unwrap();
+
+    store.delete(&TaskId::new("never-there")).await.unwrap();
+    assert_eq!(log.export("").await.unwrap(), []);
+
+    store.delete(&task.id).await.unwrap();
+    assert!(store.get(&task.id).await.unwrap().is_none());
+    let records = log.export("").await.unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].kind, kind::TASK_DELETED);
+    assert_eq!(records[0].task_id.as_deref(), Some("t-1"));
+    assert_eq!(records[0].context_id.as_deref(), Some("c-1"));
+    assert!(
+        !serde_json::to_string(&records[0])
+            .unwrap()
+            .contains("a secret"),
+        "the record names the task, not what it held"
+    );
+}

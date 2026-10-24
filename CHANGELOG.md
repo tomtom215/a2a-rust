@@ -353,6 +353,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Erasure and legal holds are on record in the audit chain** (server,
+  `audit`; GDPR Art. 5(2), CRA Annex I Part I (2)(m)). Four record kinds:
+  `task.deleted`, written by the audited task store when a task that was
+  there is deleted (the id, context and tenant, never content); `erasure`,
+  written by the new `AuditLog::record_erasure(chain, by, Erased)` for the
+  `purge_expired` and `erase_caller` an operator runs on a concrete store
+  (who, the scope, the counts; the erased caller in a new `erasedCaller`
+  field that `with_privacy` seals under that caller's own key, so erasing the
+  person later removes their name from the record of their erasure); and
+  `hold.placed` and `hold.released`, which `place_hold` and `release_hold`
+  now write, naming the person (`by`, a new parameter; both methods are new in
+  0.15). Tests: `audit/task_store/tests.rs`
+  `deleting_a_task_is_a_chain_record_and_deleting_nothing_is_not`,
+  `audit/tests/holds.rs` `placing_and_releasing_a_hold_are_chain_records_naming_the_person`,
+  `audit/privacy/tests/erasure.rs` `an_operator_erasure_names_the_operator_and_seals_the_caller`;
+  each fails with its record not written (or, for the third, the field left
+  unsealed).
+
 - **`RequestHandlerBuilder::with_additional_metrics`** (server). `with_metrics`
   replaces the default, which exports to the global OpenTelemetry meter
   provider, so a handler given a counter of its own stopped exporting
@@ -1608,6 +1626,18 @@ section "The client refuses what `a2a.proto` does not allow".
   the other listeners' agents are.
 
 ### Behaviour Changes
+
+- **The SQLite stores zero deleted content in the database file**
+  (`secure_delete=ON` on every pooled connection: the task, tenant, push
+  configuration, halt and audit stores). SQLite leaves a deleted or
+  rewritten cell in its freed page until something reuses it, so `delete`,
+  `purge_expired` and `erase_caller` left the bytes in the file. They are
+  now overwritten with zeros there. They are not overwritten in the
+  write-ahead log, which keeps a page's earlier image until a checkpoint
+  truncates it, nor in a backup. Writes that free or rewrite content do a
+  little more work; the cost was not measured. Test: `sqlite_pool.rs`
+  `a_deleted_row_does_not_stay_in_the_database_file` reads the file's bytes
+  and, as its control, finds the deleted text there with the pragma off.
 
 - **`rpc.server.call.duration`, `rpc.client.call.duration` and
   `a2a.server.request.duration` use the semantic conventions' current

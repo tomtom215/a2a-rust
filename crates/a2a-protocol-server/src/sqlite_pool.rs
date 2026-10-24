@@ -15,7 +15,7 @@
 //! for this once with `DEFAULT_MAX_PAGE_SIZE`. A comment asking the next
 //! person to keep four copies in step is not a guard; one function is.
 //!
-//! Two of the four change behaviour, and two currently restate a `sqlx`
+//! Three of the five change behaviour, and two currently restate a `sqlx`
 //! default. Measured 2026-08-26 by deleting each line in turn and re-running
 //! the test below, rather than read off anyone's documentation:
 //!
@@ -25,6 +25,7 @@
 //! | `synchronous=NORMAL` | **test fails** | the documented companion to WAL — durable across process crash, trading only the OS-crash window for throughput; `sqlx` leaves this at `FULL` |
 //! | `busy_timeout=5000` | test still passes | `sqlx` already defaults to 5s. Kept because the value this code depends on should be stated where it is depended on, not inherited silently |
 //! | `foreign_keys=ON` | test still passes | `sqlx` already turns it on, unlike raw `SQLite`. Kept for the same reason |
+//! | `secure_delete=ON` | **test fails** | a deleted or rewritten cell is overwritten with zeros in the database file, instead of staying in the freed page until something reuses it (GDPR Art. 17, CRA Annex I Part I (2)(m)); `SQLite` leaves this off |
 //!
 //! The two that "still pass" are not dead weight and are not proof either. They
 //! pin an effective configuration this code relies on; if `sqlx` ever changed
@@ -53,6 +54,11 @@ async fn sqlite_pool_with_size(url: &str, max_connections: u32) -> Result<Sqlite
         .pragma("busy_timeout", "5000")
         .pragma("synchronous", "NORMAL")
         .pragma("foreign_keys", "ON")
+        // Deleted content is zeroed in the main database file, not left in the
+        // free page. It does not reach the write-ahead log, which holds the
+        // earlier image of a page until a checkpoint truncates it, nor a
+        // backup or a copy of the file.
+        .pragma("secure_delete", "ON")
         .create_if_missing(true);
 
     SqlitePoolOptions::new()
@@ -128,7 +134,82 @@ mod tests {
             .expect("foreign_keys");
         assert_eq!(fk, 1);
 
+        // 1 == ON.
+        let secure: i64 = sqlx::query_scalar("PRAGMA secure_delete")
+            .fetch_one(&pool)
+            .await
+            .expect("secure_delete");
+        assert_eq!(secure, 1, "deleted content must not stay in the free page");
+
         pool.close().await;
         cleanup(&path);
+    }
+
+    /// Whether `MARKER` is still in the database file after its row was
+    /// deleted, with `secure_delete` set as asked on the one connection.
+    ///
+    /// Reads the file's bytes, which is the thing erasure is about: that the
+    /// pragma is set says nothing about whether the page was overwritten.
+    /// Checkpointed with `TRUNCATE` before and after, so the main file, not
+    /// the write-ahead log, holds the pages being read.
+    async fn marker_survives_a_delete(secure: bool) -> bool {
+        const MARKER: &str = "erase-me-3f9c1a7e-marker";
+        const INSERT: &str = "INSERT INTO t (body) VALUES ('erase-me-3f9c1a7e-marker')";
+        assert!(INSERT.contains(MARKER));
+        let path = std::env::temp_dir().join(format!(
+            "a2a-secure-delete-{}-{secure}.db",
+            std::process::id()
+        ));
+        let cleanup = |p: &std::path::Path| {
+            for suffix in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{suffix}", p.display()));
+            }
+        };
+        cleanup(&path);
+        let pool = sqlite_pool_with_size(&format!("sqlite://{}", path.display()), 1)
+            .await
+            .expect("pool");
+        {
+            let mut conn = pool.acquire().await.expect("connection");
+            let pragma = if secure {
+                "PRAGMA secure_delete = ON"
+            } else {
+                "PRAGMA secure_delete = OFF"
+            };
+            for statement in [
+                pragma,
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, body TEXT NOT NULL)",
+                INSERT,
+                "PRAGMA wal_checkpoint(TRUNCATE)",
+                "DELETE FROM t",
+                "PRAGMA wal_checkpoint(TRUNCATE)",
+            ] {
+                sqlx::query(statement)
+                    .execute(&mut *conn)
+                    .await
+                    .unwrap_or_else(|e| panic!("{statement}: {e}"));
+            }
+        }
+        pool.close().await;
+        let bytes = std::fs::read(&path).expect("the database file");
+        cleanup(&path);
+        bytes
+            .windows(MARKER.len())
+            .any(|window| window == MARKER.as_bytes())
+    }
+
+    /// Erasure that leaves the bytes in the file is not erasure (GDPR
+    /// Art. 17; CRA Annex I Part I (2)(m)). The control, with the pragma off,
+    /// finds the marker where the row was; with it on, it is gone.
+    #[tokio::test]
+    async fn a_deleted_row_does_not_stay_in_the_database_file() {
+        assert!(
+            marker_survives_a_delete(false).await,
+            "the control: without secure_delete the deleted text stays in the file"
+        );
+        assert!(
+            !marker_survives_a_delete(true).await,
+            "with secure_delete the deleted text must not stay in the file"
+        );
     }
 }

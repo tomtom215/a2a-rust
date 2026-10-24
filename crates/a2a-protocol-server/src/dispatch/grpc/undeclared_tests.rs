@@ -8,6 +8,8 @@
 //! The gRPC listener checks its agent card against the binding it serves
 //! (spec §5.2). Split from `dispatcher.rs` at the 500-line limit.
 
+#![cfg(feature = "tracing")]
+
 use std::sync::Arc;
 
 use super::{GrpcConfig, GrpcDispatcher};
