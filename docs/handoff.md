@@ -418,14 +418,6 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   it is a format change that needs a two-step rollout (readers first,
   then writers behind a flag), so it waits. The book tells deployers to
   give each replica its share of the limit meanwhile.
-- **An intermittent test:** `push_delivery::tests::log_redaction::
-  a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` misses
-  its timeout warning about once in 20 parallel runs of `--lib -- audit
-  store::encrypted push` (2 of 40, 2026-10-21; never alone, 0 of 6). The
-  event is emitted (the timeout path's result is asserted) but not
-  captured. `rebuild_interest_cache` after the install and again before
-  the second delivery did not stop it (still 2 of 40), so the callsite
-  cache is not the whole cause. Not skipped; cause unknown.
 - **Tool loop:** spans record no content, because the handler's
   content-capture setting does not reach an executor; a `Failed` status
   carries up to 512 bytes of the provider's error body to the A2A caller;
@@ -654,6 +646,18 @@ into this file: the commit that records it changes it.
   the "How to Reproduce Locally" block `mutants.yml` prints.
 
 ## Lessons
+
+- **A scoped tracing subscriber is not enough to capture a log line in a
+  parallel test binary** (root cause of the 1-in-20 `log_redaction` flake,
+  found 2026-10-24). `tracing-core` 0.1.36 keeps `has_just_one` true while
+  one dispatcher is registered and then computes a callsite's interest from
+  the first-reaching thread's own default, so another test's thread, with no
+  subscriber, reaching the same `warn!` first makes it "never interested" for
+  every thread. Two threads and two barriers reproduce it every time; 160
+  runs of the real test did not, so repetition cannot find it. Capture
+  through `crate::handler::warnings_during` or `warning_lines_during` (one
+  global subscriber), never `with_default`, in a test that shares a binary.
+
 
 - A mutation run's "caught" is only as good as the test that failed. Read
   the per-mutant logs in the shard artifacts (`mutation-report-*`,

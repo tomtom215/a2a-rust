@@ -47,7 +47,7 @@ pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
 pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
 #[cfg(all(test, feature = "tracing"))]
-pub(crate) use shutdown::tests::warning::warnings_during;
+pub(crate) use shutdown::tests::warning::{warning_lines_during, warnings_during};
 pub use shutdown::{InFlightReport, ShutdownReport};
 
 use std::collections::HashMap;

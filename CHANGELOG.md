@@ -3927,6 +3927,18 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Internal
 
+- **The intermittent `log_redaction` test is explained and fixed.**
+  `a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` missed a
+  warning about once in 20 parallel runs. It captured with a scoped
+  subscriber, and `tracing-core` 0.1.36 computes a callsite's interest from
+  the first-reaching thread's default while only one dispatcher is
+  registered, so another test's thread reaching the same `warn!` first made
+  it "never interested" for every thread (two threads and two barriers
+  reproduce it every time; 160 runs of the test did not). The test now
+  captures through the shared global subscriber (`warning_lines_during`).
+  Regression: `handler/shutdown/tests/warning.rs`
+  `a_callsite_another_thread_reached_first_is_still_captured`.
+
 - **A prompt-injection containment harness** (`a2a-protocol-sdk/tests/injection_containment/`,
   `docs/injection-containment.md`). A deterministic model that obeys every
   `CALL` line it reads drives a `ToolLoopExecutor` whose tools pay, fetch
