@@ -353,6 +353,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`a2a.server.executor.duration`: an agent executor's run time is a metric**
+  (server, `otel`). The run is the executor's work for one turn of a task,
+  which usually outlives the call that started it, so `rpc.server.call.duration`
+  did not measure it and only the `invoke_agent` span's duration did. The new
+  histogram (seconds, the call buckets' 0.1 ms to 100 s) carries an `outcome`:
+  `completed`, `error`, `budget_exhausted` (the executor timeout, or the
+  caller's deadline or tokens), `canceled` (the task was canceled or halted,
+  or the server was shutting down) or `aborted` (the future ended without
+  returning: a panic, or a dropped run, reported from a guard so it is not
+  missing). It comes from a new defaulted `Metrics::on_executor_run`, which the
+  OpenTelemetry exporters, `Arc<T>` and the forwarder `with_additional_metrics`
+  builds all forward; the server dashboard gains an "Agent executor" row
+  (p50 and p95 by outcome, runs per second by outcome). Tests:
+  `handler/executor_metrics_tests.rs` (one per outcome and the duration; each
+  fails with its path removed).
+
 - **Erasure and legal holds are on record in the audit chain** (server,
   `audit`; GDPR Art. 5(2), CRA Annex I Part I (2)(m)). Four record kinds:
   `task.deleted`, written by the audited task store when a task that was

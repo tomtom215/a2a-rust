@@ -521,7 +521,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1562 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
-    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:229 RequestHandler::executor_future"
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:232 RequestHandler::executor_future"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -2011,7 +2011,7 @@
     "crates/a2a-protocol-server/src/rpc_span/mod.rs:327 ServerSpan::call",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:298 SyncCollector::run",
-    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:369 write_failure_event"
+    "crates/a2a-protocol-server/src/handler/messaging/execute.rs:378 write_failure_event"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/rpc_span/tests.rs:120 a_finished_call_is_recorded_once",

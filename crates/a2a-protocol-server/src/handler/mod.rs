@@ -442,6 +442,8 @@ mod context_lookup_tests;
 #[cfg(test)]
 mod default_store_metrics_tests;
 #[cfg(test)]
+mod executor_metrics_tests;
+#[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]
 mod tenant_limits_tests;

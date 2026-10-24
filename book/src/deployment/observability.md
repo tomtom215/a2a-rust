@@ -244,6 +244,7 @@ treat them as the contract.
 | `a2a.server.pool.created` | counter | `{connection}` | Connections created since start |
 | `a2a.server.pool.closed` | counter | `{connection}` | Connections closed on error or timeout |
 | `db.client.operation.duration` | histogram | s | Each operation of a task store that names its database, by `db.operation.name` and outcome |
+| `a2a.server.executor.duration` | histogram | s | How long an agent executor's run took, by `outcome` (`completed`, `error`, `budget_exhausted`, `canceled`, `aborted`); the run, which usually outlives the call that started it |
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
 instrument, with their advisory buckets (0.1 ms to 100 s; 5 ms to 10 s
@@ -535,8 +536,12 @@ skipped            the per-event budget ran out before this config was tried
 
 Stated so a green dashboard is not mistaken for a complete one:
 
-* **The executor has a span, not a metric.** Its time is the
-  `invoke_agent` span's duration; no histogram records it.
+* **A run that ends without returning is `aborted`, with the time it had
+  taken.** `a2a.server.executor.duration` records every executor run, by how
+  it ended; one whose future was dropped (a panic, or an abort) is reported
+  from the guard that watched it, so it is in the histogram rather than
+  missing from it. Before 0.15 only the `invoke_agent` span's duration showed
+  the run.
 * **A store's individual SQL statements have no span.** Each task-store
   operation is one span and one `db.client.operation.duration` point (see
   [Task-store operations](#task-store-operations)); the statements inside

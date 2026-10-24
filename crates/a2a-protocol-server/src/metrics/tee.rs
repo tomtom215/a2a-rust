@@ -66,4 +66,9 @@ impl<A: Metrics, B: Metrics> Metrics for Tee<A, B> {
         self.first.on_rpc_call(call);
         self.second.on_rpc_call(call);
     }
+
+    fn on_executor_run(&self, outcome: &str, duration: Duration) {
+        self.first.on_executor_run(outcome, duration);
+        self.second.on_executor_run(outcome, duration);
+    }
 }

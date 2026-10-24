@@ -712,6 +712,112 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Agent executor",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 60
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Executor run duration (p50 / p95), by outcome",
+      "description": "How long an agent executor's run took, from a2a.server.executor.duration: the run, not the call that started it, so a streaming send or a task that waits for input is measured here and not by the call duration. Outcomes: completed, error, budget_exhausted, canceled, aborted (the executor panicked or its future was dropped). Quantiles over 5 minutes; the histogram's top bucket is 100 s.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (outcome, le) (rate(a2a_server_executor_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p50 {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (outcome, le) (rate(a2a_server_executor_duration_seconds_bucket{job=~\"$job\"}[5m])))",
+          "legendFormat": "p95 {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Executor runs per second, by outcome",
+      "description": "Runs that ended, by how they ended. A rising error, budget_exhausted or aborted share is an agent failing, which the call-level error ratio shows only for the calls that waited for it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "a2a-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "a2a-prometheus"
+          },
+          "expr": "sum by (outcome) (rate(a2a_server_executor_duration_seconds_count{job=~\"$job\"}[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ],
   "links": []

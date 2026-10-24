@@ -114,6 +114,10 @@ impl Metrics for GlobalOtelMetrics {
     fn on_rpc_call(&self, call: &RpcCall<'_>) {
         self.current().on_rpc_call(call);
     }
+
+    fn on_executor_run(&self, outcome: &str, duration: Duration) {
+        self.current().on_executor_run(outcome, duration);
+    }
 }
 
 #[cfg(test)]
