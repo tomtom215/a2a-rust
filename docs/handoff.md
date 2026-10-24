@@ -288,8 +288,11 @@ only: when something here is done, delete it rather than annotating it.
    dropped calls, early-dropped streams and retries are not visible (M9,
    M10); push-config, audit, halt, lease and retention stores have no DB
    span (M11); card fetch, JWKS and token exchange have no duration metric
-   (M12); the per-operation by binding matrix is asserted for three
-   operations only (M15); and the low items L1, L3 to L12 (an
+   (M12); the per-operation by binding matrix (M15) is now asserted for all
+   eleven operations on JSON-RPC, HTTP+JSON, gRPC and WebSocket
+   (`tests/operation_matrix`; it found the gRPC `with_custom_transport` gap,
+   fixed), but not for the axum `A2aRouter` or SLIMRPC (SLIMRPC's own
+   `tests/telemetry.rs` reads SendMessage and GetTask only); and the low items L1, L3 to L12 (an
    `OTEL_*_EXPORTER=prometheus` env that panics every binary, no flush on
    SIGTERM for four binaries, a stale `RpcCall::duration` doc line, and the
    rest).

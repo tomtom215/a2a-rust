@@ -3478,6 +3478,23 @@ section "The client refuses what `a2a.proto` does not allow".
   Test: `hardening/observability.rs`
   `the_checks_leave_the_global_meter_provider_as_they_found_it` (fails with
   the restore removed from both checks).
+- **A gRPC client built from `GrpcTransport::connect` recorded no span and no
+  duration** (client, `grpc`). Handed to `with_custom_transport`, the route
+  the book documents for configuring the transport yourself, `GrpcTransport`
+  named neither its `rpc.system.name` nor its address, and a client call
+  with no system opens no `CLIENT` span and records no
+  `rpc.client.call.duration`; only `build_grpc` named them. The transport now
+  reports `grpc` and the endpoint it dials. Found by the new
+  `crates/a2a-protocol-sdk/tests/operation_matrix`, which runs all eleven
+  operations of `Method::ALL` over JSON-RPC, HTTP+JSON, gRPC and WebSocket
+  and requires a `SERVER` span and `rpc.server.call.duration` point from the
+  server and a `CLIENT` span and `rpc.client.call.duration` point from the
+  client for each (176 checks); the other 154 held. Tests:
+  `tests/grpc_unary_success_tests.rs`
+  `a_transport_from_connect_names_its_system_and_address`, and the matrix
+  (22 gaps before the fix, all on the gRPC client; renaming one operation in
+  either side's span-name table makes it name that operation on all four
+  bindings and no other).
 
 ### Deprecated
 
