@@ -12,6 +12,7 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
+use a2a_protocol_sdk::prelude::Telemetry;
 use a2a_protocol_sdk::server::tool_loop::OpenAiChatModel;
 
 mod agents;
@@ -111,6 +112,18 @@ async fn run() -> Result<Vec<Check>, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // OpenTelemetry from the standard `OTEL_*` environment, for each signal
+    // an endpoint is configured for: every binding's server span and
+    // `rpc.server.call.duration`, the client's, and the tool loop's
+    // `invoke_agent`, `chat` and `execute_tool` spans and `gen_ai.*`
+    // metrics. Nothing is built without an endpoint. Kept until `main`
+    // returns, which flushes it.
+    let telemetry = Telemetry::builder()
+        .with_default_service_name(env!("CARGO_BIN_NAME"))
+        .with_export_where_configured()
+        .build()
+        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+    telemetry.install_subscriber();
     let done = match run().await {
         Ok(done) => done,
         Err(e) => {

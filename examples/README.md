@@ -47,14 +47,15 @@ command. "Exits" means a default run checks itself and exits with a status;
 directory, and `cargo run --bin` builds only the binary it runs, hence the
 `cargo build` first.
 
-**Telemetry.** Every binary here but two starts the SDK's `Telemetry` from the
+**Telemetry.** Every binary here but one starts the SDK's `Telemetry` from the
 standard `OTEL_*` environment, as `langfuse-agent` does: set
 `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector and its traces, metrics and logs
 go there (`OTEL_SERVICE_NAME` overrides the default service name, the
 binary's); leave it unset and nothing is built, so a plain `cargo run` needs
-no collector. The two: `hello-agent`, whose point is that the prelude alone
-says hello, and `mcp-agent`'s `tool_server`, an MCP server that runs no A2A
-code. So do `tck/sut`, the ITK agent in `itk/` and the `a2a` CLI.
+no collector. The one: `mcp-agent`'s `tool_server`, an MCP server that runs
+no A2A code. So do `tck/sut`, the ITK agent in `itk/` and the `a2a` CLI.
+`scripts/check_otel_wiring.py` (CI) fails a `fn main` that starts none and is
+not on its list of exemptions, each with its reason.
 
 ## Which one to read
 

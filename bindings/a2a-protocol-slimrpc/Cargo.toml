@@ -58,7 +58,12 @@ publish = true
 # for local development and rewrites it to the version requirement in the
 # packaged manifest.
 a2a-protocol-types  = { version = "0.15", path = "../../crates/a2a-protocol-types", features = ["proto"] }
-a2a-protocol-client = { version = "0.15", path = "../../crates/a2a-protocol-client", default-features = false }
+# `otel` (which brings `tracing`): each call's `CLIENT` span and
+# `rpc.client.call.duration` reach whatever provider the process installs, as
+# the server's already do. Not the defaults, which add TLS and the webhook
+# receiver this binding has no use for. Until 2026-10-24 this asked for
+# neither, so in this crate's own build a SLIMRPC client recorded nothing.
+a2a-protocol-client = { version = "0.15", path = "../../crates/a2a-protocol-client", default-features = false, features = ["otel"] }
 # At its defaults, `tracing` and `otel`, as every other crate here takes it:
 # each call's `SERVER` span and `rpc.server.call.duration` (ADR 0013) reach
 # whatever subscriber and OpenTelemetry provider the process installs. Until

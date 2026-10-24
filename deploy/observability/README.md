@@ -24,8 +24,12 @@ built from this repository, not derived from the code.
 
 ## Pointing an agent at it
 
-Every binary in this repository, and any agent that builds
-`server::otel::Telemetry`, reads the standard `OTEL_*` variables.
+Every binary in this repository that serves or calls an agent, and any agent
+that builds `server::otel::Telemetry`, reads the standard `OTEL_*` variables.
+The exceptions (the official-TCK runner, which has no SDK dependency by
+design; an MCP server over stdio; the benchmark harnesses; the code
+generator) are listed with their reasons in `scripts/check_otel_wiring.py`,
+which CI runs.
 
 Straight to Prometheus (`prometheus --web.enable-otlp-receiver`):
 

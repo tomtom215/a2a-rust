@@ -353,6 +353,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scripts/check_otel_wiring.py`, a CI gate for what a binary exports.** It
+  fails a tracked `fn main` that starts no `Telemetry` and is not on its
+  exemption list (the TCK runner, an MCP stdio server, the benchmark
+  harnesses and the code generator, each with its reason), and a manifest
+  that takes `a2a-protocol-client`, `-server` or `-sdk` with
+  `default-features = false` and no `otel`. Stale exemptions fail too.
+  `--self-test` proves each rule on a fixture repository. Run on the tree
+  before the fixes below it named exactly `examples/live-model`, the SLIMRPC
+  manifest and `itk/Cargo.toml`.
+
 - **Agent-card requests are traced and measured** (server, `tracing` and
   `otel`; HTTP semantic conventions at `55c98cf`). A request for
   `/.well-known/agent-card.json` on any listener that serves it (JSON-RPC,
@@ -3428,6 +3438,20 @@ section "The client refuses what `a2a.proto` does not allow".
   as an error with its latency, like every later failure. Test:
   `handler/tenant_refusal_metrics_tests.rs` (all ten methods; each of the
   nine call sites fails it when reverted on its own).
+- **`live-model`, the SLIMRPC client and the ITK agent's client exported
+  nothing** (examples, `a2a-protocol-slimrpc`, `itk`). `examples/live-model`
+  started no `Telemetry`, so its run over every binding, the richest
+  `gen_ai.*` source in the repository, recorded into the no-op provider.
+  `a2a-protocol-slimrpc` and `itk` took `a2a-protocol-client` with
+  `default-features = false` and no `otel`, which drops `tracing` too, so
+  their outbound calls opened no `CLIENT` span and recorded no
+  `rpc.client.call.duration` (neither lockfile had a `tracing` or
+  `opentelemetry` edge on the client). `live-model` now starts `Telemetry`
+  from the `OTEL_*` environment as the other examples do; both manifests ask
+  for `otel`. Test: `bindings/a2a-protocol-slimrpc/tests/client_telemetry.rs`
+  (a `CLIENT` and a `SERVER` span for one SendMessage; fails with the
+  features removed). The ITK agent and `live-model` have no test of their
+  own; `scripts/check_otel_wiring.py` is what pins them.
 
 ### Deprecated
 

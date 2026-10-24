@@ -28,7 +28,10 @@ a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
 # signal an OTLP endpoint is configured for (`OTEL_EXPORTER_OTLP_ENDPOINT` or
 # the signal's own `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT`).
 a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = ["grpc", "otlp"] }
-a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false, features = ["grpc"] }
+# `otel`: the outbound calls' `CLIENT` spans and `rpc.client.call.duration`,
+# through the providers `telemetry::init` installs. Until 2026-10-24 only the
+# server half of this agent was instrumented.
+a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false, features = ["grpc", "otel"] }
 tokio       = { version = ">=1.47.1, <2", features = ["macros", "rt-multi-thread", "net", "time", "signal", "io-util"] }
 serde_json  = { version = ">=1.0.145, <2" }
 hyper       = { version = ">=1.7.0, <2", features = ["http1", "server"] }

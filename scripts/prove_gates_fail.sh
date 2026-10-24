@@ -361,6 +361,8 @@ injection_for() {
             echo "api_reference" ;;
         *"check_otel_metrics_coverage.py"*)
             echo "otel_coverage" ;;
+        *"check_otel_wiring.py"*)
+            echo "otel_wiring" ;;
         *"check_fuzz_matrix.py"*)
             echo "fuzz_matrix" ;;
         *"check_compliance_map.py"*)
@@ -535,6 +537,7 @@ expected_marker() {
         # that reports only one of the two is INCONCLUSIVE, not proven.
         api_reference)    echo "FAIL (stale=1, unlisted=1)" ;;
         otel_coverage)    echo "the bundled exporter drops" ;;
+        otel_wiring)      echo "fn main starts no Telemetry and is not exempt" ;;
         # The "runs nowhere" direction specifically. A run red because the
         # workflow lists a target Cargo.toml lacks would prove the loud half,
         # which the runner's own build already catches.
@@ -861,6 +864,14 @@ PY
             # this arm stays a one-liner like its neighbours.
             note_touched "$OTEL_RS"
             perl -0pi -e 's/\n    fn on_push_delivery\(.*?\n    \}\n/\n/s' "$OTEL_RS"
+            ;;
+        otel_wiring)
+            # A binary that no longer starts `Telemetry`: the state
+            # `examples/live-model` was in until 2026-10-24. It compiles, its
+            # tests pass, and nothing it does reaches a collector.
+            note_touched "examples/live-model/src/main.rs"
+            sed -i 's/Telemetry::builder()/Telemetry::builder_removed()/' \
+                examples/live-model/src/main.rs
             ;;
         fuzz_matrix)
             # Drop one target from fuzz.yml's matrix, leaving its harness and

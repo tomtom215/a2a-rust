@@ -32,6 +32,7 @@ non-zero if any check failed.
 | `LIVE_THINKING` | unset: every request carries `"chat_template_kwargs": {"enable_thinking": false}`; `1` sends nothing extra |
 | `LIVE_EXTRA_BODY` | none: a JSON object merged into every request after the line above |
 | `LIVE_MODEL_TIMEOUT_SECS` | 600: how long one model turn may take |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (and the other standard `OTEL_*` variables) | unset: nothing is built. Set, the run exports every binding's server and client spans and `rpc.*.call.duration`, and the tool loop's `invoke_agent`, `chat` and `execute_tool` spans and `gen_ai.*` metrics |
 
 ## The checks
 

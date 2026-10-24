@@ -12,6 +12,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "opentelemetry",
  "prost",
  "protoc-bin-vendored",
  "serde",
@@ -22,6 +23,8 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tonic-types",
+ "tracing",
+ "tracing-opentelemetry",
  "uuid",
  "zeroize",
 ]

@@ -12,9 +12,12 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "opentelemetry",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-opentelemetry",
  "uuid",
  "zeroize",
 ]
