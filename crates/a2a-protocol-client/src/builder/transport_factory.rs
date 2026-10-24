@@ -54,10 +54,9 @@ impl ClientBuilder {
         }
         self.send_extensions()?;
 
-        let custom = self
-            .transport_override
-            .as_ref()
-            .map(|t| crate::call_span::Peer::custom(t.rpc_system(), self.agent.clone()));
+        let custom = self.transport_override.as_ref().map(|t| {
+            crate::call_span::Peer::custom(t.rpc_system(), t.server_url(), self.agent.clone())
+        });
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override.take() {
             t
         } else {
@@ -198,7 +197,7 @@ impl ClientBuilder {
         self.send_extensions()?;
 
         let peer = if let Some(t) = &self.transport_override {
-            crate::call_span::Peer::custom(t.rpc_system(), self.agent.clone())
+            crate::call_span::Peer::custom(t.rpc_system(), t.server_url(), self.agent.clone())
         } else {
             crate::call_span::Peer::new("GRPC", &self.endpoint, self.agent.clone())
         };

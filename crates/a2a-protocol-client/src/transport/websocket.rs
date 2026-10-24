@@ -860,6 +860,11 @@ impl Transport for WebSocketTransport {
         Some("jsonrpc")
     }
 
+    /// The `ws://` or `wss://` URL the transport connects to.
+    fn server_url(&self) -> Option<&str> {
+        Some(&self.endpoint)
+    }
+
     fn send_request<'a>(
         &'a self,
         method: &'a str,

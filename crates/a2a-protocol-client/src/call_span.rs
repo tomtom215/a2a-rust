@@ -61,18 +61,21 @@ pub struct Peer {
 }
 
 impl Peer {
-    /// The peer of a client given a transport of its own: the system the
-    /// transport names and the agent from the card, if any. The address is
-    /// the transport's own business, so it is not recorded, and no
+    /// The peer of a client given a transport of its own: the system and the
+    /// URL the transport names, and the agent from the card, if any. No
     /// `traceparent` is set, since such a transport may carry no headers.
     pub(crate) fn custom(
         system: Option<&'static str>,
+        url: Option<&str>,
         agent: Option<Arc<(String, String, String)>>,
     ) -> Self {
+        let (address, port) = url.map(target).unwrap_or_default();
         Self {
             system,
+            address,
+            port,
             agent,
-            ..Self::default()
+            carries_headers: false,
         }
     }
 
@@ -88,18 +91,7 @@ impl Peer {
             "GRPC" => Some("grpc"),
             _ => None,
         };
-        let uri = endpoint.parse::<hyper::Uri>().ok();
-        let address = uri
-            .as_ref()
-            .and_then(|u| u.host())
-            .map(|h| h.trim_matches(['[', ']']).to_owned());
-        let port = uri.as_ref().and_then(|u| {
-            u.port_u16().or_else(|| match u.scheme_str() {
-                Some("https") => Some(443),
-                Some("http") => Some(80),
-                _ => None,
-            })
-        });
+        let (address, port) = target(endpoint);
         Self {
             system,
             address,
@@ -108,6 +100,24 @@ impl Peer {
             carries_headers: system.is_some(),
         }
     }
+}
+
+/// `server.address` and `server.port` for a URL: the host without an IPv6
+/// literal's brackets, and the port, or the scheme's default.
+fn target(url: &str) -> (Option<String>, Option<u16>) {
+    let uri = url.parse::<hyper::Uri>().ok();
+    let address = uri
+        .as_ref()
+        .and_then(|u| u.host())
+        .map(|h| h.trim_matches(['[', ']']).to_owned());
+    let port = uri.as_ref().and_then(|u| {
+        u.port_u16().or_else(|| match u.scheme_str() {
+            Some("https" | "wss") => Some(443),
+            Some("http" | "ws") => Some(80),
+            _ => None,
+        })
+    });
+    (address, port)
 }
 
 /// A call's span, from open to the recording of its outcome.

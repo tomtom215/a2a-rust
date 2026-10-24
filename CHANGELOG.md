@@ -2563,6 +2563,19 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Fixed
 
+- **A WebSocket client's spans and `rpc.client.call.duration` carry
+  `server.address` and `server.port`** (client). A transport given to
+  `with_custom_transport`, as `WebSocketTransport` is, recorded neither, so
+  a dashboard could not tell its agents apart; found when the client
+  dashboard's failure-ratio panel showed a series with no agent. The new
+  defaulted `Transport::server_url` names the URL; `WebSocketTransport`
+  returns its endpoint (`ws`/`wss` default to ports 80 and 443), and
+  `build` and `build_grpc` both read it. Tests:
+  `a_custom_transport_names_its_system_and_keeps_the_agent`,
+  `a_custom_transport_given_to_build_grpc_names_its_system_and_address`
+  (the first coverage of `build_grpc`'s custom-transport branch) and
+  `ws_transport_names_its_rpc_system_jsonrpc`.
+
 - **gRPC: a call whose answer cannot be converted to protobuf is recorded
   as failed** (server, `grpc`). SendMessage, GetTask, ListTasks,
   CancelTask, GetExtendedAgentCard and a directly answered
