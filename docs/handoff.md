@@ -454,6 +454,20 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   format change; erasure serialised across replicas, which needs the
   compare-and-set writes of 0.16 (decided); attribution of a tenant's shared
   partition, which has no caller to attribute it to.
+- **Release bar, measured 2026-10-24 at the tree of `567babe`:** `cargo
+  semver-checks --release-type patch` (the default skips a 0.14 to 0.15 bump
+  as already major) against the published 0.14.1, all features, four crates:
+  6 major-level differences, each in `### Breaking Changes` of `CHANGELOG.md`
+  (`ClientRequest.query_params`, `SseParseError` non-exhaustive, `Server` no
+  longer `UnwindSafe`, `TenantLimits.max_stored_tasks` removed, `TaskState`
+  discriminants, `ConvertError` non-exhaustive) and 5 minor-level ones
+  (deprecations); the SDK crate none. Gates and tests on that tree:
+  clippy (workspace all features and default, `--each-feature` on four
+  crates), the per-package tests (all, no and default features: 0 failed),
+  docs, the SLIMRPC binding's fmt, clippy, tests and example, the PostgreSQL
+  gates, and the offline examples. Not run locally: `cargo package`,
+  `prove_workflow_gates_fail.py`, the mutation sweep, the official TCK and
+  ACTS (workflow dispatch on the branch).
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on
@@ -603,7 +617,14 @@ into this file: the commit that records it changes it.
   low. A linker "bus error" (signal 7), or `linking with cc failed`,
   means the disk is full. `bindings/a2a-protocol-slimrpc/target` reaches
   12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
-  and delete it afterwards.
+  and delete it afterwards. `cargo test --workspace` fills the allowance
+  while linking (2026-10-24: three gates failed with `No space left on
+  device`, which a failed test run reports as a compile error): run one
+  package at a time and delete the executables in `target/debug/deps` between
+  (`find target/debug/deps -maxdepth 1 -type f -perm -u+x ! -name '*.so' !
+  -name '*.d' -delete`; 14.7 GB of 20 GB were test executables). When the
+  harness prints "Disk full ... 0 MB free", its output is lost: free space
+  first, then re-run.
 - **`check_file_lengths.sh` counts tracked files only:** run it after
   `git add`, or a new file over 500 lines passes unseen (it did:
   `tests/provenance_signing.rs`, 533 lines, at `69163dec`).
@@ -612,7 +633,16 @@ into this file: the commit that records it changes it.
   The `postgres` role's password is not always `postgres` in a fresh
   container (scram auth refused it on 2026-10-20): set it with
   `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`.
-- **llama.cpp:** b11836 (`f5027fb`) at `/opt/llama/src/build/bin`, and
+- **llama.cpp, in a fresh container (2026-10-24, none was installed):**
+  `git clone --depth 1 https://github.com/ggml-org/llama.cpp`, `cmake -S . -B
+  build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=ON
+  -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF`, `cmake --build build
+  --target llama-server -j2` (about 6 minutes on 4 vCPUs; built at commit
+  `3f03b17`). github.com release pages answer 403 through the proxy;
+  huggingface.co is reachable, e.g. `unsloth/Qwen3-1.7B-GGUF`
+  `Qwen3-1.7B-Q4_K_M.gguf` (1.1 GB, 7 s). The examples default to
+  `localhost:11434` and the name `qwen3:1.7b`: start the server with `--port
+  11434 --alias qwen3:1.7b --jinja -c 8192`. Earlier: b11836 (`f5027fb`) at `/opt/llama/src/build/bin`, and
   the study's b11751 (`8466395`) at `/opt/llama/old`; GGUFs in
   `/opt/models` (hashes in the study). Use `-c 8192` (the default context
   sized the KV cache to ~4.6 GB and the OOM killer took the server), and
@@ -628,7 +658,7 @@ into this file: the commit that records it changes it.
   cannot be run here.
 - `pkill -f` and `pgrep -f` match their own shell's command line, which
   contains the pattern: kill by PID, or put the command in a script file
-  (cost a killed shell twice on 2026-10-20).
+  (cost a killed shell twice on 2026-10-20 and twice more on 2026-10-24).
 - Agents in worktrees that share `target/` race on a crate's `.rlib`
   (`linking with cc failed` while the other build replaced it): re-run the
   step before reading anything into it.
