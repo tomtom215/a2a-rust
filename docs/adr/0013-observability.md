@@ -42,6 +42,12 @@ The semantic conventions this ADR commits to were read from the
 - `rpc.server.call.duration`: histogram, unit `s`, stability
   release-candidate, advisory buckets
   `[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]`.
+  *Changed 2026-10-24:* at `55c98cf` the conventions advise
+  `[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100]`
+  for both `rpc.server.call.duration` and `rpc.client.call.duration`, and
+  both histograms use it from 0.15. The old set's top bucket was 10 s, so
+  a dashboard's p95 of agent calls that wait on a model read 10 s whatever
+  they took.
 - RPC server span: kind `SERVER`, named `{rpc.method}`; `rpc.system.name`
   required; `rpc.method` the fully-qualified logical method, or `_OTHER`
   for one the server does not recognise; `error.type` required on failure.

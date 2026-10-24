@@ -65,9 +65,9 @@ mod streams;
 use fixtures::*;
 
 /// The advisory buckets for `rpc.server.call.duration`, from the semantic
-/// conventions at `838e414` as ADR 0013 records them.
-const RPC_DURATION_BUCKETS: [f64; 14] = [
-    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+/// conventions at `55c98cf` (ADR 0013 records the change from `838e414`).
+const RPC_DURATION_BUCKETS: [f64; 13] = [
+    0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0,
 ];
 
 /// The fully-qualified method the ADR names every binding's server span for.

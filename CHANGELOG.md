@@ -1542,6 +1542,19 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Behaviour Changes
 
+- **`rpc.server.call.duration`, `rpc.client.call.duration` and
+  `a2a.server.request.duration` use the semantic conventions' current
+  advisory buckets, 0.1 ms to 100 s** (`docs/rpc/rpc-metrics.md` at
+  `55c98cf`), instead of the 5 ms to 10 s set they advised at `838e414`.
+  An agent call that waits on a model routinely takes longer than ten
+  seconds, and every such call fell in the last bucket, so a p95 or p99
+  read 10 s whatever the calls took (seen on the client dashboard over a
+  harness whose calls took 10 to 80 s). The bucket boundaries are part of
+  each series' identity: a stored histogram's quantiles across the upgrade
+  mix the two sets until the old series ages out. ADR 0013 records the
+  change. Tests: the boundaries asserted in `call_metric::tests`,
+  `otel::rpc_tests` and `observability_e2e`.
+
 - **A `Message` an executor writes during its task is streamed as a status
   update** (server; spec §3.1.2, §3.5.2). A stream is exactly one `Message`
   or a `Task` followed by status and artifact updates; a `Message` written

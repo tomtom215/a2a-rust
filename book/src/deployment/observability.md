@@ -240,7 +240,8 @@ treat them as the contract.
 | `db.client.operation.duration` | histogram | s | Each operation of a task store that names its database, by `db.operation.name` and outcome |
 
 `rpc.server.call.duration` is the OpenTelemetry semantic conventions'
-instrument, with their advisory buckets (5 ms to 10 s) and attributes:
+instrument, with their advisory buckets (0.1 ms to 100 s; 5 ms to 10 s
+before 0.15) and attributes:
 `rpc.system.name` (`jsonrpc` — over HTTP or WebSocket — `a2a_http_json`,
 `grpc`, or `slimrpc` for `a2a-protocol-slimrpc`); `rpc.method`, the fully qualified method
 (`lf.a2a.v1.A2AService/SendMessage`) or `_OTHER` for one the server does not
