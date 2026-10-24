@@ -9505,7 +9505,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1807 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1812 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1336 an_appended_chunk_with_no_parts_is_dropped",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1273 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:61 an_artifact_with_no_parts_is_not_streamed",
@@ -9703,8 +9703,8 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1390 artifact_append_merges_into_the_existing_artifact",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1511 artifact_append_targets_the_matching_id_not_another",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1868 append_merges_and_non_append_does_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1935 append_merges_into_the_matching_artifact_not_another"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1873 append_merges_and_non_append_does_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1940 append_merges_into_the_matching_artifact_not_another"
    ],
    "notes": "Parts extended and metadata merged into the artifact with matching id.",
    "auditor": "G",

@@ -82,17 +82,26 @@ impl StoreDatabase {
 
 /// The in-memory store, declaring `redis` at `cache.internal`: for the tests
 /// of a wrapper's forwarding and of the traced store.
-#[cfg(all(test, any(feature = "tracing", feature = "audit", feature = "encryption")))]
+#[cfg(all(
+    test,
+    any(feature = "tracing", feature = "audit", feature = "encryption")
+))]
 pub struct DeclaresDatabase(pub super::InMemoryTaskStore);
 
-#[cfg(all(test, any(feature = "tracing", feature = "audit", feature = "encryption")))]
+#[cfg(all(
+    test,
+    any(feature = "tracing", feature = "audit", feature = "encryption")
+))]
 impl DeclaresDatabase {
     pub fn declared() -> StoreDatabase {
         StoreDatabase::new("redis").with_server("cache.internal", None)
     }
 }
 
-#[cfg(all(test, any(feature = "tracing", feature = "audit", feature = "encryption")))]
+#[cfg(all(
+    test,
+    any(feature = "tracing", feature = "audit", feature = "encryption")
+))]
 impl super::TaskStore for DeclaresDatabase {
     fn save<'a>(
         &'a self,
