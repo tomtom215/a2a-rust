@@ -25,13 +25,7 @@ pub fn open(url: &str) -> tracing::Span {
         .as_ref()
         .and_then(hyper::Uri::host)
         .map(|h| h.trim_matches(['[', ']']).to_owned());
-    let port = uri.as_ref().and_then(|u| {
-        u.port_u16().or_else(|| match u.scheme_str() {
-            Some("https") => Some(443),
-            Some("http") => Some(80),
-            _ => None,
-        })
-    });
+    let port = uri.as_ref().and_then(port);
     let full = uri.as_ref().map(scrubbed);
     tracing::info_span!(
         target: "a2a_protocol_client::discovery",
@@ -57,6 +51,15 @@ pub fn ended(span: &tracing::Span, error: Option<&crate::error::ClientError>) {
     }
 }
 
+/// `server.port`: the URL's port, or its scheme's default.
+fn port(uri: &hyper::Uri) -> Option<u16> {
+    uri.port_u16().or_else(|| match uri.scheme_str() {
+        Some("https") => Some(443),
+        Some("http") => Some(80),
+        _ => None,
+    })
+}
+
 /// `uri` as scheme, authority without userinfo, and path.
 fn scrubbed(uri: &hyper::Uri) -> String {
     let scheme = uri.scheme_str().unwrap_or("http");
@@ -68,6 +71,15 @@ fn scrubbed(uri: &hyper::Uri) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_port_is_the_url_s_or_its_scheme_s_default() {
+        let port_of = |url: &str| port(&url.parse().unwrap());
+        assert_eq!(port_of("https://agent.example/card"), Some(443));
+        assert_eq!(port_of("http://agent.example/card"), Some(80));
+        assert_eq!(port_of("https://agent.example:8443/card"), Some(8443));
+        assert_eq!(port_of("/relative/card"), None);
+    }
 
     #[test]
     fn the_url_keeps_its_origin_and_path_and_drops_userinfo_and_query() {

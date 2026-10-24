@@ -344,8 +344,13 @@ mod tests {
         // The URL only as its origin: a webhook URL often carries the
         // secret in its path, query or userinfo. Until 2026-10-23 it was
         // printed whole.
-        for secret in ["URL-PASSWORD", "URL-SECRET", "URL-SIG", "/hook"] {
-            assert!(!dbg.contains(secret), "url secret {secret} leaked: {dbg}");
+        // The message names no fixture: CodeQL reads one as a logged
+        // secret (code scanning alert 160 on pull request #179).
+        for part in ["URL-PASSWORD", "URL-SECRET", "URL-SIG", "/hook"] {
+            assert!(
+                !dbg.contains(part),
+                "the URL's userinfo, path or query is in Debug"
+            );
         }
         assert!(
             dbg.contains("url: \"https://example.com:8443\""),
@@ -372,6 +377,7 @@ mod tests {
             ("/relative/SECRET", "<webhook url without scheme or host>"),
             ("https://bad host SECRET/x", "<unparseable webhook url>"),
             ("https:///SECRET", "<webhook url without scheme or host>"),
+            ("://example.com/SECRET", "<unparseable webhook url>"),
         ] {
             let cfg = TaskPushNotificationConfig::new("t", url);
             let dbg = format!("{cfg:?}");
