@@ -392,4 +392,5 @@ fn a_current_trace_is_the_parent_only_without_a_recorded_span() {
     assert_ne!(sent.trace_id(), ambient.trace_id());
 }
 
+#[cfg(feature = "tracing")]
 mod custom_transport;
