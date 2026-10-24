@@ -4149,7 +4149,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:40 stamp_status",
     "crates/a2a-protocol-client/src/methods/status_timestamp.rs:13 utc",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:108 A2aClient::list_tasks"
+    "crates/a2a-protocol-client/src/methods/tasks.rs:102 A2aClient::list_tasks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:170 an_offset_timestamp_is_rewritten_in_utc",
@@ -4242,7 +4242,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:40 stamp_status",
     "crates/a2a-protocol-client/src/methods/status_timestamp.rs:13 utc",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:108 A2aClient::list_tasks"
+    "crates/a2a-protocol-client/src/methods/tasks.rs:102 A2aClient::list_tasks"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:170 an_offset_timestamp_is_rewritten_in_utc",
@@ -4817,7 +4817,7 @@
     "crates/a2a-protocol-client/tests/legacy_card.rs:55 a_v03_card_is_read_with_its_interfaces_and_extended_card",
     "crates/a2a-protocol-client/tests/legacy_card_warning.rs:96 a_legacy_card_is_warned_about_and_a_current_one_is_not",
     "crates/a2a-protocol-client/src/legacy_card.rs:217 the_current_form_is_left_as_it_is",
-    "crates/a2a-protocol-client/src/methods/extended_card.rs:185 a_legacy_extended_card_is_read_in_its_current_form"
+    "crates/a2a-protocol-client/src/methods/extended_card.rs:178 a_legacy_extended_card_is_read_in_its_current_form"
    ],
    "notes": "New names emitted. Dual-handling: legacy enum spellings and AgentCard.url parse (types crate aliases); since 2026-10-14 a fetched or extended card's v0.3 url, preferredTransport and additionalInterfaces fold into supportedInterfaces, and supportsAuthenticatedExtendedCard or App. A.2.2's supportsExtendedAgentCard is read as capabilities.extendedAgentCard (a field the v1.0 form sets wins), with a tracing warning naming each legacy field (legacy_card.rs). Not handled: App. A.2.1's kind discriminator on parts and stream events, which only a v0.3 interface sends; interface selection never picks one (ClientBuilder::from_card passes over a 0.3 interface for a 1.x one and refuses a card with none), so the client receives no such object. Before: no fallback for the extended-card field, url parsed but not folded, and no warning.",
    "auditor": "C",
@@ -5195,7 +5195,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/methods/follow.rs:109 A2aClient::follow_task",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:202 A2aClient::subscribe_to_task",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:184 A2aClient::subscribe_to_task",
     "crates/a2a-protocol-client/src/methods/push_config.rs:73 A2aClient::set_push_config",
     "crates/a2a-protocol-client/src/webhook/receiver.rs:75 WebhookReceiver"
    ],
@@ -9861,7 +9861,7 @@
     "crates/a2a-protocol-client/src/methods/mod.rs:32 A2aClient::tenant_or_default",
     "crates/a2a-protocol-client/src/methods/send_message.rs:21 apply_client_config",
     "crates/a2a-protocol-client/src/methods/tasks.rs:50 A2aClient::read_task",
-    "crates/a2a-protocol-client/src/methods/tasks.rs:108 A2aClient::list_tasks",
+    "crates/a2a-protocol-client/src/methods/tasks.rs:102 A2aClient::list_tasks",
     "crates/a2a-protocol-client/src/methods/push_config.rs:73 A2aClient::set_push_config",
     "crates/a2a-protocol-client/src/methods/extended_card.rs:35 A2aClient::get_extended_agent_card"
    ],

@@ -95,6 +95,14 @@ impl Drop for StreamCall {
 }
 
 impl super::EventStream {
+    /// The call failed after the stream opened — an interceptor's `after`
+    /// hook refused it — so it ends with `error`, not as abandoned.
+    pub(crate) fn fail_call(&mut self, error: &ClientError) {
+        if let Some(call) = self.call.as_mut() {
+            call.0.fail(error);
+        }
+    }
+
     /// Keeps `call` — its span open, its duration running — until the
     /// stream is dropped.
     #[must_use]

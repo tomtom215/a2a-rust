@@ -293,16 +293,24 @@ conventions' client histogram (unit `s`, the same buckets), with
 success), `error.type` for a failed call (that status, or the failure's
 class — `timeout`, `transport` — when the agent never answered), and
 `server.address` and `server.port`. A streaming call is measured until the
-caller drops its stream, as its span is. A call the caller gives up on — its
-future dropped by a `tokio::time::timeout` or a `select!` — and a stream
-dropped before its final event or the end of its body are recorded as
-`error.type` `cancelled`, with the time they ran, as the server records a
-peer that goes away; the slow calls a caller abandons are the ones a latency
-panel most needs. A stream read to its end is not. The interceptors' error
-hook does not run for a dropped call: a destructor cannot await it. It
-records through the global
-meter provider — the one `Telemetry` installs — as it stood when the client
-was built, under the meter `a2a.client`; a call on a custom transport that
+caller drops its stream, as its span is. A call is recorded as it ended for
+the caller, not as the agent answered: an answer the client then refuses (an
+interceptor's `after` hook errors, the result does not decode, the response
+is malformed, a content signature does not verify) is a failed call, with
+`error.type` `serialization`, `invalid_response`, `content_not_verified` or
+the hook's own error. A call the caller gives up on — its future dropped by
+a `tokio::time::timeout` or a `select!` — and a stream dropped before its
+final event or the end of its body are recorded as `error.type`
+`cancelled`, with the time they ran, as the server records a peer that goes
+away; the slow calls a caller abandons are the ones a latency panel most
+needs. A stream read to its end is not. The interceptors' error hook does
+not run for a dropped call: a destructor cannot await it. A call refused
+before anything is sent — an undeclared capability, a message that is not
+well formed, a `before` hook that fails — is not an RPC and is not
+recorded. The metric records through the global meter provider — the one
+`Telemetry` installs — as it stands at each call, so a client built before
+`Telemetry` records once it is installed, under the meter `a2a.client`; a
+call on a custom transport that
 names no `rpc.system.name` is not recorded, since that attribute is
 required.
 

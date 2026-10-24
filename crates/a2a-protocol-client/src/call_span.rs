@@ -47,10 +47,8 @@ pub fn agent_identity(card: &AgentCard) -> Arc<(String, String, String)> {
 mod peer;
 pub use peer::Peer;
 
-#[cfg(feature = "tracing")]
-mod abandoned;
-#[cfg(feature = "tracing")]
-pub use abandoned::Abandoned;
+mod in_flight;
+pub use in_flight::InFlight;
 
 /// A call's span, from open to the recording of its outcome.
 #[cfg(feature = "tracing")]
@@ -139,19 +137,10 @@ impl CallSpan {
         }
     }
 
-    /// Records the call as finished with `result`, the response's JSON:
-    /// a task — bare, or as a send's `{"task": …}` — names the task, its
-    /// context and its state.
-    pub(crate) fn succeeded(self, result: Option<&serde_json::Value>) {
-        if let Some(code) = Status::ok(self.system).code {
-            self.span.record("rpc.status_code", code.as_str());
-        }
-        self.opened(result);
-    }
-
-    /// [`succeeded`](Self::succeeded) for a call that opened a stream, whose
-    /// status is recorded when the stream ends ([`ended`](Self::ended)).
-    pub(crate) fn opened(mut self, result: Option<&serde_json::Value>) {
+    /// Records what the agent's response, `result` — the response's JSON — says
+    /// of its task: a task, bare or as a send's `{"task": …}`, names the task,
+    /// its context and its state.
+    pub(crate) fn response(&mut self, result: Option<&serde_json::Value>) {
         if self.span.is_disabled() {
             return;
         }
@@ -167,10 +156,20 @@ impl CallSpan {
                     .and_then(|v| v.as_str())
                     .map(ToOwned::to_owned)
             };
-            self.task_id = field("id").or(self.task_id);
-            self.context_id = field("contextId").or(self.context_id);
+            self.task_id = field("id").or_else(|| self.task_id.take());
+            self.context_id = field("contextId").or_else(|| self.context_id.take());
             self.span.record("a2a.task.state", state);
         }
+    }
+
+    /// Records how the call ended — `rpc.status_code`, and for a failure
+    /// `error.type` and `Error` status — and the task and context it was
+    /// about. Once: a field recorded twice is exported twice.
+    pub(crate) fn end(&self, status: &Status) {
+        if self.span.is_disabled() {
+            return;
+        }
+        ended(&self.span, status);
         self.finish();
     }
 
@@ -182,16 +181,8 @@ impl CallSpan {
         }
     }
 
-    /// Records the call as failed with `error`.
-    pub(crate) fn failed(self, error: &crate::error::ClientError) {
-        if self.span.is_disabled() {
-            return;
-        }
-        ended(&self.span, &Status::failed(self.system, error));
-        self.finish();
-    }
-
-    fn finish(self) {
+    /// Records the task and context the call was about.
+    fn finish(&self) {
         if let Some(id) = &self.task_id {
             self.span.record("a2a.task.id", id.as_str());
         }
@@ -275,6 +266,14 @@ impl Status {
         }
     }
 
+    /// A call whose caller dropped it unfinished: no status came back.
+    pub(crate) fn cancelled() -> Self {
+        Self {
+            code: None,
+            error: Some("cancelled".to_owned()),
+        }
+    }
+
     /// A call on `system` that failed with `error`.
     pub(crate) fn failed(system: Option<&str>, error: &crate::error::ClientError) -> Self {
         use crate::error::ClientError as E;
@@ -354,6 +353,7 @@ pub fn error_type(error: &crate::error::ClientError) -> String {
         E::InvalidEndpoint(_) => "invalid_endpoint".to_owned(),
         E::AuthRequired { .. } => "auth_required".to_owned(),
         E::InvalidAgentResponse(_) => "invalid_response".to_owned(),
+        E::ContentNotVerified(_) => "content_not_verified".to_owned(),
         _ => "_OTHER".to_owned(),
     }
 }

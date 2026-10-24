@@ -73,20 +73,14 @@ impl A2aClient {
             }
         }
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let task =
-            serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)?;
-        crate::received::task(METHOD, &task)?;
-        self.content.task(&task)?;
-        Ok(task)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let task =
+                serde_json::from_value::<Task>(result).map_err(ClientError::Serialization)?;
+            crate::received::task(METHOD, &task)?;
+            self.content.task(&task)?;
+            Ok(task)
+        })
+        .await
     }
 
     /// Lists tasks visible to the caller.
@@ -119,20 +113,14 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let page = serde_json::from_value::<TaskListResponse>(resp.result)
-            .map_err(ClientError::Serialization)?;
-        crate::received::page(&page)?;
-        self.content.page(&page)?;
-        Ok(page)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let page = serde_json::from_value::<TaskListResponse>(result)
+                .map_err(ClientError::Serialization)?;
+            crate::received::page(&page)?;
+            self.content.page(&page)?;
+            Ok(page)
+        })
+        .await
     }
 
     /// Requests cancellation of a running task.
@@ -169,20 +157,14 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let task =
-            serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)?;
-        crate::received::task(METHOD, &task)?;
-        self.content.task(&task)?;
-        Ok(task)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let task =
+                serde_json::from_value::<Task>(result).map_err(ClientError::Serialization)?;
+            crate::received::task(METHOD, &task)?;
+            self.content.task(&task)?;
+            Ok(task)
+        })
+        .await
     }
 
     /// Subscribes to the SSE stream for an in-progress task.
@@ -269,7 +251,7 @@ impl A2aClient {
         self.interceptors.run_before(&mut req).await?;
 
         let stream = self.send_streaming_intercepted(METHOD, &mut req).await?;
-        let stream = self.configure_stream(stream);
+        let mut stream = self.configure_stream(stream);
 
         // FIX(#6): Call run_after() for streaming requests so interceptors
         // get their cleanup/logging hook.
@@ -278,7 +260,10 @@ impl A2aClient {
             result: serde_json::Value::Null,
             status_code: 200,
         };
-        self.interceptors.run_after(&resp).await?;
+        if let Err(e) = self.interceptors.run_after(&resp).await {
+            stream.fail_call(&e);
+            return Err(e);
+        }
 
         Ok(stream)
     }

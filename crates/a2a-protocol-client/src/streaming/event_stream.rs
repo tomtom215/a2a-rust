@@ -702,6 +702,13 @@ impl EventStream {
     }
 }
 
+/// Without `tracing` a stream carries no record of its call to fail.
+#[cfg(not(feature = "tracing"))]
+impl EventStream {
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
+    pub(crate) const fn fail_call(&mut self, _: &ClientError) {}
+}
+
 impl Drop for EventStream {
     fn drop(&mut self) {
         #[cfg(feature = "tracing")]

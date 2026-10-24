@@ -131,20 +131,14 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let response = serde_json::from_value::<SendMessageResponse>(resp.result)
-            .map_err(ClientError::Serialization)?;
-        crate::received::response(&response)?;
-        self.content.response(&response)?;
-        Ok(response)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let response = serde_json::from_value::<SendMessageResponse>(result)
+                .map_err(ClientError::Serialization)?;
+            crate::received::response(&response)?;
+            self.content.response(&response)?;
+            Ok(response)
+        })
+        .await
     }
 
     /// Sends a message and returns a streaming [`EventStream`] of progress
@@ -170,7 +164,7 @@ impl A2aClient {
         self.interceptors.run_before(&mut req).await?;
 
         let stream = self.send_streaming_intercepted(METHOD, &mut req).await?;
-        let stream = self.configure_stream(stream);
+        let mut stream = self.configure_stream(stream);
 
         // FIX(#6): Call run_after() for streaming requests so interceptors
         // get their cleanup/logging hook. The response body is empty since
@@ -184,7 +178,10 @@ impl A2aClient {
             result: serde_json::Value::Null,
             status_code: stream.status_code(),
         };
-        self.interceptors.run_after(&resp).await?;
+        if let Err(e) = self.interceptors.run_after(&resp).await {
+            stream.fail_call(&e);
+            return Err(e);
+        }
 
         Ok(stream)
     }

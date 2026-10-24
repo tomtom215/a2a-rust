@@ -107,6 +107,23 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
     }
 }
 
+/// A call that ended, in one step: what the span's tests read.
+#[cfg(feature = "tracing")]
+impl CallSpan {
+    /// Ends the call as a success, with what the agent answered.
+    pub(super) fn succeeded(mut self, result: Option<&serde_json::Value>) {
+        self.response(result);
+        let status = Status::ok(self.system);
+        self.end(&status);
+    }
+
+    /// Ends the call as a failure with `error`.
+    pub(super) fn failed(self, error: &crate::error::ClientError) {
+        let status = Status::failed(self.system, error);
+        self.end(&status);
+    }
+}
+
 /// The fields `f` records, with nothing but [`Fields`] subscribed.
 #[cfg(feature = "tracing")]
 pub fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {

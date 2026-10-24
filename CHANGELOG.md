@@ -2689,23 +2689,38 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Fixed
 
-- **A client call the caller drops, and a stream it drops early, are
-  recorded as `cancelled`** (client, `tracing`/`otel`). A call dropped
+- **A client call is recorded as it ended for the caller** (client,
+  `tracing`/`otel`). Three calls were recorded wrongly. A call dropped
   while waiting for its agent (a `tokio::time::timeout`, a `select!`) ran
   nothing after its `.await`: its span ended with no status and
   `rpc.client.call.duration` held no point, so the calls callers gave up on
   were the ones the telemetry could not see. A stream dropped before its
-  final event or the end of its body was recorded as a success. Both now
-  end their span with `error.type` `cancelled` and `ERROR` status and
-  record their duration with that `error.type`, as the server records a
-  peer that goes away. A stream read to its end is unchanged. The
-  interceptors' error hook does not run for a dropped call (a destructor
-  cannot await it). Tests: `call_metric/tests.rs`
-  `a_call_the_caller_drops_is_recorded_as_cancelled` and
-  `a_stream_dropped_before_it_ended_is_recorded_as_cancelled`; the guard's
-  own in `call_span/abandoned.rs`. Each was written failing first (no point
-  recorded; success recorded), and three mutations of the guard and one of
-  the stream's phase check are each caught.
+  final event or the end of its body was recorded as a success. And a call
+  ended at the transport, before the client had accepted the answer: an
+  interceptor's `after` hook that refused it, a result that did not decode,
+  a response `received` found malformed, a content signature that did not
+  verify were all recorded as successes. The first two now end their span
+  with `error.type` `cancelled` and `ERROR` status and record their
+  duration with that `error.type`, as the server records a peer that goes
+  away; the third ends with the refusal's class (`serialization`,
+  `invalid_response`, the new `content_not_verified`, or the hook's own
+  error). A stream read to its end is unchanged. The interceptors' error
+  hook still runs only for a failure of the transport, and not for a dropped
+  call (a destructor cannot await it). A call refused before anything is
+  sent (an undeclared capability, a message that is not well formed, a
+  `before` hook that fails) opens no span, as before: nothing was called.
+  Internally the nine unary methods' send, `after` hooks and decoding are
+  one `send_decoded`, and the span, clock and metric are one `InFlight`
+  (`call_span/in_flight.rs`). Tests: `call_metric/tests.rs`
+  `a_call_the_caller_drops_is_recorded_as_cancelled`,
+  `a_stream_dropped_before_it_ended_is_recorded_as_cancelled`,
+  `a_response_an_interceptor_refuses_is_recorded_as_failed`,
+  `a_response_that_does_not_decode_is_recorded_as_failed` and
+  `a_stream_an_interceptor_refuses_is_recorded_as_failed`, and the span's
+  own in `call_span/in_flight/tests.rs`. The first two were written failing
+  first (no point recorded; a success recorded); the others were checked by
+  four mutations (ending before validation, no failure for a refused
+  stream, a no-op `Drop`, no `content_not_verified` class), each caught.
 
 - **A WebSocket client's spans and `rpc.client.call.duration` carry
   `server.address` and `server.port`** (client). A transport given to

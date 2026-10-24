@@ -92,17 +92,21 @@ agent_executor!(Endless, |ctx, queue| async {
     std::future::pending().await
 });
 
-/// A JSON-RPC client of `addr`, recording into a fresh reader.
-fn client_of(addr: std::net::SocketAddr) -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
+/// The client `builder` builds, recording into a fresh reader.
+fn instrumented(builder: ClientBuilder) -> (A2aClient, Arc<ManualReader>, SdkMeterProvider) {
     let reader = Arc::new(ManualReader::builder().build());
     let provider = SdkMeterProvider::builder()
         .with_reader(SharedReader(Arc::clone(&reader)))
         .build();
     let meter = opentelemetry::metrics::MeterProvider::meter(&provider, "a2a.client");
-    let mut client = ClientBuilder::new(format!("http://{addr}"))
-        .build()
-        .expect("client");
+    let mut client = builder.build().expect("client");
     client.metric = CallMetric::from_meter(&meter);
+    (client, reader, provider)
+}
+
+/// A JSON-RPC client of `addr`, recording into a fresh reader.
+fn client_of(addr: std::net::SocketAddr) -> (A2aClient, Arc<ManualReader>, SdkMeterProvider, u16) {
+    let (client, reader, provider) = instrumented(ClientBuilder::new(format!("http://{addr}")));
     (client, reader, provider, addr.port())
 }
 
@@ -304,6 +308,134 @@ async fn a_stream_dropped_before_it_ended_is_recorded_as_cancelled() {
             "lf.a2a.v1.A2AService/SendStreamingMessage".to_owned()
         )),
         "{attributes:?}"
+    );
+}
+
+/// An interceptor that refuses every answer.
+struct RefuseAfter;
+
+#[allow(clippy::unused_async_trait_impl)]
+impl crate::interceptor::CallInterceptor for RefuseAfter {
+    async fn before<'a>(
+        &'a self,
+        _: &'a mut crate::interceptor::ClientRequest,
+    ) -> crate::ClientResult<()> {
+        Ok(())
+    }
+    async fn after<'a>(
+        &'a self,
+        _: &'a crate::interceptor::ClientResponse,
+    ) -> crate::ClientResult<()> {
+        Err(crate::error::ClientError::InvalidAgentResponse(
+            "refused".into(),
+        ))
+    }
+}
+
+/// The one point `reader` holds, as its `error.type`.
+fn only_error_type(reader: &ManualReader) -> Option<String> {
+    let points = points(reader);
+    assert_eq!(points.len(), 1, "{points:?}");
+    let (attributes, count, _) = &points[0];
+    assert_eq!(*count, 1, "recorded more than once: {attributes:?}");
+    attributes
+        .iter()
+        .find(|(k, _)| k == "error.type")
+        .map(|(_, v)| v.clone())
+}
+
+/// A call is recorded as it ended for the caller, not as the agent answered
+/// it: an interceptor that refuses the answer after the agent gave it makes
+/// a failed call, recorded once.
+#[tokio::test]
+async fn a_response_an_interceptor_refuses_is_recorded_as_failed() {
+    let handler = RequestHandlerBuilder::new(Done)
+        .without_agent_card()
+        .build()
+        .expect("handler");
+    let addr = a2a_protocol_server::serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::new(Arc::new(handler)),
+    )
+    .await
+    .expect("serve");
+    let (client, reader, _provider) =
+        instrumented(ClientBuilder::new(format!("http://{addr}")).with_interceptor(RefuseAfter));
+    client.send_message(send()).await.expect_err("refused");
+    assert_eq!(
+        only_error_type(&reader).as_deref(),
+        Some("invalid_response")
+    );
+}
+
+/// Answers every call with a result no method decodes.
+struct Garbage;
+
+impl crate::transport::Transport for Garbage {
+    fn send_request<'a>(
+        &'a self,
+        _: &'a str,
+        _: serde_json::Value,
+        _: &'a std::collections::HashMap<String, String>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::ClientResult<serde_json::Value>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(serde_json::json!("not a task")) })
+    }
+    fn send_streaming_request<'a>(
+        &'a self,
+        _: &'a str,
+        _: serde_json::Value,
+        _: &'a std::collections::HashMap<String, String>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = crate::ClientResult<crate::streaming::EventStream>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Err(crate::error::ClientError::Transport("unused".into())) })
+    }
+    fn rpc_system(&self) -> Option<&'static str> {
+        Some("jsonrpc")
+    }
+}
+
+/// An answer the client cannot decode is a failed call, whatever the agent
+/// thinks it sent.
+#[tokio::test]
+async fn a_response_that_does_not_decode_is_recorded_as_failed() {
+    let (client, reader, _provider) =
+        instrumented(ClientBuilder::new("http://127.0.0.1:9").with_custom_transport(Garbage));
+    let missing = TaskQueryParams {
+        tenant: None,
+        id: "t".into(),
+        history_length: None,
+    };
+    client.get_task(missing).await.expect_err("does not decode");
+    assert_eq!(only_error_type(&reader).as_deref(), Some("serialization"));
+}
+
+/// A stream whose `after` hook refuses it fails its call with the refusal;
+/// it was not abandoned by its caller, who never saw it.
+#[tokio::test]
+async fn a_stream_an_interceptor_refuses_is_recorded_as_failed() {
+    let handler = RequestHandlerBuilder::new(Done)
+        .without_agent_card()
+        .build()
+        .expect("handler");
+    let addr = a2a_protocol_server::serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::new(Arc::new(handler)),
+    )
+    .await
+    .expect("serve");
+    let (client, reader, _provider) =
+        instrumented(ClientBuilder::new(format!("http://{addr}")).with_interceptor(RefuseAfter));
+    client.stream_message(send()).await.expect_err("refused");
+    assert_eq!(
+        only_error_type(&reader).as_deref(),
+        Some("invalid_response")
     );
 }
 
