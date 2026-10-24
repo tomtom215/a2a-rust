@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known Limitations
+
+- **Several replicas sharing a store need session affinity.** Without every
+  turn of a task routed to one replica, two replicas can run the same task
+  at once (`the_single_writer_refusal_does_not_cross_replicas`), and a
+  continuation saved on one can overwrite what the other's turn wrote
+  meanwhile: the stored task loses it, though a subscriber still receives
+  the event (`tests/stale_write_position`). Compare-and-set task writes and
+  cross-replica single-writer admission would close it; they are planned,
+  not built. One replica, or several with affinity, is the supported
+  topology for 0.15 ([Running More Than One Replica](book/src/deployment/horizontal-scaling.md)).
+
 ### Breaking Changes
 
 - **`serve::Server` is no longer `UnwindSafe` or `RefUnwindSafe` with

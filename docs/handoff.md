@@ -262,7 +262,8 @@ only: when something here is done, delete it rather than annotating it.
   not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. CRA rows
   CRA-AI-I-2a, CRA-AI-II-2-4-8 and CRA-14 carry it as a gap. Filing is an
   upstream action, so it waits for the maintainer.
-- **Compare-and-set for task writes (cross-replica).** The 2026-10-20 fix
+- **Compare-and-set for task writes (cross-replica).** *Decided 2026-10-24:
+  not for 0.15.0; 0.16 (see Decisions).* The 2026-10-20 fix
   makes a stale continuation save record the position of its read, so a
   subscriber replays the event it overwrote, but only until the continuing
   turn's first fold stores a position past it again; the stored task keeps
@@ -429,6 +430,11 @@ read `cargo deny check advisories` after the update, not before.
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
 
+- **2026-10-24:** multi-replica high availability is not a requirement for
+  0.15.0. It ships as a documented limitation (CHANGELOG "Known
+  Limitations", the book's horizontal-scaling page): the supported topology
+  is one replica, or several with session affinity per task. Compare-and-set
+  writes and cross-replica single-writer admission move to 0.16.
 - **2026-10-08:** commits are authored as Tom F. with sign-off; release tags
   are signed with the maintainer's own SSH or GPG key and CI verifies them;
   new distribution channels (the CLI, Homebrew, winget) are drafted in-repo
