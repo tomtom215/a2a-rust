@@ -336,10 +336,11 @@ impl Metrics for OtelMetrics {
     }
 }
 
-/// The explicit bucket boundaries, in seconds, the OpenTelemetry semantic
-/// conventions advise for `rpc.server.call.duration` and
-/// `rpc.client.call.duration` (`docs/rpc/rpc-metrics.md` at `55c98cf`,
-/// read 2026-10-24): 0.1 ms to 100 s. Until 0.15 these were the 5 ms to 10 s
+/// The RPC call-duration buckets the semantic conventions advise, in seconds.
+///
+/// For `rpc.server.call.duration` and `rpc.client.call.duration`
+/// (`docs/rpc/rpc-metrics.md` at `55c98cf`, read 2026-10-24): 0.1 ms to
+/// 100 s. Until 0.15 these were the 5 ms to 10 s
 /// set the conventions advised at `838e414`, which put every call an agent
 /// took longer than ten seconds over in the last bucket.
 pub const RPC_DURATION_BUCKETS: [f64; 13] = [

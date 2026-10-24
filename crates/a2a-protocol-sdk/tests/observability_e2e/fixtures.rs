@@ -41,7 +41,8 @@ agent_executor!(Recorder, |ctx, queue| async {
 /// An in-memory store that refuses to persist any non-initial state of a task
 /// in the context `persist-fail`, so the persistence-error path runs, and
 /// fails every read of the task [`STORE_DOWN`], so a call fails on the
-/// server's side.
+/// server's side. It names a database, as a SQL store does, so its
+/// operations are spanned and measured in `db.client.operation.duration`.
 pub struct FailingStore(pub InMemoryTaskStore);
 
 /// The task id whose every read fails.
@@ -70,6 +71,9 @@ impl TaskStore for FailingStore {
     }
     fn delete<'a>(&'a self, id: &'a TaskId) -> Fut<'a, ()> {
         self.0.delete(id)
+    }
+    fn database(&self) -> Option<a2a_protocol_sdk::server::store::StoreDatabase> {
+        Some(a2a_protocol_sdk::server::store::StoreDatabase::new("e2e"))
     }
 }
 
