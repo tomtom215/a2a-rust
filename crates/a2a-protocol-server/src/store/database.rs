@@ -170,6 +170,40 @@ impl super::TaskStore for DeclaresDatabase {
 mod tests {
     use super::*;
 
+    /// The test store forwards each operation to the store it wraps, so a
+    /// test through it sees the real store's answers (the mutation gate
+    /// found its forwarding unexercised).
+    #[cfg(any(feature = "tracing", feature = "audit", feature = "encryption"))]
+    #[tokio::test]
+    async fn the_declaring_test_store_forwards_every_operation() {
+        use a2a_protocol_types::params::ListTasksParams;
+        use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
+
+        use crate::store::TaskStore as _;
+
+        let store = DeclaresDatabase(crate::store::InMemoryTaskStore::new());
+        let task = Task::new("t-1", "c-1", TaskStatus::new(TaskState::Working));
+        let id = TaskId::new("t-1");
+        assert!(store.insert_if_absent(&task).await.unwrap());
+        assert!(
+            !store.insert_if_absent(&task).await.unwrap(),
+            "already there"
+        );
+        assert_eq!(
+            store.get(&id).await.unwrap().map(|t| t.id),
+            Some(id.clone())
+        );
+        let mut done = task.clone();
+        done.status = TaskStatus::new(TaskState::Completed);
+        store.save(&done).await.unwrap();
+        let stored = store.get(&id).await.unwrap().expect("stored");
+        assert_eq!(stored.status.state, TaskState::Completed);
+        let listed = store.list(&ListTasksParams::default()).await.unwrap();
+        assert_eq!(listed.tasks.len(), 1);
+        store.delete(&id).await.unwrap();
+        assert_eq!(store.get(&id).await.unwrap(), None);
+    }
+
     #[test]
     fn a_database_carries_what_it_was_given() {
         let db = StoreDatabase::new("redis")
