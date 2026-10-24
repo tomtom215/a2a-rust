@@ -475,20 +475,35 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   CRA-AI-I-2a and CRA-AI-II-2-4-8, a release key CRA-AI-II-7), or a feature
   that would narrow the row without closing it (GDPR-15-20, GDPR-18-21,
   CRA-AI-I-2e, CRA-AI-I-2m, ASI04, AIA-14-4e, GDPR-5-2).
-- **Release bar, measured 2026-10-24 at the tree of `567babe`:** `cargo
-  semver-checks --release-type patch` (the default skips a 0.14 to 0.15 bump
-  as already major) against the published 0.14.1, all features, four crates:
-  6 major-level differences, each in `### Breaking Changes` of `CHANGELOG.md`
-  (`ClientRequest.query_params`, `SseParseError` non-exhaustive, `Server` no
-  longer `UnwindSafe`, `TenantLimits.max_stored_tasks` removed, `TaskState`
-  discriminants, `ConvertError` non-exhaustive) and 5 minor-level ones
-  (deprecations); the SDK crate none. Gates and tests on that tree:
+- **Release bar, measured 2026-10-24 on the final tree** (after the `InFlight`
+  restructure, the last code change; each line is a run, not a reading):
+  `cargo semver-checks` in CI's form (`--all-features`, four crates) exits 0;
+  with `--release-type patch` (the default skips a 0.14 to 0.15 bump as
+  already major) against the published 0.14.1 it reports 7 major-level lints
+  and 5 minor-level ones, the SDK crate none. The 7 are the six entries of
+  `### Breaking Changes` in `CHANGELOG.md` (`ClientRequest.query_params`,
+  `SseParseError` non-exhaustive, `Server` no longer `UnwindSafe`,
+  `TenantLimits.max_stored_tasks` removed, which is three lints with its two
+  builder methods, `TaskState` discriminants, `ConvertError`
+  non-exhaustive); the 5 are deprecations. This line said 6 major-level
+  differences until the lints were listed rather than counted. Also run:
   clippy (workspace all features and default, `--each-feature` on four
-  crates), the per-package tests (all, no and default features: 0 failed),
-  docs, the SLIMRPC binding's fmt, clippy, tests and example, the PostgreSQL
-  gates, and the offline examples. Not run locally: `cargo package`,
-  `prove_workflow_gates_fail.py`, the mutation sweep, the official TCK and
-  ACTS (workflow dispatch on the branch).
+  crates), tests (workspace all features: 6089 passed, 0 failed; the client
+  and SDK crates with no, default and all features), docs (both forms), the
+  SLIMRPC binding (fmt, clippy in two forms, 133 tests, the in-process
+  example), `itk` clippy, the four offline examples, `cargo deny` as CI runs it
+  (the workspace and the binding), `cargo package` as CI runs it, `cargo check`
+  of the four crates on Rust 1.94 (all targets, all features),
+  `prove_workflow_gates_fail.py` (30 proven, 0 unproven, 23 exempt of 53),
+  and `scripts/go_sdk_interop.sh` (both directions, 33 cells exercised, 11
+  not applicable, 0 failures). The incremental mutation gate's invocation
+  (`mutants.yml`, `--in-diff` against `origin/main`, with PostgreSQL) was run
+  locally on the whole diff: the client has 39 mutants (12 caught, 27
+  unviable, 0 missed), the server 82 (12 caught, 70 unviable, 0 missed, 0
+  timeouts), the types crate none. Not run locally: the official TCK, ACTS,
+  the Windows and macOS legs, the full mutation sweep, and
+  `prove_gates_fail.sh` in full (the one gate added this cycle was proven when
+  it was added). The CI run of the pull request is the check of those.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on
