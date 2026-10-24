@@ -359,14 +359,6 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   losing it, until the continuing turn's first fold stores a position past
   it again (`store/applied.rs`, `handler/messaging/basis.rs`,
   `tests/stale_write_position`).
-- **Holds (§3.5.2):** the subscription's setup hold
-  (`handler/lifecycle/subscribe/hold.rs`) has no test that fails without
-  it; with the in-memory processor the window it guards cannot open past
-  the bound (ledger §3.5.2 note). The gap path's early returns in
-  `replay_after` predate the holds and skip the positions between the
-  snapshot and the attach point if the log cannot cover them, with no
-  `streamLagged` (independent review, 2026-10-20, finding 6): rarer now,
-  not closed.
 - **AES-GCM nonce budget is per process** (encryption verification,
   2026-10-21, medium, design). The 2^32-seal limit per key is counted per
   process and resets on restart, so R replicas can seal R × 2^32 under one
@@ -405,9 +397,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   `4101bb55`, after the auth-ordering change: leg 1 52 checks, leg 1b
   38, leg 2 33 cells exercised (11 WebSocket cells not applicable), 0
   failures.
-- **Control map:** 13 supported, 2 documented, 11 partial, 22 integrator
-  (`python3 scripts/check_compliance_map.py`); the partial rows' remaining
-  gaps are in each row's `gap`.
+- **Control map:** 15 supported, 4 documented, 29 partial, 0 gap, 40
+  integrator's duty, of 88 rows (the table at the top of the generated
+  `docs/compliance/control-map.md`, counted from `controls.toml` 2026-10-24;
+  `check_compliance_map.py` prints no counts). This line said 13, 2, 11 and
+  22 until then, which matched no version of the file we could find. The
+  partial rows' remaining gaps are in each row's `gap`.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on

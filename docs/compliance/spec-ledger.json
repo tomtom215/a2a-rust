@@ -303,7 +303,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1542 InMemoryQueueReader::next_live"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1562 InMemoryQueueReader::next_live"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -429,7 +429,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1158 InMemoryQueueReader::set_provisional_task",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:85 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:656 InMemoryQueueWriter::write_in_order",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:560 process_folded_message",
@@ -463,11 +463,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:269 a_message_only_stream_is_exactly_one_message",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1701 a_dropped_first_read_still_ends_a_message_only_stream"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1721 a_dropped_first_read_still_ends_a_message_only_stream"
    ],
    "notes": "Exactly one Message, then the reader returns None; a read dropped while waiting for the first event keeps the decision (cancel-safety test).",
    "auditor": "A",
@@ -511,8 +511,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1542 InMemoryQueueReader::next_live",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1562 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:229 RequestHandler::executor_future"
@@ -539,7 +539,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/handler_tests/send_message.rs:47 send_message_streaming_returns_reader",
@@ -559,7 +559,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/delegation_tests.rs:202 a_direct_reply_is_a_message_outcome",
@@ -582,7 +582,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:606 InMemoryQueueWriter::broadcast",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1542 InMemoryQueueReader::next_live"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1562 InMemoryQueueReader::next_live"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/background_processor.rs:153 streaming_mode_push_delivery_with_cooperative_executor",
@@ -830,7 +830,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe",
     "crates/a2a-protocol-server/src/handler/capability.rs:39 RequestHandler::ensure_streaming_supported"
    ],
    "test_evidence": [
@@ -851,10 +851,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:784 resubscribe_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:801 resubscribe_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -869,10 +869,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:801 resubscribe_terminal_task_returns_unsupported_operation"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:818 resubscribe_terminal_task_returns_unsupported_operation"
    ],
    "notes": "",
    "auditor": "A",
@@ -888,11 +888,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81 RequestHandler::subscribe_reattach_hook",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:251 HandlerLimits::default",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:842 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:859 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:101 by_default_a_parked_subscription_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:109 a_bound_too_large_for_the_clock_is_no_bound",
     "crates/a2a-protocol-server/tests/subscribe_no_idle_bound.rs:119 an_operator_s_bound_still_ends_a_parked_subscription",
@@ -915,16 +915,16 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:178 RequestHandler::subscription",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:217 RequestHandler::snapshot_and_live",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:227 RequestHandler::snapshot_and_live",
     "crates/a2a-protocol-server/src/streaming/event_queue/applied.rs:111 AppliedMark::read_through",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:322 InMemoryQueueWriter::attach"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:842 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:859 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:223 a_first_subscribe_misses_nothing_between_snapshot_and_stream",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:229 a_first_subscribe_beside_a_blocking_send_misses_nothing",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1106 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1175 the_stream_skips_what_its_snapshot_already_holds",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1123 a_snapshot_the_store_cannot_reach_is_followed_by_the_log",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:1192 the_stream_skips_what_its_snapshot_already_holds",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:268 a_first_subscribe_waits_for_the_store_rather_than_the_log"
    ],
    "notes": "The Task is read at a known position (2026-10-13): the stream attaches to the queue first, at an exact position, and the task row is read once every event up to there is stored and none is being stored (streaming/event_queue/applied.rs), so the Task and the live events neither overlap nor leave a gap. Read before the attach, as until then, it trailed the broadcast and an event broadcast before the attach and stored after the read was in neither. The wait is bounded by subscribe_replay_catchup (2 s); past it the event log fills the gap after the Task. Outside the mark: a row CancelTask or another replica writes.",
@@ -2199,7 +2199,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39 RequestHandler::ensure_streaming_supported",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:234 RequestHandler::validate_and_commit",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe"
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:247 card_without_streaming_rejects_streaming",
@@ -2311,7 +2311,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:193 RequestHandler::respond_blocking",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/context_id_in_reply.rs:47 a_blocking_direct_reply_carries_the_generated_context",
@@ -2725,7 +2725,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:50 write_multiple_events_read_in_order",
     "crates/a2a-protocol-server/tests/handler_tests/streaming.rs:12 streaming_events_arrive_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2833 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2853 concurrent_clones_deliver_every_position_in_order",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:293 a_held_terminal_event_is_not_overtaken",
     "crates/a2a-protocol-server/src/streaming/event_queue/terminal_gate.rs:326 a_terminal_event_that_waited_for_room_is_not_overtaken",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/results.rs:130 bind_equiv_002_every_binding_delivers_events_in_generation_order"
@@ -2782,17 +2782,17 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1387 InMemoryQueueReader::settle",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1416 InMemoryQueueReader::settle_lag",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1446 InMemoryQueueReader::settle_from",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1476 InMemoryQueueReader::settle_through",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1407 InMemoryQueueReader::settle",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1436 InMemoryQueueReader::settle_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1466 InMemoryQueueReader::settle_from",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1496 InMemoryQueueReader::settle_through",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:975 CatchUpPage::goes_on",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1187 InMemoryQueueReader::queue_resume_replay",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1497 InMemoryQueueReader::close_through",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1526 InMemoryQueueReader::deliver_live_position",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:431 RequestHandler::lag_catch_up_hook",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:684 LogReplay::read",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:298 RequestHandler::replay_after",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1517 InMemoryQueueReader::close_through",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1546 InMemoryQueueReader::deliver_live_position",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:446 RequestHandler::lag_catch_up_hook",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:699 LogReplay::read",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:312 RequestHandler::replay_after",
     "crates/a2a-protocol-server/src/store/applied.rs:80 AppliedPosition",
     "crates/a2a-protocol-server/src/handler/messaging/admission.rs:249 RequestHandler::resume_after",
     "crates/a2a-protocol-server/src/store/holds/mod.rs:107 EventHolds::new",
@@ -2805,14 +2805,16 @@
     "crates/a2a-protocol-server/src/store/task_store/config.rs:350 TaskStoreConfig::with_max_held_events_factor",
     "crates/a2a-protocol-server/src/store/task_store/mod.rs:762 TaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:618 TenantAwareInMemoryTaskStore::hold_events",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1274 InMemoryQueueReader::read",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1294 InMemoryQueueReader::read",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1109 InMemoryQueueReader::owed_after",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:31 RequestHandler::held_snapshot_and_live",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/hold.rs:59 RequestHandler::holding_log",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
     "crates/a2a-protocol-server/src/handler/messaging/basis.rs:68 based_on",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:196 RequestHandler::register_inline_push_config",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:279 RequestHandler::commit_task"
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:279 RequestHandler::commit_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:312 RequestHandler::replay_after",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1207 InMemoryQueueReader::report_unreplayed"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:107 a_lagged_send_stream_catches_up_from_the_event_log",
@@ -2821,10 +2823,10 @@
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:258 a_lagged_stream_catches_up_in_its_tenant",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:140 a_replay_over_the_limit_is_read_in_pages",
     "crates/a2a-protocol-server/tests/stream_lag_catch_up.rs:417 a_lag_the_log_cannot_cover_still_ends_with_stream_lagged",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2833 concurrent_clones_deliver_every_position_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2653 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2853 concurrent_clones_deliver_every_position_in_order",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2673 a_replay_that_leaves_a_gap_is_reported_as_a_lag",
     "crates/a2a-protocol-server/tests/event_queue_tests.rs:171 slow_reader_gets_explicit_lag_error",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2118 subscribe_creates_independent_reader",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:2138 subscribe_creates_independent_reader",
     "crates/a2a-protocol-server/tests/event_log_tests/live_resubscribe.rs:312 a_lag_while_the_log_trails_waits_for_the_log",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:200 a_turn_that_ends_between_polls_reaches_the_subscriber",
     "crates/a2a-protocol-server/tests/event_log_tests/across_turns.rs:208 a_turn_longer_than_a_poll_keeps_its_first_events",
@@ -2894,12 +2896,19 @@
     "crates/a2a-protocol-server/src/store/task_store/in_memory/hold_tests.rs:172 a_factor_of_one_holds_nothing_past_the_bound",
     "crates/a2a-protocol-server/tests/stale_write_position/main.rs:304 in_memory_a_stale_continuation_save_loses_no_event",
     "crates/a2a-protocol-server/tests/stale_write_position/sql.rs:54 sqlite_a_stale_continuation_save_loses_no_event",
-    "crates/a2a-protocol-server/tests/stale_write_position/sql.rs:123 postgres_a_stale_continuation_save_loses_no_event"
+    "crates/a2a-protocol-server/tests/stale_write_position/sql.rs:123 postgres_a_stale_continuation_save_loses_no_event",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:221 a_store_without_a_log_reports_what_the_snapshot_lacks",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:229 an_unreadable_log_reports_what_the_snapshot_lacks",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:237 a_log_with_a_hole_reports_what_the_snapshot_lacks",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:245 a_log_that_no_longer_reaches_back_reports_what_the_snapshot_lacks",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:258 a_whole_log_fills_what_the_snapshot_lacks",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:275 a_whole_snapshot_needs_no_report_when_a_resume_cannot_be_served",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe/gap_tests.rs:300 the_log_is_held_while_the_snapshot_waits_for_the_store"
    ],
-   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Since 2026-10-15 (maintainer decision) a replay longer than subscribe_replay_limit is read a page at a time, for a lag, a missed turn and a Last-Event-ID resume, and the stream reads the channel again only once the last page is in; before, a lag past the limit ended with streamLagged, and a resume past it skipped the positions between the replay's end and the live receiver's start with no streamLagged at all (event_log_tests pinned [snapshot, 1, 2] for a log of five). A page with a hole, an empty page, or a read cut short by the catch-up deadline never asks for more (log_replay_tests). After an independent review (2026-10-15): a resume whose first read the log had not caught up with skipped the rest silently, and now reads on while the log moves forward, reporting what it cannot supply; the hook answers a gap-free page the log covers even when it trails the writer, rather than nothing; a page the log cannot supply after a lag is reported once. Remaining, why PARTIAL/low, each ending the stream with an explicit streamLagged after what was delivered: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log, so with them this case cannot arise short of a failed append), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Since 2026-10-15 (audit register R69) a subscription with no local queue reads the task with the event-log position it reflects, in one store read (TaskStore::get_with_position), and replays the log after that position. It read the log's end and then the task: another replica's processor logs each event before it stores it, so an event logged before the first read and stored after the second was in neither the snapshot nor the replay and was lost with no streamLagged (reproduced by a test that fails on the old order), and one logged and stored between them arrived twice. Every shipped store records the position atomically with each write the processors make inside AppliedPosition::scope; a custom store that reports none falls back to the old order, which can still lose that one event. A turn after a failed append is numbered after the later of the log's end and the stored position, so its first event no longer takes the failed event's position and is not skipped as already delivered by a subscriber past it (found by an independent review of R69, 2026-10-15; the live-subscriber case predates R69). During a rolling upgrade a replica on an earlier release does not write the position, so a subscriber can receive events twice until every replica is upgraded. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently. Re-examined 2026-10-18, kept PARTIAL/low: a stream that lags beyond what the in-memory log retains (512 events per task by default) ends with streamLagged after what was delivered, so it does not receive every event; the SQL stores keep the whole log. Closing it would take an unbounded in-memory log, which the store cap exists to prevent. Re-examined 2026-10-20: the 512 is TaskStoreConfig::max_events_per_task's default (DEFAULT_MAX_EVENTS_PER_TASK, store/task_store/config.rs) and None removes the bound, and the SQL stores keep the whole log, so a deployment can meet the MUST today by configuration; what stays short of it is the bounded in-memory default, which trades the guarantee for memory. The engineering alternative weighed: trim the in-memory log only below the lowest position an attached stream still owes (a per-task watermark), so a lagging stream loses nothing while memory stays bounded by the slowest attached reader up to a hard ceiling; past the ceiling the stream would still end with streamLagged. It changes the store/stream contract the 2026-10-15 decisions settled, so it was the maintainer's call; the maintainer decided on 2026-10-20 to build it. Since 2026-10-20 (maintainer decision) an attached stream holds the positions it still owes in the in-memory log (EventHolds, TaskStore::hold_events, synchronous, default None), taken when the stream is built, inside the request's tenant scope, at the first position it may read from the log (a resume's Last-Event-ID, or a late snapshot's position, when lower; a subscription holds the log from the resume position, or from the start, while its snapshot waits for the store), raised after each read to the lowest position it may still read (a paged resume's page end, not the live receiver's start), never lowered (a fresh-numbered queue's reset to 0 pins nothing: its positions are in no log), kept across turns while the reattach hook and the log are awaited, and released when the stream ends or is dropped. The bound (max_events_per_task, 512) drops an event only once no hold owes it, up to a ceiling of max_held_events_factor times the bound (default 8, so 4,096 events; None is no ceiling; Some(1) is the old behaviour); past the ceiling the oldest is dropped anyway and reported (event_append_error::HOLD_CEILING). The audit, encrypted and tenant-aware wrappers forward it, the tenant store to the request's partition. A stream lagging 62 positions behind a bound of 10 now receives every one (stream_lag_holds; the same configuration ended with streamLagged before, which stream_lag_catch_up pinned). Kept PARTIAL/low: a stream lagging past the ceiling still ends with streamLagged after what it delivered, which the ceiling exists to allow (an unbounded hold would let a client that stops reading pin its task's log for as long as its connection lasts); so does a lag on a custom store that keeps a bounded log without holds. Independent review (2026-10-20), two defects fixed the same day: a streaming send took its hold only after the event processor had started appending and a historyLength store read had been awaited, so a stream that lagged in that window still ended with streamLagged (tests/stream_hold_before_append.rs the_send_stream_holds_the_log_before_its_history_is_read, which fails with the old order: 0 of 60 artifacts, streamLagged 58); and a finished task kept its held log, up to the ceiling, until it expired, since only an append trimmed it (now the eviction sweep trims a released held log to the bound: hold_tests the_eviction_sweep_trims_a_released_held_log_to_the_bound). Some(1) now consults no hold and reports nothing, the old trim exactly; the ceiling is logged once per task. The subscription's setup hold (subscribe/hold.rs) has no test that fails without it: the in-memory processor logs and then stores each event in order, so the log runs at most one event ahead of the snapshot the subscription reads, and the window it guards cannot open past the bound with this store; it is kept as a guard for a store whose log can run further ahead. Since 2026-10-20 a continuation's save records the event-log position of the task it was built from: the read the queue lease makes to number the turn (handler/messaging/basis.rs, admission::resume_after), whose artifacts and metadata the save now carries. The save replaces the stored artifacts and metadata, so an event another replica's still-running turn folded after that read is gone from the task; the save was unscoped and kept the position that fold had stored, so a subscription on a replica with no live queue started from a task lacking the event at a position past it, and the event was in neither its snapshot nor its replay, with no streamLagged (tests/stale_write_position, which fails on the old code with the task stored at position 3 without the artifact logged at 3, on the in-memory store shared by two handlers, on SQLite and on PostgreSQL). Every shipped store stores a scoped position even when it is lower than the stored one (applied_position). The new turn is numbered after the position recorded, so the lower position can give two events one position only where concurrent turns on two replicas already can (single-writer admission does not cross replicas, tests/multi_replica.rs). Still open: the task itself keeps the lost update, and the continuing turn's first fold stores a position past it again, so a subscriber starting after that fold still misses it; only a compare-and-set write would refuse the stale save. A cancel's status-only write leaves a terminal task, which no subscription starts from.",
+   "notes": "A stream that falls behind the bounded broadcast buffer now catches up from the task's event log, after the last position it delivered, and goes on live (2026-10-12), so a slow stream receives the same events in the same order as a fast one. Only a complete replay whose head is still in the log is used, and a live event that does not follow it is reported as a lag, so no stream skips an event silently. Since 2026-10-15 (maintainer decision) a replay longer than subscribe_replay_limit is read a page at a time, for a lag, a missed turn and a Last-Event-ID resume, and the stream reads the channel again only once the last page is in; before, a lag past the limit ended with streamLagged, and a resume past it skipped the positions between the replay's end and the live receiver's start with no streamLagged at all (event_log_tests pinned [snapshot, 1, 2] for a log of five). A page with a hole, an empty page, or a read cut short by the catch-up deadline never asks for more (log_replay_tests). After an independent review (2026-10-15): a resume whose first read the log had not caught up with skipped the rest silently, and now reads on while the log moves forward, reporting what it cannot supply; the hook answers a gap-free page the log covers even when it trails the writer, rather than nothing; a page the log cannot supply after a lag is reported once. Remaining, why PARTIAL/low, each ending the stream with an explicit streamLagged after what was delivered: a lag beyond what the log still holds (the in-memory stores keep 512 events per task by default; the SQL stores keep the whole log, so with them this case cannot arise short of a failed append), or a custom store without an event log. Every stream receives positions in the order they were assigned, because writes are broadcast in that order (2026-10-13, see spec line 683); before that a reader, which skips a position it has passed, could lose an event another write had overtaken. A SubscribeToTask stream across turns replays from the log what each reattach answer leaves it owing (2026-10-13): the events a turn broadcast before the reattach hook found its queue, a turn that ran between two polls and parked again or finished, and, on a replica sharing the store, the running replica's events, a poll late. Until then all of them were lost without a streamLagged. Without a log the turn's missed events are reported as streamLagged, and a turn numbered from 1 is no longer skipped as already delivered. A read dropped while the log is read keeps the replay owed, for a lag too. Since 2026-10-15 (audit register R69) a subscription with no local queue reads the task with the event-log position it reflects, in one store read (TaskStore::get_with_position), and replays the log after that position. It read the log's end and then the task: another replica's processor logs each event before it stores it, so an event logged before the first read and stored after the second was in neither the snapshot nor the replay and was lost with no streamLagged (reproduced by a test that fails on the old order), and one logged and stored between them arrived twice. Every shipped store records the position atomically with each write the processors make inside AppliedPosition::scope; a custom store that reports none falls back to the old order, which can still lose that one event. A turn after a failed append is numbered after the later of the log's end and the stored position, so its first event no longer takes the failed event's position and is not skipped as already delivered by a subscriber past it (found by an independent review of R69, 2026-10-15; the live-subscriber case predates R69). During a rolling upgrade a replica on an earlier release does not write the position, so a subscriber can receive events twice until every replica is upgraded. A continuation sent the moment a task parks no longer numbers its events over the previous turn's (2026-10-13): it was admitted when the executor returned, before the processor had logged the turn's last events, so its positions collided and its events were dropped from the log. A turn's queue is now released once its events are stored; within one process only. A replay with a position missing, which a failed append leaves, is not used either (2026-10-13): a lag across it is reported as streamLagged and a resume across it starts from the snapshot, where the stream used to skip the lost event silently. Re-examined 2026-10-18, kept PARTIAL/low: a stream that lags beyond what the in-memory log retains (512 events per task by default) ends with streamLagged after what was delivered, so it does not receive every event; the SQL stores keep the whole log. Closing it would take an unbounded in-memory log, which the store cap exists to prevent. Re-examined 2026-10-20: the 512 is TaskStoreConfig::max_events_per_task's default (DEFAULT_MAX_EVENTS_PER_TASK, store/task_store/config.rs) and None removes the bound, and the SQL stores keep the whole log, so a deployment can meet the MUST today by configuration; what stays short of it is the bounded in-memory default, which trades the guarantee for memory. The engineering alternative weighed: trim the in-memory log only below the lowest position an attached stream still owes (a per-task watermark), so a lagging stream loses nothing while memory stays bounded by the slowest attached reader up to a hard ceiling; past the ceiling the stream would still end with streamLagged. It changes the store/stream contract the 2026-10-15 decisions settled, so it was the maintainer's call; the maintainer decided on 2026-10-20 to build it. Since 2026-10-20 (maintainer decision) an attached stream holds the positions it still owes in the in-memory log (EventHolds, TaskStore::hold_events, synchronous, default None), taken when the stream is built, inside the request's tenant scope, at the first position it may read from the log (a resume's Last-Event-ID, or a late snapshot's position, when lower; a subscription holds the log from the resume position, or from the start, while its snapshot waits for the store), raised after each read to the lowest position it may still read (a paged resume's page end, not the live receiver's start), never lowered (a fresh-numbered queue's reset to 0 pins nothing: its positions are in no log), kept across turns while the reattach hook and the log are awaited, and released when the stream ends or is dropped. The bound (max_events_per_task, 512) drops an event only once no hold owes it, up to a ceiling of max_held_events_factor times the bound (default 8, so 4,096 events; None is no ceiling; Some(1) is the old behaviour); past the ceiling the oldest is dropped anyway and reported (event_append_error::HOLD_CEILING). The audit, encrypted and tenant-aware wrappers forward it, the tenant store to the request's partition. A stream lagging 62 positions behind a bound of 10 now receives every one (stream_lag_holds; the same configuration ended with streamLagged before, which stream_lag_catch_up pinned). Kept PARTIAL/low: a stream lagging past the ceiling still ends with streamLagged after what it delivered, which the ceiling exists to allow (an unbounded hold would let a client that stops reading pin its task's log for as long as its connection lasts); so does a lag on a custom store that keeps a bounded log without holds. Independent review (2026-10-20), two defects fixed the same day: a streaming send took its hold only after the event processor had started appending and a historyLength store read had been awaited, so a stream that lagged in that window still ended with streamLagged (tests/stream_hold_before_append.rs the_send_stream_holds_the_log_before_its_history_is_read, which fails with the old order: 0 of 60 artifacts, streamLagged 58); and a finished task kept its held log, up to the ceiling, until it expired, since only an append trimmed it (now the eviction sweep trims a released held log to the bound: hold_tests the_eviction_sweep_trims_a_released_held_log_to_the_bound). Some(1) now consults no hold and reports nothing, the old trim exactly; the ceiling is logged once per task. The subscription's setup hold (subscribe/hold.rs) is pinned since 2026-10-24 (gap_tests the_log_is_held_while_the_snapshot_waits_for_the_store, which fails with the hold disabled and no other test does): the in-memory processor logs and then stores each event in order, so the log runs at most one event ahead of the snapshot the subscription reads and the window the hold guards cannot open past the bound with this store; the test appends to the log by hand during the snapshot's wait, as a store whose log can run further ahead would. Since 2026-10-24 (the independent review of 2026-10-20, finding 6) replay_after reports whether it queued a replay, and when the snapshot the store could not bring up to the queue lacks positions (the replay was owed to cover them) and no replay came (a store without a log, an unreadable log, a log with a hole, a log that no longer reaches back), the stream yields the snapshot and then streamLagged counting the positions between, where it used to go on live and skip them with no streamLagged (gap_tests, four tests, which fail with the report disabled; a whole log and a whole snapshot report nothing, pinned by the other two). Since 2026-10-20 a continuation's save records the event-log position of the task it was built from: the read the queue lease makes to number the turn (handler/messaging/basis.rs, admission::resume_after), whose artifacts and metadata the save now carries. The save replaces the stored artifacts and metadata, so an event another replica's still-running turn folded after that read is gone from the task; the save was unscoped and kept the position that fold had stored, so a subscription on a replica with no live queue started from a task lacking the event at a position past it, and the event was in neither its snapshot nor its replay, with no streamLagged (tests/stale_write_position, which fails on the old code with the task stored at position 3 without the artifact logged at 3, on the in-memory store shared by two handlers, on SQLite and on PostgreSQL). Every shipped store stores a scoped position even when it is lower than the stored one (applied_position). The new turn is numbered after the position recorded, so the lower position can give two events one position only where concurrent turns on two replicas already can (single-writer admission does not cross replicas, tests/multi_replica.rs). Still open: the task itself keeps the lost update, and the continuing turn's first fold stores a position past it again, so a subscriber starting after that fold still misses it; only a compare-and-set write would refuse the stale save. A cancel's status-only write leaves a terminal task, which no subscription starts from.",
    "auditor": "B",
    "source": "spec",
-   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20)"
+   "changed_by": "claude/jolly-hypatia-lsr7uv (2026-10-20); claude/sleepy-knuth-3lnx7k (2026-10-24)"
   },
   {
    "spec_line": 693,
@@ -5087,7 +5096,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:99 TerminalTracking::terminal_written"
    ],
    "test_evidence": [
@@ -6324,12 +6333,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/mod.rs:307 JsonRpcDispatcher::dispatch_single_request_http",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:289 A2aServiceImpl::subscribe_to_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:801 resubscribe_terminal_task_returns_unsupported_operation",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:818 resubscribe_terminal_task_returns_unsupported_operation",
     "crates/a2a-protocol-types/src/task.rs:716 is_terminal_all_variants"
    ],
    "notes": "Shared handler path, so it holds for JSON-RPC, REST, gRPC, WebSocket and SLIMRPC; wire mapping is -32004 / 400 / FAILED_PRECONDITION (SLIMRPC: UNIMPLEMENTED, see 3017).",
@@ -7051,7 +7060,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:656 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1542 InMemoryQueueReader::next_live",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1562 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/streaming/sse.rs:388 build_sse_response"
    ],
    "test_evidence": [
@@ -7072,9 +7081,9 @@
    "status": "TESTED",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:30 HandlerLimits",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:478 RequestHandler::final_snapshot_hook",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:493 RequestHandler::final_snapshot_hook",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1070 InMemoryQueueReader::final_snapshot",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame",
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -9352,7 +9361,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:93 stamp_ids",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:193 RequestHandler::respond_blocking",
-    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1308 InMemoryQueueReader::next_frame"
+    "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1328 InMemoryQueueReader::next_frame"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/status_stamp.rs:218 agent_messages_on_a_status_or_in_history_get_the_tasks_ids",
@@ -11435,7 +11444,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:53 parse_params",
     "crates/a2a-protocol-server/src/handler/ids.rs:84 task_id_param",
-    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:528 RequestHandler::on_resubscribe",
+    "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe",
     "crates/a2a-protocol-types/src/generated/params.rs:175 TaskIdParams",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:137 TaskQueryParams::try_from",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:165 TaskIdParams::from"

@@ -1196,6 +1196,26 @@ impl InMemoryQueueReader {
         }
     }
 
+    /// Reports the positions after `through` that this reader's start leaves
+    /// out: its snapshot reflects only the positions up to `through`, the
+    /// live receiver goes on after the position the reader attached at, and
+    /// nothing was replayed to cover those between.
+    ///
+    /// Queued behind the snapshot as the lag error, so the stream says what
+    /// it lacks instead of going on with a gap its consumer cannot see (spec
+    /// §3.5.2). Nothing is queued when the reader already reaches `through`.
+    pub(crate) fn report_unreplayed(&mut self, through: u64) {
+        if let Some(dropped) = self.replayed_through.checked_sub(through)
+            && dropped > 0
+        {
+            trace_warn!(
+                dropped_events = dropped,
+                "a subscription could not replay the events its snapshot lacks"
+            );
+            self.pending.push_back(Err(lag_error(dropped)));
+        }
+    }
+
     /// Creates a reader with a snapshot event that will be yielded first.
     pub(crate) fn with_first_event(
         rx: broadcast::Receiver<super::Shared>,

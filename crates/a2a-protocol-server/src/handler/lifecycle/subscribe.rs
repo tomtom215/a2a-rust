@@ -189,7 +189,17 @@ impl RequestHandler {
             .with_stream_hooks(reader, task_id)
             .with_final_snapshot(self.final_snapshot_hook(task_id.clone(), shape));
         if let Some(after_seq) = resume_after.or(gap) {
-            self.replay_after(&mut reader, task_id, after_seq).await;
+            let replayed = self.replay_after(&mut reader, task_id, after_seq).await;
+            // A snapshot the store could not bring up to the queue
+            // (`gap`) lacks the positions between what it reflects and
+            // where the live receiver attached, and only the log has them.
+            // A replay that did not happen leaves them out, so the stream
+            // says so after the snapshot: until 2026-10-24 it went on live,
+            // and the subscriber lost them with no `streamLagged` (spec
+            // §3.5.2; independent review 2026-10-20, finding 6).
+            if !replayed && let Some(snapshot_through) = gap {
+                reader.report_unreplayed(snapshot_through);
+            }
         }
         Ok(reader)
     }
@@ -292,22 +302,26 @@ impl RequestHandler {
     /// answer available.
     ///
     /// A failed read is not an error. The stream is still correct without the
-    /// replay — it is the pre-resumption behaviour, a snapshot then live
-    /// events — and refusing to subscribe because the history could not be
-    /// read would turn a storage hiccup into a dropped connection.
+    /// replay when its snapshot is whole — it is the pre-resumption
+    /// behaviour, a snapshot then live events — and refusing to subscribe
+    /// because the history could not be read would turn a storage hiccup into
+    /// a dropped connection.
+    ///
+    /// Returns whether a replay was queued. When it was not, a snapshot that
+    /// is not whole leaves positions out, which the caller reports.
     async fn replay_after(
         &self,
         reader: &mut InMemoryQueueReader,
         task_id: &TaskId,
         after_seq: u64,
-    ) {
+    ) -> bool {
         if !self.task_store.supports_event_log() {
             trace_warn!(
                 task_id = %task_id,
                 "resubscribe sent Last-Event-ID but this task store keeps no event log; \
                  the stream starts from the snapshot instead"
             );
-            return;
+            return false;
         }
 
         let Some(Replayed {
@@ -316,7 +330,7 @@ impl RequestHandler {
             complete,
         }) = self.read_log_with_catchup(task_id, after_seq).await
         else {
-            return;
+            return false;
         };
         if !contiguous(after_seq, &events) {
             trace_warn!(
@@ -325,7 +339,7 @@ impl RequestHandler {
                 "the event log misses a position the resume asked for; \
                  the stream starts from the snapshot rather than a replay with a hole"
             );
-            return;
+            return false;
         }
 
         // The log may no longer hold the position the client asked to resume
@@ -356,7 +370,7 @@ impl RequestHandler {
                 "resubscribe asked to resume from a position the event log no longer \
                  holds; the stream starts from the snapshot rather than a gapped replay"
             );
-            return;
+            return false;
         }
 
         trace_info!(
@@ -374,6 +388,7 @@ impl RequestHandler {
                 complete,
             },
         );
+        true
     }
 
     /// Reads the task's log from `after_seq` for a resubscribe; see
@@ -765,6 +780,8 @@ impl LogReplay {
     }
 }
 
+#[cfg(test)]
+mod gap_tests;
 mod hold;
 #[cfg(test)]
 mod log_replay_tests;
