@@ -395,3 +395,48 @@ fn a_client_identity_that_is_not_pem_fails_the_build() {
         );
     }
 }
+
+/// OTLP/gRPC with no endpoint in code takes the environment's, as
+/// `opentelemetry-otlp` reads it: the signal's variable before the general
+/// one, a scheme added from `INSECURE` when it has none; OTLP/HTTP leaves an
+/// unset endpoint to the exporter.
+#[test]
+fn a_grpc_endpoint_comes_from_the_environment_and_an_http_one_is_left_unset() {
+    let endpoint =
+        |pairs: &[(&str, &str)]| with_env(pairs).target(Signal::Metrics).unwrap().endpoint;
+    let grpc = ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc");
+    let general = ("OTEL_EXPORTER_OTLP_ENDPOINT", "collector:4317");
+    assert_eq!(
+        endpoint(&[grpc, general]).as_deref(),
+        Some("https://collector:4317")
+    );
+    assert_eq!(
+        endpoint(&[grpc, general, ("OTEL_EXPORTER_OTLP_INSECURE", " TRUE ")]).as_deref(),
+        Some("http://collector:4317")
+    );
+    assert_eq!(
+        endpoint(&[
+            grpc,
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c.example:4317")
+        ])
+        .as_deref(),
+        Some("http://c.example:4317")
+    );
+    assert_eq!(
+        endpoint(&[
+            grpc,
+            general,
+            (
+                "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+                "https://metrics.example:4317"
+            ),
+        ])
+        .as_deref(),
+        Some("https://metrics.example:4317")
+    );
+    assert_eq!(endpoint(&[grpc]), None);
+    assert_eq!(
+        endpoint(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"), general]),
+        None
+    );
+}

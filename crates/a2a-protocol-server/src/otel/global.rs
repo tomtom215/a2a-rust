@@ -32,6 +32,9 @@ const METER_NAME: &str = "a2a.server";
 /// [`OtelMetrics`] on the global meter provider, rebound when it changes.
 pub struct GlobalOtelMetrics {
     bound: RwLock<Option<Bound>>,
+    /// Where the provider comes from: the global, except in this module's
+    /// tests, which must not race the crate's other tests for it.
+    source: fn() -> Arc<dyn MeterProvider + Send + Sync>,
 }
 
 /// The provider the instruments were built from, and the instruments.
@@ -48,15 +51,16 @@ impl std::fmt::Debug for GlobalOtelMetrics {
 
 impl GlobalOtelMetrics {
     /// Bound to nothing yet: the first measurement binds.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             bound: RwLock::new(None),
+            source: opentelemetry::global::meter_provider,
         }
     }
 
     /// The instruments for the provider that is global now.
     fn current(&self) -> Arc<OtelMetrics> {
-        let provider = opentelemetry::global::meter_provider();
+        let provider = (self.source)();
         if let Ok(bound) = self.bound.read()
             && let Some(bound) = bound.as_ref()
             && Arc::ptr_eq(&bound.provider, &provider)
@@ -109,5 +113,72 @@ impl Metrics for GlobalOtelMetrics {
 
     fn on_rpc_call(&self, call: &RpcCall<'_>) {
         self.current().on_rpc_call(call);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, LazyLock};
+
+    use opentelemetry::metrics::MeterProvider;
+    use opentelemetry_sdk::metrics::data::ResourceMetrics;
+    use opentelemetry_sdk::metrics::reader::MetricReader as _;
+    use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
+
+    use super::GlobalOtelMetrics;
+    use crate::metrics::{ConnectionPoolStats, Metrics};
+    use crate::otel::test_reader::SharedReader;
+
+    static READER: LazyLock<Arc<ManualReader>> =
+        LazyLock::new(|| Arc::new(ManualReader::builder().build()));
+    static PROVIDER: LazyLock<Arc<dyn MeterProvider + Send + Sync>> = LazyLock::new(|| {
+        Arc::new(
+            SdkMeterProvider::builder()
+                .with_reader(SharedReader(Arc::clone(&READER)))
+                .build(),
+        )
+    });
+
+    fn provider() -> Arc<dyn MeterProvider + Send + Sync> {
+        Arc::clone(&PROVIDER)
+    }
+
+    /// Every callback reaches the provider's instruments: each one, emptied,
+    /// leaves its instrument unrecorded (the mutation gate found five that
+    /// could be).
+    #[test]
+    fn every_callback_records_on_the_provider() {
+        let metrics = GlobalOtelMetrics {
+            source: provider,
+            ..GlobalOtelMetrics::new()
+        };
+        metrics.on_request("GetTask");
+        metrics.on_response("GetTask");
+        metrics.on_error("GetTask", "task_not_found");
+        metrics.on_latency("GetTask", std::time::Duration::from_millis(3));
+        metrics.on_queue_depth_change(2);
+        metrics.on_persistence_error("save", "internal");
+        metrics.on_push_delivery("delivered");
+        metrics.on_connection_pool_stats(&ConnectionPoolStats::default());
+        let mut collected = ResourceMetrics::default();
+        READER.collect(&mut collected).expect("collect");
+        let mut names: Vec<String> = collected
+            .scope_metrics()
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .map(|m| m.name().to_owned())
+            .collect();
+        names.sort();
+        for name in [
+            "a2a.server.requests",
+            "a2a.server.responses",
+            "a2a.server.errors",
+            "a2a.server.request.duration",
+            "a2a.server.queue_depth",
+            "a2a.server.persistence_errors",
+            "a2a.server.push_deliveries",
+            "a2a.server.pool.active",
+        ] {
+            assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
+        }
     }
 }

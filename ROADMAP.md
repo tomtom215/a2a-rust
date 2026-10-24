@@ -63,6 +63,7 @@ as the comment. ADR 0006 records the review.
 | `dispatch/grpc/well_known.rs` — `WellKnownCard::poll_ready` → `Poll::from(Ok(()))` (2026-10-14) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`; `Result<(), Infallible>` has no other value to return. |
 | `provenance.rs` — `Inbound::check` without `signing` → `Ok(Default::default())` (2026-10-22) | The body is `Ok(ContentCheck::NotChecked)`, and `NotChecked` is `ContentCheck`'s `#[default]`. The gate also builds with every feature, where this function is compiled out. |
 | `store/halt/mod.rs` — the default `HaltStore::publish_cancel` → `Box::pin(async move { Ok(()) })` (2026-10-23) | The default body is an empty future answering `Ok(())`, and so is the mutant. |
+| `rpc_span/tool.rs` — `AgentRun::start` without `otel` → `Default::default()` (2026-10-24) | Not an equivalence the tests could see either way: the stub is `#[cfg(not(feature = "otel"))]` and the gate builds `--all-features`, so it is not compiled, and every mutant of it builds and passes unchanged. `AgentRun` there is a unit struct with nothing to record. |
 | `auth/jwt.rs` — `build_jwks_client` → `Default::default()` | Not an equivalence: the mutated variant is `#[cfg(not(feature = "tls-rustls"))]` and the sweep builds `--all-features`, so it is not compiled at all. See below. |
 
 All but the last are equivalences of *form*: the mutated expression compiles to

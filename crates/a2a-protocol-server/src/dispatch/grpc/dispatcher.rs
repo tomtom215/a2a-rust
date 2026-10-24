@@ -396,6 +396,27 @@ impl std::fmt::Debug for GrpcDispatcher {
 mod tests {
     use super::*;
 
+    /// Whether the listener serves TLS, which the agent card's span records
+    /// as `url.scheme`, is whether it was given a TLS configuration.
+    #[cfg(feature = "grpc-tls")]
+    #[test]
+    fn it_serves_tls_exactly_when_given_a_tls_configuration() {
+        use crate::RequestHandlerBuilder;
+        use crate::agent_executor;
+        struct DummyExec;
+        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExec)
+                .without_agent_card()
+                .build()
+                .unwrap(),
+        );
+        let plain = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
+        assert!(!plain.serves_tls());
+        let tls = plain.with_tls(tonic::transport::ServerTlsConfig::new());
+        assert!(tls.serves_tls());
+    }
+
     // ── Connection-level bounds ──────────────────────────────────────────
     //
     // `GrpcConfig` bounds message size and per-connection concurrency, and

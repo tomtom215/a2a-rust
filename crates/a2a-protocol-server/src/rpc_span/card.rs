@@ -295,3 +295,45 @@ fn record_duration(call: &CardCall, status: u16, failed: bool) {
     }
     histogram.record(call.started.elapsed().as_secs_f64(), &attributes);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{scheme, version};
+
+    fn request(uri: &str, forwarded: Option<&str>) -> hyper::Request<()> {
+        let mut builder = hyper::Request::get(uri);
+        if let Some(proto) = forwarded {
+            builder = builder.header("x-forwarded-proto", proto);
+        }
+        builder.body(()).unwrap()
+    }
+
+    /// The scheme of an absolute request URI is the request's; only an
+    /// origin-form one falls back to `X-Forwarded-Proto`; this server's TLS
+    /// is `https` whatever either says.
+    #[test]
+    fn the_scheme_is_the_uris_then_the_forwarded_header() {
+        let card = "/.well-known/agent-card.json";
+        assert_eq!(scheme(&request(card, None), true), "https");
+        assert_eq!(
+            scheme(&request("https://a.example/x", None), false),
+            "https"
+        );
+        assert_eq!(
+            scheme(&request("http://a.example/x", Some("https")), false),
+            "http"
+        );
+        assert_eq!(scheme(&request(card, Some(" HTTPS ")), false), "https");
+        assert_eq!(scheme(&request(card, Some("http")), false), "http");
+        assert_eq!(scheme(&request(card, None), false), "http");
+    }
+
+    #[test]
+    fn each_http_version_has_its_conventions_name() {
+        assert_eq!(version(hyper::Version::HTTP_09), "0.9");
+        assert_eq!(version(hyper::Version::HTTP_10), "1.0");
+        assert_eq!(version(hyper::Version::HTTP_11), "1.1");
+        assert_eq!(version(hyper::Version::HTTP_2), "2");
+        assert_eq!(version(hyper::Version::HTTP_3), "3");
+    }
+}

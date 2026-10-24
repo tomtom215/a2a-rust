@@ -40,6 +40,7 @@ impl MetricReader for SharedReader {
 /// A meter over a provider of its own, not the global one, so tests running
 /// in parallel cannot see each other's measurements; the reader to collect
 /// them; and the provider, which must outlive the measurements.
+#[cfg_attr(not(feature = "tool-loop"), allow(dead_code))]
 pub fn recording_meter() -> (Meter, Arc<ManualReader>, SdkMeterProvider) {
     let reader = Arc::new(ManualReader::builder().build());
     let provider = SdkMeterProvider::builder()
@@ -49,6 +50,7 @@ pub fn recording_meter() -> (Meter, Arc<ManualReader>, SdkMeterProvider) {
 }
 
 /// Everything recorded so far.
+#[cfg_attr(not(feature = "tool-loop"), allow(dead_code))]
 pub fn collect(reader: &ManualReader) -> ResourceMetrics {
     let mut collected = ResourceMetrics::default();
     reader.collect(&mut collected).expect("collect");

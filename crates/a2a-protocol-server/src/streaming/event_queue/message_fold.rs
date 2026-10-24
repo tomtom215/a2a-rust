@@ -161,6 +161,23 @@ mod tests {
 
     use super::*;
 
+    /// A task snapshot tells the fold its state and ids, as a status update
+    /// does: a turn that wrote one is a task stream.
+    #[test]
+    fn a_task_snapshot_notes_its_state_and_ids() {
+        let snapshot = StreamResponse::Task(a2a_protocol_types::task::Task::new(
+            "t-9",
+            "c-9",
+            TaskStatus::new(TaskState::InputRequired),
+        ));
+        let Note::Status(state, task_id, context_id) = Note::of(&snapshot) else {
+            panic!("a snapshot is a status note");
+        };
+        assert_eq!(state, TaskState::InputRequired);
+        assert_eq!(task_id, TaskId::new("t-9"));
+        assert_eq!(context_id, ContextId::new("c-9"));
+    }
+
     fn message() -> StreamResponse {
         StreamResponse::Message(Message::agent_text("m", "hello"))
     }

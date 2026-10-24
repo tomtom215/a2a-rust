@@ -1416,12 +1416,43 @@ mod tests {
 
     /// A carried message (spec §3.1.2) the store refuses leaves the
     /// in-memory task as it was: neither the status message nor the history
-    /// runs ahead of the store.
+    /// runs ahead of the store, and no push announces it.
     #[tokio::test]
     async fn a_failed_save_of_a_carried_message_reverts_status_and_history() {
+        use crate::push::{PushConfigStore as _, PushSender};
         use a2a_protocol_types::message::Message;
+        use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+        /// Counts what it is asked to send.
+        #[derive(Default)]
+        struct Counts(std::sync::atomic::AtomicUsize);
+        impl PushSender for Counts {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>>
+            {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+
         let task_store = FailingSaveStore::new();
         let push_store = InMemoryPushConfigStore::new();
+        push_store
+            .set(TaskPushNotificationConfig {
+                tenant: None,
+                id: Some("cfg".into()),
+                task_id: Some("t-carried".into()),
+                url: "https://example.com/hook".into(),
+                token: None,
+                authentication: None,
+            })
+            .await
+            .expect("config");
+        let pushes = Counts::default();
         let task_id = TaskId::new("t-carried");
         task_store
             .inner
@@ -1453,7 +1484,7 @@ mod tests {
             BackgroundDeps {
                 task_store: &task_store,
                 push_config_store: &push_store,
-                push_sender: None,
+                push_sender: Some(&pushes),
                 limits: &default_limits(),
                 metrics: &crate::metrics::NoopMetrics,
             },
@@ -1464,6 +1495,11 @@ mod tests {
         assert_eq!(outcome, Outcome::NotPersisted);
         assert_eq!(last_task.status, before.status);
         assert_eq!(last_task.history, before.history);
+        assert_eq!(
+            pushes.0.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "a message the store refused is not pushed"
+        );
     }
 
     #[tokio::test]

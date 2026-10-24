@@ -286,6 +286,11 @@ pub struct AgentRun;
 #[cfg(not(feature = "otel"))]
 #[allow(clippy::unused_self, clippy::missing_const_for_fn)]
 impl AgentRun {
+    // Unkillable: the gate builds with every feature, where this stub is
+    // compiled out, so any mutant of it builds and passes unchanged; and
+    // `AgentRun` is a unit struct, so it has no other value to return
+    // (ADR 0006).
+    #[mutants::skip]
     pub fn start(_meter: &GenAiMeter, _agent: Option<&str>, _model: &str) -> Self {
         Self
     }

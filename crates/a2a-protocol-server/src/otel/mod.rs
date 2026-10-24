@@ -350,8 +350,6 @@ pub const RPC_DURATION_BUCKETS: [f64; 13] = [
 
 #[cfg(test)]
 mod rpc_tests;
-// Only the tool loop's metric tests read a meter back this way.
-#[cfg(feature = "tool-loop")]
 #[cfg(test)]
 pub(crate) mod test_reader;
 #[cfg(test)]
