@@ -15,7 +15,6 @@ use super::{GrpcConfig, GrpcDispatcher};
 /// Spec §5.2: every serve path builds its router in `build_router`, which
 /// warns for a card that does not declare gRPC and is silent for one that
 /// does (independent re-audit, 2026-10-24).
-#[cfg(feature = "tracing")]
 #[test]
 fn building_the_router_warns_when_the_card_does_not_declare_grpc() {
     use crate::RequestHandlerBuilder;

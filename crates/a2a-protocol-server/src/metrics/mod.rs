@@ -447,5 +447,8 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
     }
 }
 
+mod tee;
+pub(crate) use tee::Tee;
+
 #[cfg(test)]
 mod tests;

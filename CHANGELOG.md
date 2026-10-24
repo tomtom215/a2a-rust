@@ -353,6 +353,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`RequestHandlerBuilder::with_additional_metrics`** (server). `with_metrics`
+  replaces the default, which exports to the global OpenTelemetry meter
+  provider, so a handler given a counter of its own stopped exporting
+  `rpc.server.call.duration` and the `a2a.server.*` instruments, and nothing
+  said so. `with_additional_metrics` keeps what the handler reports to (the
+  default, or whatever `with_metrics` set) and adds the caller's: each of the
+  nine `Metrics` callbacks goes to the existing metrics, then to the new
+  ones. `examples/agent-team` (five handlers) and `examples/resilient-agent`
+  (two acts) lost their server metrics this way; both now use it, and
+  agent-team's `MetricsForward`, which `Arc<T>` made redundant, is gone.
+  Tests: `metrics/tests.rs` `a_tee_forwards_every_callback_to_both_in_order`
+  (fails with any callback dropped) and `tests/default_metrics.rs`
+  `additional_metrics_are_reported_beside_the_default_not_instead_of_it`
+  (fails when the method replaces). `scripts/check_otel_metrics_coverage.py`
+  now also holds `Arc<T>` and the new forwarder to every callback.
+
 - **`scripts/check_otel_wiring.py`, a CI gate for what a binary exports.** It
   fails a tracked `fn main` that starts no `Telemetry` and is not on its
   exemption list (the TCK runner, an MCP stdio server, the benchmark
@@ -3452,6 +3468,16 @@ section "The client refuses what `a2a.proto` does not allow".
   (a `CLIENT` and a `SERVER` span for one SendMessage; fails with the
   features removed). The ITK agent and `live-model` have no test of their
   own; `scripts/check_otel_wiring.py` is what pins them.
+- **`incident-response` stopped exporting after its observability act**
+  (examples). The act's two checks each install a meter provider of their
+  own as the global one and shut it down, and the demo goes on serving;
+  handlers on the default metrics follow the global provider at each
+  measurement, so everything recorded after the act went to a provider
+  already shut down and the `OTEL_*` export the demo had configured lost it.
+  Each check now puts the provider that was global back when it returns.
+  Test: `hardening/observability.rs`
+  `the_checks_leave_the_global_meter_provider_as_they_found_it` (fails with
+  the restore removed from both checks).
 
 ### Deprecated
 

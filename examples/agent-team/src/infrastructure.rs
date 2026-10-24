@@ -99,24 +99,6 @@ impl Metrics for TeamMetrics {
     }
 }
 
-/// Wrapper to forward `Arc<TeamMetrics>` into the handler's `Box<dyn Metrics>`.
-pub struct MetricsForward(pub Arc<TeamMetrics>);
-
-impl Metrics for MetricsForward {
-    fn on_request(&self, method: &str) {
-        self.0.on_request(method);
-    }
-    fn on_response(&self, method: &str) {
-        self.0.on_response(method);
-    }
-    fn on_error(&self, method: &str, error: &str) {
-        self.0.on_error(method, error);
-    }
-    fn on_queue_depth_change(&self, active_queues: usize) {
-        self.0.on_queue_depth_change(active_queues);
-    }
-}
-
 // ── Audit interceptor ────────────────────────────────────────────────────────
 
 /// Server interceptor that logs every request/response and enforces a simple

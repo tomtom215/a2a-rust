@@ -259,7 +259,7 @@ async fn deliver_through(
         die_after_first_chunk: false,
     })
     .without_agent_card()
-    .with_metrics(Arc::clone(&metrics))
+    .with_additional_metrics(Arc::clone(&metrics))
     .with_push_sender(
         HttpPushSender::with_timeout(Duration::from_secs(1))
             .with_retry_policy(

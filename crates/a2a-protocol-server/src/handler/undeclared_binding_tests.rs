@@ -125,6 +125,7 @@ fn a_custom_dispatcher_names_no_binding_by_default() {
 // (independent re-audit, 2026-10-24): each warns for a card that does not
 // declare its binding, and stays silent for one that does.
 
+#[cfg(feature = "tracing")]
 fn card_declaring(interfaces: impl IntoIterator<Item = AgentInterface>) -> AgentCard {
     let mut interfaces = interfaces.into_iter();
     let first = interfaces.next().expect("at least one interface");

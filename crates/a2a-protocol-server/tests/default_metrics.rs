@@ -5,14 +5,15 @@
 //! provider when the `otel` feature is on (the default): a process that
 //! installs a provider — `Telemetry` does — gets `rpc.server.call.duration`
 //! with nothing to enable, whenever it installs it. Its own test binary,
-//! because the provider is process-global.
+//! because the provider is process-global, and its tests take `GLOBAL` in turn.
 
 #![cfg(feature = "otel")]
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use a2a_protocol_server::{JsonRpcDispatcher, RequestHandlerBuilder, agent_executor};
+use a2a_protocol_server::{JsonRpcDispatcher, Metrics, RequestHandlerBuilder, agent_executor};
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use opentelemetry_sdk::metrics::reader::MetricReader;
 use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
@@ -44,6 +45,9 @@ impl MetricReader for SharedReader {
 
 struct Idle;
 agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+
+/// The tests share the process's one global provider, so they take turns.
+static GLOBAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// A provider with a reader the test can collect from.
 fn provider() -> (SdkMeterProvider, Arc<ManualReader>) {
@@ -97,6 +101,7 @@ async fn call(addr: std::net::SocketAddr) {
 /// life.
 #[tokio::test]
 async fn a_handler_records_to_the_global_provider_installed_after_it() {
+    let _turn = GLOBAL.lock().await;
     let handler = RequestHandlerBuilder::new(Idle)
         .without_agent_card()
         .build()
@@ -128,5 +133,72 @@ async fn a_handler_records_to_the_global_provider_installed_after_it() {
         calls(&first_reader),
         1,
         "the replaced provider kept recording"
+    );
+}
+
+/// Counts the requests it is told of.
+#[derive(Default)]
+struct Requests(AtomicU64);
+
+impl Metrics for Requests {
+    fn on_request(&self, _: &str) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// `with_metrics` replaces the export; `with_additional_metrics` keeps it and
+/// adds the caller's, in the same handler. Both calls below reach the global
+/// provider and the caller's counter.
+#[tokio::test]
+async fn additional_metrics_are_reported_beside_the_default_not_instead_of_it() {
+    let _turn = GLOBAL.lock().await;
+    let (installed, reader) = provider();
+    opentelemetry::global::set_meter_provider(installed.clone());
+
+    let requests = Arc::new(Requests::default());
+    let handler = RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .with_additional_metrics(Arc::clone(&requests))
+        .build()
+        .expect("handler");
+    let addr = a2a_protocol_server::serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::new(Arc::new(handler)),
+    )
+    .await
+    .expect("serve");
+    call(addr).await;
+    assert_eq!(
+        calls(&reader),
+        1,
+        "the default export was replaced, not kept"
+    );
+    assert_eq!(
+        requests.0.load(Ordering::Relaxed),
+        1,
+        "the added metrics saw nothing"
+    );
+
+    // The contrast: `with_metrics` replaces the export, so a handler given
+    // the same counter alone leaves the provider's (cumulative) count where
+    // it was.
+    let replaced = Arc::new(Requests::default());
+    let handler = RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .with_metrics(Arc::clone(&replaced))
+        .build()
+        .expect("handler");
+    let addr = a2a_protocol_server::serve_with_addr(
+        "127.0.0.1:0",
+        JsonRpcDispatcher::new(Arc::new(handler)),
+    )
+    .await
+    .expect("serve");
+    call(addr).await;
+    assert_eq!(replaced.0.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        calls(&reader),
+        1,
+        "with_metrics must replace the export: the provider's count moved"
     );
 }

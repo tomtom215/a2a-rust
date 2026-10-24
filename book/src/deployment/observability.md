@@ -103,6 +103,12 @@ handler and nothing else is needed. The client's `rpc.client.call.duration`
 binds the same way. Before 0.15 such a handler recorded nothing until given
 `with_metrics`.
 
+`with_metrics` *replaces* that default, so a handler given a counter of its
+own stops exporting `rpc.server.call.duration` and the `a2a.server.*`
+instruments. To count something of your own beside the export, use
+`.with_additional_metrics(my_metrics)`: each callback goes to the default (or
+to whatever `with_metrics` set), then to yours.
+
 ## Exporting with `Telemetry`
 
 `Telemetry` (ADR 0013, option 5) builds one OTLP exporter per signal, on the

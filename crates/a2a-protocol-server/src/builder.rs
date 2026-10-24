@@ -626,9 +626,31 @@ impl RequestHandlerBuilder {
     ///
     /// Defaults to `OtelMetrics` instruments on the global meter provider as
     /// it stands at each measurement (`otel`), else `NoopMetrics`.
+    ///
+    /// This *replaces* the default, so a handler given a counter of its own
+    /// no longer exports `rpc.server.call.duration` or the `a2a.server.*`
+    /// instruments. To keep the default and also observe, use
+    /// [`with_additional_metrics`](Self::with_additional_metrics).
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
         self.metrics = Arc::new(metrics);
+        self
+    }
+
+    /// Also reports to `metrics`, keeping what the handler reports to now:
+    /// the default (`OtelMetrics` instruments on the global meter provider,
+    /// else `NoopMetrics`), or whatever
+    /// [`with_metrics`](Self::with_metrics) or an earlier call set.
+    ///
+    /// Each callback goes to the existing metrics first, then to `metrics`.
+    /// Use it to count something of your own beside the OpenTelemetry
+    /// export; `with_metrics` is for replacing the export.
+    #[must_use]
+    pub fn with_additional_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
+        self.metrics = Arc::new(crate::metrics::Tee {
+            first: self.metrics,
+            second: metrics,
+        });
         self
     }
 

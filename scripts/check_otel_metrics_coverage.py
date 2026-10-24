@@ -56,6 +56,19 @@ TRAIT_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "metrics" / "mod.r
 OTEL_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "otel" / "mod.rs"
 GLOBAL_SRC = REPO / "crates" / "a2a-protocol-server" / "src" / "otel" / "global.rs"
 
+# The two impls that only forward: a handler holds its metrics as an
+# `Arc<dyn Metrics>`, and `with_additional_metrics` wraps two in a `Tee`. A
+# callback either leaves out is dropped for everything behind it, the exporter
+# included.
+FORWARDERS = (
+    ("Arc<T>", TRAIT_SRC, "impl<T: Metrics + ?Sized> Metrics for Arc<T> {"),
+    (
+        "Tee<A, B>",
+        TRAIT_SRC.parent / "tee.rs",
+        "impl<A: Metrics, B: Metrics> Metrics for Tee<A, B> {",
+    ),
+)
+
 # Callbacks the OTLP exporter deliberately does not forward, each with the
 # reason. Empty today: every callback the trait defines is exported.
 INTENTIONALLY_UNEXPORTED: dict[str, str] = {}
@@ -83,16 +96,18 @@ def trait_methods(path: Path) -> list[str]:
     return names
 
 
-def impl_methods(path: Path, ty: str = "OtelMetrics") -> list[str]:
-    """Method names inside `impl Metrics for <ty>`."""
+def impl_methods(path: Path, ty: str = "OtelMetrics", header: str | None = None) -> list[str]:
+    """Method names inside `impl Metrics for <ty>`, or inside the impl whose
+    header line is `header` (for an impl with generics)."""
     try:
         src = path.read_text(encoding="utf-8")
     except OSError as e:
         die(f"cannot read {path}: {e}")
 
-    start = src.find(f"impl Metrics for {ty} {{")
+    header = header or f"impl Metrics for {ty} {{"
+    start = src.find(header)
     if start == -1:
-        die(f"no `impl Metrics for {ty}` block found in {path}")
+        die(f"no `{header}` block found in {path}")
 
     # Walk braces so a method body containing `}` cannot end the block early.
     depth = 0
@@ -126,6 +141,17 @@ def main() -> int:
             f"callback(s): {', '.join(unforwarded)}. Forward each to `self.current()`."
         )
         return 1
+    for name, source, header in FORWARDERS:
+        forwarded_by = set(impl_methods(source, header=header))
+        dropped = [
+            m for m in declared if m not in forwarded_by and m not in INTENTIONALLY_UNEXPORTED
+        ]
+        if dropped:
+            print(
+                f"FAIL — `{name}` drops {len(dropped)} callback(s): {', '.join(dropped)}. "
+                "Forward each to the metrics it wraps."
+            )
+            return 1
 
     print("OpenTelemetry exporter coverage of the Metrics trait")
     print(f"  trait declares : {len(declared)}")

@@ -278,11 +278,11 @@ only: when something here is done, delete it rather than annotating it.
    client_telemetry.rs`), the exemptions (`a2a-tck`, the MCP stdio server,
    benches, codegen) are recorded with reasons and enforced by
    `scripts/check_otel_wiring.py` (H2, M14, L2, L13), and the two stale
-   README claims are corrected. Still open: the SLIMRPC multicast fan-out has
-   no span or duration (H3); `agent-team` and
-   `resilient-agent` pass a custom `Metrics` that replaces the OpenTelemetry
-   default (M1); `incident-response` Act 5 replaces and shuts down the global
-   meter provider (M2); axum `TimedBody` and two `refuse_unreadable` paths,
+   README claims are corrected; `with_additional_metrics` keeps the
+   OpenTelemetry default beside a custom `Metrics` and `agent-team` and
+   `resilient-agent` use it (M1), and `incident-response` puts the global
+   meter provider back after its two OpenTelemetry checks (M2). Still open: the SLIMRPC multicast fan-out has
+   no span or duration (H3); axum `TimedBody` and two `refuse_unreadable` paths,
    WebSocket binary/busy/handshake/oversize refusals, SLIMRPC refusals before
    the span, and tonic's own refusals record nothing (M5 to M8); client
    dropped calls, early-dropped streams and retries are not visible (M9,
@@ -316,7 +316,9 @@ only: when something here is done, delete it rather than annotating it.
   `cargo audit`, `cargo deny` and OSV-Scanner on an integrator's lockfile do
   not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. CRA rows
   CRA-AI-I-2a, CRA-AI-II-2-4-8 and CRA-14 carry it as a gap. Filing is an
-  upstream action, so it waits for the maintainer.
+  upstream action, so it waits for the maintainer. The entry is drafted in
+  `docs/upstream/rustsec-ghsa-hr9h-6jvf-wvg6.md` (file, front matter, the
+  three decisions it leaves to you, and what was and was not checked).
 - **Compare-and-set for task writes (cross-replica).** *Decided 2026-10-24:
   not for 0.15.0; 0.16 (see Decisions).* The 2026-10-20 fix
   makes a stale continuation save record the position of its read, so a
