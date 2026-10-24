@@ -324,3 +324,11 @@ impl Transport for Unnamed {
 fn a_transport_names_no_rpc_system_by_default() {
     assert_eq!(Unnamed.rpc_system(), None);
 }
+
+/// A transport that does not name its URL names none, not an empty or a
+/// made-up one: its calls then carry no `server.address` or `server.port`.
+/// The mutation gate found the default untested.
+#[test]
+fn a_transport_names_no_server_url_by_default() {
+    assert_eq!(Unnamed.server_url(), None);
+}
