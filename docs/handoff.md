@@ -397,6 +397,23 @@ only: when something here is done, delete it rather than annotating it.
   290,000 characters against the API's 125,000; `release.yml` posts the
   upgrade-relevant subsections and links the rest). A `v*` tag ruleset is
   still unset; `ROADMAP.md` tracks it.
+- **Code-scanning alerts on `main` (2026-10-25: six open, read from a
+  screenshot; the alerts API is not readable from a session).** Two are
+  OSV-Scanner's `idna` (CVE-2026-45409, fixed in 3.15): the peers job scans
+  `itk/agents/python/requirements.txt` as written, which had no `idna` floor
+  and resolved to 3.9.0, while the image installs `requirements.lock`, which
+  pins 3.20. The floor is added and Scorecard's Vulnerabilities alert should
+  close with them once this reaches `main` and the scans rerun. Afterwards a
+  recursive `osv-scanner scan source -r .` (nine `Cargo.lock` files, the Go,
+  Java, JavaScript and Python peers, the CI requirement files) reports no
+  issues, against the OSV data of 2026-10-25. The other three are Scorecard
+  process findings that no code change closes. Branch-Protection: `main` has
+  no active rule; the `protect-main` ruleset (created 2026-03-16) is
+  `disabled` and holds only `deletion` and `non_fast_forward`. A rule that
+  requires pull requests or checks would also need `github-actions` as a
+  bypass actor, because the benchmark workflow pushes to `main` directly.
+  Code-Review: Scorecard wants an approval from someone other than the
+  author, and there is one maintainer. CII-Best-Practices: the badge below.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
   each with its status), held on 2026-10-15 for re-verification. The a2a-go
   draft for R19 is deliberately not committed: it was never checked against
