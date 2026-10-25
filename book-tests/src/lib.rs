@@ -146,6 +146,15 @@ pub mod page_deployment_observability {}
 #[doc = include_str!("../../book/src/deployment/langfuse.md")]
 pub mod page_deployment_langfuse {}
 
+#[doc = include_str!("../../book/src/compliance/overview.md")]
+pub mod page_compliance_overview {}
+
+#[doc = include_str!("../../book/src/compliance/gdpr.md")]
+pub mod page_compliance_gdpr {}
+
+#[doc = include_str!("../../book/src/compliance/cyber-resilience-act.md")]
+pub mod page_compliance_cyber_resilience_act {}
+
 #[doc = include_str!("../../book/src/deployment/audit.md")]
 pub mod page_deployment_audit {}
 

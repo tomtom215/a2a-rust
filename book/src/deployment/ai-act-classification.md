@@ -1,10 +1,11 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# Is Your Agent High-Risk?
+# EU AI Act: Is Your Agent High-Risk?
 
 The EU AI Act's obligations fall on providers and deployers of AI systems,
-and most of them only on high-risk ones. This chapter says where the SDK sits,
+and most of them only on high-risk ones. The [Compliance Overview](../compliance/overview.md)
+puts this page beside the GDPR and the Cyber Resilience Act. This chapter says where the SDK sits,
 how a system you build with it is classified, and which of the SDK's features
 answer which obligations once it is. It cites Regulation (EU) 2024/1689 as
 published in the Official Journal (OJ L, 2024/1689, 12.7.2024).
