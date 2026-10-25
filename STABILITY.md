@@ -12,11 +12,11 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 ## 1. Where the project is
 
-The crates are at `0.15.0`, unreleased; `0.14.1` (2026-09-30) is the newest
-release. `0.14.0` (2026-09-26) carried seven breaking changes and `0.14.1`,
-a patch, none. `0.15.0` carries 26, each under "Breaking Changes" in
-`CHANGELOG.md` with its migration (counted 2026-10-23 as that section's
-top-level entries). That number is deliberate: the maintainer chose on
+The crates are at `0.15.0` (2026-10-25), the newest release; `0.14.1`
+(2026-09-30) is the one before. `0.14.0` (2026-09-26) carried seven breaking
+changes and `0.14.1`, a patch, none. `0.15.0` carries 26, each under "Breaking
+Changes" in `CHANGELOG.md` with its migration (counted 2026-10-23 as that
+section's top-level entries). That number is deliberate: the maintainer chose on
 2026-10-23 to land every break then known in this one release, the minimum
 supported Rust version included (§5), rather than spread them over several.
 It also restarts §7's count again: `0.13.0`, `0.14.0` and `0.15.0` each

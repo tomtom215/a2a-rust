@@ -666,7 +666,7 @@ sdk = "Per-crate CycloneDX SBOMs (every release since v0.7.0) and SLSA build-pro
 status = "supported"
 ci = ["Generate CycloneDX SBOMs", "Attest build provenance (SLSA)", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml", "cargo-deny (the workspace dependency tree)"]
 evidence = ["SECURITY.md", "PROVENANCE.md", "RELEASING.md", "docs/openssf-best-practices.md"]
-remainder = "The due diligence is the manufacturer's act: verifying the attestations (`gh attestation verify`), folding the SBOM into its own, and scanning its own lockfile, which, not this repository's, decides the versions it builds. Release-tag signing is required but no release has been signed yet (CRA-AI-II-7)."
+remainder = "The due diligence is the manufacturer's act: verifying the attestations (`gh attestation verify`), folding the SBOM into its own, and scanning its own lockfile, which, not this repository's, decides the versions it builds. Release-tag signing is required and `v0.15.0` is the first signed tag; earlier tags are unsigned (CRA-AI-II-7)."
 
 [[control]]
 id = "CRA-13-6"
@@ -999,7 +999,7 @@ ci = [
   "Obtain a crates.io token via Trusted Publishing",
 ]
 evidence = ["RELEASING.md", ".github/release-signers/README.md"]
-gap = "A release key is configured (`.github/release-signers/allowed_signers` holds one SSH key, checked 2026-10-25) but no release has passed the signature gate yet: 0.15.0 would be the first. Whether a tag ruleset restricts `v*` tags is a repository setting this tree cannot show. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
+gap = "`v0.15.0` (2026-10-25) is the first tag to pass the signature gate: it is SSH-signed by the one key in `.github/release-signers/allowed_signers`, and `scripts/verify_tag_signature.sh` accepts it against the keys on `main`. Whether a tag ruleset restricts `v*` tags is a repository setting this tree cannot show. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
 
 [[control]]
 id = "CRA-13-8"
