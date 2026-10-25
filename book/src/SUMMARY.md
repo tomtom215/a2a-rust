@@ -48,11 +48,16 @@
 - [Incident-Response Team](./examples/incident-response.md)
 - [Echo Agent](./examples/echo-agent.md)
 - [Agent Team](./examples/agent-team.md)
+- [Resilient Agent](./examples/resilient-agent.md)
 - [Genai Agent](./examples/genai-agent.md)
 - [Rig Agent](./examples/rig-agent.md)
+- [Tool-Loop Agent](./examples/tool-loop-agent.md)
+- [Live Model](./examples/live-model.md)
 - [MCP Agent](./examples/mcp-agent.md)
 - [A2A → MCP Bridge](./examples/mcp-bridge.md)
+- [Langfuse Agent](./examples/langfuse-agent.md)
 - [Multi-Language Team](./examples/multi-lang-team.md)
+- [Swarm](./examples/swarm.md)
 
 # Testing & Deployment
 
