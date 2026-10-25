@@ -352,7 +352,13 @@ async fn the_axum_router_records_a_body_over_its_limit_and_one_never_finished() 
         .expect("write");
     let mut response = String::new();
     socket.read_to_string(&mut response).await.expect("read");
-    assert!(response.starts_with("HTTP/1.1 408"), "{response}");
+    // The status, not the response text: a failure names the code it got.
+    let status: u16 = response
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or_default();
+    assert_eq!(status, 408);
 
     assert_eq!(
         *seen.lock().unwrap(),
