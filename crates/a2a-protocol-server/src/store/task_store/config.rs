@@ -90,13 +90,15 @@ pub struct TaskStoreConfig {
     pub max_capacity: Option<usize>,
 
     /// Time-to-live for completed or failed tasks. Tasks in terminal states
-    /// older than this duration are evicted on the next write operation.
+    /// older than this duration are evicted by the next TTL sweep: every
+    /// `eviction_interval` writes, or when `run_eviction()` is called.
     /// `None` means no TTL-based eviction.
     pub task_ttl: Option<Duration>,
 
     /// Number of writes between automatic eviction sweeps. Default: 64.
     ///
-    /// Amortizes the O(n) eviction cost so it doesn't run on every single `save()`.
+    /// Amortizes the cost of the TTL sweep so it doesn't run on every single
+    /// `save()`.
     pub eviction_interval: u64,
 
     /// Maximum allowed page size for list queries. Default: 1000.
@@ -150,7 +152,8 @@ pub struct TaskStoreConfig {
     /// A send presenting a key the store already holds is answered as always
     /// — a replay or a conflict — whatever the count. A send presenting a new
     /// key first expires keys past their TTL; if the store is still full, it
-    /// is refused as temporarily unavailable (HTTP `503`, gRPC `UNAVAILABLE`)
+    /// is refused as temporarily unavailable (HTTP `503`, gRPC
+    /// `RESOURCE_EXHAUSTED`)
     /// and runs nothing. No key is evicted to make room: dropping a live key
     /// re-opens the double execution it was claimed to prevent, which is worse
     /// than a retryable refusal. A send without a key is not affected.

@@ -124,8 +124,11 @@ pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 /// context they would on the HTTP bindings — credentials are presented once,
 /// at connect time, and apply to the whole connection.
 ///
-/// An upgrade request carrying an `A2A-Version` header with a major version
-/// other than `1` is rejected during the handshake with HTTP 400.
+/// An upgrade request with no `A2A-Version` (header or `?A2A-Version=`
+/// parameter), or one naming a version other than 1.0 (a patch number is
+/// ignored), is rejected during the handshake with HTTP 400;
+/// [`accept_missing_version_header`](Self::accept_missing_version_header)
+/// admits the former.
 ///
 /// # TLS and origins
 ///

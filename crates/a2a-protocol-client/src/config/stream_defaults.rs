@@ -45,10 +45,12 @@ pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 /// silence before the first event is no different, as evidence of a dead
 /// peer, from silence between events, and the peers that matter produce
 /// both. The specification asks a server to open a stream with its `Task`
-/// or `Message`, and this repository's server does so at once; but a2a-go
-/// v2.5.0 writes nothing until the agent emits its first event, so an agent
-/// that makes a slow model call first is silent for as long as the call
-/// takes. The 30 seconds this bound inherited from `stream_connect_timeout`
+/// or `Message`. This repository's server does so at once for
+/// `SubscribeToTask`; for `SendStreamingMessage` its executor's first event
+/// decides, so a silent executor leaves the stream without data until the
+/// `: keep-alive` comment (every 30 seconds by default). a2a-go v2.5.0
+/// writes nothing until the agent emits its first event, so an agent that
+/// makes a slow model call first is silent for as long as the call takes. The 30 seconds this bound inherited from `stream_connect_timeout`
 /// cut such an agent off. Callers that know their agent answers at once can
 /// tighten it to fail fast.
 pub const DEFAULT_STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_mins(5);

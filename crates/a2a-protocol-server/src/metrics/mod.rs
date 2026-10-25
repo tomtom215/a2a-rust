@@ -178,8 +178,8 @@ pub struct RpcCall<'a> {
     /// does not serve. `None` when the request was refused before it named
     /// one — a body that is not JSON-RPC, a batch over the limit.
     pub method: Option<&'a str>,
-    /// From receipt to the response, or to the stream being established for
-    /// a streaming method — not to the stream's end.
+    /// From receipt to the response; for a streaming method, to the stream's
+    /// end (the span's lifetime), as the semantic conventions ask.
     pub duration: Duration,
     /// The status the binding answered with, as `rpc.status_code`: the
     /// JSON-RPC error code (`-32001`), the HTTP status (`404`), or the gRPC

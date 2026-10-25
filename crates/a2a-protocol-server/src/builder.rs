@@ -27,7 +27,8 @@ use crate::streaming::EventQueueManager;
 use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
-/// Default ceiling on concurrent streaming event queues.
+/// Default ceiling on concurrent event queues: one per task being run,
+/// whether its send blocks or streams.
 ///
 /// Every streaming request eagerly allocates channels and spawns background
 /// tasks, so an *unlimited* default let an unauthenticated caller grow server
@@ -601,10 +602,12 @@ impl RequestHandlerBuilder {
         self
     }
 
-    /// Sets the maximum number of concurrent streaming event queues.
+    /// Sets the maximum number of concurrent event queues: one per task being
+    /// run, whether its send blocks or streams.
     ///
-    /// Limits memory usage from concurrent streams. When the limit is
-    /// reached, new streaming requests will fail. Defaults to
+    /// Limits memory usage from concurrent tasks. When the limit is
+    /// reached, a send that would open one more is refused as overloaded.
+    /// Defaults to
     /// [`DEFAULT_MAX_CONCURRENT_STREAMS`] (1024); pass `usize::MAX` to
     /// effectively disable the ceiling.
     #[must_use]

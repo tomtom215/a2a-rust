@@ -524,7 +524,7 @@ fn apply_jitter(backoff: Duration, factor: f64) -> Duration {
     Duration::try_from_secs_f64(jittered_secs).unwrap_or(backoff)
 }
 
-/// Applies full jitter to a backoff duration: returns a random duration in
+/// Applies jitter to a backoff duration: returns a random duration in
 /// `[backoff/2, backoff)`.
 ///
 /// Uses `std::hash::RandomState` for cheap, no-dependency randomness. This

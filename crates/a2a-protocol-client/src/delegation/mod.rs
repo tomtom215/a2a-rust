@@ -218,7 +218,8 @@ impl Delegation {
     ///
     /// As [`start`](Self::start). The reservation is returned only when the
     /// error shows the agent refused the request, so no child exists: an
-    /// A2A error, an HTTP error status, or an authentication challenge.
+    /// A2A error, an HTTP error status, an authentication challenge, or an
+    /// endpoint the client cannot use.
     /// After a transport error or a timeout a child may be running, and the
     /// reservation is kept.
     pub async fn start_budgeted(

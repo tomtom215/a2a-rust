@@ -98,8 +98,10 @@ pub trait AgentExecutor: Send + Sync + 'static {
     /// live subscribers has no queue receivers, and that must not fail the
     /// cancel, because the handler persists the state either way. Cancellation
     /// in A2A is *cooperative* — by the time this runs the handler has already
-    /// triggered [`RequestContext::cancellation_token`], which a running
-    /// `execute` is expected to observe.
+    /// triggered the running task's cancellation token, which a running
+    /// `execute` is expected to observe. The `ctx` passed here is a fresh
+    /// context for the cancel call: its own
+    /// [`RequestContext::cancellation_token`] is not cancelled.
     ///
     /// Override this when the task holds something that must be released —
     /// a reserved slot, a parked message, an open handle. Overriding is about

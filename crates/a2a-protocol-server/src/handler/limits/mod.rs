@@ -110,7 +110,9 @@ pub struct HandlerLimits {
     /// reached 6 of 100 per event and skipped the rest.
     pub push_delivery_budget: Duration,
     /// How long the blocking send path waits, after the executor has
-    /// finished, for the event queue to close. Default: 5 seconds.
+    /// finished, for the event queue to close. Also how long a send that
+    /// continues a parked task waits for the task's previous turn to finish.
+    /// Default: 5 seconds.
     ///
     /// Once the executor returns, everything it wrote is already buffered and
     /// is drained immediately; the only thing left to wait for is the

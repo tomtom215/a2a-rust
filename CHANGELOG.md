@@ -113,10 +113,10 @@ Nothing yet.
   SecurityScheme::Http(HttpAuthSecurityScheme { scheme: "Bearer".into(),
   description: None, bearer_format: None }))]))`); for
   `ApiKeyAuthInterceptor`, an `apiKeySecurityScheme` naming its header; for
-  `MutualTlsAuthInterceptor`, a `mutualTlsSecurityScheme`; and repeat every
+  `MutualTlsAuthInterceptor`, a `mtlsSecurityScheme`; and repeat every
   extended-card scheme in the public card. The ITK agent now declares its
   bearer scheme in every pass (it guards the extended card in every pass),
-  and the SLIMRPC binding's tests declare `mutualTlsSecurityScheme` for
+  and the SLIMRPC binding's tests declare `mtlsSecurityScheme` for
   `SlimPeerAuthInterceptor::required()`. Tests:
   `auth::declared_tests::an_authenticator_behind_a_public_card_declaring_no_scheme_is_refused`,
   `auth::declared_tests::a_scheme_declared_only_on_the_extended_card_is_refused`.
@@ -220,7 +220,7 @@ Nothing yet.
   now refuses a flow URL, refresh URL or `openIdConnectUrl` that is not
   `scheme://authority...`, and an `oauth2MetadataUrl` that is not `https`.
   The deprecated implicit and password flows' URLs are checked only when
-  given. A client never applies this to a card it fetches. Tests:
+  given. A client applies the same check to a card it fetches. Tests:
   `security::url_tests`.
 - **A client built from a card refuses to build when the card marks an
   extension `required` that it does not ask for** (client; a2a.proto
@@ -453,7 +453,7 @@ Nothing yet.
   `server::peer::security_scheme()` to `securitySchemes` under
   `SECURITY_SCHEME_NAME` (`slimMls`), and for `required()` a security
   requirement naming it. A2A has no scheme type for SLIM, so it is a
-  `mutualTlsSecurityScheme` whose description names SLIM, the kind whose
+  `mtlsSecurityScheme` whose description names SLIM, the kind whose
   credential the transport proves for both peers. The interceptor now
   answers `checks_scheme`: a mutual-TLS scheme and no other, so
   `RequestHandlerBuilder::build` refuses `required()` behind a card whose
@@ -1788,7 +1788,7 @@ section "The client refuses what `a2a.proto` does not allow".
   message without `role`, `""` for a request without `message` or `id`); it
   is now `message.role`, `message.messageId`, `message`, `id`, `url`, on
   JSON-RPC, WebSocket and HTTP+JSON. The `SendMessage` id checks named
-  `message.id`, `task_id`, `context_id` and `reference_task_ids`; they are
+  `message.id`, `task_id` and `context_id` (reference ids were not checked); they are
   `message.messageId`, `message.taskId`, `message.contextId` and
   `message.referenceTaskIds`, in the violation's `field` and the message
   ("message.messageId must not be empty or whitespace-only"). A client
@@ -2113,7 +2113,7 @@ section "The client refuses what `a2a.proto` does not allow".
   message only. They are the new `ServerError::InvalidField { field, message }`,
   which answers with the same code, status, message and metric label as
   `InvalidParams`; code matching `ServerError::InvalidParams` on these errors
-  matches `InvalidField` too (see the upgrading guide).
+  must also match `InvalidField` (see the upgrading guide).
 
 - **A `google.protobuf.Struct` error detail is written as ProtoJSON writes
   an `Any`** (server; §3.3.2, §9.5, §11.6, audit register R19). An error's
@@ -2454,8 +2454,8 @@ section "The client refuses what `a2a.proto` does not allow".
   register webhooks on them. Now each caller an authenticating interceptor
   identifies gets a partition of its own, where another caller's task is
   `TaskNotFound`. A request it lets through without an identity (an
-  unlabelled token or key, a JWT without `sub`) keeps the tenant's shared
-  records, as before; `isolate_tasks_by_caller` still refuses one. Unset
+  unlabelled token or key) keeps the tenant's shared records, as before (a JWT
+  without `sub` is refused, below); `isolate_tasks_by_caller` still refuses one. Unset
   stores default to the tenant-aware in-memory ones: up to 1,000 partitions,
   each with the whole `with_task_store_config` capacity (10,000 tasks by
   default), so that store's bound is per caller now. `build()` now refuses, naming the remedies, a supplied task or
@@ -4356,7 +4356,7 @@ section "The client refuses what `a2a.proto` does not allow".
     else.
   - **Migration.** gRPC and `A2aRouter` pass the resolver no URL, so there it
     now resolves no tenant: the request is served from the default tenant,
-    or rejected under `require_resolved_tenant(true)`. A deployment that used
+    or rejected under `require_resolved_tenant()`. A deployment that used
     this resolver on those entry points was taking the tenant from the client
     all along. Switch it to `BearerTokenTenantResolver`, or to
     `HeaderTenantResolver` behind a proxy that sets the header and strips any

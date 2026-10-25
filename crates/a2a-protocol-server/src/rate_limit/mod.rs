@@ -58,8 +58,9 @@
 //!    **Register the authentication interceptor before this one.** The chain
 //!    runs interceptors in registration order over one [`CallContext`], so a
 //!    limiter registered first reads an identity nothing has set yet and
-//!    buckets every caller together. Nothing rejects that ordering; it just
-//!    stops being per-caller.
+//!    keys on the client address instead (steps 2 and 3), or on the shared
+//!    `anon` key (step 4) where no address is recorded. Nothing rejects that
+//!    ordering; it just stops being per-caller.
 //!
 //!    `JwtAuthInterceptor` (the `auth-jwt` feature) records the
 //!    validated issuer and `sub`; [`ApiKeyAuthInterceptor`](crate::ApiKeyAuthInterceptor)

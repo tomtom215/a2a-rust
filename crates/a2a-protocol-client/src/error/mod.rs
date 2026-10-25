@@ -116,8 +116,10 @@ pub enum ClientError {
     ProtocolBindingMismatch(String),
 
     /// An agent's security scheme this client cannot send a credential with:
-    /// an `APIKeySecurityScheme` that places the key in the query string, or
-    /// names a header or cookie no request can carry. Also a call not sent
+    /// an `APIKeySecurityScheme` whose name is not an HTTP token (no header,
+    /// cookie or query parameter can carry it), or that places the key in the
+    /// query string on the gRPC or WebSocket transport, which have no query
+    /// string. Also a call not sent
     /// because its credentials satisfy none of the agent card's security
     /// requirements, from a client built with
     /// [`CredentialPreflight::Refuse`](crate::CredentialPreflight::Refuse)

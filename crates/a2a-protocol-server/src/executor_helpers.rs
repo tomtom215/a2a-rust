@@ -187,7 +187,7 @@ macro_rules! agent_executor {
 /// Ergonomic helper for emitting status and artifact events from an executor.
 ///
 /// Caches `task_id` and `context_id` from the [`RequestContext`] so that every
-/// event emission is a one-liner instead of a 7-line struct literal.
+/// event emission is a one-liner instead of a struct literal.
 ///
 /// # Example
 ///
