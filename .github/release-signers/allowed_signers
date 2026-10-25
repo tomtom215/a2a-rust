@@ -1,3 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
 # SSH keys trusted to sign release tags. Format and procedure: README.md here.
-# Empty: no release can pass release.yml's signature gate until a key is added.
+# The principal must equal the email git records as the tag's tagger.
+tomf@tomtomtech.net namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIpEjwPmNqli6aIWVddichCoTNQTROw2mEja+TSJ9ngd

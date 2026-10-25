@@ -999,7 +999,7 @@ ci = [
   "Obtain a crates.io token via Trusted Publishing",
 ]
 evidence = ["RELEASING.md", ".github/release-signers/README.md"]
-gap = "No release key is configured yet: `.github/release-signers/allowed_signers` and `gpg-fingerprints.txt` hold only comments (checked 2026-10-21), so no release has passed the signature gate and the next cannot until a key is added. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
+gap = "A release key is configured (`.github/release-signers/allowed_signers` holds one SSH key, checked 2026-10-25) but no release has passed the signature gate yet: 0.15.0 would be the first. Whether a tag ruleset restricts `v*` tags is a repository setting this tree cannot show. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
 
 [[control]]
 id = "CRA-13-8"

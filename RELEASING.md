@@ -198,9 +198,9 @@ git push origin vX.Y.Z
 **The tag must be signed** (since 2026-10-08), by an SSH or OpenPGP key
 listed in [`.github/release-signers/`](.github/release-signers/README.md) on
 `main`, and must point at a commit on `main`. `release.yml` refuses anything
-else before building. The directory holds no key until the maintainer commits
-one, so the first signed release starts with that pull request; the README
-there has the commands.
+else before building. The directory holds the maintainer's SSH key (added for
+0.15.0, the first release the gate can pass); the README there has the
+commands for adding another.
 
 > **Known gap — the first ten tags do not match this step.** Ten release
 > tags (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,

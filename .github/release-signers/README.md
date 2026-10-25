@@ -18,9 +18,13 @@ signature verifies against a key listed here, as this directory stands on
 An OpenPGP key file here is not trusted unless its fingerprint is also listed:
 presence proves nothing about whose key it is.
 
-**No key is configured yet**, so the gate refuses every release until the
-maintainer commits one. That is deliberate: the alternative is a gate that
-passes unsigned tags while it waits, which is the gap it exists to close.
+One key is configured: the maintainer's SSH key, `SHA256:ziO4yysBwOPEyekQKir3ahIqzkzciF+a7u/Xh7jaDpM`
+(ed25519, principal `tomf@tomtomtech.net`; compare with `ssh-keygen -lf` on the
+`.pub` file and with the signing keys on the maintainer's GitHub profile). The
+gate accepts a tag signed by it and refuses every other. Until it was added the
+gate refused every release, deliberately: the alternative is a gate that passes
+unsigned tags while it waits, which is the gap it exists to close. No release
+has passed the gate yet.
 
 ## Adding the maintainer's SSH key
 
