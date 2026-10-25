@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A Compliance part in the book** (`book/src/compliance/`): a
+  [Compliance Overview](book/src/compliance/overview.md) with an obligation to
+  page table, the 88-provision control map summarised by framework and the
+  protections that are off until switched on; a
+  [GDPR](book/src/compliance/gdpr.md) page (where personal data sits, article
+  by article what the SDK carries and leaves, erasure and what it does not
+  reach); and a
+  [Cyber Resilience Act](book/src/compliance/cyber-resilience-act.md) page (what
+  the project publishes, Annex I property by property, the advisory missing from
+  RustSec). The EU AI Act chapter (retitled "EU AI Act: Is Your Agent
+  High-Risk?"), Audit Trail, Human Oversight and Provenance and Signatures move
+  into the part; their URLs are unchanged. Every claim is taken from a row of
+  `docs/compliance/controls.toml`, and none says the SDK is compliant with
+  anything.
 - **Book pages for the five examples that had none** (`book/src/examples/`):
   [Resilient Agent](book/src/examples/resilient-agent.md),
   [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
