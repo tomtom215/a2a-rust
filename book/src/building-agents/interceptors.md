@@ -82,6 +82,12 @@ let handler = RequestHandlerBuilder::new(my_executor)
 # }
 ```
 
+An authenticating interceptor needs a scheme declared in the public agent card
+(spec §13.3), or `build()` refuses it. For the bundled bearer interceptor that
+is an HTTP `Bearer` scheme, set with `.with_security_schemes(...)` on the card
+passed to `with_agent_card`. See
+[The card and the interceptors must agree](./authentication.md#the-card-and-the-interceptors-must-agree).
+
 Interceptors execute in the order they're added:
 
 ```text
@@ -180,6 +186,7 @@ impl ServerInterceptor for SessionAuthInterceptor {
                 })?;
             // Rate limiting and executors (`ctx.caller_identity()`) key on this.
             ctx.set_caller_identity(caller);
+            ctx.set_auth_scheme("session");
             Ok(())
         })
     }
@@ -191,8 +198,11 @@ impl ServerInterceptor for SessionAuthInterceptor {
         Box::pin(async move { Ok(()) })
     }
 
-    // The extended agent card may be served only behind an authenticating
-    // interceptor (spec §13.3); this is how the handler knows one is there.
+    // Marks this interceptor as an authenticator. That lets the extended
+    // agent card be served (spec §13.3), requires the public card to declare
+    // a scheme it checks (override `checks_scheme` to say which), and makes
+    // the handler give each caller named by `set_caller_identity` its own
+    // task partition.
     fn authenticates(&self) -> bool {
         true
     }
@@ -276,7 +286,8 @@ let client = ClientBuilder::new("http://agent.example.com")
 
 ### Logging
 
-Log method names, durations, and errors:
+Log the method, the outcome and how long the call took from `on_complete` (see
+above; `CallContext::received_at()` is when the call arrived):
 
 ```rust,no_run
 struct LoggingInterceptor;
@@ -286,7 +297,9 @@ struct LoggingInterceptor;
 
 ### Metrics
 
-Track request counts, latencies, error rates:
+Count requests. A counter in `before` counts every call that reaches this
+interceptor, whatever its outcome; to count successes and failures separately,
+or to time calls, use `on_complete` (see above):
 
 ```rust
 # use std::future::Future;
@@ -354,22 +367,31 @@ let handler = RequestHandlerBuilder::new(my_executor)
 # }
 ```
 
-Caller keys are derived from `CallContext::caller_identity()`, or
-`"anonymous"`. `JwtAuthInterceptor` sets the identity from the token's `sub`.
-`BearerTokenAuthInterceptor::new` and `ApiKeyAuthInterceptor::new` do not, so
-every valid caller shares one bucket; use
+Caller keys come from `CallContext::caller_identity()` when an authenticating
+interceptor registered before the limiter set one. Otherwise they come from the
+client address: the `x-forwarded-for` entry that `trusted_proxy_hops` trusted
+reverse proxies appended, or, when `trusted_proxy_hops` is 0 (the default), the
+connection's peer address, an IPv6 address counting as its /64. The header is
+client-controlled, so it is ignored unless you set `trusted_proxy_hops` to the
+number of trusted reverse proxies in front of the server. Only a call with no
+identity and no usable address (a forwarded chain shorter than
+`trusted_proxy_hops`, or a transport that records no peer) shares the `anon`
+bucket.
+
+`JwtAuthInterceptor` sets `jwt:<issuer>:<sub>` and nothing for a token without
+`sub`. `BearerTokenAuthInterceptor::new` and `ApiKeyAuthInterceptor::new` name
+nobody, so their callers are limited by address; use
 `BearerTokenAuthInterceptor::with_labelled_tokens([(token, "caller-a"), …])` or
-`ApiKeyAuthInterceptor::with_labelled_keys(…)` for per-caller limits. The
-`X-Forwarded-For` header is only consulted
-when `trusted_proxy_hops` is set to the number of trusted reverse proxies in
-front of the server — the header is client-controlled, so it is ignored by
-default. The bucket map is bounded by `max_buckets` (default 10,000).
+`ApiKeyAuthInterceptor::with_labelled_keys(…)` for per-caller limits (the key
+is then `id:bearer:caller-a` or `id:api-key:caller-a`). The bucket map is
+bounded by `max_buckets` (default 10,000).
 
 > **Note:** `CallContext` fields are read-only (accessed via methods like
-> `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`), with one
-> write-once exception: `set_caller_identity`, which the first authenticating
-> interceptor sets and nothing can then overwrite. This prevents interceptors
-> from mutating security-critical context mid-request.
+> `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`), with
+> write-once exceptions: `set_caller_identity`, `set_auth_scheme` and
+> `set_actors`, which an authenticating interceptor sets and nothing can then
+> overwrite. This prevents interceptors from mutating security-critical context
+> mid-request.
 
 For limits shared across replicas, pass a `RateLimitCounter` to
 `RateLimitInterceptor::with_shared_counter` (`PostgresRateLimitCounter` ships

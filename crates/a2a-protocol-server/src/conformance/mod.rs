@@ -31,8 +31,8 @@
 //! honest. A check that did not apply — because the executor never did the
 //! thing it is about — is **not graded**, and a report that grades nothing
 //! fails rather than passing vacuously. Both rules are the ones `tck/` already
-//! follows, for the reason its own README gives: a run that measured nothing
-//! once reported full marks.
+//! follows, for the reason its own README gives: a check that never ran once
+//! counted as a pass, so a run reported 22/22 while 21 checks ran.
 //!
 //! # What it cannot tell you
 //!

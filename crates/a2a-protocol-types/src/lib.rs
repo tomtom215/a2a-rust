@@ -52,9 +52,11 @@ struct ReadmeDoctests;
 /// Agent Cards" — so this is `"1.0"`, not `"1.0.0"`.
 pub const A2A_VERSION: &str = "1.0";
 
-/// The registered A2A media type (spec §14.1.1), accepted on ingress by the
-/// HTTP bindings alongside [`JSON_CONTENT_TYPE`], and sent on HTTP+JSON
-/// responses to a client that asks for it (§11.1).
+/// The registered A2A media type (spec §14.1.1).
+///
+/// Accepted on ingress by the HTTP bindings alongside [`JSON_CONTENT_TYPE`],
+/// and the HTTP+JSON binding's response type (§11.1) unless the request's
+/// `Accept` prefers `application/json` or asks only for `text/event-stream`.
 pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
 
 /// This project's identifier for its §12 WebSocket binding, as
@@ -89,12 +91,14 @@ pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
 pub const WEBSOCKET_BINDING_URI: &str = "https://a2a-rust.com/bindings/websocket/v1";
 
 /// Content type emitted by the JSON-RPC binding, and by the HTTP+JSON binding
-/// to a client that does not ask for [`A2A_CONTENT_TYPE`].
+/// to a client whose `Accept` prefers it or asks only for
+/// `text/event-stream`.
 ///
 /// §9.1 specifies `application/json` for JSON-RPC. For HTTP+JSON, §11.1 says
-/// `application/a2a+json` SHOULD be used; this SDK negotiates it: a client
-/// whose `Accept` prefers it, or whose request body is labelled with it, gets
-/// it back, and every other client gets `application/json`. Released a2a-go
+/// `application/a2a+json` SHOULD be used; this SDK negotiates it: unless the
+/// request's `Accept` prefers `application/json` (or asks only for
+/// `text/event-stream`), the response is `application/a2a+json`. Released
+/// a2a-go
 /// (v2.6.0) sends `Accept: application/json` and reads an error body only
 /// under that type, so labelling every response the A2A way would cost a Go
 /// client every error's identity (audit N38, and the book's conformance

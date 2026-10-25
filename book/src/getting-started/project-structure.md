@@ -1,8 +1,10 @@
 # Project Structure
 
-a2a-rust is organized as a Cargo workspace with four crates, each with a clear responsibility. Understanding this structure helps you choose the right dependency for your use case.
+a2a-rust is organized around four published library crates in one Cargo workspace, each with a clear responsibility. Understanding this structure helps you choose the right dependency for your use case.
 
 ## Workspace Layout
+
+This tree lists the principal modules, not every file; `git ls-files crates/*/src` is the full list.
 
 ```text
 a2a-rust/
@@ -22,12 +24,13 @@ a2a-rust/
 │   │       ├── push.rs         # Push notification config types
 │   │       ├── error.rs        # A2aError, ErrorCode, A2aResult
 │   │       ├── security.rs     # Security schemes and requirements
-│   │       ├── signing.rs      # Agent card signing (JWS/ES256)
+│   │       ├── signing.rs      # Agent card signing (JWS: ES256, EdDSA)
 │   │       └── extensions.rs   # Extension types
 │   │
 │   ├── a2a-protocol-client/  # HTTP client
 │   │   └── src/
-│   │       ├── lib.rs          # A2aClient, ClientBuilder
+│   │       ├── lib.rs          # Re-exports
+│   │       ├── client.rs       # A2aClient
 │   │       ├── builder/        # ClientBuilder (fluent config)
 │   │       │   ├── mod.rs            # Builder struct, configuration setters
 │   │       │   └── transport_factory.rs  # build() / build_grpc() assembly
@@ -174,16 +177,33 @@ a2a-rust/
 │   ├── deploy-agent/       # The hello agent made deployable (health, SIGTERM, container)
 │   ├── echo-agent/         # Every A2A method over all four bindings
 │   ├── incident-response/  # Three cooperating agents: input-required, delegation, cancel
-│   ├── agent-team/         # Comprehensive 4-agent dogfood suite (102 E2E tests by default, 87 bare)
+│   ├── agent-team/         # Five-agent dogfood suite plus a sixth swept over all four bindings (100 tests + 2 sweep results by default; 87 bare)
 │   ├── multi-lang-team/    # Multi-language team example
 │   ├── rig-agent/          # Integration with the Rig framework
 │   ├── genai-agent/        # Integration with the GenAI framework
 │   ├── mcp-agent/          # Tools discovered from an MCP server
 │   ├── mcp-bridge/         # A remote A2A agent exposed as an MCP server
-│   ├── resilient-agent/
+│   ├── tool-loop-agent/    # Tool calling from the SDK alone: ToolLoopExecutor over OpenAiChatModel
+│   ├── langfuse-agent/     # Two agents, one delegating to the other, traced into one Langfuse trace
+│   ├── swarm/              # Hierarchical agent swarm: fan-out, retry, cancel propagation
+│   ├── live-model/         # The SDK end to end with a real model
+│   ├── resilient-agent/    # Durability across a restart, failure injection, two replicas over a shared store
 │   └── harness/            # Shared coverage matrix and sweep for the examples
 │
-├── tck/                    # Technology Compatibility Kit
+├── bindings/
+│   └── a2a-protocol-slimrpc/  # SLIMRPC binding (outside the workspace, own lockfile)
+│
+├── tools/
+│   ├── a2a-cli/            # The `a2a` command-line client
+│   └── a2a-codegen/        # Generates the public types from the proto
+│
+├── proto/                  # a2a.proto
+├── benches/                # Criterion benchmarks
+├── book/                   # This book
+├── book-tests/             # Compiles the book's Rust blocks as doctests
+├── itk/                    # Interoperability tests against the other SDKs
+│
+├── tck/                    # In-repo conformance runner (the official TCK is a2aproject/a2a-tck)
 │
 ├── docs/
 │   └── adr/                # Architecture Decision Records
@@ -228,16 +248,19 @@ use a2a_protocol_sdk::prelude::*;
 ```
 
 This gives you:
-- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `MessageRole`, `Part`, `Artifact`, `ArtifactId`
+- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `MessageRole`, `Part`, `PartContent`, `FileContent`, `Artifact`, `ArtifactId`
 - ID types: `TaskId`, `ContextId`, `MessageId`
 - Events: `StreamResponse`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`
 - Agent card: `AgentCard`, `AgentInterface`, `AgentCapabilities`, `AgentSkill`
-- Params: `MessageSendParams`, `TaskQueryParams`
+- Params: `MessageSendParams`, `TaskQueryParams`, `ListTasksParams`
 - Responses: `SendMessageResponse`, `TaskListResponse`
 - Errors: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`, `ServerError`, `ServerResult`
 - Client: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`
 - Server: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `RequestContext`, `EventQueueWriter`, `EventEmitter`, `Dispatcher`
-- Dispatchers: `JsonRpcDispatcher`, `RestDispatcher`
+- Dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, and `A2aRouter` (`axum` feature)
+- Macros and helpers: `agent_executor!`, `boxed_future`
+- Discovery and auth: `resolve_agent_card`, `ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`, `BearerAuthInterceptor`, `OAuth2ClientCredentials`, `StaticTokenProvider`, `TokenProvider`
+- Telemetry and webhooks (default features): `Telemetry`, `WebhookReceiver`, `WebhookOutcome`
 - Utilities: `serve`, `serve_with_addr`, `RateLimitInterceptor`, `RateLimitConfig`
 
 ## External Dependencies

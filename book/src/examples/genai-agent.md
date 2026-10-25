@@ -6,12 +6,12 @@ Demonstrates how to wrap a [genai](https://crates.io/crates/genai) multi-provide
 
 ## Supported providers
 
-| Provider | Model example | Env var |
+| Provider | Model example (check the provider for current names) | Env var |
 |----------|--------------|---------|
 | OpenAI | `gpt-4o`, `gpt-4o-mini` | `OPENAI_API_KEY` |
 | Anthropic | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
 | Google Gemini | `gemini-1.5-flash` | `GEMINI_API_KEY` |
-| Ollama | `llama3` | (local, no key) |
+| Ollama / any local server on `:11434` | any other model name | (local, no key) |
 | Groq | `llama3-70b-8192` | `GROQ_API_KEY` |
 | Cohere | `command-r-plus` | `COHERE_API_KEY` |
 
@@ -54,8 +54,12 @@ A2A Client ──→ A2A Server (JSON-RPC)
 
 ## Fully local, no API key
 
-Model names that don't match a hosted provider route to the Ollama adapter
-on `:11434` — which is also what llama.cpp's `llama-server` speaks:
+Model names that don't match a hosted provider are sent to the
+OpenAI-compatible API at `http://localhost:11434/v1/` (`src/local_model.rs`),
+which llama.cpp's `llama-server`, vLLM and Ollama all serve. genai on its own
+would send them to its Ollama adapter, which calls Ollama's native `/api/chat`;
+`llama-server` answers that `404`. Start a server there first (the example's
+README has the `llama-server`, vLLM and Ollama commands), then:
 
 ```bash
 GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent
@@ -68,8 +72,18 @@ checks, 1 not applicable, on the JSON-RPC binding. `tck.yml`'s
 with no model configured — the TCK grades protocol conformance, and none of it
 reaches the executor's brain.
 
+Server mode's webhook SSRF guard is on: a push-notification URL on a loopback,
+private or link-local address is refused; set `A2A_ALLOW_PRIVATE_WEBHOOKS=1`
+for local testing. `A2A_GRPC_ADDR` and `A2A_WS_ADDR` also serve gRPC and
+WebSocket on the same handler. `A2A_MAX_CONCURRENT_TASKS` caps a tenant's
+running tasks (a request past it is refused with `Overloaded`). Set one of
+`A2A_BEARER_TOKEN`, `A2A_API_KEY` or `A2A_JWT_HS256_SECRET` (a secret of at
+least 32 bytes; `A2A_JWT_ISS` and `A2A_JWT_AUD` add checks) to require
+authentication; each adds an interceptor and several would all have to pass.
+The plain agent card stays public.
+
 ## Key integration point
 
-The `GenaiAgentExecutor` implements `AgentExecutor` — the single trait that bridges any LLM framework with A2A. The integration is ~60 lines of code: extract text from the A2A message, call the genai client, and emit the result as an artifact.
+The `GenaiAgentExecutor` implements `AgentExecutor` — the single trait that bridges any LLM framework with A2A. The integration is the `impl AgentExecutor for GenaiAgentExecutor` block in `src/main.rs`: extract text from the A2A message, call the genai client, and emit the result as an artifact.
 
 This pattern is the same for any LLM integration — see also the [Rig Agent](./rig-agent.md) for an alternative framework.

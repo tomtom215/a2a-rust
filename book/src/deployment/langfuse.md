@@ -7,9 +7,9 @@
 for Python and JavaScript; for every other language it points at its OTLP
 endpoint. An agent built on this SDK needs nothing Langfuse-specific to use
 that endpoint — its spans already carry the conventions Langfuse maps — only
-configuration, which `Telemetry` reads from the three variables Langfuse's own
-SDKs read. A Rust agent is configured exactly like the Python agents next to
-it.
+configuration, which `Langfuse::from_env()` reads from the three variables
+Langfuse's own SDKs read and `Telemetry::builder().with_langfuse(..)` applies.
+A Rust agent is configured exactly like the Python agents next to it.
 
 The preset defaults to a Langfuse you run yourself, at
 `http://localhost:3000`. That is deliberate: Langfuse's own SDKs default to
@@ -44,7 +44,9 @@ the secrets to change.
 ## Setup
 
 ```toml
-a2a-protocol-sdk = "0.15"   # `otlp`, which Langfuse needs, is a default feature
+a2a-protocol-sdk   = "0.15"   # `otlp`, which Langfuse needs, is a default feature
+tokio              = { version = "1", features = ["full"] }
+tracing-subscriber = "0.3"
 ```
 
 ```bash
@@ -54,7 +56,7 @@ export LANGFUSE_BASE_URL=http://localhost:3000   # the default; set it for any o
 ```
 
 ```rust,no_run
-use a2a_protocol_server::otel::{Langfuse, Telemetry};
+use a2a_protocol_sdk::server::otel::{Langfuse, Telemetry};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
@@ -74,7 +76,16 @@ telemetry.shutdown()?;
 ```
 
 `examples/langfuse-agent` is a runnable version: an orchestrator agent that
-delegates to a worker agent, both traced into one Langfuse trace.
+delegates to a worker agent, both traced into one Langfuse trace. From a
+checkout of this repository, with the Langfuse above running:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-local LANGFUSE_SECRET_KEY=sk-lf-local \
+cargo run -p langfuse-agent -- "summarise the quarterly report"
+```
+
+Without `LANGFUSE_PUBLIC_KEY` it exports to whatever `OTEL_EXPORTER_OTLP_*`
+names.
 
 ## What the preset sets
 
@@ -93,8 +104,10 @@ transports from its OpenTelemetry integration page, the rest from the
   `OTEL_METRICS_EXPORTER=otlp` / `OTEL_LOGS_EXPORTER=otlp` and point
   `OTEL_EXPORTER_OTLP_ENDPOINT` at a collector: traces still go to Langfuse,
   the other two to the collector.
-* The preset's endpoint and headers are set in code, so for traces they win
-  over `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS`.
+* The preset's endpoint is set in code, so for traces it wins over
+  `OTEL_EXPORTER_OTLP_ENDPOINT`. Its two headers are added to those in
+  `OTEL_EXPORTER_OTLP_HEADERS`; a header of the same name in the variable (say
+  `Authorization`) replaces the preset's, so leave those out.
 
 ## What you see
 
@@ -136,7 +149,7 @@ propagation code in either agent: the client sends its own span as the
 The same preset works with Langfuse's hosted service: set `LANGFUSE_BASE_URL`
 to the region's address (`https://cloud.langfuse.com`,
 `https://us.cloud.langfuse.com`) and use that project's keys. Nothing else
-changes. As noted below, this SDK has not been run against it.
+changes. As noted above, this SDK has not been run against it.
 
 ## When you already run a collector
 

@@ -800,6 +800,19 @@ impl GrpcTransport {
 }
 
 impl Transport for GrpcTransport {
+    /// `grpc`, as the server records the same call. Without it a client
+    /// built from this transport with `with_custom_transport` opened no
+    /// `CLIENT` span and recorded no `rpc.client.call.duration`.
+    fn rpc_system(&self) -> Option<&'static str> {
+        Some("grpc")
+    }
+
+    /// The endpoint the channel dials, from which each call's span and
+    /// duration take `server.address` and `server.port`.
+    fn server_url(&self) -> Option<&str> {
+        Some(&self.inner.endpoint)
+    }
+
     fn send_request<'a>(
         &'a self,
         method: &'a str,

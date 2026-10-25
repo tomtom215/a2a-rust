@@ -162,3 +162,101 @@ fn arc_delegates_on_persistence_error_and_on_push_delivery() {
         vec![push_outcome::SKIPPED.to_owned()]
     );
 }
+
+/// Logs `"{name} {callback}"` for every callback into a log shared with the
+/// other recorder, so the order across the two is visible.
+struct Logged {
+    name: &'static str,
+    log: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Logged {
+    fn note(&self, callback: &str) {
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("{} {callback}", self.name));
+    }
+}
+
+impl Metrics for Logged {
+    fn on_request(&self, _: &str) {
+        self.note("request");
+    }
+    fn on_response(&self, _: &str) {
+        self.note("response");
+    }
+    fn on_error(&self, _: &str, _: &str) {
+        self.note("error");
+    }
+    fn on_latency(&self, _: &str, _: Duration) {
+        self.note("latency");
+    }
+    fn on_queue_depth_change(&self, _: usize) {
+        self.note("queue_depth");
+    }
+    fn on_connection_pool_stats(&self, _: &ConnectionPoolStats) {
+        self.note("pool_stats");
+    }
+    fn on_persistence_error(&self, _: &str, _: &str) {
+        self.note("persistence_error");
+    }
+    fn on_push_delivery(&self, _: &str) {
+        self.note("push_delivery");
+    }
+    fn on_rpc_call(&self, _: &RpcCall<'_>) {
+        self.note("rpc_call");
+    }
+    fn on_executor_run(&self, _: &str, _: Duration) {
+        self.note("executor_run");
+    }
+}
+
+/// Every one of the trait's ten callbacks reaches both sides, the first
+/// side first. A callback `Tee` forgot would default to nothing on both.
+#[test]
+fn a_tee_forwards_every_callback_to_both_in_order() {
+    let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let tee = Tee {
+        first: Logged {
+            name: "first",
+            log: Arc::clone(&log),
+        },
+        second: Logged {
+            name: "second",
+            log: Arc::clone(&log),
+        },
+    };
+    tee.on_request("m");
+    tee.on_response("m");
+    tee.on_error("m", "e");
+    tee.on_latency("m", Duration::ZERO);
+    tee.on_queue_depth_change(1);
+    tee.on_connection_pool_stats(&ConnectionPoolStats::default());
+    tee.on_persistence_error("op", "kind");
+    tee.on_push_delivery("delivered");
+    tee.on_rpc_call(&RpcCall {
+        system: "jsonrpc",
+        method: None,
+        duration: Duration::ZERO,
+        status_code: None,
+        error_type: None,
+    });
+    tee.on_executor_run("completed", Duration::ZERO);
+    let expected: Vec<String> = [
+        "request",
+        "response",
+        "error",
+        "latency",
+        "queue_depth",
+        "pool_stats",
+        "persistence_error",
+        "push_delivery",
+        "rpc_call",
+        "executor_run",
+    ]
+    .iter()
+    .flat_map(|c| [format!("first {c}"), format!("second {c}")])
+    .collect();
+    assert_eq!(*log.lock().unwrap(), expected);
+}

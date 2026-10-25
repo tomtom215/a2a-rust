@@ -4,6 +4,8 @@
 //! [`LoopError`]: why a run of the loop produced no answer.
 
 use std::fmt;
+#[cfg(test)]
+use std::time::Duration;
 
 use a2a_protocol_types::budget::Exhausted;
 
@@ -49,6 +51,33 @@ impl fmt::Display for LoopError {
 impl std::error::Error for LoopError {}
 
 impl LoopError {
+    /// What the A2A caller is told when the run fails.
+    ///
+    /// Not [`Display`](fmt::Display): that carries what the provider sent
+    /// back, up to 512 bytes of an error body for a status (which can echo
+    /// the prompt, an account or quota detail, or an internal address), and
+    /// the text of a transport error (which names the provider's URL). The
+    /// caller is another agent or a person at the other end of the network,
+    /// not the operator, so it gets the status or the kind of failure and
+    /// the operator gets the rest in the log. A tool's own message and a
+    /// [`ToolModel`](super::ToolModel)'s [`Other`](ModelError::Other) are the
+    /// integrator's words and go through unchanged.
+    pub(super) fn caller_message(&self) -> String {
+        match self {
+            Self::Model(ModelError::Status { status, .. }) => {
+                format!("the model provider answered HTTP {status}")
+            }
+            Self::Model(ModelError::Transport(_)) => {
+                "could not reach the model provider".to_owned()
+            }
+            Self::Model(ModelError::InvalidResponse(_)) => {
+                "the model provider's answer could not be read".to_owned()
+            }
+            Self::Model(ModelError::Config(_)) => "the model client is misconfigured".to_owned(),
+            other => other.to_string(),
+        }
+    }
+
     /// The `error.type` a run that ended in this records
     /// (`rpc_span/tool_metrics.rs` lists them).
     pub(super) fn error_type(&self) -> String {
@@ -59,5 +88,69 @@ impl LoopError {
             Self::Cancelled => "cancelled".to_owned(),
             Self::Budget(_) => "budget_exhausted".to_owned(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a caller is told, per failure: the status or the kind, never the
+    /// provider's body, URL or response text; the integrator's own words as
+    /// they wrote them.
+    #[test]
+    fn the_caller_is_told_the_kind_of_failure_not_what_the_provider_sent() {
+        let said = |e: LoopError| e.caller_message();
+        assert_eq!(
+            said(LoopError::Model(ModelError::Status {
+                status: 429,
+                body: "quota for org-acme exceeded; prompt: <the user's text>".to_owned(),
+            })),
+            "the model provider answered HTTP 429"
+        );
+        assert_eq!(
+            said(LoopError::Model(ModelError::Transport(
+                "connect to http://10.0.3.7:8080 refused".to_owned()
+            ))),
+            "could not reach the model provider"
+        );
+        assert_eq!(
+            said(LoopError::Model(ModelError::InvalidResponse(
+                "expected a string at line 1 column 9: sk-live-123".to_owned()
+            ))),
+            "the model provider's answer could not be read"
+        );
+        assert_eq!(
+            said(LoopError::Model(ModelError::Config(
+                "https endpoint https://llm.internal without TLS".to_owned()
+            ))),
+            "the model client is misconfigured"
+        );
+        // Words the integrator wrote, and facts the caller needs.
+        assert_eq!(
+            said(LoopError::Model(ModelError::Other(
+                "quota exhausted for this tenant".to_owned()
+            ))),
+            "quota exhausted for this tenant"
+        );
+        assert_eq!(
+            said(LoopError::Fatal {
+                tool: "restart".to_owned(),
+                message: "no such service".to_owned()
+            }),
+            "tool 'restart' failed: no such service"
+        );
+        assert_eq!(
+            said(LoopError::Model(ModelError::Timeout(Duration::from_secs(
+                30
+            )))),
+            "the model provider did not answer within 30s"
+        );
+        // The full text, for the operator, still carries the body.
+        let full = LoopError::Model(ModelError::Status {
+            status: 500,
+            body: "details".to_owned(),
+        });
+        assert!(full.to_string().contains("details"));
     }
 }

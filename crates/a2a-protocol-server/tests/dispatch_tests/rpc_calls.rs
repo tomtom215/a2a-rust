@@ -293,3 +293,115 @@ async fn the_axum_router_records_each_request_refused_before_routing() {
     refuse_before_routing(addr).await;
     assert_eq!(*seen.lock().unwrap(), refused_before_routing());
 }
+
+// ── What the axum router refused inside its own extractors and routes ────
+//
+// Wiring audit, 2026-10-24: a body over `max_request_body_size` (413) or not
+// received in `body_read_timeout` (408) was rejected by the `TimedBody`
+// extractor with an unmarked response, and a `historyLength` or list query
+// that did not parse was refused outside the recorded call, so none of the
+// four reached `rpc.server.call.duration`.
+
+#[cfg(feature = "axum")]
+async fn serve_axum(
+    seen: &Seen,
+    config: a2a_protocol_server::dispatch::DispatchConfig,
+) -> SocketAddr {
+    let app =
+        a2a_protocol_server::dispatch::axum_adapter::A2aRouter::with_config(handler(seen), config)
+            .into_router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    addr
+}
+
+#[cfg(feature = "axum")]
+#[tokio::test]
+async fn the_axum_router_records_a_body_over_its_limit_and_one_never_finished() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let seen = Seen::default();
+    let addr = serve_axum(
+        &seen,
+        a2a_protocol_server::dispatch::DispatchConfig::default()
+            .with_max_request_body_size(16)
+            .with_body_read_timeout(std::time::Duration::from_millis(300)),
+    )
+    .await;
+
+    // Over the cap.
+    assert_eq!(
+        post(addr, "/message:send", &"x".repeat(100)).await,
+        hyper::StatusCode::PAYLOAD_TOO_LARGE
+    );
+
+    // Announces 10 bytes and sends 5: never finished.
+    let mut socket = tokio::net::TcpStream::connect(addr).await.expect("connect");
+    socket
+        .write_all(
+            format!(
+                "POST /message:send HTTP/1.1\r\nhost: {addr}\r\ncontent-type: application/json\r\n\
+                 a2a-version: 1.0\r\ncontent-length: 10\r\nconnection: close\r\n\r\n12345"
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("write");
+    let mut response = String::new();
+    socket.read_to_string(&mut response).await.expect("read");
+    // The status, not the response text: a failure names the code it got.
+    let status: u16 = response
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or_default();
+    assert_eq!(status, 408);
+
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            answered("a2a_http_json", None, "413"),
+            answered("a2a_http_json", None, "408"),
+        ]
+    );
+}
+
+/// The axum router records a query it cannot read as the method refused, the
+/// way `RestDispatcher` records the same request: the two surfaces are one
+/// binding.
+#[cfg(feature = "axum")]
+#[tokio::test]
+async fn the_axum_router_records_an_unreadable_query_as_the_method_refused() {
+    let axum_seen = Seen::default();
+    let axum_addr = serve_axum(
+        &axum_seen,
+        a2a_protocol_server::dispatch::DispatchConfig::default(),
+    )
+    .await;
+    let rest_seen = Seen::default();
+    let rest_addr = serve_with_addr("127.0.0.1:0", RestDispatcher::new(handler(&rest_seen)))
+        .await
+        .expect("serve");
+
+    for addr in [axum_addr, rest_addr] {
+        assert_eq!(
+            get(addr, "/tasks/t?historyLength=abc", Some("1.0")).await,
+            400
+        );
+        assert_eq!(get(addr, "/tasks?pageSize=abc", Some("1.0")).await, 400);
+    }
+
+    let expected = [
+        answered("a2a_http_json", Some("lf.a2a.v1.A2AService/GetTask"), "400"),
+        answered(
+            "a2a_http_json",
+            Some("lf.a2a.v1.A2AService/ListTasks"),
+            "400",
+        ),
+    ];
+    assert_eq!(*rest_seen.lock().unwrap(), expected, "the REST dispatcher");
+    assert_eq!(*axum_seen.lock().unwrap(), expected, "the axum router");
+}

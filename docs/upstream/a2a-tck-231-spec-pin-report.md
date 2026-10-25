@@ -16,6 +16,16 @@ refiled here. Every artefact the report cites — `specification/version.json`,
 whose `specification/` holds the proto and JSON schema and whose prose lives at
 that repository's own `docs/specification.md`.
 
+**Added 2026-10-24** (a clone of `a2a-tck` at `d4d6fae`, `git ls-remote` and
+`refs/pull/*`): two contributor pull requests claim to fix #231 and are not
+merged: #232 (2026-09-03, "Fixes #231") re-vendors `specification/` at v1.0.1
+and changes the six hand-written `ErrorBinding` constants in
+`tck/requirements/base.py`, and #258 (2026-10-19) does the same with the
+v1.0.1 tag. A refresh of `specification/` alone clears nothing: the failing
+expectations are those constants and literals in the tests, not the vendored
+text. `scripts/update_spec.sh` defaults to the `main` branch of A2A, so
+`make spec` would not vendor v1.0.1 either.
+
 This is the finding recorded in `docs/official-tck-findings.md` §20 and §21,
 with §21.1 as the correction that made it filable: §20 had concluded that
 upstream "amended the table in place", which is not what happened and would

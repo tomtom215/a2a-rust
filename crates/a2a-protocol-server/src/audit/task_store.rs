@@ -118,8 +118,22 @@ impl TaskStore for AuditedTaskStore {
         self.inner.insert_if_absent(task)
     }
 
+    /// Deletes through the wrapped store, then records `task.deleted` for a
+    /// task that was there: the id, its context and the tenant, never its
+    /// content (GDPR Art. 5(2): the erasure is on record). Deleting a task
+    /// that is not there records nothing, because nothing was deleted.
     fn delete<'a>(&'a self, id: &'a TaskId) -> Fut<'a, ()> {
-        self.inner.delete(id)
+        Box::pin(async move {
+            let existed = self.inner.get(id).await?;
+            self.inner.delete(id).await?;
+            if let Some(task) = existed {
+                let mut r = AuditRecord::new(TenantContext::current(), kind::TASK_DELETED);
+                r.task_id = Some(id.0.clone());
+                r.context_id = Some(task.context_id.0.clone());
+                let _ = append_or_report(&self.log, &*self.metrics, r).await;
+            }
+            Ok(())
+        })
     }
 
     fn count(&self) -> Fut<'_, u64> {

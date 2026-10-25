@@ -19,23 +19,45 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
-  four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
-  `CHANGELOG.md` is `[Unreleased]`.
-- **Working branch:** `claude/zealous-fermat-f4kg9z`, started 2026-10-23
-  from `main` at `4cadc2af` (pull request #178 merged that day), to make
-  0.15.0 release-ready. First pushed 2026-10-23, after the local
-  verification the maintainer asked for: the workspace suite (327 test
-  binaries, 5965 passed, 0 failed), the server with all features and
-  PostgreSQL (181 binaries, 3436 passed, 0 failed), every clippy
-  invocation `ci.yml` names including `cargo hack --each-feature` (57
-  combinations), `cargo deny` advisories on all nine lockfiles, and the
-  SLIMRPC binding's steps except the SPIFFE suites, which need SPIRE (not
-  installed here). `ci.yml` runs on a push only to `main`, so it was
-  started with `workflow_dispatch`; the TCK and the labelled mutation gate
-  run only on a pull request, which waits for the maintainer.
-  `git log 4cadc2af..` lists the commits; each message says what it
-  changed and how it was verified. So far:
+- **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release.
+  0.15.0 is prepared in pull request #180 and not tagged: the four crates and
+  `tools/a2a-cli` at 0.15.0, the SLIMRPC binding at 0.7.0, `CHANGELOG.md`
+  dated 2026-10-25 above an empty `[Unreleased]`, the maintainer's public
+  signing key in `.github/release-signers/`, and `docs/provenance-manifest.md`
+  regenerated last. Merge with a merge commit, never a squash, then tag the
+  merge commit (*Waiting on the maintainer*).
+- **Book audit (2026-10-25):** 13 readers checked every book page against
+  the code, the specification and the changelog, and 13 editors applied what
+  held up. Checked mechanically afterwards: the book's doctests (281 passed,
+  0 failed, 5 ignored, the baseline), `rustdoc -D warnings` on the four
+  crates, the CI gates that need no build, `promtool` on the alert rules, and
+  the two generated benchmark pages (each regenerates byte-identical from its
+  generator). The harness does not compile the bodies of `#[test]` and
+  `#[tokio::test]` functions (rustdoc strips them), so `testing.md`'s seven
+  were compiled and run by hand against a working executor: 7 of 7 pass; the
+  page's hidden stub executor does nothing, so they fail against it, which is
+  why the page now says `CalcExecutor` is not shown. The book's type face was
+  11.9 px in a 560 px column (mdBook's 62.5 % root made `1rem` 10 px);
+  `book/theme/custom.css` now sets 17 px in a 720 px column. The banner cards'
+  subtitle and the code card's footer said v1.0.0; they say v1.0.1 now (only
+  that text band was re-rendered; `book/static/brand/README.md`). Left open:
+  `book/src/images/dashboards/a2a-server.png` predates the Agent executor row
+  (the page says so; retaking it needs the live stack);
+  `examples/deploy-agent/Dockerfile` was one Rust minor behind the MSRV and
+  is now on 1.94, with no gate that keeps it there; `docs/official-tck-
+  findings.md` §1 says 87 passing and 5 failing "cannot be reconciled" with
+  114, and an editor's arithmetic suggests it can (87 + 5 + 1 + 21), which
+  nobody has resolved.
+- **Working branch:** `claude/sleepy-knuth-3lnx7k`, started 2026-10-24
+  from `main` at `2781bb69`, the merge of pull request #179. `git log
+  2781bb69..` lists what it holds that `main` lacks.
+- **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
+  2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
+  `6707f4d` had 104 check runs, 98 success and 6 skipped by their own
+  workflows' conditions (`repos/tomtom215/a2a-rust/commits/6707f4d/
+  check-runs`, `total_count`, counted 2026-10-24), the labelled mutation
+  gate among them. `git log 4cadc2af..2781bb69` lists the commits; each
+  message says what it changed and how it was verified. In sum:
   - the tool-calling study scored, audited by reading every answer, and
     published (`docs/tool-calling-study.md`, `34f579d`);
   - every dependency refreshed in all nine lockfiles, the Python
@@ -85,8 +107,10 @@ only: when something here is done, delete it rather than annotating it.
     (44 of 44, LLM leg exercised), `mcp-agent` (exit 0; 1 of 2 answers
     used the MCP tools, and the billing answer, which called none, is
     invented), `swarm` (`llm` scenario 32 of 32 jobs completed) and
-    `rig-agent` (44 of 44 on its second run; see the 30 s timeout under
-    *Open engineering*). Logs were not committed.
+    `rig-agent` (44 of 44 on its second run; its first lost SendMessage over
+    WebSocket to the clients' 30 s default timeout, which `84d37e1` replaced
+    with one 300 s `MODEL_CALL_TIMEOUT` per example on every binding).
+    Logs were not committed.
   - §3.1.2 (2026-10-23): a `Message` an executor writes once its task
     stream has begun is sent as a status update carrying it, folded once
     at the queue's writer (`streaming/event_queue/message_fold.rs`),
@@ -187,9 +211,11 @@ only: when something here is done, delete it rather than annotating it.
   Counted 2026-10-20 with `git log -1 --format=%B` per commit. `main` is not
   rewritten; whether to leave it is the maintainer's call.
 - **The spec ledger:** `python3 -I scripts/check_spec_ledger.py` is the
-  authority on the counts (2026-10-23, after WP-A, WP-B and WP-C: TESTED
-  454, APPLICATION 32, NOT_APPLICABLE 20, PARTIAL 4; 510 entries, after
-  the writer fold of 2026-10-23). The four PARTIAL entries, each short for
+  authority on the counts (2026-10-24: TESTED 455, APPLICATION 32,
+  NOT_APPLICABLE 19, PARTIAL 4; 510 entries). Re-audited 2026-10-24: the 20
+  NOT_APPLICABLE entries were read again against the v1.0.1 text by an
+  independent reader (18 agreed; §1.4's migration-guidance MUST at line 112
+  moved to TESTED, with a drift test; Appendix A's note rewritten). The four PARTIAL entries, each short for
   a stated reason: §3.5.2, a stream lagging
   past the held-events ceiling (8 × `max_events_per_task`, 4,096 events by
   default) ends with `streamLagged`; §5.7, the specification contradicts
@@ -208,32 +234,50 @@ only: when something here is done, delete it rather than annotating it.
   twice in a file (`TryFrom` both ways) it cannot, and each must be
   re-pointed by hand to the same impl it named before (2026-10-23: 23
   after WP-B, each checked against the old file).
-- **CI on `main` at `4cadc2af`:** all fifteen push workflows green
-  (checked 2026-10-23). The scheduled OSV-Scanner runs failed on the older
-  head `6c90d0b`, before the merge; the merge's push run passed.
+- **CI on `main` at `2781bb69`** (the fifteen push workflows, read with
+  `gh api repos/tomtom215/a2a-rust/actions/runs?head_sha=…`, 2026-10-24
+  13:40 UTC): DCO, Scorecard, ITK, OSV-Scanner, Verification, Deploy
+  Documentation, Official TCK, Soak, ACTS, Fuzz, TCK and CodeQL passed; CI,
+  Coverage and Benchmarks were still running. The scheduled OSV-Scanner
+  runs failed on 10-21, 10-22 and 10-23 at head `6c90d0b`
+  (RUSTSEC-2026-0381/0382/0383: rustls-webpki 0.103.15, webpki-roots and
+  webpki-root-certs 1.0.9, in four lockfiles) and on 10-24 at head
+  `4cadc2a` (RUSTSEC-2026-0387: crypto-bigint 0.7.5 in the SLIMRPC
+  lockfile). Each cause was read in the job log; #179 fixed all of them
+  (`8d7e878` the last) and OSV-Scanner passed on the merge.
 - **Commits:** authored `Tom F. <tomf@tomtomtech.net>` with `Signed-off-by`,
   no other trailers (`CONTRIBUTING.md`, `PROVENANCE.md` §3.2).
 
 ## Next, in order
 
-1. **After the APPLICATION and NOT_APPLICABLE review** (2026-10-20, all
-   54 against the v1.0.1 text, tag `3303592`, and the code; about 130 note
-   claims checked, 8 not verifiable from the repository): 35 kept as they
-   were, 16 kept with wrong or stale note claims and citations corrected,
-   §14 line 3244 split (what the SDK consumes is TESTED; content an agent
-   forwards stays APPLICATION), and §4.6.3 1139 and §5.8 1297 moved to
-   TESTED by URI-contract golden tests (`uri_contracts.rs`,
-   `uri_contract_websocket.rs`). Its suggestions were built the same day:
-   the `wss://` lint fix, the axum `A2aRouter` §5.2 warning, and `Server`'s
-   plaintext warning (§7.1). Left: a public form of the §5.2 check for
-   bindings outside the crate (SLIMRPC cannot call `warn_if_undeclared`).
-   `spec_line` N is line N + 31 of the vendored file (the header ends at
-   line 30, then one blank line).
-2. **The rest of the conformance list:** the four PARTIAL entries (§3.5.2,
-   §5.7; §7.6.1, line
-   227, documented 2026-10-23 and kept PARTIAL; §12.4 waits on agntcy/slim),
-   MAY entries relabelled SUPPORTED, and the TCK baseline (the drafts for
-   CORE-SEND-003 and a2a-tck#231 are in `docs/upstream/`).
+1. **The APPLICATION and NOT_APPLICABLE entries** were reviewed twice, the
+   second time on 2026-10-24 by independent readers (32 and 20 entries
+   against the v1.0.1 text and the code): no APPLICATION entry changed
+   status (29 of 32 agreed; three notes were stale and are corrected), and
+   NOT_APPLICABLE lost one (§1.4's migration-guidance MUST, now TESTED by
+   `book-tests/tests/upgrading_guide.rs`). Built from the findings: the §5.2
+   check is public (`RequestHandler::undeclared_binding`,
+   `warn_if_undeclared`) and `SlimRpcServer` calls it; every listener's call
+   is pinned by a test; the lint's IANA allowlist lost four tokens that are
+   not schemes. Still not built: a plaintext warning on the WebSocket and
+   gRPC listeners (only `Server` has one) and the ADR 0025 refusal for
+   them, `CombinedDispatcher` and SLIMRPC. `spec_line` N is line N + 31 of
+   the vendored file (the header ends at line 30, then one blank line).
+2. **The four PARTIAL entries cannot all be closed from this repository.**
+   §12.4 waits on agntcy-slim-rpc (3.4.6, the newest release, drops error
+   details; draft `docs/upstream/agntcy-slim-rpc-error-details.md`); §5.7 is
+   a contradiction inside the specification (a REQUIRED array that a
+   no-match listing leaves empty; draft
+   `docs/upstream/a2a-required-empty-array-report.md`); §3.5.2 is short by a
+   design limit (a stream lagging past the held-events ceiling ends with
+   `streamLagged`); §7.6.1 is short by a design conflict between the
+   section's two SHOULDs (an executor still waiting for an out-of-band
+   credential cannot also take the next message; closing it means an
+   executor mailbox, an ADR and a decision). The TCK baseline was re-read
+   against a2a-tck `d4d6fae` on 2026-10-24: all seven still fail on a defect
+   of the suite (`official-tck-findings.md` §25), and upstream already
+   tracks CORE-SEND-003 as issue #202. MAY entries relabelled SUPPORTED are
+   not started.
 3. **OpenTelemetry, still open:** `error.type` on a store span is the A2A
    code or `unavailable`, not the database's SQLSTATE, which the
    conventions prefer; carrying it would need the stores to keep it past
@@ -246,7 +290,48 @@ only: when something here is done, delete it rather than annotating it.
    conversion failures recorded as failures, the tool loop's `GenAI` metrics,
    JSON-RPC client span attributes, the card-fetch and webhook-receiver
    spans, delegation spawns kept in the parent's trace, and default
-   metrics that follow the global meter provider at each measurement.
+   metrics that follow the global meter provider at each measurement; the
+   task store a handler builds for itself reports to the handler's `Metrics`
+   (`handler/default_store_metrics_tests.rs`), and a tenant refusal is
+   counted as an answered error by all ten methods
+   (`handler/tenant_refusal_metrics_tests.rs`; without it
+   `A2ARequestsUnanswered` fired on refusals).
+   **Open from the 2026-10-24 wiring audit** (a read-only static reading of
+   the tree at `9a14939`; no binary was run, so each is a reading, not a
+   measurement; the report is not in the repository). Fixed since: `live-model`
+   starts `Telemetry` (H1), the SLIMRPC binding and `itk` ask for the
+   client's `otel` (H4, M13; `bindings/a2a-protocol-slimrpc/tests/
+   client_telemetry.rs`), the exemptions (`a2a-tck`, the MCP stdio server,
+   benches, codegen) are recorded with reasons and enforced by
+   `scripts/check_otel_wiring.py` (H2, M14, L2, L13), and the two stale
+   README claims are corrected; `with_additional_metrics` keeps the
+   OpenTelemetry default beside a custom `Metrics` and `agent-team` and
+   `resilient-agent` use it (M1), and `incident-response` puts the global
+   meter provider back after its two OpenTelemetry checks (M2); the client
+   records a call as it ended for the caller: a dropped call and an
+   early-dropped stream are `cancelled`, a refused answer is a failure (M9 a,
+   b, d; `call_span/in_flight.rs`). Still open: the SLIMRPC multicast fan-out has
+   no span or duration (H3); WebSocket upgrade refusals (`Origin`,
+   `A2A-Version`, timeout) and oversize-message closes are logged but not
+   metered (M6, the rest of it; M5 and the binary and busy answers are
+   fixed); SLIMRPC refusals before the span (M7: they need `record_unrouted`
+   and `RpcSystem` public, an API decision) and the refusals tonic itself
+   makes (an oversize message, an unknown method, the connection limit; M8: a
+   tower layer that can tell them from calls the service ran) record
+   nothing; client
+   retries are not visible (M10); refusals before anything is sent
+   (undeclared capability, malformed message, a failing `before` hook such as
+   a token provider) are not recorded by decision, not being RPCs (M9 (c);
+   the token exchange itself is M12); push-config, audit, halt, lease and retention stores have no DB
+   span (M11); card fetch, JWKS and token exchange have no duration metric
+   (M12); the per-operation by binding matrix (M15) is now asserted for all
+   eleven operations on JSON-RPC, HTTP+JSON, gRPC and WebSocket
+   (`tests/operation_matrix`; it found the gRPC `with_custom_transport` gap,
+   fixed), but not for the axum `A2aRouter` or SLIMRPC (SLIMRPC's own
+   `tests/telemetry.rs` reads SendMessage and GetTask only); and the low items L1, L3 to L12 (an
+   `OTEL_*_EXPORTER=prometheus` env that panics every binary, no flush on
+   SIGTERM for four binaries, a stale `RpcCall::duration` doc line, and the
+   rest).
 4. **Mutation testing.** The full sweep deals `a2a-server` across 60 shards
    and the incremental gate across 20 (`mutants.yml`, measured from runs
    39193157308 and 39343090044). The three 2026-10-19 survivors were
@@ -255,12 +340,22 @@ only: when something here is done, delete it rather than annotating it.
 5. **Official TCK** after any wire change: `--min-graded 88` full, 66
    minimal. Last run 2026-10-20 at `1305674b`, after the auth-ordering,
    streaming-span and WebSocket trace-context changes, against a2a-tck
-   `5daf014` (the workflow tracks `main`): full 88 graded, 81 passed, the
+   `5daf014` (the workflow tracks `main`; the seven baselined failures were re-read against `d4d6fae` on 2026-10-24, `official-tck-findings.md` §25): full 88 graded, 81 passed, the
    9 baselined (requirement, transport) failures and no other; minimal 66
    graded, 8 of the 9 baselined failing (STREAM-SUB-003 not graded there);
    required-extension CORE-CAP-004 passed on JSON-RPC and HTTP+JSON. All
    three gates exit 0. Re-run after any further wire change.
-6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
+6. **After the 0.15.0 tag:** drop the README's "unreleased 0.15.0" callout and
+   `STABILITY.md` §1's "unreleased" sentence; bump
+   `benches/sdk-comparison/harness/agent-a2a-rust` from `=0.14.1`; change
+   `book/src/deployment/cicd.md`'s "`/v0.14/` is 0.14.1" and
+   `docs/openssf-best-practices.md`'s release dates; record the first signed
+   tag in `book/src/deployment/security.md` ("No released tag is signed
+   yet"), `.github/release-signers/README.md` and the
+   `docs/compliance/controls.toml` gap row; decide whether to publish the
+   SLIMRPC binding (it is not on crates.io, and `book/src/bindings/slimrpc.md`
+   shows a path dependency until it is). Then debt, starting with the
+   changelog's size (*Open engineering* below).
 
 ## Waiting on the maintainer
 
@@ -270,7 +365,9 @@ only: when something here is done, delete it rather than annotating it.
   `cargo audit`, `cargo deny` and OSV-Scanner on an integrator's lockfile do
   not flag `a2a-protocol-server` or `a2a-protocol-sdk` below 0.14.1. CRA rows
   CRA-AI-I-2a, CRA-AI-II-2-4-8 and CRA-14 carry it as a gap. Filing is an
-  upstream action, so it waits for the maintainer.
+  upstream action, so it waits for the maintainer. The entry is drafted in
+  `docs/upstream/rustsec-ghsa-hr9h-6jvf-wvg6.md` (file, front matter, the
+  three decisions it leaves to you, and what was and was not checked).
 - **Compare-and-set for task writes (cross-replica).** *Decided 2026-10-24:
   not for 0.15.0; 0.16 (see Decisions).* The 2026-10-20 fix
   makes a stale continuation save record the position of its read, so a
@@ -286,9 +383,37 @@ only: when something here is done, delete it rather than annotating it.
   contract custom stores implement, so it is the maintainer's call. It
   does not make concurrent turns on two replicas safe; that needs
   cross-replica single-writer admission (a lease row per task).
-- **A release signing key.** `.github/release-signers/allowed_signers` and
-  `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
-  tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
+- **Tagging 0.15.0.** `.github/release-signers/allowed_signers` holds the
+  public half of the maintainer's `id_ed25519_signing` key; the private half
+  never enters an agent session. After the pull request merges, on the
+  machine that holds the key: `git tag -s v0.15.0 <merge commit> -m "Release
+  v0.15.0"`, `scripts/verify_tag_signature.sh v0.15.0`, push the tag, approve
+  the `crates-io` environment. Tag the merge commit itself, before the
+  benchmark bot pushes to `main`: the tagged tree may differ from the
+  manifest's pinned commit only by the manifest file. Not verified: that
+  `release.yml` accepts a tag this key signed (no tag has been signed yet),
+  that the `crates-io` environment's credentials exist, and that GitHub
+  accepts the shortened release body (the 0.15.0 changelog section is about
+  290,000 characters against the API's 125,000; `release.yml` posts the
+  upgrade-relevant subsections and links the rest). A `v*` tag ruleset is
+  still unset; `ROADMAP.md` tracks it.
+- **Code-scanning alerts on `main` (2026-10-25: six open, read from a
+  screenshot; the alerts API is not readable from a session).** Two are
+  OSV-Scanner's `idna` (CVE-2026-45409, fixed in 3.15): the peers job scans
+  `itk/agents/python/requirements.txt` as written, which had no `idna` floor
+  and resolved to 3.9.0, while the image installs `requirements.lock`, which
+  pins 3.20. The floor is added and Scorecard's Vulnerabilities alert should
+  close with them once this reaches `main` and the scans rerun. Afterwards a
+  recursive `osv-scanner scan source -r .` (nine `Cargo.lock` files, the Go,
+  Java, JavaScript and Python peers, the CI requirement files) reports no
+  issues, against the OSV data of 2026-10-25. The other three are Scorecard
+  process findings that no code change closes. Branch-Protection: `main` has
+  no active rule; the `protect-main` ruleset (created 2026-03-16) is
+  `disabled` and holds only `deletion` and `non_fast_forward`. A rule that
+  requires pull requests or checks would also need `github-actions` as a
+  bypass actor, because the benchmark workflow pushes to `main` directly.
+  Code-Review: Scorecard wants an approval from someone other than the
+  author, and there is one maintainer. CII-Best-Practices: the badge below.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
   each with its status), held on 2026-10-15 for re-verification. The a2a-go
   draft for R19 is deliberately not committed: it was never checked against
@@ -344,21 +469,6 @@ only: when something here is done, delete it rather than annotating it.
 
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
-- **Examples time out a CPU-served model at the client's 30 s default**
-  (found 2026-10-23, low, examples only). Every transport defaults to a
-  30 s request timeout, and the model-backed examples build their clients
-  with it (`examples/{rig-agent,genai-agent,agent-team,multi-lang-team}/
-  src/surface.rs` `client_for`, `examples/incident-response/src/agents.rs`
-  and `serving.rs`). With Qwen3-1.7B on four CPU cores and several runs
-  in flight, a model turn took up to 64 s (llama-server's own timings):
-  `rig-agent`'s first run lost SendMessage over WebSocket and the five
-  cells after it (exit 1; 44 of 44 on a re-run), and in 2 of 3
-  `incident-response` runs the runbook leg timed out, which the demo
-  prints inside the report and still exits 0. Proposed: one longer
-  timeout for these examples' clients, every binding included (gRPC's and
-  WebSocket's transports take their own). Not built: it touches five
-  examples, beyond this branch's scope without the maintainer's say.
-
 - **Cross-replica:** single-writer admission (pinned by a test in
   `tests/multi_replica.rs` that is ignored by default). A continuation's
   save on one replica still overwrites an artifact another replica's
@@ -368,14 +478,6 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   losing it, until the continuing turn's first fold stores a position past
   it again (`store/applied.rs`, `handler/messaging/basis.rs`,
   `tests/stale_write_position`).
-- **Holds (§3.5.2):** the subscription's setup hold
-  (`handler/lifecycle/subscribe/hold.rs`) has no test that fails without
-  it; with the in-memory processor the window it guards cannot open past
-  the bound (ledger §3.5.2 note). The gap path's early returns in
-  `replay_after` predate the holds and skip the positions between the
-  snapshot and the attach point if the log cannot cover them, with no
-  `streamLagged` (independent review, 2026-10-20, finding 6): rarer now,
-  not closed.
 - **AES-GCM nonce budget is per process** (encryption verification,
   2026-10-21, medium, design). The 2^32-seal limit per key is counted per
   process and resets on restart, so R replicas can seal R × 2^32 under one
@@ -385,19 +487,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   it is a format change that needs a two-step rollout (readers first,
   then writers behind a flag), so it waits. The book tells deployers to
   give each replica its share of the limit meanwhile.
-- **An intermittent test:** `push_delivery::tests::log_redaction::
-  a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` misses
-  its timeout warning about once in 20 parallel runs of `--lib -- audit
-  store::encrypted push` (2 of 40, 2026-10-21; never alone, 0 of 6). The
-  event is emitted (the timeout path's result is asserted) but not
-  captured. `rebuild_interest_cache` after the install and again before
-  the second delivery did not stop it (still 2 of 40), so the callsite
-  cache is not the whole cause. Not skipped; cause unknown.
 - **Tool loop:** spans record no content, because the handler's
-  content-capture setting does not reach an executor; a `Failed` status
-  carries up to 512 bytes of the provider's error body to the A2A caller;
-  `CONTRIBUTING.md` still says the server has "eleven public traits"
-  (21 `pub trait`s on 2026-10-20).
+  content-capture setting does not reach an executor (the caller-facing
+  `Failed` message no longer carries the provider's error body, 2026-10-24).
+  `CONTRIBUTING.md` says twenty public traits with every feature and fifteen
+  by default (2026-10-24, from `cargo doc`'s `trait.*.html`; a grep of `pub
+  trait` gives 21, one of them unreachable).
 - **Privacy:** audit protection (`AuditLog::with_privacy`) leaves what its
   module docs list: an erased person's records stay linkable, keys survive
   in backups and logs, erasure is not serialised across replicas.
@@ -405,24 +500,81 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
   ids, states, timestamps, `metadata` and order unprotected, and its seal
   limit is per process while the true budget is per key across processes.
-- **Measurement:** `docs/readiness-bar.md` records no measurements yet (WS4);
-  WS3 and WS5; a send 6–21% slower at `2b0a3abd` than at `6ce5dc9a`, not yet
-  measured with the pinned-core method; the 0.9–1.8 µs `ListTasks` gap at
-  10K tasks.
+- **Measurement:** `docs/readiness-bar.md` records no measurement of its rows
+  R1 to R7, C1 to C5 and F1 to F5 (WS3, WS4, WS5: each unmet, not assumed);
+  the 0.9–1.8 µs `ListTasks` gap at 10K tasks is unmeasured. The send
+  slowdown is measured (2026-10-24, pinned core, interleaved rounds, five
+  runs; the section "the CPU cost of a blocking send"): not slower than
+  0.14.1 (102.0 against 106.2 µs), 11.5–16.0% slower than `6ce5dc9a`, which
+  was 13.9% faster than 0.14.1; this branch's share is inside the noise
+  (+1.4%, 12 rounds); default telemetry is 4.6–6.6% of a send. Cause of the
+  rise since `6ce5dc9a`: not isolated.
 - **Interop:** `itk/interop/card_signature_interop.py` checks Python only.
   `scripts/go_sdk_interop.sh` last passed both directions 2026-10-20 at
   `4101bb55`, after the auth-ordering change: leg 1 52 checks, leg 1b
   38, leg 2 33 cells exercised (11 WebSocket cells not applicable), 0
   failures.
-- **Control map:** 13 supported, 2 documented, 11 partial, 22 integrator
-  (`python3 scripts/check_compliance_map.py`); the partial rows' remaining
-  gaps are in each row's `gap`.
+- **Control map:** 15 supported, 4 documented, 29 partial, 0 gap, 40
+  integrator's duty, of 88 rows (the table at the top of the generated
+  `docs/compliance/control-map.md`, counted from `controls.toml` 2026-10-24;
+  `check_compliance_map.py` prints no counts). This line said 13, 2, 11 and
+  22 until then, which matched no version of the file we could find. The
+  partial rows' remaining gaps are in each row's `gap`. Narrowed on
+  2026-10-24 (no row changed status): task deletions, erasures and legal
+  holds are audit records (GDPR-5-2) and the SQLite stores zero deleted
+  content in the file (CRA-AI-I-2m). Not built, and the reason each: a
+  per-caller export (GDPR-15-20); a bounded cancel deadline (AIA-14-4e);
+  sealing `metadata` in `EncryptedTaskStore` (CRA-AI-I-2e); erased audit
+  records unlinkable from each other, which needs a per-record handle, a
+  format change; erasure serialised across replicas, which needs the
+  compare-and-set writes of 0.16 (decided); attribution of a tenant's shared
+  partition, which has no caller to attribute it to. A reading of each of
+  the 29 partial rows' `gap` (2026-10-24, a judgement, not a check) found
+  none that SDK code alone moves to supported: the gaps are an integrator's
+  or a model provider's (AIA-15-4, AIA-15-5, AIA-50-2, CRA-13-16-18,
+  CRA-AI-I-2b, -2d, -2f, -2h-2i, -2j, -2k, -2l, GDPR-5-1f-32-1b, ASI03,
+  ASI07, ASI08, ASI10), a default settled as off (GDPR-25-2), the
+  protocol's (no method to correct or delete a task: GDPR-5-1d-16,
+  GDPR-5-1e), something only the maintainer can supply (the RustSec entry
+  CRA-AI-I-2a and CRA-AI-II-2-4-8, a release key CRA-AI-II-7), or a feature
+  that would narrow the row without closing it (GDPR-15-20, GDPR-18-21,
+  CRA-AI-I-2e, CRA-AI-I-2m, ASI04, AIA-14-4e, GDPR-5-2).
+- **Release bar, measured 2026-10-24 on the final tree** (after the `InFlight`
+  restructure, the last code change; each line is a run, not a reading):
+  `cargo semver-checks` in CI's form (`--all-features`, four crates) exits 0;
+  with `--release-type patch` (the default skips a 0.14 to 0.15 bump as
+  already major) against the published 0.14.1 it reports 7 major-level lints
+  and 5 minor-level ones, the SDK crate none. The 7 are the six entries of
+  `### Breaking Changes` in `CHANGELOG.md` (`ClientRequest.query_params`,
+  `SseParseError` non-exhaustive, `Server` no longer `UnwindSafe`,
+  `TenantLimits.max_stored_tasks` removed, which is three lints with its two
+  builder methods, `TaskState` discriminants, `ConvertError`
+  non-exhaustive); the 5 are deprecations. This line said 6 major-level
+  differences until the lints were listed rather than counted. Also run:
+  clippy (workspace all features and default, `--each-feature` on four
+  crates), tests (workspace all features: 6089 passed, 0 failed; the client
+  and SDK crates with no, default and all features), docs (both forms), the
+  SLIMRPC binding (fmt, clippy in two forms, 133 tests, the in-process
+  example), `itk` clippy, the four offline examples, `cargo deny` as CI runs it
+  (the workspace and the binding), `cargo package` as CI runs it, `cargo check`
+  of the four crates on Rust 1.94 (all targets, all features),
+  `prove_workflow_gates_fail.py` (30 proven, 0 unproven, 23 exempt of 53),
+  and `scripts/go_sdk_interop.sh` (both directions, 33 cells exercised, 11
+  not applicable, 0 failures). The incremental mutation gate's invocation
+  (`mutants.yml`, `--in-diff` against `origin/main`, with PostgreSQL) was run
+  locally on the whole diff: the client has 39 mutants (12 caught, 27
+  unviable, 0 missed), the server 82 (12 caught, 70 unviable, 0 missed, 0
+  timeouts), the types crate none. Not run locally: the official TCK, ACTS,
+  the Windows and macOS legs, the full mutation sweep, and
+  `prove_gates_fail.sh` in full (the one gate added this cycle was proven when
+  it was added). The CI run of the pull request is the check of those.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
   benchmark comparison harness pins `=0.14.1`, the newest release on
   crates.io (checked 2026-10-20), and moves when 0.15.0 is published;
-  `prove_workflow_gates_fail.py` needs `ssh-keygen`, absent in the cloud
-  container (apt has no candidate), so it did not run here on 2026-10-20.
+  `prove_workflow_gates_fail.py` needs `ssh-keygen`: a fresh cloud container
+  has none, and `apt-get install openssh-client` finds no candidate until
+  `apt-get update` has run (it installed 1:9.6p1 after one, 2026-10-24).
 
 ## Waivers and their removal tests
 
@@ -542,7 +694,8 @@ it.
   reads the first `version` line. `RELEASING.md` §1 has the loop over every
   lockfile and `check_lockfiles.sh`.
 - The maintainer has allowed release preparation inside the content pull
-  request twice; the manifest-last rule holds either way.
+  request, most recently for 0.15.0 (2026-10-25); the manifest-last rule
+  holds either way.
 
 ## Branches
 
@@ -565,7 +718,22 @@ into this file: the commit that records it changes it.
   low. A linker "bus error" (signal 7), or `linking with cc failed`,
   means the disk is full. `bindings/a2a-protocol-slimrpc/target` reaches
   12 GB for its full test suite: run it with `CARGO_PROFILE_DEV_DEBUG=0`
-  and delete it afterwards.
+  and delete it afterwards. `cargo test --workspace` fills the allowance
+  while linking (2026-10-24: three gates failed with `No space left on
+  device`, which a failed test run reports as a compile error): run one
+  package at a time and delete the executables in `target/debug/deps` between
+  (`find target/debug/deps -maxdepth 1 -type f -perm -u+x ! -name '*.so' !
+  -name '*.d' -delete`; 14.7 GB of 20 GB were test executables). When the
+  harness prints "Disk full ... 0 MB free", its output is lost: free space
+  first, then re-run (a command that prints nothing, not even a trailing
+  `echo`, is that symptom). `target/debug/deps` also keeps every build of the
+  workspace crates, one per feature set and profile: `cargo clean -p
+  a2a-protocol-types -p a2a-protocol-client -p a2a-protocol-server -p
+  a2a-protocol-sdk` removed 10.6 GiB of 172 stale builds of the server crate
+  alone (2026-10-24) and costs only those crates' recompilation. Do not run
+  a script that prunes `target/debug/incremental` while another `cargo` is
+  building in the same tree: the build fails with `failed to move dependency
+  graph`.
 - **`check_file_lengths.sh` counts tracked files only:** run it after
   `git add`, or a new file over 500 lines passes unseen (it did:
   `tests/provenance_signing.rs`, 533 lines, at `69163dec`).
@@ -574,7 +742,16 @@ into this file: the commit that records it changes it.
   The `postgres` role's password is not always `postgres` in a fresh
   container (scram auth refused it on 2026-10-20): set it with
   `su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres'\""`.
-- **llama.cpp:** b11836 (`f5027fb`) at `/opt/llama/src/build/bin`, and
+- **llama.cpp, in a fresh container (2026-10-24, none was installed):**
+  `git clone --depth 1 https://github.com/ggml-org/llama.cpp`, `cmake -S . -B
+  build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=ON
+  -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF`, `cmake --build build
+  --target llama-server -j2` (about 6 minutes on 4 vCPUs; built at commit
+  `3f03b17`). github.com release pages answer 403 through the proxy;
+  huggingface.co is reachable, e.g. `unsloth/Qwen3-1.7B-GGUF`
+  `Qwen3-1.7B-Q4_K_M.gguf` (1.1 GB, 7 s). The examples default to
+  `localhost:11434` and the name `qwen3:1.7b`: start the server with `--port
+  11434 --alias qwen3:1.7b --jinja -c 8192`. Earlier: b11836 (`f5027fb`) at `/opt/llama/src/build/bin`, and
   the study's b11751 (`8466395`) at `/opt/llama/old`; GGUFs in
   `/opt/models` (hashes in the study). Use `-c 8192` (the default context
   sized the KV cache to ~4.6 GB and the OOM killer took the server), and
@@ -590,7 +767,7 @@ into this file: the commit that records it changes it.
   cannot be run here.
 - `pkill -f` and `pgrep -f` match their own shell's command line, which
   contains the pattern: kill by PID, or put the command in a script file
-  (cost a killed shell twice on 2026-10-20).
+  (cost a killed shell twice on 2026-10-20 and twice more on 2026-10-24).
 - Agents in worktrees that share `target/` race on a crate's `.rlib`
   (`linking with cc failed` while the other build replaced it): re-run the
   step before reading anything into it.
@@ -608,6 +785,18 @@ into this file: the commit that records it changes it.
   the "How to Reproduce Locally" block `mutants.yml` prints.
 
 ## Lessons
+
+- **A scoped tracing subscriber is not enough to capture a log line in a
+  parallel test binary** (root cause of the 1-in-20 `log_redaction` flake,
+  found 2026-10-24). `tracing-core` 0.1.36 keeps `has_just_one` true while
+  one dispatcher is registered and then computes a callsite's interest from
+  the first-reaching thread's own default, so another test's thread, with no
+  subscriber, reaching the same `warn!` first makes it "never interested" for
+  every thread. Two threads and two barriers reproduce it every time; 160
+  runs of the real test did not, so repetition cannot find it. Capture
+  through `crate::handler::warnings_during` or `warning_lines_during` (one
+  global subscriber), never `with_default`, in a test that shares a binary.
+
 
 - A mutation run's "caught" is only as good as the test that failed. Read
   the per-mutant logs in the shard artifacts (`mutation-report-*`,

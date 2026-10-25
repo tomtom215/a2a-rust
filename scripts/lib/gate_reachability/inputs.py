@@ -50,6 +50,7 @@ GATE_INPUTS: list[tuple[str, list[str]]] = [
     (r"check_api_reference\.py", ["book/src/reference/api-reference.md",
                                   "crates/**/*.rs"]),
     (r"check_otel_metrics_coverage\.py", ["crates/**/*.rs"]),
+    (r"check_otel_wiring\.py", ["**/*.rs", "**/Cargo.toml"]),
     (r"check_package_excludes\.py", ["**/Cargo.toml", ".github/workflows/ci.yml",
                                      ".github/workflows/release.yml",
                                      "RELEASING.md"]),

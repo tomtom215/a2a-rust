@@ -10,7 +10,7 @@
 //!
 //! | Pass | Trigger | Cost |
 //! |---|---|---|
-//! | TTL | every `eviction_interval` writes | O(n) — must look at every entry |
+//! | TTL | every `eviction_interval` writes | O(k log n) in the k entries at least `task_ttl` old, plus a scan of the held idempotency keys |
 //! | Capacity | any write leaving the store over `max_capacity` | bounded by [`capacity::EVICTION_SCAN_WINDOW`] |
 //!
 //! The distinction matters because a store that has reached `max_capacity`
@@ -47,8 +47,9 @@ use super::InMemoryTaskStore;
 /// Which eviction passes a single write has earned.
 ///
 /// The two passes have very different costs and belong on different schedules.
-/// The TTL sweep must look at every entry to find the expired ones, so it is
-/// amortized — once every `eviction_interval` writes. The capacity sweep is
+/// The TTL sweep walks every entry at least `task_ttl` old and scans the held
+/// idempotency keys, so it is amortized — once every `eviction_interval`
+/// writes. The capacity sweep is
 /// bounded (see [`capacity::EVICTION_SCAN_WINDOW`]) and must run immediately,
 /// because a store over its cap has to come back down before the next write.
 ///
@@ -58,7 +59,8 @@ use super::InMemoryTaskStore;
 /// triggered it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct EvictionPasses {
-    /// Remove terminal tasks older than `task_ttl`. O(n) in the store size.
+    /// Remove terminal tasks older than `task_ttl`: O(k log n) in the k entries
+    /// that old. Also expires idempotency keys, a scan of the held keys.
     pub(super) ttl: bool,
     /// Bring the store back down to `max_capacity`.
     pub(super) capacity: bool,
@@ -125,8 +127,8 @@ impl InMemoryTaskStore {
 
     /// Returns which eviction passes this write has earned.
     ///
-    /// The TTL pass is gated on the write counter so its O(n) scan is
-    /// amortized; the capacity pass fires on any write that leaves the store
+    /// The TTL pass is gated on the write counter so its idempotency-key scan
+    /// is amortized; the capacity pass fires on any write that leaves the store
     /// over its cap.
     pub(super) fn should_evict(&self, store_len: usize) -> EvictionPasses {
         let count = self

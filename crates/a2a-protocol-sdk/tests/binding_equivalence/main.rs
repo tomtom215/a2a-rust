@@ -29,4 +29,5 @@ mod errors;
 mod functionality;
 mod harness;
 mod results;
+mod sweep;
 mod version;

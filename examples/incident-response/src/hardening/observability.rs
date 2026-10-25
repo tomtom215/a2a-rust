@@ -103,28 +103,20 @@ pub(super) async fn metrics_hook() -> Check {
 
 // ── OpenTelemetry export ─────────────────────────────────────────────────────
 
-const OTEL_LABEL: &str = "OpenTelemetry export (a2a.server.requests reaches a reader)";
-
-/// Drives an OTel-instrumented handler and reads the exported datapoint back.
-///
-/// Building `OtelMetrics` and serving a request proves nothing on its own: the
-/// global meter provider defaults to a no-op, so a handler that never records
-/// anything and one that records everything produce identical output. This
-/// check installs a real SDK meter provider with a [`ManualReader`], drives
-/// traffic, collects, and requires a non-zero `a2a.server.requests` sum — the
-/// number an operator's dashboard would be reading.
-///
-/// [`ManualReader`]: opentelemetry_sdk::metrics::ManualReader
 #[cfg(feature = "otel")]
-pub(super) async fn otel_export() -> Check {
-    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData, ResourceMetrics};
+mod meter {
+    //! What the two OpenTelemetry checks, and the test of them, share.
+
+    use std::sync::Arc;
+
+    use opentelemetry_sdk::metrics::ManualReader;
+    use opentelemetry_sdk::metrics::data::ResourceMetrics;
     use opentelemetry_sdk::metrics::reader::MetricReader;
-    use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
 
     /// `SdkMeterProvider::with_reader` takes ownership, so the reader is shared
     /// through a newtype that forwards the trait.
     #[derive(Debug, Clone)]
-    struct SharedReader(Arc<ManualReader>);
+    pub(super) struct SharedReader(pub(super) Arc<ManualReader>);
 
     impl MetricReader for SharedReader {
         fn register_pipeline(
@@ -153,9 +145,65 @@ pub(super) async fn otel_export() -> Check {
         }
     }
 
+    /// The provider that was global, handed back to `set_meter_provider`,
+    /// which wants a `MeterProvider` and is given an `Arc<dyn MeterProvider>`.
+    struct Previous(Arc<dyn opentelemetry::metrics::MeterProvider + Send + Sync>);
+
+    impl opentelemetry::metrics::MeterProvider for Previous {
+        fn meter_with_scope(
+            &self,
+            scope: opentelemetry::InstrumentationScope,
+        ) -> opentelemetry::metrics::Meter {
+            self.0.meter_with_scope(scope)
+        }
+    }
+
+    /// Puts the process's global meter provider back as it was when dropped.
+    ///
+    /// Both checks install a provider of their own and shut it down, and the
+    /// demo goes on serving. Handlers on the default metrics follow whichever
+    /// provider is global at each measurement, so until 2026-10-24 they
+    /// recorded into a provider already shut down, and the export `Telemetry`
+    /// was configured for lost everything after this act.
+    pub(super) struct RestoreGlobalMeterProvider(
+        Arc<dyn opentelemetry::metrics::MeterProvider + Send + Sync>,
+    );
+
+    impl RestoreGlobalMeterProvider {
+        pub(super) fn capture() -> Self {
+            Self(opentelemetry::global::meter_provider())
+        }
+    }
+
+    impl Drop for RestoreGlobalMeterProvider {
+        fn drop(&mut self) {
+            opentelemetry::global::set_meter_provider(Previous(Arc::clone(&self.0)));
+        }
+    }
+}
+
+const OTEL_LABEL: &str = "OpenTelemetry export (a2a.server.requests reaches a reader)";
+
+/// Drives an OTel-instrumented handler and reads the exported datapoint back.
+///
+/// Building `OtelMetrics` and serving a request proves nothing on its own: the
+/// global meter provider defaults to a no-op, so a handler that never records
+/// anything and one that records everything produce identical output. This
+/// check installs a real SDK meter provider with a [`ManualReader`], drives
+/// traffic, collects, and requires a non-zero `a2a.server.requests` sum — the
+/// number an operator's dashboard would be reading.
+///
+/// [`ManualReader`]: opentelemetry_sdk::metrics::ManualReader
+#[cfg(feature = "otel")]
+pub(super) async fn otel_export() -> Check {
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData, ResourceMetrics};
+    use opentelemetry_sdk::metrics::reader::MetricReader;
+    use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
+
+    let _restore = meter::RestoreGlobalMeterProvider::capture();
     let reader = Arc::new(ManualReader::builder().build());
     let provider = SdkMeterProvider::builder()
-        .with_reader(SharedReader(Arc::clone(&reader)))
+        .with_reader(meter::SharedReader(Arc::clone(&reader)))
         .build();
     // `OtelMetricsBuilder` resolves its meter from the global provider, so the
     // provider has to be installed before the instruments are created.
@@ -316,6 +364,7 @@ pub(super) async fn otlp_pipeline() -> Check {
         });
     }
 
+    let _restore = meter::RestoreGlobalMeterProvider::capture();
     // The endpoint is passed explicitly rather than through
     // `OTEL_EXPORTER_OTLP_ENDPOINT`: writing the environment is `unsafe` in
     // edition 2024 because other threads of this process may be reading it.
@@ -390,4 +439,50 @@ pub(super) async fn otlp_pipeline() -> Check {
 #[cfg(not(feature = "otel"))]
 pub(super) async fn otlp_pipeline() -> Check {
     Check::skipped(OTLP_LABEL, "otel")
+}
+
+#[cfg(all(test, feature = "otel"))]
+mod tests {
+    use opentelemetry_sdk::metrics::data::ResourceMetrics;
+    use opentelemetry_sdk::metrics::reader::MetricReader as _;
+    use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
+
+    use super::*;
+
+    /// Both OpenTelemetry checks install a provider of their own and shut it
+    /// down; the demo then keeps serving. The provider that was global before
+    /// them must be global after, or everything the demo records from then on
+    /// goes to one already shut down (wiring audit, 2026-10-24). A provider
+    /// standing in for the one `Telemetry` installs; a measurement made after
+    /// both checks must reach its reader.
+    /// Multi-threaded, as the demo is: the OTLP check flushes with a blocking
+    /// call while the listener it exports to runs on the same runtime.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_checks_leave_the_global_meter_provider_as_they_found_it() {
+        let reader = Arc::new(ManualReader::builder().build());
+        let before = SdkMeterProvider::builder()
+            .with_reader(meter::SharedReader(Arc::clone(&reader)))
+            .build();
+        opentelemetry::global::set_meter_provider(before.clone());
+
+        for check in [otel_export().await, otlp_pipeline().await] {
+            assert!(!check.failed(), "{}", check.label);
+        }
+
+        opentelemetry::global::meter("restore-probe")
+            .u64_counter("restore.probe")
+            .build()
+            .add(1, &[]);
+        let mut collected = ResourceMetrics::default();
+        reader.collect(&mut collected).expect("collect");
+        let names: Vec<_> = collected
+            .scope_metrics()
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .map(|m| m.name().to_owned())
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "restore.probe"),
+            "a measurement after the checks did not reach the provider that was global before them: {names:?}"
+        );
+    }
 }

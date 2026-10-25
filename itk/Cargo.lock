@@ -12,6 +12,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "opentelemetry",
  "prost",
  "protoc-bin-vendored",
  "serde",
@@ -22,6 +23,8 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tonic-types",
+ "tracing",
+ "tracing-opentelemetry",
  "uuid",
  "zeroize",
 ]
@@ -1185,9 +1188,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.3"
+version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
+checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
 name = "socket2"
@@ -1240,7 +1243,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

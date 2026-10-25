@@ -5,3 +5,7 @@ httptools>=0.6.0
 # CVE-2026-63374 / CVE-2026-64847 and h11 < 0.16.0 has CVE-2025-43859.
 anyio>=4.14.2
 h11>=0.16.0
+# Likewise idna: < 3.15 has PYSEC-2026-215 / GHSA-65pc-fj4g-8rjx (CVE-2026-45409),
+# and OSV-Scanner resolves this file's floor-less idna to 3.9.0. The image
+# installs requirements.lock, which pins 3.20; this keeps the two in step.
+idna>=3.15

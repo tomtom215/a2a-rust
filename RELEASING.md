@@ -21,7 +21,7 @@ This document describes the release process for the `a2a-rust` workspace.
   available. Delete the secret once the fallback has not been used for a
   release.
 - All CI checks passing on `main`
-- **`protoc`** installed locally (required for `--all-features` builds that enable the `grpc` feature). Install via `apt-get install protobuf-compiler` (Debian/Ubuntu), `brew install protobuf` (macOS), or download from the [protobuf releases page](https://github.com/protocolbuffers/protobuf/releases)
+- No `protoc` install is needed: the `grpc` feature builds against the vendored `protoc-bin-vendored` binary
 
 ## Workspace crate dependency order
 
@@ -157,9 +157,13 @@ git checkout -b release/vX.Y.Z main
 # must be the LAST substantive change before the tag. Anything committed after
 # it (another fix, a doc touch, a bot pushing benchmark results to `main`)
 # re-breaks the gate, because that file now differs from the pinned commit too.
-# In practice that forces content and release prep into two pull requests in
-# that order, prep second, with the manifest regenerated in the prep commit —
-# which is exactly how 0.12.1 shipped (docs/handoff-history.md, "0.12.1"). The
+# That is why 0.12.1 shipped as two pull requests, content then prep, with the
+# manifest regenerated in the prep commit (docs/handoff-history.md, "0.12.1").
+# One pull request works as well, and 0.14.0 shipped that way (0.15.0 was
+# prepared that way): the content commits, then the prep commit, then the
+# manifest commit, last; merged with a merge commit, never squashed (a squash
+# leaves the pinned commit outside `main`'s history); and the tag cut on that
+# merge commit before any bot push lands on `main`. The
 # v0.11.0 tag died on 2026-08-30 to the other half of the same rule: the
 # manifest was regenerated before a benchmark bot push landed, so it pinned a
 # tree the release no longer had. Wait for automation to settle, regenerate,
@@ -194,9 +198,9 @@ git push origin vX.Y.Z
 **The tag must be signed** (since 2026-10-08), by an SSH or OpenPGP key
 listed in [`.github/release-signers/`](.github/release-signers/README.md) on
 `main`, and must point at a commit on `main`. `release.yml` refuses anything
-else before building. The directory holds no key until the maintainer commits
-one, so the first signed release starts with that pull request; the README
-there has the commands.
+else before building. The directory holds the maintainer's SSH key (added for
+0.15.0, the first release the gate can pass); the README there has the
+commands for adding another.
 
 > **Known gap — the first ten tags do not match this step.** Ten release
 > tags (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,
@@ -248,10 +252,11 @@ there has the commands.
 
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
-1. **Validates** that all 4 crate versions match the tag and CHANGELOG entry
+1. **Validates** that all 4 crate versions and `tools/a2a-cli`'s match the tag and CHANGELOG entry
    exists, and that the tag publishes what its notes describe (below)
 2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny)
-3. **Packages** all crates with SLSA build provenance attestation
+3. **Packages** all crates with SLSA build provenance attestation and a
+   CycloneDX SBOM attestation per crate
 4. **Runs the A2A conformance suite (ACTS)** on the tagged commit over every
    binding (`acts.yml`), fails on any failed or errored test, and attests the
    summary onto each `.crate` (predicate type
@@ -259,7 +264,7 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
    `gh attestation verify <crate>.crate -R tomtom215/a2a-rust --predicate-type …`).
    The GitHub release, and so the publish, waits on it
 5. **Runs a publish dry run** to verify packages are publishable
-6. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
+6. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts. GitHub refuses a release body over 125,000 characters, so a section longer than 120,000 is released as its Known Limitations, Breaking Changes, Deprecated and Security sections plus a link to the whole section at the tag (0.15.0's section is about 289,000)
 7. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval; authenticates with Trusted Publishing, falling back to the environment secret)
 
 ### The tag must be the release-preparation commit
@@ -326,7 +331,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — currently `0.5.0` against the SDK's `0.13.0`. Numbering it
+It is versioned independently — currently `0.7.0` against the SDK's `0.15.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 

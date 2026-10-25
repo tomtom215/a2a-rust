@@ -28,7 +28,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 
 | Chapter | TESTED | APPLICATION | NOT_APPLICABLE | PARTIAL | Total |
 |---|---:|---:|---:|---:|---:|
-| §1 | 3 |  | 4 |  | 7 |
+| §1 | 4 |  | 3 |  | 7 |
 | §2 | 2 |  | 1 |  | 3 |
 | §3 | 122 | 11 | 3 | 1 | 137 |
 | §4 | 15 |  |  |  | 15 |
@@ -43,7 +43,7 @@ a hook); `SUPPORTED`/`NOT_SUPPORTED` (for MAY); `NOT_APPLICABLE`.
 | §14 | 14 | 2 |  |  | 16 |
 | §A |  |  | 1 |  | 1 |
 | proto `REQUIRED` fields | 94 | 4 | 8 |  | 106 |
-| **All** | **454** | **32** | **20** | **4** | **510** |
+| **All** | **455** | **32** | **19** | **4** | **510** |
 
 ## Open items, most severe first
 

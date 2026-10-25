@@ -195,10 +195,10 @@ What the benchmarks do about these effects:
   overshoots its nominal duration. Interpret the slow consumer benchmarks
   against `backpressure/timer_calibration`, not the nominal 1ms / 5ms.
 
-- **`data_volume/save` wide CIs**: `after_prefill/10000` has wide confidence
-  intervals and a high outlier rate from BTreeSet rebalancing during sorted
-  index inserts; the median is the representative figure. Acceptable
-  tradeoff: BTreeSet enables O(page_size) pagination vs O(n) full scans.
+- **`data_volume/save` at 10K tasks**: an earlier run of `after_prefill/10000`
+  reported a wider confidence interval than the other prefill levels; the
+  book's benchmark page has the current one. The order index is a `BTreeMap`,
+  which keeps pagination at O(log n + page_size) with no per-call sort.
 
 - **Dispatch routing**: `direct_handler_invoke` calls the request handler
   directly; `full_http_roundtrip` sends a message through a JSON-RPC server

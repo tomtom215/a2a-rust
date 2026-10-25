@@ -259,3 +259,86 @@ async fn exchanged_key_rows_no_longer_open() {
         .unwrap();
     assert!(log.reveal(&alices).await.is_err());
 }
+
+/// An operator's `purge_expired` or `erase_caller` is a chain record naming
+/// who ran it and how much it removed; a caller erased is named in a field
+/// sealed under that caller's own key, so erasing the person later takes
+/// their name out of the record of their own erasure.
+#[tokio::test]
+async fn an_operator_erasure_names_the_operator_and_seals_the_caller() {
+    use crate::audit::Erased;
+
+    let (log, _) = log();
+    // Alice has a key, as a person the chain already names.
+    log.append(record("acme", ALICE)).await.unwrap();
+
+    let expired = log
+        .record_erasure("acme", DPO, Erased::Expired { tasks: 12 })
+        .await
+        .unwrap();
+    assert_eq!(expired.kind, kind::ERASURE);
+    let shown = log.reveal(&expired).await.unwrap().record;
+    assert_eq!(shown.actor.unwrap().subject, DPO);
+    assert_eq!(shown.detail["scope"], "expired");
+    assert_eq!(shown.detail["tasks"], 12);
+
+    let caller = log
+        .record_erasure(
+            "acme",
+            DPO,
+            Erased::Caller {
+                caller: ALICE,
+                partitions: 2,
+                rows: 7,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        !serde_json::to_string(&caller).unwrap().contains("alice@"),
+        "the erased caller is sealed: {caller:?}"
+    );
+    let shown = log.reveal(&caller).await.unwrap().record;
+    assert_eq!(shown.detail["scope"], "caller");
+    assert_eq!(shown.detail["erasedCaller"], ALICE);
+    assert_eq!(shown.detail["partitions"], 2);
+    assert_eq!(shown.detail["rows"], 7);
+
+    // Erasing the person from the chain takes the name out of this record.
+    let erased = log.erase_subject("acme", ALICE, DPO).await.unwrap();
+    assert_eq!(erased.sids.len(), 1);
+    let after = log.reveal(&caller).await.unwrap();
+    assert_ne!(
+        after.record.detail.get("erasedCaller"),
+        Some(&serde_json::json!(ALICE)),
+        "the record of an erasure must not keep the erased person's name"
+    );
+    assert!(
+        !after.erased.is_empty(),
+        "reveal reports what it could not open"
+    );
+    assert!(log.verify("acme").await.unwrap().is_intact());
+}
+
+/// Without protection the record is plain, and the counts are exact.
+#[tokio::test]
+async fn an_erasure_record_without_protection_holds_the_counts() {
+    use crate::audit::Erased;
+
+    let log = AuditLog::new(Arc::new(InMemoryAuditStore::new()));
+    let r = log
+        .record_erasure(
+            "acme",
+            DPO,
+            Erased::Caller {
+                caller: ALICE,
+                partitions: 1,
+                rows: 3,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.detail["erasedCaller"], ALICE);
+    assert_eq!(r.detail["rows"], 3);
+    assert_eq!(r.actor.unwrap().subject, DPO);
+}

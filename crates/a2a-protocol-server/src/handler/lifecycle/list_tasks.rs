@@ -34,7 +34,7 @@ impl RequestHandler {
         self.metrics.on_request("ListTasks");
 
         let tenant = self
-            .resolve_tenant("ListTasks", headers, params.tenant.as_deref())
+            .resolve_tenant_counted(start, "ListTasks", headers, params.tenant.as_deref())
             .await?;
         let mut params = params;
         // a2a.proto: `contextId`, `status` and `pageToken` have no presence,

@@ -107,6 +107,23 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Fields {
     }
 }
 
+/// A call that ended, in one step: what the span's tests read.
+#[cfg(feature = "tracing")]
+impl CallSpan {
+    /// Ends the call as a success, with what the agent answered.
+    pub(super) fn succeeded(mut self, result: Option<&serde_json::Value>) {
+        self.response(result);
+        let status = Status::ok(self.system);
+        self.end(&status);
+    }
+
+    /// Ends the call as a failure with `error`.
+    pub(super) fn failed(self, error: &crate::error::ClientError) {
+        let status = Status::failed(self.system, error);
+        self.end(&status);
+    }
+}
+
 /// The fields `f` records, with nothing but [`Fields`] subscribed.
 #[cfg(feature = "tracing")]
 pub fn recorded(f: impl FnOnce()) -> std::collections::BTreeMap<String, String> {
@@ -297,7 +314,7 @@ fn each_binding_reports_the_status_it_was_answered_with() {
 /// crate's global test subscriber ([`crate::test_tracing`]), without which
 /// the call span can come back disabled.
 #[cfg(feature = "otel")]
-fn with_otel<R>(f: impl FnOnce() -> R) -> R {
+pub(super) fn with_otel<R>(f: impl FnOnce() -> R) -> R {
     use opentelemetry::trace::TracerProvider as _;
     use tracing_subscriber::layer::SubscriberExt as _;
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
@@ -326,7 +343,7 @@ fn propagated(
 }
 
 #[cfg(feature = "otel")]
-fn traceparent(
+pub(super) fn traceparent(
     headers: &std::collections::HashMap<String, String>,
 ) -> a2a_protocol_types::trace_context::TraceContext {
     use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TraceContext};

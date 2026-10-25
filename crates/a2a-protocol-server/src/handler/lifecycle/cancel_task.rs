@@ -35,7 +35,7 @@ impl RequestHandler {
         self.metrics.on_request("CancelTask");
 
         let tenant = self
-            .resolve_tenant("CancelTask", headers, params.tenant.as_deref())
+            .resolve_tenant_counted(start, "CancelTask", headers, params.tenant.as_deref())
             .await?;
         // Boxed for clippy's `large_futures`, which estimates this future at
         // about 16 KiB and every dispatcher's that awaits it inline over its

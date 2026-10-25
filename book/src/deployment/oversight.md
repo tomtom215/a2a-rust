@@ -49,8 +49,9 @@ While a scope is halted:
 - **Reads and cancels are still served,** so whoever halted it can see what
   stopped.
 
-With the [audit trail](./audit.md), each halt and resume is a `halt` record
-naming the operator (`by`), the reason, and the ids of the tasks it stopped.
+With the [audit trail](./audit.md), each halt is a `halt` record naming the
+operator (`by`), the reason, and the ids of the tasks it stopped. A resume
+that lifts a halt is a `halt` record with `action` `resume` and the operator.
 
 The SDK has no admin endpoint of its own. Call `halt` from one you already
 guard, such as an internal route, a signal handler, or a feature-flag
@@ -78,13 +79,17 @@ watcher, so that who may halt is your access control's decision.
 - **An executor that ignores its cancellation token keeps running.** Its task
   keeps whatever state it had. Executors should watch
   `ctx.cancellation_token`.
-- **Tasks waiting at `input-required` are not running, so they are not
-  cancelled.** The halt refuses the send that would continue them.
+- **Tasks waiting at `input-required` or `auth-required` are not running, so
+  they are not cancelled.** The halt refuses the send that would continue
+  them.
 
 ## Asking before acting
 
 An agent about to take an action it should not take alone asks first. It
-names the exact action by the SHA-256 digest of its canonical JSON:
+names the exact action by the SHA-256 digest of its canonical JSON.
+`action_digest` is behind the `signing` feature of `a2a-protocol-types`
+(`signing` on `a2a-protocol-sdk` turns it on); the block below does not
+compile without it:
 
 ```rust,no_run
 use a2a_protocol_server::{EventEmitter, RequestContext};
@@ -184,6 +189,11 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 # let _ = handler;
 ```
 
+`ApprovalGate::new()` on its own lets any authenticated caller approve,
+except the one whose run asked; `with_approvers` narrows that to the
+identities you list. Without it, anyone your interceptor authenticates can
+approve.
+
 An approver answers by continuing the requester's task, so the two must
 share it. With an authenticating interceptor, tasks are isolated by caller
 unless the builder says otherwise, and `build()` refuses a gate that wants a
@@ -199,7 +209,7 @@ A continuation that carries a decision is refused before anything runs when:
 | It answers a different request id | invalid params |
 | Its digest is not the request's: the person was shown a different action | invalid params |
 | The caller is not authenticated | permission denied |
-| The caller is not one of the approvers | permission denied |
+| The caller is not among the identities given to `with_approvers` | permission denied |
 | The caller is the one whose run asked (unless `allowing_self_approval`) | permission denied |
 
 The executor sees an admitted decision in `ctx.approval()`, with the
@@ -214,10 +224,15 @@ recorded.
 ### More than one approver
 
 The EU AI Act's Article 14(5) asks, for the remote biometric identification
-systems in its Annex III point 1(a), that nothing is done on an
-identification until at least two natural persons have separately verified
-and confirmed it. `with_quorum(n)` makes the gate wait for `n` distinct
-approvers:
+systems in its Annex III point 1(a), that no action or decision is taken by
+the deployer on the basis of an identification unless at least two natural
+persons have separately verified and confirmed it. The paragraph does not
+apply to systems used for law enforcement, migration, border control or
+asylum where Union or national law considers it disproportionate. The
+[control map](https://github.com/tomtom215/a2a-rust/blob/main/docs/compliance/control-map.md)
+did not check whether Regulation (EU) 2026/1744 amends this paragraph, so
+read the consolidated text. `with_quorum(n)` makes the gate wait for `n`
+distinct approvers:
 
 ```rust
 use a2a_protocol_server::approval::ApprovalGate;
@@ -254,8 +269,12 @@ names every approver in `approvers`.
 The count is kept on the task, so replicas sharing a task store count
 together. One handler serializes the approvals for a task; two replicas do
 not, and two approvals arriving at two replicas at the same moment can each
-overwrite the other's record. The count then falls short, never over: the
-approver whose record was lost sends the approval again.
+overwrite the other's record. The count then falls short, and never counts an
+approval nobody sent: the approver whose record was lost sends the approval
+again. The last two approvals can also reach two replicas at the same moment
+and both meet the quorum, which resumes the executor twice. Run one replica,
+or route every turn of a task to one replica
+([Running More Than One Replica](./horizontal-scaling.md)).
 
 Whether a system falls under Annex III point 1(a), and whether the
 approvers have the competence, training and authority the Article asks for,
@@ -274,5 +293,9 @@ holds two allowed identities counts twice.
 ## Stopping what an agent started
 
 An agent that hands work to other agents should send it with a
-[`Delegation`](../client/delegation.md). Then cancelling or halting the
-agent's task cancels the tasks it created elsewhere.
+[`Delegation`](../client/delegation.md) and pass
+`ctx.cancellation_token.cancelled()` to `wait`. Then cancelling or halting
+the agent's task cancels the tasks it created elsewhere. A parent that
+crashes cancels nothing unless it started the child with
+`Delegation::start_leased` (ADR 0020), which grants the child a lease that
+lapses when the parent stops renewing it.

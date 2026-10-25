@@ -303,9 +303,10 @@ fn bench_artifact_accumulation(c: &mut Criterion) {
     let mut group = c.benchmark_group("advanced/artifact_accumulation");
     group.throughput(Throughput::Elements(1));
 
-    // Measure the task.clone() cost that the background processor pays
-    // on every artifact event. This is the dominant factor in the 90µs/event
-    // cost at 501+ events: as artifacts accumulate, clone() copies all of them.
+    // Measure the cost of cloning a task that already holds N artifacts: what
+    // a store that saved the whole task on every artifact event would pay as
+    // artifacts accumulate. (The background processor persists with
+    // `save_artifact_delta` and does not clone the task per event.)
     let artifact_counts: &[usize] = &[0, 10, 50, 100, 500];
     for &n in artifact_counts {
         // Build a task with N pre-existing artifacts.

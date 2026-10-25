@@ -32,7 +32,9 @@ little else moves:
 Diffing the two `agent.rs` files is the point: the loop does not care where
 tools come from, which is why it is worth getting right once. Nothing in the
 crate knows what the tools are, so `MCP_SERVER_BIN` repoints it at any other
-MCP stdio server — someone else's, in any language — with no code change.
+MCP stdio server — someone else's, in any language — with no code change. The
+variable names one executable, run with no arguments; wrap a server started as
+`npx …`, `uvx …` or `python server.py` in a script.
 
 ## The two failures that must not be confused
 
@@ -59,9 +61,15 @@ llama-server -m Qwen3-1.7B-Q4_K_M.gguf --port 11434 --alias qwen3:1.7b --jinja &
 export OPENAI_API_KEY=local
 export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
 
-cargo run -p mcp-a2a-agent                                 # self-driving demo
-A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent    # serve
+cargo build -p mcp-a2a-agent                                                  # both binaries
+cargo run -p mcp-a2a-agent --bin mcp-a2a-agent                                # self-driving demo
+A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p mcp-a2a-agent --bin mcp-a2a-agent   # serve
 ```
+
+The package has two binaries, so `cargo run` needs `--bin`. The agent spawns
+`mcp-tool-server` from its own directory, which `cargo run --bin mcp-a2a-agent`
+does not build, so build first or it stops with "could not spawn
+…/mcp-tool-server".
 
 `--jinja` is required or no model emits a tool call, and the model must be
 tool-capable — see [Rig Agent](./rig-agent.md#the-local-model-has-to-be-tool-capable)
@@ -88,14 +96,15 @@ would look exactly like a green run that exercised MCP.
 
 ## Tests
 
-Fourteen, in two groups. Ten drive the bridge over an in-process
+Seventeen, in three groups. Eleven drive the bridge over an in-process
 `tokio::io::duplex` pipe — real MCP framing, no process — and cover the
 branches: a tool refusing, a session dying mid-call, a model that never stops
-calling. Four spawn the **shipped** `mcp-tool-server` binary the way a real
-MCP client does, which is what proves its schemas reach the wire from the
-`JsonSchema` derive and that its `main` writes nothing but MCP to stdout. A
-stray `println!` there would desynchronize every frame, and no in-process test
-would notice.
+calling, a call written as text. Two (`src/leaked.rs`) cover recovering a tool
+call the model wrote as text. Four spawn the **shipped** `mcp-tool-server`
+binary the way a real MCP client does, which is what proves its schemas reach
+the wire from the `JsonSchema` derive and that its `main` writes nothing but
+MCP to stdout. A stray `println!` there would desynchronize every frame, and no
+in-process test would notice.
 
 They need neither a model nor a network, and run under `cargo test
 --workspace`. No separate CI job gates the live-model demo.

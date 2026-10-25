@@ -89,6 +89,7 @@ pub use telemetry::{
 /// | `a2a.server.pool.idle` | Gauge | `{connection}` | Idle connections |
 /// | `a2a.server.pool.created` | Counter | `{connection}` | Total connections created |
 /// | `a2a.server.pool.closed` | Counter | `{connection}` | Connections closed |
+/// | `a2a.server.executor.duration` | Histogram | `s` | How long an executor's run took, by `outcome` ([`executor_outcome`](crate::metrics::executor_outcome)) |
 ///
 /// `rpc.server.call.duration` carries `rpc.system.name`, `rpc.method`,
 /// `rpc.status_code` and, on failure, `error.type` (see [`RpcCall`]). The
@@ -112,6 +113,7 @@ pub struct OtelMetrics {
     pool_closed_seen: AtomicU64,
     persistence_error_counter: Counter<u64>,
     push_delivery_counter: Counter<u64>,
+    executor_histogram: Histogram<f64>,
 }
 
 impl std::fmt::Debug for OtelMetrics {
@@ -178,6 +180,8 @@ impl OtelMetrics {
 
         let (persistence_error_counter, push_delivery_counter) = Self::failure_instruments(meter);
 
+        let executor_histogram = Self::executor_instrument(meter);
+
         Self {
             rpc_call_histogram,
             request_counter,
@@ -193,6 +197,7 @@ impl OtelMetrics {
             pool_closed_seen: AtomicU64::new(0),
             persistence_error_counter,
             push_delivery_counter,
+            executor_histogram,
         }
     }
 
@@ -216,6 +221,23 @@ impl OtelMetrics {
             .build();
 
         (rpc_call_histogram, latency_histogram)
+    }
+
+    /// How long an executor's run took, by how it ended.
+    ///
+    /// An agent's run is often minutes, not milliseconds, so it takes the
+    /// call buckets' range (0.1 ms to 100 s) rather than the SDK's
+    /// millisecond-sized default.
+    fn executor_instrument(meter: &Meter) -> Histogram<f64> {
+        meter
+            .f64_histogram("a2a.server.executor.duration")
+            .with_description(
+                "How long an agent executor's run took, by how it ended \
+                 (completed / error / budget_exhausted / canceled / aborted)",
+            )
+            .with_unit("s")
+            .with_boundaries(RPC_DURATION_BUCKETS.to_vec())
+            .build()
     }
 
     /// The two failure signals the request path cannot see.
@@ -333,6 +355,13 @@ impl Metrics for OtelMetrics {
         }
         self.rpc_call_histogram
             .record(call.duration.as_secs_f64(), &attributes);
+    }
+
+    fn on_executor_run(&self, outcome: &str, duration: Duration) {
+        self.executor_histogram.record(
+            duration.as_secs_f64(),
+            &[KeyValue::new("outcome", outcome.to_owned())],
+        );
     }
 }
 

@@ -1,6 +1,6 @@
 # Testing Your Agent
 
-a2a-rust makes it easy to test agents at multiple levels: unit testing executors, integration testing with real HTTP, and property-based testing with fuzz targets.
+a2a-rust makes it easy to test agents at multiple levels: unit testing executors, integration testing with real HTTP, and fuzz testing of the parsers.
 
 ## Grading an executor against the protocol
 
@@ -78,8 +78,8 @@ executor conformance:
 
 **A check that did not apply is not graded**, and a report that grades
 nothing fails rather than passing vacuously — the same two rules the TCK
-follows, for the reason its README gives: a run that measured nothing once
-reported full marks.
+follows, for the reason its README gives: a check that never ran once counted
+as a pass, so a run reported 22/22 while 21 checks ran.
 
 What it cannot tell you: it runs each check once, so it will not find a race;
 it supplies its own message, so use `conformance::check_with` if your
@@ -142,7 +142,10 @@ a race. Every store this SDK ships passes it, PostgreSQL's included
 
 ## Unit Testing Executors
 
-Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
+Test your executor logic directly by creating a `RequestContext` and a real in-memory event queue.
+The examples on this page test a calculator executor, `CalcExecutor`, which is
+not shown: given `"3 + 5"` it emits `Working`, an artifact holding `8`, then
+`Completed`. Substitute your own executor and its expectations:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -205,18 +208,20 @@ Test the full stack by starting a real server and using a client:
 # use a2a_protocol_sdk::prelude::*;
 # struct CalcExecutor;
 # agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
-use a2a_protocol_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
+use a2a_protocol_sdk::server::{JsonRpcDispatcher, RequestHandlerBuilder, serve_with_addr};
 use a2a_protocol_sdk::client::ClientBuilder;
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_end_to_end() {
-    // Build handler and server
+    // Build handler and server. Port 0 lets the OS pick a free port, and
+    // `serve_with_addr` returns the address it bound.
     let handler = Arc::new(
         RequestHandlerBuilder::new(CalcExecutor).with_agent_card(card()).build().unwrap()
     );
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
-    let addr = start_test_server(dispatcher).await;
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        .await
+        .unwrap();
 
     // Build client
     let client = ClientBuilder::new(format!("http://{addr}"))
@@ -239,39 +244,12 @@ async fn test_end_to_end() {
         panic!("expected task response");
     }
 }
-
-async fn start_test_server(
-    dispatcher: Arc<JsonRpcDispatcher>,
-) -> std::net::SocketAddr {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = listener.accept().await.unwrap();
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let d = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let svc = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&d);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                ).serve_connection(io, svc).await;
-            });
-        }
-    });
-
-    addr
-}
 # fn main() {}
 ```
 
 ## Testing Both Transports
 
-Run the same tests against both JSON-RPC and REST:
+Run the same tests against both JSON-RPC and REST (the `HTTP+JSON` binding):
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -288,7 +266,7 @@ async fn test_jsonrpc_transport() {
 async fn test_rest_transport() {
     let addr = start_rest_server().await;
     let client = ClientBuilder::new(format!("http://{addr}"))
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build().unwrap();
     run_test_suite(&client).await;
 }
@@ -301,11 +279,32 @@ async fn run_test_suite(client: &A2aClient) {
 
 ## Testing Streaming
 
+The first event of a streaming send is a full `Task` snapshot, so count it
+with the events the executor emits:
+
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
+# }
+use a2a_protocol_sdk::prelude::*;
+use std::sync::Arc;
+# struct CalcExecutor;
+# agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
+
 #[tokio::test]
 async fn test_streaming() {
-    let addr = start_server().await;
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(CalcExecutor).with_agent_card(card()).build().unwrap()
+    );
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        .await
+        .unwrap();
     let client = ClientBuilder::new(format!("http://{addr}")).build().unwrap();
+    let params = MessageSendParams::new(Message::user_text("m1", "10 + 20"));
 
     let mut stream = client.stream_message(params).await.unwrap();
     let mut events = vec![];
@@ -314,9 +313,11 @@ async fn test_streaming() {
         events.push(event.unwrap());
     }
 
-    // Verify event sequence
-    assert!(events.len() >= 3); // Working + Artifact + Completed
+    // Verify event sequence: at least the initial Task snapshot, the
+    // artifact and the terminal status
+    assert!(events.len() >= 3);
 }
+# fn main() {}
 ```
 
 ## Wire Format Tests
@@ -324,6 +325,7 @@ async fn test_streaming() {
 Verify JSON serialization matches the A2A spec:
 
 ```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
 #[test]
 fn task_state_wire_format() {
     let status = TaskStatus::new(TaskState::Completed);
@@ -333,12 +335,7 @@ fn task_state_wire_format() {
 
 #[test]
 fn message_role_wire_format() {
-    let msg = Message {
-        id: MessageId::new("m1"),
-        role: MessageRole::User,
-        parts: vec![Part::text("hi")],
-        // ...
-    };
+    let msg = Message::user_text("m1", "hi");
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains("\"ROLE_USER\""));
     assert!(json.contains("\"messageId\""));
@@ -347,15 +344,19 @@ fn message_role_wire_format() {
 
 ## Fuzz Testing
 
-The `fuzz/` directory contains fuzz targets for JSON parsing:
+The `fuzz/` directory holds 17 fuzz targets for the parsers of peer input:
+JSON deserialization, the JSON-RPC envelope, the SSE parser, JWT and JWKS
+parsing, the webhook URL check and more (`fuzz/README.md` lists them all):
 
 ```bash
-# Requires nightly Rust
-cd fuzz
+# Requires nightly Rust and cargo-fuzz (one-time install)
+cargo install cargo-fuzz --version '^0.12' --locked
+
+# From the repository root, as CI and fuzz/README.md run it
 cargo +nightly fuzz run json_deser
 ```
 
-Fuzz testing helps find edge cases in JSON deserialization that unit tests miss.
+Fuzz testing helps find edge cases in the parsers that unit tests miss.
 
 ## Why No Single Test Type Is Enough
 
@@ -372,10 +373,10 @@ class of bug, and the gaps between layers are where production incidents hide:
 | **E2E dogfooding** | The full stack works under realistic conditions | That your *assertions* actually detect regressions |
 | **Mutation tests** | Your assertions detect real code changes | Protocol-level emergent behavior |
 
-**The a2a-rust experience:** At the first mutation run — when the suite had ~1,630
-unit/integration/property/fuzz tests; it has more than doubled since — after building those
-tests (with feature flags), an exhaustive E2E dogfood suite that caught 68 real bugs across 13
-documented passes, and achieving full green CI — **mutation testing still found gaps.** Tests
+**The a2a-rust experience:** At v0.3.0 the suite held about 1,630
+unit/integration/property/fuzz tests (about 1,850 with all feature flags; it has more than
+doubled since) and a 94-test E2E dogfood suite whose 13 documented passes found 68 real bugs,
+and CI was fully green — **mutation testing, adopted in that release, still found gaps.** Tests
 that looked comprehensive were silently missing assertions on return values,
 boundary conditions, and delegation correctness. The suite was green, but mutants
 survived because no test *verified* the specific behavior being mutated.
@@ -388,8 +389,9 @@ the tests catch it if the code broke?" In this repo the full sweep runs weekly
 `.github/workflows/mutants.yml`, rather than as a blocking PR gate, because a
 full sweep can take 100+ minutes per crate; a separate incremental sweep
 (`cargo-mutants --in-diff`) *is* a blocking PR gate, scoped to just the lines
-a PR changes. See [CI/CD](./cicd.md#mutation-testing-workflow) for the full
-policy.
+a PR changes (it runs once the PR is labelled `mutation-test`; the required
+check fails until then). See [CI/CD](./cicd.md#mutation-testing-workflow) for
+the full policy.
 
 ## Mutation Testing
 
@@ -419,8 +421,8 @@ conditions that are hardest to reproduce in staging.
 
 ### What Mutation Testing Found in a2a-rust
 
-Even with ~1,630 passing tests (with feature flags, at the time), an E2E dogfood suite on `agent-team`, property tests, and fuzz targets —
-all green — the first mutation testing run surfaced gaps across every crate:
+Even with about 1,630 passing tests at v0.3.0 (about 1,850 with all feature flags), an E2E dogfood suite on `agent-team`, property tests, and fuzz targets —
+all green — mutation testing surfaced gaps across every crate:
 
 - **Delegation methods** returning `()` instead of forwarding calls (e.g.,
   `Arc<T>` metrics delegation, OTel instrument recording)
@@ -490,8 +492,9 @@ header carries them too, and `ROADMAP.md` carries the plan for activating it
 (which changes both the scope and the timeout, so it needs a sweep of its own).
 
 Read that as: **generated protobuf code under `crates/*/src/proto/` is mutated
-like any other source**, and the per-mutant timeout is cargo-mutants' default
-5x the baseline with no cap.
+like any other source**, and, in the full sweep, the per-mutant timeout is
+cargo-mutants' default 5x the baseline with no cap (the incremental PR job
+passes `--timeout 300`).
 
 What genuinely configures a sweep is the command line in
 `.github/workflows/mutants.yml`, plus one file that *is* read:
@@ -516,13 +519,19 @@ name the mutant that established this and the measurement behind the numbers.
 - **On-demand**: the same full sweep can also be triggered via
   `workflow_dispatch`, e.g. to re-run it against `main` outside the weekly
   schedule.
-- **Every pull request** runs the incremental gate (`--in-diff`): only changed
-  source lines are mutated, and any missed mutant fails the PR.
+- **Every pull request** is gated on the incremental job (`--in-diff`). Once
+  the PR carries the `mutation-test` label, only changed source lines are
+  mutated and any missed mutant fails the PR. Without the label the required
+  `Mutation Testing (incremental)` check fails as not run.
 
 ### Interpreting Results
 
+An illustrative summary, annotated for this page (cargo-mutants' own closing
+line reads like `76 mutants tested in 22m: 26 caught, 49 unviable, 1 timeouts`,
+as quoted in [Mutation Testing History](../reference/mutation-history.md)):
+
 ```text
-Found 247 mutants to test
+Found 250 mutants to test
  247 caught   ✓     # Test suite detected the mutation
    0 missed   ✗     # ALERT: test gap — add or strengthen tests
    0 timeout  ?     # No verdict — the suite hung rather than answering
@@ -570,7 +579,7 @@ measuring SDK overhead independently of agent logic:
 | Error Paths | Happy vs error path latency ratio, rejection throughput |
 | Backpressure | Stream volume scaling, slow consumer, concurrent streams |
 | Data Volume | Store ops at 1K–100K tasks, context filtering, history depth |
-| Memory Overhead | Heap allocations per operation via counting allocator |
+| Memory Overhead | Time per operation with a counting allocator installed (allocation counts are asserted, not reported) |
 | Enterprise Scenarios | Multi-tenant, push configs, eviction, rate limiting, CORS |
 | Production Scenarios | Cold start, reconnection, agent burst, dispatch routing |
 | Advanced Scenarios | Tenant resolvers, hot-reload, fan-out, pagination, artifacts |
@@ -596,9 +605,10 @@ CI artifacts.
 
 ## Running the Test Suite
 
-> **Current status:** the workspace carries 2,000+ passing tests — run
-> `cargo test --workspace --all-features` for the live count.
-> across all crates (unit, integration, property, TCK conformance, and E2E dogfood).
+> **Current status:** the workspace carries several thousand tests (unit,
+> integration, property and TCK conformance, across all crates) — run
+> `cargo test --workspace --all-features` for the live count. The E2E dogfood
+> suite is a separate binary, `cargo run -p agent-team`.
 
 ```bash
 # All tests

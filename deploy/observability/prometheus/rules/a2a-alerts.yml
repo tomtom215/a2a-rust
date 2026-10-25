@@ -81,7 +81,7 @@ groups:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of push deliveries not delivered"
           description: >-
             Over 20% of push-notification attempts failed, timed out or were
-            skipped for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m.
+            cut short by push_delivery_timeout for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m.
 
       - alert: A2AUnaryLatencyHigh
         expr: a2a:rpc_server_unary_latency:p99_5m > 2.5

@@ -9,7 +9,7 @@ Demonstrates a Rust coordinator agent that delegates work to worker agents imple
 ```text
         ┌─────────────────────────────────┐
         │   Rust Coordinator              │  ← accepts user requests via A2A
-        │   (a2a-protocol-sdk)            │
+        │   (client + server crates)      │
         └──┬──────┬──────┬──────┬──────┬──┘
            │      │      │      │      │
            ▼      ▼      ▼      ▼      ▼
@@ -29,12 +29,17 @@ The coordinator:
 ### 1. Start the worker agents
 
 ```bash
-cd itk/agents/python && python agent.py &
-cd itk/agents/js-agent && node index.js &
+cd itk/agents/python && pip install -r requirements.txt && python agent.py &
+cd itk/agents/js-agent && npm ci && node index.js &
 cd itk/agents/go-agent && go run . &
 cd itk/agents/java-agent && mvn compile exec:java &
 cargo run -p multi-lang-team --bin rust-worker &
 ```
+
+Ports: Python 9100, JavaScript 9101, Go 9102, Java 9103, Rust 9104
+(`RUST_WORKER_ADDR=host:port` moves the Rust one). Any subset is fine; the
+coordinator probes each at startup and says which it found. The Rust worker
+needs only this repository.
 
 ### 2. Start the Rust coordinator
 

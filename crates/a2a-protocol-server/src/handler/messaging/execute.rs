@@ -31,6 +31,9 @@ use super::super::budget;
 use super::create::continues;
 use super::terminal::TerminalTracking;
 
+mod run_timer;
+use run_timer::{RunTimer, run_outcome};
+
 use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
 
 /// The handler's cancellation-token map, as the spawned task holds it.
@@ -234,6 +237,7 @@ impl RequestHandler {
         turn: Arc<ExecutorTurn>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let executor = Arc::clone(&self.executor);
+        let metrics = Arc::clone(&self.metrics);
         let task_id = ctx.task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
         let cancel_tokens = Arc::clone(&self.cancellation_tokens);
@@ -295,11 +299,16 @@ impl RequestHandler {
             let writer = TerminalTracking::new(writer, Arc::clone(&turn)).with_budget(ctx.budget());
             #[cfg(feature = "tracing")]
             let writer = writer.with_recorder(recorder);
+            let run = RunTimer::start(metrics);
             let result = budget::run_bounded(&ctx, executor_timeout, |timeout| {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout)
             })
             .await;
             let stopped = shutdown.is_cancelled() || turn.is_halted();
+            run.finish(run_outcome(
+                &result,
+                stopped || ctx.cancellation_token.is_cancelled(),
+            ));
             writer
                 .finish_run(executor.as_ref(), &ctx, result, stopped)
                 .await;

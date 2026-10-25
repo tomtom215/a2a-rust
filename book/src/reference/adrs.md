@@ -19,7 +19,7 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 
 **Rationale:** An agent server implementor doesn't pay for the client dependency tree and vice versa. The types crate is usable without any async runtime — useful for codegen, validation, or non-HTTP transports.
 
-## ADR 0002: Dependency Philosophy
+## ADR 0002: Dependency Philosophy and Minimal Footprint
 
 **Status:** Accepted
 
@@ -30,7 +30,7 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 - TLS through pure-Rust rustls, no OpenSSL (`tls-rustls`, a default feature of the client and SDK; `default-features = false` removes it)
 - Logging through `tracing`, a default feature since 0.14 (ADR 0013); `default-features = false` compiles it out
 - In-tree SSE parser instead of third-party crate
-- `serde` + `hyper` as the only mandatory heavyweight deps
+- `serde`, `tokio` and `hyper` as the only mandatory heavyweight deps
 
 **Rationale:** A production-grade SDK must work in corporate environments with strict dependency audits, embedded/constrained environments, and without forcing users into specific TLS or logging frameworks.
 
@@ -71,8 +71,8 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 **Context:** A2A streaming uses Server-Sent Events (SSE). Rust lacks a battle-tested, zero-dep SSE library that is hyper 1.x native.
 
 **Decision:** In-tree SSE implementation for both client parsing and server emission:
-- Client parser: ~220 lines, handles partial TCP frames, enforces 16 MiB buffer cap
-- Server emitter: ~200 lines, formats SSE `data:` lines with proper `\n\n` terminators
+- Client parser: `sse_parser`, handles partial TCP frames, enforces an event size cap (16 MiB by default)
+- Server emitter: `streaming/sse.rs`, formats SSE `data:` lines with proper `\n\n` terminators
 - Zero additional dependencies beyond hyper
 
 **Rationale:** Third-party SSE crates either use older hyper versions, carry unnecessary dependencies, or lack proper backpressure. The in-tree implementation is small enough to audit, test, and maintain.
@@ -84,18 +84,19 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 **Context:** The test suite includes unit, integration, property, fuzz, and E2E dogfood tests — but none of these measure whether the tests actually *detect* real bugs. A test suite can achieve 100% line coverage with trivial assertions. At multi-data-center deployment scales, the bugs that escape traditional testing have the highest blast radius.
 
 The full sweep runs weekly and on demand (`workflow_dispatch`); every pull
-request runs an incremental `--in-diff` mutation gate on the changed lines.
+request labelled `mutation-test` runs an incremental `--in-diff` mutation gate
+on the changed lines, and the required check fails until the label is present.
 
 **Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The tradeoff is CI time: running the full sweep on every commit is punitive given current compute budgets, so the full sweep is scheduled, and pull requests are gated on the mutants in their own diff.
 
-## ADR 0007: Axum Integration and TCK Wire Format Tests
+## ADR 0007: Axum Framework Integration and TCK Wire Format Tests
 
 **Status:** Accepted
 
 **Context:** The SDK lacked formal wire format conformance tests and required raw hyper for HTTP serving. Other SDKs integrate with their ecosystem's dominant web framework.
 
 **Decision:** Two additions:
-1. **TCK conformance tests** — 44 golden-fixture tests in `crates/a2a-protocol-types/tests/tck_wire_format.rs` validating ProtoJSON serialization, SecurityRequirement/StringList format, Part discriminators, cross-SDK interop fixtures, and full round-trip.
+1. **TCK conformance tests** — 48 golden-fixture tests in `crates/a2a-protocol-types/tests/tck_wire_format.rs` validating ProtoJSON serialization, SecurityRequirement/StringList format, Part discriminators, cross-SDK interop fixtures, and full round-trip.
 2. **Axum integration** — Feature-gated `A2aRouter` (`axum` feature) wrapping `RequestHandler` as an idiomatic `axum::Router`. Zero business logic duplication.
 
 **Rationale:** TCK tests catch interop regressions before release. Axum integration reduces server setup from ~25 lines to 3 while remaining optional (the raw hyper `serve()` API is unchanged).
@@ -126,24 +127,24 @@ request runs an incremental `--in-diff` mutation gate on the changed lines.
 | 0010 | First-party auth helpers (client OAuth2 client-credentials + token providers; server API-key/bearer/JWT interceptors) built on `ring`/`hyper`, not the OAuth-ecosystem crates; its "rejections map to `InvalidRequest`" consequence is superseded by ADR 0014 |
 | 0011 | Task retention is explicit, and the store does not schedule it (Accepted) |
 | 0012 | An append-only event log, with the snapshot kept as the record (Accepted) |
-| 0013 | Spans, metrics and one telemetry entry point (the file's status is **Proposed**; its open question on making `tracing` a default feature records the maintainer's decision of 2026-09-23: yes) |
+| 0013 | Spans, metrics and one telemetry entry point, implemented as `otel::Telemetry` (Accepted; its open question on making `tracing` a default feature records the maintainer's decision of 2026-09-23: yes) |
 | 0014 | A refused credential answers each binding's own status: HTTP `401`/`403`, gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED` (Accepted; supersedes ADR 0010's `InvalidRequest` mapping) |
 | 0015 | A tamper-evident audit trail: calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, content by digest, signed checkpoints and anchors, a six-month retention floor and legal holds (Accepted) |
 | 0016 | The public types are generated from `a2a.proto` by `tools/a2a-codegen`, the output is checked in, and CI fails on drift (Accepted) |
 | 0017 | The send's context lookup lists without history and reads only the chosen task whole; `RequestContext::stored_task` stays the whole stored task (Accepted) |
-| 0018 | A mutual-TLS client certificate reaches the interceptors on every binding, and `MutualTlsAuthInterceptor` names the caller by its SHA-256 fingerprint or a deployment's mapping; no X.509 parser in the SDK (Accepted) |
+| 0018 | A mutual-TLS client certificate reaches the interceptors on every binding, and `MutualTlsAuthInterceptor` names the caller by its SHA-256 fingerprint or a deployment's mapping; no X.509 parser in the mutual-TLS path (the `signing` feature parses `x5c` certificates for key validity) (Accepted) |
 | 0019 | Halts are written through to a `HaltStore` that every replica reads before its first send and polls; a halt the store refuses holds where it was given and is retried (Accepted) |
 | 0020 | A delegated child carries a lease, renewed by a `GetTask` that activates the lease extension; the deadline lives in a store every replica shares, and a child whose lease lapses is stopped (Accepted) |
 | 0021 | The originating principal travels as an RFC 8693 delegated token: the server reads its `act` chain into `CallContext::actors` and the audit record, and the client exchanges tokens at the identity provider (Accepted) |
 | 0022 | A tool-calling loop in the SDK: `ToolModel`, `Tool`, `ToolSet` and `ToolLoop` behind the off-by-default `tool-loop` feature, with an OpenAI-compatible model client (Accepted) |
 | 0023 | A budget travels down the delegation chain: a relative deadline and named meters on the message, held by the receiving server, reserved from the parent at grant time and reported on each status update (Accepted) |
 | 0024 | Halts and cancels are pushed to every replica: the PostgreSQL halt store notifies with each write and a listener per replica forwards it, a cancel reaches the replica running the task, and the poll stays behind the push (Accepted) |
-| 0025 | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store, and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged (Accepted) |
+| 0025 | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store (and, since ADR 0027, a content signer), and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged (Accepted) |
 | 0026 | Tool calls carry idempotency keys, HMAC-SHA256 under the loop's secret of the task and message, the tool and its canonical arguments; a repeated call to a tool not declared read-only is answered from the first; `Delegation` keys its sends to agents that honour keys (Accepted) |
-| 0027 | Content is signed when served and verified when received: `with_content_signer` signs every agent message and artifact a server sends, over exactly what is sent; `with_content_keys` on the server and the client refuses altered content and marks unsigned content unverified; the production profile requires a signer (Accepted) |
+| 0027 | Content is signed when served and verified when received: `with_content_signer` signs every artifact, status message and direct reply a server sends (not a task's history), over exactly what is sent; `with_content_keys` on the server and the client refuses altered content and marks unsigned content unverified; the production profile requires a signer (Accepted) |
 
 Only ADRs 0001–0008 have a section above; the table is the summary for all
-twenty-four.
+twenty-seven.
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

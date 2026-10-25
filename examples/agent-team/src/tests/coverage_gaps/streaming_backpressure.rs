@@ -57,7 +57,7 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
         RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)
             .with_agent_card(card)
             .with_interceptor(AuditInterceptor::new("BackpressureTest"))
-            .with_metrics(MetricsForward(Arc::clone(&metrics)))
+            .with_additional_metrics(Arc::clone(&metrics))
             .with_event_queue_capacity(2)
             .build()
             .expect("build backpressure handler"),

@@ -234,6 +234,13 @@ jobs:
       - name: OTel exporter covers every Metrics callback
         run: python3 scripts/check_otel_metrics_coverage.py
 
+      # A binary that starts no `Telemetry`, or a dependency on the client or
+      # server crate that drops `otel`, exports nothing and breaks nothing:
+      # the 2026-10-24 wiring audit found `live-model`, the SLIMRPC client
+      # and `itk` that way by reading.
+      - name: Every binary starts Telemetry and no manifest drops otel
+        run: python3 -I scripts/check_otel_wiring.py
+
       # The same rule for `TaskStore`: a store that writes a delta in place
       # must also say so through `try_save_*_delta`, or `EncryptedTaskStore`
       # seals every part of the task on every event (release audit F7).

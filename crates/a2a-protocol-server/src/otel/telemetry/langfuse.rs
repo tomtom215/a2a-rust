@@ -43,9 +43,11 @@ pub const LANGFUSE_SELF_HOSTED: &str = "http://localhost:3000";
 ///   or `OTEL_LOGS_EXPORTER=otlp` turns them back on, towards the general
 ///   `OTEL_EXPORTER_OTLP_*` endpoint — a collector, not Langfuse.
 ///
-/// The preset's endpoint and headers are set in code, so for traces they win
-/// over `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS`; to
-/// send traces somewhere else, do not apply it.
+/// The preset's endpoint is set in code, so for traces it wins over
+/// `OTEL_EXPORTER_OTLP_ENDPOINT`. Its two headers are added to those in
+/// `OTEL_EXPORTER_OTLP_HEADERS`, and a header of the same name in the
+/// variable replaces the preset's; to send traces somewhere else, do not
+/// apply it.
 #[derive(Clone)]
 pub struct Langfuse {
     base_url: String,

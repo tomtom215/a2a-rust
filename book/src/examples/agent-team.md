@@ -1,29 +1,31 @@
 # Agent Team
 
-The project's primary integration test and SDK dogfood. Deploys 4 specialized agents communicating over multiple transports, then runs **102 E2E tests** exercising every major SDK feature. That is what a plain `cargo run -p agent-team` reports: WebSocket, gRPC, Axum, SQLite, signing and OTel are the example's `default` features, so the default run is the full run. `--no-default-features` compiles all six out and runs 87.
+The project's primary integration test and SDK dogfood. Deploys five specialized agents over JSON-RPC, REST and gRPC, runs **100 end-to-end tests** against them, then sweeps every A2A method over every binding against a sixth agent that serves all four: 102 results in all. That is what a plain `cargo run -p agent-team` reports: WebSocket, gRPC, Axum, SQLite, signing and OTel are the example's `default` features, so the default run is the full run. `--no-default-features` compiles all six out and runs 87 tests (four agents, no sweep).
 
 **Source:** [`examples/agent-team/`](https://github.com/tomtom215/a2a-rust/tree/main/examples/agent-team)
 
-If this passes, the SDK works.
+If this passes, every SDK feature listed below works in-process. It does not
+exercise PostgreSQL, JWT, tool calling, encryption or a real model.
 
 ## Agents
 
 | Agent | Transport | Role | Key features exercised |
 |-------|-----------|------|----------------------|
 | **CodeAnalyzer** | JSON-RPC | File analysis, LOC counting | Streaming, artifacts, multi-part messages |
-| **BuildMonitor** | REST | Cargo check/test runner | Streaming, cancellation, push notifications |
+| **BuildMonitor** | REST | Simulated cargo builds | Streaming, cancellation, push notifications |
 | **HealthMonitor** | JSON-RPC | Agent health checks | Push notifications, interceptors |
 | **Coordinator** | REST | Orchestration, delegation | A2A client calls, task aggregation, metrics |
 | **GrpcAnalyzer** | gRPC | Same as CodeAnalyzer | gRPC transport (`grpc` feature) |
+| **Surface agent** | all four | Exists to be swept | Every method over every binding (`src/surface.rs`; needs `websocket` and `grpc`) |
 
 ## Running
 
 ```bash
-# The full run — 102 tests. WebSocket, gRPC, Axum, SQLite, signing and OTel
+# The full run — 100 tests, 102 results. WebSocket, gRPC, Axum, SQLite, signing and OTel
 # are this example's DEFAULT features, so nothing is compiled out here:
 cargo run -p agent-team
 
-# Identical — 102. --all-features adds only `tracing`, which changes output
+# Identical — 102 results. --all-features adds only `tracing`, which changes output
 # volume and not coverage:
 cargo run -p agent-team --all-features
 
@@ -64,8 +66,8 @@ For the full test matrix, see [Test Coverage Matrix](../deployment/dogfooding-te
 
 The suite exercises **40+ SDK features** including:
 
-- `AgentExecutor` trait (4 implementations)
-- `RequestHandlerBuilder` (all configuration options)
+- `AgentExecutor` trait (5 implementations)
+- `RequestHandlerBuilder` (executor timeout, event-queue capacity, max concurrent streams, metrics, interceptors, extended card, push sender)
 - `JsonRpcDispatcher` + `RestDispatcher`
 - `ClientBuilder` (JSON-RPC + REST bindings; `from_card` + `build_grpc` on a bare `host:port` gRPC target)
 - Sync and streaming `SendMessage`

@@ -9,6 +9,20 @@
 2026-10-23 so that every baselined failure in `tck/conformance-baseline.json`
 has an upstream report.
 
+**Re-checked 2026-10-24 at `d4d6fae` (still upstream `main`): do not file
+this as a new issue.** Upstream already tracks it: issue #202, and the
+unmerged pull requests #213 ("bind expected_error on CORE-SEND-003 and
+CORE-MULTI-002a", closes #202), #203 and #238 all add the `expected_error`
+this draft proposes (their heads are in the repository's `refs/pull/*`; none
+is an ancestor of `main`; whether each is open could not be read, the GitHub
+API being out of reach from here). The merged #207 names `CORE-SEND-003`
+as "tracked in #202". A comment on #202 with this draft's evidence is the
+useful form. One claim below is incomplete: after the fix the `http_json`
+cell still fails, because the suite hardcodes HTTP 415 for
+`ContentTypeNotSupportedError` where v1.0.1 §5.4 says 400, which #232/#258
+change. `CORE-MULTI-002a` (`core_operations.py:591`) has the same missing
+`expected_error` and is not baselined here (not assessed).
+
 Verified against a fresh clone of `a2a-tck` at `d4d6fae`
 (`main`, 2026-10-22) on 2026-10-23: the requirement, the harness path and the
 vendored specification text quoted below are read from that clone. The

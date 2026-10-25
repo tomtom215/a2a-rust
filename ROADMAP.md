@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.14.1** (prepared 2026-09-30; the tag is the maintainer's act). MSRV **1.94** for 0.15.0 (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
+Current release: **0.15.0** (prepared 2026-10-25; the tag is the maintainer's act). MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
 
 ## What this file is
 
@@ -252,7 +252,7 @@ eviction cost.
 ### The SLIMRPC binding — `bindings/a2a-protocol-slimrpc`
 
 All eleven spec methods plus multicast, deliberately outside the workspace with
-its own `Cargo.lock` (`agntcy-slim-rpc` brings 359 transitive dependencies
+its own `Cargo.lock` (`agntcy-slim-rpc` brings 387 transitive dependencies
 including `aws-lc-sys`; `a2a-protocol-types` has 11). **86 test functions**
 across ten topologies — in-process, multicast group, one node over TCP, that
 node with verified TLS, mutual TLS, two peered nodes, a node in its own OS

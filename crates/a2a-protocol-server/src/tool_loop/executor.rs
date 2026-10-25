@@ -117,7 +117,12 @@ impl AgentExecutor for ToolLoopExecutor {
                     emit.fail(FailureClass::BudgetExhausted, e.to_string())
                         .await
                 }
-                Err(e) => emit.fail(FailureClass::Internal, e.to_string()).await,
+                Err(e) => {
+                    // The whole error is the operator's; the caller gets
+                    // `caller_message`, without the provider's body or URL.
+                    trace_warn!(error = %e, "the run failed");
+                    emit.fail(FailureClass::Internal, e.caller_message()).await
+                }
             }
         })
     }

@@ -73,6 +73,10 @@ CRUD, and passes the in-repo TCK: 21/21 graded checks, 1 not applicable, on
 the JSON-RPC binding. `tck.yml`'s `tck-example-agents` job gates that figure on
 every push and pull request, with no model configured;
 `cargo run -p a2a-tck -- --url <addr> --binding jsonrpc` reproduces it.
+Server mode permits push-notification webhooks on loopback and private
+addresses (`allow_private_urls`), so it is a local test server, not a
+deployment template; [Genai Agent](./genai-agent.md)'s server mode shows the
+guarded default.
 
 ### The local model has to be tool-capable
 
@@ -83,6 +87,14 @@ Measured 2026-09-19 against the same `llama-server` build (llama.cpp
 |---|---|
 | Qwen3.5-0.8B-Q4_0 | **Cannot.** Answers in prose. Forced with `tool_choice: "required"` it still emits no tool call, and runs to `finish_reason: "length"`. |
 | Qwen3-1.7B-Q4_K_M | **Can.** First request returns `finish_reason: "tool_calls"`. |
+
+Re-measured 2026-10-20 on llama.cpp b11751, after the loop began running a
+call the model wrote as its whole reply's text when it names a declared tool
+(`src/leaked.rs`) and the preamble told the model to call tools itself:
+Qwen3-1.7B-Q4_K_M went to 20 of 20 on each of two prompts (the example's
+README says what is counted), and Qwen3.5-0.8B-Q4_0 now emits tool calls (9 of
+10 billing runs made at least one) but answers wrongly too often to rely on.
+Use Qwen3-1.7B or larger.
 
 Hence the default, which differs from the sibling LLM examples': they do not
 call tools, so 0.8B remains right for them. `--jinja` is load-bearing —

@@ -185,7 +185,8 @@ impl RequestHandler {
         self.metrics.on_request("CreateTaskPushNotificationConfig");
 
         let tenant = self
-            .resolve_tenant(
+            .resolve_tenant_counted(
+                start,
                 "CreateTaskPushNotificationConfig",
                 headers,
                 config.tenant.as_deref(),
@@ -263,7 +264,8 @@ impl RequestHandler {
         self.metrics.on_request("GetTaskPushNotificationConfig");
 
         let tenant = self
-            .resolve_tenant(
+            .resolve_tenant_counted(
+                start,
                 "GetTaskPushNotificationConfig",
                 headers,
                 params.tenant.as_deref(),
@@ -343,7 +345,7 @@ impl RequestHandler {
         self.metrics.on_request("ListTaskPushNotificationConfigs");
 
         let tenant_owned = self
-            .resolve_tenant("ListTaskPushNotificationConfigs", headers, tenant)
+            .resolve_tenant_counted(start, "ListTaskPushNotificationConfigs", headers, tenant)
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant_owned, async {
@@ -414,7 +416,8 @@ impl RequestHandler {
         self.metrics.on_request("DeleteTaskPushNotificationConfig");
 
         let tenant = self
-            .resolve_tenant(
+            .resolve_tenant_counted(
+                start,
                 "DeleteTaskPushNotificationConfig",
                 headers,
                 params.tenant.as_deref(),

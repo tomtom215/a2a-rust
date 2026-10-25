@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.15.0] - 2026-10-25
+
 ### Known Limitations
 
 - **Several replicas sharing a store need session affinity.** Without every
@@ -109,10 +113,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SecurityScheme::Http(HttpAuthSecurityScheme { scheme: "Bearer".into(),
   description: None, bearer_format: None }))]))`); for
   `ApiKeyAuthInterceptor`, an `apiKeySecurityScheme` naming its header; for
-  `MutualTlsAuthInterceptor`, a `mutualTlsSecurityScheme`; and repeat every
+  `MutualTlsAuthInterceptor`, a `mtlsSecurityScheme`; and repeat every
   extended-card scheme in the public card. The ITK agent now declares its
   bearer scheme in every pass (it guards the extended card in every pass),
-  and the SLIMRPC binding's tests declare `mutualTlsSecurityScheme` for
+  and the SLIMRPC binding's tests declare `mtlsSecurityScheme` for
   `SlimPeerAuthInterceptor::required()`. Tests:
   `auth::declared_tests::an_authenticator_behind_a_public_card_declaring_no_scheme_is_refused`,
   `auth::declared_tests::a_scheme_declared_only_on_the_extended_card_is_refused`.
@@ -216,7 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now refuses a flow URL, refresh URL or `openIdConnectUrl` that is not
   `scheme://authority...`, and an `oauth2MetadataUrl` that is not `https`.
   The deprecated implicit and password flows' URLs are checked only when
-  given. A client never applies this to a card it fetches. Tests:
+  given. A client applies the same check to a card it fetches. Tests:
   `security::url_tests`.
 - **A client built from a card refuses to build when the card marks an
   extension `required` that it does not ask for** (client; a2a.proto
@@ -353,6 +357,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`a2a.server.executor.duration`: an agent executor's run time is a metric**
+  (server, `otel`). The run is the executor's work for one turn of a task,
+  which usually outlives the call that started it, so `rpc.server.call.duration`
+  did not measure it and only the `invoke_agent` span's duration did. The new
+  histogram (seconds, the call buckets' 0.1 ms to 100 s) carries an `outcome`:
+  `completed`, `error`, `budget_exhausted` (the executor timeout, or the
+  caller's deadline or tokens), `canceled` (the task was canceled or halted,
+  or the server was shutting down) or `aborted` (the future ended without
+  returning: a panic, or a dropped run, reported from a guard so it is not
+  missing). It comes from a new defaulted `Metrics::on_executor_run`, which the
+  OpenTelemetry exporters, `Arc<T>` and the forwarder `with_additional_metrics`
+  builds all forward; the server dashboard gains an "Agent executor" row
+  (p50 and p95 by outcome, runs per second by outcome). Tests:
+  `handler/executor_metrics_tests.rs` (one per outcome and the duration; each
+  fails with its path removed).
+
+- **Erasure and legal holds are on record in the audit chain** (server,
+  `audit`; GDPR Art. 5(2), CRA Annex I Part I (2)(m)). Four record kinds:
+  `task.deleted`, written by the audited task store when a task that was
+  there is deleted (the id, context and tenant, never content); `erasure`,
+  written by the new `AuditLog::record_erasure(chain, by, Erased)` for the
+  `purge_expired` and `erase_caller` an operator runs on a concrete store
+  (who, the scope, the counts; the erased caller in a new `erasedCaller`
+  field that `with_privacy` seals under that caller's own key, so erasing the
+  person later removes their name from the record of their erasure); and
+  `hold.placed` and `hold.released`, which `place_hold` and `release_hold`
+  now write, naming the person (`by`, a new parameter; both methods are new in
+  0.15). Tests: `audit/task_store/tests.rs`
+  `deleting_a_task_is_a_chain_record_and_deleting_nothing_is_not`,
+  `audit/tests/holds.rs` `placing_and_releasing_a_hold_are_chain_records_naming_the_person`,
+  `audit/privacy/tests/erasure.rs` `an_operator_erasure_names_the_operator_and_seals_the_caller`;
+  each fails with its record not written (or, for the third, the field left
+  unsealed).
+
+- **`RequestHandlerBuilder::with_additional_metrics`** (server). `with_metrics`
+  replaces the default, which exports to the global OpenTelemetry meter
+  provider, so a handler given a counter of its own stopped exporting
+  `rpc.server.call.duration` and the `a2a.server.*` instruments, and nothing
+  said so. `with_additional_metrics` keeps what the handler reports to (the
+  default, or whatever `with_metrics` set) and adds the caller's: each of the
+  nine `Metrics` callbacks goes to the existing metrics, then to the new
+  ones. `examples/agent-team` (five handlers) and `examples/resilient-agent`
+  (two acts) lost their server metrics this way; both now use it, and
+  agent-team's `MetricsForward`, which `Arc<T>` made redundant, is gone.
+  Tests: `metrics/tests.rs` `a_tee_forwards_every_callback_to_both_in_order`
+  (fails with any callback dropped) and `tests/default_metrics.rs`
+  `additional_metrics_are_reported_beside_the_default_not_instead_of_it`
+  (fails when the method replaces). `scripts/check_otel_metrics_coverage.py`
+  now also holds `Arc<T>` and the new forwarder to every callback.
+
+- **`scripts/check_otel_wiring.py`, a CI gate for what a binary exports.** It
+  fails a tracked `fn main` that starts no `Telemetry` and is not on its
+  exemption list (the TCK runner, an MCP stdio server, the benchmark
+  harnesses and the code generator, each with its reason), and a manifest
+  that takes `a2a-protocol-client`, `-server` or `-sdk` with
+  `default-features = false` and no `otel`. Stale exemptions fail too.
+  `--self-test` proves each rule on a fixture repository. Run on the tree
+  before the fixes below it named exactly `examples/live-model`, the SLIMRPC
+  manifest and `itk/Cargo.toml`.
+
 - **Agent-card requests are traced and measured** (server, `tracing` and
   `otel`; HTTP semantic conventions at `55c98cf`). A request for
   `/.well-known/agent-card.json` on any listener that serves it (JSON-RPC,
@@ -389,7 +453,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `server::peer::security_scheme()` to `securitySchemes` under
   `SECURITY_SCHEME_NAME` (`slimMls`), and for `required()` a security
   requirement naming it. A2A has no scheme type for SLIM, so it is a
-  `mutualTlsSecurityScheme` whose description names SLIM, the kind whose
+  `mtlsSecurityScheme` whose description names SLIM, the kind whose
   credential the transport proves for both peers. The interceptor now
   answers `checks_scheme`: a mutual-TLS scheme and no other, so
   `RequestHandlerBuilder::build` refuses `required()` behind a card whose
@@ -1574,7 +1638,26 @@ section "The client refuses what `a2a.proto` does not allow".
   `IPV6_V6ONLY`, a custom backlog) and binding before dropping privileges
   (#151). `Server::bind` now delegates to it.
 
+- **`RequestHandler::undeclared_binding` and `warn_if_undeclared` are
+  public** (spec §5.2: an agent MUST declare every protocol it serves). Every
+  listener in this crate runs the check when it starts; a binding outside it
+  could not. `SlimRpcServer` now runs it with its own `protocolBinding`, so a
+  SLIMRPC agent whose card omits SLIMRPC is warned about at construction, as
+  the other listeners' agents are.
+
 ### Behaviour Changes
+
+- **The SQLite stores zero deleted content in the database file**
+  (`secure_delete=ON` on every pooled connection: the task, tenant, push
+  configuration, halt and audit stores). SQLite leaves a deleted or
+  rewritten cell in its freed page until something reuses it, so `delete`,
+  `purge_expired` and `erase_caller` left the bytes in the file. They are
+  now overwritten with zeros there. They are not overwritten in the
+  write-ahead log, which keeps a page's earlier image until a checkpoint
+  truncates it, nor in a backup. Writes that free or rewrite content do a
+  little more work; the cost was not measured. Test: `sqlite_pool.rs`
+  `a_deleted_row_does_not_stay_in_the_database_file` reads the file's bytes
+  and, as its control, finds the deleted text there with the pragma off.
 
 - **`rpc.server.call.duration`, `rpc.client.call.duration` and
   `a2a.server.request.duration` use the semantic conventions' current
@@ -1705,7 +1788,7 @@ section "The client refuses what `a2a.proto` does not allow".
   message without `role`, `""` for a request without `message` or `id`); it
   is now `message.role`, `message.messageId`, `message`, `id`, `url`, on
   JSON-RPC, WebSocket and HTTP+JSON. The `SendMessage` id checks named
-  `message.id`, `task_id`, `context_id` and `reference_task_ids`; they are
+  `message.id`, `task_id` and `context_id` (reference ids were not checked); they are
   `message.messageId`, `message.taskId`, `message.contextId` and
   `message.referenceTaskIds`, in the violation's `field` and the message
   ("message.messageId must not be empty or whitespace-only"). A client
@@ -2030,7 +2113,7 @@ section "The client refuses what `a2a.proto` does not allow".
   message only. They are the new `ServerError::InvalidField { field, message }`,
   which answers with the same code, status, message and metric label as
   `InvalidParams`; code matching `ServerError::InvalidParams` on these errors
-  matches `InvalidField` too (see the upgrading guide).
+  must also match `InvalidField` (see the upgrading guide).
 
 - **A `google.protobuf.Struct` error detail is written as ProtoJSON writes
   an `Any`** (server; §3.3.2, §9.5, §11.6, audit register R19). An error's
@@ -2371,8 +2454,8 @@ section "The client refuses what `a2a.proto` does not allow".
   register webhooks on them. Now each caller an authenticating interceptor
   identifies gets a partition of its own, where another caller's task is
   `TaskNotFound`. A request it lets through without an identity (an
-  unlabelled token or key, a JWT without `sub`) keeps the tenant's shared
-  records, as before; `isolate_tasks_by_caller` still refuses one. Unset
+  unlabelled token or key) keeps the tenant's shared records, as before (a JWT
+  without `sub` is refused, below); `isolate_tasks_by_caller` still refuses one. Unset
   stores default to the tenant-aware in-memory ones: up to 1,000 partitions,
   each with the whole `with_task_store_config` capacity (10,000 tasks by
   default), so that store's bound is per caller now. `build()` now refuses, naming the remedies, a supplied task or
@@ -2609,6 +2692,39 @@ section "The client refuses what `a2a.proto` does not allow".
   a2a-itk `82458cea` (`acts/reports/2026-10-08/`).
 
 ### Fixed
+
+- **A client call is recorded as it ended for the caller** (client,
+  `tracing`/`otel`). Three calls were recorded wrongly. A call dropped
+  while waiting for its agent (a `tokio::time::timeout`, a `select!`) ran
+  nothing after its `.await`: its span ended with no status and
+  `rpc.client.call.duration` held no point, so the calls callers gave up on
+  were the ones the telemetry could not see. A stream dropped before its
+  final event or the end of its body was recorded as a success. And a call
+  ended at the transport, before the client had accepted the answer: an
+  interceptor's `after` hook that refused it, a result that did not decode,
+  a response `received` found malformed, a content signature that did not
+  verify were all recorded as successes. The first two now end their span
+  with `error.type` `cancelled` and `ERROR` status and record their
+  duration with that `error.type`, as the server records a peer that goes
+  away; the third ends with the refusal's class (`serialization`,
+  `invalid_response`, the new `content_not_verified`, or the hook's own
+  error). A stream read to its end is unchanged. The interceptors' error
+  hook still runs only for a failure of the transport, and not for a dropped
+  call (a destructor cannot await it). A call refused before anything is
+  sent (an undeclared capability, a message that is not well formed, a
+  `before` hook that fails) opens no span, as before: nothing was called.
+  Internally the nine unary methods' send, `after` hooks and decoding are
+  one `send_decoded`, and the span, clock and metric are one `InFlight`
+  (`call_span/in_flight.rs`). Tests: `call_metric/tests.rs`
+  `a_call_the_caller_drops_is_recorded_as_cancelled`,
+  `a_stream_dropped_before_it_ended_is_recorded_as_cancelled`,
+  `a_response_an_interceptor_refuses_is_recorded_as_failed`,
+  `a_response_that_does_not_decode_is_recorded_as_failed` and
+  `a_stream_an_interceptor_refuses_is_recorded_as_failed`, and the span's
+  own in `call_span/in_flight/tests.rs`. The first two were written failing
+  first (no point recorded; a success recorded); the others were checked by
+  four mutations (ending before validation, no failure for a refused
+  stream, a no-op `Drop`, no `content_not_verified` class), each caught.
 
 - **A WebSocket client's spans and `rpc.client.call.duration` carry
   `server.address` and `server.port`** (client). A transport given to
@@ -3388,6 +3504,121 @@ section "The client refuses what `a2a.proto` does not allow".
   collector makes the executor wait (bounded by the write timeout) instead
   of dropping events. Measured after: 600 of 600 in 60 of 60 sends.
 
+- **A subscription that could not replay what its snapshot lacked went on
+  live and skipped those events with no `streamLagged`** (spec §3.5.2: each
+  stream MUST receive the same events in the same order). When the store had
+  not applied the queue's events within `subscribe_replay_catchup`, the
+  `SubscribeToTask` snapshot reflected fewer positions than the live
+  receiver started after, and the log was replayed to cover them; a store
+  without an event log, an unreadable or holed log, and a log that no longer
+  reached back each returned early instead. The stream now yields the
+  snapshot and then `streamLagged` counting the positions between. A resume
+  against a whole snapshot is unchanged.
+- **The agent-card lint accepted `iso-kam3-*` as HTTP authentication
+  schemes.** They are the algorithms of the `Mutual` scheme, in IANA's second
+  table, not registered schemes; removed from the allowlist, so a card naming
+  one is warned about.
+- **The task store a handler builds for itself reported to no metrics**
+  (server). `RequestHandlerBuilder::build` made the default (and the
+  caller-isolated default) store with the no-op `Metrics`, so on a handler
+  with no store of its own the one sign that an event was lost, an append
+  for a task the store no longer held (`a2a.server.persistence_errors{operation=event_append,
+  error=task_absent}`), reached no exporter. The store now reports to the
+  handler's `Metrics`. Tests: `handler/default_store_metrics_tests.rs`
+  (the default and the caller-isolated default; both fail without the fix).
+- **A request the tenant rule refused was counted as received and never as
+  answered** (server). Under `require_resolved_tenant()`, or a resolver that
+  disagrees with the client's tenant, `SendMessage`, `SendStreamingMessage`,
+  `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask` and the four push
+  configuration methods returned from resolving the tenant after counting
+  `on_request` and before any `on_error` or `on_latency`, so
+  `a2a:server_unanswered:rate5m` and `A2ARequestsUnanswered` read every
+  refusal as a request the server never answered. The refusal is now counted
+  as an error with its latency, like every later failure. Test:
+  `handler/tenant_refusal_metrics_tests.rs` (all ten methods; each of the
+  nine call sites fails it when reverted on its own).
+- **`live-model`, the SLIMRPC client and the ITK agent's client exported
+  nothing** (examples, `a2a-protocol-slimrpc`, `itk`). `examples/live-model`
+  started no `Telemetry`, so its run over every binding, the richest
+  `gen_ai.*` source in the repository, recorded into the no-op provider.
+  `a2a-protocol-slimrpc` and `itk` took `a2a-protocol-client` with
+  `default-features = false` and no `otel`, which drops `tracing` too, so
+  their outbound calls opened no `CLIENT` span and recorded no
+  `rpc.client.call.duration` (neither lockfile had a `tracing` or
+  `opentelemetry` edge on the client). `live-model` now starts `Telemetry`
+  from the `OTEL_*` environment as the other examples do; both manifests ask
+  for `otel`. Test: `bindings/a2a-protocol-slimrpc/tests/client_telemetry.rs`
+  (a `CLIENT` and a `SERVER` span for one SendMessage; fails with the
+  features removed). The ITK agent and `live-model` have no test of their
+  own; `scripts/check_otel_wiring.py` is what pins them.
+- **`incident-response` stopped exporting after its observability act**
+  (examples). The act's two checks each install a meter provider of their
+  own as the global one and shut it down, and the demo goes on serving;
+  handlers on the default metrics follow the global provider at each
+  measurement, so everything recorded after the act went to a provider
+  already shut down and the `OTEL_*` export the demo had configured lost it.
+  Each check now puts the provider that was global back when it returns.
+  Test: `hardening/observability.rs`
+  `the_checks_leave_the_global_meter_provider_as_they_found_it` (fails with
+  the restore removed from both checks).
+- **Six answers the axum router and the WebSocket server gave were recorded
+  nowhere** (server). Not in `rpc.server.call.duration`, so a dashboard's
+  error ratio and its status breakdown missed them. The axum router's
+  `TimedBody` extractor answered a body over `max_request_body_size` (413) and
+  one not received in `body_read_timeout` (408) with a response nothing
+  marked, and a `historyLength` or list query that did not parse was refused
+  outside the recorded call; the WebSocket server answered a binary frame
+  (-32700) and a request over the 64 a connection may run at once (-32603)
+  without recording either. The axum body rejections are now marked as
+  refused, so the validating layer records them with their status; the two
+  query parses run inside the recorded call, so `GetTask` and `ListTasks` are
+  recorded refused, as `RestDispatcher` records the same requests; the
+  WebSocket answers are recorded with their code. Tests:
+  `tests/dispatch_tests/rpc_calls.rs`
+  `the_axum_router_records_a_body_over_its_limit_and_one_never_finished` and
+  `the_axum_router_records_an_unreadable_query_as_the_method_refused` (the
+  second compares the router with `RestDispatcher`), and `websocket.rs`
+  `ws_binary_and_busy_answers_are_recorded`; each fails with its fix
+  removed. Still unrecorded: a WebSocket upgrade refused for its `Origin` or
+  `A2A-Version` or timed out (logged, not metered), and a message over the
+  size cap, which tungstenite refuses by closing the connection with no
+  JSON-RPC answer.
+- **A tool-loop run that failed on the model provider told the A2A caller
+  what the provider had sent back** (server, `tool-loop`). `ToolLoopExecutor`
+  failed the task with the error's full text: up to 512 bytes of the
+  provider's response body for a non-2xx status (which can echo the prompt or
+  name an account or a quota), and, for a connection failure, the provider's
+  URL. The caller is another agent or a person across the network, not the
+  operator. The task now fails with `the model provider answered HTTP {status}`,
+  `could not reach the model provider`, `the model provider's answer could
+  not be read` or `the model client is misconfigured`, and the full error is
+  logged at WARN for the operator. A tool's own message, a timeout and an
+  error a `ToolModel` returns as `Other` go through unchanged, and
+  `ModelError`'s `Display`, for code calling the loop directly, is unchanged.
+  Tests: `tool_loop/loop_error.rs`
+  `the_caller_is_told_the_kind_of_failure_not_what_the_provider_sent`,
+  `tests/tool_loop/executor.rs`
+  `a_provider_failure_fails_the_task_as_internal_with_the_status_and_not_the_body`
+  and `a_transport_failure_does_not_tell_the_caller_where_the_provider_is`.
+
+- **A gRPC client built from `GrpcTransport::connect` recorded no span and no
+  duration** (client, `grpc`). Handed to `with_custom_transport`, the route
+  the book documents for configuring the transport yourself, `GrpcTransport`
+  named neither its `rpc.system.name` nor its address, and a client call
+  with no system opens no `CLIENT` span and records no
+  `rpc.client.call.duration`; only `build_grpc` named them. The transport now
+  reports `grpc` and the endpoint it dials. Found by the new
+  `crates/a2a-protocol-sdk/tests/operation_matrix`, which runs all eleven
+  operations of `Method::ALL` over JSON-RPC, HTTP+JSON, gRPC and WebSocket
+  and requires a `SERVER` span and `rpc.server.call.duration` point from the
+  server and a `CLIENT` span and `rpc.client.call.duration` point from the
+  client for each (176 checks); the other 154 held. Tests:
+  `tests/grpc_unary_success_tests.rs`
+  `a_transport_from_connect_names_its_system_and_address`, and the matrix
+  (22 gaps before the fix, all on the gRPC client; renaming one operation in
+  either side's span-name table makes it name that operation on all four
+  bindings and no other).
+
 ### Deprecated
 
 - **`signing::sign_agent_card`** (types; spec §8.4.2), for
@@ -3419,6 +3650,22 @@ section "The client refuses what `a2a.proto` does not allow".
   version); code that names them now gets a deprecation warning.
 
 ### Performance
+
+- **A blocking send costs no more CPU than in 0.14.1; telemetry compiled in
+  by default is about 5% of it** (measured, not a change). On
+  `send_latency_breakdown`, `diag/send/echo_3_events/single_worker`
+  (release profile, one pinned core of a shared 4-vCPU Xeon at 2.10 GHz,
+  rustc 1.99.1, medians of 8 interleaved rounds): 0.14.1 106.2 µs
+  (102.0–114.0), this tree 102.0 µs (101.0–115.9), this tree without
+  `tracing` and `otel` 95.7 µs (87.4–106.0). The ranges overlap, so the
+  first pair says "not slower", not "faster". With nothing installed, the
+  default `tracing` and `otel` cost 4.6% and 6.6% of a send in two runs;
+  `default-features = false` removes it. The `default` comment of the server
+  crate said "a level check" until this. Against `6ce5dc9a` (2026-10-12, a
+  commit that was 13.9% faster than 0.14.1 in the same run) this tree is
+  11.5–16.0% slower in four runs, with no step between them larger than
+  the noise; the cause was not isolated. Method, every run and its spread:
+  `docs/readiness-bar.md`, "the CPU cost of a blocking send".
 
 - **A send's context lookup copies one history, not ten** (server; ADR
   0017). `find_task_by_context` listed up to ten tasks of the context
@@ -3767,6 +4014,18 @@ section "The client refuses what `a2a.proto` does not allow".
 
 ### Internal
 
+- **The intermittent `log_redaction` test is explained and fixed.**
+  `a_failed_or_timed_out_delivery_logs_the_origin_not_the_secret` missed a
+  warning about once in 20 parallel runs. It captured with a scoped
+  subscriber, and `tracing-core` 0.1.36 computes a callsite's interest from
+  the first-reaching thread's default while only one dispatcher is
+  registered, so another test's thread reaching the same `warn!` first made
+  it "never interested" for every thread (two threads and two barriers
+  reproduce it every time; 160 runs of the test did not). The test now
+  captures through the shared global subscriber (`warning_lines_during`).
+  Regression: `handler/shutdown/tests/warning.rs`
+  `a_callsite_another_thread_reached_first_is_still_captured`.
+
 - **A prompt-injection containment harness** (`a2a-protocol-sdk/tests/injection_containment/`,
   `docs/injection-containment.md`). A deterministic model that obeys every
   `CALL` line it reads drives a `ToolLoopExecutor` whose tools pay, fetch
@@ -4097,7 +4356,7 @@ section "The client refuses what `a2a.proto` does not allow".
     else.
   - **Migration.** gRPC and `A2aRouter` pass the resolver no URL, so there it
     now resolves no tenant: the request is served from the default tenant,
-    or rejected under `require_resolved_tenant(true)`. A deployment that used
+    or rejected under `require_resolved_tenant()`. A deployment that used
     this resolver on those entry points was taking the tenant from the client
     all along. Switch it to `BearerTokenTenantResolver`, or to
     `HeaderTenantResolver` behind a proxy that sets the header and strips any

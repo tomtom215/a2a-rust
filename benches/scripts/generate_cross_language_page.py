@@ -3,19 +3,29 @@
 # Copyright 2026 Tom F.
 """Render benches/results/cross-language-*.json into an mdbook page.
 
-Every figure on the page is computed here from the result files. Nothing is
-typed in by hand, so the page cannot drift from the measurement it describes.
+Every measured figure on the page is computed here from the result files, so
+the page cannot drift from the measurement it describes. The only figures typed
+in are assumptions, named as such on the page: the agent-turn bounds below and
+the request rates of the first table.
 """
 
 from __future__ import annotations
 
 import json
 import pathlib
+import re
+import statistics
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 RESULTS = REPO / "benches" / "results"
+REQUIREMENTS = REPO / "benches" / "requirements-cross-language.txt"
 OUT = REPO / "book" / "src" / "reference" / "cross-language-benchmarks.md"
+
+# OpenTelemetry instrumentation became a default feature of the SDK crates on
+# 2026-10-18 (commit ce719b0). A result file generated before that date was
+# measured without it.
+OTEL_DEFAULT_SINCE = "2026-10-18"
 
 RUST = "rust-a2a-protocol-server"
 PY = "official-python-a2a-sdk"
@@ -47,6 +57,30 @@ def rps(doc: dict, target: str) -> float:
     return doc["results"][target]["concurrent"]["median_throughput_rps"]
 
 
+def trial_median(doc: dict, target: str, key: str) -> float:
+    """Median over the trials of one per-trial figure, as p50 is."""
+    trials = doc["results"][target]["sequential"]["trials"]
+    return statistics.median(t[key] for t in trials)
+
+
+def relative(pinned_value: float, default_value: float) -> str:
+    """The unpinned figure against the pinned one, e.g. `3.7 % lower`."""
+    pct = abs(pinned_value - default_value) / pinned_value * 100
+    return f"{pct:.1f} % {'lower' if default_value < pinned_value else 'higher'}"
+
+
+def requirement_pins() -> dict[str, str]:
+    """`name==version` pins in the requirements file, with names normalised."""
+    pins: dict[str, str] = {}
+    if not REQUIREMENTS.exists():
+        return pins
+    for line in REQUIREMENTS.read_text().splitlines():
+        m = re.match(r"([A-Za-z0-9._-]+)(?:\[[^\]]*\])?==([^\s;#]+)", line.strip())
+        if m:
+            pins[m.group(1).lower().replace("_", "-")] = m.group(2)
+    return pins
+
+
 def main() -> int:
     pinned = load("pinned")
     default = load("default")
@@ -56,6 +90,24 @@ def main() -> int:
     r_cpu, p_cpu = cpu(pinned, RUST), cpu(pinned, PY)
     delta_ms = (p_cpu - r_cpu) / 1000.0
     ratio = p_cpu / r_cpu
+
+    # The same probe on the unpinned configuration, so the headline is not
+    # quoted for one configuration alone.
+    dr_cpu, dp_cpu = cpu(default, RUST), cpu(default, PY)
+    d_ratio = dp_cpu / dr_cpu
+    dr_probe = default["results"][RUST]["cpu"]
+    dp_probe = default["results"][PY]["cpu"]
+
+    # Whether pinning is the more favourable configuration for this SDK on every
+    # figure the page shows for it. The page says so only when that holds.
+    pinned_favours_rust = (
+        p50(pinned, RUST) < p50(default, RUST)
+        and trial_median(pinned, RUST, "p95_us") < trial_median(default, RUST, "p95_us")
+        and trial_median(pinned, RUST, "p99_us") < trial_median(default, RUST, "p99_us")
+        and rps(pinned, RUST) > rps(default, RUST)
+        and r_cpu < dr_cpu
+        and ratio > d_ratio
+    )
 
     pct_fast = 100 * (delta_ms / 1000.0) / TURN_FAST_S
     pct_slow = 100 * (delta_ms / 1000.0) / TURN_SLOW_S
@@ -95,6 +147,15 @@ def main() -> int:
         w(f"| {load_rps:,} req/s | {r_cpu * load_rps / 1e6:.3f} cores | "
           f"{p_cpu * load_rps / 1e6:.2f} cores |")
     w("")
+    w("Each row is the pinned CPU per request multiplied by the rate. No server was")
+    w("driven at these rates: the official SDK's single worker sustained")
+    w(f"{rps(pinned, PY):,.0f} req/s with {method['concurrency']} connections in the "
+      "concurrency test, so its")
+    w("1,000 and 10,000 req/s rows describe several workers' worth of CPU, not the")
+    w("one worker measured. Unpinned, the 10,000 req/s row is")
+    w(f"{dr_cpu * 10000 / 1e6:.3f} cores for this SDK against "
+      f"{dp_cpu * 10000 / 1e6:.2f} for the official one.")
+    w("")
     w("That is the shape of the result: irrelevant inside one agent, and the whole")
     w("cost model for anything that terminates A2A traffic on behalf of many.")
     w("")
@@ -114,7 +175,17 @@ def main() -> int:
           f"{c['requests']:,} | {c['quantisation_error_pct']:.2f} % |")
     w("")
     w(f"**{ratio:.1f}× the CPU per request**, or {p_cpu - r_cpu:,.0f} µs more, on the")
-    w("pinned configuration described below.")
+    w("pinned configuration described below. Unpinned, each server as its own")
+    w("documentation runs it, the same probe gives")
+    w(f"{dr_cpu:,.1f} µs for this SDK ({dr_probe['requests']:,} requests, "
+      f"{dr_probe['quantisation_error_pct']:.2f} % quantisation error)")
+    w(f"and {dp_cpu:,.1f} µs for the official SDK ({dp_probe['requests']:,} requests, "
+      f"{dp_probe['quantisation_error_pct']:.2f} %):")
+    w(f"{d_ratio:.1f}×, or {dp_cpu - dr_cpu:,.0f} µs more.")
+    if ratio > d_ratio:
+        w("Pinning is the more favourable configuration for this SDK; the "
+          f"{ratio:.1f}× is the upper")
+        w("figure.")
     w("")
 
     w("## Latency and throughput")
@@ -125,10 +196,20 @@ def main() -> int:
     w("uvicorn worker got one. `default` runs each server exactly as its own")
     w("documentation says to.")
     w("")
+    w(f"Every latency column is the median over the {method['trials']} trials of that")
+    w("trial's figure, p50, p95 and p99 alike.")
+    w("")
     w("Note that the Rust server is **slower unpinned than pinned**, and the Python")
-    w("server is unaffected by pinning — it is single-threaded and CPU-bound, so")
-    w("confining it changes nothing. The pinned configuration is not favourable to")
-    w("this SDK; if anything it is the opposite.")
+    w("server is almost unaffected by pinning — it is single-threaded and CPU-bound:")
+    w(f"its p50 is {p50(pinned, PY):,.1f} µs pinned and {p50(default, PY):,.1f} µs "
+      f"unpinned ({relative(p50(pinned, PY), p50(default, PY))}) and its CPU")
+    w(f"per request {p_cpu:,.1f} and {dp_cpu:,.1f} µs "
+      f"({relative(p_cpu, dp_cpu)}).")
+    if pinned_favours_rust:
+        w("The pinned configuration is the more favourable of the two for this SDK:")
+        w("lower latency, higher throughput, less CPU per request and a larger ratio")
+        w("over the Python server. It is shown because it is the like-for-like")
+        w("comparison, not because it is the harsher one.")
     w("")
     for name, doc in (("pinned", pinned), ("default", default)):
         w(f"### `{name}`")
@@ -148,14 +229,15 @@ def main() -> int:
             (FLOOR, "_floor — no A2A work_"),
         ):
             s = doc["results"][label]["sequential"]
-            t = s["trials"][0]
+            p95 = trial_median(doc, label, "p95_us")
+            p99 = trial_median(doc, label, "p99_us")
             thr = (
                 f"{rps(doc, label):,.0f} req/s"
                 if label != FLOOR
                 else "_not comparable — see below_"
             )
-            w(f"| {title} | {s['median_of_trial_medians_us']:,.1f} µs | {t['p95_us']:,.1f} µs | "
-              f"{t['p99_us']:,.1f} µs | {s['trial_median_min_us']:,.1f}–{s['trial_median_max_us']:,.1f} µs | {thr} |")
+            w(f"| {title} | {s['median_of_trial_medians_us']:,.1f} µs | {p95:,.1f} µs | "
+              f"{p99:,.1f} µs | {s['trial_median_min_us']:,.1f}–{s['trial_median_max_us']:,.1f} µs | {thr} |")
         w("")
 
     w("### The floor row")
@@ -165,6 +247,11 @@ def main() -> int:
     w("stack and the kernel, which sit in every number on this page. Because that")
     w("shared cost is present in both real servers, **the ratio of two end-to-end")
     w("latencies understates the ratio of the servers' own handling cost.**")
+    w("")
+    w("The floor server runs as a thread inside the client process (a Python")
+    w("interpreter sharing the client's cores), not as a separate process like the")
+    w("two real servers, each on its own core in the pinned configuration, so")
+    w("floor-subtracted figures are indicative, not exact.")
     w("")
     f_p50 = p50(pinned, FLOOR)
     w(f"Subtracting the floor from the pinned p50 figures leaves "
@@ -199,7 +286,8 @@ def main() -> int:
     w(f"| Request body | {method['request_bytes']} bytes, `SendMessage`, `A2A-Version: 1.0` |")
     w(f"| Warmup per trial | {method['warmup_per_trial']:,} requests (discarded) |")
     w(f"| Measured per trial | {method['iterations_per_trial']:,} requests |")
-    w(f"| Trials per configuration | {method['trials']}, each against a freshly started server |")
+    w(f"| Trials per configuration | {method['trials']}, run back to back against one "
+      "server process started once per configuration |")
     w(f"| Concurrency test | {method['concurrency']} connections × "
       f"{method['concurrent_requests_per_connection']} requests |")
     w(f"| Percentile rule | {method['percentile_rule']} |")
@@ -251,7 +339,14 @@ def main() -> int:
     w(f"| Load average at run | {', '.join(f'{x:.2f}' for x in env['loadavg'])} |")
     w(f"| rustc | {env['rustc']} |")
     w(f"| Python | {env['python']} |")
-    w(f"| Build profile | `--release` (Rust) |")
+    if pinned["generated_utc"][:10] < OTEL_DEFAULT_SINCE:
+        features = ("before OpenTelemetry instrumentation became a default "
+                    "feature in 0.15.0")
+    else:
+        features = ("with OpenTelemetry instrumentation, a default feature "
+                    "since 0.15.0")
+    w(f"| Build profile | `--release` (Rust), default features of the crates at "
+      f"the measured commit ({features}) |")
     w(f"| Repository commit | `{env['git_commit']}` |")
     w(f"| Working tree clean | {'yes' if not env['git_dirty'] else 'NO — results not reproducible'} |")
     w("")
@@ -269,8 +364,28 @@ def main() -> int:
         w(pkg)
     w("```")
     w("")
+    # The requirements file is read at generation time. If it pins a package at
+    # a version other than the one the result files recorded, the command shown
+    # below would install something different from what was measured.
+    measured = {
+        pkg.split("==")[0].lower().replace("_", "-"): pkg.split("==")[1]
+        for pkg in env["python_packages"]
+        if "==" in pkg
+    }
+    moved = [
+        f"{name} {version}"
+        for name, version in sorted(requirement_pins().items())
+        if name in measured and measured[name] != version
+    ]
+    if moved:
+        w(f"The requirements file has since moved to {' and '.join(moved)}; the")
+        w("figures above were measured with the versions listed.")
+        w("")
 
     w("## Reproducing this")
+    w("")
+    w("Needs Linux with `taskset` (util-linux), at least 4 logical CPUs,")
+    w("`python3 -m venv` and network access to install the pinned Python packages.")
     w("")
     w("```bash")
     w("benches/scripts/cross_language_python.sh")
@@ -281,8 +396,10 @@ def main() -> int:
     w("`benches/requirements-cross-language.txt`, runs both CPU configurations, and")
     w("writes `benches/results/cross-language-{pinned,default}.json`. Those files")
     w("carry the full raw distributions and complete provenance, including the")
-    w("resolved dependency set and the repository commit. This page is generated")
-    w("from them and contains no hand-entered figures.")
+    w("resolved dependency set and the repository commit. All measured figures on")
+    w(f"this page are generated from them; the {TURN_FAST_S:.0f}–{TURN_SLOW_S:.0f} s "
+      "agent-turn bounds and the")
+    w("request rates in the first table are assumptions.")
     w("")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

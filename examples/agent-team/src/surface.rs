@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! A fifth agent that serves all four bindings, so the method × binding matrix
+//! A sixth agent that serves all four bindings, so the method × binding matrix
 //! can be measured.
 //!
 //! # Why a separate agent rather than reusing the team
 //!
-//! The four team agents are deliberately split by binding — CodeAnalyzer on
+//! The team agents are deliberately split by binding — CodeAnalyzer on
 //! JSON-RPC, BuildMonitor on REST, and so on — because the team exists to
 //! demonstrate agents talking to each other over different transports. That
 //! split is the point, and it also means no single one of them can answer the

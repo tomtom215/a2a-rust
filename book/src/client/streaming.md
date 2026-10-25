@@ -49,16 +49,18 @@ while let Some(event) = stream.next().await {
 
 A typical stream delivers events in this order:
 
-1. `Task` snapshot (first on every stream from this repository's server; the spec requires it for `SubscribeToTask` and allows a stream from `SendStreamingMessage` to be a single `Message` instead)
+1. `Task` snapshot (first on every `SubscribeToTask` stream, and on every `SendStreamingMessage` stream except a direct reply: when the executor's first event is a `Message`, the stream is that one `Message` and closes, spec §3.1.2)
 2. `StatusUpdate` → `Working`
 3. `ArtifactUpdate` (one or more, potentially chunked)
 4. `StatusUpdate` → `Completed` (or `Failed`)
 5. Optionally, a final `Task` snapshot with accumulated artifacts
 
-> **Note:** This repository's server always emits a `Task` snapshot as the **first event** in
-> any streaming response. For `subscribe_to_task()`, this allows reconnecting
-> clients to recover the current state. For `stream_message()`, it
-> provides the initial task state before execution events begin.
+> **Note:** This repository's server decides a `SendStreamingMessage` stream by
+> the executor's first event. A `Message` is a direct reply and the whole
+> stream; anything else is preceded by a `Task` snapshot that gives the initial
+> task state before execution events begin. `subscribe_to_task()` always begins
+> with a `Task` snapshot, which lets a reconnecting client recover the current
+> state. Write the consumer to accept a `Message` first.
 
 ## Chunked Artifacts
 
@@ -175,7 +177,7 @@ let client = ClientBuilder::new(url)
 
 The **connect timeout** (default 30 seconds) bounds establishing the stream: until the response headers arrive (for gRPC, until the call is accepted), and reading the error body when the answer is not a stream.
 
-The **first-event timeout** (default 5 minutes) bounds the wait for the stream's first data once it is established; a keep-alive comment counts. The specification asks a server to open with its `Task` or `Message` at once, and this repository's server does, but a2a-go writes nothing until its agent emits an event, so an agent that makes a slow model call first is silent until the call returns.
+The **first-event timeout** (default 5 minutes) bounds the wait for the stream's first data once it is established; a keep-alive comment counts. The specification asks a server to open with its `Task` or `Message`. For `SubscribeToTask` this repository's server does so at once; for `SendStreamingMessage` the executor's first event decides whether the stream is a `Message` or begins with the `Task`, so an executor that works silently first leaves the stream without data until the server's `: keep-alive` comment (every 30 seconds by default). a2a-go likewise writes nothing until its agent emits an event, so an agent that makes a slow model call first is silent until the call returns. Do not set `with_stream_first_event_timeout` below the longest silent start you expect from the agent.
 
 > **Migrating from 0.13 or earlier:** the connect timeout used to bound the first event too, so an agent that flushed its headers and thought for longer than 30 seconds was cut off. If you shortened `with_stream_connect_timeout` in order to fail fast on a silent agent, set `with_stream_first_event_timeout` to the same value to keep that behaviour. `GrpcTransport::with_stream_connect_timeout` likewise now bounds opening the call rather than the first event.
 

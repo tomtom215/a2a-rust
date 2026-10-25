@@ -15,7 +15,7 @@ use a2a_protocol_types::{
 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
-use crate::interceptor::{ClientRequest, ClientResponse};
+use crate::interceptor::ClientRequest;
 
 /// Names a webhook URL as `scheme://host[:port]`, for an error or a log
 /// line: webhook URLs often carry a secret in their path, query or userinfo.
@@ -84,19 +84,13 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let config = serde_json::from_value::<TaskPushNotificationConfig>(resp.result)
-            .map_err(ClientError::Serialization)?;
-        crate::received::push_config(METHOD, &config)?;
-        Ok(config)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let config = serde_json::from_value::<TaskPushNotificationConfig>(result)
+                .map_err(ClientError::Serialization)?;
+            crate::received::push_config(METHOD, &config)?;
+            Ok(config)
+        })
+        .await
     }
 
     /// Retrieves a push notification configuration by task ID and config ID.
@@ -124,19 +118,13 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let config = serde_json::from_value::<TaskPushNotificationConfig>(resp.result)
-            .map_err(ClientError::Serialization)?;
-        crate::received::push_config(METHOD, &config)?;
-        Ok(config)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let config = serde_json::from_value::<TaskPushNotificationConfig>(result)
+                .map_err(ClientError::Serialization)?;
+            crate::received::push_config(METHOD, &config)?;
+            Ok(config)
+        })
+        .await
     }
 
     /// Lists push notification configurations for a task with pagination.
@@ -158,21 +146,15 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let page = serde_json::from_value::<ListPushConfigsResponse>(resp.result)
-            .map_err(ClientError::Serialization)?;
-        page.configs
-            .iter()
-            .try_for_each(|config| crate::received::push_config(METHOD, config))?;
-        Ok(page)
+        self.send_decoded(METHOD, &mut req, |result| {
+            let page = serde_json::from_value::<ListPushConfigsResponse>(result)
+                .map_err(ClientError::Serialization)?;
+            page.configs
+                .iter()
+                .try_for_each(|config| crate::received::push_config(METHOD, config))?;
+            Ok(page)
+        })
+        .await
     }
 
     /// Deletes a push notification configuration.
@@ -205,15 +187,6 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        Ok(())
+        self.send_decoded(METHOD, &mut req, |_| Ok(())).await
     }
 }

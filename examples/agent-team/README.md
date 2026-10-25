@@ -5,7 +5,7 @@
 
 An end-to-end example that deploys five specialized A2A agents over JSON-RPC, REST and gRPC, runs 100 end-to-end tests against them, then sweeps every A2A method over every binding against a sixth agent that serves all four.
 
-This is the project's primary integration test and SDK dogfood — if it passes, the SDK works.
+This is the project's primary integration test and SDK dogfood — if it passes, every SDK feature listed below works in-process. It does not exercise PostgreSQL, JWT, tool calling, encryption or a real model.
 
 ## Agents
 
@@ -55,8 +55,8 @@ matrix gap or a feature area not built.
 
 The test suite exercises 40+ SDK features including:
 
-- `AgentExecutor` trait (4 implementations)
-- `RequestHandlerBuilder` (all configuration options)
+- `AgentExecutor` trait (5 implementations)
+- `RequestHandlerBuilder` (executor timeout, event-queue capacity, max concurrent streams, metrics, interceptors, extended card, push sender)
 - `JsonRpcDispatcher` + `RestDispatcher`
 - `ClientBuilder` (JSON-RPC + REST bindings; `from_card` + `build_grpc` on a bare `host:port` gRPC target)
 - Sync and streaming `SendMessage`

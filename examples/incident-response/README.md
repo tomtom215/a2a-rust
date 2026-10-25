@@ -16,8 +16,8 @@ A wrapped prompt answers once and forgets. An agent holds a **task**:
 | **Delegate to other agents** over the same protocol it serves | Triage → logs agent and runbook agent are real A2A client calls; swap any of them for an agent in another language or from another vendor |
 | **Stream progress** while it works | `SendStreamingMessage` delivers `Working` status updates ("querying log agent", "synthesizing incident report") the moment they happen |
 | Produce **artifacts**, not just chat | The final `incident-report` artifact contains the assessment, the log evidence, and the runbook guidance |
-| Be **cancelled** | Act 3: the operator calls off a parked task → `TASK_STATE_CANCELED`. Cancellation is cooperative — see `TriageExecutor::cancel` |
-| End in an **honest terminal state** | LLM/provider failures and textless messages end in `TASK_STATE_FAILED`, never a fake success |
+| Be **cancelled** | Act 3: the operator calls off a parked task → `TASK_STATE_CANCELED`. Cancellation is cooperative; the default `AgentExecutor::cancel` already records `Canceled`, and triage overrides it only to drop the alert it parked — see `TriageExecutor::cancel` |
+| **Degrade loudly**, never fake success | An unreachable model or specialist is reported in the output (`[mechanical summary — no model reachable]`, `[verbatim runbook — no model reachable]`, `[log agent error: …]`) and the task still completes. The logs and runbook agents refuse a query naming no known service with `InvalidParams`, and triage parks an alert naming none in `TASK_STATE_INPUT_REQUIRED` |
 
 Two further acts answer the questions that follow from that one — *does this
 SDK serve the whole protocol?* and *can I deploy it?*
@@ -200,10 +200,11 @@ rather than downgrading a check to a printed line.
   message.
 - **Status messages narrate; artifacts deliver**: repeated `Working`
   updates carry progress notes, the artifact carries the deliverable.
-- **Cooperative cancellation**: override `AgentExecutor::cancel` to release
-  task state; the default reports tasks as not cancelable.
+- **Cooperative cancellation**: the default `AgentExecutor::cancel` already
+  records `Canceled`; override it to release what the task holds (here, the
+  parked alert).
 - **Degrade loudly**: when a specialist or the model is unreachable, the
-  output says so (`[log agent unavailable: …]`, `[verbatim runbook — no
+  output says so (`[log agent error: …]`, `[verbatim runbook — no
   model reachable]`) instead of pretending.
 - **Resolve the tenant server-side**: a `TenantResolver` derives it from
   trusted request context, and a client that names a different one is

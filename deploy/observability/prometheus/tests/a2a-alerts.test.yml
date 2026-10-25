@@ -113,7 +113,7 @@ tests:
           - exp_labels: {severity: warning, job: a}
             exp_annotations:
               summary: "a: 50% of push deliveries not delivered"
-              description: "Over 20% of push-notification attempts failed, timed out or were skipped for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m."
+              description: "Over 20% of push-notification attempts failed, timed out or were cut short by push_delivery_timeout for 15 minutes. Split by outcome with a2a:push_deliveries:rate5m."
 
   # Every call 3 s against a control at 50 ms; streaming calls excluded.
   - interval: 1m

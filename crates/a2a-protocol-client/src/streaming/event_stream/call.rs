@@ -67,6 +67,15 @@ impl StreamCall {
             self.failed = Some(Status::failed(self.system, error));
         }
     }
+
+    /// The caller dropped the stream before it ended: the call was cut short
+    /// (`cancelled`, as the server records a peer that goes away), unless it
+    /// had already failed.
+    pub(super) fn abandon(&mut self) {
+        if self.failed.is_none() {
+            self.failed = Some(Status::cancelled());
+        }
+    }
 }
 
 impl Drop for StreamCall {
@@ -86,6 +95,14 @@ impl Drop for StreamCall {
 }
 
 impl super::EventStream {
+    /// The call failed after the stream opened — an interceptor's `after`
+    /// hook refused it — so it ends with `error`, not as abandoned.
+    pub(crate) fn fail_call(&mut self, error: &ClientError) {
+        if let Some(call) = self.call.as_mut() {
+            call.0.fail(error);
+        }
+    }
+
     /// Keeps `call` — its span open, its duration running — until the
     /// stream is dropped.
     #[must_use]

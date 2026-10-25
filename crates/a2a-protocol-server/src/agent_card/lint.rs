@@ -20,9 +20,12 @@ use a2a_protocol_types::agent_card::AgentCard;
 use a2a_protocol_types::security::SecurityScheme;
 
 /// The HTTP authentication schemes in the IANA registry
-/// (<https://www.iana.org/assignments/http-authschemes>), read on 2026-10-18;
-/// the registry was last updated 2025-02-18. Compared without regard to
-/// case (RFC 9110 §11.1).
+/// (<https://www.iana.org/assignments/http-authschemes>), read on 2026-10-18
+/// and again on 2026-10-24; the registry was last updated 2025-02-18.
+/// Compared without regard to case (RFC 9110 §11.1). The page's second table,
+/// "HTTP Mutual Authentication Algorithms" (`iso-kam3-*`), names algorithms of
+/// the `Mutual` scheme, not schemes, and is not in this list; it was until
+/// 2026-10-24.
 const IANA_HTTP_AUTH_SCHEMES: &[&str] = &[
     "Basic",
     "Bearer",
@@ -38,10 +41,6 @@ const IANA_HTTP_AUTH_SCHEMES: &[&str] = &[
     "SCRAM-SHA-1",
     "SCRAM-SHA-256",
     "vapid",
-    "iso-kam3-dl-2048-sha256",
-    "iso-kam3-dl-4096-sha512",
-    "iso-kam3-ec-p256-sha256",
-    "iso-kam3-ec-p521-sha512",
 ];
 
 /// The specification's own binding names (§5.3); any other is custom.

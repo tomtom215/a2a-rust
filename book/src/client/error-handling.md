@@ -28,14 +28,15 @@ assert_eq!(e.code, ErrorCode::TaskNotFound);
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_sdk::types::error::ErrorCode;
 # async fn f(client: A2aClient) {
 # let params = TaskQueryParams { tenant: None, id: "task-abc".into(), history_length: None };
 match client.get_task(params).await {
     Ok(task) => println!("Got task: {}", task.id),
-    Err(e) => {
-        // Check the error type
-        eprintln!("Error: {e}");
+    Err(ClientError::Protocol(e)) if e.code == ErrorCode::TaskNotFound => {
+        eprintln!("no such task: {}", e.message);
     }
+    Err(e) => eprintln!("Error: {e}"),
 }
 # }
 ```
@@ -50,15 +51,33 @@ The client wraps transport and protocol errors:
 match client.send_message(params).await {
     Ok(response) => { /* handle response */ }
     Err(e) => {
-        // Transport errors (network, timeout, etc.)
-        // Protocol errors (task not found, invalid params, etc.)
-        // Parse errors (malformed response)
+        // Which variant it is says what went wrong: a transport failure,
+        // an A2A error from the agent (`Protocol`), or a response that
+        // would not read (`Serialization`, `InvalidAgentResponse`).
         eprintln!("Client error: {e}");
     }
 }
 # Ok(())
 # }
 ```
+
+`ClientError` is `#[non_exhaustive]`: a `match` on it needs a wildcard arm.
+
+| Variant | Meaning | `is_retryable()` |
+|---|---|---|
+| `Http`, `HttpClient` | A transport failure from hyper or its client (connection, redirect) | yes |
+| `Timeout` | A request, or a stream's connect, first-event or idle bound, expired | yes |
+| `TooManyPendingRequests { limit }` | The connection's cap on requests awaiting a response (WebSocket) refused this one up front | yes |
+| `IncompleteStream { last_event_id, detail }` | A stream ended before its final event; resume with `subscribe_to_task_from` ([below](#a-stream-that-ends-early)) | yes |
+| `UnexpectedStatus { status, body, retry_after }` | An HTTP status the binding did not map to an A2A error (gRPC `Unauthenticated`, `PermissionDenied` and `ResourceExhausted` arrive as 401, 403 and 429) | 429, 502, 503, 504 |
+| `Protocol(A2aError)` | An A2A error from the agent. Also what `build()` returns for `ExtensionSupportRequired`, and `InvalidParams` for a message the client refuses before sending | only when it names a retry delay |
+| `Serialization` | A request could not be encoded, or the agent's JSON does not parse | no |
+| `InvalidAgentResponse(String)` | The agent sent an object `a2a.proto` does not allow: a REQUIRED field missing or empty (spec §5.7), or a card that fails `AgentCard::validate`. The message names the call and the field | no |
+| `Transport`, `InvalidEndpoint`, `ProtocolBindingMismatch` | A transport configuration or connection error, an unusable URL (or a card with no interface this client speaks), or a client and agent on different bindings | no |
+| `CapabilityNotDeclared { method, capability }` | Not sent: the card the client was built from does not declare the capability the call needs (spec §3.3.4) | no |
+| `InvalidAuthScheme`, `InsecureTransport`, `InsecureWebhook` | Not sent: an API key the client cannot place (a name that is not an HTTP token, or a query-string key over gRPC or WebSocket) or credentials that fail `CredentialPreflight::Refuse`; a credential bound for a plain `http://` or `ws://` host (`require_https_credentials`); a plain `http://` webhook URL (`require_https_webhooks`) | no |
+| `ContentNotVerified` | Received content failed its provenance check (feature `signing`) | no |
+| `AuthRequired { task_id }` | The agent requires authentication for a task. No bundled transport returns it: a 401 or 403 arrives as `UnexpectedStatus` | no |
 
 ### Timeout Errors
 
@@ -170,9 +189,9 @@ match client.send_message(params).await {
 # }
 ```
 
-Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, `TooManyPendingRequests`, `UnexpectedStatus` with codes 429, 502, 503, or 504, and a `Protocol` error whose details carry a `google.rpc.RetryInfo` delay, which is how a rate limit is refused over JSON-RPC and WebSocket. `retry_after()` returns that delay, or a 429's `Retry-After`, and the retry policy waits it out instead of its own backoff; both are retried even for `SendMessage`, because the request was refused before it was processed. Over gRPC, `DeadlineExceeded` maps to `Timeout`, and `Unavailable` or a response truncated before its `grpc-status` maps to `HttpClient` (all retryable). `ResourceExhausted` maps to `UnexpectedStatus { status: 429 }` (retryable), and `Unauthenticated`/`PermissionDenied` map to `UnexpectedStatus` 401/403 (not retryable). A peer's `Cancelled` is a non-retryable `Protocol` error.
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, `TooManyPendingRequests`, `UnexpectedStatus` with codes 429, 502, 503, or 504, and a `Protocol` error whose details carry a `google.rpc.RetryInfo` delay, which is how a rate limit is refused over JSON-RPC and WebSocket. `retry_after()` returns that delay, or the delta-seconds `Retry-After` of an HTTP error response such as a 429 or 503 (an HTTP-date is ignored; more than an hour is read as an hour). The retry policy waits that long instead of its own backoff, but never longer than its `max_backoff` (30 seconds by default). A 429, a 503 and a `RetryInfo` delay are retried even for `SendMessage`, because the request was refused before it was processed. Over gRPC, `DeadlineExceeded` maps to `Timeout`, and `Unavailable` or a response truncated before its `grpc-status` maps to `HttpClient` (all retryable). `ResourceExhausted` maps to `UnexpectedStatus { status: 429 }` (retryable), and `Unauthenticated`/`PermissionDenied` map to `UnexpectedStatus` 401/403 (not retryable). A peer's `Cancelled` is a non-retryable `Protocol` error.
 
-Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering-herd storms when multiple clients experience the same failure simultaneously.
+Each computed backoff is randomized to between 0.5x and 1.0x of its value, to prevent thundering-herd storms when multiple clients experience the same failure simultaneously. A server-directed delay is used as given (capped at `max_backoff`).
 
 ## Server Errors
 
@@ -265,12 +284,14 @@ async fn delegate(downstream_url: &str) -> A2aResult<Option<String>> {
 |---|---|
 | `Protocol(e)` from the downstream agent | passed through unchanged (code, message, data), classified by its code |
 | `Protocol(e)` naming a retry delay (a downstream rate limit) | passed through with its delay, `Transient` |
-| timeouts, connection failures, HTTP `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `Transient` (retry with backoff) |
+| timeouts, connection failures, a stream cut off before its final event (`IncompleteStream`), HTTP `429`/`502`/`503`/`504`, `TooManyPendingRequests` | `Transient` (retry with backoff) |
 | anything else | `Internal` |
 
 `Transient` is given exactly when `ClientError::is_retryable()` is true, so the
-client's retry policy and the caller's agree. The failed task's status text is
-`downstream A2A call failed: ` followed by the client error and its causes.
+client's retry policy and the caller's agree. For every client error other than
+`Protocol`, the failed task's status text is `downstream A2A call failed: `
+followed by the client error and its causes; a `Protocol` error keeps the
+downstream agent's own message.
 
 ### Stream Error Recovery
 

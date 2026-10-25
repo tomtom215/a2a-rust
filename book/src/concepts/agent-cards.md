@@ -15,12 +15,12 @@ Agent cards are served at `/.well-known/agent-card.json` and contain:
     {
       "url": "https://agent.example.com/rpc",
       "protocolBinding": "JSONRPC",
-      "protocolVersion": "1.0.0"
+      "protocolVersion": "1.0"
     },
     {
       "url": "https://agent.example.com/api",
       "protocolBinding": "HTTP+JSON",
-      "protocolVersion": "1.0.0"
+      "protocolVersion": "1.0"
     }
   ],
   "defaultInputModes": ["text/plain"],
@@ -40,6 +40,15 @@ Agent cards are served at `/.well-known/agent-card.json` and contain:
   }
 }
 ```
+
+The card a client fetches from a server built with `RequestHandlerBuilder` is
+the card you supplied plus the extension declarations the server adds to
+`capabilities.extensions`: the failure-taxonomy and budget extensions always,
+and the idempotency, lease and approval extensions when the matching store or
+gate is configured. An entry you declared yourself is kept as written.
+`build()` refuses a card that carries a signature and would need an entry
+added, because the edit would invalidate the signature: declare the
+extensions, then sign.
 
 ## Naming a protocol binding
 
@@ -72,14 +81,26 @@ still out there.
 
 | Field | Description |
 |-------|-------------|
-| `name` | Human-readable agent name |
-| `description` | What the agent does |
-| `version` | Semantic version of this agent |
-| `supportedInterfaces` | At least one interface with URL and protocol binding |
-| `defaultInputModes` | MIME types accepted (e.g., `["text/plain"]`) |
-| `defaultOutputModes` | MIME types produced |
-| `skills` | At least one skill describing a capability |
+| `name` | Human-readable agent name; not empty |
+| `description` | What the agent does; not empty (`AgentCard::new` leaves it empty, so call `with_description`) |
+| `version` | Version of this agent; not empty |
+| `supportedInterfaces` | At least one interface; each needs a non-empty `url`, `protocolBinding` and `protocolVersion` |
+| `defaultInputModes` | At least one MIME type accepted (`AgentCard::new` starts at `["text/plain"]`) |
+| `defaultOutputModes` | At least one MIME type produced (starts at `["text/plain"]`) |
+| `skills` | At least one skill; each needs a non-empty `id`, `name` and `description` and at least one tag |
 | `capabilities` | Capability flags (streaming, push, etc.) |
+
+A `provider`, when present, needs both `organization` and `url`; a card
+signature needs `protected` and `signature`. `AgentCard::validate` checks
+these, and `AgentCard::validate_security_schemes` checks the REQUIRED strings
+of the security schemes (an API key's `name`, an HTTP scheme's `scheme`,
+`openIdConnectUrl`, the flow URLs). `RequestHandlerBuilder::build` runs both on
+the public and the extended card and fails with `ServerError::InvalidParams`
+naming the rule; `StaticAgentCardHandler::new` refuses an invalid card,
+`DynamicAgentCardHandler` answers `500` for one, and
+`HotReloadAgentCardHandler` refuses to reload one and keeps serving the
+previous card. `build()` also refuses a handler with no card unless you call
+`without_agent_card()`.
 
 ## Skills
 
@@ -132,6 +153,11 @@ let caps = AgentCapabilities::none()
 >   refuses a card that declares `pushNotifications` with no sender.
 > - If `extendedAgentCard` is not `true`, `GetExtendedAgentCard` returns
 >   `UnsupportedOperationError`.
+> - A message part whose explicit `mediaType` is in neither
+>   `defaultInputModes` nor a skill's `inputModes` is refused with
+>   `ContentTypeNotSupportedError`. A part with no `mediaType` is not checked,
+>   and `RequestHandlerBuilder::allow_undeclared_input_modes()` turns the
+>   check off.
 >
 > So if your agent serves streaming or push, **set the matching flag to `true`**
 > — otherwise clients are told the operation is unsupported. A handler with no
@@ -155,7 +181,7 @@ use a2a_protocol_sdk::types::agent_card::AgentInterface;
 let interface = AgentInterface {
     url: "https://agent.example.com/rpc".into(),
     protocol_binding: "JSONRPC".into(),  // or "HTTP+JSON", "GRPC"
-    protocol_version: "1.0.0".into(),
+    protocol_version: "1.0".into(), // Major.Minor only (spec §3.6)
     tenant: None, // Optional: fixed tenant for this interface
 };
 ```
@@ -351,7 +377,9 @@ let handler = RequestHandlerBuilder::new(my_executor)
 # }
 ```
 
-The static handler automatically provides:
+When you give the handler a card with `with_agent_card`, every built-in
+dispatcher serves it through `StaticAgentCardHandler` (also usable directly:
+`StaticAgentCardHandler::new(&card)?`), which provides:
 - **ETag** headers for cache validation
 - **Last-Modified** timestamps
 - **Cache-Control** directives
@@ -382,6 +410,14 @@ impl AgentCardProducer for MyCardProducer {
 ```
 
 The dynamic handler calls the producer on every request, computes a fresh ETag, and handles conditional caching.
+
+`DynamicAgentCardHandler::new(MyCardProducer).handle(&req).await` answers a
+`GET` or `HEAD` for the card; mount it on your own route. The built-in dispatchers
+always serve, at that path, the static card given to `with_agent_card`.
+`without_agent_card()` is the way to build a handler whose card is published
+elsewhere, and it also turns off the checks the card drives (the capability
+flags and input modes above). A produced card that fails
+`AgentCard::validate` or `validate_security_schemes` is answered `500`.
 
 ### Hot-Reload Handler
 
@@ -415,6 +451,11 @@ let signal_watcher = handler.spawn_signal_watcher(
 
 `HotReloadAgentCardHandler` implements `AgentCardProducer`, so it plugs directly into `DynamicAgentCardHandler` for full HTTP caching support. The internal `Arc<RwLock<AgentCard>>` ensures updates are atomic with low contention for concurrent readers.
 
+`reload_from_file`, `reload_from_json`, the poll watcher and the SIGHUP watcher
+refuse a card that does not parse or is not valid, and keep serving the
+current one. To replace the card in code, use `try_update`, which validates;
+`update` is deprecated since 0.15.0.
+
 ## HTTP Caching
 
 Agent card responses include standard HTTP caching headers (spec §8.6, RFC 9110):
@@ -447,6 +488,17 @@ let card = resolver.resolve().await?; // from the cache while fresh
 
 `with_always_revalidate(true)` sends a request on every resolve, as the resolver did before 0.15, for an agent whose card changes sooner than its `max-age` says; a hot-reloaded card served with the default `max-age=3600` is the usual case. `resolve_agent_card` and `fetch_card_from_url` cache nothing: each call fetches.
 
+A card the client receives is held to the rules the server applies before it
+publishes one. `resolve_agent_card`, `fetch_card_from_url`,
+`CachingCardResolver::resolve` and `get_extended_agent_card` fail with
+`ClientError::InvalidAgentResponse` for a card that `AgentCard::validate` or
+`validate_security_schemes` refuses, and a refused extended card is not
+adopted. `ClientBuilder::from_card` does not validate the card it is handed,
+but its `build()` fails with `ExtensionSupportRequired` when the card marks an
+extension `required` that the client has not asked for with `with_extensions`
+(call `skip_required_extension_check()` if an interceptor sends the
+`A2A-Extensions` header).
+
 ## Security
 
 Agent cards declare security schemes and the requirements that reference
@@ -472,11 +524,32 @@ card, a bare array (`"oauth": ["read"]`, as a2a-go v2.5.0 writes it) and `null`
 are accepted too, so a Go agent's card parses; only the `{"list": [...]}` form
 is ever written.
 
-Individual skills can also declare their own security requirements, overriding the global ones.
+Individual skills can also declare the security requirements that apply to
+them (`AgentSkill::security_requirements`). The SDK does not enforce them per
+skill: `build()` only counts them when it checks that an authenticating
+interceptor exists.
 
-## Extended Agent Cards
+### What `build()` checks
 
-If the agent supports `extendedAgentCard` capability, clients can fetch an authenticated version with additional details via the `GetExtendedAgentCard` method.
+`RequestHandlerBuilder::build` also checks the card's security against the
+handler's interceptors (spec §13.3). It fails with `InvalidParams` when:
+
+- an authenticating interceptor is registered but the public card declares no
+  `securitySchemes`, or none the interceptor checks:
+  `BearerTokenAuthInterceptor` and `JwtAuthInterceptor` check an HTTP
+  `bearer` scheme (an OAuth 2.0 or OpenID Connect scheme also counts, as
+  their tokens are bearer tokens), `ApiKeyAuthInterceptor` an
+  `apiKeySecurityScheme` in a header of the name it reads, and
+  `MutualTlsAuthInterceptor` an `mtlsSecurityScheme`;
+- the extended card declares a scheme the public card does not declare under
+  the same name with the same definition;
+- the card, or a skill, has `securityRequirements` and no interceptor
+  authenticates, unless you call `authenticated_upstream()`;
+- an OAuth flow URL, a refresh URL or an `openIdConnectUrl` is not a URL, or
+  `oauth2MetadataUrl` (and the deprecated implicit and password flows' URLs)
+  is not `https`;
+- any card URL carries user information or a query parameter named like a
+  secret (`token`, `api_key`, `password`, ...).
 
 ## Next Steps
 

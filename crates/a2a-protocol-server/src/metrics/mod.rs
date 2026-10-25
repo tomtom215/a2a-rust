@@ -129,6 +129,37 @@ pub trait Metrics: Send + Sync + 'static {
     /// unknown method, a call the peer abandoned. Those are the failures a
     /// dashboard built on the handler's callbacks alone could not show.
     fn on_rpc_call(&self, _call: &RpcCall<'_>) {}
+
+    /// Called once when an agent executor's run ends, with how it ended and
+    /// how long the run took.
+    ///
+    /// The run is the executor's work for one turn of a task, which usually
+    /// outlives the call that started it (a streaming send, a task that
+    /// waits for input), so [`on_rpc_call`](Metrics::on_rpc_call)'s duration
+    /// does not measure it. `outcome` is one of the constants in
+    /// [`executor_outcome`]. Reported for every executor, whatever it does
+    /// inside; an agent built on the tool loop also has the `gen_ai.*`
+    /// metrics for its model and tool calls.
+    fn on_executor_run(&self, _outcome: &str, _duration: Duration) {}
+}
+
+/// How an executor's run ended, as [`Metrics::on_executor_run`] reports it.
+///
+/// A bounded set, so a dashboard can list every value.
+pub mod executor_outcome {
+    /// The executor returned `Ok`.
+    pub const COMPLETED: &str = "completed";
+    /// It returned an error that is not a spent budget.
+    pub const ERROR: &str = "error";
+    /// A budget ran out: the executor timeout passed (the future was
+    /// dropped), or the caller's deadline or tokens did.
+    pub const BUDGET_EXHAUSTED: &str = "budget_exhausted";
+    /// The task was canceled or halted, or the server was shutting down,
+    /// when the executor returned.
+    pub const CANCELED: &str = "canceled";
+    /// The future ended without returning a result: the executor panicked,
+    /// or the run was dropped.
+    pub const ABORTED: &str = "aborted";
 }
 
 /// One finished inbound call, as [`Metrics::on_rpc_call`] reports it.
@@ -147,8 +178,8 @@ pub struct RpcCall<'a> {
     /// does not serve. `None` when the request was refused before it named
     /// one — a body that is not JSON-RPC, a batch over the limit.
     pub method: Option<&'a str>,
-    /// From receipt to the response, or to the stream being established for
-    /// a streaming method — not to the stream's end.
+    /// From receipt to the response; for a streaming method, to the stream's
+    /// end (the span's lifetime), as the semantic conventions ask.
     pub duration: Duration,
     /// The status the binding answered with, as `rpc.status_code`: the
     /// JSON-RPC error code (`-32001`), the HTTP status (`404`), or the gRPC
@@ -445,7 +476,14 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
     fn on_rpc_call(&self, call: &RpcCall<'_>) {
         (**self).on_rpc_call(call);
     }
+
+    fn on_executor_run(&self, outcome: &str, duration: Duration) {
+        (**self).on_executor_run(outcome, duration);
+    }
 }
+
+mod tee;
+pub(crate) use tee::Tee;
 
 #[cfg(test)]
 mod tests;

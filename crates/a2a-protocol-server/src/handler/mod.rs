@@ -47,7 +47,7 @@ pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
 pub(crate) use messaging::FileUrls;
 pub(crate) use shutdown::InFlight;
 #[cfg(all(test, feature = "tracing"))]
-pub(crate) use shutdown::tests::warning::warnings_during;
+pub(crate) use shutdown::tests::warning::{warning_lines_during, warnings_during};
 pub use shutdown::{InFlightReport, ShutdownReport};
 
 use std::collections::HashMap;
@@ -440,9 +440,15 @@ mod context_lookup_cost;
 #[cfg(test)]
 mod context_lookup_tests;
 #[cfg(test)]
+mod default_store_metrics_tests;
+#[cfg(test)]
+mod executor_metrics_tests;
+#[cfg(test)]
 mod tenant_isolation_tests;
 #[cfg(test)]
 mod tenant_limits_tests;
+#[cfg(test)]
+mod tenant_refusal_metrics_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

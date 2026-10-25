@@ -124,8 +124,11 @@ pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 /// context they would on the HTTP bindings — credentials are presented once,
 /// at connect time, and apply to the whole connection.
 ///
-/// An upgrade request carrying an `A2A-Version` header with a major version
-/// other than `1` is rejected during the handshake with HTTP 400.
+/// An upgrade request with no `A2A-Version` (header or `?A2A-Version=`
+/// parameter), or one naming a version other than 1.0 (a patch number is
+/// ignored), is rejected during the handshake with HTTP 400;
+/// [`accept_missing_version_header`](Self::accept_missing_version_header)
+/// admits the former.
 ///
 /// # TLS and origins
 ///
@@ -627,6 +630,17 @@ impl WebSocketDispatcher {
         Ok(())
     }
 
+    /// Records an answer given before the call's method is known, with the
+    /// JSON-RPC code it was answered with.
+    fn record_unrouted(&self, code: &str) {
+        crate::rpc_span::record_unrouted(
+            &self.handler,
+            crate::rpc_span::RpcSystem::JsonRpc,
+            std::time::Instant::now(),
+            code,
+        );
+    }
+
     /// Reads and dispatches frames until the connection ends.
     async fn read_loop(
         &self,
@@ -693,7 +707,12 @@ impl WebSocketDispatcher {
                         // already in memory and ≤ 4 MiB) so the client can
                         // correlate the rejection instead of waiting for its
                         // request timeout on an unroutable null-id error.
-                        send_json(writer, &busy_response(&text)).await;
+                        // Recorded like any other answer given before the
+                        // method is known (nothing recorded it until
+                        // 2026-10-24).
+                        let busy = busy_response(&text);
+                        self.record_unrouted(&busy.error.code.to_string());
+                        send_json(writer, &busy).await;
                         continue;
                     };
 
@@ -713,7 +732,10 @@ impl WebSocketDispatcher {
                 Ok(WsMessage::Binary(_)) => {
                     // JSON-RPC over this binding is text-only. Answer instead
                     // of ignoring so a misconfigured client fails fast rather
-                    // than hanging until its request timeout.
+                    // than hanging until its request timeout. Recorded as the
+                    // parse error it is answered with (nothing recorded it
+                    // until 2026-10-24).
+                    self.record_unrouted("-32700");
                     let err_resp = JsonRpcErrorResponse::new(
                         None,
                         JsonRpcError::new(
@@ -3004,6 +3026,69 @@ mod tests {
                 .unwrap_or("")
                 .contains("binary"),
             "error should explain binary frames are unsupported: {v}"
+        );
+    }
+
+    /// The two answers the read loop gives before any method is known, a
+    /// binary frame and a 65th concurrent request, are recorded with the
+    /// code they were answered with, as the unparseable-JSON answer is.
+    #[tokio::test]
+    async fn ws_binary_and_busy_answers_are_recorded() {
+        type Seen = Arc<std::sync::Mutex<Vec<(Option<String>, Option<String>)>>>;
+        struct Recording(Seen);
+        impl crate::Metrics for Recording {
+            fn on_rpc_call(&self, call: &crate::RpcCall<'_>) {
+                self.0.lock().unwrap().push((
+                    call.method.map(str::to_owned),
+                    call.status_code.map(str::to_owned),
+                ));
+            }
+        }
+        struct BlockingExec;
+        agent_executor!(BlockingExec, |_ctx, _queue| async {
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+        let seen = Seen::default();
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(BlockingExec)
+                .without_agent_card()
+                .with_metrics(Recording(Arc::clone(&seen)))
+                .build()
+                .unwrap(),
+        );
+        let addr = Arc::new(WebSocketDispatcher::new(handler))
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let mut ws = ws_connect(addr).await;
+
+        ws.send(WsMessage::Binary(vec![1, 2, 3].into()))
+            .await
+            .unwrap();
+        let _ = read_text(&mut ws).await;
+        for i in 0..65 {
+            let req = serde_json::json!({
+                "jsonrpc": "2.0", "method": "SendMessage", "id": format!("b-{i}"),
+                "params": {"message": {
+                    "messageId": format!("m-{i}"), "role": "ROLE_USER",
+                    "parts": [{"text": "block"}]
+                }}
+            })
+            .to_string();
+            ws.send(WsMessage::Text(req.into())).await.unwrap();
+        }
+        let _ = read_text(&mut ws).await; // the 65th, refused as busy
+
+        let calls = seen.lock().unwrap().clone();
+        let unrouted: Vec<_> = calls.iter().filter(|(m, _)| m.is_none()).collect();
+        assert_eq!(
+            unrouted,
+            [
+                &(None, Some("-32700".to_owned())),
+                &(None, Some("-32603".to_owned())),
+            ],
+            "recorded: {calls:?}"
         );
     }
 

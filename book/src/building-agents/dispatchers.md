@@ -1,4 +1,4 @@
-# Dispatchers (JSON-RPC, REST, Axum & gRPC)
+# Dispatchers (JSON-RPC, REST, WebSocket, Axum & gRPC)
 
 Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides five built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `A2aRouter` (`axum` feature), `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature). `CombinedDispatcher` puts the first two on one listener ([below](#json-rpc-and-rest-on-one-port)).
 
@@ -34,10 +34,11 @@ let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 - **Agent card** — `GET /.well-known/agent-card.json` returns the agent card (same as REST)
 - **Batch support** — Handles JSON-RPC batch arrays
 - **ID preservation** — Echoes back the exact request ID (string, number, float, null). The client validates that response IDs match request IDs.
+- **Notifications** — A request with no `id` member is run and gets no reply: `204 No Content` over HTTP, no entry in a batch's array (`204` when every member is one), no frame over WebSocket. `"id": null` is a call and is answered; a streaming method sent as a notification is not run
 - **Streaming** — `SendStreamingMessage` and `SubscribeToTask` return SSE streams
 - **CORS** — Configurable cross-origin headers
 - **Content type** — Accepts `application/json` and `application/a2a+json`
-- **Version validation** — Requires the `A2A-Version` header by default: a request without it (read as v0.3, spec §3.6.2) or with a version other than 1.0 (a patch number is ignored; `1.1` is refused) is refused with `VersionNotSupported` (-32009). `DispatchConfig::accept_missing_version_header()` admits header-less requests
+- **Version validation** — Requires the `A2A-Version` header (or the `A2A-Version` query parameter, §3.6.1) by default: a request without it (read as v0.3, spec §3.6.2) or with a version other than 1.0 (a patch number is ignored; `1.1` is refused) is refused with `VersionNotSupported` (-32009). `DispatchConfig::accept_missing_version_header()` admits header-less requests
 
 ### Batch Restrictions
 
@@ -62,6 +63,13 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 | `sse_channel_capacity` | `usize` | 64 | Backpressure channel between event reader and HTTP response |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
 | `require_version_header` | `bool` | `true` | Refuse requests without an `A2A-Version` header (`accept_missing_version_header()` turns it off) |
+| `agent_card_max_age` | `u32` | 3600 | `Cache-Control: max-age`, in seconds, of the public agent card (spec §8.6.1) |
+
+`DispatchConfig` is `#[non_exhaustive]`: build one with
+`DispatchConfig::default()` and its `with_*` methods, and pass it to
+`JsonRpcDispatcher::with_config(handler, config)`,
+`RestDispatcher::with_config`, `A2aRouter::with_config` or
+`CombinedDispatcher::with_config`.
 
 ## RestDispatcher
 
@@ -100,11 +108,12 @@ let dispatcher = Arc::new(RestDispatcher::new(handler));
 | `POST` | `/tasks/{id}:cancel` | CancelTask |
 | `GET\|POST` | `/tasks/{id}:subscribe` | SubscribeToTask |
 | `GET` | `/extendedAgentCard` | GetExtendedAgentCard |
-| `POST` | `/tasks/{id}/pushNotificationConfigs` | CreatePushConfig |
-| `GET` | `/tasks/{id}/pushNotificationConfigs` | ListPushConfigs |
-| `GET` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | GetPushConfig |
-| `DELETE` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | DeletePushConfig |
+| `POST` | `/tasks/{id}/pushNotificationConfigs` | CreateTaskPushNotificationConfig |
+| `GET` | `/tasks/{id}/pushNotificationConfigs` | ListTaskPushNotificationConfigs |
+| `GET` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | GetTaskPushNotificationConfig |
+| `DELETE` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | DeleteTaskPushNotificationConfig |
 | `GET` | `/.well-known/agent-card.json` | AgentCard |
+| `GET\|HEAD` | `/health`, `/ready` | Health probes, answered `200` |
 
 ### Multi-Tenancy
 
@@ -131,10 +140,10 @@ The REST dispatcher includes automatic protections:
 
 | Protection | Behavior |
 |-----------|----------|
-| **Path traversal** | `..` in path segments (including `%2E%2E`, `%2e%2e`) → 400 |
+| **Path traversal** | a `.` or `..` path segment, raw or percent-encoded at any depth, or separated with `\` → 400; an id that merely contains `..` is served |
 | **Query string size** | Over 4 KiB → 414 |
 | **Body size** | Over 4 MiB → 413 |
-| **Content type** | Accepts `application/json` and `application/a2a+json`; answers `application/a2a+json` to a client that asks for it ([negotiation](../concepts/transport-layers.md#content-types)) |
+| **Content type** | Accepts `application/json` and `application/a2a+json` (any other `Content-Type` on a `POST` is `ContentTypeNotSupportedError`, 400). Answers `application/a2a+json` unless the request's `Accept` prefers `application/json` or asks only for `text/event-stream`; the agent card and `/health`, `/ready` stay `application/json` ([negotiation](../concepts/transport-layers.md#content-types)) |
 
 ## Server Startup
 
@@ -167,6 +176,11 @@ println!("Listening on {addr}");
 # Ok(())
 # }
 ```
+
+`serve` and `serve_with_addr` run on `Server` with `ServeConfig::default()`
+(header-read and idle timeouts on, connections unbounded). For TLS, a
+connection ceiling or a graceful shutdown, use `Server`
+([Production Hardening](../deployment/production.md)).
 
 ### Manual wiring (advanced)
 
@@ -271,8 +285,9 @@ over HTTP — credentials are presented once, at connect time, and apply to
 the whole connection — except that a refused credential is answered only in
 the JSON-RPC body (-32600), since interceptors run per message after the
 upgrade; see [Authentication](./authentication.md#error-mapping-important).
-An upgrade request with no `A2A-Version` header, or one naming an
-unsupported major version, is rejected during the handshake with HTTP 400
+An upgrade request with no `A2A-Version` (header or `?A2A-Version=`
+parameter), or one naming a version other than 1.0 (a patch number is
+ignored), is rejected during the handshake with HTTP 400
 (`accept_missing_version_header()` admits the former).
 
 ### TLS and origins
@@ -521,6 +536,13 @@ tonic::transport::Server::builder()
 # }
 ```
 
+`into_service()` applies only `GrpcConfig`'s `max_message_size`,
+`stream_channel_capacity` and `require_version_header`. `concurrency_limit`,
+`with_tls`, `with_http2_keepalive`, `with_max_connection_age`,
+`with_max_connections` and the agent card on the same port belong to the
+`serve*` methods; on your own `tonic::transport::Server`, set the equivalents
+(for example `.concurrency_limit_per_connection(256)`).
+
 ## A2aRouter (Axum)
 
 For projects already using Axum, the `axum` feature provides `A2aRouter` — an
@@ -586,6 +608,12 @@ let app = axum::Router::new()
 All 11 A2A REST methods are mapped, plus health check and agent card discovery.
 Streaming methods return SSE responses. The router delegates entirely to
 `RequestHandler` — zero business logic duplication.
+
+Unlike `RestDispatcher`, the router has no `/{tenant}/…` or
+`/tenants/{tenant}/…` routes: a tenant-prefixed path is a 404. Resolve
+tenants with a `TenantResolver` (for example `HeaderTenantResolver`) plus
+`require_resolved_tenant()`; with no resolver a GET or DELETE names its
+tenant in `?tenant=` and a POST in the body's `tenant` field.
 
 ## Running Multiple Transports
 

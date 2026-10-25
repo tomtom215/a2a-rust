@@ -61,6 +61,8 @@ mod dispatcher;
 mod helpers;
 mod native;
 mod shutdown;
+#[cfg(test)]
+mod undeclared_tests;
 mod well_known;
 
 /// Generated tonic glue for the canonical `lf.a2a.v1.A2AService`.

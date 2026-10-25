@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive E2E suite of **102 tests** runs in ~6 seconds. That is the figure for a plain `cargo run -p agent-team`, because the six optional features — WebSocket, gRPC, Axum, SQLite, signing and OTel — are the example's `default` set; `examples/agent-team/Cargo.toml` says why, and `--all-features` adds only `tracing`, which changes output volume rather than coverage, so it is 102 as well. Compile the six out with `--no-default-features` and **87** run. Both figures are the binary's own total, read off the run; hand-counting the source gives the wrong answer, which is how the 81/94 this paragraph used to claim survived.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of the SDK's protocol surface and its main server and client features. It deploys four specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol — plus a fifth, GrpcAnalyzer, that serves the CodeAnalyzer executor over gRPC, and a sixth that serves all four bindings for the surface sweep. The E2E suite is **100 tests** and runs in ~6 seconds; the run's total of **102** adds the two results of the method × binding surface sweep (`surface-counter` and `surface-sweep`). That is the figure for a plain `cargo run -p agent-team`, because the six optional features — WebSocket, gRPC, Axum, SQLite, signing and OTel — are the example's `default` set; `examples/agent-team/Cargo.toml` says why, and `--all-features` adds only `tracing`, which changes output volume rather than coverage, so it is 102 as well. Compile the six out with `--no-default-features` and **87** run, with no sweep (it needs `websocket` and `grpc` together). The 102 and the 87 are the `Total:` the binary prints; the 100 is the number of tests `main.rs` registers, 13 of them behind the six features.
 
 ## Why Dogfood?
 
@@ -17,7 +17,7 @@ Unit tests and integration tests are necessary but insufficient. **No single tes
 | **Dogfooding** | DX issues, multi-hop bugs, performance surprises, missing features | Weak assertions, dead code paths |
 | **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
 
-**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 94 E2E dogfood tests that caught 68 real bugs across 13 documented passes — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
+**The critical lesson:** At v0.3.0 the suite held about 1,630 tests across the categories above — unit, integration, property and fuzz (about 1,850 with all feature flags) — and a 94-test E2E dogfood suite whose 13 documented passes found 68 real bugs — **the entire suite was green.** Every CI check passed. Mutation testing, adopted in that release, still found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
 
 Mutation testing fills the gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
 
@@ -28,7 +28,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│      (102 default / 87 no-default-features, ~5500ms)        │
+│    (100 tests + 2 sweep = 102 / 87 no-default, ~5500ms)     │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -64,7 +64,7 @@ Each agent exercises different SDK capabilities:
 The agent team exercises **45+ distinct SDK features** in a single run:
 
 - `AgentExecutor` trait (4 implementations)
-- `RequestHandlerBuilder` (all options: timeout, queue capacity, max streams, metrics, interceptors)
+- `RequestHandlerBuilder` (timeout, queue capacity, max streams, metrics, interceptors, push sender, extended card)
 - `JsonRpcDispatcher` and `RestDispatcher`
 - `WebSocketDispatcher` (with `websocket` feature flag)
 - `ClientBuilder` (both JSON-RPC and REST protocol bindings)
@@ -93,6 +93,7 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 - `TenantAwareInMemoryTaskStore` isolation
 - `TenantContext::scope` task-local threading
 - WebSocket transport (`SendMessage` + streaming) — with `websocket` feature
+- gRPC transport (`SendMessage`, streaming, `GetTask`) — with `grpc` feature
 - Batch JSON-RPC (single, multi, empty, mixed, streaming rejection)
 - Real auth rejection (interceptor short-circuit)
 - `GetExtendedAgentCard` via JSON-RPC
@@ -109,6 +110,7 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 - `SqliteTaskStore` (persistent task store) — with `sqlite` feature
 - `SqlitePushConfigStore` (persistent push config) — with `sqlite` feature
 - Combined Axum + SQLite production stack — with `axum,sqlite` features
+- `OtelMetrics` wired into a handler — with `otel` feature
 
 ## Modular Example Structure
 
@@ -116,7 +118,9 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 examples/agent-team/src/
 ├── main.rs                      # Thin orchestrator (~500 lines)
 ├── features.rs                  # Feature-claim table and its audit against the run
+├── features/tests.rs            # Tests of the claim-table audit
 ├── surface.rs                   # Every method × every binding matrix
+├── telemetry.rs                 # SDK telemetry (otel) and log output (tracing)
 ├── executors/
 │   ├── mod.rs                   # Re-exports
 │   ├── code_analyzer.rs         # CodeAnalyzer executor
@@ -150,22 +154,24 @@ examples/agent-team/src/
 ## Running the Agent Team
 
 ```bash
-# The full suite — 102 tests. WebSocket, gRPC, Axum, SQLite, signing and OTel
-# are the example's DEFAULT features, so this is not a reduced run.
+# The full suite — 100 tests, 102 results with the surface sweep. WebSocket,
+# gRPC, Axum, SQLite, signing and OTel are the example's DEFAULT features, so
+# this is not a reduced run.
 cargo run -p agent-team
 
 # Identical: --all-features adds only `tracing`, which changes output volume
-# and not coverage. Still 102.
+# and not coverage. Still 100 tests, 102 results.
 cargo run -p agent-team --all-features
 
-# All six compiled out — 87 tests. Exits 2, because a narrowed build leaves
-# claimed feature areas unexercised, and that is reported rather than hidden.
+# All six compiled out — 87 tests, no sweep. Exits 2, because a narrowed
+# build leaves claimed feature areas unexercised, and that is reported rather
+# than hidden.
 cargo run -p agent-team --no-default-features
 
 # One area at a time on top of that narrowed build:
 cargo run -p agent-team --no-default-features --features axum,sqlite   # tests 93-98
 cargo run -p agent-team --no-default-features --features websocket     # tests 51-52
-cargo run -p agent-team --no-default-features --features grpc          # tests 56-58, needs protoc
+cargo run -p agent-team --no-default-features --features grpc          # tests 56-58 (protoc is vendored; nothing to install)
 
 # With structured logging. `tracing` is the only non-default feature, and the
 # count is unchanged.
@@ -179,14 +185,22 @@ Expected output:
 ║     A2A Agent Team — Full SDK Dogfood & E2E Test Suite       ║
 ╚══════════════════════════════════════════════════════════════╝
 
+Webhook receiver listening on http://127.0.0.1:XXXXX
+
 Agent [CodeAnalyzer]  JSON-RPC on http://127.0.0.1:XXXXX
 Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
+Agent [GrpcAnalyzer]  gRPC     on 127.0.0.1:XXXXX
 
-...102 tests...
+...100 tests, then the surface sweep...
 
 ║ Total: 102 | Passed: 102 | Failed: 0 | Time: ~5500ms
+
+...
+
+All 102 tests passed in ~5500ms.
+Every claimed SDK feature was exercised. SDK dogfood complete.
 ```
 
 ## Lessons for Your Own Agents
@@ -216,7 +230,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 ## Sub-pages
 
 - **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 68 bugs discovered across thirteen dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete E2E coverage map — 102 tests on the default feature set, 87 with `--no-default-features`
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete E2E coverage map — 100 tests plus the surface sweep (102 results) on the default feature set, 87 with `--no-default-features`
 
 ## See Also
 

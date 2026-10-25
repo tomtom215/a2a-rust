@@ -28,7 +28,7 @@ use crate::builder::ClientBuilder;
 use crate::config::ClientConfig;
 use crate::declared::DeclaredCapabilities;
 use crate::error::ClientResult;
-use crate::interceptor::{ClientRequest, InterceptorChain};
+use crate::interceptor::{ClientRequest, ClientResponse, InterceptorChain};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
@@ -203,138 +203,82 @@ impl A2aClient {
         declared.map_or(Ok(()), |declared| declared.require(capability, method))
     }
 
-    /// Sends an intercepted request, and lets the interceptors see a
-    /// failure.
+    /// Sends an intercepted request, runs the interceptors' `after` hooks on
+    /// the answer, and `decode`s it into the call's typed result.
     ///
-    /// `after` hooks run only on success, so without this an interceptor
-    /// never learns that the agent rejected what it attached — which is how
-    /// a bearer token the agent answered with `401` kept being sent until it
-    /// expired. The params move to the transport, so `req.params` reads as
-    /// `null` in the error hook.
-    pub(crate) async fn send_intercepted(
+    /// The call is recorded (`call_span/in_flight.rs`) as it ends for the
+    /// caller, after `decode`: a response an interceptor, the decoder or a
+    /// content check then refuses is a failed call, not a success.
+    ///
+    /// `after` hooks run only on success, so without the error hook an
+    /// interceptor never learns that the agent rejected what it attached —
+    /// which is how a bearer token the agent answered with `401` kept being
+    /// sent until it expired. The error hook runs for a failure of the
+    /// transport; the params move to it, so `req.params` reads as `null`
+    /// there.
+    pub(crate) async fn send_decoded<T>(
         &self,
         method: &str,
         req: &mut ClientRequest,
-    ) -> ClientResult<serde_json::Value> {
+        decode: impl FnOnce(serde_json::Value) -> ClientResult<T>,
+    ) -> ClientResult<T> {
         let params = std::mem::take(&mut req.params);
-        #[cfg(feature = "otel")]
-        let started = std::time::Instant::now();
-        #[cfg(feature = "tracing")]
-        let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
-        #[cfg(feature = "otel")]
-        crate::call_span::propagate(
-            &call,
-            &self.peer,
-            self.config.propagate_trace,
-            &mut req.extra_headers,
-        );
+        let mut call = crate::call_span::InFlight::open(self, method, &params);
+        call.propagate(&mut req.extra_headers);
         let send = self.transport.send_request_with_query(
             method,
             params,
             &req.extra_headers,
             &req.query_params,
         );
-        #[cfg(feature = "tracing")]
-        let send = tracing::Instrument::instrument(send, call.span.clone());
-        #[cfg(feature = "tracing")]
-        let (result, request_id) = crate::call_span::noting_request_id(send).await;
-        #[cfg(feature = "tracing")]
-        call.request_id(request_id.as_deref());
-        #[cfg(not(feature = "tracing"))]
-        let result = send.await;
-        #[cfg(feature = "otel")]
-        self.measure(method, started, result.as_ref().err());
-        #[cfg(feature = "tracing")]
-        match &result {
-            Ok(value) => call.succeeded(Some(value)),
-            Err(e) => call.failed(e),
-        }
-        if let Err(ref e) = result {
-            self.interceptors.run_on_error(req, e).await;
-        }
-        result
+        let result = match call.send(send).await {
+            Ok(result) => result,
+            Err(e) => {
+                call.end(Some(&e));
+                self.interceptors.run_on_error(req, &e).await;
+                return Err(e);
+            }
+        };
+        call.response(&result);
+        let resp = ClientResponse {
+            method: method.to_owned(),
+            result,
+            status_code: 200,
+        };
+        let decoded = match self.interceptors.run_after(&resp).await {
+            Ok(()) => decode(resp.result),
+            Err(e) => Err(e),
+        };
+        call.end(decoded.as_ref().err());
+        decoded
     }
 
-    /// [`send_intercepted`](Self::send_intercepted) for a streaming method:
-    /// a stream the agent refuses to open is reported the same way.
+    /// [`send_decoded`](Self::send_decoded) for a streaming method: a stream
+    /// the agent refuses to open is reported the same way, and the call lasts
+    /// until the caller has finished consuming the stream (`call_span.rs`,
+    /// `call_metric.rs`).
     pub(crate) async fn send_streaming_intercepted(
         &self,
         method: &str,
         req: &mut ClientRequest,
     ) -> ClientResult<EventStream> {
         let params = std::mem::take(&mut req.params);
-        #[cfg(feature = "otel")]
-        let started = std::time::Instant::now();
-        #[cfg(feature = "tracing")]
-        let call = crate::call_span::CallSpan::open(method, &self.peer, &params);
-        #[cfg(feature = "otel")]
-        crate::call_span::propagate(
-            &call,
-            &self.peer,
-            self.config.propagate_trace,
-            &mut req.extra_headers,
-        );
+        let call = crate::call_span::InFlight::open(self, method, &params);
+        call.propagate(&mut req.extra_headers);
         let send = self.transport.send_streaming_request_with_query(
             method,
             params,
             &req.extra_headers,
             &req.query_params,
         );
-        #[cfg(feature = "tracing")]
-        let send = tracing::Instrument::instrument(send, call.span.clone());
-        #[cfg(feature = "tracing")]
-        let (result, request_id) = crate::call_span::noting_request_id(send).await;
-        #[cfg(feature = "tracing")]
-        call.request_id(request_id.as_deref());
-        #[cfg(not(feature = "tracing"))]
-        let result = send.await;
-        // A stream's span stays open with the stream, and its duration runs:
-        // the call lasts until the caller has finished consuming it
-        // (`call_span.rs`, `call_metric.rs`).
-        #[cfg(feature = "tracing")]
-        let result = match result {
-            Ok(stream) => {
-                let stream_call = crate::streaming::event_stream::call::StreamCall::new(
-                    call.span.clone(),
-                    call.system,
-                );
-                #[cfg(feature = "otel")]
-                let stream_call =
-                    stream_call.measured(self.metric.clone(), self.peer.clone(), method, started);
-                call.opened(None);
-                Ok(stream.with_call(stream_call))
-            }
+        match call.send(send).await {
+            Ok(stream) => Ok(call.attach(stream)),
             Err(e) => {
-                #[cfg(feature = "otel")]
-                self.measure(method, started, Some(&e));
-                call.failed(&e);
+                call.end(Some(&e));
+                self.interceptors.run_on_error(req, &e).await;
                 Err(e)
             }
-        };
-        if let Err(ref e) = result {
-            self.interceptors.run_on_error(req, e).await;
         }
-        result
-    }
-}
-
-#[cfg(feature = "otel")]
-impl A2aClient {
-    /// Records a call of `method` begun at `started`, which failed with
-    /// `error` or, without one, succeeded (`call_metric.rs`).
-    fn measure(
-        &self,
-        method: &str,
-        started: std::time::Instant,
-        error: Option<&crate::error::ClientError>,
-    ) {
-        let system = self.peer.system;
-        let status = error.map_or_else(
-            || crate::call_span::Status::ok(system),
-            |e| crate::call_span::Status::failed(system, e),
-        );
-        let method = crate::call_span::qualified(method);
-        self.metric.record(&self.peer, method, started, &status);
     }
 }
 

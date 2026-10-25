@@ -26,8 +26,8 @@
 //!
 //! # Why this is a separate crate
 //!
-//! `agntcy-slim-rpc` brings 379 transitive dependencies, including
-//! `aws-lc-sys` — a native C crypto build. `a2a-protocol-types` has 12.
+//! `agntcy-slim-rpc` brings 387 transitive dependencies, including
+//! `aws-lc-sys` — a native C crypto build. `a2a-protocol-types` has 11.
 //! Putting the binding in the workspace would have pushed all of it into the
 //! lockfile and audit surface of four crates that do not need any of it, so
 //! this crate sits outside the workspace with its own `Cargo.lock` and depends

@@ -3,7 +3,8 @@
 
 //! **Agent Team** — Full-stack dogfood of every a2a-rust SDK capability.
 //!
-//! This example deploys 4 specialized agents that communicate via A2A:
+//! This example deploys 4 specialized agents (plus GrpcAnalyzer, under the
+//! `grpc` feature) that communicate via A2A:
 //!
 //! | Agent | Transport | Features exercised |
 //! |-------|-----------|-------------------|
@@ -12,9 +13,9 @@
 //! | **HealthMonitor** | JSON-RPC | push notifications, interceptors |
 //! | **Coordinator** | REST | agent-to-agent calls, aggregation, metrics |
 //!
-//! Starts all four agents, runs the E2E suite (102 tests with `--all-features`),
-//! then measures the method x binding surface against a fifth agent that exists
-//! purely to be swept — see [`surface`].
+//! Starts the agents, runs the E2E suite (100 tests; 102 results with the
+//! surface sweep), then measures the method x binding surface against a sixth
+//! agent that exists purely to be swept — see [`surface`].
 //!
 //! Run with: `cargo run -p agent-team`
 
@@ -46,8 +47,8 @@ use executors::{
 #[cfg(feature = "grpc")]
 use infrastructure::serve_grpc;
 use infrastructure::{
-    AuditInterceptor, MetricsForward, TeamMetrics, WebhookReceiver, bind_listener, serve_jsonrpc,
-    serve_rest, start_webhook_server,
+    AuditInterceptor, TeamMetrics, WebhookReceiver, bind_listener, serve_jsonrpc, serve_rest,
+    start_webhook_server,
 };
 use tests::{
     TestContext, TestResult, basic, coverage_gaps, dogfood, edge_cases, lifecycle, stress,
@@ -92,7 +93,7 @@ async fn main() {
             .with_agent_card(code_analyzer_card(&analyzer_url))
             .with_extended_agent_card(code_analyzer_card(&analyzer_url))
             .with_interceptor(AuditInterceptor::new("CodeAnalyzer"))
-            .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
+            .with_additional_metrics(Arc::clone(&analyzer_metrics))
             .with_executor_timeout(std::time::Duration::from_secs(30))
             .with_event_queue_capacity(128)
             // Test 68 reads the extended card, the public card served as it
@@ -111,7 +112,7 @@ async fn main() {
             .with_agent_card(build_monitor_card(&build_url))
             .with_interceptor(AuditInterceptor::new("BuildMonitor").with_token("build-secret"))
             .with_push_sender(HttpPushSender::new().allow_private_urls())
-            .with_metrics(MetricsForward(Arc::clone(&build_metrics)))
+            .with_additional_metrics(Arc::clone(&build_metrics))
             .with_executor_timeout(std::time::Duration::from_secs(60))
             .build()
             .expect("build build monitor handler"),
@@ -125,7 +126,7 @@ async fn main() {
             .with_agent_card(health_monitor_card(&health_url))
             .with_interceptor(AuditInterceptor::new("HealthMonitor"))
             .with_push_sender(HttpPushSender::new().allow_private_urls())
-            .with_metrics(MetricsForward(Arc::clone(&health_metrics)))
+            .with_additional_metrics(Arc::clone(&health_metrics))
             .build()
             .expect("build health monitor handler"),
     );
@@ -142,7 +143,7 @@ async fn main() {
         RequestHandlerBuilder::new(CoordinatorExecutor::new(agent_urls))
             .with_agent_card(coordinator_card(&coordinator_url))
             .with_interceptor(AuditInterceptor::new("Coordinator"))
-            .with_metrics(MetricsForward(Arc::clone(&coordinator_metrics)))
+            .with_additional_metrics(Arc::clone(&coordinator_metrics))
             .with_max_concurrent_streams(50)
             .build()
             .expect("build coordinator handler"),
@@ -163,7 +164,7 @@ async fn main() {
             RequestHandlerBuilder::new(CodeAnalyzerExecutor)
                 .with_agent_card(grpc_analyzer_card(&grpc_base_url))
                 .with_interceptor(AuditInterceptor::new("GrpcAnalyzer"))
-                .with_metrics(MetricsForward(Arc::clone(&grpc_analyzer_metrics)))
+                .with_additional_metrics(Arc::clone(&grpc_analyzer_metrics))
                 .with_executor_timeout(std::time::Duration::from_secs(30))
                 .with_event_queue_capacity(128)
                 .build()
@@ -355,7 +356,7 @@ async fn main() {
     // flow through the same pass/fail accounting as everything else.
     // Surface matrix: every method over every binding. Lives in `surface.rs`
     // so this function stays about orchestration; see that module for why a
-    // fifth agent exists.
+    // sixth agent exists.
     #[cfg(all(feature = "websocket", feature = "grpc"))]
     let surface_missing = surface::run(&mut results, webhook_addr).await;
 

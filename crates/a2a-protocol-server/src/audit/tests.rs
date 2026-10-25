@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
+mod holds;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -341,20 +343,6 @@ async fn purge_never_deletes_the_newest_record() {
     assert_eq!(report.purged, vec![("c".to_owned(), 2, 2)]);
     assert_eq!(log.export("c").await.unwrap().len(), 1);
     assert!(log.verify("c").await.unwrap().is_intact());
-}
-
-#[tokio::test]
-async fn a_legal_hold_stops_purge_until_released() {
-    let (log, _store) = aged_log(&[0, 1, 2, 300]).await;
-    let retention = AuditRetention::allowing_shorter_than_six_months(Duration::from_hours(24));
-    log.place_hold("c", "litigation 2026-17").await.unwrap();
-    let held = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
-    assert_eq!(held.held, vec!["c".to_owned()]);
-    assert_eq!(held.purged, Vec::new());
-    assert_eq!(log.export("c").await.unwrap().len(), 4);
-    assert!(log.release_hold("c").await.unwrap());
-    let report = log.purge(retention, Y2026 + 400 * DAY_MS).await.unwrap();
-    assert_eq!(report.purged.len(), 1);
 }
 
 #[tokio::test]

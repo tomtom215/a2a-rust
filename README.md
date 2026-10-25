@@ -142,9 +142,9 @@ says what each panel shows.
 `a2a-protocol-client` and `a2a-protocol-server` are **siblings** — neither depends on the other. Use only what you need.
 
 `a2a-protocol-slimrpc` sits outside the workspace with its own lockfile, because
-`agntcy-slim-rpc` brings 359 transitive dependencies (including a native C
+`agntcy-slim-rpc` brings 387 transitive dependencies (including a native C
 crypto build) against 11 for `a2a-protocol-types` (normal dependencies, as
-`cargo tree -e normal` counts them, 2026-09-25). None of that reaches the four
+`cargo tree -e normal` counts them, 2026-10-25). None of that reaches the four
 crates above, which do not depend on it. It is versioned independently and is
 currently on the `0.7` line —
 [`bindings/a2a-protocol-slimrpc/Cargo.toml`](bindings/a2a-protocol-slimrpc/Cargo.toml)
@@ -244,9 +244,9 @@ Quick Start once did.
 
 ### Hello Agent (smallest complete agent)
 
-The whole SDK in one screen — 32 lines of code above its tests (counted
-2026-10-15, blank and comment lines excluded), the SDK plus `tokio` for the
-runtime, no SDK feature flags. It greets whoever sends it a message:
+The whole SDK in one screen — the code above its tests is one screen long, the
+SDK plus `tokio` for the runtime, no SDK feature flags. It greets whoever sends
+it a message:
 
 ```bash
 cargo run -p hello-agent
@@ -302,7 +302,7 @@ cargo run -p incident-response
 
 ### Agent Team (Full Dogfood)
 
-An agent team that exercises the SDK broadly — 102 end-to-end tests on the default feature set, which already enables WebSocket, gRPC, Axum, SQLite, signing and OTel (87 with `--no-default-features`; both figures are what `cargo run -p agent-team` prints) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
+An agent team that exercises the SDK broadly — 100 end-to-end tests and a 2-result method × binding sweep (102 results) on the default feature set, which already enables WebSocket, gRPC, Axum, SQLite, signing and OTel (87 with `--no-default-features`, which has no sweep; the totals are what `cargo run -p agent-team` prints) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
 
 ```bash
 cargo run -p agent-team

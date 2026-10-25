@@ -4,7 +4,7 @@ Tasks and messages are the core data model of the A2A protocol. Understanding th
 
 ## Tasks
 
-A **Task** represents a unit of work. Every `SendMessage` call creates one.
+A **Task** represents a unit of work. A `SendMessage` that names no task starts one; one that names a live task continues it; and an agent may answer with a direct `Message` instead of returning a task.
 
 ### Task Structure
 
@@ -16,7 +16,7 @@ pub struct Task {
     pub id: TaskId,                          // Server-assigned unique ID
     pub context_id: ContextId,               // Conversation thread ID
     pub status: TaskStatus,                  // Current state + optional message
-    pub history: Option<Vec<Message>>,       // Previous messages in context
+    pub history: Option<Vec<Message>>,       // The task's messages; omitted from a send response by default
     pub artifacts: Option<Vec<Artifact>>,    // Produced results
     pub metadata: Option<serde_json::Value>, // Arbitrary key-value data
 }
@@ -27,24 +27,42 @@ pub struct Task {
 # };
 ```
 
+A `SendMessage` response omits `history` unless the request's
+`configuration.historyLength` asks for it (`n` keeps the newest `n` messages;
+`0` omits). `GetTask` returns the stored, size-capped history unless
+`historyLength` trims it.
+
 ### Task States
 
-Tasks follow a state machine with validated transitions:
+Tasks follow a state machine with validated transitions; the proto's default,
+`Unspecified`, is not a state a task is ever in:
 
 | State | Meaning | Terminal? |
 |-------|---------|-----------|
+| `Unspecified` | The proto default (`TASK_STATE_UNSPECIFIED`): no real state. Never send it as a status: a server refuses the event and a client refuses a task carrying it | No |
 | `Submitted` | Received, not yet started | No |
 | `Working` | Actively processing | No |
 | `InputRequired` | Needs more input from client | No |
 | `AuthRequired` | Needs authentication | No |
 | `Completed` | Finished successfully | Yes |
 | `Failed` | Finished with error | Yes |
-| `Canceled` | Canceled by client | Yes |
-| `Rejected` | Rejected before execution | Yes |
+| `Canceled` | Canceled before completion (by `CancelTask`) | Yes |
+| `Rejected` | The agent declined the task, at creation or later | Yes |
 
 ### Valid Transitions
 
-Not all state transitions are allowed. The library enforces these rules:
+Not all state transitions are allowed. `TaskState::can_transition_to` encodes
+two rules, and the server applies them to every status update and task snapshot
+an executor writes:
+
+1. Terminal states (`Completed`, `Failed`, `Canceled`, `Rejected`) are final,
+   including to themselves.
+2. Nothing transitions into `Submitted` or `Unspecified`.
+
+Everything else is allowed, `Submitted → Completed` and `Working → Working`
+included. An event that breaks a rule fails a blocking send with
+`InvalidStateTransition`; on the streaming and `returnImmediately` path the
+task is marked `Failed`:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::TaskState;
@@ -74,6 +92,14 @@ Tasks in terminal states enforce strict invariants:
   `TaskNotCancelable`.
 - **Unknown taskId** — `SendMessage` with a `taskId` that doesn't reference an
   existing task returns `TaskNotFound`.
+
+Two more rules apply to a `SendMessage` that names a task, whatever its state:
+
+- **One run at a time** — a `SendMessage` naming a task whose executor is still
+  running returns `UnsupportedOperation`; wait for `INPUT_REQUIRED`,
+  `AUTH_REQUIRED` or a terminal state.
+- **Context must match** — a message whose `contextId` differs from the named
+  task's returns `InvalidParams`.
 
 ### Task Status
 
@@ -114,7 +140,7 @@ A **Message** is a structured payload exchanged between client and agent:
 # use a2a_protocol_sdk::types::message::{MessageId, MessageRole, Part};
 # use a2a_protocol_sdk::types::artifact::{Artifact, ArtifactId};
 pub struct Message {
-    pub id: MessageId,                           // Unique message ID
+    pub id: MessageId,                           // Unique message ID (wire name: messageId)
     pub role: MessageRole,                       // User or Agent
     pub parts: Vec<Part>,                        // Content (≥1 part)
     pub task_id: Option<TaskId>,                 // Associated task
@@ -135,6 +161,7 @@ pub struct Message {
 |------|------------|---------|
 | `User` | `"ROLE_USER"` | From the client/human side |
 | `Agent` | `"ROLE_AGENT"` | From the agent/server side |
+| `Unspecified` | `"ROLE_UNSPECIFIED"` | The proto default; a server refuses a message that carries it (`InvalidParams`) |
 
 ### Creating Messages
 
@@ -178,6 +205,11 @@ let part = Part::raw(base64_encoded_string);
 
 Wire format: `{"raw": "aGVsbG8=", "filename": "doc.bin", "mediaType": "application/octet-stream"}`
 
+`Part::raw` does not check its argument. A server refuses a `raw` that is not
+base64 with `InvalidParams` naming the field; URL-safe and unpadded base64 are
+accepted and returned in standard padded form. The same check applies to the
+events an executor writes.
+
 ### Url (URI reference)
 
 ```rust
@@ -204,6 +236,10 @@ let part = Part::data(serde_json::json!({
 
 Wire format: `{"data": {"table": [...]}}`
 
+Protobuf carries these numbers as doubles, so a server refuses an integer
+beyond ±2^53 in a `data` part or in `metadata` with `InvalidParams`, in a
+client's message and in an executor's events alike.
+
 ### Part Metadata
 
 Any part can carry optional metadata:
@@ -224,7 +260,7 @@ Artifacts are results produced by an agent, delivered as part of a task:
 # use a2a_protocol_sdk::types::message::{Message, MessageId, MessageRole, Part};
 # use a2a_protocol_sdk::types::artifact::ArtifactId;
 pub struct Artifact {
-    pub id: ArtifactId,
+    pub id: ArtifactId,                      // wire name: artifactId
     pub name: Option<String>,
     pub description: Option<String>,
     pub parts: Vec<Part>,                    // ≥1 part
@@ -246,7 +282,9 @@ let artifact = Artifact::new(
     "result-1",
     vec![Part::text("The answer is 42")],
 );
-// Validate before emitting — parts must be non-empty per A2A spec.
+// `Artifact::new` panics in debug builds on empty parts; `validate()` is the
+// fallible check for an artifact built another way (a struct literal, or one
+// you deserialized). A server refuses an artifact with no parts.
 artifact.validate().expect("artifact should be valid");
 ```
 
@@ -285,6 +323,12 @@ When `append=true`, the server finds the existing artifact by ID and:
 2. Merges metadata key by key at the top level (new keys override existing keys)
 
 If no artifact with the ID exists, it is created as a new artifact.
+
+A chunk without `append` (or with `append: false`) for an ID the task already
+holds **replaces** that artifact; it does not add a second one, so every chunk
+after the first needs `append: Some(true)`. An append that would take the
+artifact past `max_parts_per_artifact` (a `HandlerLimits` field, default
+10,000) is dropped.
 
 ## ID Types
 

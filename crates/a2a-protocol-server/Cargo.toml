@@ -20,10 +20,11 @@ categories             = ["network-programming", "web-programming"]
 [features]
 ## `tracing` and `otel` are on by default: a default build logs through, and
 ## records spans with, whatever `tracing` subscriber the application installs,
-## and costs a level check when none is; `otel` adds the OpenTelemetry API, so
-## a process that installs a provider gets this crate's spans and metrics
-## without enabling anything here (decided 2026-10-14). Exporting them is
-## `otlp`. Opt out with `default-features = false`.
+## and, with none installed, costs about 5% of a blocking send's CPU
+## (`docs/readiness-bar.md`, measured 2026-10-24). `otel` adds the
+## OpenTelemetry API, so a process that installs a provider gets this crate's
+## spans and metrics without enabling anything here (decided 2026-10-14).
+## Exporting them is `otlp`. Opt out with `default-features = false`.
 default = ["tracing", "otel"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
 ##

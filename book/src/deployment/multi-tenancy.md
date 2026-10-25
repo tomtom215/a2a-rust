@@ -20,9 +20,21 @@ Three resolvers ship:
 
 | Resolver | Reads | Trustworthy when |
 |---|---|---|
-| `BearerTokenTenantResolver` | a claim in a validated bearer token | the token is verified — this is the one to reach for |
+| `BearerTokenTenantResolver::with_mapper` | what your closure returns for the bearer token | the closure verifies the token (signature, expiry) and returns its tenant claim — this is the one to reach for |
 | `HeaderTenantResolver` | a request header | a proxy you control sets it and strips any inbound copy |
 | `PathSegmentTenantResolver` | a URL path segment | the same, and never on its own |
+
+`BearerTokenTenantResolver::new()` uses the raw, unverified token as the tenant
+id, so the caller chooses its own tenant; it is for tests.
+
+A resolver does nothing until you install it with
+`RequestHandlerBuilder::with_tenant_resolver`. Without one the handler uses the
+tenant the client names, verbatim, so any caller can name any tenant. With one,
+the resolved tenant is authoritative: a client that names a different tenant
+is refused with `InvalidParams`. A request the resolver cannot place (`None`)
+falls into the shared default partition unless you also call
+`require_resolved_tenant()`, which refuses it; turn it on whenever every
+request should belong to a tenant.
 
 `PathSegmentTenantResolver` reads the request URL on the JSON-RPC, HTTP+JSON and
 WebSocket dispatchers. The gRPC dispatcher and the Axum adapter give it no URL,
@@ -32,7 +44,8 @@ header, which any caller could set (GHSA-hr9h-6jvf-wvg6); upgrade.
 A header or a path segment is caller-supplied input. It is a legitimate design
 when something in front of the agent authenticates the caller and rewrites the
 header — and a vulnerability the moment that is not true, because `curl -H
-'X-Tenant: someone-else'` is the entire attack.
+'X-Tenant-Id: someone-else'` is the entire attack (with the default header
+name).
 
 Write your own `TenantResolver` when identity comes from somewhere else; the
 trait exists for exactly that.
@@ -194,8 +207,9 @@ subscribe to Alice's, and register a webhook on them):
   (`BearerTokenAuthInterceptor::with_labelled_tokens` as `bearer:<label>`,
   `ApiKeyAuthInterceptor::with_labelled_keys` as `api-key:<label>`, the JWT
   interceptor as `jwt:<issuer>:<sub>`, since 0.15, so one `sub` from two
-  issuers is two callers; a custom interceptor calls
-  `CallContext::set_caller_identity`). Another
+  issuers is two callers; `MutualTlsAuthInterceptor` as `mtls:<name>`, by
+  default the certificate's SHA-256 fingerprint, `mtls:sha256:<hex>`; a custom
+  interceptor calls `CallContext::set_caller_identity`). Another
   caller's task is `TaskNotFound`, the same answer as an id that does not
   exist, so its existence is not revealed, and `ListTasks` returns only the
   caller's own.

@@ -58,9 +58,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
 
 use super::{TestContext, TestResult};
 use crate::helpers::make_send_params;
-use crate::infrastructure::{
-    AuditInterceptor, MetricsForward, TeamMetrics, bind_listener, serve_jsonrpc,
-};
+use crate::infrastructure::{AuditInterceptor, TeamMetrics, bind_listener, serve_jsonrpc};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

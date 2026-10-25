@@ -24,7 +24,7 @@ let client = ClientBuilder::new("http://agent.example.com")
 
 // Force REST transport
 let client = ClientBuilder::new("http://agent.example.com")
-    .with_protocol_binding("REST")
+    .with_protocol_binding("HTTP+JSON")
     .build()
     .unwrap();
 ```
@@ -100,12 +100,18 @@ let client = ClientBuilder::new(url)
     .unwrap();
 ```
 
-Your own hooks implement `CallInterceptor` and are added the same way.
+Your own hooks implement `CallInterceptor` and are added the same way. A hook
+receives each call as a `ClientRequest`: `method`, `params`, `extra_headers` and,
+since 0.15.0, `query_params`, which the JSON-RPC and HTTP+JSON transports append
+to the request URL; the gRPC and WebSocket transports refuse a call that carries
+any, with `InvalidAuthScheme`. Build one with `ClientRequest::new`: a struct
+literal naming every field no longer compiles. Override `on_error` to observe a
+call the transport failed.
 
 ### API keys
 
 An agent whose card declares an `APIKeySecurityScheme` (spec §4.5.2) reads
-its key from the header or cookie the scheme names, so
+its key from the header, cookie or query parameter the scheme names, so
 `AuthInterceptor::api_key` sends it there; `AuthInterceptor::with_scheme(..,
 "api-key")` writes `Authorization`, which such an agent never reads:
 
@@ -133,9 +139,12 @@ let client = ClientBuilder::new(url)
     .unwrap();
 ```
 
-A scheme that places the key in the query string is refused with
-`ClientError::InvalidAuthScheme`: no transport here can add a query parameter
-to a call yet.
+A scheme that places the key in the query string is sent as a query parameter
+by the JSON-RPC and HTTP+JSON transports. The gRPC and WebSocket transports
+have no query string and refuse such a call with
+`ClientError::InvalidAuthScheme`. A URL can reach server and proxy access
+logs, so prefer the header when the agent offers both. `api_key` itself
+returns `InvalidAuthScheme` only for a name that is not an HTTP token.
 
 ### Extensions
 
@@ -156,10 +165,16 @@ let client = ClientBuilder::new(url)
 Every request carries the URIs in one comma-separated `A2A-Extensions` header
 (gRPC metadata on gRPC). An agent uses those it supports; one that declares an
 extension `required` refuses a request that does not ask for it with
-`ExtensionSupportRequired` (§3.3.4). An interceptor that sets the header
-itself decides for that request. A `WebSocketTransport` sends headers only
-with its upgrade, so give it the URIs with
-`WebSocketTransportConfig::with_extensions`; another set needs another
+`ExtensionSupportRequired` (§3.3.4). A client built with `from_card` checks
+this itself: if the card marks an extension `required` that `with_extensions`
+does not list, `build()` fails with a `ClientError::Protocol` whose code is
+`ExtensionSupportRequired` and whose message names the extension, instead of
+having every call refused. Ask for the extension with `with_extensions`, or call
+`skip_required_extension_check()` when an interceptor of yours sends the
+`A2A-Extensions` header. A client built with `new(url)` has no card and is not
+checked. An interceptor that sets the header itself decides for that request.
+A `WebSocketTransport` sends headers only with its upgrade, so give it the URIs
+with `WebSocketTransportConfig::with_extensions`; another set needs another
 connection. The build refuses a URI that is empty or holds a comma,
 whitespace or anything but visible ASCII.
 
@@ -192,9 +207,11 @@ let client = ClientBuilder::new(url)
 ```
 
 Sends (`send_message`, `stream_message`, creating a push config) are retried only
-on 429/503, which prove the server did not process them. After a timeout or a
-dropped connection they are not re-sent unless they carry an idempotency key the
-peer honours; see [Idempotent Sends](./idempotency.md).
+on a 429, a 503, or a protocol error that names a retry delay (`RetryInfo`), all
+of which prove the server did not process them. After a timeout or a dropped
+connection they are not re-sent, except a `send_message` or `stream_message` that
+carries an idempotency key the peer honours; see
+[Idempotent Sends](./idempotency.md).
 
 ### Return Immediately
 
@@ -214,7 +231,7 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card, using the first interface the card lists that this client supports (spec §8.3.2; until 0.15 it preferred JSON-RPC). Only interfaces whose `protocolVersion` has major 1 count (empty counts; `v1.0` counts), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one. The client also checks the card's optional capabilities before each call that needs one (spec §3.3.4); see `without_capability_checks` |
+| `from_card(&AgentCard)` | — | Build from an agent card, using the first interface the card lists that this client supports (spec §8.3.2; until 0.15 it preferred JSON-RPC). Only interfaces whose `protocolVersion` has major 1 count (`1.0` and `v1.0` count; an empty version does not), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one. The client also checks the card's optional capabilities before each call that needs one (spec §3.3.4); see `without_capability_checks` |
 | `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
 | `with_protocol_binding(str)` | `"JSONRPC"` | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
@@ -237,6 +254,13 @@ let client = ClientBuilder::new(url)
 | `with_peer_honouring_idempotency(bool)` | false (true when the card advertises the extension) | Let a keyed send be retried after an ambiguous failure; see [Idempotent Sends](./idempotency.md) |
 | `with_grpc_bare_address_scheme(GrpcBareAddressScheme)` | `HttpsExceptLoopback` | How `build_grpc` dials a bare `host:port` |
 | `with_grpc_tls_config(ClientTlsConfig)` | None (bundled Mozilla roots) | TLS settings for `build_grpc` (`grpc-tls` feature) |
+| `skip_required_extension_check()` | checks on | Build even when the card marks an extension `required` that `with_extensions` does not ask for; use it when an interceptor sends `A2A-Extensions` |
+| `require_https_credentials()` | warn once per client | Refuse, before sending, a call that carries a credential (`Authorization`, `Proxy-Authorization`, `Cookie`, an API-key header or query parameter) to an `http://` or `ws://` host other than loopback (spec §13.4); `ClientError::InsecureTransport` |
+| `require_https_webhooks()` | warn | Refuse a push config whose webhook URL is `http://` to a host other than loopback (spec §13.2); `ClientError::InsecureWebhook` |
+| `with_credential_preflight(CredentialPreflight)` | `Warn` | What a client built from a card does with a call whose credentials satisfy none of the card's `securityRequirements` (spec §3.1.11): `Off`, `Warn` or `Refuse` |
+| `with_trace_propagation(bool)` | true | Whether a call's `traceparent` names the call's own span (has an effect with the `otel` feature) |
+| `with_content_keys(Jwks)`, `require_signed_content()` | off | (feature `signing`) Verify the provenance signature of received artifacts and agent messages; the second also refuses unsigned content |
+| `chosen_interface()` | — | The card interface the builder will connect to; `None` after `new(url)` |
 | `build()` | — | Construct a JSON-RPC or REST client |
 | `build_grpc()` (async) | — | Construct a gRPC client (`grpc` feature) |
 
@@ -259,7 +283,7 @@ impl MyOrchestrator {
         Self {
             analyzer: ClientBuilder::new(analyzer_url).build().unwrap(),
             builder: ClientBuilder::new(builder_url)
-                .with_protocol_binding("REST")
+                .with_protocol_binding("HTTP+JSON")
                 .build()
                 .unwrap(),
         }
@@ -286,6 +310,11 @@ async fn bad_pattern(url: &str, params: MessageSendParams) {
 ## gRPC Client
 
 > Requires the `grpc` feature: `a2a-protocol-client = { version = "0.15", features = ["grpc"] }`
+>
+> An `https://` endpoint, or a card's bare `host:port` on a host other than
+> loopback (dialled with TLS by default), also needs the `grpc-tls` feature
+> (`features = ["grpc-tls"]` includes `grpc`); without it `build_grpc` fails with
+> "gRPC over TLS needs the `grpc-tls` feature".
 
 `ClientBuilder::new(url).build_grpc().await?` (or `from_card(&card)?.build_grpc()`)
 builds a gRPC client that uses this builder's timeouts and limits; a transport

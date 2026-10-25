@@ -78,10 +78,19 @@ the same ID:
 - If no artifact with the matching ID exists, a new artifact is created
 - A chunk must carry at least one part, as every `Artifact` must; the queue
   refuses an empty one, so `lastChunk: true` goes on the chunk with the last part
+- An append that would take the artifact past `max_parts_per_artifact`
+  (10,000) is not stored in the task; a warning is logged
+
+An update without `append: true` (or with `append: false`) for an artifact ID
+the task already holds **replaces** that artifact; for a new ID it adds one. A
+new artifact past `max_artifacts_per_task` (1,000) is not stored either.
 
 ### Task
 
-A complete task snapshot (usually the first event on subscribe, or the final event):
+A complete task snapshot: the first event of a task stream (and of a
+`SubscribeToTask` stream). A server also sends one after the terminal state, as
+a final event, only when `HandlerLimits::with_final_task_snapshot(true)` is set
+(off by default, spec §11.7):
 
 ```json
 {
@@ -195,11 +204,14 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 
 With broadcast channels, writes never block on readers. A reader that falls more than the queue capacity behind catches up from the task's event log (spec §3.5.2): it reads the events it missed from the store, after the last position it delivered, and goes on, so a slow stream receives the same events in the same order as a fast one. Every built-in store keeps a log: the SQL stores keep a task's whole log, and the in-memory ones the last 512 events of a task by default (`TaskStoreConfig::max_events_per_task`). An attached stream holds the events it still owes, so the in-memory log keeps them past that bound, up to `TaskStoreConfig::max_held_events_factor` times it (8 × 512 = 4,096 events by default; since 2026-10-20). A replay longer than `HandlerLimits::subscribe_replay_limit` (1,000 by default) is read a page at a time. Only a complete replay is used. When the log cannot supply every missed event, because the store keeps none or the reader fell further behind than even a held log keeps, the stream is cut off instead: it ends with one `event: error` frame carrying the `streamLagged` signal (`ClientError::is_stream_lagged()` on the client). It gets a contiguous prefix and an announced end, never a silent gap, and resubscribing (with `Last-Event-ID` to replay) continues it. The task store is the source of truth; SSE is best-effort notification. The one write that waits is the terminal one, on the store rather than on readers (see [The terminal frame is the stored one](#the-terminal-frame-is-the-stored-one)).
 
-> **High-volume streams:** For tasks producing >250 events, increase the queue
-> capacity to match expected peak volume. The default capacity of 256 is sufficient
-> for most use cases. A slower reader catches up from the event log, so what
-> ends a stream with `streamLagged` is the log's retention and the replay
-> limit, not the queue.
+> **High-volume streams:** A slower reader catches up from the task's event
+> log, so the queue capacity does not decide whether it loses events. A stream
+> ends with `streamLagged` only when the log cannot supply what it missed: the
+> store keeps no log, the log no longer reaches back far enough
+> (`max_events_per_task`, extended up to `max_held_events_factor` times while a
+> stream owes events), or a page of the log could not be read. Raise the
+> capacity only to reduce how often readers have to go to the log; the default
+> of 256 is sufficient for most use cases.
 
 Configure these via the builder:
 
@@ -248,7 +260,7 @@ while let Some(event) = stream.next().await {
             println!("Artifact: {}", ev.artifact.id);
         }
         Ok(StreamResponse::Task(task)) => {
-            println!("Final task: {:?}", task.status.state);
+            println!("Task snapshot: {:?}", task.status.state);
         }
         Ok(StreamResponse::Message(msg)) => {
             println!("Message: {:?}", msg);
@@ -303,11 +315,13 @@ typed errors from a stream that fails to open should use HTTP+JSON or gRPC.
 | Binding | Error frame `data:` |
 |---|---|
 | JSON-RPC | the JSON-RPC error response, echoing the request id: `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,…}}` |
-| HTTP+JSON | a `google.rpc.Status` (§11.6): `{"error":{"code":404,"status":"NOT_FOUND","message":…,"details":[…]}}`; `A2aError::data` rides as a flattened `google.protobuf.Struct` detail |
+| HTTP+JSON | a `google.rpc.Status` (§11.6): `{"error":{"code":404,"status":"NOT_FOUND","message":…,"details":[…]}}`; `A2aError::data` rides as a `google.protobuf.Struct` detail, `{"@type":"type.googleapis.com/google.protobuf.Struct","value":{…}}` (data that names its own `@type` goes as it is) |
 
 This client accepts every shape a peer sends: a JSON-RPC refusal as SSE, as a
 plain JSON body (this server, and the Python SDK's), or as an
-HTTP status all fail the call itself with `ClientError::Protocol`. The one
+HTTP status whose body is a `google.rpc.Status` (HTTP+JSON) all fail the call
+itself with `ClientError::Protocol`; any other non-success status, such as a
+`401` or `403`, is `ClientError::UnexpectedStatus`. The one
 exception is a peer that opens a live, chunked stream and then sends the error
 as its first frame (a2a-go's server): that cannot be told from a stream that
 has started, so the same `ClientError::Protocol` arrives as the first
@@ -341,6 +355,12 @@ error frame. Either way it never blocks other readers or the writer; after a
 > `UnsupportedOperation` error immediately. No stream is opened: on JSON-RPC
 > the answer is a plain `application/json` error response (see
 > [Errors on the wire](#errors-on-the-wire)).
+
+> **Parked tasks:** Subscribing to a task that is waiting in `INPUT_REQUIRED`
+> or `AUTH_REQUIRED` keeps the stream open. By default the server sets no idle
+> bound (`HandlerLimits::with_subscribe_max_idle` sets one). When the next
+> turn starts, the stream carries that turn's events, replayed from the event
+> log if the turn ran before the stream noticed it.
 
 ### Resuming from where you left off
 
@@ -381,9 +401,11 @@ Details worth knowing:
   terminal frame the server rebuilds from stored state are server-synthesized
   rather than agent-emitted, so they carry no position and do not move your
   offset.
-- **The replay is bounded** by `HandlerLimits::subscribe_replay_limit`
-  (default 1,000). Truncation is not loss: each replayed frame carries its own
-  `id:`, so reconnect at the last one you received and continue.
+- **Each read of the log is bounded** by `HandlerLimits::subscribe_replay_limit`
+  (default 1,000). A longer replay is read a page at a time, each page
+  delivered before the next is read, so `Last-Event-ID: 0` delivers the whole
+  retained history on one connection. Memory stays bounded by the limit, not
+  by the history.
 - **It needs a store that keeps a log.** Every store this crate ships does
   (`TaskStore::supports_event_log`). A custom store that does not gets the
   snapshot and the live stream, which is the behaviour from before resumption

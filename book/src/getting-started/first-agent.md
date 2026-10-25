@@ -41,7 +41,7 @@ agent_executor!(CalcExecutor, |ctx, queue| async {
     // text part, skipping any file or URL parts that precede it.
     let expr = ctx.message.text().unwrap_or_default();
 
-    // Evaluate (very basic: just handle "a + b")
+    // Evaluate (very basic: one `a op b` expression with + - * /)
     let result = evaluate(expr);
 
     // Send the result as an artifact
@@ -80,49 +80,24 @@ fn evaluate(expr: &str) -> String {
 
 ## Step 2: Create the Agent Card
 
-The agent card tells clients what your agent can do:
+The agent card tells clients what your agent can do. `AgentCard::new` takes the
+three things the type cannot invent — a name, a version and where to reach the
+agent — and defaults both mode lists to `text/plain`; the `with_*` methods add
+the rest. The server's builder refuses a card without a description, or without
+a skill that has at least one tag (spec §5.7):
 
 ```rust,no_run
-use a2a_protocol_sdk::types::agent_card::*;
+use a2a_protocol_sdk::prelude::*;
 
 fn make_agent_card(url: &str) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Calculator Agent".into(),
-        description: "Evaluates simple arithmetic expressions".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_sdk::types::A2A_VERSION.into(),
-            tenant: None,
-        }],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "calc".into(),
-            name: "Calculator".into(),
-            description: "Evaluates expressions like '3 + 5'".into(),
-            tags: vec!["math".into(), "calculator".into()],
-            examples: Some(vec![
-                "3 + 5".into(),
-                "10 * 2".into(),
-                "100 / 4".into(),
-            ]),
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(false),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
+    AgentCard::new("Calculator Agent", "1.0.0", AgentInterface::jsonrpc(url))
+        .with_description("Evaluates simple arithmetic expressions")
+        .with_skill(
+            AgentSkill::new("calc", "Calculator", "Evaluates expressions like '3 + 5'")
+                .with_tags(["math", "calculator"])
+                .with_examples(["3 + 5", "10 * 2", "100 / 4"]),
+        )
+        .with_streaming(true)
 }
 ```
 
@@ -155,12 +130,22 @@ async fn main() -> std::io::Result<()> {
 ```
 
 > **Note:** `serve()` is re-exported from the prelude. It binds a TCP listener
-> and runs the accept loop internally. For production use cases needing the bound
-> address (e.g. port `0`), use `serve_with_addr()` instead.
+> and runs the accept loop until the process ends, with a 30-second header-read
+> timeout, a 75-second idle timeout, no connection ceiling, no TLS and no
+> graceful shutdown. `serve_with_addr()` is the same server spawned in the
+> background; it returns the bound address, which is what you want for port `0`
+> in tests. For a deployment that needs TLS, a connection ceiling or a draining
+> shutdown, bind a `Server` (`Server::bind`, `serve_with_shutdown`).
+
+Steps 1 to 3 go in `src/main.rs`, in that order. Start the agent:
+
+```bash
+cargo run --bin my-agent
+```
 
 ## Step 4: Test with a Client
 
-In a separate terminal (or in the same binary), create a client:
+Save the client as `src/bin/client.rs`:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -193,6 +178,12 @@ async fn main() {
 }
 ```
 
+Run it in a second terminal while the agent is running:
+
+```bash
+cargo run --bin client
+```
+
 Output:
 ```text
 Result: Completed
@@ -209,7 +200,7 @@ Almost every executor follows this pattern:
 
 For streaming clients, these arrive as individual SSE events. For synchronous clients, the handler collects them into a final `Task` response.
 
-`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a seven-field struct literal. Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
+`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a struct literal of four to six fields. Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
 
 ## Next Steps
 

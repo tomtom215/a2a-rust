@@ -32,6 +32,7 @@ non-zero if any check failed.
 | `LIVE_THINKING` | unset: every request carries `"chat_template_kwargs": {"enable_thinking": false}`; `1` sends nothing extra |
 | `LIVE_EXTRA_BODY` | none: a JSON object merged into every request after the line above |
 | `LIVE_MODEL_TIMEOUT_SECS` | 600: how long one model turn may take |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (and the other standard `OTEL_*` variables) | unset: nothing is built. Set, the run exports every binding's server and client spans and `rpc.*.call.duration`, and the tool loop's `invoke_agent`, `chat` and `execute_tool` spans and `gen_ai.*` metrics |
 
 ## The checks
 
@@ -110,6 +111,67 @@ for the tool-loop check, had one Qwen3.5-2B run on HTTP+JSON that answered
 "I don't have access to a tool…" with an empty trace and still passed. That
 is why a completed run with no tool call now reports not exercised. All the
 figures above come from the runs after that change.
+
+## Recorded runs, 2026-10-24
+
+| | |
+|---|---|
+| Server | llama.cpp `llama-server` 0.7.0-dev (build 1), commit `3f03b17` (`3f03b17724ad8b69040825f45c43c59b092a0244`, 2026-10-24), built from source with `cmake -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=ON`; `llama-server -m qwen3-1.7b-q4_k_m.gguf -c 8192 --port 8080 --jinja`, 4 slots |
+| Model | Qwen3-1.7B Q4_K_M, `unsloth/Qwen3-1.7B-GGUF` at revision `d7f544eead698dbd1f15126ef60b45a1e1933222`, file `Qwen3-1.7B-Q4_K_M.gguf`, SHA-256 `b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897` |
+| Settings | thinking off (the default above); no sampler settings, so the server's defaults |
+| Binary | `cargo build --release -p live-model`, rustc 1.99.1, this example as committed with this file |
+| Host | four shared vCPUs, 15 GiB, no GPU |
+
+Three runs, one after the other. Every run exited 0 with 10 of 10 checks
+passing and none not exercised (30 of 30). The second ran with
+`OTEL_EXPORTER_OTLP_ENDPOINT` set at a local Prometheus 3.15.1 (the
+receiver enabled, `OTEL_METRIC_EXPORT_INTERVAL=5000`): 49 metric families
+arrived for the job (`rpc.server.call.duration`, `rpc.client.call.duration`,
+the `a2a.server.*` instruments and the tool loop's `gen_ai.*` metrics).
+`deploy/observability/scripts/check_dashboards.py --prometheus` against it
+found data for the 4 client panels, 9 of the 10 GenAI panels and 6 of the 13
+server panels; the rest were empty because this feed had no failed model call,
+no push delivery, no persistent store and only seconds of samples for
+`rate()` (the README there says a short-lived process cannot feed every
+panel). Before this example started `Telemetry` (2026-10-24) it exported
+none.
+
+| Check | Seconds (3 runs) |
+|---|---|
+| tool loop, JSON-RPC | 4.8–7.5 |
+| tool loop, HTTP+JSON | 4.6–5.1 |
+| tool loop, gRPC | 4.6–5.2 |
+| tool loop, WebSocket | 4.7–5.1 |
+| provenance refused | 2.4–2.6 |
+| idempotency | 6.1–6.8 |
+| budget exhausted | 1.0–1.1 |
+| delegation | 4.0–8.9 |
+| halt | 0.0 |
+| quorum | 1.9–2.2 |
+
+The answers, read one by one. There is no `billing` service: the right answer
+says so and names the three services.
+
+* **Billing, 1 of 12 right.** One answer (run 3, JSON-RPC) said "The service
+  "billing" does not exist in the inventory" and listed `payments-api`,
+  `checkout` and `search`. The other 11 named the three services and ended
+  "Let me check the status of the billing service for you.": a promise to do
+  what the model had just done (it called `service_status("billing")`, read the
+  error pointing at `list_services`, called that, and stopped). The checks pass
+  on any non-empty answer, so they passed.
+* **Delegation, version 3 of 3 right, uptime 0 of 3.** All three relays gave
+  the search service's version, 1.19.3. The tool returned 7,776,000 s, which
+  is exactly 90 days; the relays said "27 hours (7776000 seconds)" and, twice,
+  "21 hours (7776000 seconds)".
+* **Idempotency:** in all 3 runs the model asked for the restart twice and the
+  tool ran once, each run under a different 64-hex-digit key.
+
+These weights are not the file recorded on 2026-10-23 (SHA-256 `d2387ca2…`,
+whose source was not kept): that file answered the billing question correctly
+12 times of 12 where this one did 1 of 12. Both are Qwen3-1.7B at Q4_K_M, so
+the difference is the file, the llama.cpp build, or chance, and three runs do
+not say which. What the SDK checks do not depend on it: the verdicts above are
+the same.
 
 ## Reproducing
 

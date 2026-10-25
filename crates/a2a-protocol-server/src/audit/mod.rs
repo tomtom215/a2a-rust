@@ -64,7 +64,7 @@ pub use log::AuditLog;
 pub use privacy::{
     AuditPrivacy, Erasure, HMAC_KEY_LEN, KEYED_DIGEST_PREFIX, Revealed, SEALED_PREFIX,
 };
-pub use retention::{AuditRetention, PurgeReport, SIX_MONTHS};
+pub use retention::{AuditRetention, Erased, PurgeReport, SIX_MONTHS};
 pub use store::{Appended, AuditStore, BoxFuture, InMemoryAuditStore, LegalHold, SubjectKey};
 
 #[cfg(feature = "postgres")]

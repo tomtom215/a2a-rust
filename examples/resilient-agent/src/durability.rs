@@ -95,7 +95,7 @@ mod sqlite {
                     .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1))
                     .allow_private_urls(),
             )
-            .with_metrics(Arc::clone(&metrics))
+            .with_additional_metrics(Arc::clone(&metrics))
             .build()
             .map_err(|e| format!("building the handler: {e}"))?;
         Ok((handler, metrics))

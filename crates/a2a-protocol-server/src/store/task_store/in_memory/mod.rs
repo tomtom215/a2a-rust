@@ -11,12 +11,13 @@
 //! under load.
 //!
 //! The `list()` method returns tasks most-recently-updated first (spec §3.1.4)
-//! by iterating a `BTreeMap<u64, TaskId>` update-order index in reverse for
-//! O(log n + page\_size) cursor pagination, plus a
-//! `HashMap<String, BTreeMap<u64, TaskId>>` context index for O(log m +
+//! by iterating a `BTreeMap<(i64, u64), TaskId>` update-order index in reverse
+//! for O(log n + page\_size) cursor pagination, plus a
+//! `HashMap<String, BTreeMap<(i64, u64), TaskId>>` context index for O(log m +
 //! page\_size) filtered queries (where m = tasks matching the `context_id`
-//! filter). The monotonic `seq` key is both the sort order and a collision-free
-//! pagination cursor.
+//! filter). The key is the status timestamp in Unix milliseconds plus a
+//! monotonic write sequence: together they are the sort order and a
+//! collision-free pagination cursor.
 //!
 //! # Module structure
 //!
@@ -433,10 +434,11 @@ impl StoreData {
 /// | Index | Structure | Purpose |
 /// |---|---|---|
 /// | Primary | `HashMap<TaskId, TaskEntry>` | O(1) get/save |
-/// | Order | `BTreeMap<u64, TaskId>` | O(log n + page\_size) update-order pagination |
-/// | Context | `HashMap<String, BTreeMap<u64, TaskId>>` | O(log m + page\_size) filtered list |
+/// | Order | `BTreeMap<(i64, u64), TaskId>` | O(log n + page\_size) update-order pagination |
+/// | Context | `HashMap<String, BTreeMap<(i64, u64), TaskId>>` | O(log m + page\_size) filtered list |
 ///
-/// The order index is keyed by a monotonic per-write sequence and iterated in
+/// The order index is keyed by the status timestamp in Unix milliseconds and
+/// a monotonic per-write sequence, and iterated in
 /// reverse to return most-recently-updated tasks first (spec §3.1.4) without
 /// the O(n log n) per-call sort that previously caused 20-70× regressions at
 /// 10K+ tasks. The context index avoids full-scan filtering by pre-partitioning
@@ -455,31 +457,19 @@ impl StoreData {
 ///
 /// ## The write that triggers a sweep pays for it
 ///
-/// This paragraph used to say the sweep "runs as a background task" and that
-/// "writers are not blocked during the O(n) cleanup". Neither is true and both
-/// were corrected on 2026-08-19. There is no `spawn`: the sweep is awaited
-/// inside `save`, so the caller that triggers it waits for it, and it holds the
-/// write lock for its whole duration, so every other writer waits too. What is
-/// genuinely decoupled is only the *lock acquisition* — the insert's write lock
-/// is released before the sweep takes its own.
+/// There is no `spawn`: the sweep is awaited inside `save`, so the caller that
+/// triggers it waits for it, and it holds the write lock for its whole
+/// duration, so every other writer waits too. What is genuinely decoupled is
+/// only the *lock acquisition* — the insert's write lock is released before
+/// the sweep takes its own.
 ///
-/// The size of that, MEASURED (debug profile, `tokio` multi-thread, 50,000
-/// terminal tasks, `eviction_interval` 1000):
+/// The TTL pass walks only the entries at least `task_ttl` old, so its cost
+/// grows with the number of tasks that expired since the last sweep (O(k log
+/// n) in the k entries that old), plus one scan of the held idempotency keys.
+/// The capacity pass is bounded by its scan window and removes only the
+/// overflow. The sweep's duration is not measured here.
 ///
-/// | | latency |
-/// |---|---|
-/// | quietest of 1,000 consecutive saves | 3.99 µs |
-/// | slowest of the same 1,000 (the one that swept) | **4.54 ms** |
-///
-/// One write in `eviction_interval` costs about 1,100× a quiet one at that
-/// size, and it stalls every concurrent writer, not just itself. The capacity
-/// pass is much cheaper — measured 3.5× and 3.7× on two runs at 10,000
-/// entries — because it removes only the overflow rather than scanning for it.
-///
-/// This is a shape to plan for, not a defect to route around: the TTL pass is
-/// O(n) unavoidably (finding expired entries means looking at all of them),
-/// which is exactly why it is amortized behind `eviction_interval` rather than
-/// run per write. What it means in practice is that `eviction_interval` is a
+/// What it means in practice is that `eviction_interval` is a
 /// tail-latency knob as much as a cleanliness one, and that a deployment
 /// sensitive to p99.9 write latency should raise it and call
 /// [`run_eviction()`](Self::run_eviction) from its own scheduler instead —
@@ -526,7 +516,8 @@ fn budget_exhausted() -> a2a_protocol_types::error::A2aError {
 
 /// The refusal of a new idempotency key when the index is at
 /// [`TaskStoreConfig::max_idempotency_keys`] after expiring what it could:
-/// temporary, so HTTP `503` and gRPC `UNAVAILABLE`, and nothing runs.
+/// temporary, so HTTP `503` and gRPC `RESOURCE_EXHAUSTED` (the send path
+/// answers it as overloaded), and nothing runs.
 fn idempotency_index_full() -> a2a_protocol_types::error::A2aError {
     a2a_protocol_types::error::A2aError::unavailable(
         "idempotency index full: no new idempotency key can be accepted until held keys expire",

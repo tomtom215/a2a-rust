@@ -8,8 +8,9 @@
 //! # Reusable serialization buffers
 //!
 //! [`SerBuffer`] provides a thread-local reusable `Vec<u8>` for
-//! `serde_json::to_writer`. This eliminates the per-call buffer allocation
-//! that dominates small-payload serialization cost (2.3× overhead at 64B).
+//! `serde_json::to_writer`, in place of the working buffer that
+//! `serde_json::to_vec` builds up on every call. The effect is measurable only
+//! on small payloads; the book's benchmark page has the current figures.
 //!
 //! ```
 //! use a2a_protocol_types::serde_helpers::SerBuffer;
@@ -22,27 +23,28 @@
 //!
 //! # Borrowed deserialization
 //!
-//! [`deser_from_str`] wraps `serde_json::from_str` which enables serde's
-//! `visit_borrowed_str` path. When deserializing from a `&str` (vs `&[u8]`),
-//! `serde_json` can borrow string values directly from the input buffer instead
-//! of allocating new `String` objects. This reduces deserialization allocations
-//! by ~15-25% for types with many string fields.
+//! [`deser_from_str`] wraps `serde_json::from_str`. The A2A types own all
+//! their data, so nothing is borrowed from the input; what `&str` input buys is
+//! `serde_json`'s internal parsing path (no UTF-8 re-validation), as the
+//! function's documentation says.
 
 use std::cell::RefCell;
 
 /// Thread-local reusable serialization buffer.
 ///
-/// Avoids the per-call `Vec<u8>` allocation from `serde_json::to_vec()`.
-/// The buffer is cleared (but not deallocated) between uses, so repeated
-/// serializations reuse the same heap allocation.
+/// Serializes into one reusable working buffer instead of the one
+/// `serde_json::to_vec()` builds up on every call. The buffer is cleared (but
+/// not deallocated) between uses. [`serialize`](Self::serialize) still returns
+/// a new `Vec<u8>`, a copy of the buffer's contents;
+/// [`serialize_into`](Self::serialize_into) writes to a writer you own and
+/// makes no copy.
 ///
 /// ## Performance impact
 ///
-/// - **Small payloads (<256B)**: Eliminates the 2.3× allocation overhead.
-///   `serde_json::to_vec` allocates a new `Vec<u8>` with ~80 bytes of
-///   initial overhead per call. With `SerBuffer`, this overhead is paid once.
-/// - **Large payloads (>1KB)**: Minimal benefit — the buffer grows to match
-///   the payload and the fixed overhead is negligible.
+/// - **Small payloads (<256B)**: measurably faster than `to_vec` (see the
+///   book's benchmark page for the current figures).
+/// - **Large payloads (>1KB)**: no measurable difference — the payload
+///   dominates.
 ///
 /// ## Thread safety
 ///
@@ -58,9 +60,9 @@ impl SerBuffer {
     /// Serializes `value` into a reusable thread-local buffer and returns
     /// the bytes as a new `Vec<u8>`.
     ///
-    /// The thread-local buffer is reused across calls — only one allocation
-    /// occurs per thread (on first use), then the buffer grows as needed but
-    /// is never deallocated between calls.
+    /// The thread-local buffer is reused across calls: it is allocated once per
+    /// thread, grows as needed and is never deallocated between calls. The
+    /// returned `Vec<u8>` is a copy of its contents.
     ///
     /// # Errors
     ///

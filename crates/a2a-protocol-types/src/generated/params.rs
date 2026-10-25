@@ -99,8 +99,8 @@ pub struct ListTasksParams {
     /// The minimum value is 1.
     /// The maximum value is 100.
     ///
-    /// Clamped by the server to `max_page_size` (default 1000): a client may ask
-    /// for any `u32`, and the server caps it.
+    /// A server refuses a value outside 1 to 100 with `InvalidParams`; a store may
+    /// cap the page lower.
     #[serde(alias = "page_size", skip_serializing_if = "Option::is_none")]
     pub page_size: Option<u32>,
     /// A page token, received from a previous `ListTasks` call.

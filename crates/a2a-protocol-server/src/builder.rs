@@ -27,7 +27,8 @@ use crate::streaming::EventQueueManager;
 use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
-/// Default ceiling on concurrent streaming event queues.
+/// Default ceiling on concurrent event queues: one per task being run,
+/// whether its send blocks or streams.
 ///
 /// Every streaming request eagerly allocates channels and spawns background
 /// tasks, so an *unlimited* default let an unauthenticated caller grow server
@@ -601,10 +602,12 @@ impl RequestHandlerBuilder {
         self
     }
 
-    /// Sets the maximum number of concurrent streaming event queues.
+    /// Sets the maximum number of concurrent event queues: one per task being
+    /// run, whether its send blocks or streams.
     ///
-    /// Limits memory usage from concurrent streams. When the limit is
-    /// reached, new streaming requests will fail. Defaults to
+    /// Limits memory usage from concurrent tasks. When the limit is
+    /// reached, a send that would open one more is refused as overloaded.
+    /// Defaults to
     /// [`DEFAULT_MAX_CONCURRENT_STREAMS`] (1024); pass `usize::MAX` to
     /// effectively disable the ceiling.
     #[must_use]
@@ -626,9 +629,31 @@ impl RequestHandlerBuilder {
     ///
     /// Defaults to `OtelMetrics` instruments on the global meter provider as
     /// it stands at each measurement (`otel`), else `NoopMetrics`.
+    ///
+    /// This *replaces* the default, so a handler given a counter of its own
+    /// no longer exports `rpc.server.call.duration` or the `a2a.server.*`
+    /// instruments. To keep the default and also observe, use
+    /// [`with_additional_metrics`](Self::with_additional_metrics).
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
         self.metrics = Arc::new(metrics);
+        self
+    }
+
+    /// Also reports to `metrics`, keeping what the handler reports to now:
+    /// the default (`OtelMetrics` instruments on the global meter provider,
+    /// else `NoopMetrics`), or whatever
+    /// [`with_metrics`](Self::with_metrics) or an earlier call set.
+    ///
+    /// Each callback goes to the existing metrics first, then to `metrics`.
+    /// Use it to count something of your own beside the OpenTelemetry
+    /// export; `with_metrics` is for replacing the export.
+    #[must_use]
+    pub fn with_additional_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
+        self.metrics = Arc::new(crate::metrics::Tee {
+            first: self.metrics,
+            second: metrics,
+        });
         self
     }
 
@@ -1098,13 +1123,26 @@ impl RequestHandlerBuilder {
         // Isolation needs a store that partitions, so an unset one is the
         // tenant-aware kind then.
         let task_store_config = self.task_store_config;
+        // The default store reports what only a store can see (an event that
+        // never reached the log, a hold's ceiling dropping one) to the
+        // handler's metrics. Left at its default it reported to nothing, and
+        // those counts, the only sign an event was lost, never left the
+        // process (independent audit, 2026-10-24). A store the caller
+        // supplies keeps the metrics the caller gave it.
+        let store_metrics = crate::metrics::MetricsHandle::from_arc(Arc::clone(&self.metrics));
         let task_store = self.task_store.unwrap_or_else(|| {
             if isolate_callers {
-                Arc::new(crate::store::TenantAwareInMemoryTaskStore::with_config(
-                    crate::store::TenantStoreConfig::default().with_per_tenant(task_store_config),
-                ))
+                Arc::new(
+                    crate::store::TenantAwareInMemoryTaskStore::with_config(
+                        crate::store::TenantStoreConfig::default()
+                            .with_per_tenant(task_store_config),
+                    )
+                    .with_metrics(store_metrics),
+                )
             } else {
-                Arc::new(InMemoryTaskStore::with_config(task_store_config))
+                Arc::new(
+                    InMemoryTaskStore::with_config(task_store_config).with_metrics(store_metrics),
+                )
             }
         });
         // Innermost, so a span measures the database and nothing wrapped

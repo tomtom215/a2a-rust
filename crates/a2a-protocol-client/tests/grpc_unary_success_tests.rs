@@ -139,6 +139,24 @@ async fn a_transport_from_connect_carries_the_call() {
     );
 }
 
+/// A transport from `connect` names its system and address, so a client built
+/// with `with_custom_transport` (the route above) gets a `CLIENT` span and
+/// `rpc.client.call.duration` like one from `build_grpc`. It named neither
+/// until 2026-10-24: every call on this route was untraced and unmeasured
+/// (found by `operation_matrix`, which sweeps every operation on every
+/// binding).
+#[tokio::test]
+async fn a_transport_from_connect_names_its_system_and_address() {
+    use a2a_protocol_client::GrpcTransport;
+    use a2a_protocol_client::transport::Transport as _;
+
+    let addr = grpc_server().await;
+    let url = format!("http://{addr}");
+    let transport = GrpcTransport::connect(url.clone()).await.expect("connect");
+    assert_eq!(transport.rpc_system(), Some("grpc"));
+    assert_eq!(transport.server_url(), Some(url.as_str()));
+}
+
 /// `connect` refuses an address it cannot dial, naming it.
 #[tokio::test]
 async fn connect_refuses_an_unusable_address() {

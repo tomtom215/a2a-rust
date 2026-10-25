@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **102 E2E tests** across 8 test modules — the figure a plain `cargo run -p agent-team` reports, because WebSocket, gRPC, Axum, SQLite, signing and OTel are the example's `default` features. `--no-default-features` compiles all six out and runs 87. All pass in ~6 seconds.
+The agent team runs **100 E2E tests** across seven test modules (`coverage_gaps` splits into eight files). A plain `cargo run -p agent-team` reports 102 results — the 100 tests plus the two results of the method × binding surface sweep (`surface-counter` and `surface-sweep`) — because WebSocket, gRPC, Axum, SQLite, signing and OTel are the example's `default` features. `--no-default-features` compiles all six out and runs 87, with no sweep. All pass in ~6 seconds. The Test column is the name the run prints for each result.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -12,7 +12,7 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 4 | streaming-rest | REST | REST SSE streaming |
 | 5 | build-failure-path | REST | `TaskState::Failed` lifecycle |
 | 6 | get-task | JSON-RPC | `GetTask` retrieval by ID |
-| 7 | list-tasks | JSON-RPC | `ListTasks` with pagination token |
+| 7 | list-tasks | JSON-RPC | `ListTasks` with `page_size`=2 and `include_artifacts` (no page token passed); passes when the call succeeds |
 | 8 | push-config-crud | REST | Push config create/get/list/delete/verify lifecycle |
 | 9 | multi-part-message | JSON-RPC | Text + data parts, HealthMonitor agent-to-agent |
 | 10 | agent-to-agent | REST | Coordinator delegates to CodeAnalyzer |
@@ -25,18 +25,18 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 12 | health-orchestration | REST | Coordinator -> HealthMonitor -> all agents (3-level) |
 | 13 | message-metadata | JSON-RPC | Request metadata passthrough |
 | 14 | cancel-task | REST | Mid-stream cancellation via `CancelTask` |
-| 15 | get-nonexistent-task | JSON-RPC | Error: `TaskNotFound` (-32001) |
+| 15 | get-nonexistent-task | JSON-RPC | `GetTask` for an unknown ID is an error (the test does not check the code; the spec's is `TaskNotFound`, -32001) |
 | 16 | pagination-walk | JSON-RPC | `ListTasks` page_size=1, no duplicates |
 | 17 | agent-card-discovery | REST | `resolve_agent_card` on REST endpoint |
 | 18 | agent-card-jsonrpc | JSON-RPC | `resolve_agent_card` on JSON-RPC endpoint |
-| 19 | push-not-supported | JSON-RPC | Error: `NotSupported` (-32003) for no-push agent |
-| 20 | cancel-completed | REST | Error: `InvalidState` for completed task cancel |
+| 19 | push-not-supported | JSON-RPC | `set_push_config` on an agent with no push sender is rejected (spec: `PushNotificationNotSupported`, -32003; code not checked) |
+| 20 | cancel-completed | REST | `CancelTask` on a completed task is rejected (spec: `TaskNotCancelable`, -32002; code not checked) |
 
 ## Tests 21-30: Edge Cases (`edge_cases.rs`)
 
 | # | Test | Transport | What it exercises |
 |---|------|-----------|-------------------|
-| 21 | cancel-nonexistent | REST | Error: `TaskNotFound` for fake task ID |
+| 21 | cancel-nonexistent | REST | `CancelTask` for a fake ID is an error (spec: `TaskNotFound`, -32001; code not checked) |
 | 22 | return-immediately | REST | `return_immediately` client config propagation |
 | 23 | concurrent-requests | JSON-RPC | 5 parallel requests to same agent |
 | 24 | empty-parts-rejected | JSON-RPC | Validation: empty message parts |
@@ -69,7 +69,7 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 41 | card-url-correct | JSON-RPC | Agent card URL matches actual bound address |
 | 42 | card-skills-valid | Both | All 4 agent cards have name, description, version, skills, interface |
 | 43 | push-list-regression | JSON-RPC | `ListTaskPushNotificationConfigs` via JSON-RPC (regression for bug 11) |
-| 44 | push-event-classify | REST | Webhook event classifier uses correct field names |
+| 44 | push-event-classify | REST | Webhook classifier uses the camelCase variant names; passes, noted "best-effort", if no push event arrives |
 | 45 | resubscribe-jsonrpc | JSON-RPC | `SubscribeToTask` via JSON-RPC transport |
 | 46 | multiple-artifacts | JSON-RPC | Multiple artifacts per task (>=2) |
 | 47 | concurrent-streams | REST | 5 parallel SSE streams on same agent |
@@ -81,19 +81,19 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 
 | # | Test | Transport | What it exercises |
 |---|------|-----------|-------------------|
-| 51 | ws-send-message | WebSocket | JSON-RPC `SendMessage` over WebSocket (feature-gated) |
-| 52 | ws-streaming | WebSocket | `SendStreamingMessage` with multi-frame streaming (feature-gated) |
-| 53 | tenant-isolation | JSON-RPC | Different tenants cannot see each other's tasks |
-| 54 | tenant-id-independence | Direct store | Same task ID in different tenants doesn't collide |
-| 55 | tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
-| 56 | grpc-send-message | gRPC | `SendMessage` over the gRPC transport (feature-gated) |
-| 57 | grpc-streaming | gRPC | `SendStreamingMessage` over gRPC transport (feature-gated) |
-| 58 | grpc-get-task | gRPC | `GetTask` after `SendMessage` over gRPC (feature-gated) |
+| 51 | 51-ws-send-message | WebSocket | JSON-RPC `SendMessage` over WebSocket (feature-gated) |
+| 52 | 52-ws-streaming | WebSocket | `SendStreamingMessage` with multi-frame streaming (feature-gated) |
+| 53 | 53-tenant-isolation | JSON-RPC | Different tenants cannot see each other's tasks |
+| 54 | 54-tenant-id-independence | Direct store | Same task ID in different tenants doesn't collide |
+| 55 | 55-tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
+| 56 | 56-grpc-send-message | gRPC | `SendMessage` over the gRPC transport (feature-gated) |
+| 57 | 57-grpc-streaming | gRPC | `SendStreamingMessage` over gRPC transport (feature-gated) |
+| 58 | 58-grpc-get-task | gRPC | `GetTask` after `SendMessage` over gRPC (feature-gated) |
 
 > **Note:** Tests 51-52 need the `websocket` feature and tests 56-58 the `grpc` feature — both
 > on by default. With `--no-default-features`, add `--features websocket` / `--features grpc`.
 
-## Tests 61-79: E2E Coverage Gaps (`coverage_gaps/`)
+## Tests 61-80: E2E Coverage Gaps (`coverage_gaps/`)
 
 | # | Test | Category | What it exercises |
 |---|------|----------|-------------------|
@@ -108,15 +108,16 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 68b | extended-card-requires-auth | Cards | Extended card refused without an authenticating interceptor (spec §13.3) |
 | 69 | dynamic-agent-card | Cards | `DynamicAgentCardHandler` runtime card generation |
 | 70 | agent-card-caching | Caching | ETag, `If-None-Match`, 304 Not Modified |
-| 71 | backpressure-lagged | Streaming | Slow reader catches up from the event log or receives a `stream_lagged` error, never a silent gap (capacity=2) |
+| 71 | backpressure-lagged | Streaming | With a capacity-2 queue the reader either gets the terminal status, or gets `stream_lagged` signal(s) and `GetTask` still reports `Completed`; a stream that ends with neither fails |
 | 72 | push-global-limit | Push config | Global push config limit enforcement (DoS prevention) |
-| 73 | webhook-url-scheme | Push config | Rejects non-HTTP webhook URL schemes (ftp://, file://) |
+| 73 | webhook-url-scheme | Push config | Rejects a non-HTTP webhook URL scheme (`ftp://`) with an "unsupported scheme" error |
 | 74 | combined-filter | ListTasks | Combined status + context_id filtering |
 | 75 | latency-metrics | Metrics | Verifies `on_request()` callback fires |
 | 76 | timeout-retryable | Retry | Timeout errors are classified as retryable |
 | 77 | concurrent-cancels | Stress | 10 parallel cancels of non-existent tasks |
 | 78 | stale-page-token | Pagination | Graceful handling of invalid page tokens |
-| 79 | agent-card-signing | Signing | ES256 key generation, JWS sign/verify, tamper detection (`signing` feature) |
+| 79 | 79_signing_e2e | Signing | ES256 key generation, JWS sign/verify, tamper detection (`signing` feature) |
+| 80 | 80_otel_metrics | Metrics | `OtelMetrics` wired into a handler as its metrics observer, then a JSON-RPC request (noop meter provider; `otel` feature) |
 
 ## Coverage by SDK Feature
 
@@ -133,7 +134,7 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | `CancelTask` | 14, 20, 21 |
 | Push config CRUD | 8, 19, 27, 36, 43 |
 | Agent card discovery | 17, 18, 41, 42 |
-| `ServerInterceptor` | All tests (audit interceptor on every agent) |
+| `ServerInterceptor` | Every request to the team agents (audit interceptor); 67 adds a rejecting one |
 | `Metrics` hooks | 29, 30, 39 |
 | `return_immediately` | 22 |
 | `CancellationToken` | 14 |
@@ -162,7 +163,6 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | Timeout retryability (Bug #32) | 76 |
 | Concurrent cancel stress | 77 |
 | Stale page token handling | 78 |
-| Agent card signing (JWS/ES256) | 79 |
 | State transition validation | 81 |
 | Executor error propagation | 82 |
 | Streaming event completeness | 83 |
@@ -175,13 +175,18 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | `SqliteTaskStore` | 96, 98 |
 | `SqlitePushConfigStore` | 97 |
 | Axum + SQLite combined stack | 98 |
+| gRPC transport | 56, 57, 58 |
+| `OtelMetrics` | 80 |
+| Wire format (`TASK_STATE_*`, flat `Part`, tagged `SendMessageResponse`, AIP-193 errors) | `wire-task-state-format`, `wire-part-flat-oneof`, `wire-response-tagged`, `wire-aip193-error` |
+| `ListTasks` `includeArtifacts` | `include-artifacts` |
+| Every method over every binding; the refusals the spec requires | `surface-sweep`, `surface-counter` |
 
-## Tests 81-90: Deep Dogfood Probes (`deep_dogfood.rs`)
+## Tests 81-90 and the Wire-Format Probes: Deep Dogfood (`deep_dogfood.rs`)
 
 | # | Test | Transport | What it exercises |
 |---|------|-----------|-------------------|
 | 81 | state-transition-order | JSON-RPC | Validates streaming state transitions are monotonically forward |
-| 82 | executor-error-failed | REST | Executor error produces `Failed` state with error metadata |
+| 82 | executor-error-failed | REST | Executor error produces a `Failed` stream end (error metadata is reported, not asserted) |
 | 83 | stream-completeness | JSON-RPC | Working→Artifact→Completed event sequence verified completely |
 | 84 | oversized-metadata | JSON-RPC | Rejects messages with metadata exceeding 1 MiB limit |
 | 85 | artifact-content | JSON-RPC | Artifact text contains actual analysis, not just present |
@@ -189,7 +194,19 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 | 87 | rapid-sequential | JSON-RPC | 30 sequential requests without degradation |
 | 88 | cancel-already-failed | REST | Cancel on terminal-state task handled gracefully |
 | 89 | card-semantic-valid | JSON-RPC | Agent card fields (name, version, skills, interfaces) validated |
-| 90 | get-after-stream | JSON-RPC | GetTask reflects streaming state (documents Bug #38 race) |
+| 90 | get-after-stream | JSON-RPC | After a stream, `GetTask` is polled for up to ~2.75 s for a terminal state. A still-non-terminal state is reported as a pass ("not yet terminal; does not guard Bug#38"), so this does not guard Bug 38, which is fixed (see [Bugs Found & Fixed](./dogfooding-bugs.md)) |
+| — | wire-task-state-format | JSON-RPC | Raw response carries `TASK_STATE_*` names |
+| — | wire-part-flat-oneof | JSON-RPC | `Part` is a flat oneof with no `type` wrapper (a text part must be present) |
+| — | wire-response-tagged | JSON-RPC | `SendMessageResponse` is externally tagged (`{"task":...}` or `{"message":...}`) |
+| — | wire-aip193-error | REST | A `GetTask` miss answers 404 with the AIP-193 error shape (`error.code`, `status`, `message`, `details` with an `ErrorInfo`) |
+| — | include-artifacts | JSON-RPC | `ListTasks` omits artifacts by default and returns them with `includeArtifacts` |
+
+These five have no number in the source; the run prints the names shown. The method × binding sweep has two results of its own:
+
+| # | Test | Transport | What it exercises |
+|---|------|-----------|-------------------|
+| — | surface-counter | JSON-RPC | Five calls that must be refused are refused: `GetTask` and `CancelTask` on an unknown ID, a push config, an extended card and a stream against a card that does not advertise them |
+| — | surface-sweep | All four | Every method over every binding (11 methods × 4 bindings = 44 cells; `surface.rs`) |
 
 ## Tests 93-98: Axum & SQLite (`axum_sqlite.rs`)
 
@@ -204,12 +221,12 @@ The agent team runs **102 E2E tests** across 8 test modules — the figure a pla
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 102 agent-team E2E tests (87 with `--no-default-features`), the SDK includes dedicated integration test suites:
+In addition to the 100 agent-team E2E tests (87 with `--no-default-features`), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
 | **TLS/mTLS** | `crates/a2a-protocol-client/tests/tls_integration_tests.rs` | 7 | Client cert validation, SNI hostname verification, unknown CA rejection, mutual TLS |
-| **WebSocket server** | `crates/a2a-protocol-server/tests/websocket_tests.rs` | 9 | Send/stream, error handling, ping/pong, connection reuse, close frames |
+| **WebSocket server** | `crates/a2a-protocol-server/tests/websocket_tests.rs` | 10 | Send/stream, error handling, ping/pong, connection reuse, close frames |
 | **Memory & load stress** | `crates/a2a-protocol-server/tests/stress_tests.rs` | 5 | 200 concurrent requests, sustained load (500 requests/10 waves), eviction under load, multi-tenant isolation (10×50), rapid connect/disconnect |
 
 ## Features NOT Covered by E2E Tests

@@ -16,7 +16,7 @@
 #
 #   book/src/bindings/slimrpc.md — `a2a-protocol-slimrpc` is deliberately
 #   outside the root workspace with its own Cargo.lock, because
-#   `agntcy-slim-rpc` pulls 379 transitive dependencies including a native C
+#   `agntcy-slim-rpc` pulls 387 transitive dependencies including a native C
 #   crypto build. Adding it to `a2a-book-tests` would drag all of that into
 #   every CI test run to compile four snippets. Those snippets are kept in
 #   step with the crate's own README and its test suite, which do compile.

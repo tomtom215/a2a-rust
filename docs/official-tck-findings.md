@@ -2126,7 +2126,14 @@ entry failed as recorded.
 **What changed here.** Since `b3260c1` (2026-10-15, the maintainer's
 decision), HTTP+JSON answers `application/a2a+json` when a request does not
 ask for `application/json` in `Accept` or send it as its body type. The suite
-sends neither, so it now gets the A2A type.
+sends neither, so it now gets the A2A type. **Corrected 2026-10-24:** the
+second sentence is wrong. The suite labels every HTTP+JSON POST body
+`Content-Type: application/json` (`tck/transport/http_json_client.py:143`,
+and `:184-186` with `Accept: text/event-stream`); its default `Accept` is
+`*/*`. What the SDK does is deliberate: since `b3260c1` a body labelled
+`application/json` no longer selects `application/json` for the answer, so
+the suite gets the A2A type although it asked for the other by its body label.
+`HTTP_JSON-ERR-001`'s GET has no body label at all.
 
 **What the specification says.** A2A v1.0.1 §11.1: "**Content-Type:**
 application/a2a+json **SHOULD** be used for requests and responses". Its §11.6
@@ -2207,3 +2214,37 @@ Writing the AUTH-INTASK-004 evidence found a defect: after a blocking
 emitted once the credential arrived, so `GetTask` never saw the task finish.
 Fixed the same day (`CHANGELOG.md`, Fixed).
 
+
+## 25. Re-verified on 2026-10-24 against `a2a-tck` `d4d6fae`
+
+Upstream `main` is `d4d6fae` (2026-10-22); three commits (`5daf014`,
+`894eacf`, `d4d6fae`) since `263b9cf`, changing only CI, `pyproject.toml` and a
+task-helper test file; its `specification/version.json` still names A2A
+`v1.0.0` (commit `173695755607`). Each of the seven baselined requirements was
+re-read there against A2A v1.0.1's text (the vendored file's body is
+byte-identical to `git show v1.0.1:docs/specification.md`, md5
+`2ab45e2e2e55f209c3ac99f8268f67cf`). This is a static comparison of the
+suite's constants and assertions with the text; the per-transport outcomes
+are the gate's own (Official TCK run 40097907886 on `2781bb6`, success).
+
+| Requirement | Defect in the suite, as read at `d4d6fae` | Upstream fix, unmerged |
+|---|---|---|
+| `CORE-CANCEL-002` (`http_json`) | `tck/requirements/base.py` hardcodes HTTP 409 for `TaskNotCancelableError`; v1.0.1 §5.4 says 400 | #232, #258 |
+| `GRPC-ERR-002` (`grpc`) | three tests expect `UNIMPLEMENTED`; v1.0.1 says `FAILED_PRECONDITION` | #232, #258 |
+| `STREAM-SUB-003` (`grpc`) | `UNIMPLEMENTED` hardcoded; v1.0.1 says `FAILED_PRECONDITION` | #232, #258 |
+| `HTTP_JSON-STATUS-001` | 415 hardcoded for `ContentTypeNotSupportedError`; v1.0.1 says 400. The test's trigger is a wrong request Content-Type, which v1.0.1 does not define | #232, #258 |
+| `HTTP_JSON-SVC-001` | substring MUST `application/json`; v1.0.1 §11.1 says `application/a2a+json` SHOULD, and does not forbid `application/json` | #238, #258 |
+| `HTTP_JSON-ERR-001` | Content-Type MUST for errors, which is the kit's own (v1.0.0's §11.6 has it only in an example) | #238, #258 |
+| `CORE-SEND-003` (three transports) | `core_operations.py:99-125` declares no `expected_error`; upstream issue #202, #213, #203, #238 | #213, #203, #238; the `http_json` cell also needs #232/#258 |
+
+Heads of #203, #213, #232, #238 and #258 are in the repository's
+`refs/pull/*` and none is an ancestor of `main`; whether each is still open
+could not be read (the GitHub API is out of reach from here), so "unmerged" is
+what is established. No baseline entry is stale.
+
+Two things in this document and the baseline were imprecise, and are
+corrected: "they clear the moment a2a-tck refreshes its vendored
+specification" (§20, and the baseline's `_comment`) is true only if the six
+`ErrorBinding` constants and the literals in the tests change with it, which
+#232 and #258 do and a bare `make spec` does not; and §23's account of what the
+suite sends (corrected in place above).

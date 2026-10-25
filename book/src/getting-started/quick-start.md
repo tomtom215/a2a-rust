@@ -1,6 +1,6 @@
 # Quick Start
 
-Two examples, in order. `hello-agent` is the whole SDK in one screen — start there. `echo-agent` is the full tour: every A2A method over every binding.
+Two examples, in order. `hello-agent` is the smallest complete agent, one screen of code — start there. `echo-agent` is the full tour: every A2A method over every binding.
 
 ## The Smallest Agent
 
@@ -32,9 +32,10 @@ The `A2A-Version: 1.0` header is required — the server refuses requests that
 omit it with `VERSION_NOT_SUPPORTED`, rather than guessing which spec revision
 you meant.
 
-That is the agent, from `examples/hello-agent/src/main.rs` — shown here without
-the agent card it also publishes; [Hello Agent](../examples/hello-agent.md) has
-the whole file:
+That is the agent, condensed from `examples/hello-agent/src/main.rs`. The file
+builds its card in a separate `card()` function, and its `main` first starts
+OpenTelemetry from the `OTEL_*` environment (it exports nothing unless an OTLP
+endpoint is set). [Hello Agent](../examples/hello-agent.md) walks through it:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -79,8 +80,8 @@ Three things carry the weight:
 - **`ctx.message.text()`** returns the first text part, skipping any file or
   URL parts before it. No `PartContent` match needed for the common case.
 
-`a2a-protocol-sdk` is the example's only dependency — everything above comes
-from `prelude::*`.
+`a2a-protocol-sdk` and `tokio` are the example's only dependencies — everything
+above except the `#[tokio::main]` runtime comes from `prelude::*`.
 
 ## Running the Echo Agent
 
@@ -152,7 +153,7 @@ agent_executor!(EchoExecutor, |ctx, queue| async {
 });
 ```
 
-The pattern is always: write status updates and artifacts to the event queue, then return `Ok(())`.
+The common pattern is: write status updates and artifacts to the event queue, then return `Ok(())`.
 
 ## With Tracing
 

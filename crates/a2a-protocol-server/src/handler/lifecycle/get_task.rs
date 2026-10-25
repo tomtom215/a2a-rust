@@ -32,7 +32,7 @@ impl RequestHandler {
         self.metrics.on_request("GetTask");
 
         let tenant = self
-            .resolve_tenant("GetTask", headers, params.tenant.as_deref())
+            .resolve_tenant_counted(start, "GetTask", headers, params.tenant.as_deref())
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope_request(tenant, async {

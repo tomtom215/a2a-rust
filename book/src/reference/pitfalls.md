@@ -6,7 +6,7 @@ A catalog of non-obvious problems encountered during development. Each entry doc
 
 ### Untagged enums hide inner errors
 
-`#[serde(untagged)]` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. `JsonRpcResponse<T>` hit this until 0.7; its `Deserialize` is now hand-written — it enforces exactly one of `result` / `error` (JSON-RPC 2.0 §5) and surfaces a mistyped `result`'s own error — and only its `Serialize` stays untagged. (`SendMessageResponse` and `StreamResponse` use `#[serde(rename_all = "camelCase")]` — externally tagged — so they produce clear errors too.)
+`#[serde(untagged)]` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. `JsonRpcResponse<T>` hit this until 0.7; its `Deserialize` is now hand-written — it enforces exactly one of `result` / `error` (JSON-RPC 2.0 §5) and surfaces a mistyped `result`'s own error — and only its `Serialize` stays untagged. (`SendMessageResponse` and `StreamResponse` are externally tagged — a one-key object whose camelCase key names the variant — and their `Deserialize` is hand-written (`oneof_deserialize!`), so they name the problem too.)
 
 **Workaround:** for an untagged enum of your own, hand-write `Deserialize`, or log the raw JSON before attempting deserialization.
 
@@ -68,7 +68,7 @@ let bytes = req.into_body().collect().await?.to_bytes();
 
 ### Response builder panics on invalid header values
 
-`hyper::Response::builder().header(k, v)` silently stores the error and panics when `.body()` is called.
+`hyper::Response::builder().header(k, v)` silently stores the error and `.body()` returns it as an `Err`; unwrapping it is what panics.
 
 **Solution:** Always use `unwrap_or_else` with a fallback response, or validate header values with `.parse::<HeaderValue>()` first. a2a-rust uses `unwrap_or_else(|_| fallback_error_response())` in production paths.
 
@@ -148,7 +148,7 @@ fn my_method<'a>(
 
 ### Cancellation token cleanup
 
-`CancellationToken`s that are never cancelled accumulate in the token map. The handler cleans up already-cancelled tokens before inserting new ones, and enforces a hard cap of 10,000 tokens.
+`CancellationToken`s that are never cancelled accumulate in the token map. Once the map reaches `max_cancellation_tokens` (10,000 by default) the handler sweeps the cancelled tokens, and the aged ones whose executor has finished, before inserting a new one. It is a sweep threshold, not a hard cap: a token belonging to a live task is never removed, so with more tasks in flight than that the map tracks the in-flight count.
 
 ### Amortized eviction vs test expectations
 
@@ -161,7 +161,7 @@ When a thread panics while holding a `std::sync::RwLock`, the lock becomes "pois
 1. **Silent ignore** (`lock.read().ok()?`) — returns `None`/no-op on poisoned locks. This hides bugs.
 2. **Fail-fast** (`lock.read().expect("poisoned")`) — panics immediately, surfacing the problem.
 
-a2a-rust uses fail-fast. If you see a "lock poisoned" panic, the root cause is a prior panic in another thread. Fix that panic first.
+a2a-rust uses both, on purpose. Where a poisoned lock could hide a security-relevant failure it fails fast: `InMemoryCredentialsStore` panics, because a lookup that quietly returned `None` would be a silent auth downgrade. Where the guarded value cannot be left half-updated (a whole-value assignment, one `HashMap` insert or remove) it recovers with `unwrap_or_else(PoisonError::into_inner)`, as the hot-reload card handler and the WebSocket client's pending-request map do, because one panic must not turn every later request into a panic or, under this workspace's release profile (`panic = "abort"`), a process abort. If you see a "lock poisoned" panic, the root cause is a prior panic in another thread. Fix that panic first.
 
 ### Rate limiter atomics under read lock — CAS loop required
 
@@ -193,7 +193,7 @@ Wrapping the tonic `Channel` in a `Mutex` serializes all concurrent gRPC request
 
 Holding a `Mutex` on the WebSocket reader for the entire duration of reading a response deadlocks when multiple requests are in flight — each request waits for the reader lock while the reader is blocked waiting for a response that may not be the one needed.
 
-**Solution:** Use a dedicated background reader task that reads all incoming messages and routes them to the correct pending request via a `HashMap<RequestId, PendingRequest>`. This eliminates the deadlock and enables true concurrent request/response multiplexing.
+**Solution:** Use a dedicated background reader task that reads all incoming messages and routes them to the correct pending request via a `HashMap<String, PendingRequest>` keyed by request id. This eliminates the deadlock and enables true concurrent request/response multiplexing.
 
 ### WebSocket upgrade requests must include auth headers
 
@@ -217,7 +217,7 @@ In a `tokio::spawn`-ed task, errors have no caller to return to. Using `let _ = 
 
 ### Per-resource limits are not enough — add global limits
 
-A per-task push config limit (e.g., 100 configs per task) does not prevent an attacker from creating millions of tasks with 100 configs each. Always pair per-resource limits with a global cap (e.g., `max_total_configs = 100_000`). The global check must run before the per-resource check in the write path.
+A per-task push config limit (e.g., 100 configs per task) does not prevent an attacker from creating millions of tasks with 100 configs each. Always pair per-resource limits with a global cap (e.g., `max_total_configs = 100_000`). Enforce both limits on every create. The order is not what matters: in this SDK's handler the per-task check runs first and the global one second, and the global one is approximate under concurrent creates for different tasks.
 
 ### Webhook URL scheme validation
 
@@ -229,8 +229,8 @@ Checking for private IPs and hostnames in webhook URLs is insufficient. URLs lik
 
 Standard `serde_json::to_vec` and `serde_json::from_str` allocate fresh buffers on every call. For hot paths (SSE frame building, transport payload serialization), this overhead compounds. The `serde_helpers` module in `a2a-protocol-types` provides optimized alternatives:
 
-- **`SerBuffer`** — Thread-local reusable serialization buffer. Call `SerBuffer::serialize(&value)` to get a `&[u8]` without allocating a new `Vec` each time. Reduces 2.3x small-payload overhead.
-- **`deser_from_str` / `deser_from_slice`** — Borrowed deserialization functions that reduce ~15-25% of allocations by avoiding intermediate owned strings.
+- **`SerBuffer`** — Thread-local reusable serialization buffer. `SerBuffer::serialize(&value)` serializes through it and returns the bytes as a new `Vec<u8>` (a copy of the buffer), which saves the buffer's growth reallocations on small payloads; `SerBuffer::serialize_into(writer, &value)` writes straight into your own writer with no intermediate buffer.
+- **`deser_from_str` / `deser_from_slice`** — Thin wrappers over `serde_json::from_str` / `from_slice`. They help only for types with borrowed (`&str` / `Cow`) fields, which the A2A types are not.
 
 Use these in performance-sensitive paths where serialization/deserialization is called repeatedly (e.g., per-event SSE frame building, transport payload encoding).
 
@@ -250,7 +250,7 @@ Fetching an agent card from an untrusted URL without a body size limit allows a 
 
 ### Bound executor cleanup with a timeout
 
-`executor.on_shutdown().await` can hang indefinitely if the executor's cleanup routine blocks. Always wrap with `tokio::time::timeout()` — the default is 10 seconds. Users can override via `shutdown_with_timeout(duration)`.
+`executor.on_shutdown().await` can hang indefinitely if the executor's cleanup routine blocks. Always wrap with `tokio::time::timeout()`. `RequestHandler::shutdown()` bounds the hook at 10 seconds; `shutdown_with_timeout(duration)` takes one budget for the whole call — draining the event queues, then the cleanup hook with whatever the drain left — so size `duration` against your platform's grace period, not per phase.
 
 ### Shutdown polling interval matters
 
@@ -258,11 +258,9 @@ A 50ms polling interval in the shutdown loop wastes up to 50ms per cycle. Using 
 
 ## gRPC Pitfalls
 
-### CI/release workflows must install `protoc` when building with `--all-features`
+### The `grpc` and `proto` features need no system `protoc`
 
-The `grpc` feature enables proto compilation via `tonic-build` in `build.rs`. Standard CI runners do not include `protoc`. If your workflow uses `--all-features`, `cargo package`, or `cargo publish` for a crate with the `grpc` feature, you must install `protoc` first — otherwise the build fails with "Could not find `protoc`".
-
-**Solution:** Add the `arduino/setup-protoc` action (or `apt-get install protobuf-compiler`) before any Cargo build step that enables the `grpc` feature. The `ci.yml` and `release.yml` workflows both use `arduino/setup-protoc` with a SHA-pinned action ref.
+Their build scripts compile `a2a.proto` with a vendored `protoc` (`protoc-bin-vendored`; Linux and macOS on x86_64 and aarch64, Windows x86_64), so `--all-features`, `cargo package` and `cargo publish` work on a stock CI runner. Set `PROTOC` only to use your own binary, or on a platform the vendored ones do not cover; `build.rs` leaves a `PROTOC` you set alone.
 
 ### Map all tonic status codes, not just the common ones
 
@@ -302,13 +300,13 @@ Enabling a feature in one crate (e.g., `signing` in `a2a-protocol-types`) enable
 
 ### Collection iteration order and determinism
 
-The `InMemoryTaskStore` uses a `HashMap` for O(1) get/save, plus a `BTreeSet<TaskId>` sorted index and a `HashMap<String, BTreeSet<TaskId>>` context index for O(log n + page\_size) list queries. The sorted index provides deterministic cursor-based pagination via `BTreeSet::range()` without the O(n log n) per-call sort that previously caused 20-70× regressions at scale. Other in-memory stores (e.g., `InMemoryPushConfigStore`) also use `HashMap`. Always sort results before applying pagination or returning them to clients.
+The `InMemoryTaskStore` uses a `HashMap<TaskId, TaskEntry>` for O(1) get/save, plus a `BTreeMap` keyed by a monotonic per-write sequence and a `HashMap<String, BTreeMap<…>>` context index. `list` walks them in reverse, so tasks come back most-recently-updated first (spec §3.1.4) in O(log n + page\_size) with a collision-free cursor, without the O(n log n) per-call sort that previously caused 20-70× regressions at scale. Other in-memory stores (e.g., `InMemoryPushConfigStore`) also use a `HashMap`, whose iteration order is arbitrary. Always sort results before applying pagination or returning them to clients.
 
 ### Percent-encoded path traversal
 
 Checking `path.contains("..")` is insufficient. Attackers can use `%2E%2E` (or mixed-case `%2e%2E`) to bypass the check.
 
-**Solution:** The REST dispatcher percent-decodes the path *before* checking for `..` sequences.
+**Solution:** The REST dispatcher percent-decodes the path, repeatedly (up to eight passes), *before* checking for a dot segment — `.` or `..` as a whole path segment, with `\` read as a separator — so `%2E%2E`, `%252E%252E` and `..\` are refused while an id such as `v1..prod` is served. A path still changing after eight passes is refused.
 
 ### A cargo-mutants baseline failure looks exactly like a clean file
 
@@ -429,11 +427,11 @@ The `get_extended_agent_card` method created an empty params object after runnin
 
 ### Empty/whitespace-only IDs must be rejected
 
-`TaskId` and `ContextId` should not accept empty or whitespace-only strings. Use `TryFrom` impls that validate input, rejecting values that are empty or contain only whitespace.
+`TaskId` and `ContextId` should not accept empty or whitespace-only strings. Build them with `TaskId::try_new` / `ContextId::try_new`, which reject such values; `new`, `From<String>` and `From<&str>` accept them for backward compatibility.
 
-### `FileContent` must have at least one data source
+### A file part needs a source
 
-A `FileContent` with neither `bytes` nor `uri` set is semantically invalid. Always validate that at least one of the two fields is present via a `validate()` method.
+v1.0 carries a file as `Part::raw(bytes)` or `Part::url(uri)`. The v0.3 `FileContent` type is deprecated, and `Part::file(FileContent)` turns one with neither `bytes` nor `uri` into an empty raw part instead of refusing it, so call `FileContent::validate()` first if you still use it.
 
 ### Push notification URLs need validation
 
@@ -441,7 +439,7 @@ A `FileContent` with neither `bytes` nor `uri` set is semantically invalid. Alwa
 
 ### Timestamps should be RFC 3339
 
-`TaskStatus` timestamps should conform to RFC 3339. The `has_valid_timestamp()` method validates this at the type level.
+`TaskStatus` timestamps should conform to RFC 3339. `has_valid_timestamp()` is only a coarse check (at least 19 characters and a `T` separator); `parse_iso8601_to_unix_millis(ts).is_some()` is the real test, and is what the server applies to `statusTimestampAfter`.
 
 ### Artifact parts must not be empty
 
@@ -461,11 +459,13 @@ When `TaskArtifactUpdateEvent` has `append=true`, metadata from the new event
 must be merged into the existing artifact's metadata (new keys override
 existing). Simply pushing a new artifact entry loses the append semantics.
 
-### ListTasksResponse fields are always present
+### TaskListResponse fields are always present
 
 `next_page_token`, `page_size`, and `total_size` are required per the proto
-spec — they are `String` and `u32`, not `Option`. An empty `next_page_token`
-means no more pages. Custom `TaskStore` implementations must populate all three.
+spec (`ListTasksResponse`) — the SDK's `TaskListResponse` holds them as
+`String` and `u32`, not `Option`, and a reader of a peer's response treats an
+absent one as empty/zero. An empty `next_page_token` means no more pages.
+Custom `TaskStore` implementations must populate all three.
 
 ### SendMessage to terminal tasks must be rejected
 
@@ -481,7 +481,7 @@ If `CachingCardResolver::new()` or `with_path()` receives an invalid base URL, s
 
 ### Always use parameterized queries for user-controlled values
 
-Using `format!` to interpolate values into SQL queries (e.g., `LIMIT`) allows SQL injection. Always use parameterized queries, even for values that appear safe like numeric limits.
+Using `format!` to interpolate caller-supplied values into SQL allows SQL injection; bind them. sqlx 0.9 enforces the rule on the type level: a statement built at run time must be wrapped in `sqlx::AssertSqlSafe`, which is the author vouching that only static text and placeholder positions went in. The one value the SDK's own stores interpolate is the page-size `LIMIT`, an integer clamped by `max_page_size`; every caller-supplied value is bound.
 
 ## WebSocket Server Pitfalls
 

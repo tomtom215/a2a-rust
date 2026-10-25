@@ -9,7 +9,7 @@ use a2a_protocol_types::AuthenticatedExtendedCardResponse;
 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
-use crate::interceptor::{ClientRequest, ClientResponse};
+use crate::interceptor::ClientRequest;
 
 impl A2aClient {
     /// Fetches the full (private) agent card, authenticating the request.
@@ -46,25 +46,18 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params);
         self.interceptors.run_before(&mut req).await?;
 
-        let result = self.send_intercepted(METHOD, &mut req).await?;
-
-        let resp = ClientResponse {
-            method: METHOD.to_owned(),
-            result,
-            status_code: 200,
-        };
-        self.interceptors.run_after(&resp).await?;
-
-        let mut result = resp.result;
-        crate::legacy_card::read_as_current(&mut result);
-        let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
-            .map_err(ClientError::Serialization)?;
-        // Before anything is adopted from it: a card a server would refuse to
-        // publish declares nothing this client should act on.
-        crate::received::card(METHOD, &card)?;
-        self.adopt_capabilities(&card);
-        self.interceptors.adopt_security(&card);
-        Ok(card)
+        self.send_decoded(METHOD, &mut req, |mut result| {
+            crate::legacy_card::read_as_current(&mut result);
+            let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
+                .map_err(ClientError::Serialization)?;
+            // Before anything is adopted from it: a card a server would refuse to
+            // publish declares nothing this client should act on.
+            crate::received::card(METHOD, &card)?;
+            self.adopt_capabilities(&card);
+            self.interceptors.adopt_security(&card);
+            Ok(card)
+        })
+        .await
     }
 }
 

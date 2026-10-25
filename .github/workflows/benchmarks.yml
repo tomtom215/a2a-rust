@@ -282,8 +282,9 @@ jobs:
     # Turning LTO off was not enough on its own. serde_json's string
     # serializer is generic, so `to_vec::<Message>` is instantiated inside
     # the bench binary itself, and its hot loop still moves whenever the
-    # set of linked crates changes. On 2026-10-19 making `otel` a default
-    # feature (`ce719b0`, Cargo.toml only) put that loop on a 32-byte
+    # set of linked crates changes. On 2026-10-18 making `otel` a default
+    # feature (`ce719b0`; its build-relevant change was the Cargo.toml feature
+    # lists) put that loop on a 32-byte
     # boundary that Intel's JCC-erratum microcode punishes: `to_vec`
     # +58..89 %, deserialize flat. Building both sides with
     # `-x86-branches-within-32B-boundaries` closed the gap (54..55 µs

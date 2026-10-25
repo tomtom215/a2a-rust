@@ -430,8 +430,8 @@ type = "Option<u32>"
 aliases = ["page_size"]
 why = "a page size counts items; u32 refuses a negative one at parse time"
 doc_append = """
-Clamped by the server to `max_page_size` (default 1000): a client may ask
-for any `u32`, and the server caps it."""
+A server refuses a value outside 1 to 100 with `InvalidParams`; a store may
+cap the page lower."""
 
 [messages.ListTasksRequest.fields.page_token]
 aliases = ["page_token"]

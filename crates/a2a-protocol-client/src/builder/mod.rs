@@ -176,7 +176,7 @@ impl ClientBuilder {
     /// whose binding appears in `preferences`.
     ///
     /// Only interfaces whose `protocolVersion` has this SDK's major (1; an
-    /// empty version counts, and a leading `v` is allowed) are considered.
+    /// empty version does not, and a leading `v` is allowed) are considered.
     /// An agent that also serves v0.3 often lists that endpoint first; it
     /// speaks another protocol, so it is skipped rather than connected to.
     ///

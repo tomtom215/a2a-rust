@@ -143,7 +143,7 @@ async fn a_tool_error_the_model_recovers_from_still_completes() {
 }
 
 #[tokio::test]
-async fn a_provider_failure_fails_the_task_as_internal_with_the_status() {
+async fn a_provider_failure_fails_the_task_as_internal_with_the_status_and_not_the_body() {
     let task = blocking(
         &handler(scripted(vec![Err(ModelError::Status {
             status: 500,
@@ -156,7 +156,23 @@ async fn a_provider_failure_fails_the_task_as_internal_with_the_status() {
     assert_eq!(task.failure_class(), Some(FailureClass::Internal));
     let reason = reason(&task);
     assert!(reason.contains("HTTP 500"), "{reason}");
-    assert!(reason.contains("Failed to parse tool call"), "{reason}");
+    // The provider's body is the operator's, in the log: it can echo the
+    // prompt or name an account, and the caller is another party.
+    assert!(!reason.contains("Failed to parse tool call"), "{reason}");
+}
+
+#[tokio::test]
+async fn a_transport_failure_does_not_tell_the_caller_where_the_provider_is() {
+    let task = blocking(
+        &handler(scripted(vec![Err(ModelError::Transport(
+            "error sending request for url (http://10.0.3.7:8080/v1/chat/completions)".to_owned(),
+        ))])),
+        "go",
+    )
+    .await;
+    assert_eq!(task.status.state, TaskState::Failed);
+    let reason = reason(&task);
+    assert_eq!(reason, "could not reach the model provider");
 }
 
 #[tokio::test]

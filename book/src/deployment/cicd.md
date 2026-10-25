@@ -1,6 +1,6 @@
 # GitHub Pages & CI/CD
 
-a2a-rust uses GitHub Actions for continuous integration, crate publishing, and documentation deployment.
+a2a-rust uses GitHub Actions for continuous integration, crate publishing, and documentation deployment. This page covers the main workflows; `.github/workflows/README.md` lists every workflow, its trigger and which checks are required (including DCO sign-off and the Official TCK).
 
 ## CI Pipeline
 
@@ -9,17 +9,17 @@ The CI workflow (`.github/workflows/ci.yml`) runs on pushes to `main`, on PRs to
 | Job | Description |
 |-----|-------------|
 | **Static checks** | `cargo fmt --all -- --check`, vendored-proto agreement, the 500-line file-length ratchet, no process-global panic hooks, the mutants-config check, and gate-inventory completeness |
-| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, websocket, grpc, auth-jwt without default features, all-features) across 3 OSes (ubuntu, macOS, Windows) on stable (lint verdicts are a property of the clippy version; the MSRV leg of the Test job is what proves 1.94 compatibility) |
+| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, tool-loop, tool-loop + tls-rustls, websocket, grpc, auth-jwt without default features, all-features) across 3 OSes (ubuntu, macOS, Windows) on stable (lint verdicts are a property of the clippy version; the MSRV leg of the Test job is what proves 1.94 compatibility) |
 | **Feature matrix** | `cargo hack clippy --each-feature` over the four published crates — every feature on its own, plus no-default-features and all-features — so a `#[cfg(feature)]` gap is caught here rather than by a downstream build enabling an unusual subset |
-| **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, websocket, grpc, auth-jwt, auth-jwt + tls-rustls, all-features, no-default-features) across 3 OSes and 2 Rust versions |
-| **Test (postgres integration)** | Runs the `#[ignore]`-gated live-database suite (`postgres_store_tests.rs`) against a `postgres:16` service container |
+| **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls on the client and on the server separately, sqlite, postgres, axum, tool-loop, websocket, grpc, auth-jwt, auth-jwt + tls-rustls, all-features, no-default-features) across 3 OSes and 2 Rust versions |
+| **Test (postgres integration)** | Runs the `#[ignore]`-gated live-database suites against a `postgres:16` service container: `postgres_store_tests.rs`, the two-handler `multi_replica` suite, `encrypted_store` and the shared rate-limit counter's tests |
 | **Nightly** | Tests and clippy on the nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking; pushes to `main` and manual runs only) |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --workspace --no-deps`, then each published crate on its own in its own default features — verifies documentation builds |
 | **Package** | `cargo package --workspace` (excluding example and tool crates) — validates crate packaging for publish |
 | **Semver** | `cargo-semver-checks` over the four published crates, all features |
 | **SDK dogfood** | `cargo run -p agent-team --release --all-features` |
-| **SLIMRPC binding** | builds the out-of-workspace binding and runs `cargo-deny` over its own dependency tree |
+| **SLIMRPC binding** | the out-of-workspace binding's own `cargo fmt --check`, clippy (also without default features), `slim-node` build, `cargo-deny`, package validation, tests and `in_process` example, and its SPIFFE tests against a real SPIRE |
 | **Example surface coverage** | two jobs: echo-agent, incident-response, genai and rig, each driving every method over every binding it supports; and multi-lang-team, resilient-agent (durability, failure injection, scaling against PostgreSQL) and swarm |
 | **Go SDK interop** | `scripts/go_sdk_interop.sh` — both directions, three bindings |
 
@@ -32,7 +32,7 @@ The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separat
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
-| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (24-way for `a2a-protocol-server`, 4-way for `a2a-protocol-types` and `a2a-protocol-client`, 1 for `a2a-protocol-sdk`) |
+| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (60-way for `a2a-protocol-server`, 4-way for `a2a-protocol-types` and `a2a-protocol-client`, 1 for `a2a-protocol-sdk`) |
 
 Every pull request additionally has an **incremental** mutation gate:
 `cargo-mutants --in-diff` mutates only the source lines changed in the PR
@@ -43,8 +43,9 @@ diff; without the label the required `Mutation Testing (incremental)` check
 fails with a message asking for it, so no PR merges unmutated. Add the label
 when the code is ready for review; while it is present, every push re-runs
 the gate. The full sweep is the one that doesn't run on every
-commit: a full sweep can take 100+ minutes per crate and a2a-server alone
-generates hundreds of mutants, so it runs on its own weekly schedule (plus
+commit: a full sweep can take 100+ minutes per crate and `a2a-protocol-server`
+alone lists about 5,500 mutants (60 shards, about two hours for the slowest, by
+the workflow's own projection), so it runs on its own weekly schedule (plus
 `workflow_dispatch` for an on-demand run against `main`) rather than
 blocking PRs.
 
@@ -66,14 +67,14 @@ The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand 
 
 On PRs that touch benchmark or SDK code, a separate **Regression Gate** job compares `transport_throughput` and `protocol_overhead` against the base branch.
 
-The 14 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, advanced scenarios, and — new in this release — **agent-level latency under fault** via an in-process 5-hop coordinator chain with fault injection at every link. The last suite is the first benchmark on this page that does not measure SDK-layer overhead; see the [Agent-Level Latency Under Fault](../reference/benchmarks.md#agent-level-latency-under-fault) section for the honest caveats.
+The 15 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, advanced scenarios, the cost breakdown of a blocking send (`send_latency_breakdown`), and **agent-level latency under fault** via an in-process 5-hop coordinator chain with fault injection at every link. The last suite is the first benchmark on this page that does not measure SDK-layer overhead; see the [Agent-Level Latency Under Fault](../reference/benchmarks.md#agent-level-latency-under-fault) section for the honest caveats.
 
 The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit on pushes to `main` and PRs. It tests the echo-agent (self-test) and runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations with both JSON-RPC and REST bindings.
 
 All actions are **SHA-pinned** for supply chain security:
 
 ```yaml
-- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 ```
 
 ## Release Pipeline
@@ -81,7 +82,7 @@ All actions are **SHA-pinned** for supply chain security:
 The release workflow (`.github/workflows/release.yml`) triggers on version tags:
 
 ```text
-vX.Y.Z tag → validate → ci + security → package + publish-dry-run → github-release → publish
+vX.Y.Z tag → validate → ci + security + conformance (ACTS) → package + publish-dry-run → attest-conformance → github-release → publish (and cli-binaries, when `PUBLISH_CLI_BINARIES` is `true`)
 ```
 
 The `grpc` feature compiles the canonical schema with `prost-build`/`tonic-prost-build` using the vendored `protoc` (`protoc-bin-vendored`); no workflow installs a system `protoc`. Set `PROTOC` to use your own.
@@ -131,8 +132,8 @@ Each release line adds about 18 MB, and GitHub Pages caps a site at 1 GB; at
 ### Building Locally
 
 ```bash
-# Install mdBook
-cargo install mdbook
+# Install mdBook (the version docs.yml pins)
+cargo install mdbook --version 0.4.40 --locked
 
 # Build
 mdbook build book
