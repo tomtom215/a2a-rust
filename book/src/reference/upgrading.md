@@ -4,10 +4,10 @@
 # Upgrading Between Minor Versions
 
 The newest minor boundary this page covers is 0.14 → 0.15, whose breaking
-section is `## [Unreleased]` in
-[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md),
-which becomes `## [0.15.0]` when it ships. (A patch such as 0.14.1 breaks
-nothing, so it has no section of its own here.) A test,
+section is `## [0.15.0]` in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+(A patch such as 0.14.1 breaks nothing, so it has no section of its own
+here.) A test,
 `book-tests/tests/upgrading_guide.rs`, fails when the changelog calls a
 release from 0.7 on breaking and this page has no `## X.Y → X.Z` section for
 its boundary (A2A v1.0.1 §1.4: migration guidance MUST be provided when
@@ -139,7 +139,7 @@ Enums follow the same rule: `ClientError`, and the protocol enums that can
 grow with the specification, are `#[non_exhaustive]`, so a `match` on one
 already carries a wildcard arm and a new variant does not break it.
 
-## 0.14 → 0.15 (unreleased)
+## 0.14 → 0.15
 
 These come from making the SDK follow the A2A 1.0 specification where it did
 not. CHANGELOG.md has every item; these are the ones an existing deployment can

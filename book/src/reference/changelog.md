@@ -51,6 +51,38 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
+## v0.15.0 (2026-10-25)
+
+A minor release that follows the A2A v1.0.1 specification where the SDK did
+not, turns OpenTelemetry instrumentation on by default, and raises the MSRV to
+1.94. It carries 26 breaking changes (counted on 2026-10-25 as the top-level
+entries of the CHANGELOG's Breaking Changes section); each has its migration in
+[Upgrading Between Minor Versions](./upgrading.md). Full detail in
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+
+- **Stricter about what it accepts.** A client refuses an agent card that does
+  not pass `AgentCard::validate`, an object a2a.proto does not allow, and a
+  gRPC message that lacks a REQUIRED field. A server refuses to publish a card
+  that carries a credential in a URL, refuses a push config with no
+  credentials, and refuses a JWT with no `sub` under caller isolation.
+- **OpenTelemetry is on by default**; exporting stays behind `otlp`. The metric
+  catalogue follows the OpenTelemetry conventions (`a2a.server.latency` is
+  removed), the server records `a2a.server.executor.duration`, and the client
+  records each call as it ended for the caller: a call the caller dropped is
+  `cancelled`, and an answer the client then refuses is a failure.
+- **`SubscribeToTask`** reads a long replay in pages and reports a gap it
+  cannot replay with `streamLagged`; it has no idle bound by default.
+- **A caller is named by how it authenticated** (`bearer:`, `api-key:`,
+  `jwt:`), and `build()` refuses a card whose declared authentication the
+  interceptors do not enforce.
+- **The SQLite stores overwrite deleted content with zeros in the database
+  file.** They do not in the write-ahead log or in a backup.
+- **Conformance:** four requirements of the A2A v1.0.1 ledger are only partly
+  met; the ledger says which and what each needs.
+- **Breaking, also:** the MSRV is 1.94 and the SQL stores use `sqlx` 0.9; every
+  agent card declares the budget extension; `TaskState`'s discriminants are its
+  proto numbers; `TaskStore::save_appending_history` takes a `HistoryLimit`.
+
 ## v0.14.1 (2026-09-30)
 
 A patch release for one security advisory. No API changes. Full detail in
