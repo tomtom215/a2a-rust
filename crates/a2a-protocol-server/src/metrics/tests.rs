@@ -207,9 +207,12 @@ impl Metrics for Logged {
     fn on_rpc_call(&self, _: &RpcCall<'_>) {
         self.note("rpc_call");
     }
+    fn on_executor_run(&self, _: &str, _: Duration) {
+        self.note("executor_run");
+    }
 }
 
-/// Every one of the trait's nine callbacks reaches both sides, the first
+/// Every one of the trait's ten callbacks reaches both sides, the first
 /// side first. A callback `Tee` forgot would default to nothing on both.
 #[test]
 fn a_tee_forwards_every_callback_to_both_in_order() {
@@ -239,6 +242,7 @@ fn a_tee_forwards_every_callback_to_both_in_order() {
         status_code: None,
         error_type: None,
     });
+    tee.on_executor_run("completed", Duration::ZERO);
     let expected: Vec<String> = [
         "request",
         "response",
@@ -249,6 +253,7 @@ fn a_tee_forwards_every_callback_to_both_in_order() {
         "persistence_error",
         "push_delivery",
         "rpc_call",
+        "executor_run",
     ]
     .iter()
     .flat_map(|c| [format!("first {c}"), format!("second {c}")])

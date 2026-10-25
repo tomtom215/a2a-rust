@@ -268,6 +268,20 @@ async fn a_whole_log_fills_what_the_snapshot_lacks() {
     assert_eq!(seen, [None, Some(1), Some(2), Some(3)]);
 }
 
+/// A reader that already reaches the position the snapshot reflects lacks
+/// nothing: the boundary of `report_unreplayed`, where a gap of none is no
+/// gap and no lag error counting zero positions is queued.
+#[tokio::test]
+async fn a_reader_that_reaches_the_snapshot_queues_no_report() {
+    let (_handler, _id, _writer, reader) =
+        handler_with(Wrapped::new(Arc::new(InMemoryTaskStore::new())), 0).await;
+    let mut reader = reader.expect("the first reader of the queue");
+    reader.report_unreplayed(0);
+    let (seen, lag) = drain(&mut reader).await;
+    assert!(lag.is_none(), "{lag:?}");
+    assert!(seen.is_empty(), "{seen:?}");
+}
+
 /// The control for the other side: a snapshot that is whole lacks nothing, so
 /// a resume the log cannot serve starts from it, as documented, and reports
 /// nothing.

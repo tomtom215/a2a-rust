@@ -136,6 +136,64 @@ async fn a_handler_records_to_the_global_provider_installed_after_it() {
     );
 }
 
+/// The runs `reader`'s provider recorded in `a2a.server.executor.duration`:
+/// each outcome with how many runs ended that way.
+fn executor_runs(reader: &ManualReader) -> Vec<(String, u64)> {
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+    let mut collected = ResourceMetrics::default();
+    reader.collect(&mut collected).expect("collect");
+    let mut runs = Vec::new();
+    for metric in collected
+        .scope_metrics()
+        .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+        .filter(|m| m.name() == "a2a.server.executor.duration")
+    {
+        if let AggregatedMetrics::F64(MetricData::Histogram(h)) = metric.data() {
+            for point in h.data_points() {
+                let outcome = point
+                    .attributes()
+                    .find(|kv| kv.key.as_str() == "outcome")
+                    .map(|kv| kv.value.to_string())
+                    .unwrap_or_default();
+                runs.push((outcome, point.count()));
+            }
+        }
+    }
+    runs
+}
+
+/// A run's time reaches the global provider through the default metrics, by
+/// outcome: the executor histogram is part of what a process that installs a
+/// provider gets with nothing to enable.
+#[tokio::test]
+async fn a_run_records_its_executor_duration_to_the_global_provider() {
+    let _turn = GLOBAL.lock().await;
+    let (provider, reader) = provider();
+    opentelemetry::global::set_meter_provider(provider.clone());
+    let handler = RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .build()
+        .expect("handler");
+    let params = a2a_protocol_types::MessageSendParams::new(a2a_protocol_types::Message::user(
+        "m-1",
+        vec![a2a_protocol_types::Part::text("hi")],
+    ));
+    handler
+        .on_send_message(params, false, None)
+        .await
+        .expect("sent");
+    // The run ends on its own task, just after the answer.
+    let mut runs = Vec::new();
+    for _ in 0..100 {
+        runs = executor_runs(&reader);
+        if !runs.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(runs, [("completed".to_owned(), 1)]);
+}
+
 /// Counts the requests it is told of.
 #[derive(Default)]
 struct Requests(AtomicU64);
