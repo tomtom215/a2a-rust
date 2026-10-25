@@ -7,12 +7,8 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 ```text
   Client              Agent Server          Client Webhook
      │                      │                      │
-     │  CreatePushConfig    │                      │
-     │ ────────────────────►│                      │
-     │  Config with ID      │                      │
-     │ ◄────────────────────│                      │
-     │                      │                      │
      │  SendMessage         │                      │
+     │  + push config       │                      │
      │ ────────────────────►│                      │
      │  Task (submitted)    │                      │
      │ ◄────────────────────│                      │
@@ -26,8 +22,13 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
      │                      │                      │
 ```
 
-1. Client registers a webhook URL via `CreateTaskPushNotificationConfig`
-2. Client sends a message (with `return_immediately: true` for async)
+1. Client sends a message with a push config inline
+   (`configuration.taskPushNotificationConfig`, with no task ID;
+   `returnImmediately: true` for async). The server creates the task and
+   registers the config for it.
+2. Alternatively, once it holds a task ID, the client registers a webhook with
+   `CreateTaskPushNotificationConfig`; a config for a task that does not exist
+   is refused with `TaskNotFoundError`.
 3. Agent processes the message and pushes events to the webhook
 
 ## Setting Up Push Notifications
@@ -62,13 +63,30 @@ let handler = RequestHandlerBuilder::new(my_executor)
 The built-in `HttpPushSender` includes:
 
 - **HTTPS delivery** — With the `tls-rustls` feature (enabled by default via the `a2a-protocol-sdk` crate) it delivers to both `http://` and `https://` webhooks. In a build with the feature disabled it is plaintext-HTTP only and fails fast on an `https://` target with a clear error.
-- **SSRF protection** — Resolves URLs and rejects private/loopback IP addresses. Uses `validate_webhook_url_with_dns()` which performs DNS resolution before IP validation, preventing DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP. For `http://` the validated IP is pinned at connect time; for `https://` the rebinding window is closed by TLS certificate verification instead (so the original hostname is preserved for SNI).
+- **SSRF protection** — Resolves the host at delivery and rejects a URL that is, or resolves to, a private, loopback, link-local, CGNAT or IPv4-mapped address, a numeric IPv4 spelling such as `0x7f.1`, or an internal name (`url_guard::resolve_public_url`, public for your own senders). Resolving before validating prevents DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP. A config is also screened when it is created, without a DNS lookup, so a hostname that resolves privately is stored but never delivered to. For `http://` the validated IP is pinned at connect time; for `https://` the rebinding window is closed by TLS certificate verification instead (so the original hostname is preserved for SNI). `with_allowed_hosts([..])` restricts webhooks to listed hosts (checked at creation and at delivery); `allow_private_urls()` turns the screen off for tests.
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
 - **HTTPS only, if you ask** — `HttpPushSender::new().https_only()` refuses an `http://` webhook (spec §13.2: webhook URLs SHOULD use HTTPS). A push config with one is refused at creation with `InvalidParams`, and a delivery to one is refused before connecting. Off by default.
 
+**Delivery and retries.** Every config of a task is attempted for every event,
+concurrently (`HandlerLimits::push_delivery_budget`, 30 s, sets how many at
+once; at the defaults, all). One attempt is bounded by the sender's request
+timeout, 10 s (`HttpPushSender::with_timeout`), after a DNS lookup bounded by
+5 s (`with_dns_timeout`). `PushRetryPolicy` (`with_retry_policy`) allows 3
+attempts with 1 s then 2 s between them (a shorter `backoff` list repeats its
+last entry; 0 attempts counts as 1). A transport error, a timeout, `408`,
+`429` and any `5xx` are retried with the same body; any other status, a
+redirect included (it is not followed), fails the delivery at once, and the
+response body is not read. A whole delivery, retries included, is bounded by
+`HandlerLimits::push_delivery_timeout` (30 s); a webhook that never answers
+needs up to 38 s at the defaults, so the third attempt can be cut short (the
+`timeout_truncated` outcome of `a2a.server.push_deliveries`). A failed delivery
+is counted (and logged, with the `tracing` feature) and does not fail the task.
+
 > **Capability + task-existence rules (spec §3.1.7, §3.3.4).** If you configure
 > an agent card, it must advertise `capabilities.pushNotifications = true` or the
-> push-config operations return `PushNotificationNotSupportedError`. Creating a
+> push-config operations return `PushNotificationNotSupportedError`; they
+> return it too when no push sender is wired, and `build()` refuses a card that
+> declares `pushNotifications` without `with_push_sender`. Creating a
 > config also requires the **target task to already exist** — a
 > `CreateTaskPushNotificationConfig` for an unknown task returns
 > `TaskNotFoundError` rather than storing an unroutable config. A
@@ -140,7 +158,7 @@ config.authentication = Some(AuthenticationInfo {
 });
 ```
 
-For scheme `Bearer` or `Basic` (any case) the server sends `Authorization: <Scheme> <credentials>` when POSTing to the webhook; other schemes, or a scheme with no credentials, produce no header.
+For scheme `Bearer` or `Basic` (any case) the server sends `Authorization: <Scheme> <credentials>` when POSTing to the webhook. Any other scheme, and a scheme with absent or blank `credentials`, is refused when the config is created (`InvalidParams` naming `authentication.scheme` or `authentication.credentials`), and a stored config that slipped past that is not delivered. Leave `authentication` out for an unauthenticated webhook; the token header below is separate.
 
 ## Receiving Push Notifications
 
@@ -216,7 +234,8 @@ if let WebhookOutcome::Accepted { event, .. } = outcome {
 | The event's task is the config's task (a message with no task fails) | 403 |
 | The same body for the same config, already accepted, is `Duplicate` | — (200) |
 
-`register` refuses a config with no token, a token another config already
+`register` refuses a config with no token, a token that is not visible ASCII
+(it could not travel in a header unchanged), a token another config already
 uses (§13.2: unique, single-purpose tokens), no task ID, or `authentication`
 without `credentials`. A duplicate is the same *bytes* again: `HttpPushSender`
 re-sends the body it serialized once, so its retries are caught. An event is
@@ -255,9 +274,17 @@ impl PushSender for SqsPushSender {
 }
 ```
 
+A custom sender gets none of `HttpPushSender`'s delivery-time checks or
+retries. A sender that POSTs to the config's URL should resolve and screen it
+with `url_guard::resolve_public_url`, and send the notification token and
+`Authorization` as the config specifies. The handler still screens a URL when
+the config is created, and bounds each `send` with `push_delivery_timeout`
+(30 s). Override `requires_https`, `allows_webhook_url` and
+`max_delivery_duration` when they apply.
+
 ## Push Config Storage
 
-The default `InMemoryPushConfigStore` stores configs in memory with per-task limits. For production, implement `PushConfigStore`:
+The default `InMemoryPushConfigStore` (the tenant-aware in-memory store when the task store isolates tenants) keeps configs in memory with per-task limits. For production use `SqlitePushConfigStore` or `PostgresPushConfigStore` (features `sqlite` / `postgres`; tenant-aware forms for multi-tenant servers), or implement `PushConfigStore` for your own database:
 
 ```rust
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {

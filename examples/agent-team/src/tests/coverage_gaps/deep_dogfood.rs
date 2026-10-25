@@ -551,11 +551,11 @@ pub async fn test_agent_card_semantic_validation(ctx: &TestContext) -> TestResul
 /// Test: After streaming completes, GetTask should reflect progress.
 ///
 /// This verifies that the background event processor updates the task store
-/// in streaming mode. Note: due to a known race condition (Bug #38), the
-/// background processor subscribes to the broadcast channel *after* the
-/// executor starts, so fast executors may complete before the subscription
-/// is active, causing the store to remain in Submitted state. This test
-/// documents the behavior and passes if the task is found.
+/// in streaming mode. It polls for a terminal state and passes if the task is
+/// found, even when the state is not yet terminal after the polling window,
+/// so it does not guard Bug #38 (a fast executor outrunning the processor's
+/// subscription), which is fixed: the processor drains a dedicated
+/// persistence channel created before the executor starts.
 pub async fn test_get_task_after_stream(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = a2a_protocol_client::ClientBuilder::new(&ctx.analyzer_url)
@@ -605,13 +605,13 @@ pub async fn test_get_task_after_stream(ctx: &TestContext) -> TestResult {
                         &format!("state={state:?}, artifacts={artifacts_count}"),
                     ),
                     Some(state) => {
-                        // Bug #38: Background processor may miss events from fast
-                        // executors due to subscribe-after-start race. Document the
-                        // behavior rather than failing the test.
+                        // Not yet terminal after the polling window. Reported as
+                        // a pass, not a failure: this test does not guard the
+                        // fixed Bug #38.
                         TestResult::pass(
                             "get-after-stream",
                             start.elapsed().as_millis(),
-                            &format!("Bug#38: state={state:?} (bg processor race)"),
+                            &format!("state={state:?} (not yet terminal; does not guard Bug#38)"),
                         )
                     }
                     None => TestResult::fail(

@@ -1,7 +1,7 @@
 # Hello Agent
 
-The smallest complete A2A agent: 28 lines of code above its tests (blank and
-comment lines excluded), one dependency, no feature flags.
+The smallest complete A2A agent: one screen of code above its tests, one
+dependency, no feature flags.
 
 ```bash
 cargo run -p hello-agent
@@ -9,7 +9,7 @@ cargo run -p hello-agent
 
 Source: [`examples/hello-agent/src/main.rs`](https://github.com/tomtom215/a2a-rust/blob/main/examples/hello-agent/src/main.rs).
 
-## The whole thing
+## The agent
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -56,6 +56,12 @@ async fn main() -> std::io::Result<()> {
 }
 ```
 
+The file's `main` also starts the SDK's `Telemetry` from the `OTEL_*`
+environment (a `Telemetry::builder()` chain and `install_subscriber()`, left
+out above): with `OTEL_EXPORTER_OTLP_ENDPOINT` set, traces, metrics and logs go
+there; without it nothing is built. The file's comments and its longer
+`expect` messages are left out too.
+
 ## Talking to it
 
 ```bash
@@ -73,21 +79,23 @@ curl -X POST http://127.0.0.1:3000 \
   "status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-...Z"}, ...}}}
 ```
 
-`A2A-Version: 1.0` is required. Without it the server answers
-`VERSION_NOT_SUPPORTED` (`-32009`) rather than guessing which revision you
-meant — a client pinned to an older spec gets a clear error instead of subtly
-wrong parsing.
+By default `A2A-Version: 1.0` is required (as a header, or as an `A2A-Version`
+query parameter). Without it, or with any other major.minor than `1.0`, the
+server answers `VERSION_NOT_SUPPORTED` (`-32009`) rather than guessing which
+revision you meant — a client pinned to an older spec gets a clear error
+instead of subtly wrong parsing. `DispatchConfig::accept_missing_version_header()`
+lifts the requirement for trusted callers.
 
 ## What each piece does
 
 | Piece | Why it is there |
 |---|---|
 | `agent_executor!` | Writes the `AgentExecutor` impl. The trait returns `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` so it stays object-safe; the macro hides that. |
-| `EventEmitter` | Caches `task_id` and `context_id` off the `RequestContext`, so each event is one line rather than a seven-field struct literal. |
+| `EventEmitter` | Caches `task_id` and `context_id` off the `RequestContext`, so each event is one line rather than a struct literal of four to six fields. |
 | `ctx.message.text()` | The first text part, or `None`. Non-text parts are skipped, not treated as the end of the search — a message that leads with a file attachment still yields its text. |
 | `serve` | Binds a listener and runs the accept loop, replacing roughly 25 lines of hyper wiring. |
 | `RequestHandlerBuilder` | Everything the agent does not configure gets a default: an in-memory task store, no auth, no push notifications. |
-| `AgentCard::new` | The card, from the three things the type cannot invent — name, version, one interface. The other twelve fields default, and `with_agent_card` makes the dispatcher serve it at the well-known path, so `a2a card http://127.0.0.1:3000` and `ClientBuilder::from_card` work against this agent. |
+| `AgentCard::new` | The card, from the three things the type cannot invent — name, version, one interface. The other twelve fields default, and `with_agent_card` makes the dispatcher serve it at the well-known path, so `cargo run -p a2a-cli -- card http://127.0.0.1:3000` (the `a2a` CLI) and `ClientBuilder::from_card` work against this agent. |
 
 ## Two rules keep it small
 

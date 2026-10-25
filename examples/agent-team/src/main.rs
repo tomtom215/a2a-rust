@@ -3,7 +3,8 @@
 
 //! **Agent Team** — Full-stack dogfood of every a2a-rust SDK capability.
 //!
-//! This example deploys 4 specialized agents that communicate via A2A:
+//! This example deploys 4 specialized agents (plus GrpcAnalyzer, under the
+//! `grpc` feature) that communicate via A2A:
 //!
 //! | Agent | Transport | Features exercised |
 //! |-------|-----------|-------------------|
@@ -12,9 +13,9 @@
 //! | **HealthMonitor** | JSON-RPC | push notifications, interceptors |
 //! | **Coordinator** | REST | agent-to-agent calls, aggregation, metrics |
 //!
-//! Starts all four agents, runs the E2E suite (102 tests with `--all-features`),
-//! then measures the method x binding surface against a fifth agent that exists
-//! purely to be swept — see [`surface`].
+//! Starts the agents, runs the E2E suite (100 tests; 102 results with the
+//! surface sweep), then measures the method x binding surface against a sixth
+//! agent that exists purely to be swept — see [`surface`].
 //!
 //! Run with: `cargo run -p agent-team`
 
@@ -355,7 +356,7 @@ async fn main() {
     // flow through the same pass/fail accounting as everything else.
     // Surface matrix: every method over every binding. Lives in `surface.rs`
     // so this function stays about orchestration; see that module for why a
-    // fifth agent exists.
+    // sixth agent exists.
     #[cfg(all(feature = "websocket", feature = "grpc"))]
     let surface_missing = surface::run(&mut results, webhook_addr).await;
 

@@ -52,11 +52,21 @@
 
 /* ── Typography ───────────────────────────────────────────────────────────── */
 
+/* mdBook sets the root font size to 62.5%, so 1rem is 10px in this book. These
+   three values were written as if it were 16px, and the page rendered 11.9px
+   text in a 560px column. Body text is now 17px in a 720px column: about 80
+   characters of prose per line, and 80 columns of code at 0.9em. */
 .content main {
-    max-width: 56rem;
-    font-size: 1.1875rem;
+    max-width: 72rem;
+    font-size: 1.7rem;
     line-height: 1.8;
 }
+
+/* mdBook's own `.content p { line-height: 1.45em }` is tighter than the 1.8
+   above; body copy reads best between 1.5 and 1.8. */
+.content main p,
+.content main ul,
+.content main ol { line-height: 1.7; }
 
 .content main h1,
 .content main h2,
@@ -129,7 +139,7 @@ code, kbd, pre, pre code {
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 
-.sidebar .sidebar-scrollbox { padding-top: 1em; font-size: 1.0625rem; }
+.sidebar .sidebar-scrollbox { padding-top: 1em; font-size: 1.45rem; }
 .sidebar .chapter li.chapter-item { margin-top: 0.35em; line-height: 1.6; }
 
 /* ── Blockquotes (tips / notes) ───────────────────────────────────────────── */

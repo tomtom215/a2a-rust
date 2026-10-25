@@ -9,7 +9,7 @@
 # Build from the repository root, not this directory:
 #   docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
 
-FROM rust:1.93-bookworm@sha256:7c4ae649a84014c467d79319bbf17ce2632ae8b8be123ac2fb2ea5be46823f31 AS build
+FROM rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS build
 WORKDIR /src
 
 # The whole workspace is copied because this example depends on the SDK crates

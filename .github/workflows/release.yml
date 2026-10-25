@@ -3,14 +3,16 @@
 #
 # Release pipeline for a2a-rust
 #
-# Triggered by pushing a semver tag (e.g. `git tag -a v0.2.0 -m "Release v0.2.0" && git push origin v0.2.0`).
+# Triggered by pushing a signed semver tag (e.g. `git tag -s v0.2.0 -m "Release v0.2.0" && git push origin v0.2.0`).
 # See RELEASING.md for the complete release runbook.
 #
 # Job dependency graph:
 #
-#   validate ──┬──► ci (matrix) ──┬──► package ─────────┬──► github-release ──► publish
-#              └──► security ────┘                     │                       (crates-io env)
-#                                └──► publish-dry-run ─┘
+#   validate -> ci (matrix), security, conformance (ACTS)
+#   ci + security -> package, publish-dry-run
+#   package + conformance -> attest-conformance
+#   validate + package + publish-dry-run + attest-conformance -> github-release
+#   validate + github-release -> publish (crates-io env), cli-binaries
 
 name: Release
 
@@ -52,7 +54,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # RELEASING.md step 3 says `git tag -a`. The first ten tags are
+      # RELEASING.md used to say `git tag -a`. The first ten tags are
       # lightweight anyway — bare refs with no tagger, no date, no message —
       # because creating a release through the GitHub UI produces one. The
       # instruction was documented and not applied, and nothing noticed for
@@ -60,11 +62,9 @@ jobs:
       # v0.8.0 and v0.9.0 are annotated tag objects, the first two releases in
       # this project's history that record who cut them and when.
       #
-      # Annotated, not signed. Signing needs a maintainer key and a published
-      # way for adopters to obtain it, which is a decision this workflow
-      # cannot make; see the "Known gap" note in RELEASING.md. Requiring an
-      # annotated tag is the part that is achievable today, and it is what
-      # makes the tag itself record who cut the release and when.
+      # This step checks that the tag is annotated, which is what makes the tag
+      # itself record who cut the release and when. The signature is checked
+      # by the next step.
       - name: Tag is annotated
         shell: bash
         run: |

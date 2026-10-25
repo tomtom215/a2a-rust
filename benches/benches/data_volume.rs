@@ -174,14 +174,10 @@ fn bench_save_at_scale(c: &mut Criterion) {
     // the store hits max_capacity across criterion samples and the benchmark
     // reports ~600µs/save instead of the true ~700ns/save.
     //
-    // KNOWN MEASUREMENT LIMITATION: The `after_prefill/10000` case reports wide
-    // confidence intervals ([1.4µs, 3.5µs], spanning a 2.5× range) and an 18%
-    // high severe outlier rate. This is caused by BTreeSet rebalancing spikes
-    // when the sorted index crosses internal node-split thresholds during insert.
-    // The median (~1.6µs) is representative; the wide CI reflects genuine
-    // variance from the B-tree data structure, not measurement noise. This is an
-    // acceptable tradeoff: the BTreeSet enables O(page_size) pagination queries
-    // vs O(n) full scans, which matters far more at production scale.
+    // The order index is a `BTreeMap`, which keeps pagination at O(log n +
+    // page_size) with no per-call sort. An earlier run of `after_prefill/10000`
+    // reported a wider confidence interval than the other prefill levels; the
+    // book's benchmark page has the current one.
     let no_eviction_config = TaskStoreConfig::default()
         .with_max_capacity(None)
         .with_task_ttl(None);

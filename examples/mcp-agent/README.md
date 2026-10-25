@@ -173,12 +173,15 @@ substitution this repository keeps removing.
 cargo test -p mcp-a2a-agent
 ```
 
-Fourteen tests, in two groups, and they cover different things:
+Seventeen tests, in three groups, and they cover different things:
 
-- **`src/tests.rs`** — ten tests over an in-process `tokio::io::duplex` pipe
+- **`src/tests.rs`** — eleven tests over an in-process `tokio::io::duplex` pipe
   against a purpose-built server. Every request is genuinely serialized,
   framed and parsed as MCP. This is where the branches live: a tool refusing,
-  a session dying mid-call, a model that never stops calling tools.
+  a session dying mid-call, a model that never stops calling tools, a call
+  written as text.
+- **`src/leaked.rs`** — two unit tests of recovering a tool call the model
+  wrote as its reply's text instead of as a call.
 - **`tests/child_process.rs`** — four tests that spawn the **shipped**
   `mcp-tool-server` binary the way a real MCP client does. This is what proves
   the binary in `target/` works, that its schemas reach the wire from the
@@ -186,7 +189,7 @@ Fourteen tests, in two groups, and they cover different things:
   a stray `println!` there would desynchronize every frame, and no in-process
   test would notice.
 
-No separate CI job gates the live-model demo; the fourteen tests run under
+No separate CI job gates the live-model demo; the seventeen tests run under
 `cargo test --workspace`, which CI does run, and they need neither a model nor
 a network.
 

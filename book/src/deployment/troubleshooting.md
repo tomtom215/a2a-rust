@@ -12,10 +12,10 @@ the entries below are much shorter when `a2a.server.*` metrics exist.
 
 ## Start here: most features are off by default
 
-**`a2a-protocol-server`'s only default feature is `tracing`.** That is
-deliberate — a protocol library should not drag in a TLS stack, a database
-driver and an OpenTelemetry exporter to serve one agent — but it means several
-"it does nothing" symptoms are one line in `Cargo.toml`.
+**`a2a-protocol-server`'s default features are `tracing` and `otel`, and
+nothing else.** That is deliberate — a protocol library should not drag in a TLS
+stack, a database driver and an OpenTelemetry exporter to serve one agent — but
+it means several "it does nothing" symptoms are one line in `Cargo.toml`.
 
 Which crate you depend on changes the answer, and this is worth checking before
 anything else:
@@ -27,8 +27,8 @@ anything else:
 | `a2a-protocol-server` | `tracing`, `otel` |
 
 So a reader who depends on the umbrella `a2a-protocol-sdk` already has TLS, and
-one who depends on `a2a-protocol-server` directly does not. Everything else is
-off in all three cases:
+one who depends on `a2a-protocol-server` directly does not. Any feature that
+the table above does not list for your crate is off until you ask for it:
 
 | You want | Feature |
 |---|---|
@@ -36,8 +36,11 @@ off in all three cases:
 | Traces, metrics and logs over OTLP (`Telemetry`) | `otlp` (default in the SDK; `otel`, its instrumentation, is default everywhere) |
 | SQLite / PostgreSQL task stores | `sqlite`, `postgres` |
 | WebSocket, gRPC, Axum | `websocket`, `grpc`, `axum` |
+| HTTPS on the server's own listener | `tls-rustls` |
+| gRPC over TLS | `grpc-tls` |
 | JWT bearer auth | `auth-jwt` |
 | Card signing types | `signing` |
+| Signing the content the server sends | `signing` |
 
 ```toml
 a2a-protocol-server = { version = "0.15", features = ["otlp", "sqlite"] }
@@ -63,9 +66,13 @@ appears at all, it is switch 2.
 
 ## No metrics anywhere, and no error either
 
-The `Metrics` trait has a **default no-op implementation for every method**. An
-agent with no metrics provider installed records nothing and reports no problem
-— which is correct behaviour, and indistinguishable from a broken exporter.
+The `Metrics` trait has a **default no-op implementation for every method**. A
+handler records through OpenTelemetry's global meter provider, so with none
+installed (no `Telemetry`, no provider of your own) it records nothing and
+reports no problem, as it does with the `otel` feature off. A
+`.with_metrics(..)` of your own replaces that default; use
+`.with_additional_metrics(..)` to count beside it. None of that is an error,
+and on a dashboard each looks the same as a broken exporter.
 
 See [Observability](./observability.md) for the full catalogue and for how to
 tell "not installed" from "installed and exporting nowhere".
@@ -77,16 +84,22 @@ Read the outcome label before doing anything else:
 ```text
 a2a.server.push_deliveries{outcome="delivered"}   the webhook accepted it
 a2a.server.push_deliveries{outcome="failed"}      reached, and refused it — or the sender errored
-a2a.server.push_deliveries{outcome="timeout"}     the webhook did not answer in time
+a2a.server.push_deliveries{outcome="timeout"}     the webhook did not answer in time, and the schedule fit inside push_delivery_timeout
 a2a.server.push_deliveries{outcome="timeout_truncated"}  push_delivery_timeout cut the retry schedule short
 ```
 
-`timeout_truncated` is the one that surprises people, because it is **not a
-network result — it is a configuration result.** The sender reports how long its own
-retry schedule needs, and `push_delivery_timeout` was shorter than that. The
-delivery was cut short with attempts still left on the schedule. Nothing was
-wrong with the webhook, and nothing will be, however many times you restart it:
-either raise `push_delivery_timeout` or shorten the sender's schedule.
+`timeout_truncated` is the one that surprises people, because it is **not
+purely a network result — it is a configuration result.** The sender reports
+how long its own retry schedule needs, and `push_delivery_timeout` was shorter
+than that, so the delivery was cut short with attempts still left on the
+schedule. At the shipped defaults that is also what a webhook that never
+answers produces: `HttpPushSender::new()` needs 38 seconds at worst (a
+5-second DNS bound, three 10-second attempts, 1 s and 2 s of backoff) against
+a 30-second bound, so the first two attempts run to their timeouts and only the
+third is shortened. Look at the webhook first. To make `timeout` mean that the
+webhook was slow, raise `push_delivery_timeout` to at least the sender's
+schedule (38 seconds for the default sender), or shorten the schedule to fit
+inside the bound.
 
 Every registered config is attempted for every event (spec §4.3.3). The
 per-event budget sets how many deliveries run at once, not which are made, so
@@ -118,13 +131,32 @@ Three different limits produce this, and they say so:
 |---|---|---|
 | `event size N bytes exceeds maximum M bytes` | One event exceeded `DEFAULT_MAX_EVENT_SIZE` (16 MiB) | Send the payload as an artifact reference, not inline |
 | `event queue: the persistence channel was still full after …; the background processor is not draining events` | Events are produced faster than they are persisted | Slow producer, or a stuck store — check `a2a.server.persistence_errors` |
-| `stream_lagged` error frame, then the stream ends | The queue buffer (`DEFAULT_QUEUE_CAPACITY`, 256) overflowed for a slow consumer | Resubscribe, raise the capacity, or consume faster |
+| `event stream lagged: N events were dropped …` (`streamLagged` in the error's `data`), then the stream ends | The reader fell behind by more than the task's event log still holds, or the store keeps no log. A reader that only falls behind the queue (`DEFAULT_QUEUE_CAPACITY`, 256) is caught up from the log and sees nothing | Resubscribe with `Last-Event-ID`; for the in-memory store raise `TaskStoreConfig::max_events_per_task` (512), or use a SQL store, which keeps the whole log; or consume faster |
 
-The last one is worth stating plainly: a consumer that is too slow loses the
-*rest of the stream*, not the task, and is told so. The task's stored state
-remains correct, and refetching it gives the truth. Streams are a live view, not the record.
+The last one is worth stating plainly: a consumer too slow to be caught up from
+the log loses the *rest of the stream*, not the task, and is told so. The
+task's stored state remains correct, and refetching it gives the truth.
+Streams are a live view, not the record.
 
 ## Requests are refused with `Overloaded`
+
+`ServerError::Overloaded` is a refusal, not a queue: the server turns the
+request away at once. The message says which limit was hit; the usual ones
+are:
+
+| Message | Cause | Fix |
+|---|---|---|
+| `tenant '<id>' already has N task(s) in flight` | the tenant is at `max_concurrent_tasks` | raise it, or see why executors do not finish |
+| `server at maximum concurrent stream capacity (N); retry later` | `with_max_concurrent_streams` (default 1024) | raise it, or find streams that never close |
+| `server is at the maximum of N push notification configs; …` | `HandlerLimits::max_total_push_configs` (default 100,000) | delete unused configs, or raise the limit |
+
+On the wire it is HTTP `503` on the HTTP+JSON binding, `RESOURCE_EXHAUSTED` on
+gRPC and `-32603` on JSON-RPC; displayed as an error value it reads `server
+overloaded: …`. A deployment with no tenant limits can still see the last two.
+A WebSocket connection past its concurrent-request cap is answered `server
+busy: too many concurrent requests`, and a send whose idempotency key the task
+store cannot claim for the moment is refused the same way, with the store's
+own message.
 
 A tenant at its `max_concurrent_tasks` limit is **refused, not queued.** That is
 a deliberate choice: queueing converts a declared bound into unbounded latency
@@ -151,8 +183,9 @@ Check your `execute` loop observes `ctx.cancellation_token`.
 
 ## The agent card fails signature verification
 
-`signing` on `a2a-protocol-server` is a **forwarding feature**: it makes the
-signing types available and nothing more. **The server never signs the card it
+`signing` on `a2a-protocol-server` makes the signing types available and
+enables `RequestHandlerBuilder::with_content_signer`, which signs the messages
+and artifacts the server sends. **The server never signs the card it
 serves.** Sign the card yourself with `sign_card_es256` and hand the signed card
 to `RequestHandlerBuilder`; `examples/incident-response` does exactly this.
 
@@ -162,7 +195,8 @@ will report — it has done what it was asked.
 ## SQLite: `database is locked`
 
 The SDK's pools set `journal_mode=WAL`, `busy_timeout=5000`,
-`synchronous=NORMAL` and `foreign_keys=ON` on every connection, so contention
+`synchronous=NORMAL`, `foreign_keys=ON` and `secure_delete=ON` on every
+connection, so contention
 inside one process waits rather than failing. Seeing `SQLITE_BUSY` anyway
 usually means a second writer the SDK did not open — another process, or a pool
 you built yourself without those pragmas.

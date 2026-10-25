@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Complete reference of all configuration options across a2a-rust crates.
+Reference of the configuration options across a2a-rust crates; the builder and each type's rustdoc list the rest.
 
 ## Server Configuration
 
@@ -18,14 +18,22 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation. Without one, every push-config operation answers `PushNotificationNotSupported`, and `build()` refuses a card that declares `pushNotifications` (spec §3.3.4) |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
 | `isolate_tasks_by_caller()` | — | On, with an authenticating interceptor | A partition per caller within a tenant (spec §13.1). On by default for the callers an authenticating interceptor identifies; calling it also refuses a request with no identity. See [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant) |
-| `share_tasks_across_callers()` | — | Off | Every caller in a tenant sees its tasks, and stores that do not partition by tenant are accepted |
+| `share_tasks_across_callers()` | — | Off | Every caller in a tenant sees its tasks, and `build()` accepts task and push-config stores that do not partition by tenant (a request that names a tenant is still refused over them unless `accept_unisolated_tenants()` is also called) |
 | `with_executor_timeout` | `Duration` | 1 hour | Max time for executor completion (`DEFAULT_EXECUTOR_TIMEOUT`); `without_executor_timeout()` removes the bound |
-| `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
+| `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per event queue. A reader that falls further behind than this catches up from the event log; raise it to reduce how often a slow reader has to. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
-| `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent SSE connections (pass `usize::MAX` to disable) |
+| `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent event queues: one per task being run, whether its send blocks or streams; a send that would open one more is refused as overloaded (pass `usize::MAX` to disable) |
 | `with_metrics` | `impl Metrics` | `OtelMetrics` on the global meter provider (`otel`, on by default); `NoopMetrics` without it | Metrics observer for handler activity |
 | `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
 | `allow_undeclared_input_modes()` | — | Off | Accept message parts whose `mediaType` the card's input modes do not declare; by default, when the card declares any, such a part is refused with `ContentTypeNotSupportedError` |
+| `with_tenant_resolver` | `impl TenantResolver` | None (single-tenant) | Derives each request's tenant; it partitions the tenant-aware stores and keys `with_tenant_config` limits |
+| `require_resolved_tenant()` | — | Off | Refuse a request the resolver returns no tenant for, instead of serving the default `""` partition |
+| `accept_unisolated_tenants()` | — | Off | By default a request naming a tenant is refused (`UnsupportedOperation`) unless both stores partition by tenant |
+| `with_tenant_config` | `PerTenantConfig` | None | Per-tenant `max_concurrent_tasks`, `executor_timeout`, `event_queue_capacity` and `rate_limit_rps` (the last also needs `RateLimitInterceptor::with_tenant_config`) |
+| `allow_unauthenticated_extended_card()` | — | Off | Serve `GetExtendedAgentCard` with no authenticating interceptor (§13.3); by default it is refused |
+| `authenticated_upstream()` | — | Off | Accept a card whose `securityRequirements` ask for a credential although no interceptor here authenticates (a gateway does) |
+| `with_additional_metrics` | `impl Metrics` | — | Also report to this observer, keeping the default |
+| `refuse_private_file_urls()` | — | Off | Refuse file-part URLs into private, loopback or link-local networks |
 
 ### HandlerLimits
 
@@ -33,10 +41,10 @@ Complete reference of all configuration options across a2a-rust crates.
 |-------|------|---------|-------------|
 | `max_id_length` | `usize` | 1,024 | Maximum task/context ID length |
 | `max_metadata_size` | `usize` | 1 MiB | Maximum serialized metadata size |
-| `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold |
+| `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold, not a hard cap: a live task's token is never removed |
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 | `push_delivery_timeout` | `Duration` | 30s | Per-webhook delivery timeout, retries included (the sender's own request timeout is 10s) |
-| `push_delivery_budget` | `Duration` | 30s | Total push-delivery time per event, across all configs |
+| `push_delivery_budget` | `Duration` | 30s | Time one event's deliveries are budgeted across all configs. Every config is attempted; the budget sets how many deliveries of an event run at once (`ceil(configs / (budget / push_delivery_timeout))`) |
 | `executor_drain_timeout` | `Duration` | 5s | Bound on the blocking path's wait for the queue to close after the executor finished; also how long a continuation waits for a parked (`input-required`/`auth-required`) turn to finish: its executor to return and its events to be stored |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
@@ -51,16 +59,18 @@ Complete reference of all configuration options across a2a-rust crates.
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
 > `push_delivery_timeout` must be non-zero. Zero values are rejected by
-> `RequestHandlerBuilder::build()`.
+> `RequestHandlerBuilder::build()`, which refuses more than that: see
+> [Build-Time Validation](../building-agents/handler.md#build-time-validation)
+> for the full list.
 
 ### TaskStoreConfig
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks evicted on overflow |
+| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks are evicted on overflow, then, as a last resort, the oldest non-terminal ones (size it above your concurrent in-flight task count) |
 | `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
 | `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
-| `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
+| `max_page_size` | `u32` | 1,000 | Cap a store applies to the page size of a `list` call. The `ListTasks` method itself refuses a `pageSize` outside 1 to 100 (`InvalidParams`) and lists 50 when none is given, so this matters for direct `TaskStore::list` callers and when set below 100 |
 | `max_events_per_task` | `Option<usize>` | 512 | Events one task's log keeps for `Last-Event-ID` resumption; `None` removes the bound. An attached stream that still owes older events holds them past it (spec §3.5.2) |
 | `max_held_events_factor` | `Option<usize>` | 8 | How many times `max_events_per_task` a task's log may keep while a stream still owes its oldest events (4,096 at the defaults); past it the stream ends with `streamLagged`. `None` is no ceiling; `Some(1)` holds nothing past the bound |
 | `idempotency_key_ttl` | `Option<Duration>` | 24 hours | How long an idempotency key is honoured, matching the SQL stores' one day; `None` keeps keys forever |
@@ -72,6 +82,7 @@ Complete reference of all configuration options across a2a-rust crates.
 |-------------|---------|-------------|
 | `::new()` | 100 | Default max push configs per task |
 | `::with_max_configs_per_task(N)` | — | Custom per-task push config limit |
+| `.with_max_total_configs(N)` | 100,000 | Global ceiling across all tasks |
 
 ### DispatchConfig
 
@@ -83,7 +94,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 |-------|------|---------|-------------|
 | `max_request_body_size` | `usize` | 4 MiB | Larger bodies return 413 |
 | `body_read_timeout` | `Duration` | 30s | Slow loris protection |
-| `max_query_string_length` | `usize` | 4,096 | REST only; longer queries return 414 |
+| `max_query_string_length` | `usize` | 4,096 | `RestDispatcher` only (not `A2aRouter`, whose query parsing is Axum's); longer queries return 414 |
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 | `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
@@ -136,6 +147,18 @@ take the same three through their own `with_completion_grace`,
 | `drain_timeout` | `Duration` | 15s | How long connections get to finish before they are reported abandoned (`DEFAULT_DRAIN_TIMEOUT`) |
 | `header_read_timeout` | `Option<Duration>` | 30s | How long a peer may take to send complete request headers; `None` disables |
 | `idle_timeout` | `Option<Duration>` | 75s | How long a connection may carry no traffic before it is closed; `None` disables |
+| `production` | `bool` | false | `ServeConfig::production()`: the server returns at once, accepting nothing, with `ServeReport::refused` saying why, when it would serve plaintext beyond loopback (unless `tls_terminated_in_front`) or a binding the handler's agent card does not declare |
+| `tls_terminated_in_front` | `bool` | false | TLS ends before this listener (load balancer, ingress, mesh); silences the plaintext warning and lifts the `production` refusal for it (`with_tls_terminated_in_front()`) |
+
+### Other server types
+
+| Type | Defaults |
+|------|----------|
+| `CorsConfig::new(origin)` | `allow_methods` `GET, POST, PUT, DELETE, OPTIONS`; `allow_headers` `content-type, authorization, a2a-version, a2a-extensions, last-event-id, x-a2a-notification-token`; `max_age_secs` 86400 |
+| `TenantStoreConfig` | `max_tenants` 1,000 partitions (each caller's partition counts when tasks are isolated by caller); `max_total_tasks` none |
+| `WebSocketDispatcher` | handshake timeout 10s (`with_handshake_timeout`); idle timeout off (`with_idle_timeout`; `DEFAULT_WS_IDLE_TIMEOUT` is 75s); `with_max_connections` unbounded; 64 concurrent requests per connection; 4 MiB messages |
+| `HttpPushSender` | 10s request timeout (`HttpPushSender::with_timeout`), 5s DNS lookup bound (`with_dns_timeout`), `PushRetryPolicy` above; SSRF guard on unless `allow_private_urls()` |
+| `JwtValidator`, `JwtAuthInterceptor` | clock-skew leeway 60s (`JwtValidator::with_leeway`); a remote JWKS is cached for 3,600s (`JwtAuthInterceptor::with_jwks_ttl`) |
 
 ### Internal Limits
 
@@ -167,6 +190,16 @@ take the same three through their own `with_completion_grace`,
 | `with_grpc_bare_address_scheme` | `GrpcBareAddressScheme` | `HttpsExceptLoopback` | How `build_grpc` dials a card's bare `host:port` gRPC target: TLS except for loopback (default), always TLS, or always plaintext |
 | `with_grpc_tls_config` | `ClientTlsConfig` | None (bundled Mozilla roots) | `grpc-tls` feature: the TLS settings `build_grpc` uses for an `https://` endpoint, explicit or policy-chosen — a private CA, a client certificate, or a server name that differs from the host |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
+| `with_max_response_size` | `usize` | 32 MiB | Largest buffered (non-streaming) response body; JSON-RPC and REST enforce it and gRPC takes it as its `max_message_size`. Not applied to a transport given to `with_custom_transport` (`WebSocketTransport` has its own `max_message_size`) |
+| `with_custom_transport` | `impl Transport` | None | Use this transport instead of the one built from the endpoint and binding |
+| `with_trace_propagation` | `bool` | true | Whether each call's `traceparent` names the call's own span (`otel`) |
+| `require_https_webhooks()` | — | Off | Refuse a push config whose webhook URL is plain `http://` to a non-loopback host (`ClientError::InsecureWebhook`, spec §13.2) |
+| `require_https_credentials()` | — | Off | Refuse a call that carries a credential to a non-loopback `http://`/`ws://` endpoint (spec §13.4) |
+| `without_tls()` | — | TLS on with `tls-rustls` | Plain HTTP only |
+| `without_capability_checks()` | — | Off | A client built from a card refuses, before sending, a call that needs a capability the card does not declare (`ClientError::CapabilityNotDeclared`); this sends them anyway |
+| `with_extensions` / `skip_required_extension_check()` | extension URIs | none | Ask the agent to use these extensions on every request (`A2A-Extensions`). A client built from a card refuses to build when the card marks an extension `required` that it did not ask for; `skip_required_extension_check()` builds anyway |
+
+`build()` returns an error if `request_timeout`, `stream_connect_timeout` or `connection_timeout` is zero.
 
 ### GrpcTransportConfig
 
@@ -215,7 +248,7 @@ and the `with_*` setters.
 |---------|---------|-------------|
 | `signing` | Off | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
 | `tracing` | **On** | Structured logging via `tracing` crate; `default-features = false` compiles it out |
-| `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender |
+| `tls-rustls` | Off | HTTPS delivery for the bundled push-notification sender, `Server::with_tls` / `with_tls_pem` (HTTPS on its own listener), and `auth::MutualTlsAuthInterceptor` |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
@@ -261,7 +294,7 @@ and the `with_*` setters.
 | `tracing` | **On** | Enables `tracing` in client and server |
 | `tls-rustls` | **On** | Enables `tls-rustls` in client and server |
 | `grpc` | Off | Enables `grpc` in client and server |
-| `grpc-tls` | Off | Enables `grpc-tls` in the client and the server: `https://` dialling on one side, `GrpcDispatcher::with_tls` on the other |
+| `grpc-tls` | Off | Enables `grpc-tls` in the client and the server (and `tls-rustls`): `https://` dialling on one side, `GrpcDispatcher::with_tls` on the other |
 | `websocket` | Off | Enables `websocket` in client and server |
 | `sqlite` | Off | Enables `sqlite` in the server |
 | `postgres` | Off | Enables `postgres` in the server |
@@ -279,7 +312,10 @@ and the `with_*` setters.
 
 | Variable | Description |
 |----------|-------------|
-| `RUST_LOG` | Log level filter (when the `tracing` feature is enabled — every crate's default — and a subscriber reads it) |
+| `RUST_LOG` | Log level filter (when the `tracing` feature is enabled — the client's, server's and SDK's default — and the application's subscriber reads it) |
+| `OTEL_*` | Read by `Telemetry` (server `otlp` feature, on in the SDK) and the OpenTelemetry crates beneath it: `OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (`otlp` or `none`), `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` / `_HEADERS` / `_TIMEOUT` (10 s) / `_CERTIFICATE` / `_CLIENT_CERTIFICATE` / `_CLIENT_KEY` / `_INSECURE` and their per-signal forms, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`; see [Observability](../deployment/observability.md) |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Read by `Langfuse::from_env()`; the base URL defaults to `http://localhost:3000` |
+| `PROTOC` | The `proto`/`grpc` build scripts use a vendored `protoc` unless this names another |
 
 Examples:
 ```bash

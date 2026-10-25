@@ -75,8 +75,8 @@ not on its list of exemptions, each with its reason.
 
 ## The pattern every agent follows
 
-[`hello-agent/src/main.rs`](hello-agent/src/main.rs) is the pattern in about
-fifty lines, and is compiled and tested in CI:
+[`hello-agent/src/main.rs`](hello-agent/src/main.rs) is the pattern on one
+screen of code, and is compiled and tested in CI:
 
 1. An executor, written with `agent_executor!` and an `EventEmitter`: a
    `Working` status, an artifact, a `Completed` status.

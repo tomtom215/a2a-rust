@@ -73,14 +73,31 @@ client address), not by who it is. To give each credential an identity
 `ApiKeyAuthInterceptor::with_labelled_keys(…)`; the label, not the secret, is
 what reaches rate limiting, logs and metrics. The identity is the scheme and
 the label, `bearer:caller-a` or `api-key:caller-a`, and a JWT's is
-`jwt:<issuer>:<sub>`; `a2a_protocol_server::auth::caller_id` builds each, for
-an approver allowlist or anything else that compares against one.
+`jwt:<issuer>:<sub>` with the issuer percent-encoded (`%` as `%25`, `:` as
+`%3A`; a token with no `iss` has an empty issuer), so a token from
+`https://idp.example` for `alice` is `jwt:https%3A//idp.example:alice`. Build
+every one with `a2a_protocol_server::auth::caller_id` (`bearer`, `api_key`,
+`jwt`, `mtls`) rather than by hand, for an approver allowlist or anything else
+that compares against one. A bare name such as `alice` in an approver
+allowlist matches nobody.
 
 An identity also scopes tasks (spec §13.1): with an authenticating
 interceptor, each identified caller gets a partition of its own, and another
-caller's task is `TaskNotFound`. Callers `new` leaves unnamed keep sharing the
-tenant's records. To let identified callers share, call
-`RequestHandlerBuilder::share_tasks_across_callers()`; see
+caller's task is `TaskNotFound`. An unlabelled bearer token or API key is the
+exception: it authenticates but names nobody, so it keeps the tenant's shared
+records. A JWT without a `sub` claim does not: it is refused with
+`PermissionDenied` (`403`), because the tenant's shared records are never
+handed to an anonymous token. Make the issuer put a `sub` in the token, or
+call `share_tasks_across_callers()`.
+
+Isolation needs a task store and a push-config store that partition by
+tenant. Left unset they default to the tenant-aware in-memory stores, whose
+capacity (`with_task_store_config`, 10,000 tasks by default) then applies per
+caller. A store you supply must be a `TenantAware…` store (or a custom one
+whose `isolates_tenants()` is `true`); otherwise `build()` refuses it. To let
+identified callers share, call
+`RequestHandlerBuilder::share_tasks_across_callers()`, which keeps one set of
+records per tenant; see
 [Multi-tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant).
 
 **Rotating and revoking** (spec §13.4: credentials SHOULD be rotated
@@ -104,15 +121,22 @@ assert!(tokens.revoke("token-2026-09"));
 # }
 ```
 
-A JWT is revoked by removing its signing key from the JWKS (a remote set is
-refetched on rotation) or by its `exp`; `JwtAuthInterceptor` keeps no list of
+A JWT is revoked by its `exp`, or by removing its signing key from the JWKS. A
+remote set is cached for an hour by default (`JwtAuthInterceptor::with_jwks_ttl`)
+and refetched when the cache expires or a token names a `kid` it does not hold,
+so tokens signed by a removed key verify until then; a static `Jwks` changes
+only by building a new interceptor. `JwtAuthInterceptor` keeps no list of
 revoked token ids.
 
 ### JWT (HS256 / RS256 / ES256)
 
 Enable the `auth-jwt` feature. `JwtAuthInterceptor` verifies the token's
-signature and its `exp`/`nbf`/`iss`/`aud` claims. Keys come from a static
-`Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
+signature, then its claims: `exp` must be present and in the future
+(`allow_missing_exp()` lifts that), and `nbf` is honoured when present, both
+with 60 s of clock-skew leeway (`with_leeway`). `iss` and `aud` are checked
+**only when you set them** (`with_issuer`, `with_audience`); a validator with
+neither accepts any correctly signed, unexpired token, so set both. Keys come
+from a static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
 
 ```toml
 a2a-protocol-server = { version = "0.15", features = ["auth-jwt", "tls-rustls"] }
@@ -122,8 +146,9 @@ a2a-protocol-server = { version = "0.15", features = ["auth-jwt", "tls-rustls"] 
 `https://`; without it the fetch is plaintext-only. Static keys and HS256 need
 only `auth-jwt`.
 
-**Validate tokens from an OIDC issuer** (discovers the issuer's JWKS, caches it,
-and refetches on key rotation):
+**Validate tokens from an OIDC issuer** (discovers the issuer's `jwks_uri` at
+construction, fetches and caches the set on the first request, and refetches it
+on key rotation):
 
 ```rust,no_run
 # #[tokio::main]
@@ -139,6 +164,17 @@ let interceptor =
 # Ok(())
 # }
 ```
+
+**A JWKS URL you already know** — `JwtAuthInterceptor::from_jwks_url` takes the
+validator and the URL; `from_jwks_url_with_tls_config` (`tls-rustls`) serves an
+identity provider behind a private CA. Nothing is fetched at construction; the
+first request fetches the set, and `with_jwks_ttl` changes how long it is
+cached (one hour by default). A token naming an unknown `kid` forces one
+refetch. A fetch is bounded to 30 s and 256 KiB; if it fails, or the set holds
+no usable key, the call is refused with a server error (not `401`), because no
+verdict about the token could be reached. Only RSA keys and P-256 EC keys are
+loaded, and an RS256 key must be 2048 to 8192 bits; entries with
+`"use": "enc"` or another key type are skipped.
 
 **Static keys** — supply a `Jwks` directly (from a JWKS JSON document or key by
 key), or a shared secret for HS256:
@@ -178,7 +214,17 @@ caller from it and refuses a call without one (`401`, `WWW-Authenticate:
 MutualTLS`; gRPC `UNAUTHENTICATED`):
 
 ```rust,no_run
+# fn card() -> a2a_protocol_types::agent_card::AgentCard {
+#     use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
+#         .with_description("An example agent")
+#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
+# }
 use a2a_protocol_server::auth::MutualTlsAuthInterceptor;
+use a2a_protocol_types::security::{
+    MutualTlsSecurityScheme, SecurityRequirement, SecurityScheme, StringList,
+};
+use std::collections::HashMap;
 # use a2a_protocol_sdk::prelude::*;
 # struct MyAgent;
 # agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
@@ -193,7 +239,18 @@ let by_name = MutualTlsAuthInterceptor::with_names(|der| {
     (der.len() > 0).then(|| "billing-agent".to_owned())
 });
 # let _ = by_fingerprint;
+
+// Spec §13.3: the public card declares the scheme the interceptor checks.
+let card = card()
+    .with_security_schemes(HashMap::from([(
+        "mtls".to_owned(),
+        SecurityScheme::MutualTls(MutualTlsSecurityScheme { description: None }),
+    )]))
+    .with_security_requirements(vec![SecurityRequirement {
+        schemes: HashMap::from([("mtls".to_owned(), StringList { list: vec![] })]),
+    }]);
 let handler = RequestHandlerBuilder::new(MyAgent)
+    .with_agent_card(card)
     .with_interceptor(by_name)
     .build()?;
 # let _ = handler;
@@ -246,10 +303,11 @@ declares with the interceptors that enforce it (since 0.15):
   `JwtAuthInterceptor` check the HTTP `bearer` scheme and OAuth 2.0 or OpenID
   Connect schemes (whose access tokens are bearer tokens);
   `ApiKeyAuthInterceptor` checks an `apiKeySecurityScheme` in the header it
-  reads, compared without regard to case. A custom interceptor answers
-  through `ServerInterceptor::checks_scheme`; one that does not (the default
-  `None`) is trusted to check one of the declared schemes, since only its
-  author knows what it checks.
+  reads, compared without regard to case; `MutualTlsAuthInterceptor` checks a
+  mutual-TLS scheme (`mtlsSecurityScheme`) and no other. A custom interceptor
+  answers through `ServerInterceptor::checks_scheme`; one that does not (the
+  default `None`) is trusted to check one of the declared schemes, since only
+  its author knows what it checks.
 
 ### Throttling guessed credentials
 
@@ -303,8 +361,8 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 ```
 
 A throttled call answers `429` with `Retry-After` on HTTP+JSON, `200` with a
-`-32603` body on JSON-RPC, and `RESOURCE_EXHAUSTED` on gRPC; the last two
-carry a `RetryInfo` detail. Each gives the seconds until the window ends.
+`-32603` body on JSON-RPC, and `RESOURCE_EXHAUSTED` on gRPC; every binding
+carries a `RetryInfo` detail giving the seconds until the window ends.
 
 A peer is the IP address of the connection (`CallContext::peer_addr`), which
 every binding records when the SDK serves it. The axum router has it only when

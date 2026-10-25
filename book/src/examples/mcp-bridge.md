@@ -62,11 +62,21 @@ text says what the agent is waiting for, so a caller can tell "waiting" from
 ## Running
 
 ```bash
-a2a-mcp-bridge http://127.0.0.1:8080      # or set A2A_AGENT_URL
+cargo build --release -p a2a-mcp-bridge --bin a2a-mcp-bridge   # target/release/a2a-mcp-bridge
+target/release/a2a-mcp-bridge http://127.0.0.1:8080            # or set A2A_AGENT_URL
 
-# or, to see the whole path at once:
+# or, to see the whole path at once (build both binaries first):
+cargo build -p a2a-mcp-bridge
 cargo run -p a2a-mcp-bridge --bin bridge-demo
 ```
+
+The crate is not published: the absolute path of the built binary is the
+`command` in an MCP client's configuration (the
+`{ "command": "a2a-mcp-bridge", ... }` above assumes it is on `PATH`;
+`cargo install --path examples/mcp-bridge --bin a2a-mcp-bridge` puts it there).
+`cargo run --bin bridge-demo` builds only the demo, and the demo spawns the
+bridge from its own directory, so without the `cargo build` it stops with
+"could not spawn …/a2a-mcp-bridge".
 
 `bridge-demo` stands up a sample A2A agent, spawns the bridge against it as a
 real child process, and acts as an MCP client. No model and no network — the

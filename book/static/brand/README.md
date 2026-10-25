@@ -53,3 +53,9 @@ Reproducing requires the **Space Grotesk** and **JetBrains Mono** fonts installe
 The sources name the fonts by family only; they do not load the WOFF2 web-font
 copies in `book/static/fonts/`, which are the ones the book and the benchmark
 dashboard use.
+
+A render with the WOFF2 copies instead differs from the committed cards in glyph
+anti-aliasing (about 2 % of pixels). So when the spec version in the editorial
+cards' subtitle and the code card's footer changed to v1.0.1 (2026-10-25), only
+that text band was re-rendered and composited into the existing PNGs; every
+other pixel is unchanged.

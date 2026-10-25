@@ -1,19 +1,19 @@
 # Dogfooding: Bugs Found & Fixed
 
-Thirteen documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **68 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
+Thirteen documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **68 bugs** that the unit, integration, property and fuzz tests of the time (about 1,630 at v0.3.0, about 1,850 with all feature flags) did not catch. All have been fixed.
 
-> **Note:** Passes 11, 13, and 14 are documented in internal audit reports and are not included in the count below.
+> **Note:** Pass 11 is recorded in the [CHANGELOG](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) (v0.3.0); Passes 13 and 14 are not recorded in this repository. None of the three is included in the count below. Fix descriptions are as first applied; several were later changed (Bugs 17, 27, 35, 36, 43, 45, P16-1).
 
 ## Summary
 
 | Pass | Focus | Bugs | Severity |
 |------|-------|------|----------|
-| [Pass 1](#pass-1-initial-dogfood-3-bugs) | Initial dogfood | 3 | 2 Medium, 1 Low |
-| [Pass 2](#pass-2-hardening-audit-6-bugs) | Hardening audit | 6 | 1 High, 2 Medium, 3 Low |
+| [Pass 1](#pass-1-initial-dogfood-3-bugs) | Initial dogfood | 3 | 1 Medium, 2 Low |
+| [Pass 2](#pass-2-hardening-audit-6-bugs) | Hardening audit | 6 | 1 High, 3 Medium, 2 Low |
 | [Pass 3](#pass-3-stress-testing-1-bug) | Stress testing | 1 | 1 High |
 | [Pass 4](#pass-4-sdk-regression-testing-3-bugs) | SDK regressions | 3 | 2 Critical, 1 Medium |
 | [Pass 5](#pass-5-hardening--concurrency-audit-4-bugs) | Concurrency | 4 | 2 High, 1 Medium, 1 Low |
-| [Pass 6](#pass-6-architecture-audit-5-bugs) | Architecture | 5 | 1 Critical, 1 High, 3 Medium |
+| [Pass 6](#pass-6-architecture-audit-5-bugs) | Architecture | 5 | 1 Critical, 2 High, 2 Medium |
 | [Pass 7](#pass-7-deep-dogfood-9-bugs) | Deep dogfood | 9 | 1 Critical, 2 High, 4 Medium, 2 Low |
 | [Pass 8](#pass-8-deep-dogfood-5-bugs) | Performance & security | 5 | 1 Critical, 3 Medium, 1 Low |
 | [Pass 9](#pass-9-scale-probing-4-bugs) | Scale probing | 4 | 1 High, 2 Medium, 1 Low |
@@ -26,9 +26,9 @@ Thirteen documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **68 
 
 | Severity | Count | Examples |
 |----------|-------|---------|
-| **Critical** | 8 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18), truncate_body panic (#44), ListPushConfigs wrong format (P16-#1), push config URL validation bypass (P16-#2) |
-| **High** | 14 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), shutdown hangs (#23), event ordering (#21), serialization error swallowed (#41), SSE line_buf OOM (#45), interceptor params discarded (#46), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
-| **Medium** | 32 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47), background processor silent exit (P16-#3) |
+| **Critical** | 8 | Timeout retry broken (#32), push config DoS (#26), JSON-RPC push-config listing broken (#11), placeholder URLs (#12, #18), truncate_body panic (#44), ListPushConfigs wrong format (P16-#1), push config validation ignores `allow_private_urls` (P16-#2) |
+| **High** | 15 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credentials-store lock poisoning masked (#14), query encoding (#19), shutdown hangs (#23), store write failures dropped (#21), fast-executor events missed (#38), serialization error swallowed (#41), SSE line_buf OOM (#45), interceptor params discarded (#46), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
+| **Medium** | 31 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M17, M19), tenant dropped by REST dispatch (M16), REST path params (#47), background processor silent exit (P16-#3) |
 | **Low** | 14 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
 
 ### Configuration Hardening
@@ -149,7 +149,7 @@ The JSON-RPC dispatcher parsed `ListTaskPushNotificationConfigs` params as `Task
 
 **Why tests missed it:** Previous push config tests used REST transport or tested create/get/delete but not list. The JSON-RPC list path was never exercised end-to-end.
 
-**Fix:** Changed `parse_params::<TaskIdParams>` to `parse_params::<ListPushConfigsParams>` and `p.id` to `p.task_id` in `jsonrpc.rs`.
+**Fix:** Changed `parse_params::<TaskIdParams>` to `parse_params::<ListPushConfigsParams>` and `p.id` to `p.task_id` in the JSON-RPC dispatcher (`dispatch/jsonrpc/mod.rs`). Covered by `tests/dispatch_tests/jsonrpc.rs` and agent-team test 43.
 
 ### Bug 12: Agent Card URLs Set to "http://placeholder"
 
@@ -211,7 +211,7 @@ The `buckets` HashMap grew without bound. Each unique caller key created a `Call
 
 `ClientBuilder::from_card()` silently accepted any `protocol_version` from the agent card, including incompatible versions (e.g., `"2.0.0"` when the client supports `"1.x"`). Users would only discover the mismatch through obscure deserialization errors.
 
-**Fix:** Added protocol version major-version check in `from_card()`. When the agent's major version differs from the client's supported version, a `tracing::warn!` is emitted.
+**Fix:** Added protocol version major-version check in `from_card()`. When the agent's major version differs from the client's supported version, a `tracing::warn!` was emitted; `from_card` now refuses a card with no interface for this SDK's protocol major, returning `ClientError::InvalidEndpoint`.
 
 ---
 
@@ -501,7 +501,7 @@ The SSE parser's internal `line_buf` appended every non-newline byte without any
 
 **Why tests missed it:** All test SSE streams used well-formed lines with newlines.
 
-**Fix:** Capped `line_buf` growth at 2× `max_event_size`. Bytes beyond the limit are silently dropped; the event will be rejected by the normal `max_event_size` check when the line is eventually processed.
+**Fix:** Capped `line_buf` growth at 2× `max_event_size`; bytes beyond the limit were dropped silently. The parser now refuses an over-long line with an `EventTooLarge` error instead, at `max_event_size` plus the longest field prefix, and buffers none of the rest.
 
 ### Bug 46: `GetExtendedAgentCard` Discards Interceptor Params
 
@@ -567,7 +567,7 @@ Auth interceptor headers were applied to JSON-RPC and REST HTTP requests but not
 
 **Fix (initial):** Added `validate_webhook_url_with_dns()` that resolves DNS before IP validation and checks every resolved IP against the private/loopback ranges.
 
-**Fix (hardening, 2026-04-15):** The initial fix validated a set of IPs but still allowed the HTTP client to re-resolve the hostname on connect, leaving a narrow TOCTOU window. `validate_webhook_url_with_dns()` now returns the specific `SocketAddr` it validated, and `HttpPushSender::send()` rewrites the outgoing URI so the request connects directly to the literal pinned IP (`http://<validated-ip>:<port>/…`) with the original hostname preserved via an explicit `Host:` header. This closes the window: the HTTP client sees an IP literal and never re-enters DNS resolution, so a rebinding attacker cannot flip the record between validation and connect. See `crates/a2a-protocol-server/src/push/sender.rs:rewrite_uri_with_pinned_addr` and the `rewrite_uri_*` / `host_header_*` tests.
+**Fix (hardening, 2026-04-15):** The initial fix validated a set of IPs but still allowed the HTTP client to re-resolve the hostname on connect, leaving a narrow TOCTOU window. `validate_webhook_url_with_dns()` now returns the `SocketAddr` it validated (`None` when the host is already a literal IP), and `HttpPushSender::send()` rewrites an `http://` webhook's URI so the request connects directly to the validated IP (`http://<validated-ip>:<port>/…`), with the original hostname in an explicit `Host:` header, so the client never re-resolves the name. An `https://` request is not pinned: it must present the hostname for SNI and certificate verification, and TLS validation is what defeats a rebind to a private address. See `crates/a2a-protocol-server/src/push/pinning.rs` (`rewrite_uri_with_pinned_addr`, `pin_target`) and the `rewrite_uri_*`, `host_header_*` and `pin_target_*` tests in `push/sender.rs`.
 
 ### Bug H7: Retry Transport Deep-Clones serde_json::Value Per Attempt
 
@@ -633,7 +633,7 @@ The WebSocket dispatcher accepted incoming messages of any size. A client could 
 
 **Why tests missed it:** All tests use valid non-empty IDs.
 
-**Fix:** Added `TryFrom<String>` and `TryFrom<&str>` impls that reject empty and whitespace-only strings.
+**Fix:** Added `TaskId::try_new` and `ContextId::try_new`, which reject empty and whitespace-only strings. `new` and the `From` impls still accept them for backward compatibility.
 
 ### Bug M14: CachingCardResolver Silently Produces Empty URLs
 

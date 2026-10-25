@@ -3,9 +3,8 @@
 
 # hello-agent
 
-The smallest complete A2A agent: **32 lines of code** (above its tests, blank
-and comment lines excluded, counted 2026-10-15), one SDK dependency plus
-`tokio`, one file.
+The smallest complete A2A agent: **one screen of code** above its tests, one
+SDK dependency plus `tokio`, one file.
 
 ```sh
 cargo run -p hello-agent

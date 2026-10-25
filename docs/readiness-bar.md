@@ -71,7 +71,7 @@ means client and server in one host over 127.0.0.1.
 ## What would move this bar
 
 The thresholds are judgements, and these are the judgements. R3's 25 ms is
-about 150 times the 169.6 µs the benchmark page
+about 135 times the 185.7 µs the benchmark page
 (`book/src/reference/benchmarks.md`) records for one JSON-RPC send on the
 benchmark runner — a different host, sequential rather than 8-way, and a
 figure this bar did not re-measure — so that it fails only on a real

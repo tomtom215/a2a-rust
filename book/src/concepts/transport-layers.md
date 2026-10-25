@@ -1,6 +1,6 @@
 # Transport Layers
 
-A2A supports four transport bindings: **JSON-RPC 2.0**, **REST**, **WebSocket** (`websocket` feature flag), and **gRPC** (`grpc` feature flag). All four are first-class citizens in a2a-rust — the server can serve multiple transports simultaneously, and `ClientBuilder::from_card` selects an interface from the agent card (`build()` constructs JSON-RPC or REST; gRPC needs `build_grpc`, and WebSocket a transport passed to `with_custom_transport`).
+A2A defines three transport bindings, **JSON-RPC 2.0**, **REST** (`HTTP+JSON`) and **gRPC** (`grpc` feature flag). a2a-rust adds a fourth, **WebSocket** (`websocket` feature flag), as a custom binding under spec §12; a fifth, [SLIMRPC](../bindings/slimrpc.md), is a separate crate. All four are first-class citizens in a2a-rust — the server can serve multiple transports simultaneously, and `ClientBuilder::from_card` selects an interface from the agent card (`build()` constructs JSON-RPC or REST; gRPC needs `build_grpc`, and WebSocket a transport passed to `with_custom_transport`).
 
 ## JSON-RPC 2.0
 
@@ -149,7 +149,7 @@ refused Go stream would otherwise lose its error. Its unary calls send
 
 The REST dispatcher includes built-in protections:
 
-- **Path traversal rejection** — `..` in path segments (including percent-encoded `%2E%2E`) returns 400
+- **Path traversal rejection** — a `.` or `..` path segment, raw or percent-encoded at any depth (`%2E%2E`, `%252E%252E`; a `\` counts as a separator), returns 400; an id that merely contains `..` (`v1..prod`) is served
 - **Query string limits** — Query strings over 4 KiB return 414
 - **Body size limits** — Request bodies over 4 MiB return 413
 
@@ -192,6 +192,13 @@ dispatcher.serve("0.0.0.0:3002").await?;
 # Ok(())
 # }
 ```
+
+Declare the binding on the card you give the handler
+(`AgentInterface::new("ws://agent.example.com:3002",
+a2a_protocol_types::WEBSOCKET_BINDING_URI)`). The listener logs a warning at
+start-up, with the `tracing` feature, when its binding is missing from the
+card (spec §5.2). See
+[Naming a protocol binding](agent-cards.md#naming-a-protocol-binding).
 
 ### Protocol
 
@@ -298,14 +305,21 @@ dispatcher.serve("0.0.0.0:50051").await?;
 # }
 ```
 
+Declare the binding on the card you give the handler
+(`AgentInterface::grpc("agent.example.com:50051")`). The listener logs a
+warning when it builds its router, with the `tracing` feature, if the card
+declares no `GRPC` interface (spec §5.2).
+
 > **Tip:** Use `serve_with_listener()` when you need to know the server address before constructing the handler (e.g., for agent cards with correct URLs). Pre-bind a `TcpListener`, extract the address, build your handler, then pass the listener.
 
 ### Client
 
-An Agent Card's gRPC interface advertises a gRPC **target** — `host:port`,
-per the proto's `AgentInterface.url` comment — not a URL, because gRPC names
-carry no scheme. `GrpcTransport::connect` and `ClientBuilder::build_grpc`
-accept that form, and decide how to dial it with a `GrpcBareAddressScheme`:
+An Agent Card's gRPC interface advertises a gRPC **target** — `host:port`, as
+the A2A proto's `AgentInterface.url` comment has said since upstream commit
+`cfc9d34` (2026-07-21); the v1.0.1 copy this repository ships still says "a
+valid absolute HTTPS URL" — not a URL, because gRPC names carry no scheme.
+`GrpcTransport::connect` and `ClientBuilder::build_grpc` accept that form, and
+decide how to dial it with a `GrpcBareAddressScheme`:
 
 | Policy | Bare `host:port` is dialled… | When |
 |---|---|---|
@@ -421,9 +435,9 @@ application installed first.
 
 JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. gRPC uses native server streaming over HTTP/2. The choice is mostly about ecosystem fit — JSON-RPC for agent-to-agent communication, REST for standard HTTP tooling, WebSocket for persistent low-latency connections, gRPC for service mesh and cross-language interop.
 
-## Running Both Transports
+## Running Several Transports
 
-The server can serve both transports simultaneously on different ports:
+The server can serve several transports at once, each dispatcher on its own port (or JSON-RPC and REST on one port with `CombinedDispatcher`):
 
 ```rust
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {

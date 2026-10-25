@@ -185,6 +185,172 @@ print(f'{unit} ({pct:.1f}%)')
 "
 }
 
+# Difference between two medians ($1 larger, $2 smaller), rendered like a table
+# cell, e.g. "132.4 µs". Quantised like derive_saving, for the same reason.
+derive_diff() {
+    local big_file="$1" small_file="$2"
+    local big small
+    big="$(extract_median_ns_as_tabled "$big_file")"
+    small="$(extract_median_ns_as_tabled "$small_file")"
+    if [ "$big" = "0" ] || [ "$small" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "
+d = $big - $small
+if d >= 1_000_000:
+    print(f'{d / 1_000_000:.2f} ms')
+elif d >= 1_000:
+    print(f'{d / 1_000:.1f} µs')
+else:
+    print(f'{d:.0f} ns')
+"
+}
+
+# Ratio of two medians ($1 over $2), e.g. "3.4×". With a third argument of
+# "raw" it uses the whole-nanosecond figures the count-mode tables print;
+# otherwise the figures the time tables print.
+derive_ratio() {
+    local top_file="$1" bottom_file="$2" mode="${3:-tabled}"
+    local top bottom
+    if [ "$mode" = "raw" ]; then
+        top="$(extract_median_ns "$top_file")"
+        bottom="$(extract_median_ns "$bottom_file")"
+    else
+        top="$(extract_median_ns_as_tabled "$top_file")"
+        bottom="$(extract_median_ns_as_tabled "$bottom_file")"
+    fi
+    if [ "$top" = "0" ] || [ "$bottom" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{$top / $bottom:.1f}×')"
+}
+
+# Cost of each extra event between two stream-volume rows: the difference of
+# the two medians over the difference in event count ($3), e.g. "5.0 µs".
+# Computed from the figures the table prints, so a reader can redo it.
+derive_marginal_per_event() {
+    local lo_file="$1" hi_file="$2" events="$3"
+    local lo hi
+    lo="$(extract_median_ns_as_tabled "$lo_file")"
+    hi="$(extract_median_ns_as_tabled "$hi_file")"
+    if [ "$lo" = "0" ] || [ "$hi" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{($hi - $lo) / $events / 1000:.1f} µs')"
+}
+
+# Per-agent saving of a burst A/B pair ($1 per-agent-client arm, $2 shared-client
+# arm, $3 burst size) as a share of the single-request saving ($4 new client,
+# $5 reused client), e.g. "26%". The burst arms are raw nanoseconds, as in
+# derive_per_agent_saving; the single-request pair is quantised, as in
+# derive_saving.
+derive_saving_share() {
+    local slow_file="$1" fast_file="$2" n="$3" new_file="$4" reused_file="$5"
+    local slow fast new reused
+    slow="$(extract_median_ns "$slow_file")"
+    fast="$(extract_median_ns "$fast_file")"
+    new="$(extract_median_ns_as_tabled "$new_file")"
+    reused="$(extract_median_ns_as_tabled "$reused_file")"
+    if [ "$slow" = "0" ] || [ "$fast" = "0" ] || [ "$new" = "0" ] || [ "$reused" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{(($slow - $fast) / $n) / ($new - $reused) * 100:.0f}%')"
+}
+
+# How many times larger the saving from $1 (slow path) to $2 (fast path) is than
+# a stated percentage ($3), e.g. "4.6×". Used to size an older, understated
+# figure against the one measured now.
+derive_saving_vs_pct() {
+    local slow_file="$1" fast_file="$2" old_pct="$3"
+    local slow fast
+    slow="$(extract_median_ns_as_tabled "$slow_file")"
+    fast="$(extract_median_ns_as_tabled "$fast_file")"
+    if [ "$slow" = "0" ] || [ "$fast" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{(($slow - $fast) / $slow) * 100 / $old_pct:.1f}×')"
+}
+
+# 95% confidence interval of a median, rendered like a table cell but with one
+# more digit, so a tight interval does not collapse into a single value.
+extract_median_ci() {
+    local est_file="$1"
+    if [ ! -f "$est_file" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "
+import json
+with open('$est_file') as f:
+    ci = json.load(f)['median']['confidence_interval']
+lo, hi = ci['lower_bound'], ci['upper_bound']
+def fmt(ns):
+    if hi >= 1_000_000:
+        return f'{ns / 1_000_000:.3f} ms'
+    if hi >= 1_000:
+        return f'{ns / 1_000:.2f} µs'
+    return f'{ns:.0f} ns'
+print(f'[{fmt(lo)}, {fmt(hi)}]')
+" 2>/dev/null || echo "—"
+}
+
+# How `from_str` compares with `from_slice` across the payload sizes of
+# protocol_payload_scaling: the range of time saved where it is faster, the
+# 64 B pair, and the sizes where it is not. Computed from the estimates behind
+# the table rows, so the sentence cannot outlive them.
+derive_from_str_summary() {
+    python3 - "$CRITERION_DIR/protocol_payload_scaling" <<'PY' 2>/dev/null || echo "—"
+import json
+import sys
+
+base = sys.argv[1]
+sizes = [(64, "64 B"), (256, "256 B"), (1024, "1 KiB"), (4096, "4 KiB"),
+         (16384, "16 KiB"), (102400, "100 KiB"), (1048576, "1 MiB")]
+
+
+def med(name, size):
+    with open(f"{base}/{name}/{size}/new/estimates.json") as f:
+        return json.load(f)["median"]["point_estimate"]
+
+
+def fmt(ns):
+    if ns >= 1_000_000:
+        return f"{ns / 1_000_000:.2f} ms"
+    if ns >= 1_000:
+        return f"{ns / 1_000:.1f} µs"
+    return f"{ns:.0f} ns"
+
+
+faster, slower = [], []
+for size, label in sizes:
+    pct = (med("from_slice", size) - med("from_str", size)) / med("from_slice", size) * 100
+    (faster if pct > 0 else slower).append((pct, label))
+
+if not faster:
+    print("no less time than `from_slice` at any payload size")
+    sys.exit(0)
+lo = min(p for p, _ in faster)
+hi = max(p for p, _ in faster)
+rng = f"{lo:.0f}%" if f"{lo:.0f}" == f"{hi:.0f}" else f"{lo:.0f}–{hi:.0f}%"
+where = (
+    "at every payload size"
+    if not slower
+    else f"at {len(faster)} of {len(sizes)} payload sizes"
+)
+first = f"{rng} less time than `from_slice` {where}"
+second = f"({fmt(med('from_str', 64))} against {fmt(med('from_slice', 64))} at 64 B)"
+if slower:
+    second += f", and more time at {', '.join(label for _, label in slower)}"
+print(first)
+print(second)
+PY
+}
+
 # ── Helper: emit a results table for all matching criterion directories ───
 
 # Arguments: $1 = glob pattern prefix (matched against top-level criterion dirs)
@@ -210,8 +376,8 @@ emit_table() {
     fi
 
     if [ "$mode" = "count" ]; then
-        printf "| Benchmark | Value |\n" >> "$OUTPUT_FILE"
-        printf "|-----------|-------|\n" >> "$OUTPUT_FILE"
+        printf "| Benchmark | Median (ns) |\n" >> "$OUTPUT_FILE"
+        printf "|-----------|-------------|\n" >> "$OUTPUT_FILE"
     else
         printf "| Benchmark | Median |\n" >> "$OUTPUT_FILE"
         printf "|-----------|--------|\n" >> "$OUTPUT_FILE"
@@ -260,6 +426,33 @@ HEADER
 printf "**Last updated:** %s  \n" "$TIMESTAMP" >> "$OUTPUT_FILE"
 printf "**Rust version:** %s  \n" "$(rustc --version 2>/dev/null || echo 'unknown')" >> "$OUTPUT_FILE"
 printf "**Platform:** %s  \n\n" "$(uname -s)-$(uname -m)" >> "$OUTPUT_FILE"
+
+# What the figures were measured with. OpenTelemetry instrumentation became a
+# default feature of the SDK crates on 2026-10-18 (commit ce719b0), and the
+# benchmark crate builds them with their default features, so a page generated
+# on or after that date includes it and an earlier one does not. The sentence
+# is chosen by the generation date because CI regenerates this page: a fixed
+# "measured before" would turn false at the first run after the change.
+# docs/readiness-bar.md measured the cost of default `tracing` and `otel` with
+# nothing installed: 4.6% and 6.6% of the CPU time of a blocking send.
+OTEL_DEFAULT_SINCE="2026-10-18"
+if [[ "${TIMESTAMP%% *}" < "$OTEL_DEFAULT_SINCE" ]]; then
+    cat >> "$OUTPUT_FILE" <<'OTEL_BEFORE'
+> **Feature set**: these figures were measured before OpenTelemetry
+> instrumentation became a default feature of the SDK crates (0.15.0).
+> `docs/readiness-bar.md` measured default `tracing` and `otel`, with nothing
+> installed, at 4.6–6.6% of the CPU time of a blocking send.
+
+OTEL_BEFORE
+else
+    cat >> "$OUTPUT_FILE" <<'OTEL_AFTER'
+> **Feature set**: these figures were measured with OpenTelemetry
+> instrumentation, a default feature of the SDK crates since 0.15.0.
+> `docs/readiness-bar.md` measured default `tracing` and `otel`, with nothing
+> installed, at 4.6–6.6% of the CPU time of a blocking send.
+
+OTEL_AFTER
+fi
 
 cat >> "$OUTPUT_FILE" <<'DASH_LINK'
 > **Interactive dashboard**: See the [Benchmark Dashboard](dashboard.md) for
@@ -359,8 +552,11 @@ Stream throughput under varying event volumes and consumer speeds.
 Reveals buffering and flow-control overhead that synthetic single-event tests miss.
 
 The default broadcast channel capacity is 256 events (raised from 64 in
-v0.5.0). Deployments with >256 events/task should use
-`EventQueueManager::with_capacity()` to set a higher value.
+v0.5.0). Deployments with >256 events/task can set a higher value with
+`RequestHandlerBuilder::with_event_queue_capacity()`. Since 0.15.0 a stream
+that falls behind catches up from the task's event log (the in-memory stores
+keep the last 512 events of a task by default), so a larger queue avoids the
+catch-up reads rather than being the only protection against `streamLagged`.
 
 SECTION
 
@@ -385,14 +581,17 @@ emit_table "data_volume_"
 cat >> "$OUTPUT_FILE" <<'SECTION'
 ## Memory Overhead
 
-Heap allocation counts and bytes per operation, measured via a counting
-allocator (`#[global_allocator]`). Values represent allocation counts or
-bytes — not time — encoded as nanoseconds for Criterion tracking.
+Wall-clock time per operation, in nanoseconds, with a counting allocator
+(`#[global_allocator]`) installed. Each iteration counts its heap allocations,
+and the benchmark asserts that the count stays within 5% of a figure measured
+once beforehand, but the counts are not published: Criterion records the
+elapsed time. Read these rows as ns per operation, not as allocation counts or
+bytes.
 
 | Metric | Unit |
 |--------|------|
-| `*_alloc_count` | Number of `alloc()` calls per operation |
-| `*_bytes_per_payload` | Bytes allocated per operation |
+| `*_alloc_count` | ns per operation (the allocation count is asserted, not reported) |
+| `*_bytes_per_payload` | ns per operation (the bytes allocated are asserted, not reported) |
 
 SECTION
 
@@ -419,9 +618,10 @@ emit_table "cross_language_"
 cat >> "$OUTPUT_FILE" <<'SECTION'
 ## Enterprise Scenarios
 
-Production-scale workloads modeling real deployments: multi-tenant isolation,
-push notification management, eviction under memory pressure, rate limiting,
-CORS handling, read/write mix ratios, and large conversation histories.
+Workloads modeled on deployment patterns, run in one process over loopback:
+multi-tenant isolation, push notification management, eviction under memory
+pressure, rate limiting, CORS handling, read/write mix ratios, and large
+conversation histories.
 
 SECTION
 
@@ -434,9 +634,10 @@ cat >> "$OUTPUT_FILE" <<'SECTION'
 ## Production Scenarios
 
 Full end-to-end workflows exercising the complete SDK pipeline in scenarios
-that real-world deployments encounter at scale: task reconnection, cold start
-latency, concurrent race conditions, multi-context orchestration, push config
-lifecycle, parallel agent bursts, and dispatch routing overhead isolation.
+modeled on real deployments (single process, loopback): task reconnection, cold
+start latency, concurrent race conditions, multi-context orchestration, push
+config lifecycle, parallel agent bursts, and dispatch routing overhead
+isolation.
 
 SECTION
 
@@ -513,8 +714,7 @@ probability.
 Varies per-link latency from 0 µs to 20 000 µs with zero synthetic
 errors, isolating the chain's latency-compounding factor from retry
 jitter. Five hops × per-hop latency gives the lower bound, plus the
-JSON-RPC loopback baseline (~2 ms for a five-hop chain with zero added
-latency).
+JSON-RPC loopback cost of five nested sends (not measured here).
 
 SECTION
 
@@ -545,14 +745,15 @@ misdiagnosing CI variance as real performance changes.
 
 ### Streaming cross-thread scheduling
 
-On N-core systems, \`tokio::spawn\` places the SSE builder task on a different
-worker thread with (N-1)/N probability, causing ~500µs cache-miss +
-work-stealing penalty. This was root-caused as the source of the ~24% bimodal
-distribution in all streaming benchmarks.
+On N-core systems, `tokio::spawn` places the SSE builder task on a different
+worker thread with (N-1)/N probability. This was once held to cost ~500µs per
+request and to cause the ~24% bimodal distribution in the streaming
+benchmarks; a later measurement (the 0.9.0 changelog entry) found cross-thread
+scheduling real but second-order, about 50 µs of a 191 µs send.
 
-**Mitigations (v1.0.0):** The SSE builder uses \`sleep\` + reset (not
-\`interval\`) to eliminate timer wheel entries during active streaming.
-Transport streaming benchmarks use \`worker_threads(1)\` runtime to eliminate
+**Mitigations (v0.5.0):** The SSE builder uses `sleep` + reset (not
+`interval`) to eliminate timer wheel entries during active streaming.
+Transport streaming benchmarks use `worker_threads(1)` runtime to eliminate
 cross-thread variance entirely (24 high severe → 4 high mild outliers, 3×
 tighter confidence intervals).
 
@@ -560,6 +761,7 @@ FOOTER
 
 # Quoted from the tables above, so computed from the same estimates.json files.
 DV_GET="$CRITERION_DIR/data_volume_get/lookup"
+DV_SAVE_10K="$CRITERION_DIR/data_volume_save/after_prefill/10000/new/estimates.json"
 STREAM_VOL="$CRITERION_DIR/backpressure_stream_volume"
 
 cat >> "$OUTPUT_FILE" <<SECTION
@@ -577,13 +779,16 @@ lookup baseline.
 ### Stream volume per-event cost
 
 The default broadcast channel capacity is **256** events (raised from 64 in
-v0.5.0). \`backpressure_stream_volume\` straddles it:
-$(extract_median "$STREAM_VOL/52_events/new/estimates.json") for 52 events, $(extract_median "$STREAM_VOL/252_events/new/estimates.json") for 252 and
-$(extract_median "$STREAM_VOL/502_events/new/estimates.json") for 502, so the per-event cost below and above
-capacity can be read directly from the table.
+v0.5.0). \`backpressure_stream_volume\` does not run its larger rows at that
+default: the bench sizes the event queue above the event count (512 slots for
+the 52- and 252-event rows, 1,024 for the 502-event row), so it measures
+streaming cost, not capacity overflow. It reports
+$(extract_median "$STREAM_VOL/52_events/new/estimates.json") for 52 events, $(extract_median "$STREAM_VOL/252_events/new/estimates.json") for 252 and $(extract_median "$STREAM_VOL/502_events/new/estimates.json") for 502:
+$(derive_marginal_per_event "$STREAM_VOL/52_events/new/estimates.json" "$STREAM_VOL/252_events/new/estimates.json" 200) per added event from 52 to 252 events and
+$(derive_marginal_per_event "$STREAM_VOL/252_events/new/estimates.json" "$STREAM_VOL/502_events/new/estimates.json" 250) from 252 to 502.
 
-Production deployments expecting >256 events/task should increase
-\`EventQueueManager::with_capacity()\` to match their peak volume.
+Production deployments expecting >256 events/task can raise
+\`RequestHandlerBuilder::with_event_queue_capacity()\` to match their peak volume.
 
 SECTION
 
@@ -593,6 +798,8 @@ SECTION
 
 TRANSPORT_64="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/64/new/estimates.json"
 TRANSPORT_16K="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/16384/new/estimates.json"
+TRANSPORT_100K="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/102400/new/estimates.json"
+TRANSPORT_1M="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/1048576/new/estimates.json"
 CONN_NEW="$CRITERION_DIR/realistic_connection/new_client_per_request/new/estimates.json"
 CONN_REUSED="$CRITERION_DIR/realistic_connection/reused_client/new/estimates.json"
 BURST_AB="$CRITERION_DIR/production_agent_burst_client_sharing"
@@ -604,7 +811,9 @@ cat >> "$OUTPUT_FILE" <<SECTION
 
 Transport benchmarks (64B → 16KB) show a $(derive_pct_increase "$TRANSPORT_64" "$TRANSPORT_16K") latency increase for a
 256× payload increase, because the $(extract_median "$TRANSPORT_64") HTTP round-trip dominates. Serde
-regressions cannot be detected via transport benchmarks. Use the
+regressions are hard to detect via the 64B–16KB transport benchmarks; the
+100KiB ($(extract_median "$TRANSPORT_100K")) and 1MiB ($(extract_median "$TRANSPORT_1M")) rows are where payload size begins to
+dominate. Use the
 \`protocol/payload_scaling\` isolation benchmarks (64B → 1MB, pure serde)
 for serialization regression detection.
 
@@ -613,7 +822,8 @@ for serialization regression detection.
 Connection reuse saves $(derive_saving "$CONN_NEW" "$CONN_REUSED") on loopback —
 $(extract_median "$CONN_NEW") per request when the client is rebuilt each time,
 versus $(extract_median "$CONN_REUSED") when it is shared. On real networks with TLS the
-saving is larger still (TLS handshake dominates). Best practice: create one
+saving should be larger still, since a new client also pays a TLS handshake;
+this page does not measure that. Best practice: create one
 \`A2aClient\` at startup and share via \`Arc\` across request handlers.
 
 Two consequences worth spelling out, because both have bitten this repo:
@@ -623,8 +833,9 @@ Two consequences worth spelling out, because both have bitten this repo:
   exactly this, and its per-agent cost tracks
   $(extract_median "$CONN_NEW") — the rebuild-every-time number — rather than
   the shared-client one.
-- Quoting this saving as a small percentage understates it by roughly 4×. It is
-  a large fraction of a loopback request, not a rounding error.
+- Quoting this saving as a small percentage (an older revision of this page
+  said 9%) understates it by $(derive_saving_vs_pct "$CONN_NEW" "$CONN_REUSED" 9).
+  It is a large fraction of a loopback request, not a rounding error.
 
 ### What sharing a client is actually worth under concurrency
 
@@ -644,7 +855,8 @@ changes.
 
 Sharing wins at every burst size, and the medians' 95% confidence intervals are
 disjoint in all three, so the direction is not noise. But the size of the win is
-about half what the single-request comparison above predicts:
+only a fraction of what the single-request comparison above predicts, $(derive_saving_share "$BURST_AB/per_agent_client_agents/10/new/estimates.json" "$BURST_AB/shared_client_agents/10/new/estimates.json" 10 "$CONN_NEW" "$CONN_REUSED") of it
+at 10 agents, $(derive_saving_share "$BURST_AB/per_agent_client_agents/50/new/estimates.json" "$BURST_AB/shared_client_agents/50/new/estimates.json" 50 "$CONN_NEW" "$CONN_REUSED") at 50 and $(derive_saving_share "$BURST_PER_AGENT" "$BURST_SHARED" 100 "$CONN_NEW" "$CONN_REUSED") at 100, where it is
 $(derive_per_agent_saving "$BURST_PER_AGENT" "$BURST_SHARED" 100) per agent
 against the $(derive_saving "$CONN_NEW" "$CONN_REUSED") that
 \`reused_client\` versus \`new_client_per_request\` would lead you to expect.
@@ -663,34 +875,45 @@ SECTION
 
 # Quoted from the tables above, so computed from the same estimates.json files.
 # Counts use extract_median_ns, which is what the count-mode tables print.
+PSC="$CRITERION_DIR/protocol_payload_scaling"
+MEM_DESER_TASK="$CRITERION_DIR/memory_deserialize/task_alloc_count/new/estimates.json"
+MEM_SER_TASK="$CRITERION_DIR/memory_serialize/task_alloc_count/new/estimates.json"
 cat >> "$OUTPUT_FILE" <<SECTION
-### Deserialization allocation overhead
+### Deserialization versus serialization cost
 
-Deserialization allocates several times more than serialization (Task:
-$(extract_median_ns "$CRITERION_DIR/memory_deserialize/task_alloc_count/new/estimates.json") vs $(extract_median_ns "$CRITERION_DIR/memory_serialize/task_alloc_count/new/estimates.json") allocs). This is inherent to serde_json's parsing model: every
-field creates an intermediate \`String\`/\`Vec\` allocation during parsing. The
-\`serde_helpers::deser_from_str()\` helper enables serde_json's borrowed-data
-path for ~15-25% fewer allocations. The \`serde_helpers::SerBuffer\` provides
-thread-local buffer reuse for serialization, eliminating the 2.3× small-payload
-overhead.
+In the \`memory_*\` rows above, deserialization takes several times as long as
+serialization (Task: $(extract_median_ns "$MEM_DESER_TASK") ns vs $(extract_median_ns "$MEM_SER_TASK") ns, $(derive_ratio "$MEM_DESER_TASK" "$MEM_SER_TASK" raw)).
+This is inherent to serde_json's parsing model: every field creates an
+intermediate \`String\`/\`Vec\` allocation during parsing. The
+\`serde_helpers::deser_from_str()\` helper uses serde_json's \`from_str\` path,
+which in the \`protocol_payload_scaling\` rows above takes
+$(derive_from_str_summary).
 
-### History depth allocation scaling
+The \`serde_helpers::SerBuffer\` provides thread-local buffer reuse for
+serialization. In the same rows it takes $(extract_median "$PSC/ser_buffer/64/new/estimates.json") against \`to_vec\`'s $(extract_median "$PSC/to_vec/64/new/estimates.json") at
+64 B ($(derive_ratio "$PSC/to_vec/64/new/estimates.json" "$PSC/ser_buffer/64/new/estimates.json")) and $(extract_median "$PSC/ser_buffer/256/new/estimates.json") against $(extract_median "$PSC/to_vec/256/new/estimates.json") at 256 B, and the two
+converge as the payload grows: $(extract_median "$PSC/ser_buffer/1048576/new/estimates.json") against $(extract_median "$PSC/to_vec/1048576/new/estimates.json") at 1 MiB.
+
+### History depth scaling
 
 History depth scales roughly linearly: \`memory_history_scaling\` records
-$(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/1/new/estimates.json") deserialization allocs at 1 turn and $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/50/new/estimates.json") at 50 turns
-($(extract_median_ns "$CRITERION_DIR/memory_history_scaling/serialize_allocs/1/new/estimates.json") and $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/serialize_allocs/50/new/estimates.json") for serialization), so a 50-turn task
-costs $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/50/new/estimates.json") deser allocs per \`store.get()\`. The \`serde_helpers\` module
+$(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/1/new/estimates.json") ns to deserialize at 1 turn and $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/deserialize_allocs/50/new/estimates.json") ns at 50 turns
+($(extract_median_ns "$CRITERION_DIR/memory_history_scaling/serialize_allocs/1/new/estimates.json") ns and $(extract_median_ns "$CRITERION_DIR/memory_history_scaling/serialize_allocs/50/new/estimates.json") ns to serialize), so a store that parses the
+stored task on every \`get()\` (the SQL stores) pays that growth per read;
+\`InMemoryTaskStore::get\` clones instead. The \`serde_helpers\` module
 provides optimized paths; for maximum throughput on deep histories, consider
 storing pre-serialized bytes alongside parsed structs to avoid re-parsing on
 every read.
 
 ### Artifact accumulation clone cost
 
-The background event processor clones the full Task struct on each SSE event.
-Clone cost grows with artifact count: \`task_clone_at_depth\` is
-$(extract_median "$CRITERION_DIR/advanced_artifact_accumulation/task_clone_at_depth/0/new/estimates.json") with no artifacts and $(extract_median "$CRITERION_DIR/advanced_artifact_accumulation/task_clone_at_depth/500/new/estimates.json") with 500. For tasks with 500+
-accumulated artifacts, consider batching event processing or using the planned
-copy-on-write artifact storage (tracked as a future optimization).
+\`task_clone_at_depth\` measures \`Task::clone\` alone:
+$(extract_median "$CRITERION_DIR/advanced_artifact_accumulation/task_clone_at_depth/0/new/estimates.json") with no artifacts and $(extract_median "$CRITERION_DIR/advanced_artifact_accumulation/task_clone_at_depth/500/new/estimates.json") with 500. The background
+event processor no longer clones the whole task per artifact event: it persists
+artifact updates with \`TaskStore::save_artifact_delta\`, which the in-memory
+store applies in place, so streaming cost per event stays flat (see
+[Stream volume per-event cost](#stream-volume-per-event-cost)).
+\`store_save_at_depth\` still prices a whole-task \`save\`.
 
 ### Slow consumer timer calibration
 
@@ -700,29 +923,25 @@ The \`backpressure/timer_calibration\` benchmarks measure actual
 results should be interpreted against these calibrated durations, not
 the nominal sleep values.
 
-SECTION
+### Data volume save() at 10K tasks
 
-cat >> "$OUTPUT_FILE" <<'FOOTER'
-### Data volume save() wide confidence intervals
+\`data_volume/save/after_prefill/10000\` reports $(extract_median "$DV_SAVE_10K") with a 95%
+confidence interval of $(extract_median_ci "$DV_SAVE_10K") in this run, as tight as
+the other prefill levels. An earlier run reported a much wider interval; if
+that recurs, an insert into the sorted \`BTreeMap\` index crossing a node split
+is the suspected cause, which has not been established. The indexes are what
+let \`list()\` serve a page in \`O(log n + page_size)\` without sorting every task
+on each call.
 
-The `data_volume/save/after_prefill/10000` benchmark reports wide confidence
-intervals ([1.4µs, 3.5µs], spanning a 2.5× range) and an 18% high severe
-outlier rate. This is caused by BTreeSet rebalancing spikes when the sorted
-index crosses internal node-split thresholds during insert. The median
-(~1.6µs) is representative; the wide CI reflects genuine variance from the
-B-tree data structure, not measurement noise. This is an acceptable tradeoff:
-the BTreeSet enables O(page\_size) pagination queries vs O(n) full scans.
-
-FOOTER
-
-cat >> "$OUTPUT_FILE" <<SECTION
 ### Dispatch routing: direct handler vs HTTP round-trip
 
 \`production/dispatch_routing/direct_handler_invoke\` calls the request handler
 directly and reports $(extract_median "$CRITERION_DIR/production_dispatch_routing/direct_handler_invoke/new/estimates.json"); \`full_http_roundtrip\` sends a message through
 a JSON-RPC server over a warm keep-alive connection and reports
-$(extract_median "$CRITERION_DIR/production_dispatch_routing/full_http_roundtrip/new/estimates.json"). The difference is the dispatch and transport overhead the
-direct call bypasses.
+$(extract_median "$CRITERION_DIR/production_dispatch_routing/full_http_roundtrip/new/estimates.json"). The difference ($(derive_diff "$CRITERION_DIR/production_dispatch_routing/full_http_roundtrip/new/estimates.json" "$CRITERION_DIR/production_dispatch_routing/direct_handler_invoke/new/estimates.json")) is everything the direct call
+bypasses: the client's request and response handling, JSON-RPC
+(de)serialization, HTTP, and dispatch. \`docs/swarm-scale-findings.md\` measures
+the HTTP stack itself at roughly a tenth of a send.
 
 ### Subscribe fan-out scaling
 
@@ -754,9 +973,9 @@ against $(extract_median "$CRITERION_DIR/transport_jsonrpc_send/single_message/n
 ### Pagination context index
 
 At 1000 tasks, the \`advanced/pagination_walk\` filtered walk takes
-$(extract_median "$CRITERION_DIR/advanced_pagination_walk/filtered/1000_tasks_page_50/new/estimates.json") against $(extract_median "$CRITERION_DIR/advanced_pagination_walk/unfiltered/1000_tasks_page_50/new/estimates.json") unfiltered. The BTreeSet context index
-reduces the scan work by only iterating tasks matching the \`context_id\`
-filter.
+$(extract_median "$CRITERION_DIR/advanced_pagination_walk/filtered/1000_tasks_page_50/new/estimates.json") against $(extract_median "$CRITERION_DIR/advanced_pagination_walk/unfiltered/1000_tasks_page_50/new/estimates.json") unfiltered. The \`BTreeMap\` context index
+lets a \`context_id\`-filtered walk iterate only that context's tasks (500 of the
+1,000 here), which is why it takes about half as long.
 
 SECTION
 
@@ -770,12 +989,15 @@ which provides:
 
 - **Statistical significance testing** — detects real regressions vs noise
 - **Warm-up iterations** — avoids cold-start measurement artifacts
-- **Median ± MAD** — robust central tendency resistant to outliers
+- **Median and its 95 % confidence interval** — a central tendency resistant to outliers
 - **Configurable sample sizes** — more iterations for noisy benchmarks
 
 ### Measurement rigor
 
-All benchmarks follow these practices for reproducibility:
+Most benchmarks follow these practices; the exceptions are deliberate (the
+cold-start, per-request-client and per-agent-client benchmarks build what they
+measure inside `iter()`, and the `data_volume` save benchmarks need a fresh task
+id per iteration):
 
 - **Deterministic inputs**: Fixed task IDs and payloads inside `iter()` — no
   incrementing counters that change HashMap distribution across iterations

@@ -42,11 +42,19 @@ has a gap.
 
 ## Server-only mode
 
-Set `A2A_BIND_ADDR` to run as a standalone server (used by the TCK):
+Set `A2A_BIND_ADDR` to run as a standalone server instead, until it is killed:
 
 ```bash
 A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p echo-agent
 ```
+
+It serves JSON-RPC and HTTP+JSON on that one address, the shape the in-repo
+TCK drives. Optional: `A2A_GRPC_BIND_ADDR` (a `host:port`) also serves gRPC on
+that address and advertises it on the card; `A2A_WS_BIND_ADDR` does the same
+for WebSocket; `A2A_INTEROP_CARD=1` advertises (does not enforce) API-key security
+requirements, for `scripts/go_sdk_interop.sh`. This mode permits push webhooks
+on loopback and private addresses, so it is a test server, not a deployment
+template.
 
 ## Key code
 

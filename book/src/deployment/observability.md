@@ -9,11 +9,15 @@ it called — and **metrics** say what is happening across all of them. This SDK
 records all three, and since 0.15 all of it is on by default: spans and
 metrics are recorded through the OpenTelemetry API (`otel`), and the SDK crate
 ships the OTLP exporter (`otlp`). What stays the application's choice is
-where they go: nothing is exported until an endpoint is configured, and spans
-and logs need a `tracing` subscriber (`Telemetry::install_subscriber` installs
-one). If you see no metrics, the answer is almost always this page's first
-section. (Until 2026-10-23 this paragraph said exporting was off by default,
-which stopped being true in 0.15.)
+where they go: `Telemetry::builder().with_export_where_configured()` builds an
+exporter only for a signal whose endpoint is configured, while a plain
+`Telemetry::builder().build()` exports every signal, to `localhost` (port
+4318, or 4317 over gRPC) when no endpoint is named, and its `shutdown` reports
+what could not be delivered. Spans and logs also need a `tracing` subscriber
+(`Telemetry::install_subscriber` installs one). If you see no metrics, the
+answer is almost always this page's first section. (Before 0.15 exporting was
+off by default: `otel`, which then carried the exporter, was not a default
+feature.)
 
 ## Turning them on
 
@@ -39,7 +43,7 @@ a2a-protocol-sdk = "0.15"   # `tracing`, `otel` and `otlp` are default features
 With `otlp`, the whole setup is this, and the rest of the page explains it:
 
 ```rust,no_run
-use a2a_protocol_server::otel::Telemetry;
+use a2a_protocol_sdk::server::otel::Telemetry;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
@@ -57,17 +61,25 @@ telemetry.shutdown()?; // or let it drop: both flush
 # }
 ```
 
+Built plainly, as here, `Telemetry` exports every signal, so an export with
+nothing listening where it goes is lost, and `shutdown` returns an error naming
+the signal and the count.
+[`with_export_where_configured`](#exporting-with-telemetry) (below) builds a
+signal only when an endpoint names where it goes.
+
 To send traces to Langfuse instead of a collector, see
 [Langfuse](./langfuse.md).
 
-## Metrics are opt-in twice over
+## Metrics: recorded by default, exported by `Telemetry`
 
 `Metrics` is a trait with a **default no-op implementation for every method**.
-An agent with no provider installed records nothing and reports no problem.
-That is correct — a library should not force a metrics backend — but it means
-"no data" and "misconfigured exporter" look identical from the outside.
+What a handler records to by default is `OtelMetrics` on the global meter
+provider (below); with no provider installed that records nothing and reports
+no problem. That is correct — a library should not force a metrics backend —
+but it means "no data" and "misconfigured exporter" look identical from the
+outside.
 
-You install one provider on the builder:
+You can add a provider of your own on the builder:
 
 ```rust
 # use std::time::Duration;
@@ -90,9 +102,11 @@ impl Metrics for CountingMetrics {
 }
 ```
 
-Hand it to the builder with `.with_metrics(CountingMetrics)`. If those lines
-appear and your dashboard is still empty, the problem is the exporter, not the
-SDK — which is the distinction this two-minute step buys you.
+Hand it to the builder with `.with_additional_metrics(CountingMetrics)` (not
+`.with_metrics`, which replaces the OpenTelemetry default and so stops the
+export you are trying to debug). If those lines appear and your dashboard is
+still empty, the problem is the exporter, not the SDK — which is the
+distinction this two-minute step buys you.
 
 With `otel`, `OtelMetrics` records the catalogue below, and with `otlp`
 `Telemetry` exports it over OTLP. `otel` is a default feature, and with it a
@@ -125,10 +139,13 @@ A binary that must run as well without a collector as with one builds it with
 endpoint names where it goes — `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_METRICS_` / `_LOGS_ENDPOINT`, or
 `with_otlp_endpoint` in code — and a signal with none has no exporter and no
-export thread. Every binary in this repository does this:
+export thread. Every agent and CLI binary in this repository does this, except
+`examples/langfuse-agent` (it applies the Langfuse preset, which names its own
+endpoint) and the few that start no telemetry at all, which
+`scripts/check_otel_wiring.py` lists with the reason for each:
 
 ```rust,no_run
-use a2a_protocol_server::otel::Telemetry;
+use a2a_protocol_sdk::server::otel::Telemetry;
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let telemetry = Telemetry::builder()
@@ -160,14 +177,16 @@ refuses a value it cannot act on rather than ignoring it:
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name` |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*` | Read by the OpenTelemetry SDK itself |
 
-The builder's `with_otlp_endpoint`, `with_otlp_protocol`, `with_otlp_header`
-and `with_ca_certificate_pem` set the same things in code, and — as in the
-OpenTelemetry SDK — a value set in code wins over the variable.
-`with_client_certificate_pem` is the exception: client certificate files the
-environment names win over it, as a header variable wins over a header set in
-code. The certificate and key are parsed when the exporters are built, so a
-file that is not PEM, or (on OTLP/HTTP) a key that is not the certificate's,
-fails `build` rather than every export.
+The builder's `with_otlp_endpoint` and `with_otlp_protocol` set the same
+things in code, and — as in the OpenTelemetry SDK — a value set in code wins
+over the variable. Three settings differ: a header variable that names the
+same header as `with_otlp_header` wins over it (headers with different names
+are all sent); `with_ca_certificate_pem` adds to the CA file
+`OTEL_EXPORTER_OTLP_CERTIFICATE` names rather than replacing it, and both are
+trusted; and the client certificate files the environment names win over
+`with_client_certificate_pem`. The certificate and key are parsed when the
+exporters are built, so a file that is not PEM, or (on OTLP/HTTP) a key that
+is not the certificate's, fails `build` rather than every export.
 
 JSON bodies (`http/json`) are the `otlp-json` feature, off by default even in
 `a2a-protocol-sdk`: `opentelemetry-otlp`'s `http-json` feature also makes JSON
@@ -221,13 +240,17 @@ prescribes; before 0.15 it overwrote them. Calling one
 twice replaces the first provider and silently orphans it. New code should use
 `Telemetry`.
 
-If `CountingMetrics` above prints and your collector is still empty, the
-problem is in the exporter configuration, not in the SDK.
+If `CountingMetrics` (added with `with_additional_metrics`) prints and your
+collector is still empty, the problem is in the exporter configuration, not in
+the SDK.
 
 ## The catalogue
 
-Every instrument the server emits, with its unit. These names are stable;
-treat them as the contract.
+The instruments the server records for its calls, its handler and its task
+stores, with their units (the client's call metric and the card, webhook and
+tool-loop instruments are in the sections below). These are the names 0.15
+ships; `STABILITY.md` does not list metric names as stable, so a rename is
+announced in the CHANGELOG, as 0.15's was.
 
 | Metric | Type | Unit | Meaning |
 |---|---|---|---|
@@ -331,10 +354,9 @@ exactly one of the other two — a call answered with an error counts in
 `errors`, not in `responses` — so `requests − responses − errors` is the
 requests that produced no answer at all: a panicked executor, a dropped
 connection, a process that went away mid-request. A single counter would hide
-exactly the failure you want to see. (Until 2026-10-23 this paragraph called
-`requests − responses` that gap, which counts every error as unanswered;
-measured against a live Prometheus, the recording rule in
-`deploy/observability/` subtracts both.)
+exactly the failure you want to see. `requests − responses` alone is not that
+gap: it counts every error as unanswered, so the recording rule in
+`deploy/observability/` subtracts both (measured against a live Prometheus).
 
 ### The tool loop's metrics
 
@@ -456,6 +478,7 @@ histogram's name follows the rename, and every other name is unchanged):
 | `a2a.server.responses` | `a2a_server_responses_total` |
 | `a2a.server.errors` | `a2a_server_errors_total` |
 | `a2a.server.request.duration` | `a2a_server_request_duration_seconds` |
+| `a2a.server.executor.duration` | `a2a_server_executor_duration_seconds` |
 | `a2a.server.queue_depth` | `a2a_server_queue_depth` |
 | `a2a.server.persistence_errors` | `a2a_server_persistence_errors_total` |
 | `a2a.server.push_deliveries` | `a2a_server_push_deliveries_total` |
@@ -465,12 +488,15 @@ histogram's name follows the rename, and every other name is unchanged):
 | `a2a.server.pool.closed` | `a2a_server_pool_closed_total` |
 
 Counters gain `_total`, the histograms gain `_seconds` from their `s` unit,
-and gauges gain nothing. Every series also carries
+and gauges gain nothing. The `a2a.server.executor.duration` row follows from
+that rule: it was added after the measurement above, so it is derived, not
+measured. Every series also carries
 `otel_scope_name="a2a.server"` — the default meter name, changeable with
 `OtelMetricsBuilder::meter_name`. Alongside them the exporter emits
 `target_info`, a gauge whose `service_name` label is the service name:
-`OTEL_SERVICE_NAME` when set, otherwise the name passed to
-`init_otlp_pipeline`.
+`OTEL_SERVICE_NAME` (or `service.name` in `OTEL_RESOURCE_ATTRIBUTES`) when
+set, otherwise the name given to `Telemetry`'s `with_default_service_name` (or
+to `init_otlp_pipeline`).
 
 **Units are UCUM since 0.15.** A dimensionless count is brace-annotated
 (`{request}`, `{connection}`), as the specification asks; before 0.15 they
@@ -494,10 +520,13 @@ push notifications to a working webhook and an unreachable one.
 **A2A server.** Calls per second and failed calls by binding and method;
 p50, p95 and p99 of non-streaming calls; errors by kind; requests without a
 response; active event queues; persistence errors; push deliveries by
-outcome; HTTP connections; and task-store operations and their p95 duration.
+outcome; HTTP connections; task-store operations and their p95 duration; and,
+per executor outcome, run duration (p50 and p95) and runs per second.
 Persistence errors are empty here because no store write failed.
 
 ![The A2A server dashboard](../images/dashboards/a2a-server.png)
+
+The screenshot predates the *Agent executor* row, which sits below *Task store*.
 
 **A2A client.** Calls per second, failed calls and failures by kind, by
 agent and binding, and the p95 of non-streaming calls, from
@@ -535,16 +564,16 @@ client that stopped reading without disconnecting.
 means `push_delivery_timeout` was shorter than the sender's own retry schedule,
 so the delivery was abandoned with attempts remaining. It will not resolve on
 its own and it will not appear as a webhook error, because the webhook was
-never the problem. `outcome="skipped"` is its sibling: the 30-second per-event
-budget ran out before this config was reached, so nothing was sent to it. The
-five labels:
+never the problem. Every registered config is attempted for every event (spec
+§4.3.3); `push_delivery_budget` only sets how many deliveries run at once, so
+there is no `skipped` outcome (the `push_outcome::SKIPPED` constant remains for
+code that matches on it, and is never reported). The four labels:
 
 ```text
 delivered          the webhook accepted it
 failed             reached, and refused it — or the sender itself errored
 timeout            the webhook did not answer inside the time it was given
 timeout_truncated  a configuration result: push_delivery_timeout cut the schedule short
-skipped            the per-event budget ran out before this config was tried
 ```
 
 ## What is not measured
@@ -555,8 +584,9 @@ Stated so a green dashboard is not mistaken for a complete one:
   taken.** `a2a.server.executor.duration` records every executor run, by how
   it ended; one whose future was dropped (a panic, or an abort) is reported
   from the guard that watched it, so it is in the histogram rather than
-  missing from it. Before 0.15 only the `invoke_agent` span's duration showed
-  the run.
+  missing from it. A custom `Metrics` receives the same values as
+  `on_executor_run`. Before 0.15 only the `invoke_agent` span's duration
+  showed the run.
 * **A store's individual SQL statements have no span.** Each task-store
   operation is one span and one `db.client.operation.duration` point (see
   [Task-store operations](#task-store-operations)); the statements inside
@@ -586,6 +616,12 @@ With `tracing` enabled and a subscriber installed:
 RUST_LOG=a2a_protocol_server=debug,a2a_protocol_client=debug cargo run
 ```
 
+`RUST_LOG` takes effect only through an `EnvFilter` your subscriber installs
+(`tracing_subscriber::EnvFilter::from_default_env()`, with
+`tracing-subscriber`'s `env-filter` feature). `Telemetry::install_subscriber`
+installs none, so with it every span is exported and events at `INFO` and
+above become log records.
+
 Task and context identifiers are on the executor's span (`a2a.task.id`,
 `a2a.context.id`), so one request can be followed through **this** process.
 If you emit your own events from inside an executor, they inherit that
@@ -606,9 +642,10 @@ server does not serve is named for its binding (`jsonrpc`), with
 span, over HTTP or WebSocket, also carries `jsonrpc.protocol.version`
 (`2.0`), the method as sent (`SendMessage`) as `rpc.method_original`, and the
 request's id as `jsonrpc.request.id` (not for a notification or a `null` id),
-as `docs/rpc/json-rpc.md` asks.
+as the OpenTelemetry semantic conventions' `docs/rpc/json-rpc.md` asks.
 
-Its addresses follow `docs/rpc/rpc-spans.md`. `network.peer.address` and
+Its addresses follow `docs/rpc/rpc-spans.md`
+(`open-telemetry/semantic-conventions@55c98cf`). `network.peer.address` and
 `network.peer.port` are the connection the call arrived on, when the
 binding knows it (the address `CallContext::peer_addr` returns).
 `server.address` and `server.port` are the address the client used: the
@@ -649,7 +686,8 @@ the metric over a real in-process SLIM fabric.
 Work spawned for the call runs in `INTERNAL` children of that span:
 `a2a.process_events`, `a2a.deliver_push`, `a2a.sse`, and the executor's run.
 **The executor's span follows the OpenTelemetry GenAI agent conventions**
-(`docs/gen-ai/gen-ai-agent-spans.md`, also `development`): it is named
+(`docs/gen-ai/gen-ai-agent-spans.md` in
+`open-telemetry/semantic-conventions-genai`, also `development`): it is named
 `invoke_agent {card name}` and carries `gen_ai.operation.name =
 invoke_agent`, the agent's name, description and version, the context as
 `gen_ai.conversation.id`, the task's final `a2a.task.state`, and — kept from
@@ -683,11 +721,11 @@ replies and artifacts as `gen_ai.output.messages`, in the conventions' JSON
 message format. That copies what users and agents say into your traces and
 wherever they are exported, which is why it is off. Each attribute holds at
 most 64 KiB of text and data, cut with a marker beyond that; raw file bytes
-are never recorded, only their media type and length. The finish reason is
-not content: a completed turn records `gen_ai.response.finish_reasons`
-`["stop"]` and a failed one `["error"]` either way, as a string array (it was
-a `finish_reason` inside the output message before 0.15, which the
-conventions deprecate).
+are never recorded, only their media type, file name and length. The finish
+reason is not content: a completed turn records
+`gen_ai.response.finish_reasons` `["stop"]` and a failed one `["error"]`
+either way, as a string array (it was a `finish_reason` inside the output
+message before 0.15, which the conventions deprecate).
 
 **Each call through the client is a `CLIENT` span** with the same name as the
 server span it causes (for a method outside the A2A service, `_OTHER`, it is
@@ -748,8 +786,7 @@ records no span at all (the call's metric is still recorded). Without the
 `otel` feature the spans are ordinary `tracing` spans, and the id sent
 onward is minted for the hop, as before.
 
-**Logs alone still do not join a delegation chain.** An early revision of
-this page said they did, which was wrong: two processes produce two span
+**Logs alone do not join a delegation chain.** Two processes produce two span
 trees, and correlating by task id does not rescue it because each agent mints
 its own. What joins them is the trace id below.
 
@@ -758,10 +795,12 @@ its own. What joins them is the trace id below.
 Since 0.13 the SDK carries [W3C Trace
 Context](https://www.w3.org/TR/trace-context/) across an A2A hop. It is
 propagation: it works whether or not anything records spans. What it
-guarantees is that every agent in a chain sees the same trace id, so whatever
-does record spans can stitch them together — including across the Python,
-JavaScript, Go and Java agents in the interoperability kit, since
-`traceparent` is a wire format rather than a Rust type.
+guarantees is that, under the default `Continue` policy and with propagation
+on, every agent in a chain sees the same trace id, so whatever does record
+spans can stitch them together. Because `traceparent` is a wire format rather
+than a Rust type, agents in other languages should join the same trace; that
+has not been run against the Python, JavaScript, Go and Java agents under
+`itk/` (the Integration Test Kit).
 
 **Serving.** The server parses an inbound `traceparent`, advances the span,
 and hands it to the executor:
@@ -787,10 +826,13 @@ if let Some(trace) = ctx.trace_context().cloned() {
 # }
 ```
 
-`None` means the caller sent no `traceparent`, or sent one the SDK refused.
-It never means the SDK invented one: a malformed header is dropped rather
-than repaired, because attaching work to a guessed-at trace is a wrong
-answer where a missing trace is only an absent one.
+Without a recording `tracing-opentelemetry` layer, `None` means the caller
+sent no `traceparent`, or sent one the SDK refused; under
+`InboundTracePolicy::Drop` it is `None` for every call, even one with a valid
+header. With a recording layer the value names this server's own recorded
+span, a new root when the caller sent no `traceparent`. The SDK never repairs
+a header: a malformed one is dropped, because attaching work to a guessed-at
+trace is a wrong answer where a missing trace is only an absent one.
 
 **Calling.** With the `otel` feature and a `tracing-opentelemetry` layer
 recording, nothing is needed: every call's `traceparent` names the call's own
@@ -836,8 +878,12 @@ chains are readable end to end.
 **What is not done.** Nothing *interprets* `tracestate` — the SDK adds no
 vendor entry of its own and reads nobody else's; it only truncates whole
 entries when a list exceeds the documented 4096-character or 32-member cap
-(W3C §3.3.1.5). There is no sampler. Each hop's `a2a.task.id` is on its own
-`invoke_agent` span; nothing links one hop's task id to the next hop's.
+(W3C §3.3.1.5). The SDK adds no sampler of its own: with `Telemetry`,
+sampling is the OpenTelemetry SDK's (`OTEL_TRACES_SAMPLER`, default
+`parentbased_always_on`), and under that parent-based default and `Continue`
+the caller's sampled flag decides, which is why a front gate uses `Restart`
+or `Drop`. Each hop's `a2a.task.id` is on its own `invoke_agent` span; nothing
+links one hop's task id to the next hop's.
 
 See also [Troubleshooting](./troubleshooting.md) for the symptom-first version
 of this page, and [Production Hardening](./production.md) for health checks.

@@ -4,7 +4,7 @@
 
 - **Rust 1.94+** (stable; CI tests the MSRV and current stable)
 - A working internet connection for downloading crates
-- **`protoc`** (Protocol Buffers compiler) — bundled automatically: the `grpc`/`proto` build scripts use a vendored `protoc` (`protoc-bin-vendored`), so a clean `cargo build --features grpc` works with no system install. Set the `PROTOC` environment variable only to override with your own binary (or on a platform the vendored binaries don't cover).
+- **`protoc`** (Protocol Buffers compiler) — bundled automatically: the `grpc`/`proto` build scripts use a vendored `protoc` (`protoc-bin-vendored`), so a clean `cargo build -p a2a-protocol-sdk --features grpc` works with no system install. Set the `PROTOC` environment variable only to override with your own binary (or on a platform the vendored binaries don't cover).
 
 ## Adding to Your Project
 
@@ -41,21 +41,24 @@ This is useful when:
 ## Feature Flags
 
 Features are off by default to minimize compile times and dependency trees, with
-two exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client` and
-`a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the client
-(and the bundled push sender) must reach them out of the box. **`tracing` is on
-by default** for `a2a-protocol-client`, `a2a-protocol-server` and
-`a2a-protocol-sdk`, so a default build logs through whatever `tracing`
-subscriber the application installs.
+these exceptions. **`tls-rustls` is on by default** for `a2a-protocol-client`
+and `a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the
+client (and the bundled push sender) must reach them out of the box.
+**`tracing` and `otel` are on by default** for `a2a-protocol-client`,
+`a2a-protocol-server` and `a2a-protocol-sdk`, so a default build logs through,
+and records OpenTelemetry spans and metrics with, whatever `tracing` subscriber
+and provider the application installs. **`webhook` is on by default** for the
+client and the SDK. **`otlp`** (`Telemetry` and OTLP export) **is on by default
+in `a2a-protocol-sdk` only.**
 `default-features = false` removes a crate's defaults — on the SDK too, which
-takes the client and server without theirs: an SDK built that way has no rustls
-and no logging.
+takes the client and server without theirs: an SDK built that way has no rustls,
+no logging, no OpenTelemetry and no webhook receiver.
 
 ### `a2a-protocol-types`
 
 | Feature | Description |
 |---------|-------------|
-| `signing` | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+| `signing` | JWS agent card signing, ES256 or EdDSA (Ed25519), with RFC 8785 canonicalization |
 | `audit` | Audit record schema, hash chains, ES256/Ed25519-signed checkpoints and chain verification (`audit::verify_chain`); implies `signing` |
 | `proto` | Canonical protobuf message types and the JSON⇄proto conversions (turned on by `grpc`) |
 
@@ -63,10 +66,10 @@ and no logging.
 
 | Feature | Description |
 |---------|-------------|
-| `tls-rustls` | HTTPS via rustls (no OpenSSL required) |
-| `signing` | Forwards `a2a-protocol-types/signing`; the client neither signs nor verifies cards on its own (call `verify_agent_card` yourself) |
-| `tracing` | Structured logging via the `tracing` crate, and a `CLIENT` span per call |
-| `otel` | Each call's `traceparent` names the call's own span when a `tracing-opentelemetry` layer records it (implies `tracing`) |
+| `tls-rustls` | HTTPS via rustls (no OpenSSL required); on by default |
+| `signing` | Forwards `a2a-protocol-types/signing`, and lets card discovery verify signatures: pass the keys you trust to `CardFetchOptions::with_signature_keys` and a `_with_options` fetch verifies the card, refusing an unsigned one unless `with_require_signature(false)`; `fetch_jwks` fetches a key set. Nothing is verified by default, and the client never signs. `verify_agent_card` checks a card you already hold |
+| `tracing` | Structured logging via the `tracing` crate, and a `CLIENT` span per call; on by default |
+| `otel` | Each call's `traceparent` names the call's own span when a `tracing-opentelemetry` layer records it (implies `tracing`); on by default |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` (plaintext) |
 | `grpc-tls` | gRPC over TLS — `grpc` + tonic's rustls connector (independent of `tls-rustls`); needed for `https://` gRPC endpoints and for the default dialling of a bare non-loopback `host:port` target |
@@ -77,9 +80,9 @@ and no logging.
 
 | Feature | Description |
 |---------|-------------|
-| `signing` | Forwards `a2a-protocol-types/signing`; the server itself neither signs nor verifies the card it serves |
-| `tracing` | Structured logging via the `tracing` crate |
-| `tls-rustls` | HTTPS delivery for the bundled push-notification sender |
+| `signing` | Forwards `a2a-protocol-types/signing`; adds `RequestHandlerBuilder::with_content_signer`, which signs every artifact, status message and direct reply the server sends, not a task's history (ADR 0027). The server never signs or verifies the card it serves: sign it with `sign_card_es256` before handing it to the builder |
+| `tracing` | Structured logging via the `tracing` crate (on by default) |
+| `tls-rustls` | HTTPS delivery for the bundled push-notification sender; HTTPS on the server's own listener (`Server::with_tls`, `Server::with_tls_pem`); `MutualTlsAuthInterceptor`, which names a caller from its client certificate (also available with `grpc-tls`) |
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
 | `postgres` | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
@@ -100,8 +103,8 @@ and no logging.
 | Feature | Description |
 |---------|-------------|
 | `signing` | Enables signing across types, client, and server |
-| `tracing` | Enables tracing across client and server |
-| `tls-rustls` | Enables HTTPS in the client and TLS push delivery in the server |
+| `tracing` | Enables tracing across client and server (on by default) |
+| `tls-rustls` | Enables HTTPS in the client, TLS push delivery in the server, and `Server::with_tls` on the server's own listener (on by default) |
 | `grpc` | Enables gRPC across client and server |
 | `grpc-tls` | Enables gRPC over TLS in the client and on the server's gRPC listener |
 | `websocket` | Enables WebSocket across client and server |
@@ -121,11 +124,11 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.15", features = ["tracing", "signing"] }
+a2a-protocol-sdk = { version = "0.15", features = ["signing", "sqlite"] }
 
 # Or with individual crates:
-a2a-protocol-server = { version = "0.15", features = ["tracing", "sqlite"] }
-a2a-protocol-client = { version = "0.15", features = ["tls-rustls"] }
+a2a-protocol-server = { version = "0.15", features = ["sqlite", "axum"] }
+a2a-protocol-client = { version = "0.15", features = ["websocket"] }
 ```
 
 ## Verifying the Installation

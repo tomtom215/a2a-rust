@@ -11,8 +11,8 @@ behind them, including the parts that are gaps rather than features.
 
 | Property | How |
 |---|---|
-| No memory-unsafety in the published crates | All four set `#![forbid(unsafe_code)]`. There is no `unsafe` block to review, because one cannot be added without removing that line in a diff |
-| No panic paths in library code | Zero `.unwrap()` in runtime library code, and zero `panic!`/`todo!`/`unimplemented!`. A CI ratchet fails the build when that changes |
+| No `unsafe` code in the published crates' libraries | All four set `#![forbid(unsafe_code)]`, so the library code has no `unsafe` block to review, and one cannot be added without removing that line in a diff. (Three build scripts, behind the `proto` and `grpc` features, call `std::env::set_var` inside `unsafe` to point `PROTOC` at the vendored compiler; they run at build time only.) |
+| Panics in library code are a frozen, reviewed list | No `.unwrap()`, `panic!`, `unreachable!`, `todo!` or `unimplemented!` in runtime library code, and a short list of `.expect(` calls (13 at 0.15.0) frozen in `scripts/panic_paths_baseline.txt`. A CI ratchet (`scripts/check_panic_paths.py`) fails the build when any count changes, so adding or removing one is a reviewed change |
 | Undocumented public API cannot ship | `#![deny(missing_docs)]` |
 | Dependencies are audited | `cargo-deny` runs in CI over the workspace, and separately over the SLIMRPC binding's much larger tree |
 | Releases are attested | SLSA build provenance and a per-crate CycloneDX SBOM are produced by the release workflow |
@@ -27,15 +27,19 @@ serves every caller.
 | `BearerTokenAuthInterceptor` | none | you validate an opaque token yourself |
 | `ApiKeyAuthInterceptor` | none | a shared secret in a header is genuinely enough |
 | `JwtAuthInterceptor` | `auth-jwt` | HS256/RS256/ES256, static or remote JWKS with OIDC discovery |
+| `MutualTlsAuthInterceptor` | `tls-rustls` or `grpc-tls` | clients hold certificates from a CA you run; the certificate names the caller |
 
 `JwtAuthInterceptor` is the one to reach for when the caller is another
 organisation: it verifies signatures against a key set you did not have to
-distribute by hand, and it is the only one of the three that can tell you
-*who* the caller is rather than only that they knew a secret.
+distribute by hand, and it names the caller from verified claims
+(`jwt:<issuer>:<sub>`). A bearer token or API key names a caller only if you
+give it a label (`with_labelled_tokens`, `with_labelled_keys`); an unlabelled
+one proves only that the caller knew a secret.
 
-Pair it with a `BearerTokenTenantResolver` if you are multi-tenant — see
-[Multi-Tenancy](./multi-tenancy.md), where the failure mode of getting this
-wrong is spelled out.
+Pair it with `BearerTokenTenantResolver::with_mapper` if you are multi-tenant,
+with a closure that verifies the token and returns its tenant claim: `new()`
+takes the raw token as the tenant id. See [Multi-Tenancy](./multi-tenancy.md),
+where the failure mode of getting this wrong is spelled out.
 
 ## Transport
 
@@ -43,9 +47,10 @@ The server terminates TLS on its own listener with `tls-rustls`:
 `Server::with_tls_pem` takes a certificate chain and key, and `Server::with_tls`
 takes a `rustls::ServerConfig` as built, so a configuration that requires
 client certificates gives mutual TLS on the HTTP bindings as it does on gRPC
-(`GrpcDispatcher::with_tls`). The client certificate reaches the
-interceptors on every binding, and `MutualTlsAuthInterceptor` names the
-caller from it ([Authentication](../building-agents/authentication.md#mutual-tls-the-client-certificate-names-the-caller));
+(`GrpcDispatcher::with_tls`, which needs `grpc-tls`). The WebSocket listener
+does the same with `WebSocketDispatcher::with_tls` and `with_tls_pem`. The
+client certificate reaches the interceptors on every binding, and
+`MutualTlsAuthInterceptor` names the caller from it ([Authentication](../building-agents/authentication.md#mutual-tls-the-client-certificate-names-the-caller));
 until 2026-10-18 the HTTP dispatchers did not see it. See
 [Production](./production.md) for the setup. A reverse proxy in front remains
 a fine choice when it already manages your certificates.
@@ -70,6 +75,10 @@ something stops it. The bundled `HttpPushSender` does:
   not help an attacker;
 * credentials are checked for `\r` and `\n` before they reach a header;
 * every delivery is capped at 30 seconds;
+* with `with_allowed_hosts([...])`, only the hosts you name are delivered to; a
+  config naming another host is refused when it is created and a delivery to
+  one is refused before any connection is made (opt-in; the SSRF checks still
+  apply to the hosts allowed);
 * with `https_only()`, an `http://` webhook is refused at config creation and
   again at delivery, so payloads and credentials never cross the network in
   plaintext (opt-in: spec §13.2 says webhook URLs SHOULD use HTTPS);
@@ -179,15 +188,16 @@ time in proportion to its size.
   (CI) states the byte layout of every sealed form (the cipher's value, a
   sealed part, a sealed push config, the audit log's wrapped keys, sealed
   values and keyed digests) and decrypts what the SDK wrote, checked in as
-  `tests/fixtures/crypto/rust_sealed.json`, with Python's `cryptography`;
-  `tests/crypto_interop.rs` opens what that script sealed with its own
-  nonces through the SDK's ordinary read paths. This shows the formats are
-  standard AES-256-GCM, HKDF-SHA-256 and HMAC-SHA-256 over the stated
-  associated data; it says nothing about nonce uniqueness or key handling.
-* **Against NIST.** `tests/crypto_nist_gcm.rs` runs 37 AES-256-GCM cases
-  from NIST CAVP (`gcmEncryptExtIV256.rsp`, `gcmDecrypt256.rsp`; 96-bit IV,
-  128-bit tag, six that must fail) through the cipher's open path and the
-  `ring` calls its seal makes.
+  `crates/a2a-protocol-server/tests/fixtures/crypto/rust_sealed.json`, with
+  Python's `cryptography`; `crates/a2a-protocol-server/tests/crypto_interop.rs`
+  opens what that script sealed with its own nonces through the SDK's ordinary
+  read paths. This shows the formats are standard AES-256-GCM, HKDF-SHA-256 and
+  HMAC-SHA-256 over the stated associated data; it says nothing about nonce
+  uniqueness or key handling.
+* **Against NIST.** `crates/a2a-protocol-server/tests/crypto_nist_gcm.rs` runs
+  37 AES-256-GCM cases from NIST CAVP (`gcmEncryptExtIV256.rsp`,
+  `gcmDecrypt256.rsp`; 96-bit IV, 128-bit tag, six that must fail) through the
+  cipher's open path and the `ring` calls its seal makes.
 * **Fuzzing.** `sealed_ring_value`, `sealed_part`, `sealed_push_config` and
   `sealed_audit_value` (`fuzz/`) feed what a store holds to each reader:
   nothing may panic, nothing unsealed may open, and a sealed value changed
@@ -207,8 +217,10 @@ time in proportion to its size.
 
 ## Agent card signing, and the part people miss
 
-`signing` on `a2a-protocol-server` is a **forwarding feature**. It makes the
-signing types available. **The server never signs the card it serves.**
+`signing` on `a2a-protocol-server` makes the signing types available and
+enables `RequestHandlerBuilder::with_content_signer`, which signs the messages
+and artifacts the server sends (ADR 0027). **The server never signs the card it
+serves.**
 
 Sign the card yourself with `sign_card_es256` and hand the signed card to
 `RequestHandlerBuilder`. An unsigned card is served happily and verifies as
@@ -226,6 +238,7 @@ otherwise have to edit, and names the URIs to add:
 
 ```rust
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::budget::BUDGET_EXTENSION_URI;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::extensions::AgentExtension;
 use a2a_protocol_types::failure::FAILURE_EXTENSION_URI;
@@ -246,6 +259,7 @@ fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
     card.capabilities.extensions = Some(vec![
         AgentExtension::new(IDEMPOTENCY_EXTENSION_URI),
         AgentExtension::new(FAILURE_EXTENSION_URI),
+        AgentExtension::new(BUDGET_EXTENSION_URI),
     ]);
 
     // ...then sign the card that results, and hand *that* to the builder.
@@ -257,8 +271,9 @@ fn card_to_serve(pkcs8: &[u8]) -> A2aResult<AgentCard> {
 
 Declare only the extensions your configuration actually advertises:
 `IDEMPOTENCY_EXTENSION_URI` is advertised exactly when the configured
-`TaskStore` reports `supports_idempotency()`, and `FAILURE_EXTENSION_URI`
-always. Declaring one the server would not have added is allowed — an
+`TaskStore` reports `supports_idempotency()`, `FAILURE_EXTENSION_URI` and
+`BUDGET_EXTENSION_URI` always, and the lease and approval URIs when a lease
+store or an approval gate is set. Declaring one the server would not have added is allowed — an
 operator's own entry is never overwritten — but it advertises a capability
 to clients, so declare it only if it holds.
 
@@ -272,21 +287,24 @@ Stated because a security page that lists only strengths is not one.
   instead, which keeps a report private without needing a key.
 * **No released tag is signed yet.** Tags since `v0.8.0` are annotated, and
   `release.yml` refuses a lightweight tag. Since 2026-10-08 it also refuses a
-  tag not signed by a key in `.github/release-signers/`, but no key is listed
-  there yet, so no release has passed that gate and the next one cannot until
-  one is. Until then `git tag -v` verifies no release. For a cryptographic
-  link from a published version to this repository, use the build provenance
-  attestations (`gh attestation verify`, step 3 of `RELEASING.md`), not the
-  tag.
+  tag not signed by a key in `.github/release-signers/`. That directory lists
+  the maintainer's SSH key as of 0.15.0, but no release has passed the gate
+  yet, so until a signed tag exists `git tag -v` verifies no release. For a
+  cryptographic link from a published version to this repository, use the
+  build provenance attestations (`gh attestation verify`, step 3 of
+  `RELEASING.md`), not the tag.
 * **No rate limiting is applied unless you wire it.** `rate_limit_rps` is
-  counted in an interceptor; setting the field without installing
-  `RateLimitInterceptor` does nothing. Failed credentials are throttled only
-  with `AuthFailureThrottle` registered before the authenticator (see
+  counted in an interceptor; setting the field does nothing unless a
+  `RateLimitInterceptor` is installed and given the tenant configuration with
+  `with_tenant_config` ([Multi-Tenancy](./multi-tenancy.md#the-one-that-can-be-set-and-do-nothing)).
+  Failed credentials are throttled only with `AuthFailureThrottle` registered
+  before the authenticator (see
   [Authentication](../building-agents/authentication.md#throttling-guessed-credentials)).
 * **The SLIMRPC binding is out of scope for the published crates' audit
-  surface.** It pulls 359 transitive dependencies including a native C crypto
-  build, which is why it lives outside the workspace with its own lockfile and
-  its own `cargo-deny` run.
+  surface.** It pulls 387 transitive dependencies (normal edges, measured on 2026-10-25 at
+  the locked `agntcy-slim-rpc` 3.4.6) including a native C crypto build, which is why it
+  lives outside the workspace with its own lockfile and its own `cargo-deny`
+  run.
 
 ## Reporting a vulnerability
 

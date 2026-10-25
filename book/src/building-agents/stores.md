@@ -1,6 +1,6 @@
 # Task & Config Stores
 
-a2a-rust uses pluggable storage backends for tasks and push notification configs. The built-in in-memory stores work for development and testing. For production, implement the traits for your database.
+a2a-rust uses pluggable storage backends for tasks and push notification configs. The built-in in-memory stores work for development and testing. For production, use the SQLite or PostgreSQL stores that ship with the crate (features `sqlite` / `postgres`), or implement the traits for your own database.
 
 ## TaskStore Trait
 
@@ -33,8 +33,12 @@ pub trait TaskStore: Send + Sync + 'static {
     fn count<'a>(&'a self)
         -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>>;
 
-    // Further provided methods — idempotency keys, delta saves, an event
-    // log for stream resumption — have defaults; see the API docs.
+    // Further provided methods have defaults; see the API docs: idempotency
+    // keys, delta saves, `isolates_tenants`, `get_with_position`, `database`,
+    // an event log for stream resumption, and
+    // `save_appending_history(task, messages, limit: HistoryLimit)`. A store
+    // that overrides the last one trims with `limit.trim(&mut history)`, which
+    // bounds the history by messages and by bytes.
 }
 # // The signatures above are the real trait's, and they are all it requires:
 # // this impl of it defines exactly these methods.
@@ -80,15 +84,20 @@ let store = InMemoryTaskStore::with_config(
 Features:
 - Thread-safe (`RwLock` — concurrent readers, exclusive writers)
 - Pre-allocated `HashMap::with_capacity(max_capacity)` — eliminates resize-induced latency spikes under load
-- O(1) amortized `save()`/`get()`/`delete()` via `HashMap` (no log(n) tree traversal overhead)
+- O(1) `get()` via `HashMap`; `save()` and `delete()` also maintain the ordered indexes, so they are O(log n)
 - **O(log n + page\_size) `list()` with secondary indexes**:
-  - `BTreeMap<u64, TaskId>` update-order index keyed by a monotonic per-write
-    sequence — iterated in reverse to return tasks most-recently-updated first
-    (spec §3.1.4), with no O(n log n) per-call sort
-  - `HashMap<String, BTreeMap<u64, TaskId>>` context index — O(log m + page\_size) filtered queries
-  - The sequence is a collision-free integer pagination cursor; every write
-    re-positions its task to the front of the update order
-- Automatic TTL eviction on access (maintains all indexes)
+  - `BTreeMap<(i64, u64), TaskId>` order index keyed by the task's status
+    timestamp (Unix milliseconds) and a monotonic per-write sequence that
+    breaks ties — iterated in reverse to return tasks most-recently-updated
+    first (spec §3.1.4: sorted by status timestamp, descending), with no
+    O(n log n) per-call sort
+  - `HashMap<String, BTreeMap<(i64, u64), TaskId>>` context index — O(log m + page\_size) filtered queries
+  - The pair is a collision-free pagination cursor (the page token is
+    `millis:seq`); a write that does not change the status timestamp, such as
+    an artifact append, keeps the task's place in the list
+- Automatic TTL eviction on write (every `eviction_interval` writes, or when you
+  call `run_eviction()`); a read never evicts, so `get` can still return a
+  terminal task past its TTL until the next sweep (maintains all indexes)
 - Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — `save` does not return with the store over capacity. Measured with 16 concurrent writers against a capacity of 100: a concurrent reader saw a peak of 102 and a final count of exactly 100, so the transient overshoot is bounded by the number of writes in flight
 - Cursor-based pagination, most-recently-updated first
 - Filtering by `context_id` (index-accelerated) and `status`
@@ -114,6 +123,12 @@ let store = SqliteTaskStore::new("sqlite::memory:").await?;
 # }
 ```
 
+`SqliteTaskStore::with_migrations(url)` runs the versioned migrations (tracked
+in a `schema_versions` table) instead of `CREATE TABLE IF NOT EXISTS`; use it
+in production. `from_pool` takes a `sqlx` 0.9 `SqlitePool` (`PgPool` for
+PostgreSQL), so an application that builds its own pool, or writes a custom
+store with `sqlx` as below, depends on `sqlx = "0.9"` (Rust 1.94 or later).
+
 Features:
 - Auto-creates schema on first use
 - Stores tasks as JSON blobs with indexed `context_id` and `state` columns
@@ -122,8 +137,12 @@ Features:
   that never drops or repeats a row even when timestamps tie
 - Atomic `insert_if_absent` via `INSERT OR IGNORE`
 - Upsert via `ON CONFLICT DO UPDATE`
-- **Production-ready defaults:** WAL journal mode, `busy_timeout=5000ms`,
-  `synchronous=NORMAL`, `foreign_keys=ON`, pool size of 8
+- **Production-ready defaults** on every connection the store opens: WAL
+  journal mode, `busy_timeout=5000ms`, `synchronous=NORMAL`, `foreign_keys=ON`,
+  `secure_delete=ON`, and a pool of 8. `secure_delete` zeroes deleted content in
+  the database file, so `delete` and `purge_expired` do not leave it in a free
+  page; it does not reach the write-ahead log until a checkpoint truncates it,
+  nor a backup. A pool you pass to `from_pool` keeps your own pragmas.
 
 ### TenantAwareInMemoryTaskStore
 
@@ -164,7 +183,7 @@ let count = store.tenant_count().await;
 # }
 ```
 
-The `TenantContext::scope()` pattern uses `tokio::task_local!` to thread the tenant ID through the async call stack without passing it as a parameter. The `RequestHandler` automatically sets the tenant scope when `params.tenant` is populated.
+The `TenantContext::scope()` pattern uses `tokio::task_local!` to thread the tenant ID through the async call stack without passing it as a parameter. The `RequestHandler` sets the tenant scope for every request from `params.tenant`, or from the `TenantResolver` when one is configured (the resolver's tenant wins, and a different `params.tenant` is refused).
 
 ### TenantAwareSqliteTaskStore (feature-gated)
 
@@ -180,7 +199,7 @@ let store = TenantAwareSqliteTaskStore::new("sqlite:tasks.db").await?;
 # }
 ```
 
-This variant partitions data by a `tenant_id` column instead of using task-local storage, making it suitable for production deployments where tenants may span multiple server instances.
+This variant reads the tenant from the same `TenantContext` and stores it in a `tenant_id` column (under caller isolation, the tenant and the caller), so its data lives in the database rather than in process memory, which suits production deployments where tenants may span multiple server instances.
 
 > **Note:** Corresponding `TenantAwareInMemoryPushConfigStore` and `TenantAwareSqlitePushConfigStore` variants exist for push notification config storage.
 
@@ -190,6 +209,11 @@ PostgreSQL-backed stores ship with the crate — `PostgresTaskStore`,
 `PostgresPushConfigStore`, tenant-aware variants, and a forward-only
 migration runner — and are exercised against a live PostgreSQL 16 service
 in CI (`postgres_store_tests.rs`):
+
+```toml
+[dependencies]
+a2a-protocol-server = { version = "0.15", features = ["postgres"] }
+```
 
 ```rust,no_run
 # fn card() -> a2a_protocol_types::agent_card::AgentCard {
@@ -214,6 +238,17 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 # Ok(())
 # }
 ```
+
+**Behind an authenticating interceptor** the handler gives each identified
+caller its own partition (spec §13.1), and `build()` refuses a task store and
+push-config store that do not partition by tenant. `SqliteTaskStore` and
+`PostgresTaskStore` do not, so use `TenantAwareSqliteTaskStore` or
+`TenantAwarePostgresTaskStore` with the matching `TenantAware…PushConfigStore`,
+or call `RequestHandlerBuilder::share_tasks_across_callers()` to keep one set
+of records per tenant. Left unset, both default to the tenant-aware in-memory
+stores, whose per-partition capacity (`with_task_store_config`, 10,000 tasks by
+default) applies per caller. See
+[Multi-Tenancy](../deployment/multi-tenancy.md#callers-within-one-tenant).
 
 ### Custom Implementation
 
@@ -278,6 +313,9 @@ pub trait PushConfigStore: Send + Sync + 'static {
     fn delete<'a>(&'a self, task_id: &'a str, id: &'a str)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
+    // Optional: fn isolates_tenants(&self) -> bool, false by default (see
+    // Tenant Isolation below).
+
     // Optional: total stored configs, counted against the handler's global
     // push-config ceiling. The default implementation returns `None`
     // (only the per-task cap is then enforced), so existing custom
@@ -308,7 +346,7 @@ let store = InMemoryPushConfigStore::new();
 ```
 
 Features:
-- Server-assigned config IDs (UUIDs)
+- Config IDs (a UUID is assigned when the config names none)
 - Per-task config limits (prevents abuse) — uses a secondary index (`task_counts`) for O(1) per-task count lookups instead of scanning all keys
 - Global config limit (`max_total_configs`, default 100,000) — prevents unbounded memory growth across all tasks
 - Thread-safe access
@@ -354,6 +392,32 @@ let handler = RequestHandlerBuilder::new(executor)
 # }
 ```
 
+## Retention, Erasure and Audit
+
+The in-memory store forgets: terminal tasks expire after `task_ttl` (one hour by
+default). The SQL stores keep every task until you say otherwise. Call
+`purge_expired(&RetentionPolicy::new(max_age))` on a concrete store from your
+own scheduler; it deletes only `Completed`, `Failed`, `Canceled` and `Rejected`
+tasks, in batches, and is safe to run from several replicas
+([Running More Than One Replica](../deployment/horizontal-scaling.md)).
+
+The tenant-aware stores also have `erase_caller(identity)`, which removes a
+caller's partitions with their tasks, logged events and idempotency keys (the
+push-config stores, its webhooks); the SQL stores do it in one transaction.
+`migrate_caller_keys(map)` (SQLite and PostgreSQL, task and push-config stores)
+moves partitions stored under the bare caller names earlier releases used to
+`bearer:<label>`, `api-key:<label>` or `jwt:<issuer>:<sub>`; run it once per
+store before serving 0.15
+([Upgrading](../reference/upgrading.md#a-caller-is-named-by-how-it-authenticated)).
+
+With `audit`, a task deleted through the audited task store is recorded in the
+hash chain. `purge_expired` and `erase_caller` are calls you make outside any
+request, so you report what they returned yourself
+([Audit Trail](../deployment/audit.md#erasure-of-tasks-is-on-record-too)). With
+`encryption`, `store::encrypted::EncryptedTaskStore` seals the parts of a
+task's history, status message and artifacts before they reach the wrapped
+store.
+
 ## Design Considerations
 
 ### Object Safety
@@ -362,14 +426,16 @@ Both traits use `Pin<Box<dyn Future>>` return types for object safety. This allo
 
 ### Tenant Isolation
 
-Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not method parameters. For in-memory stores, `TenantAwareInMemoryTaskStore` automatically partitions data by tenant. For SQL stores, `TenantAwareSqliteTaskStore` partitions by a `tenant_id` column. If you implement a custom store, use `TenantContext::current()` to retrieve the active tenant within the async call stack.
+Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not method parameters. For in-memory stores, `TenantAwareInMemoryTaskStore` automatically partitions data by tenant. For SQL stores, `TenantAwareSqliteTaskStore` partitions by a `tenant_id` column. If you implement a custom store that partitions by tenant, key by `TenantContext::partition()` (the tenant, plus the caller when the handler isolates callers), and override `isolates_tenants()` to return `true` on both `TaskStore` and `PushConfigStore`. A store that leaves it `false` makes the handler refuse every request that names a tenant (unless the builder was told `accept_unisolated_tenants()`), and `build()` refuse the store behind an authenticating interceptor. A wrapper store must forward it.
 
 ### TaskStoreConfig Fields
 
 **`TaskStoreConfig` configures `InMemoryTaskStore` only.** The SQL stores take
 a connection URL, not a config — `max_capacity`, `task_ttl` and
 `eviction_interval` have no meaning for them (the database holds the rows, and
-retention is `purge_expired`), and each carries its own page-size cap via
+retention is `purge_expired`; see
+[Retention, Erasure and Audit](#retention-erasure-and-audit)), and each carries
+its own page-size cap via
 `with_max_page_size`. Until 2026-08-19 that cap was a hardcoded `1000` that
 happened to equal this table's default, so setting `max_page_size` to something
 tighter changed the in-memory store and nothing else: measured with the cap at
@@ -380,31 +446,39 @@ returned all 60 rows it held.
 |-------|------|---------|-------------|
 | `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest evicted when exceeded |
 | `task_ttl` | `Option<Duration>` | `Some(1 hour)` | TTL for terminal-state tasks; `None` disables eviction |
-| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes O(n) cost) — see the note below |
+| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes the sweep's cost) — see the note below |
 | `max_page_size` | `u32` | 1000 | Maximum allowed page size for list queries |
+| `max_events_per_task` | `Option<usize>` | `Some(512)` | Events one task's log keeps for stream resumption; `None` removes the bound |
+| `max_held_events_factor` | `Option<usize>` | `Some(8)` | Times `max_events_per_task` a log may hold while an attached stream still owes its oldest events |
+| `idempotency_key_ttl` | `Option<Duration>` | `Some(24 h)` | How long a client's idempotency key is honoured; `None` keeps keys for the life of the process |
+| `max_idempotency_keys` | `Option<usize>` | `Some(100_000)` | Keys held at once; a send with a new key past it is refused as temporarily unavailable (HTTP `503`; gRPC `RESOURCE_EXHAUSTED`) |
 
 #### `eviction_interval` is a tail-latency knob
 
 The TTL sweep is not spawned: it is awaited inside `save`, and it holds the
 store's write lock for its whole duration, so the write that triggers it pays
-for it and every concurrent writer waits. Measured (debug profile, 50,000
-terminal tasks, `eviction_interval` 1000): the quietest of 1,000 consecutive
-saves took 3.99 µs and the one that swept took **4.54 ms** — about 1,100×.
+for it and every concurrent writer waits.
 
-The scan is O(n) unavoidably, which is why it is amortized behind the interval
-rather than run per write. If p99.9 write latency matters to you, raise
-`eviction_interval` and drive cleanup yourself with `run_eviction()` on your own
-schedule, so the stall lands where you chose it. The capacity pass is far
-cheaper (measured 3.5× and 3.7× on two runs at 10,000 entries) because it
-removes the overflow instead of scanning for it.
+The sweep walks only the tasks last written at least `task_ttl` ago (an index
+ordered by write time) and every held idempotency key (`idempotency_key_ttl`),
+so what it costs grows with the expired tasks and the held keys, not with the
+store size. The interval keeps it off most writes. The cost of one sweep has
+not been measured on this code.
+
+If p99.9 write latency matters to you, raise `eviction_interval` and drive
+cleanup yourself with `run_eviction()` on your own schedule, so the stall lands
+where you chose it. The capacity pass is separate: it runs on any write that
+leaves the store over `max_capacity` and removes only the overflow, oldest
+first, rather than scanning for it.
 
 ### Pagination
 
 The `list` method receives `ListTasksParams` with:
-- `page_size` — Number of results per page. Capped by
-  `TaskStoreConfig::max_page_size` on `InMemoryTaskStore`, and by
-  `with_max_page_size` on each SQL store; both default to
-  `DEFAULT_MAX_PAGE_SIZE` (1,000)
+- `page_size` — Number of results per page. The handler refuses a value
+  outside 1 to 100 before your store sees it, and an unset value lists 50. A
+  store may cap it lower: `TaskStoreConfig::max_page_size` on
+  `InMemoryTaskStore` and `with_max_page_size` on each SQL store (default
+  `DEFAULT_MAX_PAGE_SIZE`, 1,000, so the cap binds only when set below 100)
 - `page_token` — Opaque cursor for the next page
 - Various filter fields
 
@@ -481,7 +555,8 @@ A custom store that keeps a log should do the same, and override
 `get_with_position` to read the task and its position together. One that does
 not keeps the trait's default, no position, and a subscription falls back to
 reading the log's end and then the task, which can lose the one event another
-replica has logged and not yet stored.
+replica has logged and not yet stored, or repeat one it logged and stored
+between the two reads.
 
 The SQL stores add the column themselves: migration 8 (`SQLite`) and 7
 (`PostgreSQL`) for `with_migrations`, and `from_pool` for a database an earlier

@@ -24,6 +24,10 @@ which articles it does and does not help with is in the
 | `task.event` | the agent emits an event and it is stored | its position in the task's event log, the new state, a digest, and which `run.started` it belongs to |
 | `task.cancel_requested` | `CancelTask` reaches a running task | task, the caller, the trace |
 | `call.started` | a call is admitted, only in [required](#required-mode) mode | method, trace |
+| `approval` | the approval gate admits a decision | task, the approver, a digest of the action, `requestId`, `decision`, who asked (`requestedBy`); under a quorum, also `required`, `approvedBy`, `reachedExecutor` |
+| `halt` | an operator halts or resumes | the operator, `action`, `scope` (`all` or `tenant`) and, for a halt, `reason` and the ids of the tasks stopped |
+| `subject.erased` | `erase_subject` destroys a person's key | the operator and the records' random handles (`sids`) |
+| `task.deleted`, `erasure`, `hold.placed`, `hold.released` | see [Erasure of tasks](#erasure-of-tasks-is-on-record-too) and [Retention and legal holds](#retention-and-legal-holds) | the task and its context for `task.deleted`; the operator for the others, with the scope and counts of an `erasure` and the reason of a `hold.placed`. Never content |
 
 Content is recorded as a SHA-256 digest of its canonical JSON, never as
 text. A record proves what was said — hash the message you hold and compare —
@@ -82,9 +86,12 @@ let handler = RequestHandlerBuilder::new(MyAgent)
 ```
 
 Records name the caller only when authentication does: give each credential
-a label (`with_labelled_tokens`, `with_labelled_keys`), or use JWT. The
-subject is the scheme and the name together: `bearer:<label>`,
-`api-key:<label>`, or `jwt:<issuer>:<sub>` (`auth::caller_id` builds each). The recording interceptor is placed first in the
+a label (`with_labelled_tokens`, `with_labelled_keys`), or use JWT or mutual
+TLS. The subject is the scheme and the name together: `bearer:<label>`,
+`api-key:<label>`, `jwt:<issuer>:<sub>` (the issuer percent-encodes `%` and
+`:`) or `mtls:<name>` (`mtls:sha256:<fingerprint>` unless
+`MutualTlsAuthInterceptor::with_names` names the certificate);
+`auth::caller_id` builds each. The recording interceptor is placed first in the
 chain whatever order you add interceptors in, so refused calls are recorded
 too. A refused call's `outcome.error` says why, with the label
 `a2a.server.errors` uses: `unauthenticated` for a missing or invalid
@@ -203,11 +210,41 @@ record, a gap, a reordering, a record from another chain, a missing start, a
 checkpoint beyond the last record (the tail was removed), or a signature that
 does not verify.
 
+The three files come from the export. `records.json` is
+`serde_json::to_vec(&log.export(chain).await?)` and `checkpoints.json` the
+same over `store.checkpoints(chain).await?`, each a JSON array. `jwks.json` is
+a JWK Set holding the checkpoint key, under the `kid` the signer was given (a
+key with no `kid` matches no checkpoint); `--keys` reads `OKP`/`Ed25519` and
+`EC`/`P-256` keys only. `log.trusted_key()` holds the raw public key, not a
+`SubjectPublicKeyInfo`: 32 bytes for Ed25519, and for P-256 the 65-byte point,
+`0x04` then X then Y. In Rust,
+`Jwk::from_verifying_key(&VerifyingKey::from_bytes(key.alg.jws_name(), &key.public_key)?, Some(key.kid.as_str()))`
+turns that key into a JWK; collect it with `Jwks::new(vec![..])` (all three
+are in `a2a_protocol_types::signing`) and serialize it with `serde_json`. For
+Ed25519 the file reads:
+
+```json
+{"keys":[{"kty":"OKP","crv":"Ed25519","kid":"audit-2026-10","x":"<base64url, no padding, of the 32-byte key>"}]}
+```
+
+For P-256 the key is `"kty":"EC","crv":"P-256"` with `x` and `y` the two
+32-byte halves of the point after its `0x04` prefix, each base64url without
+padding.
+
 ## Following one task across agents
 
-Every record carries the W3C trace id of the call that caused it, and this
-SDK's client propagates `traceparent` on every outbound call. With both
-agents audited, the records for one user request are the records with one
+The `call`, `call.started`, `run.started`, `task.cancel_requested` and
+`approval` records carry the W3C trace id of the call that caused them, when
+the call has one. A `task.event` names its `run.started` by `runSeq`, and that
+record carries it; the records an operator writes (`halt`, `erasure`,
+`hold.placed`, `hold.released`, `subject.erased`) and `task.deleted` carry
+none. This SDK's client propagates `traceparent` when the `otel` feature and a
+recording `tracing-opentelemetry` layer are present (unless it is built with
+`with_trace_propagation(false)`), or when it carries
+`TracePropagationInterceptor`; neither sends it over WebSocket. The server
+keeps the caller's trace id under the default `InboundTracePolicy::Continue`
+(see [Trace context](./observability.md#trace-context)). With both agents
+audited that way, the records for one user request are the records with one
 `trace.traceId` across the two agents' chains — the interaction Article 72(2)
 asks a provider to be able to analyse.
 
@@ -325,7 +362,7 @@ Removing a task is something a controller has to be able to show (GDPR Art.
   let swept = store.purge_expired(&policy).await?;
   log.record_erasure("acme", "operator:dpo", Erased::Expired { tasks: swept.tasks_deleted }).await?;
 
-  let gone = store.erase_caller("bearer:alice@example.test").await;
+  let gone = store.erase_caller("bearer:alice@example.test").await?;
   log.record_erasure("acme", "operator:dpo", Erased::Caller {
       caller: "bearer:alice@example.test",
       partitions: gone.partitions,
@@ -333,11 +370,13 @@ Removing a task is something a controller has to be able to show (GDPR Art.
   }).await?;
   ```
 
-  The `erasure` record names who, the scope and the counts. The erased
-  caller is in a field `with_privacy` seals under that caller's own key, so
-  erasing them from the chain later (`erase_subject`) takes their name out of
-  the record of their own erasure. The record is written after the erasure,
-  and nothing makes you write it;
+  The SQL stores' `erase_caller` returns a `Result`, as the `?` shows; the
+  in-memory stores return the `CallerErasure` directly. The `erasure` record
+  names who, the scope and the counts. The erased caller is in a field
+  `with_privacy` seals under that caller's own key, so erasing them from the
+  chain later (`erase_subject`) takes their name out of the record of their
+  own erasure. The record is written after the erasure, and nothing makes you
+  write it;
 - a legal hold is `hold.placed` or `hold.released`, naming who did it.
 
 ## Required mode
@@ -362,7 +401,8 @@ names no caller; the `call` record after it does.
 
 - Record times come from the server's clock, not a trusted time source.
 - A run's link from its events to its caller is kept in memory; a restart
-  while a task runs leaves that task's later events without a `runSeq`.
+  while a task runs leaves that task's later events without a `runSeq`, and so
+  does a run forgotten because more than 65,536 runs were tracked at once.
 - Appends to one tenant's chain are serialised. ADR 0015 gives the measured
   cost: about 9 µs per record in memory and 270 µs on a SQLite file on the
   machine measured.

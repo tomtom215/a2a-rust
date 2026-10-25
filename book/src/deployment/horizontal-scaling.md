@@ -5,11 +5,14 @@
 
 Two replicas behind a load balancer sharing a database is the first
 architecture most people reach for, and until recently this book said nothing
-about it. Everything below is measured by
+about it. Most of what follows is measured by
 `crates/a2a-protocol-server/tests/multi_replica.rs`, which runs two handlers
-over one PostgreSQL instance and asserts each claim. Where something does not
-work, there is a test pinning that too — so if a future release changes it, the
-test fails rather than this page quietly becoming wrong.
+over one PostgreSQL instance; the cancel rows by `tests/cross_replica_cancel/`,
+the lost-save row by `tests/stale_write_position/`, the schema lock by
+`tests/postgres_store_tests.rs`, and the load figures by
+`tests/soak_multi_replica.rs`. Where something does not work, there is a test
+pinning that too — so if a future release changes it, the test fails rather
+than this page quietly becoming wrong.
 
 ## The short version
 
@@ -23,18 +26,23 @@ test fails rather than this page quietly becoming wrong.
 | Rate limiting enforces the configured limit | **Only with a shared counter** | Otherwise each replica counts alone |
 | A second send to a running task is refused | **No** — each replica admits one | Admission state is per-handler |
 | A task one replica finished stays finished | **Yes** | The store refuses to move a terminal task |
-| `CancelTask` stops an executor running on another replica | **At its next write** | The refused write is the only signal |
+| `CancelTask` stops an executor running on another replica | **At its next write; at once with a halt store** | The refused write; with `with_halt_store(PostgresHaltStore)` the cancel is also pushed to the replica running the task (ADR 0024) |
 | A continuation's save keeps what another replica's turn wrote meanwhile | **No** — the stored task loses it; a subscriber still receives the event | No compare-and-set write (`tests/stale_write_position`) |
+| A halt (`halt` / `resume`) stops every replica | **Only with a halt store** | `with_halt_store(PostgresHaltStore)` writes and pushes it (ADR 0019, 0024); without one it holds in one process |
+| A delegated child stops when the agent that delegated it goes quiet | **Only with a lease store** | `with_lease_store(PostgresLeaseStore)` keeps the deadline where every replica reads it, so a renewal on any replica counts (ADR 0020) |
 
-Sharing a task store gets you most of the way. What it does not cover is
-streaming, rate limiting, and who may write to a running task — and only rate
-limiting has a complete fix.
+The halt and lease rows are covered in [Human oversight](./oversight.md).
+
+Sharing a task store gets you most of the way. What it does not cover is rate
+limiting, who may write to a running task, and a save made on top of another
+replica's turn; only rate limiting has a complete fix. Streaming works across
+replicas through the shared event log, up to a poll late.
 
 **What 0.15 supports.** One replica, or several sharing a store **with every
 turn of a task routed to one replica** (session affinity on the task or
 context ID, below). Without affinity, two replicas can run the same task at
-once and a write can be lost, as the last two rows say; this release does not
-prevent it. Closing it needs compare-and-set task writes and single-writer
+once and a write can be lost, as the second-send and continuation rows say;
+this release does not prevent it. Closing it needs compare-and-set task writes and single-writer
 admission across replicas, both planned and neither built.
 
 ## Share the store
@@ -73,7 +81,8 @@ EXISTS` is not safe to run concurrently, and one replica could fail its first
 start with a duplicate key in `pg_type` or `pg_class`. Since 2026-09-23 every
 constructor — the task stores, both push-config stores, the shared rate-limit
 counter and `with_migrations` — does its DDL under one transaction-scoped
-advisory lock, so they serialize. The key is the bytes of `"a2a_schm"` read as
+advisory lock, so they serialize. So do the audit, halt and lease stores,
+which have taken it since they were added. The key is the bytes of `"a2a_schm"` read as
 a big-endian `i64`; an application taking advisory locks of its own on the
 same database should avoid it.
 
@@ -114,10 +123,12 @@ that depends on `CallContext::caller_identity`, and only an authentication
 interceptor can supply one:
 
 - `JwtAuthInterceptor` records the validated issuer and `sub` automatically,
-  as `jwt:<issuer>:<sub>`.
+  as `jwt:<issuer>:<sub>` (the issuer percent-encodes `%` and `:`).
 - `ApiKeyAuthInterceptor::with_labelled_keys` and
   `BearerTokenAuthInterceptor::with_labelled_tokens` record a label you
   choose, as `api-key:<label>` and `bearer:<label>`.
+- `MutualTlsAuthInterceptor` records the client certificate's fingerprint (or
+  a name you map it to) as `mtls:<name>`.
 
 The label is separate from the credential on purpose. A caller key reaches the
 rate-limit table your replicas share, and can reach logs and metrics; a bearer
@@ -137,11 +148,15 @@ registration order over one context, so a limiter registered first reads an
 identity nothing has set yet and buckets every caller together. Nothing rejects
 that ordering — it just quietly stops being per-caller.
 
-Without any of this an unidentified caller is keyed by its peer address (an
-IPv6 client by its `/64`) when `trusted_proxy_hops` is zero, and otherwise
-falls back to a shared `anon` bucket, so the limit still holds but every
-caller behind one proxy, or with no recorded address, spends one budget.
-Since 2026-10-18; before, every unidentified caller shared one bucket.
+Without any of this an unidentified caller is keyed by its client address:
+with `trusted_proxy_hops` set, the `trusted_proxy_hops`-th entry from the
+right of `X-Forwarded-For`; with it zero, the connection's peer address (an
+IPv6 client by its `/64`). Only when neither is available — a forwarded chain
+shorter than `trusted_proxy_hops`, or a transport that records no peer — does
+it fall back to a shared `anon` bucket, which keeps the limit but makes those
+callers spend one budget. Keying by the peer address is new in 0.15; before,
+every caller with no identity and no trusted forwarded address shared one
+bucket.
 
 ### What it costs
 
@@ -194,12 +209,21 @@ both SQL stores keep one. That client:
   reattach hook looks for new events every `subscribe_reattach_interval`
   (250 ms by default), so a frame can be up to one interval late.
 
-Two edges remain, both at the moment of subscribing. The snapshot the stream
-starts with is read just after the log's end, so an event the running replica
-logs and stores between those two reads arrives twice, in the snapshot and
-again in the replay; a client folding an `append: true` artifact chunk would
-fold it twice. And a store without an event log has nothing to replay: its
-subscribers get the ending and not the middle.
+The stream starts from a snapshot of the task and replays the log after the
+position that snapshot reflects. Every shipped store returns the task together
+with that position, in one read (`TaskStore::get_with_position`), so an event
+the running replica logs and stores while the subscription starts arrives once;
+before 0.15 it could arrive twice, and a client folding an `append: true`
+artifact chunk would have folded it twice. Three edges remain. A replica still
+on an earlier release does not write that position, so during a rolling
+upgrade a subscriber can see an event its snapshot already holds a second time.
+A custom store that does not return the position falls back to reading the
+log's end and then the task, which can lose the one event another replica has
+logged and not yet stored, or repeat one it logged and stored between the two
+reads
+([The log position a stored task reflects](../building-agents/stores.md#the-log-position-a-stored-task-reflects)).
+And a store without an event log has nothing to replay: its subscribers get
+the ending and not the middle.
 
 Where a poll's latency matters, or the store keeps no log, three ways to live
 with it, in the order most deployments should consider them:
@@ -264,9 +288,13 @@ enforced, all three stores let A overwrite `Canceled` with `Completed`, and
 
 What this does **not** give you:
 
-- **Prompt cancellation.** A's executor learns at its next write. One that
-  works silently for an hour runs for an hour. There is no cross-replica
-  cancel signal; the refused write stands in for one.
+- **Prompt cancellation, without a halt store.** A's executor learns at its
+  next write. One that works silently for an hour runs for an hour. With a
+  `HaltStore` (`with_halt_store`; see [Human oversight](./oversight.md)) the
+  replica that took the cancel publishes it and A fires the executor's token at
+  once (ADR 0024). Streams open on A then end when the executor returns,
+  without the `Canceled` frame, and an executor that ignores its token still
+  runs on.
 - **A clean stream on A.** Non-terminal frames A's executor emitted between
   the cancel and its next write still reach a client streaming from A —
   though never the store. The terminal frame is held until the store has

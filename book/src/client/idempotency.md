@@ -97,9 +97,10 @@ miss the deduplication entirely — which is the very case this exists for.
 
 ## What the client does with it
 
-Attaching a key changes the retry decision. `SendMessage` and
-`SendStreamingMessage` are normally not retried after an ambiguous failure; a
-keyed send is, because the retry cannot duplicate work.
+Attaching a key changes the retry decision of a client built with
+`with_retry_policy` (without a policy nothing is ever re-sent).
+`SendMessage` and `SendStreamingMessage` are normally not retried after an
+ambiguous failure; a keyed send is, because the retry cannot duplicate work.
 
 **That holds only against a peer known to honour the key**, and the client
 will not assume it. `ClientBuilder::from_card` reads the advertisement off
@@ -108,10 +109,8 @@ with `ClientBuilder::with_peer_honouring_idempotency(true)`. Without that
 evidence a keyed send stays exactly as retryable as an unkeyed one, which is
 to say not at all after an ambiguous failure.
 
-This paragraph used to say the property held even against a server without
-the extension, "because such a server refuses a keyed send outright". That is
-true of *this* SDK's server, which refuses a keyed send when its store cannot
-honour one — and of nothing else. The key travels in `Message.metadata`,
+This SDK's server refuses a keyed send when its store cannot honour one, but
+nothing obliges another server to. The key travels in `Message.metadata`,
 which A2A defines as free-form, and the extension is deliberately not part of
 A2A v1.0: a conformant Python, Java, Go or JavaScript server has never heard
 of the URI, ignores the metadata, and runs the send. Retrying against one
@@ -178,6 +177,15 @@ reported instead.
 A key outlives its task on purpose. If a retention sweep removed the task, a
 retry reports `TaskNotFound` rather than finding the key free and running the
 send a second time.
+
+It does not outlive everything. The in-memory store keeps a key for 24 hours by
+default (`TaskStoreConfig::idempotency_key_ttl`), and a retry that arrives
+later is treated as a new send. A SQL store deletes nothing until you run its
+retention sweep (`purge_expired`); the sweep's `RetentionPolicy` expires keys
+after 24 hours by default, and never sooner than it expires terminal tasks. The
+in-memory index holds at most 100,000 keys (`max_idempotency_keys`, per tenant
+in a tenant-aware store); a send with a new key past that is refused as
+temporarily unavailable (HTTP 503) and runs nothing, so retry it later.
 
 ## Server support
 

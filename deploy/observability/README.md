@@ -52,8 +52,9 @@ my-agent
 ```
 
 Set `service.instance.id` per replica. `service.name` becomes the `job`
-label and `service.instance.id` the `instance` label; the SDK does not set
-an instance id itself, so two replicas without one write the same series.
+label and `service.instance.id` the `instance` label. `Telemetry` sets a
+random `service.instance.id` per process unless `OTEL_RESOURCE_ATTRIBUTES`
+names one; set it yourself, as above, for a stable per-replica label.
 
 ## How this was tested
 

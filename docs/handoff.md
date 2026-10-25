@@ -19,9 +19,35 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release. The
-  four crates are at 0.15.0 and the SLIMRPC binding at 0.7.0, all unreleased;
-  `CHANGELOG.md` is `[Unreleased]`.
+- **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release.
+  0.15.0 is prepared in pull request #180 and not tagged: the four crates and
+  `tools/a2a-cli` at 0.15.0, the SLIMRPC binding at 0.7.0, `CHANGELOG.md`
+  dated 2026-10-25 above an empty `[Unreleased]`, the maintainer's public
+  signing key in `.github/release-signers/`, and `docs/provenance-manifest.md`
+  regenerated last. Merge with a merge commit, never a squash, then tag the
+  merge commit (*Waiting on the maintainer*).
+- **Book audit (2026-10-25):** 13 readers checked every book page against
+  the code, the specification and the changelog, and 13 editors applied what
+  held up. Checked mechanically afterwards: the book's doctests (281 passed,
+  0 failed, 5 ignored, the baseline), `rustdoc -D warnings` on the four
+  crates, the CI gates that need no build, `promtool` on the alert rules, and
+  the two generated benchmark pages (each regenerates byte-identical from its
+  generator). The harness does not compile the bodies of `#[test]` and
+  `#[tokio::test]` functions (rustdoc strips them), so `testing.md`'s seven
+  were compiled and run by hand against a working executor: 7 of 7 pass; the
+  page's hidden stub executor does nothing, so they fail against it, which is
+  why the page now says `CalcExecutor` is not shown. The book's type face was
+  11.9 px in a 560 px column (mdBook's 62.5 % root made `1rem` 10 px);
+  `book/theme/custom.css` now sets 17 px in a 720 px column. The banner cards'
+  subtitle and the code card's footer said v1.0.0; they say v1.0.1 now (only
+  that text band was re-rendered; `book/static/brand/README.md`). Left open:
+  `book/src/images/dashboards/a2a-server.png` predates the Agent executor row
+  (the page says so; retaking it needs the live stack);
+  `examples/deploy-agent/Dockerfile` was one Rust minor behind the MSRV and
+  is now on 1.94, with no gate that keeps it there; `docs/official-tck-
+  findings.md` §1 says 87 passing and 5 failing "cannot be reconciled" with
+  114, and an editor's arithmetic suggests it can (87 + 5 + 1 + 21), which
+  nobody has resolved.
 - **Working branch:** `claude/sleepy-knuth-3lnx7k`, started 2026-10-24
   from `main` at `2781bb69`, the merge of pull request #179. `git log
   2781bb69..` lists what it holds that `main` lacks.
@@ -319,7 +345,17 @@ only: when something here is done, delete it rather than annotating it.
    graded, 8 of the 9 baselined failing (STREAM-SUB-003 not graded there);
    required-extension CORE-CAP-004 passed on JSON-RPC and HTTP+JSON. All
    three gates exit 0. Re-run after any further wire change.
-6. **Release readiness for 0.15.0, then debt** (*Open engineering* below).
+6. **After the 0.15.0 tag:** drop the README's "unreleased 0.15.0" callout and
+   `STABILITY.md` §1's "unreleased" sentence; bump
+   `benches/sdk-comparison/harness/agent-a2a-rust` from `=0.14.1`; change
+   `book/src/deployment/cicd.md`'s "`/v0.14/` is 0.14.1" and
+   `docs/openssf-best-practices.md`'s release dates; record the first signed
+   tag in `book/src/deployment/security.md` ("No released tag is signed
+   yet"), `.github/release-signers/README.md` and the
+   `docs/compliance/controls.toml` gap row; decide whether to publish the
+   SLIMRPC binding (it is not on crates.io, and `book/src/bindings/slimrpc.md`
+   shows a path dependency until it is). Then debt, starting with the
+   changelog's size (*Open engineering* below).
 
 ## Waiting on the maintainer
 
@@ -347,9 +383,20 @@ only: when something here is done, delete it rather than annotating it.
   contract custom stores implement, so it is the maintainer's call. It
   does not make concurrent turns on two replicas safe; that needs
   cross-replica single-writer admission (a lease row per task).
-- **A release signing key.** `.github/release-signers/allowed_signers` and
-  `gpg-fingerprints.txt` hold comments only, so `release.yml` refuses every
-  tag, by design. Also a `v*` tag ruleset. `ROADMAP.md` tracks both.
+- **Tagging 0.15.0.** `.github/release-signers/allowed_signers` holds the
+  public half of the maintainer's `id_ed25519_signing` key; the private half
+  never enters an agent session. After the pull request merges, on the
+  machine that holds the key: `git tag -s v0.15.0 <merge commit> -m "Release
+  v0.15.0"`, `scripts/verify_tag_signature.sh v0.15.0`, push the tag, approve
+  the `crates-io` environment. Tag the merge commit itself, before the
+  benchmark bot pushes to `main`: the tagged tree may differ from the
+  manifest's pinned commit only by the manifest file. Not verified: that
+  `release.yml` accepts a tag this key signed (no tag has been signed yet),
+  that the `crates-io` environment's credentials exist, and that GitHub
+  accepts the shortened release body (the 0.15.0 changelog section is about
+  290,000 characters against the API's 125,000; `release.yml` posts the
+  upgrade-relevant subsections and links the rest). A `v*` tag ruleset is
+  still unset; `ROADMAP.md` tracks it.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
   each with its status), held on 2026-10-15 for re-verification. The a2a-go
   draft for R19 is deliberately not committed: it was never checked against
@@ -630,7 +677,8 @@ it.
   reads the first `version` line. `RELEASING.md` §1 has the loop over every
   lockfile and `check_lockfiles.sh`.
 - The maintainer has allowed release preparation inside the content pull
-  request twice; the manifest-last rule holds either way.
+  request, most recently for 0.15.0 (2026-10-25); the manifest-last rule
+  holds either way.
 
 ## Branches
 

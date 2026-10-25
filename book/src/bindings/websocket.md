@@ -30,6 +30,9 @@ A refused upgrade carries the HTTP+JSON binding's error body (§11.6):
 The `Origin` refusal carries the same shape with `"code":403`,
 `"status":"PERMISSION_DENIED"` and no `details`.
 
+No subprotocol is negotiated: the SDK's client sends no
+`Sec-WebSocket-Protocol` and the server's answer selects none.
+
 ## 2. Service parameters (§3.2.6, §12.3)
 
 **Transmission.** Service parameters are the HTTP headers of the upgrade
@@ -80,13 +83,16 @@ supported: an array is answered `-32600`.
 {"jsonrpc":"2.0","id":"1","result":{"id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-10-12T08:00:00Z"}}}
 ```
 
-A connection may have up to 64 requests in progress at once. Their responses
-can arrive in any order; a client correlates them by `id`.
+A connection may have up to 64 requests in progress at once; a stream counts
+as in progress until it ends. Their responses can arrive in any order; a client
+correlates them by `id`.
 
 A request with no `id` member is a notification (JSON-RPC 2.0 §4.1): the
-server runs it and sends no frame for it, whether it succeeds or fails. A
-streaming method (`SendStreamingMessage`, `SubscribeToTask`) sent as a
-notification is not run: a stream is its only answer.
+server runs it and sends no frame for it, whether it succeeds or fails, except
+that a notification read while 64 requests are in progress is not run and is
+refused with the `-32603` frame of §5 and a null `id`. A streaming method
+(`SendStreamingMessage`, `SubscribeToTask`) sent as a notification is not run:
+a stream is its only answer.
 
 ### Data types (§12.2)
 
@@ -194,13 +200,14 @@ that accepts its cookie or ticket and forwards a header.
 
 - **Transport.** The dispatcher listens on plain `ws://` unless given a
   certificate: `WebSocketDispatcher::with_tls` (a `rustls::ServerConfig`) or
-  `with_tls_pem` (feature `tls-rustls`) makes the listener `wss://` only,
-  offering ALPN `http/1.1`, with the TLS handshake bound by the handshake
-  timeout. The agent card is served over the same TLS session. Production
-  deployments (spec §7.1) either do that or put a TLS terminator in front,
-  and publish `wss://` in the card. The SDK's client connects to `wss://`
-  with the roots its HTTPS transports use (feature `tls-rustls`, on by
-  default), or a configuration given to
+  `with_tls_pem` (both need the `tls-rustls` feature of `a2a-protocol-server`,
+  which is off by default there and on in `a2a-protocol-sdk`'s defaults) makes
+  the listener `wss://` only, offering ALPN `http/1.1`, with the TLS handshake
+  bound by the handshake timeout. The agent card is served over the same TLS
+  session. Production deployments (spec §7.1) either do that or put a TLS
+  terminator in front, and publish `wss://` in the card. The SDK's client
+  connects to `wss://` with the roots its HTTPS transports use (feature
+  `tls-rustls`, on by default), or a configuration given to
   `WebSocketTransportConfig::with_tls_config`.
 - **Origin.** By default the server accepts an upgrade from any `Origin`.
   Where credentials are ambient (a cookie a gateway turns into a header), a

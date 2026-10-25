@@ -67,15 +67,22 @@ async fn run(signing_key_pkcs8: &[u8]) -> Result<(), Box<dyn std::error::Error>>
 }
 ```
 
-Use durable halt and lease stores (SQLite, PostgreSQL) when more than one
-replica serves the agent. The gRPC and WebSocket dispatchers serve on their
-own listeners, which `ServeConfig` does not reach.
+Use `PostgresHaltStore` and `PostgresLeaseStore` (feature `postgres`) when
+more than one replica serves the agent: both are shared through the database.
+`SqliteHaltStore` keeps a halt across a restart of one process, but a SQLite
+file is not shared between pods, and there is no SQLite lease store. In 0.15
+several replicas are supported only when every turn of a task is routed to one
+replica; see [Running More Than One Replica](./horizontal-scaling.md). The
+gRPC and WebSocket dispatchers serve on their own listeners, which
+`ServeConfig` does not reach.
 
 ### HTTPS
 
-Always use HTTPS in production. The **client** (and the server's push sender)
-ship TLS out of the box via the default `tls-rustls` feature — `https://`
-agents and webhooks work with no extra setup.
+Always use HTTPS in production. The **client** (and, through
+`a2a-protocol-sdk`, the server's push sender) ship TLS out of the box via the
+default `tls-rustls` feature — `https://` agents and webhooks work with no
+extra setup. A direct dependency on `a2a-protocol-server` needs
+`features = ["tls-rustls"]`.
 
 The **server** terminates TLS itself on `serve::Server` (spec §14:
 "Implementations SHOULD support HTTPS"), with the same `tls-rustls` feature,
@@ -107,10 +114,13 @@ let report = Server::bind("0.0.0.0:443")
 The listener then speaks TLS only, offering HTTP/2 and HTTP/1.1 by ALPN. A
 handshake must finish within `ServeConfig::header_read_timeout`; one that
 fails closes the connection and counts as failed in the connection-pool
-metrics. The quick-start `serve` and `serve_with_addr`, and the WebSocket
-listener, stay plaintext: run those behind a TLS-terminating reverse proxy
-(nginx, Caddy, a cloud load balancer), as is also the usual choice when
-certificates are managed outside the process:
+metrics. The WebSocket listener terminates TLS itself with
+`WebSocketDispatcher::with_tls` or `with_tls_pem` (`tls-rustls`), and the gRPC
+listener with `GrpcDispatcher::with_tls` (`grpc-tls`); without those calls they
+are plaintext too. So are the quick-start `serve` and `serve_with_addr`: run
+those behind a TLS-terminating reverse proxy (nginx, Caddy, a cloud load
+balancer), as is also the usual choice when certificates are managed outside
+the process:
 
 ```text
 Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
@@ -118,14 +128,23 @@ Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
 
 ### CORS
 
-Configure CORS for browser-based clients:
+Configure CORS for browser-based clients. It is off until configured: without
+`with_cors`, no response carries CORS headers (an `OPTIONS` preflight
+included), so a browser refuses the cross-origin call. Name the origin you
+expect rather than using `CorsConfig::permissive()`:
 
 ```rust,no_run
-use a2a_protocol_sdk::server::CorsConfig;
+use std::sync::Arc;
+use a2a_protocol_sdk::server::{CorsConfig, JsonRpcDispatcher, RequestHandler};
 
-// The dispatchers include CORS handling.
-// Configure allowed origins for production.
+fn dispatcher(handler: Arc<RequestHandler>) -> JsonRpcDispatcher {
+    JsonRpcDispatcher::new(handler).with_cors(CorsConfig::new("https://app.example.com"))
+}
 ```
+
+`RestDispatcher` and `CombinedDispatcher` have the same `with_cors`. The
+WebSocket listener has its own origin check,
+`WebSocketDispatcher::with_allowed_origins`.
 
 ### Push Notification Security
 
@@ -134,6 +153,7 @@ The built-in `HttpPushSender` includes:
 - **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth), including IPv4-in-IPv6 smuggling, and pins the validated IP against DNS rebinding
 - **Header injection prevention** — Validates credentials for `\r`/`\n` characters
 - **Timeouts** — Each push delivery HTTP request is capped at 10 seconds, and a whole delivery, retries included, at 30 (`HandlerLimits::push_delivery_timeout`), inside the 10-30 seconds spec §4.3.3 recommends
+- **HTTPS only, if you ask** — `HttpPushSender::new().https_only()`, handed to `with_push_sender`, refuses an `http://` webhook when the config is created and again at delivery. `with_allowed_hosts([...])` limits delivery to the hosts you name
 
 > **Transport note:** with the `tls-rustls` feature (enabled by default when
 > using `a2a-protocol-sdk`) the bundled `HttpPushSender` delivers to both
@@ -261,9 +281,11 @@ order that works:
 2. let in-flight tasks finish on their own for up to `completion_grace`
    (default 5 s), then cancel the rest and wait up to `task_grace` (default
    10 s) for the executors to act on it — cancel what they delegated,
-   return — after which the executor's `cancel` hook, or the handler after a hook that
-   writes none, writes the terminal `Canceled` for any that did not write one, so every
-   open stream ends with a terminal event;
+   return. An executor that returns without a terminal state has its `cancel`
+   hook called (or, if that writes none, the handler writes `Canceled`), so
+   its open streams end with a terminal event; one still running when the
+   grace ends is counted in `still_running` and cut off when the process
+   exits;
 3. drain connections, for up to `drain_timeout` (default 15 s).
 
 ```rust,no_run
@@ -381,6 +403,13 @@ RequestHandlerBuilder::new(executor)
 # }
 ```
 
+The window is fixed, so a caller can spend up to twice `requests_per_window`
+across a window boundary. Register the limiter after the authentication
+interceptor; registered first, it cannot key on the caller's identity and falls
+back to the client address. It cannot slow credential guessing; use
+`AuthFailureThrottle` for that
+([Authentication](../building-agents/authentication.md#throttling-guessed-credentials)).
+
 For a limit shared across replicas, use `with_shared_counter` with
 `PostgresRateLimitCounter` or your own `RateLimitCounter` — see
 [Running More Than One Replica](./horizontal-scaling.md#rate-limiting-needs-a-shared-counter).
@@ -389,7 +418,7 @@ For sliding windows, use a reverse proxy or implement a custom
 
 ### Client Retry & Reuse
 
-When calling remote agents, build clients once and reuse them. Connection reuse is critical for performance — creating a new client per request bypasses HTTP keep-alive and connection pooling, adding ~300-500us of overhead per call:
+When calling remote agents, build clients once and reuse them. Connection reuse is critical for performance — creating a new client per request bypasses HTTP keep-alive and connection pooling, adding about 130-180 µs of overhead per call on loopback (more over TLS, where the handshake dominates):
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -435,9 +464,14 @@ Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_protocol_server=debug` fo
 
 ### Health Checks
 
-The REST dispatcher and `A2aRouter` answer `GET /health` and `GET /ready`
-themselves. The JSON-RPC dispatcher does not; route the path yourself in front
-of it, answering with the dispatcher's own body type:
+`A2aRouter` answers `GET /health` (liveness, a constant) and `GET /ready`,
+which reaches the task store and answers `503` with a `not_ready` body when it
+cannot. `RestDispatcher` (and `CombinedDispatcher`, through its REST half)
+answers both paths with a constant `{"status":"ok"}`, so its `/ready` says
+nothing about the store; call `RequestHandler::task_store_health()` from a
+route of your own if a probe needs that (`examples/deploy-agent` does). The
+JSON-RPC dispatcher answers neither; route the path yourself in front of it,
+answering with the dispatcher's own body type:
 
 ```rust
 use std::convert::Infallible;
@@ -465,13 +499,13 @@ async fn route(
 
 Both dispatchers use hyper's HTTP/1.1 and HTTP/2 support via `hyper_util::server::conn::auto::Builder`. This automatically negotiates the best protocol version.
 
-`TCP_NODELAY` is enabled on all server and client TCP sockets. This disables Nagle's algorithm, eliminating the ~40ms delayed-ACK latency that would otherwise penalize small SSE frames and JSON-RPC responses on loopback and low-latency networks.
+`TCP_NODELAY` is enabled on the sockets of `serve::Server` (so `serve` and `serve_with_addr`), of the WebSocket listener, of the push sender and of the client's HTTP transports. The gRPC listener does not set it, and a listener you own (Axum) is yours to configure. This disables Nagle's algorithm, eliminating the ~40ms delayed-ACK latency that would otherwise penalize small SSE frames and JSON-RPC responses on loopback and low-latency networks.
 
 ### Task Store Performance
 
 The `InMemoryTaskStore` uses a pre-allocated `HashMap` with secondary indexes for efficient queries:
 
-- **O(1) amortized save/get/delete** — constant-time operations regardless of store size
+- **O(1) amortized get** — a `HashMap` lookup regardless of store size; save and delete also maintain the ordered indexes, O(log n)
 - **No resize-induced latency spikes** — pre-allocation to the configured `max_capacity` eliminates the periodic full-rehash events that cause unpredictable 5-7× latency cliffs when the table outgrows its capacity
 - **O(log n + page\_size) list queries** — a `BTreeMap<(i64, u64), TaskId>` index keyed by (status timestamp, write sequence) gives the spec's status-timestamp-descending order and O(log n) cursor positioning, and a `HashMap<String, BTreeMap<(i64, u64), TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
 
@@ -505,11 +539,11 @@ let builder = builder.with_event_queue_capacity(64);
 # }
 ```
 
-> **Benchmark data:** Per-event cost inflects at the broadcast channel capacity
-> boundary. With the default capacity of 256 (increased from 64), tasks producing
-> >250 events see increased per-event overhead due to broadcast buffer pressure
-> (~4µs/event below capacity, ~193µs/event above capacity). Set capacity to at
-> least your expected peak event count per task. The `serde_helpers::SerBuffer`
+> **Benchmark data:** Per-event cost rises once a task writes more events than
+> the queue holds and a reader falls behind: the reader then catches up from the
+> task's event log (see [Streaming](../concepts/streaming.md#queue-limits)),
+> which is more work than reading the live channel. Set capacity to at least
+> your expected peak event count per task. The `serde_helpers::SerBuffer`
 > module can further reduce per-event serialization overhead via thread-local
 > buffer reuse.
 
@@ -557,12 +591,13 @@ to copy.
 - [ ] CORS origins restricted to known clients
 - [ ] Executor timeout set
 - [ ] Max concurrent streams limited
+- [ ] `ServeConfig::with_max_connections` set (connections are unbounded by default); header-read (30 s) and idle (75 s) timeouts left on
 - [ ] Task store TTL and capacity configured
 - [ ] Rate limiting enabled for public-facing agents
 - [ ] A2A clients built once and reused (not per-request)
 - [ ] Structured logging enabled
 - [ ] Health check endpoint available
-- [ ] Push notification URLs restricted to HTTPS
+- [ ] Push notification URLs restricted to HTTPS (`HttpPushSender::https_only`)
 - [ ] Body/query size limits verified
 - [ ] Graceful shutdown implemented
 - [ ] Server runs on jemalloc or mimalloc, not glibc's default allocator

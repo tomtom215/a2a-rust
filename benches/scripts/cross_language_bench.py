@@ -24,8 +24,8 @@ twice and make the two legs incomparable.
 
 Statistics
 ----------
-Each trial is an independent process-level run against a freshly started
-server. Within a trial we discard ``--warmup`` requests, then time
+The trials run back to back in this process, against one server started once
+per configuration by cross_language_python.sh. Within a trial we discard ``--warmup`` requests, then time
 ``--iterations``. We report per-trial percentiles and, across trials, the
 median of medians with the observed min/max spread — a shared container is a
 noisy host and a single trial cannot be distinguished from a scheduling artifact.

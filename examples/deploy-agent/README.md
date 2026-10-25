@@ -5,10 +5,11 @@
 
 The smallest A2A agent you can actually ship.
 
-[`hello-agent`](../hello-agent) is the smallest thing that answers A2A — 32
-lines, no configuration, bound to `127.0.0.1:3000`. It is the right first
-example and the wrong thing to deploy. This is the same agent with the four
-things a container platform requires, and nothing else.
+[`hello-agent`](../hello-agent) is the smallest thing that answers A2A — one
+screen of code, no configuration, bound to `127.0.0.1:3000`. It is the right
+first example and the wrong thing to deploy. This is the same agent with the
+four things a container platform requires, plus a jemalloc allocator and OTLP
+telemetry from the `OTEL_*` environment, and nothing else.
 
 | Concern | Here | Why examples never show it |
 |---|---|---|
@@ -79,9 +80,10 @@ Two edits first:
 `terminationGracePeriodSeconds: 30`. That number must exceed the shutdown
 budget in `main.rs`: up to 5 s for tasks to end on their own, then
 cancellation and up to 10 s for the executors to act on it, then the HTTP
-drain, then up to 5 s for the executor's cleanup hook. A task still running
-after 5 s is cancelled, however long its stream would have been. If `SIGKILL`
-lands before that finishes, the graceful shutdown is decorative.
+drain, then one 5 s budget shared by the event-queue drain and the executor's
+cleanup hook. A task still running after 5 s is cancelled, however long its
+stream would have been. If `SIGKILL` lands before that finishes, the graceful
+shutdown is decorative.
 
 ## The trap this example exists to prevent
 
@@ -136,5 +138,7 @@ these reads as an endorsement:
   and two replicas do not share them. `replicas: 2` is safe here only because
   the agent is stateless per request — a real deployment wants the SQLite or
   Postgres store.
-- **Observability.** No metrics or tracing exporter. The SDK has both hooks;
-  wiring them is deployment-specific.
+- **Observability beyond `Telemetry`.** With `OTEL_EXPORTER_OTLP_ENDPOINT` set
+  (or a per-signal endpoint) the binary sends traces, metrics and logs to that
+  collector; with none set nothing is built. There are no dashboards, alerts or
+  collector here, and wiring those is deployment-specific.

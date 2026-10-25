@@ -30,12 +30,12 @@ What Rust gives this library, stated as narrowly as it holds:
 - **Predictable cost** — no garbage collector or runtime beyond tokio. The extension points are trait objects (`Arc<dyn AgentExecutor>`, boxed futures), so each call pays a dynamic dispatch and an allocation; the benchmark pages measure what that costs
 - **No `unsafe` in library code** — every published crate is `#![forbid(unsafe_code)]`. The attribute does not reach build scripts: the three protobuf-compiling crates' `build.rs` wrap `std::env::set_var("PROTOC", …)` in `unsafe`, which edition 2024 requires, and so do the TCK runner's and the ITK's
 - **Thread safety at compile time** — the compiler checks every cross-thread use; `Send + Sync` is asserted by test for the core types (`Task`, `TaskState`, `Message`, `Part`, `AgentCard` and the three error types), not for every public type
-- **Forward-compatible enums** — protocol enums such as `TaskState` are `#[non_exhaustive]`, so a new state in a later specification is a minor release, not a break. The cost is that your `match` needs a wildcard arm, and the compiler cannot tell you a state is new
+- **Forward-compatible enums** — protocol enums such as `TaskState` are `#[non_exhaustive]`, so a variant a later specification revision adds is a patch-level addition ([Stability](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md) §4), not a break for a `match` that has a wildcard arm. The cost is that your `match` needs that wildcard arm, and the compiler cannot tell you a state is new. A state number this SDK does not know is refused by the gRPC conversion (`unknown TaskState number`), not mapped to a variant
 - **Errors, not panics** — HTTP is hyper's. Fallible operations return `Result`; a CI gate (`scripts/check_panic_paths.py`) freezes the set of `unwrap`, `expect`, `panic!`, `unreachable!` and `todo!` in library code, and the 13 `expect` calls it allows each assert an internal invariant (a poisoned lock, a retry loop that always runs once, a TLS provider that supports its own defaults). The gate cannot see arithmetic overflow or slice indexing, so "never panics" is not a claim it supports
 
 ## Architecture at a Glance
 
-a2a-rust is organized as a Cargo workspace with four crates:
+a2a-rust is organized around four published library crates in one Cargo workspace:
 
 ```text
 ┌─────────────────────────────────────────────┐
@@ -60,7 +60,7 @@ a2a-rust is organized as a Cargo workspace with four crates:
 ## Key Features
 
 - **v1.0 wire types** — every A2A type, serialized to the specification's JSON and protobuf shapes and checked by golden-byte fixtures and the official TCK; the TCK's gaps are listed in the README's Project Status
-- **Quad transport** — JSON-RPC 2.0, REST, WebSocket (`websocket` feature flag), and gRPC (`grpc` feature flag), both client and server
+- **Quad transport** — JSON-RPC 2.0, REST and gRPC (`grpc` feature flag), the three bindings the specification names, plus WebSocket (`websocket` feature flag), a custom binding this project defines under spec §12; client and server. A fifth, [SLIMRPC](./bindings/slimrpc.md), is a community-contributed crate outside the workspace
 - **SSE streaming** — Real-time `SendStreamingMessage` and `SubscribeToTask`
 - **Push notifications** — Pluggable `PushSender` with SSRF protection
 - **Agent card discovery** — Static and dynamic card handlers with HTTP caching (ETag, Last-Modified, 304)
@@ -72,18 +72,18 @@ a2a-rust is organized as a Cargo workspace with four crates:
 - **Server startup helper** — `serve()` reduces ~25 lines of hyper boilerplate to one call
 - **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header
 - **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
-- **Task state machine** — Validated transitions per the A2A specification
+- **Task state machine** — `TaskState::can_transition_to` enforces the two rules the specification implies: terminal states are final, and nothing re-enters `Submitted` (or the proto default, `Unspecified`). The specification itself defines no transition matrix
 - **Executor ergonomics** — `boxed_future`, `agent_executor!` macro, `EventEmitter` reduce boilerplate
-- **Executor timeout** — Kills hung agent tasks automatically
+- **Executor timeout** — an executor still running after the limit (default one hour, `with_executor_timeout`) has its task marked failed with a timeout error
 - **CORS support** — Configurable cross-origin policies
 - **Configurable** — the handler's timeouts, limits and intervals are overridable via builders, and the book's defaults table is checked against the code. A few bounds are fixed constants (the client's 2 MiB cap on an agent card body is one)
-- **Mutation-tested** — every pull request runs `cargo-mutants` over the functions it changes and fails on a surviving mutant. That gate is `--in-diff`: code no pull request has touched since the gate existed is covered only by the weekly full sweep, which is advisory and has recorded survivors ([mutation history](reference/mutation-history.md))
+- **Mutation-tested** — every pull request must pass `cargo-mutants` over the functions it changes: the shards run once the PR carries the `mutation-test` label, the required aggregator fails until they have, and a surviving mutant fails them. That gate is `--in-diff`: code no pull request has touched since the gate existed is covered only by the weekly full sweep, which is advisory and has recorded survivors ([mutation history](reference/mutation-history.md))
 
 ## All 11 Protocol Methods
 
 | Method | Description |
 |--------|-------------|
-| `SendMessage` | Synchronous message send; returns completed task |
+| `SendMessage` | Synchronous message send; returns the task once it is terminal or interrupted (`INPUT_REQUIRED`, `AUTH_REQUIRED`), or a direct `Message` |
 | `SendStreamingMessage` | Streaming send with real-time SSE events |
 | `GetTask` | Retrieve a task by ID |
 | `ListTasks` | Query tasks with filtering and pagination |

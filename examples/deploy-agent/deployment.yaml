@@ -22,8 +22,10 @@ spec:
       labels:
         app: deploy-agent
     spec:
-      # Must exceed the longest in-flight stream, or SIGKILL arrives before the
-      # drain finishes and the graceful shutdown in main.rs is decorative.
+      # Must exceed the shutdown budget in main.rs (up to 5 s + 10 s for
+      # in-flight tasks, the HTTP drain, then one 5 s budget for the queue
+      # drain and the cleanup hook), or SIGKILL arrives before the drain
+      # finishes and the graceful shutdown is cut short.
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true

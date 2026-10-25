@@ -90,8 +90,8 @@ construct it yourself.
 |-----------|-------------|
 | `context_id` | Tasks in a specific conversation |
 | `status` | Tasks in a specific state |
-| `status_timestamp_after` | Tasks updated after a timestamp (ISO 8601) |
-| `page_size` | Results per page (capped by server's `max_page_size`, default 1,000) |
+| `status_timestamp_after` | Tasks whose status timestamp is at or after this ISO 8601 time (the bound is included). The client sends it as UTC with a `Z` (an offset is rewritten); a value that is not ISO 8601 fails with `ClientError::Protocol` (`InvalidParams`) before anything is sent |
+| `page_size` | Results per page, 1 to 100 (a server refuses any other value with `InvalidParams` naming `pageSize`); unset lists 50. A store configured with a smaller `max_page_size` returns at most that many |
 | `page_token` | Cursor for the next page |
 | `include_artifacts` | Include artifact data in results |
 | `history_length` | Max number of most recent messages per task (`0` = no history) |
@@ -118,7 +118,7 @@ println!("Task state: {:?}", task.status.state);
 # }
 ```
 
-Cancellation is cooperative. The default `AgentExecutor::cancel` records `Canceled` and triggers the task's cancellation token, which a running `execute` should observe; override `cancel` to also stop downstream work. A task already in a terminal state answers `TaskNotCancelable`.
+Cancellation is cooperative. The handler triggers the task's cancellation token, which a running `execute` should observe, and then calls `AgentExecutor::cancel`; the default records `Canceled`. Override `cancel` to release what the task holds or to stop downstream work; if the override writes no terminal state, the handler writes `Canceled` after it returns. A task already in a terminal state answers `TaskNotCancelable`.
 
 ### Cancellation States
 

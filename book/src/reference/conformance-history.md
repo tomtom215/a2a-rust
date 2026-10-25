@@ -3,9 +3,10 @@
 
 # Conformance History
 
-A dated record of TCK conformance runs — the official `a2aproject/a2a-tck`
-suite and this repo's own `a2a-tck` runner — together with a register of every
-suppression that narrows what those runs measure.
+A dated record of conformance runs — the official `a2aproject/a2a-tck` suite,
+this repo's own `a2a-tck` runner and the A2A project's second suite, ACTS —
+together with a register of every suppression that narrows what those runs
+measure.
 
 This is the conformance counterpart to
 [Mutation Testing History](./mutation-history.md), and exists for the same
@@ -16,7 +17,7 @@ number last moved.
 ## Why the suppression register is half the page
 
 A conformance score is only meaningful next to the list of things it did not
-ask. This repo has twice shipped a gate that could not fail — the mutation gate
+ask. This repo has more than once shipped a gate that could not fail — the mutation gate
 reporting 100% over reports nobody read, and `exclude_re` entries in
 `mutants.toml` that were silently ignored. (Since 2026-08-14 the second one
 reads worse: the whole file is silently ignored, because cargo-mutants looks for
@@ -26,8 +27,9 @@ failure mode in a nastier form, because *skipping* is a normal, expected
 outcome there: the suite legitimately skips what the agent card does not
 advertise. "0 failures" and "nothing ran" look identical.
 
-So every row below carries its suite exit code, and every waiver is listed with
-where it lives and what would make it removable.
+So every row below carries its suite exit code where one was recorded (`—`
+means not recorded), and every waiver is listed with where it lives and what
+would make it removable.
 
 ## How to add an entry
 
@@ -66,6 +68,11 @@ that measured nothing.
 | 2026-09-26 | `c67accc` | `main` | full | 240 | 7 | 18 | 0 | 88 | — |
 | 2026-09-26 | `c67accc` | `main` | minimal | 174 | 8 | 83 | 0 | 66 | — |
 | 2026-09-26 | `c67accc` | `main` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
+| 2026-10-10 | `f824b03` | `263b9cf` | full | — | — | — | — | 88 | — |
+| 2026-10-16 | `d05a7fc` | `263b9cf` | full | — | — | — | — | 88 | — |
+| 2026-10-16 | `d05a7fc` | `263b9cf` | minimal | — | — | — | — | 66 | — |
+| 2026-10-18 | — | `263b9cf` | full | — | — | — | — | 88 | — |
+| 2026-10-18 | — | `263b9cf` | minimal | — | — | — | — | 66 | — |
 
 The 2026-08-10 rows are the first against post-#103 `main`; the 2026-08-09 rows
 predate it. Every count is identical, which is the point of recording an
@@ -214,11 +221,13 @@ directly comparable and no upstream drift has occurred since 2026-08-09.
 > a dated measurement that gets quietly edited stops being a measurement. The
 > pin has since moved, and upstream drift *has* occurred since: see the next
 > section. The state to quote was **87 of 114 passing and 5 failing** (since
-2026-10-16, 85 and 7: §23 of `docs/official-tck-findings.md`),
+2026-10-16, 85 and 7 across the three profiles; the full profile alone is 81 and 7,
+which `README.md` and `ROADMAP.md` quote: §23 of `docs/official-tck-findings.md`),
 > measured 2026-09-26 on the 0.14.0 release PR (see "The 2026-09-26
-> measurement" below) and recorded in `tck/conformance-baseline.json` (five
-> `known_failures`), in `README.md`'s Project Status section and in
-> `ROADMAP.md`'s Conformance section.
+> measurement" below) and recorded then in `tck/conformance-baseline.json`
+> (five `known_failures`; seven, nine requirement-transport pairs, since
+> 2026-10-16). `README.md`'s Project Status section and `ROADMAP.md`'s
+> Conformance section quote the full profile alone: 81 passing and 7 failing.
 
 ### The 2026-09-01 re-measurement at `a2a-tck@de6af18`
 
@@ -293,6 +302,55 @@ media-type enforcement (N34) now answers the `ContentTypeNotSupportedError` that
 the SDK accepted any media type. It is baselined; the evidence is
 `docs/official-tck-findings.md` §22.
 
+### The measurements of 2026-10-10, 2026-10-16 and 2026-10-18
+
+All three are against `a2a-tck@263b9cf`, which was still upstream `main`'s
+newest commit on 2026-10-18. Their pytest columns and exit codes are `—` for
+the same reason as 2026-09-01's: the sources (`docs/official-tck-findings.md`
+§1, §23 and §24) state the MUST tallies, not the pytest summary lines or the
+exit codes. The 2026-10-18 a2a-rust column is `—` too: that run was taken from
+a working branch and no commit is recorded.
+
+* **2026-10-10** (CI on `main` at `f824b03`, and a local run of a branch): 83
+  `PASS`, 5 `FAIL` (all baselined), 5 `SKIPPED`, 21 `NOT TESTED` of 114; 88
+  graded, the gate's floor.
+* **2026-10-16** (PR #172 at `d05a7fc`, in CI and locally): the full profile
+  81 `PASS` and 7 `FAIL`, the minimal profile 60 `PASS` and 6 `FAIL` of 66. The
+  two new failures are `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001` (§23).
+* **2026-10-18** (run locally): the gate counts failing *pairs*, a requirement
+  on one binding. Full: 88 graded, 9 known failing pairs, 9 observed. Minimal:
+  66 graded, 9 known, 8 observed, because that profile does not grade
+  `STREAM-SUB-003`. Both gates passed with no regression.
+
+2026-10-24 has no row. Findings §25 re-read the seven baselined requirements
+statically against upstream `d4d6fae` (three commits after `263b9cf`, changing
+only CI, `pyproject.toml` and a task-helper test file) and found no baseline
+entry stale; the per-transport outcomes it relies on are the gate's own, in
+Official TCK run `40097907886` on `2781bb6`, which succeeded.
+
+## ACTS (`a2aproject/a2a-itk`)
+
+The A2A project's second conformance suite, run against this repository's ITK
+agent (`itk/`) over JSON-RPC, gRPC and HTTP+JSON. Counts are ACTS tests passed
+of tests run, at every level.
+
+| Date | a2a-itk | JSON-RPC | gRPC | HTTP+JSON | Not passed |
+|---|---|---|---|---|---|
+| 2026-10-08 | `82458cea` | 101/101 | 88/88 | 94/94 | none |
+
+By level (MUST, SHOULD, MAY): JSON-RPC 59/59, 29/29, 13/13; gRPC 47/47, 28/28,
+13/13; HTTP+JSON 49/49, 32/32, 13/13 (`acts/reports/2026-10-08/`). `REST-CT-001`,
+the SHOULD failure recorded under "Deliberate deviations" below, passes in this
+run.
+
+Since 2026-10-09 `acts.yml` runs ACTS on every pull request and every push to
+`main`, and `release.yml` runs it on each tagged commit and attests the summary
+onto the `.crate` files. `acts.yml` pins a2a-itk at `bcce1a15` (2026-10-23), so
+the row above was graded at an earlier revision than the one the gate uses now,
+and the gate's own runs are not rows here. Its verdict is
+`scripts/acts_predicate.py`, which fails on any failed or errored test at any
+level; upstream's `--require-conformant` fails on a MUST alone.
+
 ## In-repo `a2a-tck` runner
 
 22 conformance checks per binding. `Skipped` counts documented deviations of
@@ -342,7 +400,7 @@ them. Requirement texts and IDs are quoted from
 **`4/4` counts requirements, not bindings, and the two are independent.** The
 "Bindings compared" column is copied from the run's own `Comparing N bindings:`
 line, which is a separate number the `4/4` does not constrain: the tool's floor
-is **two** bindings (`equivalence.rs:854`, `ifaces.len() < 2` → hard error,
+is **two** bindings (`equivalence.rs:1048`, `ifaces.len() < 2` → hard error,
 "reporting a pass would mean nothing"), not four. A run against a card
 advertising three bindings prints `Comparing 3 bindings` and then `4/4`, and
 exits 0.
@@ -393,8 +451,9 @@ it authenticated correctly and then failed method dispatch, so JSON-RPC and
 WebSocket both reported a refusal and the check declared a binding asymmetry
 that did not exist. **On the rejection sweep alone, a probe that can never
 succeed is indistinguishable from enforcement working.** Recorded because it is
-the same failure shape as the five gates this repo has found that could not
-fail, caught this time before it shipped.
+the same failure shape as the gates this repo has found that could not fail
+(the mutation history numbers eight in the mutation gate alone), caught this
+time before it shipped.
 
 Measured the same day, by injection, that the check can fail: run with a
 deliberately wrong token it exits 1 and names all four bindings as refusing.
@@ -438,16 +497,16 @@ as bad as a missing row, but it costs the reader the one thing the row exists to
 | # | Where | Mechanism | Scope | Why | Removable when |
 |---|---|---|---|---|---|
 | W1 | `official-tck.yml:55` (`env: A2A_TCK_REVISION`) | `A2A_TCK_REVISION: main` | every run | Not a waiver but a measurement caveat: the harness **floats**. A green PR can go red on upstream drift, and two rows above are only comparable if the a2a-tck column matches. | n/a — a deliberate trade-off. Pinning is a maintainer decision; see the comment at that line. |
-| W2 | `official-tck.yml:194` (step *Run the official suite*) | `\|\| true` on the full suite | suite exit status only | The differential gate step, not the suite's exit code, is the verdict. | n/a by design. Backed since 2026-08-09 by `--min-graded 88` (`:243`), without which a zero-measurement run passed this gate. |
+| W2 | `official-tck.yml:194` (step *Run the official suite*); the steps *Run the suite against the minimal-capability profile* and *Run the suite against the required-extension profile* (the `case "$suite_status"` block that ends each) | `\|\| true` on the full suite; `case "$suite_status" in 0\|1)` on the minimal and extension suites | suite exit status only: the full step discards all of it, the other two only pytest's 1 (tests failed; 2-5 still fail the step) | The differential gate step, not the suite's exit code, is the verdict. | n/a by design. Backed since 2026-08-09 by `--min-graded 88` (`:243`), without which a zero-measurement run passed this gate. |
 | ~~W3~~ | `official-tck.yml` (step *Run the suite against the minimal-capability profile*) | ~~`--deselect …TestRestStreaming::test_streaming_content_type`~~ | ~~1 test, minimal profile only~~ | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | **Removed 2026-09-01.** [`#226`](https://github.com/a2aproject/a2a-tck/pull/226) ("read streamed error body before close so `_extract_error` survives non-2xx") merged upstream on 2026-08-31 as [`38ab89e`](https://github.com/a2aproject/a2a-tck/commit/38ab89e), closing [`#225`](https://github.com/a2aproject/a2a-tck/issues/225). Measured at `a2a-tck@de6af18`: the test now skips cleanly on *"Streaming not supported"*, and the minimal profile grades the same 66 MUST requirements and reports the same failures with the flag as without it. The waiver is closed, not traded. See `docs/official-tck-findings.md` §21. |
 | W4 | `official-tck.yml:404` (step *Run the suite against the required-extension profile*, `:389`) | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. **Re-verified still OPEN 2026-08-12.** Guarded by `--require-pass CORE-CAP-004` (`:436`), so an upstream rename fails loudly instead of selecting nothing. |
 | ~~W5~~ | `tck.yml` js-sdk leg (`tck.yml:264`; the comment at `:274-291` records the removal) | ~~`--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest)~~ | ~~js-sdk leg~~ | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | **Removed 2026-08-30.** `list_tasks_basic` was fixed in `@a2a-js/sdk` 1.1.0, and the pin moved. `a2a_media_type_accepted` on JSON-RPC was never a divergence: §9 specifies `application/json`, and the check is now REST-only. See "2026-08-30 — the pins moved" below. |
 | ~~W6~~ | `tck.yml` java-sdk leg (the comment there records the removal) | ~~`--skip a2a_media_type_accepted` (rest only; the JSON-RPC half was removed 2026-08-30)~~ | ~~java-sdk leg, REST binding~~ | Documented `a2a-java` divergence on HTTP+JSON: 1.3.0.Final rejected `application/a2a+json`, which §11.1 says SHOULD be used. | **Removed 2026-10-12.** `a2a-java` 1.4.0.Final accepts it. Pin freshness graded 1.4.0.Final and reported the skip stale (run `38299384752`: 20/20 graded on REST, `STALE SKIP`), the pin moved, and the skip went with it; graded again locally at 1.4.0.Final, 21/21 on both bindings with no skip. See "2026-10-12 — the pins moved again" below. |
 | W7 | `tck.yml:96` (step *a2a-inspector card validation*, `:95`) | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
 | W8 | `itk.yml:103` | `continue-on-error: true` | opt-in `workflow_dispatch` job only | The upstream ITK resolves dependencies from a private Google Artifact Registry that 401s unauthenticated. The deterministic in-repo `itk-traversal-selftest` is the authoritative gate. | A public ITK lockfile exists. |
-| W9 | `tck/conformance-baseline.json` | baselined known failures | 7 (requirement, transport) pairs | **No longer empty.** `CORE-SEND-003` [`grpc`, `http_json`, `jsonrpc`] was added 2026-09-26 (`docs/official-tck-findings.md` §22): the requirement declares no `expected_error`, so the suite demands that an unsupported media type be accepted, and 0.14.0 now refuses it as §3.1.1 requires. Clears when the suite declares the expected error. The rest: `GRPC-ERR-002` [`grpc`] and `HTTP_JSON-STATUS-001` [`*`] were added 2026-08-30 (`docs/official-tck-findings.md` §20); `CORE-CANCEL-002` [`http_json`] and `STREAM-SUB-003` [`grpc`] on 2026-09-01 (§21). All four are the same cause: `a2a-tck` grades §5.4 against a **vendored copy of the specification** pinned to A2A **v1.0.0** (per its own `specification/version.json`, and byte-identical to that tag), which A2A's **v1.0.1** release superseded on 2026-05-28, and each of the four fails on exactly the one binding whose cell the two copies disagree about — passing on the bindings where they agree. Not a waiver of this SDK's behaviour: the SDK answers what the published §5.4 says, corroborated by the official Python SDK. | [`a2aproject/a2a-tck#231`](https://github.com/a2aproject/a2a-tck/issues/231) (filed 2026-09-01) lands, i.e. `a2a-tck` refreshes its vendored specification. The gate is differential in both directions, so a baselined check that starts passing fails as a **stale baseline** and forces the entry out. |
+| W9 | `tck/conformance-baseline.json` | baselined known failures | 7 requirements, 9 (requirement, transport) pairs | **No longer empty.** `CORE-SEND-003` [`grpc`, `http_json`, `jsonrpc`] was added 2026-09-26 (`docs/official-tck-findings.md` §22): the requirement declares no `expected_error`, so the suite demands that an unsupported media type be accepted, and 0.14.0 now refuses it as §3.1.1 requires. Clears when the suite declares the expected error. Four more: `GRPC-ERR-002` [`grpc`] and `HTTP_JSON-STATUS-001` [`*`] were added 2026-08-30 (`docs/official-tck-findings.md` §20); `CORE-CANCEL-002` [`http_json`] and `STREAM-SUB-003` [`grpc`] on 2026-09-01 (§21). Those four are the same cause: `a2a-tck` grades §5.4 against a **vendored copy of the specification** pinned to A2A **v1.0.0** (per its own `specification/version.json`, and byte-identical to that tag), which A2A's **v1.0.1** release superseded on 2026-05-28, and each of the four fails on exactly the one binding whose cell the two copies disagree about — passing on the bindings where they agree. `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001` [`*`] were added 2026-10-16 (§23): the same stale copy's §11.1 says `application/json` for HTTP+JSON, where v1.0.1 says `application/a2a+json` SHOULD be used, which this SDK has answered since 2026-10-15; the suite's substring test `"application/json" in content_type` cannot pass it. So six of the seven are the same stale copy (the four §5.4 rows and the two §11.1 rows), and `CORE-SEND-003` is a different defect. Not a waiver of this SDK's behaviour: the SDK answers what the published §5.4 says, corroborated by the official Python SDK. | [`a2aproject/a2a-tck#231`](https://github.com/a2aproject/a2a-tck/issues/231) (filed 2026-09-01) lands, i.e. `a2a-tck` refreshes its vendored specification and the six hand-written `ErrorBinding` constants and test literals with it (upstream #232 and #258 do both; a bare `make spec` does not). `HTTP_JSON-SVC-001` and `HTTP_JSON-ERR-001` need #238 as well, and `CORE-SEND-003` needs #213, #203 and #238 (findings §25). The gate is differential in both directions, so a baselined check that starts passing fails as a **stale baseline** and forces the entry out. |
 | ~~W10~~ | `tck/src/equivalence.rs` (`fn bind_equiv_004`) | ~~`BIND-EQUIV-004` graded **structurally only**~~ | ~~1 of the 4 §5.1 requirements~~ | **Removed 2026-08-11, the same day it was added.** The row was correct when written: the check confirmed the card declares its schemes once with no per-interface override, and did not confirm every binding *enforces* them, because no job provided a target requiring credentials. `SUT_PROFILE=secured` now does, `fn bind_equiv_004_enforcement` grades both the rejection and acceptance sweeps against it, and `tck.yml` gates it. See "`BIND-EQUIV-004`'s enforcement half" above for the run and for the probe defect the acceptance sweep caught. | already clear |
-| W11 | `tck/src/runner.rs:354` (`run_test` at `:345`, `Scope::covers` at `:36`) | checks outside a binding's scope report `N/A` and leave the denominator | 2 of 22 checks, binding-dependent | Applicability, not waiver: `jsonrpc_envelope_format` has nothing to inspect on §10/§11, and `a2a_media_type_accepted` applies only to §11 (§9 specifies `application/json`; §10/§12 have no field for it). Listed because it does narrow what a run measures, and because it was a silent inflation bug until 2026-08-10 (`rest` scored 22/22 while 21 checks ran). Now guarded by three compile-time tests: a scope may not name an unknown binding, may not cover all or none, and may not omit its reason. | n/a — removing it would re-introduce the inflation. The guard is the control. |
+| W11 | `tck/src/runner.rs:354` (`run_test` at `:345`, `Scope::covers` at `:36`) | checks outside a binding's scope report `N/A` and leave the denominator | 2 of 22 checks, binding-dependent | Applicability, not waiver: `jsonrpc_envelope_format` has nothing to inspect on §10/§11, and `a2a_media_type_accepted` applies only to §11 (§9 specifies `application/json`; §10/§12 have no field for it). Listed because it does narrow what a run measures, and because it was a silent inflation bug until 2026-08-10 (`rest` scored 22/22 while 21 checks ran). Now guarded by three unit tests (`cargo test`): a scope may not name an unknown binding, may not cover all or none, and may not omit its reason. | n/a — removing it would re-introduce the inflation. The guard is the control. |
 | W12 | `itk-nightly.yml:110-113` (step *Summarise the scenario results*); `env: A2A_ITK_REVISION: main` at `:50` | a failing `a2a-itk` scenario does not fail the job — per the workflow's own comment, the shared driver exits 0 on a nightly with failures, and the summary step never fails | nightly `a2a-itk` interop run only | Metrics, not a gate. Results go to the job summary, the `itk-nightly-results` artifact and the rolling `nightly-metrics` prerelease; no gate reads them, so this narrows nothing a gate claims. Listed because a green run of this workflow is not a passing interop result, and because the harness revision floats, as W1's does. | n/a by design — read the job summary, not the job status. |
 
 ### The 2026-08-11 completeness audit
@@ -486,10 +545,13 @@ than strengthen it:
 **Checked and found sound.** `tck.yml:326-344`'s four `if: matrix.sdk == …`
 guards select which language toolchain a matrix leg installs. A leg matching
 none of them would have no toolchain to start its agent with — but the "wait
-for agent" step that follows exits 1 after 30 attempts, so it fails closed rather than grading nothing. The four
-`if: always()` guards in `official-tck.yml` widen rather than narrow: they make
-the gate steps run even after a red suite. `itk.yml:151`'s `if: failure()` is a
-diagnostic upload.
+for agent" step that follows exits 1 after 30 attempts, so it fails closed rather than grading nothing. The two
+`if: always()` guards in `official-tck.yml` (the job summary and the report
+upload) and its four `if: ${{ !cancelled() && … }}` guards (the minimal and
+extension suite steps and their two gate steps) widen rather than narrow: the
+gates run even after a red suite, and the minimal and extension suites are
+skipped only when the SUT build or the TCK install failed, which has already
+turned the job red. `itk.yml:151`'s `if: failure()` is a diagnostic upload.
 
 ## Deliberate deviations
 
@@ -500,17 +562,24 @@ for the choice and the condition under which it would be reversed.
 ### HTTP+JSON responses are `application/json`, not `application/a2a+json` — resolved 2026-10-08
 
 **Resolved by negotiation.** Since 2026-10-08 HTTP+JSON responses are
-labelled `application/a2a+json` for a client whose `Accept` prefers it, or
-whose request body carries it, and `application/json` for everyone else
+negotiated, and since 2026-10-15 the default is the A2A type. `Accept` decides
+when it names either JSON type; otherwise a request body labelled
+`application/a2a+json` is answered in kind; otherwise a request asking only for
+`text/event-stream` gets `application/json`; everything else, including a
+request with no `Accept`, gets `application/a2a+json`
 (`dispatch::rest::media_type`, on both `RestDispatcher` and the axum adapter;
 `rest_and_axum_negotiate_the_response_media_type` pins it). Released a2a-go
-v2.6.0 still decodes errors only under `application/json`, but it sends
-`Accept: application/json`, so it keeps receiving that: `go_sdk_interop.sh`
+v2.6.0 still decodes errors only under `application/json`, but its unary calls
+send `Accept: application/json` and its streaming calls send only
+`Accept: text/event-stream`, so both keep receiving it: `go_sdk_interop.sh`
 passed every check on the change. ACTS then rated HTTP+JSON 94/94, every
 level, against a2a-itk `82458cea` (`acts/reports/2026-10-08/`). a2a-go's
 `main` already accepts both types in `isJSONErrorContentType`; once a release
-carries it, an unconditional `application/a2a+json` default becomes possible
-and `go_sdk_interop.sh` will say so.
+carries it, the event-stream-only exception can go. That exception is what
+remains of the deviation; it also goes if a2a-go otherwise reads
+`application/a2a+json` errors (a report is drafted and held:
+`docs/upstream/a2a-go-a2a-json-errors-report.md`), and `go_sdk_interop.sh` is
+the check.
 
 The record below is the deviation as it stood from 2026-09-25 to 2026-10-08.
 
@@ -543,27 +612,32 @@ test passes (its specification §12.7; `is_conformant` in a2a-itk's
 `scripts/acts_report.py`), and `run_acts.py` exits 0 on a conformant run, so
 a failed SHOULD such as this one leaves the exit status green: 0 at
 `d04d64eb`, where a run with a failed MUST (SEC-AUTH-002, earlier that day)
-exited 1. No workflow here runs ACTS yet. A gate added later must key on
-that exit status, or list REST-CT-001 as a known SHOULD failure if it
-compares test by test.
+exited 1. No workflow here ran ACTS then. Since 2026-10-09 `acts.yml` runs
+it on every pull request and push to `main` and fails on any failed or
+errored test at any level, so a failed SHOULD such as REST-CT-001 would now
+fail the merge; `release.yml` runs it on the tagged commit and attests the
+summary onto each `.crate`.
 
 **Reversed when** the widely used clients accept `application/a2a+json`
 responses, a2a-go's among them. `rest_and_axum_answer_operations_with_the_same_headers`
 pins the current headers, and `go_sdk_interop.sh` would show when the switch
-is safe. Not reported upstream at this time, by the maintainer's decision
-(2026-09-25).
+is safe. Not reported upstream by the maintainer's decision (2026-09-25);
+since 2026-10-15 a report is drafted and held, to be sent by the maintainer
+(`docs/upstream/a2a-go-a2a-json-errors-report.md`).
 
 ## Transport coverage
 
-The repo implements four transports. TCK coverage is not uniform across them,
-and a transport with no conformance job is a gap, not a pass.
+The workspace implements four transports (a fifth, SLIMRPC, lives outside it).
+TCK coverage is not uniform across them, and a transport with no conformance
+job is a gap, not a pass.
 
 | Transport | Spec | Official TCK | In-repo TCK | Other evidence |
 |---|---|---|---|---|
-| JSON-RPC | §9 | yes — 73 MUSTs | yes — 21 graded, 1 N/A (since 2026-08-30) | cross-SDK matrix |
-| HTTP+JSON / REST | §11 | yes — 69 MUSTs | yes — 21 graded, 1 N/A | cross-SDK matrix |
-| gRPC | §10 | yes — 53 MUSTs | yes — 20 graded, 2 N/A (since 2026-08-10) | golden wire fixtures vs official Python SDK |
+| JSON-RPC | §9 | yes — 73 MUSTs | yes — 21 graded, 1 N/A (since 2026-08-30) | cross-SDK matrix; ACTS (every PR) |
+| HTTP+JSON / REST | §11 | yes — 69 MUSTs | yes — 21 graded, 1 N/A | cross-SDK matrix; ACTS (every PR) |
+| gRPC | §10 | yes — 53 MUSTs | yes — 20 graded, 2 N/A (since 2026-08-10) | golden wire fixtures vs official Python SDK; ACTS (every PR) |
 | WebSocket | §12 *custom binding* | **no** | yes — 21 graded, 1 N/A (since 2026-08-10) | unit/integration tests |
+| SLIMRPC (`bindings/a2a-protocol-slimrpc`, outside the workspace) | not in v1.0 | **no** | **no** | the binding's own tests (`ci.yml`'s `slimrpc-binding` job); outside the TCK conformance claim (`README.md`) |
 
 WebSocket is a §12 custom binding, so the official suite has no notion of it —
 its absence there is expected, not a defect. Its absence from the in-repo
@@ -572,10 +646,10 @@ is redundancy against the official suite rather than a new blind spot closed,
 but it is the only outside-in run of gRPC this repo controls, and it is what
 makes §5.1 equivalence gradeable across all four.
 
-The four bindings are not served by one target. `examples/echo-agent` answers
-three (no gRPC) and `tck/sut` answers four, so the all-bindings and
-equivalence jobs run against the SUT. That is deliberate: the example stays an
-example.
+The four bindings are not served by one target. `examples/echo-agent`, as
+`tck.yml` starts it (no `A2A_GRPC_BIND_ADDR`), answers three (no gRPC) and
+`tck/sut` answers four, so the all-bindings and equivalence jobs run against
+the SUT. That is deliberate: the example stays an example.
 
 ## What "100%, nothing skipped" would actually require
 
@@ -589,15 +663,20 @@ Ranked by what is within this project's control.
    2026-09-26 a fifth, `CORE-SEND-003`, is baselined as a defect in the suite
    (§22); quote "87 of 114 passing and 5 failing", as the section above says.
    Since 2026-10-16 two more are baselined, §11.1's media type graded against
-   the same stale copy (§23); quote "85 of 114 passing and 7 failing".
+   the same stale copy (§23); quote "85 of 114 passing and 7 failing" across the
+   three profiles (the full profile alone is 81 and 7, as `README.md` and
+   `ROADMAP.md` quote).
    Corrected 2026-09-24 and 2026-09-26.
-2. **W6's REST half (in this project's control only to remove, not to fix).**
-   An upstream `a2a-java` defect. The runner fails if it starts passing, so it
-   cannot linger unnoticed. W5 was removed 2026-08-30.
+2. **~~W6's REST half.~~ Done 2026-10-12** — `a2a-java` 1.4.0.Final accepts
+   `application/a2a+json`; the skip went with the pin move, and `tck.yml` sets
+   no skip. W5 was removed 2026-08-30.
 2.5. **~~`BIND-EQUIV-004`'s enforcement half.~~ Done 2026-08-11** — the last
-   in-scope conformance claim this repo had recorded as unmeasured. A
-   credential-requiring `tck/sut` profile now exists and both the rejection and
-   acceptance sweeps are graded and gated.
+   in-scope conformance claim this repo had recorded as unmeasured (as of
+   2026-08-11; `docs/compliance/spec-ledger.md` lists four `PARTIAL`
+   requirements — §3.5.2, §5.7, §7.6.1 and §12.4 — as open items, which are
+   partly met rather than unmeasured). A credential-requiring `tck/sut`
+   profile now exists and both the rejection and acceptance sweeps are graded
+   and gated.
 3. **W4 — an upstream TCK defect, filed.** It cannot be closed here without
    patching the harness, which this repo declines to do (§18). Removing it is
    gated on `#193`. (W3 was removed 2026-09-01, when upstream `#226` closed
@@ -613,9 +692,9 @@ Ranked by what is within this project's control.
    live in `a2aproject/a2a-tck`. What changed is that this repo no longer ships
    a multi-binding server with nothing checking the bindings agree.
 
-Items 3 and 5 mean a literal "100% with nothing skipped" is **not currently
+Items 1, 3 and 5 mean a literal "100% with nothing skipped" is **not currently
 reachable** from inside this repository. Any claim that it has been reached
-should be read as a claim that one of those two rows changed upstream.
+should be read as a claim that one of those three rows changed upstream.
 
 ## Not verified
 
@@ -638,8 +717,11 @@ no source, workflow, proto, SUT or agent file differs. The result therefore
 transfers, and this note is here so the reader can check that claim rather than
 take it.
 
-**Still not verified:** the ITK jobs (W8 — the upstream ITK resolves from a
-private registry that 401s unauthenticated).
+**Still not verified:** `itk.yml`'s opt-in `itk-current-mount` job (W8 — the
+upstream ITK's `uv.lock` resolves from a private registry that 401s
+unauthenticated). The upstream ITK is also driven by `itk-nightly.yml` (metrics
+rather than a gate; W12) and, for ACTS, by `acts.yml` (a gate); this page
+records no result from the nightly.
 
 ### W6 is now measured, not inherited
 

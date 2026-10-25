@@ -55,10 +55,15 @@ and nothing here is a conformity assessment.
 
 | Obligation | What the SDK provides | Chapter |
 |---|---|---|
-| Article 12, record-keeping | A tamper-evident audit trail of every call, task transition and oversight action | [Audit Trail](./audit.md) |
+| Article 12, record-keeping | With the `audit` feature, a tamper-evident audit trail of every call, task transition and oversight action | [Audit Trail](./audit.md) |
 | Article 14, human oversight | Halting a tenant or server, approval before an action, a quorum of approvers (14(5)), cascading cancellation | [Human Oversight](./oversight.md) |
-| Article 50(2), marking output | A machine-readable AI-generated marker and signed content | [Provenance and Signatures](./provenance.md) |
+| Article 50(2), marking output (whatever the risk class) | A machine-readable AI-generated marker in A2A metadata, and signed content; not a watermark, and it does not travel with a saved file | [Provenance and Signatures](./provenance.md) |
 | Article 15, accuracy, robustness and cybersecurity | Authentication, limits, refusal of malformed input, signed cards | [Security](./security.md) |
+
+Article 50(2) binds providers of systems that generate synthetic audio,
+image, video or text whether or not they are high-risk, from 2 August 2026
+(2 December 2026 for a generative system already on the market then,
+Article 111(4)). The control map rates the SDK's part Partial.
 
 Each obligation is traced to the code and the test that proves the SDK's part
 in the [control map](https://github.com/tomtom215/a2a-rust/blob/main/docs/compliance/control-map.md),

@@ -130,14 +130,15 @@ mutant could not fail either.
 * `set -o pipefail`, so `tee` stops masking cargo-mutants' exit status.
 * `count()` no longer emits `"0\n0"` for an empty-but-present file, which
   would have broken the arithmetic the moment the paths were corrected.
-* The **shard-completeness gate** and **12-way `a2a-server` sharding** from
-  2026-07-31 remain: they address a real second hazard (shards cancelled at
-  the 120-minute timeout), they were simply not what made that run green.
+* The **shard-completeness gate** remains, and `a2a-server` sharding began at
+  12-way on 2026-07-31 (24 on 2026-10-12, 60 on 2026-10-20): they address a
+  real second hazard (shards cancelled at the 120-minute timeout), they were
+  simply not what made that run green.
 
 **Do not backfill a number from run 30236603180.** The 91% above is recorded
 as forensics, not as a measurement of the workspace: two of its shards were
-cancelled, so its denominator is short by roughly two-elevenths of
-`a2a-server`.
+cancelled, so its denominator is short by two of `a2a-server`'s eight shards
+(a quarter of that crate, two-elevenths of the jobs).
 
 ### A second scheduled run told the same lie
 
@@ -155,7 +156,7 @@ Caught: 0  Missed: 0  Timeout: 0  Unviable: 0
 
 All fifteen crate shards concluded `success` too, after doing real work: the
 `a2a-types` job alone ran for 1h49m. So this was not a run that failed to
-start. It was a run that measured 3,430 mutants and reported none of them.
+start. It was a run that measured 3,630 mutants and reported none of them.
 
 Its artifacts had not expired, and were re-counted directly on 2026-08-09:
 
@@ -200,8 +201,8 @@ The check conflated "a shard did not finish" (score is not a measurement) with
 "a shard finished and did its job" (score is exactly what we want). Each shard
 now writes a `COMPLETED` marker inline at the end of its run step, so it exists
 if and only if cargo-mutants returned; the summary requires one per matrix
-entry (21 since a2a-types and a2a-client were sharded) and ignores the matrix
-conclusion. The marker cannot live in an `always()` step —
+entry (21 when a2a-types and a2a-client were sharded; 69 since 2026-10-20) and
+ignores the matrix conclusion. The marker cannot live in an `always()` step —
 those still run on cancellation, as run 30236603180 proved by uploading
 artifacts from cancelled shards.
 
@@ -278,9 +279,11 @@ has the same trap waiting. So `scripts/check_mutation_scope.sh` reads the
 pathspec **out of `mutants.yml`** — not a copy, or it could drift from the thing
 that runs — and asserts it matches exactly the tracked `.rs` files under
 `crates/*/src/`, failing in both directions (a missed file hides code from the
-gate; an over-matched one can balloon a PR run past its timeout). It is gate
-**40** in `ci.yml`'s `fmt` job, costs two `git ls-files` calls, and prints
-`141 of 141 tracked sources … are reachable by the PR gate`.
+gate; an over-matched one can balloon a PR run past its timeout). It runs in
+`ci.yml`'s `static-checks` job (formerly `fmt`), costs one `git ls-files` call
+per crate in the incremental matrix plus one for the intended set, and prints
+`N of N tracked sources … are reachable by the PR gate` (141 of 141 when it was
+added, 568 of 568 at 0.15.0).
 
 It is registered in `scripts/prove_gates_fail.sh` as the `mutation_scope`
 injection, whose defect is the historical bug restored verbatim — drop the
@@ -358,13 +361,19 @@ What this changes about reading the table below:
   `Unmutated baseline in 50s build + 65s test` → `Auto-set test timeout to
   328s`. 328 exceeds the 300s `cap_timeout`, which settles it without needing
   to agree on the multiplier — a cap that was applied could not be exceeded.
-  Only the `mutants-incremental` job passes `--timeout 300` on the command
-  line, so the PR gate is capped and the full sweep is not.
-* **What does govern a sweep** is the command line in `mutants.yml`:
-  `-p <crate> --shard --jobs 4 --test-tool=nextest --profile=mutants --
-  --all-features --run-ignored all`, plus `.config/nextest.toml`, which nextest
-  reads normally and which now supplies the per-test kill described in the
-  2026-08-14 row.
+  Only the `mutants-incremental-shard` jobs pass `--timeout 300` on the command
+  line, so the PR gate is capped per mutant and the full sweep is not (both
+  cap the build phase at `--build-timeout 1800`).
+* **What does govern a sweep** is the command line in `mutants.yml`. On
+  2026-08-14 it was `-p <crate> --output . --shard K/N --jobs 4
+  --test-tool=nextest --profile=mutants -- --all-features --run-ignored all`.
+  It is now `-p <crate> --output . --build-timeout 1800 --shard K/N
+  --sharding round-robin --jobs 4 --test-tool=nextest --profile=mutants
+  --all-features -- --run-ignored all -E 'not (binary(soak) or …)'`:
+  `--all-features` is given to cargo-mutants itself (since 2026-09-23), and
+  `--build-timeout`, `--sharding` and the `-E` test filter were added.
+  `.config/nextest.toml` also applies, which nextest reads normally and which
+  now supplies the per-test kill described in the 2026-08-14 row.
 
 Not fixed here, deliberately: activating the config changes what the sweep
 measures, in both scope and budget, and that belongs on a sweep of its own
@@ -581,15 +590,17 @@ functions: 4 mutants listed before the change, 2 after (`Ok(Some(0))` and
 
 ## Per-file measurements
 
-A full workspace sweep needs 21 CI runners; a single 4-core machine projects to
-well over a day for `a2a-server` alone (measured: 37 of 2113 mutants in ~40
-minutes). Per-file sweeps are the practical unit for burning down a cluster,
-and they answer the question a stale survivor list cannot: *is this still true
-of `HEAD`?*
+A full workspace sweep needed 21 CI runners when this was measured (69 since
+2026-10-20: 60 for `a2a-server`, 4 each for `a2a-types` and `a2a-client`, 1 for
+`a2a-sdk`); a single 4-core machine projects to well over a day for `a2a-server`
+alone (measured: 37 of 2113 mutants in ~40 minutes). Per-file sweeps are the
+practical unit for burning down a cluster, and they answer the question a stale
+survivor list cannot: *is this still true of `HEAD`?*
 
-All rows below were run on 2026-08-09 against this branch, with a live Postgres
-and `--run-ignored all`. Exit codes are quoted because they are the only
-reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
+All rows below were run on 2026-08-09 (the `a2a-protocol-client` row on
+2026-08-10) against this branch, with a live Postgres and `--run-ignored all`.
+Exit codes are quoted because they are the only reliable signal — `0` all
+caught, `2` survivors, `4` baseline failed.
 
 | File | Mutants | Caught | Missed | Unviable | Exit | Was |
 |---|---:|---:|---:|---:|---:|---:|
@@ -605,11 +616,14 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 | `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 | 8 |
 | `a2a-protocol-client` (whole crate) | 804 | 357 | 10 | 437 | 2 | 10 |
 
-Across these `a2a-server` files: **57 survivors addressed, none remaining.**
+Across these `a2a-server` files: **53 survivors addressed, none remaining** —
+the sum of the `Was` column, or 60 counting the 7 that the 2026-08-03 artifacts
+show for `agent_card/caching.rs`, which has no `Was` figure.
 Every one of the nine reports exit 0, and nothing was excluded anywhere in the
 project at the time — no `--exclude-re`, no `#[mutants::skip]`, no baselined
 exception. (Since 2026-09-10 there are `#[mutants::skip]` attributes — three
-then, four since 2026-09-22 — none in these nine files; see ADR 0006.)
+then, nine in `a2a-protocol-server` as of 2026-10-24 — none in these nine
+files; see ADR 0006.)
 
 **What that sentence does not cover.** Nine files is not the crate.
 `a2a-server` has 2113 mutants; these nine account for 487 of them. Treat "zero
@@ -652,7 +666,7 @@ Read the headline with this attached. `041c3666` is **44 commits behind**
 `af7a1f8`; the scheduled sweep ran at 03:33 UTC and PR #103 merged later the
 same day. So the 125 describes a tree that no longer exists.
 
-Quantified rather than asserted: **61 of the 125 survivors (48%) sit in files
+Quantified rather than asserted: **61 of the 125 survivors (49%) sit in files
 that changed between `041c3666` and `af7a1f8`.**
 
 | Survivors | File (`a2a-server`) | In the per-file table above? |
@@ -700,10 +714,12 @@ a sweep:
 
 * All **eight** named survivor-cluster files still changed between `041c366` and
   `6ebf821`, so the "61 of 125 sit in changed files" half holds unchanged.
-* The set of changed `crates/*/src` sources grew from **9** files at `af7a1f8`
-  to **13** at `6ebf821` — four more files entered it. Since the 64 "still
-  valid" survivors were never enumerated per file, it cannot be said which of
-  them those four touch. **64 is therefore an upper bound at `6ebf821`, not a
+* The set of changed `crates/*/src` sources grew from **10** files at `af7a1f8`
+  to **19** at `6ebf821` — nine more files entered it (counted with
+  `:(glob)crates/*/src/**/*.rs`; the pathspec without `:(glob)`, which is blind
+  to files directly under `src/`, gives 9 and 13). Since the 64 "still valid"
+  survivors were never enumerated per file, it cannot be said which of them
+  those nine touch. **64 is therefore an upper bound at `6ebf821`, not a
   current count**, and the same refusal to subtract applies as above.
 
 The honest position is unchanged and now further from its evidence: the
@@ -849,7 +865,8 @@ created, so every caller is admitted forever, which the enforcement tests catch
 at once. The rule generalises: when splitting a function for length, extract
 the half whose absence changes behaviour.
 
-Two of these settle open questions:
+The 2026-08-09 per-file table (see "Per-file measurements") settles two open
+questions:
 
 * **`a2a-protocol-types` 605/8** matches the 2026-08-03 artifact recount and
   the 2026-08-07 CI figure exactly. Three independent measurements agree, so
@@ -859,9 +876,9 @@ Two of these settle open questions:
   commits that fixed it. This is the trap the survivor list sets: a cluster
   list is only meaningful against the commit it was measured on.
 
-Five of the ten files above now report **exit 0** — every mutant caught, and
-no exclusions anywhere. `state_machine.rs` was verified by `--list` only
-(12 mutants → 7) without a full sweep.
+All nine `a2a-server` files in that table report **exit 0** — every mutant
+caught, and no exclusions anywhere. `state_machine.rs` is not in the table: it
+was verified by `--list` only (12 mutants → 7), without a full sweep.
 
 Three things this burndown is worth remembering for:
 
@@ -928,13 +945,13 @@ unattributed rather than reassigned on a guess.
 
 | Date | Commit | Overall Score | Caught | Missed | Timeout | Notes |
 |------|--------|---------------|-------:|-------:|--------:|-------|
-| 2026-10-19 | [`86c8fac`](https://github.com/tomtom215/a2a-rust/commit/86c8fac) | — | 4318 | 3 | 3 | Run [39193157308](https://github.com/tomtom215/a2a-rust/actions/runs/39193157308), scheduled, on `main`; the first sweep on the 33-shard matrix (`a2a-server` dealt round-robin across 24). **Incomplete again: `a2a-server` shards 6/24, 20/24 and 21/24 were cancelled at the 240-minute job timeout**, each having passed its baseline and listed 203 mutants, so 609 of the 7241 listed went ungraded and the score column is left blank, as for 2026-10-12. The summary job found 30/33 `COMPLETED` markers and refused to aggregate. **Counted from the 33 shards' job logs, not their artifacts** (the session that recorded this row could read logs but not download artifacts): cargo-mutants' own `N mutants tested …` line for each of the 29 shards that printed one, and every `MISSED` and `TIMEOUT` line in all 33. Over those 29: 4318 + 3 + 3 + 2308 unviable = 6632 graded, which is the sum of their `tested` figures. None of the three cancelled shards printed a `MISSED` or `TIMEOUT` line before it was killed; how many each caught is not in its log. Per crate: `a2a-types` 1141/0 with 3 timeouts, `a2a-client` 686/2, `a2a-server` 2491/1 over 21 of its 24 shards, `a2a-sdk` 0/0 (0 listed). Listed mutants rose 5642 → 7241 in a week. **Survivors:** `handler/lifecycle/subscribe.rs:502` `+` → `-` in `RequestHandler::final_snapshot_hook` (the read-through deadline, `Instant::now() + wait`); `transport/rest/mod.rs:207` `RestTransport::send_request` → `Box::pin(async move{Ok(Default::default())})`; `delegation.rs:214` `&&` → `||` in `Delegation::observe` (a message settling a handle whose child already has an id). None of the 2026-10-12 six recurs. The branch that carries this row deals with all three, each verified by applying the mutant by hand: `the_snapshot_waits_for_a_store_that_is_behind` (`tests/final_task_snapshot.rs`) gives the store a terminal write slower than the queue's 5-second write timeout, so the stream ends before the store has the task and only the catch-up wait can produce the snapshot; `send_request_via_trait_delegation` now asserts the body it was sent, not just `Ok`; `a_message_after_the_task_does_not_settle_the_handle` (`tests/delegation_outcome_tests.rs`) streams a working task and then a message. **Timeouts:** `agent_card/mod.rs:143`, `:160` and `:169`, `+=` → `*=` in `AgentCard::validate`; each turns `i += 1` from 0 into `i *= 1`, a loop that never ends, so the timeout is the mutant being detected by hanging rather than a gap (a timeout fails no shard). Slowest completed `a2a-server` shard by job clock 239 minutes (19/24), fastest 151: 24 shards did not bring the server under the limit, because the list grew with them. |
+| 2026-10-19 | [`86c8fac`](https://github.com/tomtom215/a2a-rust/commit/86c8fac) | — | 4318 | 3 | 3 | Run [39193157308](https://github.com/tomtom215/a2a-rust/actions/runs/39193157308), scheduled, on `main`; the first sweep on the 33-shard matrix (`a2a-server` dealt round-robin across 24). **Incomplete again: `a2a-server` shards 6/24, 20/24 and 21/24 were cancelled at the 240-minute job timeout**, each having passed its baseline and listed 203 mutants, so 609 of the 7241 listed went ungraded and the score column is left blank, as for 2026-10-12. The summary job found 30/33 `COMPLETED` markers and refused to aggregate. **Counted from the 33 shards' job logs, not their artifacts** (the session that recorded this row could read logs but not download artifacts): cargo-mutants' own `N mutants tested …` line for each of the 29 shards that printed one, and every `MISSED` and `TIMEOUT` line in all 33. Over those 29: 4318 + 3 + 3 + 2308 unviable = 6632 graded, which is the sum of their `tested` figures. None of the three cancelled shards printed a `MISSED` or `TIMEOUT` line before it was killed; how many each caught is not in its log. Per crate: `a2a-types` 1141/0 with 3 timeouts, `a2a-client` 686/2, `a2a-server` 2491/1 over 21 of its 24 shards, `a2a-sdk` 0/0 (0 listed). Listed mutants rose 5642 → 7241 in a week. **Survivors:** `handler/lifecycle/subscribe.rs:502` `+` → `-` in `RequestHandler::final_snapshot_hook` (the read-through deadline, `Instant::now() + wait`); `transport/rest/mod.rs:207` `RestTransport::send_request` → `Box::pin(async move{Ok(Default::default())})`; `delegation.rs:214` `&&` → `||` in `Delegation::observe` (a message settling a handle whose child already has an id). None of the 2026-10-12 six recurs. The branch that carries this row deals with all three, each verified by applying the mutant by hand: `the_snapshot_waits_for_a_store_that_is_behind` (`tests/final_task_snapshot.rs`) gives the store a terminal write slower than the queue's 5-second write timeout, so the stream ends before the store has the task and only the catch-up wait can produce the snapshot; `send_request_via_trait_delegation` now asserts the body it was sent, not just `Ok`; `a_message_after_the_task_does_not_settle_the_handle` (`tests/delegation_outcome_tests.rs`) streams a working task and then a message. **Timeouts:** `agent_card/mod.rs:143`, `:160` and `:169`, `+=` → `*=` in `AgentCard::validate`; each turns `i += 1` from 0 into `i *= 1`, a loop that never ends, so the timeout is the mutant being detected by hanging rather than a gap (a timeout fails no shard). Slowest completed `a2a-server` shard by job clock 239 minutes (19/24), fastest 152: 24 shards did not bring the server under the limit, because the list grew with them. Resharded the next day (`f78fdcb`, 2026-10-20): `a2a-server` is now dealt round-robin across 60 shards, 69 jobs in all; the matrix comment in `mutants.yml` has the projection. |
 | 2026-10-12 | [`9ec265d`](https://github.com/tomtom215/a2a-rust/commit/9ec265d) | — | 3588 | 6 | 0 | Run [38199170161](https://github.com/tomtom215/a2a-rust/actions/runs/38199170161), scheduled, on `main`. **Incomplete: `a2a-server` shards 7/12 and 11/12 were cancelled at the 240-minute job timeout** with 37 and 55 of their 311 mutants ungraded, so 92 of the 5642 listed went unmeasured and the score column is left blank, as for 2026-08-24. 19/21 `COMPLETED` markers. 1955 unviable. Counted from all 21 artifacts' lists rather than the summary: 3588 + 6 + 0 + 1955 = 5549 graded. Shard 11/12's `outcomes.json` holds one caught mutant its `caught.txt` lacks (`postgres_store/store_impl.rs:492`, `==` → `!=` in `append_event`), written as the job was killed. Per crate: `a2a-types` 844/0, `a2a-client` 579/2, `a2a-server` 2165/4 over 10 of its 12 shards, `a2a-sdk` 0/0. Listed mutants rose 4600 → 5642 in a week: PRs #162 and #163 added 11,683 lines to the three crates' sources. The six survivors are the 2026-09-28 six, and the branch that carries this row deals with each, every one verified by applying the mutant by hand: `check_endpoint_reachable` is already killed on `main` by `https_endpoints_are_refused_by_a_build_without_tls` (`17f75fa`, PR #165, after the swept commit); `reset_event_state` and `task_count` (both constants) have new tests that fail under them; the `earliest_event_seq` default and `CancelOnFirstWrite::close` are equivalents, rewritten so the patched cargo-mutants no longer generates them (listed over the two functions: 4 mutants before, 2 after, both caught here). The timeouts are why `mutants.yml` now deals `a2a-server` round-robin across 24 shards; its matrix comment has the measurement. Slowest `a2a-server` shard per sweep, by job clock, from 2026-09-14 on: 165, 245, 227, 193, 241 minutes. |
 | 2026-10-05 | [`20b162b`](https://github.com/tomtom215/a2a-rust/commit/20b162b) | **99%** | 3102 | 6 | 0 | Run [37258541718](https://github.com/tomtom215/a2a-rust/actions/runs/37258541718), scheduled, on `main`. **Row added 2026-10-12**, as are the next three: none of the four sweeps between 2026-09-07 and 2026-10-12 was recorded when it ran. Each was re-counted from all 21 of its artifacts with one script, and each count was reproduced byte-for-byte by a second run of it. 21/21 `COMPLETED`. 1492 unviable; 3102 + 6 + 0 + 1492 = 4600, the number the shards' `mutants.json` list. 99.81% exact. Per crate: `a2a-types` 710/0, `a2a-client` 500/2, `a2a-server` 1892/4, `a2a-sdk` 0/0. The six survivors are the 2026-09-28 six, unchanged; so are the `a2a-types` and `a2a-client` figures, shard for shard, because neither crate's sources changed between the two commits (their `mutants.json` files are byte-identical). Slowest `a2a-server` shard 193 minutes. |
-| 2026-09-28 | [`88c802f`](https://github.com/tomtom215/a2a-rust/commit/88c802f) | **99%** | 3071 | 6 | 0 | Run [36372641630](https://github.com/tomtom215/a2a-rust/actions/runs/36372641630), scheduled, on `main`. Row added 2026-10-12 (see 2026-10-05). **The first sweep with the patched cargo-mutants** (`16d499b`, 2026-09-25) and with `--all-features` given to cargo-mutants itself, so the first whose caught count is not overstated (see the 2026-09-23 section above). 21/21 `COMPLETED`. 1462 unviable; 3071 + 6 + 0 + 1462 = 4539 listed. 99.81% exact. Per crate: `a2a-types` 710/0, `a2a-client` 500/2, `a2a-server` 1861/4, `a2a-sdk` 0/0. Fewer mutants are listed than a week earlier (4944): the 1542 `Result`-alias and `Pin::new(..)`-style replacements listed then are gone, for fewer that compile, 240 `Box::pin(async move{..})` among them. `RequestHandler::task_count`, for one, went from seven `A2aResult::new(..)`-style replacements to `Ok(0)` and `Ok(1)`. **Six survivors, the first since 2026-09-07**, and five exist only because the patch made them gradable — on 2026-09-21 every replacement listed for them was uncompilable: `token_provider.rs:711 check_endpoint_reachable` → `Ok(())`, `handler/introspection.rs:45 RequestHandler::task_count` → `Ok(0)` and `Ok(1)`, `store/task_store/mod.rs:613 TaskStore::earliest_event_seq` → `Box::pin(async move{Ok(None)})`, and `conformance/run/mod.rs:131 CancelOnFirstWrite::close` → `Box::pin(async move{Ok(())})`. The sixth is a regression in coverage, not in grading: `sse_parser/parser.rs SseParser::reset_event_state` → `()` was caught on 2026-09-14 and 2026-09-21 (at line 286) and is missed here (line 374); the one commit between them that touches the parser or its edge-case tests, `adce975`, added a third call to the reset. Which test had been catching it, and why it stopped, is not established here. Slowest `a2a-server` shard 227 minutes. |
+| 2026-09-28 | [`88c802f`](https://github.com/tomtom215/a2a-rust/commit/88c802f) | **99%** | 3071 | 6 | 0 | Run [36372641630](https://github.com/tomtom215/a2a-rust/actions/runs/36372641630), scheduled, on `main`. Row added 2026-10-12 (see 2026-10-05). **The first sweep with the patched cargo-mutants** (`b0ebedc`, 2026-09-23) and with `--all-features` given to cargo-mutants itself, so the first whose caught count is not overstated (see the 2026-09-23 section above). 21/21 `COMPLETED`. 1462 unviable; 3071 + 6 + 0 + 1462 = 4539 listed. 99.81% exact. Per crate: `a2a-types` 710/0, `a2a-client` 500/2, `a2a-server` 1861/4, `a2a-sdk` 0/0. Fewer mutants are listed than a week earlier (4944): the 1542 `Result`-alias and `Pin::new(..)`-style replacements listed then are gone, for fewer that compile, 240 `Box::pin(async move{..})` among them. `RequestHandler::task_count`, for one, went from seven `A2aResult::new(..)`-style replacements to `Ok(0)` and `Ok(1)`. **Six survivors, the first since 2026-09-07**, and five exist only because the patch made them gradable — on 2026-09-21 every replacement listed for them was uncompilable: `token_provider.rs:711 check_endpoint_reachable` → `Ok(())`, `handler/introspection.rs:45 RequestHandler::task_count` → `Ok(0)` and `Ok(1)`, `store/task_store/mod.rs:613 TaskStore::earliest_event_seq` → `Box::pin(async move{Ok(None)})`, and `conformance/run/mod.rs:131 CancelOnFirstWrite::close` → `Box::pin(async move{Ok(())})`. The sixth is a regression in coverage, not in grading: `sse_parser/parser.rs SseParser::reset_event_state` → `()` was caught on 2026-09-14 and 2026-09-21 (at line 286) and is missed here (line 374); the one commit between them that touches the parser or its edge-case tests, `adce975`, added a third call to the reset. Which test had been catching it, and why it stopped, is not established here. Slowest `a2a-server` shard 227 minutes. |
 | 2026-09-21 | [`391f0df`](https://github.com/tomtom215/a2a-rust/commit/391f0df) | **100%** | 3244 | 0 | 0 | Run [35556427298](https://github.com/tomtom215/a2a-rust/actions/runs/35556427298), scheduled, on `main`. Row added 2026-10-12 (see 2026-10-05). **Concluded `cancelled`, and is nevertheless complete:** `a2a-server` shard 10/12's job ran 4h05m, past the 240-minute limit, but only after cargo-mutants had returned — its `COMPLETED` marker is present and all 262 of its mutants are graded — and the summary job ran and passed on all 21 reports. The first sweep to put an `a2a-server` shard past the limit. 1700 unviable; 3244 + 0 + 0 + 1700 = 4944 listed. Per crate: `a2a-types` 753/0, `a2a-client` 448/0, `a2a-server` 2043/0, `a2a-sdk` 0/0. Measured before 2026-09-23: the score is an upper bound (see that section). |
 | 2026-09-14 | [`c5d1379`](https://github.com/tomtom215/a2a-rust/commit/c5d1379) | **100%** | 2731 | 0 | 0 | Run [34801495771](https://github.com/tomtom215/a2a-rust/actions/runs/34801495771), scheduled, on `main`; concluded `success`. Row added 2026-10-12 (see 2026-10-05). 21/21 `COMPLETED`. 1568 unviable; 2731 + 0 + 0 + 1568 = 4299 listed. Per crate: `a2a-types` 647/0, `a2a-client` 432/0, `a2a-server` 1652/0, `a2a-sdk` 0/0. Zero survivors, the first full sweep to say so since the 2026-09-07 row's 55 were burned down. Measured before 2026-09-23: the score is an upper bound (see that section). Slowest `a2a-server` shard 165 minutes. |
-| 2026-09-07 | [`d3ebb72`](https://github.com/tomtom215/a2a-rust/commit/d3ebb72) | **97%** | 2609 | 55 | 0 | Run [34078555778](https://github.com/tomtom215/a2a-rust/actions/runs/34078555778), scheduled, on `main`. 1397 unviable. Ten of the twelve `a2a-server` shards exited 1; every `a2a-types`, `a2a-client` and `a2a-sdk` shard exited 0, so all 55 survivors are in `a2a-server`. Grouped from the ten failing shards' logs — the `MISSED` lines de-duplicated by mutant, 55 exactly: `push/sender.rs` `parse_numeric_ipv4` **26**; `serve/graceful/idle/mod.rs` `IdleTimeout` write paths 7 (`poll_write`, `poll_write_vectored` ×3, `poll_flush`, `poll_shutdown`, `is_write_vectored`); `rate_limit/shared.rs` `PostgresRateLimitCounter` 6 (`count` ×4, `sweep`, `Debug::fmt`); `handler/concurrency.rs` `tenant_slot_semaphore` 4; `store/sqlite_store/mod.rs` `artifact_delta_sql` 2; the two `tenant_config.rs` builders; and one each in `auth/mod.rs` `labelled_constant_time_match`, `dispatch/websocket.rs` `next_frame`, `push_delivery/mod.rs` `timeout_outcome`, `push/sender.rs` `max_delivery_duration`, `sqlite_store/journal.rs` `rows_for_append`, `store/retention/sqlite.rs` `purge`, `streaming/sse.rs` `close`, `auth/jwt.rs` `build_jwks_client`. **Twenty-six of the 55 are one function.** `parse_numeric_ipv4` was added on 2026-08-27 by `7fe1193` (PR #113), and that PR's incremental gate (run [33094131262](https://github.com/tomtom215/a2a-rust/actions/runs/33094131262)) concluded success — while each of its eight shards logged `FAILED Unmutated baseline` and none printed a `mutants tested` line. That is the 2026-08-24 defect below, three days before its fix: the gate that "prevents the count from growing" graded nothing for the PR that added the largest cluster in this table since 2026-08-13. Of the remaining 29, seven (`IdleTimeout`) and one (`purge`) have tests on `main` that post-date this sweep (PR #117), and four are the set the 2026-08-14 row calls documented-unkillable — of which `build_jwks_client` is a `#[cfg]` artifact that a one-function rewrite retires, and the other three are equivalents by construction (see the `#[mutants::skip]` note in `ROADMAP.md`). **Burned down 2026-09-09** (`e89e2e7`, on the branch that carries this row): rewrites of `parse_numeric_ipv4`, `labelled_constant_time_match` and `build_jwks_client`, and tests for the rest. Measured locally with the sweep's own command line — `cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants -- --all-features --run-ignored all -E 'not (binary(soak) or binary(soak_multi_replica))'`, against a live PostgreSQL 16.13 — over every function named above except `purge` (`-F` on their names; `purge` was measured separately, see below): **133 mutants, 109 caught, 21 unviable, 0 timeouts, 3 missed**, and the three are exactly `TenantLimits::builder`, `PerTenantConfig::builder` and `SseBodyWriter::close`. Per function, caught / unviable: `parse_numeric_ipv4` 14/1 (the rewrite has 15 mutants where the old form had 49), `labelled_constant_time_match` 6/1, `tenant_slot_semaphore` 4/1, `PostgresRateLimitCounter` 14/0, `next_frame` 7/0, `IdleTimeout` write paths 14/18, `timeout_outcome` 5/0, `max_delivery_duration` 4/0, `build_jwks_client` 1/0, `artifact_delta_sql` 21/0, `rows_for_append` 18/0. `purge` was graded by a second run over its file, `--file crates/a2a-protocol-server/src/store/retention/sqlite.rs`, same configuration: 11 mutants, 11 caught, the `> 0` → `>= 0` survivor among them, killed by PR #117's `the_journal_sweep_runs_only_after_a_task_was_deleted`. Together: 144 mutants graded, 3 missed. This is a targeted run over the survivors' functions, not a workspace sweep; the next scheduled sweep is the figure to record. **The last three, 2026-09-10:** `#[mutants::skip]` in source, with the `mutants` crate taken as a dependency (ADR 0006). Re-graded the same way over both files (`--file tenant_config.rs --file streaming/sse.rs`): 38 mutants, 11 caught, 27 unviable, 0 missed, 0 timeouts, exit 0. |
+| 2026-09-07 | [`d3ebb72`](https://github.com/tomtom215/a2a-rust/commit/d3ebb72) | **97%** | 2609 | 55 | 0 | Run [34078555778](https://github.com/tomtom215/a2a-rust/actions/runs/34078555778), scheduled, on `main`. 1397 unviable. Ten of the twelve `a2a-server` shards exited 1; every `a2a-types`, `a2a-client` and `a2a-sdk` shard exited 0, so all 55 survivors are in `a2a-server`. Grouped from the ten failing shards' logs — the `MISSED` lines de-duplicated by mutant, 55 exactly: `push/sender.rs` `parse_numeric_ipv4` **26**; `serve/graceful/idle/mod.rs` `IdleTimeout` write paths 7 (`poll_write`, `poll_write_vectored` ×3, `poll_flush`, `poll_shutdown`, `is_write_vectored`); `rate_limit/shared.rs` `PostgresRateLimitCounter` 6 (`count` ×4, `sweep`, `Debug::fmt`); `handler/concurrency.rs` `tenant_slot_semaphore` 4; `store/sqlite_store/mod.rs` `artifact_delta_sql` 2; the two `tenant_config.rs` builders; and one each in `auth/mod.rs` `labelled_constant_time_match`, `dispatch/websocket.rs` `next_frame`, `push_delivery/mod.rs` `timeout_outcome`, `push/sender.rs` `max_delivery_duration`, `sqlite_store/journal.rs` `rows_for_append`, `store/retention/sqlite.rs` `purge`, `streaming/sse.rs` `close`, `auth/jwt.rs` `build_jwks_client`. **Twenty-six of the 55 are one function.** `parse_numeric_ipv4` was added on 2026-08-27 by `7fe1193` (PR #113), and that PR's incremental gate (run [33094131262](https://github.com/tomtom215/a2a-rust/actions/runs/33094131262)) concluded success — while each of its eight shards logged `FAILED Unmutated baseline` and none printed a `mutants tested` line. That is the 2026-08-24 defect below, three days before its fix: the gate that "prevents the count from growing" graded nothing for the PR that added the largest cluster in this table since 2026-08-13. Of the remaining 29, seven (`IdleTimeout`) and one (`purge`) have tests on `main` that post-date this sweep (PR #117), and four are the set the 2026-08-14 row calls documented-unkillable — of which `build_jwks_client` is a `#[cfg]` artifact that a one-function rewrite retires, and the other three are equivalents by construction (see the `#[mutants::skip]` note in `ROADMAP.md`). **Burned down 2026-09-09** (`e89e2e7`, on the branch that carries this row): rewrites of `parse_numeric_ipv4`, `labelled_constant_time_match` and `build_jwks_client`, and tests for the rest. Measured locally with the sweep's own command line — `cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants -- --all-features --run-ignored all -E 'not (binary(soak) or binary(soak_multi_replica))'`, against a live PostgreSQL 16.13 — over every function named above except `purge` (`-F` on their names; `purge` was measured separately, see below): **133 mutants, 109 caught, 21 unviable, 0 timeouts, 3 missed**, and the three are exactly `TenantLimits::builder`, `PerTenantConfig::builder` and `SseBodyWriter::close`. Per function, caught / unviable: `parse_numeric_ipv4` 14/1 (the rewrite has 15 mutants where the old form had 49), `labelled_constant_time_match` 6/1, `tenant_slot_semaphore` 4/1, `PostgresRateLimitCounter` 14/0, `next_frame` 7/0, `IdleTimeout` write paths 14/18, `timeout_outcome` 5/0, `max_delivery_duration` 4/0, `build_jwks_client` 1/0, `artifact_delta_sql` 21/0, `rows_for_append` 18/0. `purge` was graded by a second run over its file, `--file crates/a2a-protocol-server/src/store/retention/sqlite.rs`, same configuration: 11 mutants, 11 caught, the `> 0` → `>= 0` survivor among them, killed by PR #117's `the_journal_sweep_runs_only_after_a_task_was_deleted` (since replaced by `the_journal_sweep_runs_even_when_the_purge_deletes_nothing`, 2026-09-20, when that guard was removed). Together: 144 mutants graded, 3 missed. This is a targeted run over the survivors' functions, not a workspace sweep; the next scheduled sweep is the figure to record. **The last three, 2026-09-10:** `#[mutants::skip]` in source, with the `mutants` crate taken as a dependency (ADR 0006). Re-graded the same way over both files (`--file tenant_config.rs --file streaming/sse.rs`): 38 mutants, 11 caught, 27 unviable, 0 missed, 0 timeouts, exit 0. |
 | 2026-08-31 | [`b6f3afb`](https://github.com/tomtom215/a2a-rust/commit/b6f3afb) | **97%** | 2610 | 54 | 0 | Run [33352800724](https://github.com/tomtom215/a2a-rust/actions/runs/33352800724), scheduled, on `main`. 1397 unviable. The first sweep after `db795c2` restored the baseline, and so the first measurement of `a2a-server` since 2026-08-14 — which is why the count jumps from 4 to 54 in one row: two weeks of merges (PRs #112–#115) landed while the server crate was unmeasured, and the incremental gate had the same blindness for the six days it mattered most. The 54 are exactly the 2026-09-07 set less `push/sender.rs:133 max_delivery_duration`, verified by de-duplicating both runs' `MISSED` lines and diffing: nothing is in this row that is not in the next, and one mutant is in the next that is not here. |
 | 2026-08-24 | [`4ddb7ab`](https://github.com/tomtom215/a2a-rust/commit/4ddb7ab) | — | 1022 | 0 | 0 | Run [32686154534](https://github.com/tomtom215/a2a-rust/actions/runs/32686154534), scheduled, on `main`. Concluded `success` and printed `COMBINED MUTATION SCORE: 100%` over `Caught: 1022 Missed: 0 Timeout: 0 Unviable: 505`. **A false green, by a third mechanism.** The `a2a-server` baseline failed — shard 1/12's log reads `Summary [58.362s] 1682 tests run: 1680 passed, 2 timed out` — because `--run-ignored all` pulled in the two soak tests (`soak::server_survives_sustained_load_without_leaking`, `soak_multi_replica::two_replicas_survive_sustained_load`), whose 60-second default runs into `.config/nextest.toml`'s 45-second kill, deterministically. cargo-mutants stops at a failed baseline, so all twelve `a2a-server` shards and `a2a-sdk` graded nothing and wrote empty outcome lists, and `Require a readable mutation report` was satisfied by files that existed. The 1022 caught are `a2a-types` (647: shards 178 + 147 + 150 + 172) and `a2a-client` (375: 79 + 50 + 107 + 139) alone, over 1527 mutants — the following week examined 4061. Diagnosed and fixed in `db795c2` (2026-08-30, PR #115): the soak binaries are excluded from the mutation command, and both jobs now reconcile the graded lists against `mutants.json`, failing when mutants were selected and none graded. Score column left blank on purpose: 100% of a third of the workspace is not a score, and the incremental gate had the same hole for the same six days (see the 2026-09-07 row). |
 | 2026-08-14 | [`1d51be0`](https://github.com/tomtom215/a2a-rust/commit/1d51be0) | **99%** | 2262 | 4 | 1 | Run [31814679306](https://github.com/tomtom215/a2a-rust/actions/runs/31814679306), `workflow_dispatch` on the 0.8 release branch — **the confirming sweep for the whole burn-down**, and the last row measured before the release. Full CI configuration: `--all-features --run-ignored all`, live PostgreSQL, 21 shards. 1293 unviable. 99.82% exact. Per crate: `a2a-types` 631/0 and `a2a-client` 375/0 — **100%, zero survivors, zero timeouts**; `a2a-server` 1256/4/1; `a2a-sdk` 0/0. Every figure re-derived from all 21 raw artifacts rather than read off the summary: 21/21 `COMPLETED` markers, and the four `missed.txt` lines and one `timeout.txt` line counted directly. The arithmetic closes against the shards' own `mutants.json`: 2262 + 4 + 1 + 1293 = **3560**, the exact number of mutants those files enumerate, so nothing is unaccounted for. Against `8642e78`: same 3560-mutant set, survivors **6 → 4** and timeouts **3 → 1**, and the four mutants that moved are exactly the four that were worked on — `state_machine.rs:143` and `rest/mod.rs:255` (fixed in `2607280`) plus `sse.rs:102 send_event` and `sse.rs:125 send_keep_alive` (fixed in `1d51be0`), all four now in `caught.txt`. **The four survivors are exactly the documented-unkillable set** and nothing else: `tenant_config.rs:82 TenantLimits::builder`, `tenant_config.rs:167 PerTenantConfig::builder`, `streaming/sse.rs:131 SseBodyWriter::close` (three semantic equivalences) and `auth/jwt.rs:790 build_jwks_client` (a `#[cfg]` artifact). **The one timeout is not expected and is reported rather than rounded off:** `manager.rs:385 replace EventQueueManager::destroy with ()`, which `90bf065` had claimed re-verified at "0 timeouts". It is fixed in `ef4b109` — see that row's note and the `.config/nextest.toml` header. Note which shards failed and which did not: 2/12, 4/12 and 9/12 exited 1 on their survivors, while 12/12, holding the timeout, exited **0**. That is the workflow's scoring rule made visible — a timeout fails nothing. |

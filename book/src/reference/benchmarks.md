@@ -18,6 +18,11 @@ benchmarking.
 **Rust version:** rustc 1.99.0 (b940084d7 2026-09-28)  
 **Platform:** Linux-x86_64  
 
+> **Feature set**: these figures were measured before OpenTelemetry
+> instrumentation became a default feature of the SDK crates (0.15.0).
+> `docs/readiness-bar.md` measured default `tracing` and `otel`, with nothing
+> installed, at 4.6–6.6% of the CPU time of a blocking send.
+
 > **Interactive dashboard**: See the [Benchmark Dashboard](dashboard.md) for
 > charts, visual comparisons, and drill-down analysis of these results.
 
@@ -200,8 +205,11 @@ Stream throughput under varying event volumes and consumer speeds.
 Reveals buffering and flow-control overhead that synthetic single-event tests miss.
 
 The default broadcast channel capacity is 256 events (raised from 64 in
-v0.5.0). Deployments with >256 events/task should use
-`EventQueueManager::with_capacity()` to set a higher value.
+v0.5.0). Deployments with >256 events/task can set a higher value with
+`RequestHandlerBuilder::with_event_queue_capacity()`. Since 0.15.0 a stream
+that falls behind catches up from the task's event log (the in-memory stores
+keep the last 512 events of a task by default), so a larger queue avoids the
+catch-up reads rather than being the only protection against `streamLagged`.
 
 | Benchmark | Median |
 |-----------|--------|
@@ -267,17 +275,20 @@ Shows how store operations scale as data accumulates over time.
 
 ## Memory Overhead
 
-Heap allocation counts and bytes per operation, measured via a counting
-allocator (`#[global_allocator]`). Values represent allocation counts or
-bytes — not time — encoded as nanoseconds for Criterion tracking.
+Wall-clock time per operation, in nanoseconds, with a counting allocator
+(`#[global_allocator]`) installed. Each iteration counts its heap allocations,
+and the benchmark asserts that the count stays within 5% of a figure measured
+once beforehand, but the counts are not published: Criterion records the
+elapsed time. Read these rows as ns per operation, not as allocation counts or
+bytes.
 
 | Metric | Unit |
 |--------|------|
-| `*_alloc_count` | Number of `alloc()` calls per operation |
-| `*_bytes_per_payload` | Bytes allocated per operation |
+| `*_alloc_count` | ns per operation (the allocation count is asserted, not reported) |
+| `*_bytes_per_payload` | ns per operation (the bytes allocated are asserted, not reported) |
 
-| Benchmark | Value |
-|-----------|-------|
+| Benchmark | Median (ns) |
+|-----------|-------------|
 | `memory_bytes_per_payload/serialize_bytes/1024` | 921 |
 | `memory_bytes_per_payload/serialize_bytes/16384` | 12324 |
 | `memory_bytes_per_payload/serialize_bytes/256` | 310 |
@@ -317,9 +328,10 @@ SDK's server against the official Python SDK's server — is on
 
 ## Enterprise Scenarios
 
-Production-scale workloads modeling real deployments: multi-tenant isolation,
-push notification management, eviction under memory pressure, rate limiting,
-CORS handling, read/write mix ratios, and large conversation histories.
+Workloads modeled on deployment patterns, run in one process over loopback:
+multi-tenant isolation, push notification management, eviction under memory
+pressure, rate limiting, CORS handling, read/write mix ratios, and large
+conversation histories.
 
 | Benchmark | Median |
 |-----------|--------|
@@ -374,9 +386,10 @@ CORS handling, read/write mix ratios, and large conversation histories.
 ## Production Scenarios
 
 Full end-to-end workflows exercising the complete SDK pipeline in scenarios
-that real-world deployments encounter at scale: task reconnection, cold start
-latency, concurrent race conditions, multi-context orchestration, push config
-lifecycle, parallel agent bursts, and dispatch routing overhead isolation.
+modeled on real deployments (single process, loopback): task reconnection, cold
+start latency, concurrent race conditions, multi-context orchestration, push
+config lifecycle, parallel agent bursts, and dispatch routing overhead
+isolation.
 
 | Benchmark | Median |
 |-----------|--------|
@@ -490,8 +503,7 @@ probability.
 Varies per-link latency from 0 µs to 20 000 µs with zero synthetic
 errors, isolating the chain's latency-compounding factor from retry
 jitter. Five hops × per-hop latency gives the lower bound, plus the
-JSON-RPC loopback baseline (~2 ms for a five-hop chain with zero added
-latency).
+JSON-RPC loopback cost of five nested sends (not measured here).
 
 ### Group 2: per-hop error injection (3 retries per hop + 8 outer retries)
 
@@ -510,14 +522,15 @@ misdiagnosing CI variance as real performance changes.
 
 ### Streaming cross-thread scheduling
 
-On N-core systems, \`tokio::spawn\` places the SSE builder task on a different
-worker thread with (N-1)/N probability, causing ~500µs cache-miss +
-work-stealing penalty. This was root-caused as the source of the ~24% bimodal
-distribution in all streaming benchmarks.
+On N-core systems, `tokio::spawn` places the SSE builder task on a different
+worker thread with (N-1)/N probability. This was once held to cost ~500µs per
+request and to cause the ~24% bimodal distribution in the streaming
+benchmarks; a later measurement (the 0.9.0 changelog entry) found cross-thread
+scheduling real but second-order, about 50 µs of a 191 µs send.
 
-**Mitigations (v1.0.0):** The SSE builder uses \`sleep\` + reset (not
-\`interval\`) to eliminate timer wheel entries during active streaming.
-Transport streaming benchmarks use \`worker_threads(1)\` runtime to eliminate
+**Mitigations (v0.5.0):** The SSE builder uses `sleep` + reset (not
+`interval`) to eliminate timer wheel entries during active streaming.
+Transport streaming benchmarks use `worker_threads(1)` runtime to eliminate
 cross-thread variance entirely (24 high severe → 4 high mild outliers, 3×
 tighter confidence intervals).
 
@@ -535,19 +548,24 @@ lookup baseline.
 ### Stream volume per-event cost
 
 The default broadcast channel capacity is **256** events (raised from 64 in
-v0.5.0). `backpressure_stream_volume` straddles it:
-510.1 µs for 52 events, 1.51 ms for 252 and
-2.83 ms for 502, so the per-event cost below and above
-capacity can be read directly from the table.
+v0.5.0). `backpressure_stream_volume` does not run its larger rows at that
+default: the bench sizes the event queue above the event count (512 slots for
+the 52- and 252-event rows, 1,024 for the 502-event row), so it measures
+streaming cost, not capacity overflow. It reports
+510.1 µs for 52 events, 1.51 ms for 252 and 2.83 ms for 502:
+5.0 µs per added event from 52 to 252 events and
+5.3 µs from 252 to 502.
 
-Production deployments expecting >256 events/task should increase
-`EventQueueManager::with_capacity()` to match their peak volume.
+Production deployments expecting >256 events/task can raise
+`RequestHandlerBuilder::with_event_queue_capacity()` to match their peak volume.
 
 ### Transport payload insensitivity
 
 Transport benchmarks (64B → 16KB) show a 26.4% latency increase for a
 256× payload increase, because the 186.4 µs HTTP round-trip dominates. Serde
-regressions cannot be detected via transport benchmarks. Use the
+regressions are hard to detect via the 64B–16KB transport benchmarks; the
+100KiB (399.8 µs) and 1MiB (2.39 ms) rows are where payload size begins to
+dominate. Use the
 `protocol/payload_scaling` isolation benchmarks (64B → 1MB, pure serde)
 for serialization regression detection.
 
@@ -556,7 +574,8 @@ for serialization regression detection.
 Connection reuse saves 134.3 µs (41.3%) on loopback —
 325.3 µs per request when the client is rebuilt each time,
 versus 191.0 µs when it is shared. On real networks with TLS the
-saving is larger still (TLS handshake dominates). Best practice: create one
+saving should be larger still, since a new client also pays a TLS handshake;
+this page does not measure that. Best practice: create one
 `A2aClient` at startup and share via `Arc` across request handlers.
 
 Two consequences worth spelling out, because both have bitten this repo:
@@ -566,8 +585,9 @@ Two consequences worth spelling out, because both have bitten this repo:
   exactly this, and its per-agent cost tracks
   325.3 µs — the rebuild-every-time number — rather than
   the shared-client one.
-- Quoting this saving as a small percentage understates it by roughly 4×. It is
-  a large fraction of a loopback request, not a rounding error.
+- Quoting this saving as a small percentage (an older revision of this page
+  said 9%) understates it by 4.6×.
+  It is a large fraction of a loopback request, not a rounding error.
 
 ### What sharing a client is actually worth under concurrency
 
@@ -587,7 +607,8 @@ changes.
 
 Sharing wins at every burst size, and the medians' 95% confidence intervals are
 disjoint in all three, so the direction is not noise. But the size of the win is
-about half what the single-request comparison above predicts:
+only a fraction of what the single-request comparison above predicts, 35% of it
+at 10 agents, 37% at 50 and 26% at 100, where it is
 35.4 µs (10.6%) per agent
 against the 134.3 µs (41.3%) that
 `reused_client` versus `new_client_per_request` would lead you to expect.
@@ -602,33 +623,42 @@ The practical reading: share the client — it is free to do and wins at every
 size measured — but size capacity from the burst figures, not from the
 single-request saving.
 
-### Deserialization allocation overhead
+### Deserialization versus serialization cost
 
-Deserialization allocates several times more than serialization (Task:
-1123 vs 330 allocs). This is inherent to serde_json's parsing model: every
-field creates an intermediate `String`/`Vec` allocation during parsing. The
-`serde_helpers::deser_from_str()` helper enables serde_json's borrowed-data
-path for ~15-25% fewer allocations. The `serde_helpers::SerBuffer` provides
-thread-local buffer reuse for serialization, eliminating the 2.3× small-payload
-overhead.
+In the `memory_*` rows above, deserialization takes several times as long as
+serialization (Task: 1123 ns vs 330 ns, 3.4×).
+This is inherent to serde_json's parsing model: every field creates an
+intermediate `String`/`Vec` allocation during parsing. The
+`serde_helpers::deser_from_str()` helper uses serde_json's `from_str` path,
+which in the `protocol_payload_scaling` rows above takes
+12–20% less time than `from_slice` at 6 of 7 payload sizes
+(272 ns against 336 ns at 64 B), and more time at 16 KiB.
 
-### History depth allocation scaling
+The `serde_helpers::SerBuffer` provides thread-local buffer reuse for
+serialization. In the same rows it takes 138 ns against `to_vec`'s 196 ns at
+64 B (1.4×) and 268 ns against 366 ns at 256 B, and the two
+converge as the payload grows: 745.9 µs against 721.8 µs at 1 MiB.
+
+### History depth scaling
 
 History depth scales roughly linearly: `memory_history_scaling` records
-1409 deserialization allocs at 1 turn and 23557 at 50 turns
-(471 and 9352 for serialization), so a 50-turn task
-costs 23557 deser allocs per `store.get()`. The `serde_helpers` module
+1409 ns to deserialize at 1 turn and 23557 ns at 50 turns
+(471 ns and 9352 ns to serialize), so a store that parses the
+stored task on every `get()` (the SQL stores) pays that growth per read;
+`InMemoryTaskStore::get` clones instead. The `serde_helpers` module
 provides optimized paths; for maximum throughput on deep histories, consider
 storing pre-serialized bytes alongside parsed structs to avoid re-parsing on
 every read.
 
 ### Artifact accumulation clone cost
 
-The background event processor clones the full Task struct on each SSE event.
-Clone cost grows with artifact count: `task_clone_at_depth` is
-122 ns with no artifacts and 64.2 µs with 500. For tasks with 500+
-accumulated artifacts, consider batching event processing or using the planned
-copy-on-write artifact storage (tracked as a future optimization).
+`task_clone_at_depth` measures `Task::clone` alone:
+122 ns with no artifacts and 64.2 µs with 500. The background
+event processor no longer clones the whole task per artifact event: it persists
+artifact updates with `TaskStore::save_artifact_delta`, which the in-memory
+store applies in place, so streaming cost per event stays flat (see
+[Stream volume per-event cost](#stream-volume-per-event-cost)).
+`store_save_at_depth` still prices a whole-task `save`.
 
 ### Slow consumer timer calibration
 
@@ -638,23 +668,25 @@ The `backpressure/timer_calibration` benchmarks measure actual
 results should be interpreted against these calibrated durations, not
 the nominal sleep values.
 
-### Data volume save() wide confidence intervals
+### Data volume save() at 10K tasks
 
-The `data_volume/save/after_prefill/10000` benchmark reports wide confidence
-intervals ([1.4µs, 3.5µs], spanning a 2.5× range) and an 18% high severe
-outlier rate. This is caused by BTreeSet rebalancing spikes when the sorted
-index crosses internal node-split thresholds during insert. The median
-(~1.6µs) is representative; the wide CI reflects genuine variance from the
-B-tree data structure, not measurement noise. This is an acceptable tradeoff:
-the BTreeSet enables O(page\_size) pagination queries vs O(n) full scans.
+`data_volume/save/after_prefill/10000` reports 1.8 µs with a 95%
+confidence interval of [1.75 µs, 1.78 µs] in this run, as tight as
+the other prefill levels. An earlier run reported a much wider interval; if
+that recurs, an insert into the sorted `BTreeMap` index crossing a node split
+is the suspected cause, which has not been established. The indexes are what
+let `list()` serve a page in `O(log n + page_size)` without sorting every task
+on each call.
 
 ### Dispatch routing: direct handler vs HTTP round-trip
 
 `production/dispatch_routing/direct_handler_invoke` calls the request handler
 directly and reports 57.7 µs; `full_http_roundtrip` sends a message through
 a JSON-RPC server over a warm keep-alive connection and reports
-190.1 µs. The difference is the dispatch and transport overhead the
-direct call bypasses.
+190.1 µs. The difference (132.4 µs) is everything the direct call
+bypasses: the client's request and response handling, JSON-RPC
+(de)serialization, HTTP, and dispatch. `docs/swarm-scale-findings.md` measures
+the HTTP stack itself at roughly a tenth of a send.
 
 ### Subscribe fan-out scaling
 
@@ -686,9 +718,9 @@ against 185.7 µs for a full JSON-RPC round trip
 ### Pagination context index
 
 At 1000 tasks, the `advanced/pagination_walk` filtered walk takes
-331.4 µs against 647.5 µs unfiltered. The BTreeSet context index
-reduces the scan work by only iterating tasks matching the `context_id`
-filter.
+331.4 µs against 647.5 µs unfiltered. The `BTreeMap` context index
+lets a `context_id`-filtered walk iterate only that context's tasks (500 of the
+1,000 here), which is why it takes about half as long.
 
 ---
 
@@ -699,12 +731,15 @@ which provides:
 
 - **Statistical significance testing** — detects real regressions vs noise
 - **Warm-up iterations** — avoids cold-start measurement artifacts
-- **Median ± MAD** — robust central tendency resistant to outliers
+- **Median and its 95 % confidence interval** — a central tendency resistant to outliers
 - **Configurable sample sizes** — more iterations for noisy benchmarks
 
 ### Measurement rigor
 
-All benchmarks follow these practices for reproducibility:
+Most benchmarks follow these practices; the exceptions are deliberate (the
+cold-start, per-request-client and per-agent-client benchmarks build what they
+measure inside `iter()`, and the `data_volume` save benchmarks need a fresh task
+id per iteration):
 
 - **Deterministic inputs**: Fixed task IDs and payloads inside `iter()` — no
   incrementing counters that change HashMap distribution across iterations

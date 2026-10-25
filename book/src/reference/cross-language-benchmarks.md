@@ -30,6 +30,13 @@ model latency. The same throughput costs materially different amounts of CPU:
 | 1,000 req/s | 0.076 cores | 2.43 cores |
 | 10,000 req/s | 0.757 cores | 24.32 cores |
 
+Each row is the pinned CPU per request multiplied by the rate. No server was
+driven at these rates: the official SDK's single worker sustained
+166 req/s with 50 connections in the concurrency test, so its
+1,000 and 10,000 req/s rows describe several workers' worth of CPU, not the
+one worker measured. Unpinned, the 10,000 req/s row is
+1.272 cores for this SDK against 24.21 for the official one.
+
 That is the shape of the result: irrelevant inside one agent, and the whole
 cost model for anything that terminates A2A traffic on behalf of many.
 
@@ -46,7 +53,13 @@ one burning CPU can post the same round-trip time. This is the server's own
 | Official `a2a-sdk` (Python) | **2,432.2 µs** | 1,217 | 0.34 % |
 
 **32.1× the CPU per request**, or 2,357 µs more, on the
-pinned configuration described below.
+pinned configuration described below. Unpinned, each server as its own
+documentation runs it, the same probe gives
+127.2 µs for this SDK (19,741 requests, 0.40 % quantisation error)
+and 2,421.5 µs for the official SDK (1,210 requests, 0.34 %):
+19.0×, or 2,294 µs more.
+Pinning is the more favourable configuration for this SDK; the 32.1× is the upper
+figure.
 
 ## Latency and throughput
 
@@ -56,10 +69,17 @@ objection that a multi-threaded Rust server was given four cores while one
 uvicorn worker got one. `default` runs each server exactly as its own
 documentation says to.
 
+Every latency column is the median over the 3 trials of that
+trial's figure, p50, p95 and p99 alike.
+
 Note that the Rust server is **slower unpinned than pinned**, and the Python
-server is unaffected by pinning — it is single-threaded and CPU-bound, so
-confining it changes nothing. The pinned configuration is not favourable to
-this SDK; if anything it is the opposite.
+server is almost unaffected by pinning — it is single-threaded and CPU-bound:
+its p50 is 2,304.7 µs pinned and 2,218.6 µs unpinned (3.7 % lower) and its CPU
+per request 2,432.2 and 2,421.5 µs (0.4 % lower).
+The pinned configuration is the more favourable of the two for this SDK:
+lower latency, higher throughput, less CPU per request and a larger ratio
+over the Python server. It is shown because it is the like-for-like
+comparison, not because it is the harsher one.
 
 ### `pinned`
 
@@ -67,9 +87,9 @@ this SDK; if anything it is the opposite.
 
 | Server | p50 | p95 | p99 | trial-to-trial p50 spread | throughput (50 connections) |
 |---|---|---|---|---|---|
-| This SDK (Rust) | 70.7 µs | 112.6 µs | 172.2 µs | 69.1–71.1 µs | 7,455 req/s |
-| Official `a2a-sdk` (Python) | 2,304.7 µs | 3,089.4 µs | 4,482.9 µs | 2,288.8–2,321.8 µs | 166 req/s |
-| _floor — no A2A work_ | 43.5 µs | 57.7 µs | 76.8 µs | 43.0–46.0 µs | _not comparable — see below_ |
+| This SDK (Rust) | 70.7 µs | 223.0 µs | 299.6 µs | 69.1–71.1 µs | 7,455 req/s |
+| Official `a2a-sdk` (Python) | 2,304.7 µs | 3,371.5 µs | 4,482.9 µs | 2,288.8–2,321.8 µs | 166 req/s |
+| _floor — no A2A work_ | 43.5 µs | 60.0 µs | 100.6 µs | 43.0–46.0 µs | _not comparable — see below_ |
 
 ### `default`
 
@@ -78,9 +98,9 @@ server's own documentation describes running it.
 
 | Server | p50 | p95 | p99 | trial-to-trial p50 spread | throughput (50 connections) |
 |---|---|---|---|---|---|
-| This SDK (Rust) | 98.6 µs | 251.9 µs | 397.4 µs | 95.0–117.6 µs | 5,359 req/s |
-| Official `a2a-sdk` (Python) | 2,218.6 µs | 3,163.1 µs | 4,035.7 µs | 2,215.4–2,221.9 µs | 168 req/s |
-| _floor — no A2A work_ | 45.0 µs | 64.9 µs | 125.1 µs | 44.7–45.1 µs | _not comparable — see below_ |
+| This SDK (Rust) | 98.6 µs | 272.9 µs | 388.2 µs | 95.0–117.6 µs | 5,359 req/s |
+| Official `a2a-sdk` (Python) | 2,218.6 µs | 3,095.6 µs | 3,968.2 µs | 2,215.4–2,221.9 µs | 168 req/s |
+| _floor — no A2A work_ | 45.0 µs | 62.4 µs | 91.6 µs | 44.7–45.1 µs | _not comparable — see below_ |
 
 ### The floor row
 
@@ -89,6 +109,11 @@ It exists to separate SDK cost from the cost of the client, the loopback
 stack and the kernel, which sit in every number on this page. Because that
 shared cost is present in both real servers, **the ratio of two end-to-end
 latencies understates the ratio of the servers' own handling cost.**
+
+The floor server runs as a thread inside the client process (a Python
+interpreter sharing the client's cores), not as a separate process like the
+two real servers, each on its own core in the pinned configuration, so
+floor-subtracted figures are indicative, not exact.
 
 Subtracting the floor from the pinned p50 figures leaves 27.2 µs against 2,261.3 µs — a
 83× ratio, against
@@ -120,7 +145,7 @@ written for this benchmark:
 | Request body | 181 bytes, `SendMessage`, `A2A-Version: 1.0` |
 | Warmup per trial | 300 requests (discarded) |
 | Measured per trial | 2,000 requests |
-| Trials per configuration | 3, each against a freshly started server |
+| Trials per configuration | 3, run back to back against one server process started once per configuration |
 | Concurrency test | 50 connections × 40 requests |
 | Percentile rule | nearest-rank on the sorted sample, index=int(q*n) |
 
@@ -167,7 +192,7 @@ discover the caveats later.
 | Load average at run | 1.10, 1.01, 0.60 |
 | rustc | rustc 1.94.1 (e408947bf 2026-03-25) |
 | Python | 3.11.15 |
-| Build profile | `--release` (Rust) |
+| Build profile | `--release` (Rust), default features of the crates at the measured commit (before OpenTelemetry instrumentation became a default feature in 0.15.0) |
 | Repository commit | `b7fcabb1352a5eeebdf16a03832f09f2f5e73657` |
 | Working tree clean | yes |
 
@@ -183,7 +208,13 @@ uvicorn==0.53.0
 uvloop==0.22.1
 ```
 
+The requirements file has since moved to a2a-sdk 1.2.3 and uvicorn 0.54.0; the
+figures above were measured with the versions listed.
+
 ## Reproducing this
+
+Needs Linux with `taskset` (util-linux), at least 4 logical CPUs,
+`python3 -m venv` and network access to install the pinned Python packages.
 
 ```bash
 benches/scripts/cross_language_python.sh
@@ -194,5 +225,6 @@ The runner builds both servers, pins the Python environment from
 `benches/requirements-cross-language.txt`, runs both CPU configurations, and
 writes `benches/results/cross-language-{pinned,default}.json`. Those files
 carry the full raw distributions and complete provenance, including the
-resolved dependency set and the repository commit. This page is generated
-from them and contains no hand-entered figures.
+resolved dependency set and the repository commit. All measured figures on
+this page are generated from them; the 1–30 s agent-turn bounds and the
+request rates in the first table are assumptions.

@@ -55,7 +55,7 @@ instead of `wait`. The handle still tracks the child's id and state.
 
 | Outcome | Meaning |
 |---|---|
-| `Completed`, `Failed`, `Canceled` | The child reached that state. `Failed` carries its [failure class](./failure-classes.md). |
+| `Completed`, `Failed`, `Canceled` | The child reached that state. `Failed` covers `failed` and `rejected` and carries its [failure class](./failure-classes.md) (`Internal` if the child declared none). |
 | `Interrupted` | `input-required` or `auth-required`. The child was not cancelled. |
 | `Message` | The agent answered with a message and created no task. |
 | `Lost` | The stream failed or closed before the child settled. If its id was known, the child was sent `CancelTask`. |
@@ -117,7 +117,9 @@ A renewal is a `GetTask` that activates the lease extension
 (`A2aClient::renew_lease`); a plain read renews nothing. Over WebSocket
 the extension header is sent only with the upgrade, so ask for the
 extension when connecting. An agent that grants no leases ignores the
-grant. `detach()` stops the renewals too: a detached leased child stops
+grant. One that does refuses a time to live under 1 second, or over its
+`with_max_lease_ttl` (an hour by default), with `InvalidParams`, and starts no
+child. `detach()` stops the renewals too: a detached leased child stops
 once its lease lapses.
 
 ## A parent's budget: deadlines and meters
@@ -126,8 +128,9 @@ A child can also outlive its parent's *deadline*, or spend more than the
 parent had. A budget prevents both (ADR 0023). Every agent built on this SDK
 holds a turn to the deadline its caller sent, and a turn the deadline stops
 ends `failed`, classed `budget-exhausted`. Inside an executor,
-`ctx.budget()` is the turn's account: what is left, `charge` for what was
-spent, and `grant` to carve a child's budget out of it.
+`ctx.budget()` is `Some` when the caller's message carried a budget and `None`
+when it did not. When it is `Some`, it is the turn's account: what is left,
+`charge` for what was spent, and `grant` to carve a child's budget out of it.
 
 ```rust,no_run
 use std::sync::Arc;
@@ -155,8 +158,12 @@ leaving it out. Each status update the child's agent writes carries what is
 left and spent, under `a2a-rust.com/budget` in its `metadata`. When the
 update that settles the child reports its spend, the parent is charged that
 in place of the reservation. Any other ending (a lost stream, a cancel, a
-detached or dropped handle) refunds nothing. Pass `Some(ttl)` as the last argument to grant a lease as
-well.
+detached or dropped handle) refunds nothing. If `start_budgeted` itself fails,
+the reservation goes back to the parent only when the error shows the agent
+refused the send (an A2A error, an HTTP error status, an authentication
+challenge or an unusable endpoint); after a transport error or a timeout a
+child may be running, and the reservation is kept as spent. Pass `Some(ttl)` as
+the last argument to grant a lease as well.
 
 The SDK's tool loop charges each model reply's reported token usage to the
 `tokens` meter and stops the run once it is spent.

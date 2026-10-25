@@ -107,23 +107,23 @@ vendored and matching, and 4 branch-only specifications, all triaged.
 
 ## Why it is not in the workspace
 
-`agntcy-slim-rpc` brings **359 transitive dependencies**, including `aws-lc-sys`
+`agntcy-slim-rpc` brings **387 transitive dependencies**, including `aws-lc-sys`
 — a native C crypto build. For comparison, in this repository:
 
 | Crate | Unique transitive deps |
 |---|---|
 | `a2a-protocol-types` | 11 |
-| `a2a-protocol-server` (default) | 55 |
-| `a2a-protocol-sdk` (default) | 69 |
-| `a2a-protocol-server` (all features) | 206 |
-| **`agntcy-slim-rpc` alone** | **385** |
+| `a2a-protocol-server` (default) | 65 |
+| `a2a-protocol-sdk` (default) | 113 |
+| `a2a-protocol-server` (all features) | 220 |
+| **`agntcy-slim-rpc` alone** | **387** |
 
-Measured 2026-09-25 with `cargo tree -p <crate> [--all-features] -e normal
+Measured 2026-10-25 with `cargo tree -p <crate> [--all-features] -e normal
 --prefix none --offline`, counting distinct `name version` pairs and excluding
 the crate itself — normal dependencies only, no build or dev dependencies. The
 workspace rows are resolved against the workspace `Cargo.lock`;
-`agntcy-slim-rpc` against this crate's own: 359 at 2.3.0, and 385 at 3.4.1,
-re-measured the same way on 2026-10-15. The default rows include `tracing`,
+`agntcy-slim-rpc` against this crate's own: 359 at 2.3.0, 385 at 3.4.1 (measured
+2026-10-15) and 387 at the locked 3.4.6. The default rows include `tracing`,
 which the client, server and SDK enable by default.
 
 So this crate sits outside the workspace with its own `Cargo.lock`. None of that
@@ -555,7 +555,7 @@ let handler = RequestHandlerBuilder::new(executor)
   count. Since 0.15 an authenticating interceptor needs the public card to
   declare a security scheme (spec §13.3), or `build()` refuses; A2A has none
   for a SLIM MLS session, and this crate's tests declare
-  `mutualTlsSecurityScheme`, the nearest.
+  `mtlsSecurityScheme`, the nearest.
 - An identity an earlier interceptor recorded stands, with its scheme.
 
 `:peer-addr` is an address in `100::/64`, the IPv6 discard-only block

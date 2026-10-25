@@ -252,7 +252,7 @@ eviction cost.
 ### The SLIMRPC binding — `bindings/a2a-protocol-slimrpc`
 
 All eleven spec methods plus multicast, deliberately outside the workspace with
-its own `Cargo.lock` (`agntcy-slim-rpc` brings 359 transitive dependencies
+its own `Cargo.lock` (`agntcy-slim-rpc` brings 387 transitive dependencies
 including `aws-lc-sys`; `a2a-protocol-types` has 11). **86 test functions**
 across ten topologies — in-process, multicast group, one node over TCP, that
 node with verified TLS, mutual TLS, two peered nodes, a node in its own OS

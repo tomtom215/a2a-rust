@@ -16,7 +16,7 @@ An A2A interaction follows this flow:
        │                           │
        │  2. SendMessage           │
        │ ─────────────────────────►│
-       │     Task (or SSE stream)  │
+       │     Task or Message       │
        │ ◄─────────────────────────│
        │                           │
        │  3. GetTask               │
@@ -61,7 +61,8 @@ A **Task** is the central unit of work. When a client sends a message, the serve
     The arrows show the usual paths, not the only valid ones.
     Valid transitions (the only two rules enforced):
     1. Terminal states (Completed, Failed, Canceled, Rejected) are final.
-    2. Nothing transitions into Submitted.
+    2. Nothing transitions into Submitted (or into the proto default,
+       Unspecified).
     Everything else is allowed, e.g. Submitted → Completed,
     Working → Working (repeated Working updates carry progress messages).
 ```
@@ -115,6 +116,8 @@ The client sends a message and blocks until the task reaches a terminal or inter
      │                             │
 ```
 
+The reply is the `Task`, or a direct `Message` when the agent answers without tracking a task.
+
 ### Streaming (SendStreamingMessage)
 
 The client sends a message and receives events in real time (via SSE on the HTTP bindings):
@@ -137,13 +140,15 @@ The client sends a message and receives events in real time (via SSE on the HTTP
      │                             │
 ```
 
+If the agent answers with a single `Message`, the stream is exactly that one `Message` and has no `Task` snapshot.
+
 Streaming is ideal for long-running tasks where the client wants progress updates.
 
 ## Contexts and Conversations
 
 Tasks exist within a **Context** — a conversation thread. Multiple tasks can share the same context, allowing agents to maintain conversational state across interactions.
 
-When a client sends a message with a `context_id`, the server groups that task with previous tasks in the same context. If no `context_id` is provided, the server creates a new one.
+When a client sends a message with a `context_id`, the server groups that task with previous tasks in the same context. If the message names only a `task_id`, the server takes that task's context. If it names neither, the server creates a new context. A `context_id` that differs from the named task's is `InvalidParams`.
 
 ## Multi-Tenancy
 

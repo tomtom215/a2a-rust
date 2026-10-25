@@ -34,7 +34,8 @@ match task.failure_class() {
     Some(c) if c.is_retryable() => "back off and try the same request again",
     Some(c) if c.needs_human()  => "escalate; retrying is the wrong response",
     Some(FailureClass::BudgetExhausted) => "retry only with a larger budget",
-    Some(_) => "give up; read task.status.message for the detail",
+    Some(FailureClass::Internal) => "retry once, then escalate",
+    Some(_) => "give up; read task.status.message, then fix the request",
     None => "the agent classified nothing — older peer, or no extension",
 }
 # }

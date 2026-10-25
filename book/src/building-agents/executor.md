@@ -10,6 +10,11 @@ The `AgentExecutor` trait is the heart of every A2A agent. It defines what happe
 # use a2a_protocol_sdk::prelude::{A2aResult, EventQueueWriter, RequestContext};
 pub trait AgentExecutor: Send + Sync + 'static {
     /// Called when a message arrives (SendMessage or SendStreamingMessage).
+    /// Runs in a spawned task: write the task's status and artifacts to
+    /// `queue`, end with a terminal status (or `INPUT_REQUIRED` /
+    /// `AUTH_REQUIRED`) and return `Ok(())`. `Err` fails the task. Returning
+    /// `Ok(())` without a terminal or interrupted state invents none: the
+    /// task stays in the last state written.
     fn execute<'a>(
         &'a self,
         ctx: &'a RequestContext,
@@ -24,7 +29,10 @@ pub trait AgentExecutor: Send + Sync + 'static {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
-    /// Called during graceful server shutdown.
+    /// Called by `RequestHandler::shutdown()` (bounded to 10 s) or
+    /// `shutdown_with_timeout()`, which your shutdown code calls after the
+    /// server has drained. `serve`, `serve_with_addr` and
+    /// `Server::serve_with_shutdown` do not call it.
     /// Default: no-op.
     fn on_shutdown<'a>(
         &'a self,
@@ -153,14 +161,20 @@ agent_executor!(MyAgent, |ctx, queue| async {
 The queue checks what an executor writes before anything stores or sends
 it, and refuses an event that leaves a field a2a.proto marks REQUIRED unset:
 a message with no `messageId`, no role or no parts; an artifact with no
-`artifactId`, or no parts unless it is an appended chunk; a status in
-`TASK_STATE_UNSPECIFIED`. That holds for a message, a status update and its
-message, an artifact update, and a task snapshot's status, artifacts and
-history. It refuses, too, what a client's message is refused for because
-the gRPC binding cannot carry it: a `raw` part that is not base64, an
-integer beyond ±2^53 in metadata or a `data` part, a `metadata` that is not
-a JSON object. The write returns `InvalidParams` naming the field, and `?`
-returns it from `execute`, which fails the task.
+`artifactId` or no parts (an appended chunk included: end a streamed
+artifact with `lastChunk: true` on the chunk that carries its last part, not
+with an empty chunk); a status in `TASK_STATE_UNSPECIFIED`. That holds for a
+message, a status update and its message, an artifact update, and a task
+snapshot's status, artifacts and history. It refuses, too, what a client's
+message is refused for because the gRPC binding cannot carry it: a `raw`
+part that is not base64, an integer beyond ±2^53 in metadata or a `data`
+part, a `metadata` that is not a JSON object. The write returns
+`InvalidParams` naming the field, and `?` returns it from `execute`, which
+fails the task.
+
+A status, artifact or task event that leaves its `taskId` or `contextId`
+empty is given the running task's; one that names another task or context is
+refused with `InvalidParams`.
 
 An agent message the executor puts on a status, or in a snapshot's history,
 without a `contextId` or `taskId` is given the task's (a2a.proto: a server
@@ -218,6 +232,10 @@ The `RequestContext` provides information about the incoming request:
 | `metadata` | `Option<Value>` | Arbitrary metadata from the request |
 | `cancellation_token` | `CancellationToken` | Token for cooperative cancellation |
 | `call_context` | `Option<CallContext>` | The call this execution belongs to (see below) |
+| `budget()` | `Option<&BudgetHandle>` | The caller's budget for this turn, its deadline and meters (ADR 0023); `None` when the message carried none |
+| `approval()` | `Option<&VerifiedApproval>` | The approval decision this continuation carries, once the handler's `ApprovalGate` checked it; `None` when there is none, and always on a handler built without a gate |
+| `accepted_output_modes()` | `&[String]` | The media types the caller accepts in the response (`acceptedOutputModes`); empty means no preference |
+| `content_check()` | `&ContentCheck` | What the server found when it checked the message's provenance signature (ADR 0027): `NotChecked`, `Unsigned` or `Verified`. A signature that does not verify is refused before the executor runs |
 
 `RequestContext` is `#[non_exhaustive]` as of 0.13 — build one with
 `RequestContext::new` and the `with_*` methods, not a struct literal.
@@ -232,16 +250,17 @@ could not enforce "only this tenant may invoke this skill" — and left
 `Message.metadata` as the only channel for anything caller-specific, which
 the *caller* writes and so is not a fact about the caller at all.
 
-Five accessors read it; the `Option` ones return `None` rather than a
+Six accessors read it; the `Option` ones return `None` rather than a
 default when nobody said (`activated_extensions()` returns an empty slice):
 
 | Accessor | Returns |
 |----------|---------|
-| `ctx.caller_identity()` | Who the caller is, once an authenticating interceptor established it |
+| `ctx.caller_identity()` | Who the caller is, once an authenticating interceptor established it, named by how it authenticated: `bearer:<label>`, `api-key:<label>`, `jwt:<issuer>:<sub>` or `mtls:<name>`. Build a value to compare with the functions in `auth::caller_id` |
 | `ctx.tenant()` | The tenant this call resolved to, after any `TenantResolver` |
 | `ctx.http_header(name)` | One inbound header, matched case-insensitively |
-| `ctx.activated_extensions()` | The URIs from the `A2A-Extensions` header (spec §14.2.2) |
+| `ctx.activated_extensions()` | The URIs from the `A2A-Extensions` header that the agent card declares, in request order (spec §14.2.2, §4.6.3); an undeclared URI is left out. With no card, the request's list unchanged |
 | `ctx.request_id()` | The caller's `X-Request-ID`, if they sent one |
+| `ctx.trace_context()` | The caller's W3C trace (`Option<&TraceContext>`), when it sent a `traceparent`; propagate it on outbound A2A calls so a delegation chain is one trace |
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;
@@ -360,7 +379,8 @@ agent_executor!(MyAgent, |ctx, queue| async {
 
 Returning `Err` also ends the task `Failed`, with the error's text; the class
 is then inferred from its code, which can only say `InvalidRequest` or
-`Internal`.
+`Internal`, unless the error carries one recorded with
+`a2a_protocol_types::failure::set_error_class`.
 ### Requesting More Input
 
 When the agent needs clarification:
@@ -389,14 +409,18 @@ queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
 # }
 ```
 
-The client can then send another message with the same `context_id` to continue the conversation.
+The client continues the task by sending another message with the same
+`taskId` (and `contextId`). A message that names only the `contextId` starts a
+new task in that context and leaves this one waiting for input.
 
 ### Supporting Cancellation
 
 Every executor supports cancellation without writing anything. By the time
-`cancel` runs, the handler has triggered `ctx.cancellation_token`, which a
-running `execute` should observe (`EventEmitter::is_cancelled`), and the
-default `cancel` emits the terminal `Canceled` status.
+`cancel` runs, the handler has cancelled the running task's
+`cancellation_token` (the one in `execute`'s `ctx`), which a running `execute`
+should observe (`EventEmitter::is_cancelled`), and the default `cancel` emits
+the terminal `Canceled` status. The `ctx` passed to `cancel` is a separate
+context for the cancel call; its token is not that one.
 
 Override `cancel` when the task holds something that must be released:
 

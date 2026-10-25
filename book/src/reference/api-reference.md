@@ -5,7 +5,8 @@ a2a-rust crates.
 
 This page is a **curated selection**, kept short enough to scan. For the
 exhaustive, always-current listing — every item, every signature, generated
-from the code on each deploy — see the [generated API documentation](/api/).
+from the code (docs.rs builds it for each release; the deploy builds it from
+`main` under `/dev/api/`) — see the [generated API documentation](/api/).
 
 Every name below is checked against the crates by
 `scripts/check_api_reference.py` in CI, so a type that gets renamed cannot leave
@@ -43,7 +44,7 @@ are rustdoc's job.
 | `responses` | RPC method response types |
 | `security` | Security scheme types for A2A agent authentication |
 | `serde_helpers` | Serialization helpers for reducing allocation overhead |
-| `signing` | Agent card signing and verification (spec §10) (`signing` feature) |
+| `signing` | Agent card signing and verification (spec §8.4) (`signing` feature) |
 | `task` | Task types for the A2A protocol |
 | `trace_context` | W3C `traceparent` / `tracestate`: parse, validate, derive a child |
 
@@ -52,8 +53,8 @@ are rustdoc's job.
 | Constant | Description |
 |----------|-------------|
 | `A2A_VERSION` | A2A protocol version string, in the `Major.Minor` wire form (`"1.0"`) |
-| `A2A_CONTENT_TYPE` | The registered A2A media type (spec §14.1.1), accepted on ingress by the HTTP bindings alongside `JSON_CONTENT_TYPE` |
-| `JSON_CONTENT_TYPE` | Content type emitted by the JSON-RPC and REST bindings (`application/json`) |
+| `A2A_CONTENT_TYPE` | The registered A2A media type (spec §14.1.1), accepted on ingress by the HTTP bindings alongside `JSON_CONTENT_TYPE`, and the HTTP+JSON binding's response type unless the request prefers `application/json` or asks only for `text/event-stream` |
+| `JSON_CONTENT_TYPE` | `application/json`: the JSON-RPC binding's content type, and the HTTP+JSON binding's when the request's `Accept` prefers it (or asks only for `text/event-stream`) |
 | `A2A_VERSION_HEADER` | HTTP header name for the A2A protocol version (`A2A-Version`) |
 | `A2A_EXTENSIONS_HEADER` | HTTP header name for extension activation (spec §14.2.2) |
 | `WEBSOCKET_BINDING_URI` | This project's identifier for its §12 WebSocket binding, as `AgentInterface::protocol_binding` |
@@ -169,16 +170,16 @@ are rustdoc's job.
 
 | Type | Description |
 |------|-------------|
-| `SerBuffer` | Thread-local reusable serialization buffer (2.3x less small-payload overhead) |
-| `deser_from_str` | Borrowed deserialization from `&str` (~15-25% fewer allocations) |
-| `deser_from_slice` | Borrowed deserialization from `&[u8]` (~15-25% fewer allocations) |
+| `SerBuffer` | Thread-local reusable serialization buffer; `serialize` still returns an owned `Vec<u8>`. In the [published results](./benchmarks.md) (2026-10-14) it is about 1.4x faster than `to_vec` at 64 and 256 bytes, and within 6 % of it from 1 KiB up |
+| `deser_from_str` | `serde_json::from_str` behind a helper. The wire types own their strings, so nothing is borrowed and allocations do not fall |
+| `deser_from_slice` | The same from `&[u8]`: checks UTF-8, then parses as `deser_from_str` does; falls back to `serde_json::from_slice` when the bytes are not UTF-8 |
 
 ### Timestamps
 
 | Function | Description |
 |----------|-------------|
 | `utc_now_iso8601()` | Returns the current UTC time as an ISO 8601 string with millisecond precision |
-| `unix_millis_to_iso8601(millis)` | Formats Unix-epoch milliseconds as an ISO 8601 UTC string with millisecond precision; pre-epoch clamps to the epoch |
+| `unix_millis_to_iso8601(millis)` | Formats Unix-epoch milliseconds as an ISO 8601 UTC string with millisecond precision; a pre-1970 instant is written as itself, and one outside years 0000-9999 clamps to `0000-01-01` or the end of `9999-12-31` |
 | `parse_iso8601_to_unix_millis(s)` | Parses an ISO 8601 / RFC 3339 timestamp into milliseconds since the Unix epoch; `None` for anything structurally invalid |
 
 ### Errors
@@ -225,7 +226,9 @@ are rustdoc's job.
 | `testing` | `ScriptedPeer`: a misbehaving agent on any binding (stall, cut-off, mis-frame, 401), for testing a client's failure handling (`testing` feature) |
 | `tls` | TLS connector via rustls (`tls-rustls` feature) |
 | `token_provider` | Token acquisition: `TokenProvider`, OAuth 2.0 client-credentials, and OIDC discovery |
+| `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `transport` | Transport abstraction for A2A client requests |
+| `version_query` | Sending `A2A-Version` as a request parameter (§3.6.1) |
 | `webhook` | The receiving side of push notifications: `WebhookReceiver`, `new_notification_token` (`webhook` feature, default on) |
 
 ### Core Types
@@ -238,10 +241,8 @@ are rustdoc's job.
 | `EventStream` | Async SSE event stream |
 | `RetryPolicy` | Configurable retry with exponential backoff |
 | `CredentialPreflight` | What a client built from a card does with a call whose credential matches none of the card's security requirements (§3.1.11): off, warn (default) or refuse |
-| `trace_propagation` | Carrying W3C trace context on outbound calls |
 | `CurrentTrace` | The trace the current task runs under, and how to start one |
 | `TracePropagationInterceptor` | Writes `traceparent` onto every outbound request |
-| `version_query` | Sending `A2A-Version` as a request parameter (§3.6.1) |
 | `VersionQueryInterceptor` | Adds `A2A-Version` to every request's query parameters, beside the header |
 | `ClientError` | Errors that can occur during A2A client operations |
 | `ClientResult<T>` | Alias for `Result<T, ClientError>` |
@@ -325,7 +326,7 @@ are rustdoc's job.
 | `auth` | Server-side authentication interceptors |
 | `builder` | Builder for `RequestHandler` |
 | `call_context` | Call context for server-side interceptors |
-| `conformance` | Grades an `AgentExecutor` against the protocol invariants (`conformance` feature) |
+| `conformance` | Grades an `AgentExecutor` against the protocol invariants, and with `conformance::halt` a `HaltStore` and a handler's halt end to end (`conformance` feature) |
 | `dispatch` | HTTP dispatch layer — JSON-RPC and REST routing |
 | `error` | Server-specific error types |
 | `executor` | Agent executor trait |
@@ -334,7 +335,7 @@ are rustdoc's job.
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
 | `otel` | `OtelMetrics` (`otel` feature, on by default) and `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset; `otlp` feature) |
-| `profile` | Deployment profiles, which combine. `Profile::Auditable` turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, or a chain with no authenticator (`audit` feature). `Profile::Production` refuses a handler with no authenticator, halt store or lease store (ADR 0025) |
+| `profile` | Deployment profiles, which combine. `Profile::Auditable` turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, a chain with no authenticator, or a builder that has not said how callers' tasks relate (`audit` feature). `Profile::Production` refuses a handler with no authenticator, halt store, lease store or content signer (ADR 0025, ADR 0027; the signer needs the `signing` feature) |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
@@ -371,7 +372,7 @@ are rustdoc's job.
 | `ShutdownReport` | What a shutdown actually managed to do (live queues it had to destroy, whether executor cleanup completed) |
 | `InFlightReport` | What `RequestHandler::finish_in_flight` / `cancel_in_flight` did: tasks that completed on their own, tasks cancelled, still running at the end of the grace period, whether everything finished |
 | `HaltScope` | What `RequestHandler::halt` applies to: one tenant, or all |
-| `HaltReport` | What a halt stopped: the ids of the tasks whose token it fired |
+| `HaltReport` | What a halt did: `stopped`, the ids of the tasks whose token it fired, and `persisted`, whether the halt store took it (`None` without a store) |
 | `ConnectionPoolStats` | Statistics about the HTTP connection pool |
 | `RpcCall` | One finished inbound call as `Metrics::on_rpc_call` reports it: binding, method, duration, status (`rpc.server.call.duration`) |
 | `BindingSpan` | The per-call server span and `rpc.server.call.duration` for a binding outside this crate, as the in-crate bindings record theirs (ADR 0013) |
@@ -417,8 +418,8 @@ are rustdoc's job.
 | `serve(addr, dispatcher) -> io::Result<()>` | `async` — binds and drives the accept loop until the future is dropped |
 | `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
 | `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
-| `ServeConfig` | Limits applied to a `Server` |
-| `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks |
+| `ServeConfig` | Limits applied to a `Server`; `ServeConfig::production()` makes it refuse plaintext beyond loopback and a binding the agent card does not declare (ADR 0025) |
+| `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks; `refused` says why a `ServeConfig::production()` server declined to start |
 | `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
 | `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
 | `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |
@@ -468,7 +469,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |
 | `HeaderTenantResolver` | `TenantResolver` that reads a configurable request header |
-| `BearerTokenTenantResolver` | `TenantResolver` that extracts tenant claims from a JWT bearer token |
+| `BearerTokenTenantResolver` | `TenantResolver` that takes the `Authorization: Bearer` token as the tenant, or what a `with_mapper` closure makes of it; `new()` trusts the raw, unverified token, so use `with_mapper` with a closure that verifies the token |
 | `PathSegmentTenantResolver` | `TenantResolver` that parses tenant from a configurable path segment |
 | `RateLimitInterceptor` | Per-caller rate limiting interceptor |
 | `PostgresRateLimitCounter` | A `RateLimitCounter` backed by a PostgreSQL table (`postgres` feature) |
@@ -528,7 +529,7 @@ All behind the `tool-loop` feature; the rest of the module (`ToolCall`,
 
 | Item | Description |
 |------|-------------|
-| `Telemetry` | OpenTelemetry for the process, from the standard `OTEL_*` environment, exporting only what an endpoint is configured for (`otlp`, on by default; `a2a_protocol_server::otel::Telemetry`) |
+| `Telemetry` | OpenTelemetry for the process, from the standard `OTEL_*` environment: every signal is exported (to `localhost` when nothing names an endpoint) unless `with_export_where_configured()` limits it to the signals an endpoint names (`otlp`, on by default; `a2a_protocol_server::otel::Telemetry`) |
 
 ### Prelude Contents
 
@@ -551,8 +552,8 @@ Part::text("hello");                   // → {"text": "hello"}
 Part::raw(base64_string);              // → {"raw": "aGVsbG8="}
 Part::url("https://...");              // → {"url": "https://..."}
 Part::data(serde_json::json!({"k": 1})); // → {"data": {"k": 1}}
-Part::file_bytes(base64_string);       // backward-compat alias for raw()
-Part::file_uri("https://...");         // backward-compat alias for url()
+Part::file_bytes(base64_string);       // deprecated alias for raw(); prefer raw()
+Part::file_uri("https://...");         // deprecated alias for url(); prefer url()
 # let wire = |p: Part| serde_json::to_value(p).unwrap();
 # assert_eq!(wire(Part::text("hello")), serde_json::json!({"text": "hello"}));
 # assert_eq!(wire(Part::raw(base64_string)), serde_json::json!({"raw": "aGVsbG8="}));
@@ -574,7 +575,7 @@ AgentCapabilities::none()
     .with_streaming(true)
     .with_push_notifications(false);
 
-// Agent cards: the three fields `validate` requires, the rest by `with_*`
+// Agent cards: `new` takes name, version and the first interface; `validate` also needs a description and a skill with a tag, so add both by `with_*`
 AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
     .with_description("Does one thing well")
     .with_skill(AgentSkill::new("echo", "Echo", "Repeats").with_tags(["text"]))

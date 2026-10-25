@@ -10,36 +10,62 @@ a2a-rust follows [Semantic Versioning](https://semver.org/):
 - **Minor** (0.2.0) — New features; before `1.0` a minor may also carry
   breaking changes, batched and labelled as [STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
   requires — see [Upgrading Between Minor Versions](./upgrading.md)
-- **Patch** (0.2.1) — Bug fixes, backward compatible
+- **Patch** (0.2.1) — Bug fixes, backward compatible, except that a correction
+  of a demonstrated deviation from the A2A specification may change observable
+  behaviour ([STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
+  §2)
 
 All four workspace crates share the same version number and are released together.
 
 ## Release Process
 
-Releases are triggered by pushing a version tag:
+Releases are triggered by pushing a signed version tag:
 
 ```bash
-git tag -a v0.3.0 -m "Release v0.3.0"
-git push origin v0.3.0
+git checkout main && git pull
+git tag -s vX.Y.Z -m "Release vX.Y.Z"   # signed; -s implies -a
+scripts/verify_tag_signature.sh vX.Y.Z   # the check release.yml will run
+git push origin vX.Y.Z
 ```
 
-The tag must be **annotated** (`-a`). A lightweight tag records no tagger and
-no date, so the tag alone attests nothing about who cut the release; the
-release workflow runs `git cat-file -t` and stops if it does not print `tag`.
-Creating a release through the GitHub web UI produces a lightweight tag.
+The tag must be **signed** (`git tag -s`; required since 2026-10-08), by an SSH
+or OpenPGP key listed in
+[`.github/release-signers/`](https://github.com/tomtom215/a2a-rust/blob/main/.github/release-signers/README.md)
+on `main`, and must point at a commit on `main`. The release workflow refuses
+anything else before building. A lightweight tag records no tagger, no date and
+no signature, so the tag alone attests nothing about who cut the release; the
+workflow runs `git cat-file -t` and stops if it does not print `tag`, and an
+annotated tag that is not signed by a listed key is refused as well. Creating a
+release through the GitHub web UI produces a lightweight tag.
 
 The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/release.yml) automatically:
 
-1. Validates the tag — annotated; on the release-preparation commit; nothing
-   left under `[Unreleased]`; breaking releases within STABILITY.md's cadence —
-   against crate versions, CHANGELOG.md, CITATION.cff, SECURITY.md and the
+1. Validates the tag — annotated; on `main` and signed by a listed release key;
+   on the release-preparation commit; nothing left under `[Unreleased]`;
+   breaking releases within STABILITY.md's cadence — against the crates' and
+   `tools/a2a-cli`'s versions, CHANGELOG.md, CITATION.cff, SECURITY.md and the
    provenance manifest
-2. Runs the full CI suite and security audit
-3. Packages all crates with SLSA build provenance, and checks each `.crate` was
-   built from the tagged commit in a clean tree
-4. Creates a GitHub release with notes extracted from CHANGELOG.md
-5. Publishes crates to crates.io in dependency order (behind a manually
-   approved `crates-io` environment)
+2. Runs CI (tests on Linux, macOS and Windows, clippy, fmt, doc, and an MSRV
+   1.94 check) and a security audit (cargo-deny)
+3. Packages all crates with SLSA build provenance and a CycloneDX SBOM
+   attestation per crate, and checks each `.crate` was built from the tagged
+   commit in a clean tree
+4. Runs the A2A conformance suite (ACTS) on the tagged commit over JSON-RPC,
+   gRPC and HTTP+JSON (`acts.yml`), fails on any failed or errored test, and
+   attests the summary onto each `.crate` (predicate type
+   `https://a2a-rust.com/attestations/acts-conformance/v1`; verify with
+   `gh attestation verify <crate>.crate -R tomtom215/a2a-rust --predicate-type …`).
+   The GitHub release, and so the publish, waits on it
+5. Runs a publish dry run (`cargo package --workspace`) to verify the packages
+   are publishable
+6. Creates a GitHub release with notes extracted from CHANGELOG.md and the
+   `.crate`, checksum and SBOM files attached. GitHub refuses a release body
+   over 125,000 characters, so a section longer than 120,000 is released as its
+   Known Limitations, Breaking Changes, Deprecated and Security sections plus a
+   link to the whole section at the tag (0.15.0's section is about 289,000)
+7. Publishes crates to crates.io in dependency order (behind a manually
+   approved `crates-io` environment; it authenticates with crates.io Trusted
+   Publishing, falling back to the environment secret)
 
 ### Publish Order
 
@@ -51,30 +77,46 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
+The SLIMRPC binding (`bindings/a2a-protocol-slimrpc`) is versioned
+independently and is not part of the tagged release; `release.yml` does not
+touch it.
+
 ## v0.15.0 (2026-10-25)
 
 A minor release that follows the A2A v1.0.1 specification where the SDK did
 not, turns OpenTelemetry instrumentation on by default, and raises the MSRV to
 1.94. It carries 26 breaking changes (counted on 2026-10-25 as the top-level
-entries of the CHANGELOG's Breaking Changes section); each has its migration in
-[Upgrading Between Minor Versions](./upgrading.md). Full detail in
-[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
+entries of the CHANGELOG's Breaking Changes section);
+[Upgrading Between Minor Versions](./upgrading.md) has the migrations an
+existing deployment is most likely to trip over, and
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
+has every item in full. The GitHub release body carries only the Known
+Limitations, Breaking Changes, Deprecated and Security sections, with a link to
+the whole section.
 
-- **Stricter about what it accepts.** A client refuses an agent card that does
-  not pass `AgentCard::validate`, an object a2a.proto does not allow, and a
-  gRPC message that lacks a REQUIRED field. A server refuses to publish a card
-  that carries a credential in a URL, refuses a push config with no
-  credentials, and refuses a JWT with no `sub` under caller isolation.
-- **OpenTelemetry is on by default**; exporting stays behind `otlp`. The metric
-  catalogue follows the OpenTelemetry conventions (`a2a.server.latency` is
-  removed), the server records `a2a.server.executor.duration`, and the client
-  records each call as it ended for the caller: a call the caller dropped is
-  `cancelled`, and an answer the client then refuses is a failure.
+- **Stricter about what it accepts.** A client refuses an agent card it fetches
+  that does not pass `AgentCard::validate` (a card handed to `from_card` is not
+  checked), an object a2a.proto does not allow, and a gRPC message that lacks a
+  REQUIRED field. A server refuses to publish a card that carries a credential
+  in a URL, refuses a push config whose `authentication` carries no credentials
+  (leave `authentication` out for an unauthenticated webhook), and refuses a
+  JWT with no `sub` under caller isolation.
+- **OpenTelemetry instrumentation is on by default** in the server, the client
+  and the SDK (`otel`). Exporting (`Telemetry`, the `Langfuse` preset,
+  `init_otlp_pipeline`) moved to a new `otlp` feature, which is default in
+  `a2a-protocol-sdk` only: a direct dependency on `a2a-protocol-server` that
+  used `Telemetry` asks for `features = ["otlp"]`. The metric catalogue follows
+  the OpenTelemetry conventions (`a2a.server.latency` is removed), the server
+  records `a2a.server.executor.duration`, and the client records each call as it
+  ended for the caller: a call the caller dropped is `cancelled`, and an answer
+  the client then refuses is a failure.
 - **`SubscribeToTask`** reads a long replay in pages and reports a gap it
   cannot replay with `streamLagged`; it has no idle bound by default.
 - **A caller is named by how it authenticated** (`bearer:`, `api-key:`,
   `jwt:`), and `build()` refuses a card whose declared authentication the
   interceptors do not enforce.
+- **HTTP+JSON answers `application/a2a+json` when the request states no
+  preference**; `Accept` still decides when it names either JSON type.
 - **The SQLite stores overwrite deleted content with zeros in the database
   file.** They do not in the write-ahead log or in a backup.
 - **Conformance:** four requirements of the A2A v1.0.1 ledger are only partly
@@ -82,6 +124,18 @@ entries of the CHANGELOG's Breaking Changes section); each has its migration in
 - **Breaking, also:** the MSRV is 1.94 and the SQL stores use `sqlx` 0.9; every
   agent card declares the budget extension; `TaskState`'s discriminants are its
   proto numbers; `TaskStore::save_appending_history` takes a `HistoryLimit`.
+- **Known limitation:** several replicas sharing a store need session affinity;
+  one replica, or several with affinity, is the supported topology for 0.15
+  ([Running More Than One Replica](../deployment/horizontal-scaling.md)).
+- **Deprecated:** `sign_agent_card` (use `sign_card_es256`; it now refuses a
+  `None` key id, and it is removed in 0.16.0),
+  `HotReloadAgentCardHandler::update` (use `try_update`),
+  `ClientConfig::preferred_bindings` (use `ClientBuilder::from_card_preferring`),
+  and `OAuthFlows::Implicit` and `Password`, which still parse and serialize.
+- **Security, visible on upgrade:** `JwtValidator` refuses an HS256 secret
+  shorter than 32 bytes, so a deployment configured with a shorter one stops
+  accepting HS256 tokens; a server whose stores cannot isolate tenants refuses
+  requests that name a tenant.
 
 ## v0.14.1 (2026-09-30)
 
@@ -233,9 +287,11 @@ documentation fixes. No API changes. Full detail in
 The deliberate breaking minor before the two clean minors
 [STABILITY.md](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md)
 requires; the migration for every item is in
-[Upgrading Between Minor Versions](./upgrading.md). Highlights — see
+[Upgrading Between Minor Versions](./upgrading.md). (0.13.0, 0.14.0 and 0.15.0
+each carried breaking changes too, so those two clean minors have not yet
+started.) Highlights — see
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
-for the full list:
+for the full list (the Gates item also draws on ROADMAP.md's 0.12 table):
 
 - **Fifteen public configuration structs are `#[non_exhaustive]`** with a
   `with_*` setter for every field, so a field can be added later without a
@@ -260,7 +316,7 @@ for the full list:
   to `main`; cargo-semver-checks over all four crates with all features;
   the toolchain action pinned by SHA.
 
-## v0.8.0 to v0.11.0
+## v0.7.0 to v0.11.0
 
 Not summarised here; each release's section in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
@@ -297,7 +353,8 @@ which nothing checks for this page.)
 - **TCK test 20: `a2a_media_type_accepted`** — servers must accept the
   registered `application/a2a+json` media type that real clients send.
 - **PostgreSQL integration suite** — live-database tests for all five
-  Postgres store files, run in CI against a `postgres:16` service.
+  Postgres store files, run in CI against a `postgres:16` service (from
+  `ci.yml`'s `test-postgres` job; not in CHANGELOG.md).
 
 ### Security
 
@@ -338,7 +395,7 @@ which nothing checks for this page.)
 - **New: `advanced_scenarios` suite** — Tenant resolver overhead (header, bearer, path), agent card hot-reload and discovery endpoint, subscribe fan-out (1-10 concurrent subscribers), streaming artifact accumulation cost (task.clone() at 0-500 depth), pagination full walk (100-1K tasks), extended agent card round-trip.
 - **New: `production_scenarios` suite** — SubscribeToTask reconnection, cold start vs steady-state, concurrent cancel+subscribe race, 7-step E2E orchestration, push config CRUD round-trip, parallel agent burst (10-100 agents), dispatch routing isolation.
 - **Fixed: `MultiEventExecutor`** — Was emitting invalid `Working → Working` state transitions; now emits `Working` once, then N artifacts, then `Completed`.
-- **Fixed: `InMemoryTaskStore::insert()`** — Optimized update path skips redundant BTreeSet/context index operations, reducing save() variance from [1.5µs, 4.2µs] to ~700ns.
+- **Fixed: `InMemoryTaskStore::insert()`** — Optimized update path skips redundant BTreeSet/context index operations, reducing save() from ~2.5µs to ~700ns.
 - **Fixed: Criterion measurement_time warnings** — Added measurement_time to 23+ groups across 8 files.
 - **Improved: `data_volume` get benchmark** — Uses 64 pseudo-random keys instead of single midpoint to avoid HashMap bucket anomalies.
 - **Improved: `backpressure` stream volume** — Added 252 and 502 event counts to push per-event signal above CI noise floor; added timer calibration benchmarks.
@@ -421,23 +478,39 @@ first shipped as part of v0.4.0 (2026-03-31).
 
 - **Task ID not reused for non-terminal continuations** — `on_send_message` now reuses the client-provided `task_id` when it matches a stored non-terminal task (#66)
 
-## v0.3.0 (2026-03-19)
+## v0.3.1 (2026-03-21)
+
+### Security
+
+- **`rustls-webpki` upgraded to 0.103.10** — Fixes RUSTSEC-2026-0049
+  ([GHSA-pwjx-qhcg-rvj4](https://github.com/rustls/webpki/security/advisories/GHSA-pwjx-qhcg-rvj4)):
+  when a certificate had more than one `distributionPoint`, only the first was
+  matched against each CRL's `IssuingDistributionPoint`, causing the others to
+  be silently ignored and valid CRLs to be skipped.
 
 ### Performance
 
 - **`TCP_NODELAY` on all sockets** — Eliminates ~40ms Nagle/delayed-ACK latency on SSE streaming and JSON-RPC responses
 - **`InMemoryTaskStore` BTreeMap migration** — List queries now O(page_size) instead of O(n): 17–164× faster at 1K–100K tasks
 - **Batch clone removal** — JSON-RPC batch dispatch no longer clones each request item
-- **`memory_overhead` benchmark fix** — CI no longer crashes on zero-variance allocation counts
 - **Benchmark server `TCP_NODELAY`** — Streaming benchmarks now report actual SDK latency (~1.5ms) instead of Nagle-inflated ~44ms
+
+### Fixed
+
+- **`memory_overhead` benchmark fix** — CI no longer crashes on zero-variance allocation counts
+
+## v0.3.0 (2026-03-19)
+
+### Added
 
 - **Axum framework integration** (`axum` feature) — `A2aRouter` for idiomatic
   Axum servers. All 11 REST methods, composable with other Axum routes/middleware.
 - **TCK wire format conformance tests** — 44 tests validating wire format
   compatibility against the A2A v1.0 specification.
 - **Mutation testing** — zero surviving mutants across all library crates.
-- **Comprehensive inline unit tests** — 1,769 tests across all crates covering
-  the full request pipeline, dispatchers, push delivery, streaming, and more.
+- **Comprehensive inline unit tests** — about 1,630 passing tests across the
+  workspace (about 1,850 with all feature flags), covering the full request
+  pipeline, dispatchers, push delivery, streaming, and more.
 
 ### Beyond-Spec Enhancements
 
@@ -496,8 +569,8 @@ first shipped as part of v0.4.0 (2026-03-31).
 **Database safety:**
 - **L7: SQLite parameterized queries** — Changed `LIMIT` from `format!` string interpolation to parameterized queries, preventing potential SQL injection.
 
-### v0.2.0 (2026-03-15)
+## v0.2.0 (2026-03-15)
 
-Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests.
+Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and a 1,769-test suite.
 
 For the complete version history, see [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).

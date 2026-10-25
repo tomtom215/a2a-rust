@@ -4,7 +4,8 @@ The most common operation: send a message to an agent and get a response.
 
 ## Synchronous Send
 
-`send_message` sends a message and waits for the task to complete:
+`send_message` sends a message and waits until the task reaches a terminal
+state or one that needs input (`input-required`, `auth-required`):
 
 ```rust,no_run
 # async fn f(client: a2a_protocol_sdk::client::A2aClient) -> Result<(), Box<dyn std::error::Error>> {
@@ -115,16 +116,33 @@ let follow_up = client
 # }
 ```
 
+A message with a `context_id` and no `task_id` starts a **new task** in that
+conversation. To continue a specific task, for example one waiting in
+`input-required` or `auth-required`, name it too:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# async fn f(client: A2aClient, task: Task) -> Result<(), Box<dyn std::error::Error>> {
+let mut reply = Message::user_text(uuid::Uuid::new_v4().to_string(), "Yes, use staging");
+reply.task_id = Some(task.id.clone());
+reply.context_id = Some(task.context_id.clone());
+client.send_message(MessageSendParams::new(reply)).await?;
+# Ok(())
+# }
+```
+
+A `task_id` the server cannot continue is refused as the table below says.
+
 ## Error Conditions
 
 `SendMessage` returns specific errors for invalid requests:
 
 | Condition | Error |
 |-----------|-------|
-| Task in terminal state (completed, failed, etc.) | `UnsupportedOperation` |
+| `taskId` names a task in a terminal state (completed, failed, etc.) | `UnsupportedOperation` |
 | Client-provided `taskId` doesn't exist | `TaskNotFound` |
 | `taskId`/`contextId` mismatch | `InvalidParams` |
-| Empty message parts | `InvalidParams` |
+| Empty `messageId`, or no parts | `InvalidParams` (the client refuses both before sending, as `ClientError::Protocol`) |
 | A part's `mediaType` not among the card's declared input modes | `ContentTypeNotSupported` |
 
 The last check applies only when the agent's card declares input modes

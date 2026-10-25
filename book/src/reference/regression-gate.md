@@ -23,12 +23,13 @@ Only two of the ~15 criterion modules participate in the PR gate:
 | Module | Why it's in the gate |
 |---|---|
 | `transport_throughput.rs` | Exercises the per-transport HTTP round-trip hot path (JSON-RPC and REST end-to-end through loopback). Most "quiet production slowdown" bugs land here. |
-| `protocol_overhead.rs` | Exercises the serde hot loop (serialize/deserialize every A2A wire type plus JSON-RPC envelopes). Catches allocator thrash, missing `#[inline]` on hot helpers, and regressions from generic-explosion in derive macros. |
+| `protocol_overhead.rs` | Exercises the serde hot loop (serialize/deserialize `AgentCard`, `Task`, `Message` and stream events, plus JSON-RPC envelopes, batches and payload scaling). Catches allocator thrash, missing `#[inline]` on hot helpers, and regressions from generic-explosion in derive macros. |
 
 The full criterion suite (~15 modules, 13 of them run on `main`; ~290
-individual benchmarks) still runs — but only on pushes to `main`, published
-to the [Benchmark Dashboard][dashboard]. Running all of them twice inside a 60-minute PR job
-is not realistic on a shared CI runner.
+individual benchmarks) still runs — but only on pushes to `main` and on
+manual dispatch, and is published to the [Benchmark Dashboard][dashboard].
+Running all of them twice inside a 60-minute PR job is not realistic on a
+shared CI runner.
 
 [dashboard]: ./dashboard.md
 
@@ -117,8 +118,9 @@ change at all** in the PR. Three mechanisms, the third measured:
    not hold for serde_json's serializer: it is generic, so
    `serde_json::to_vec::<Message>` is instantiated in the bench binary
    itself, and its hot loop moves whenever the set of linked crates
-   changes. On 2026-10-19 a commit that changed only `Cargo.toml` feature
-   lists (`ce719b0`, `otel` on by default) reproduced the same
+   changes. On 2026-10-18 a commit whose build-relevant change was the
+   `Cargo.toml` feature lists (`ce719b0`, `otel` on by default; it also gated
+   the `otel` modules by feature and edited the docs) reproduced the same
    signature — `payload_scaling` serialize +58..89 % with tight CIs,
    deserialize flat — under the gate's no-LTO build. Bisected locally on
    an Intel Xeon @ 2.80 GHz to that one commit, the medians at
@@ -162,10 +164,39 @@ Before investigating as a real regression, check:
 2. **Did a sibling benchmark in the same module move by a similar
    amount in the opposite direction?** That's a strong hint of
    runner-systematic effects rather than a real regression.
-3. **Does the regression reproduce on a clean local machine?** Run
-   `./benches/scripts/run_benchmarks.sh --save` on `main`, then
-   `./benches/scripts/run_benchmarks.sh --compare` on the PR branch. If the regression does not reproduce locally, it's
-   CI-specific.
+3. **Does the regression reproduce on a clean local machine?** Build both
+   sides the way the job does and compare the two gated modules (the
+   `RUSTFLAGS` value is x86-only):
+
+   ```sh
+   export CARGO_PROFILE_BENCH_LTO=false CARGO_PROFILE_BENCH_CODEGEN_UNITS=16
+   export RUSTFLAGS="-C llvm-args=-x86-branches-within-32B-boundaries"
+
+   git checkout main
+   for b in transport_throughput protocol_overhead; do
+     cargo bench -p a2a-benchmarks --bench "$b" -- \
+       --save-baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+   done
+
+   git checkout <pr-branch>
+   for b in transport_throughput protocol_overhead; do
+     cargo bench -p a2a-benchmarks --bench "$b" -- \
+       --baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+   done
+
+   python3 benches/scripts/check_regression.py \
+     --target-dir target/criterion \
+     --threshold 0.50 \
+     --override 'protocol_payload_scaling/ser_buffer/*=1.50' \
+     --override 'protocol_payload_scaling/to_vec/*=1.50' \
+     --exclude '*/from_str/16384'
+   ```
+
+   If the regression does not reproduce locally, it's CI-specific.
+   `./benches/scripts/run_benchmarks.sh --bench NAME --save` and then
+   `--compare` is a cheaper variant, but it runs without the job's flags
+   (baseline `base`, Criterion's default sample size, the shipping build), so
+   a result from it is not the job's configuration.
 4. **If it does reproduce locally, does it reproduce *again*, on the
    same commit pair, immediately afterward?** A single local match is
    not sufficient evidence for a tiny (low-microsecond) benchmark — see
@@ -243,14 +274,17 @@ run, labelled `[EXCLUDED]` — this is not `continue-on-error`, and it does
 not hide the benchmark from the job summary. It just cannot fail the
 gate on its own, at any magnitude. Everything else keeps gating
 normally; excluding one benchmark does not widen tolerance for its
-neighbours (verified: `check_regression.py`'s own test run confirms an
-excluded regression is dropped from the failing set while an
-unexcluded one in the same run still fails the job).
+neighbours (by the logic of `check_regression.py`'s `is_excluded` and `main`:
+an excluded regression is dropped from the failing set, while an unexcluded
+one in the same run still fails the job).
 
-**`protocol/payload_scaling/from_str/16384` is the case that motivated
-this.** It started as a `--override */from_str/16384=0.75` entry after
-repeatedly producing tight-CI swings past the 50 % default on provably unchanged code. PR #99 showed
-that 75 % isn't a ceiling either — the investigation, dated 2026-07-29:
+**`protocol_payload_scaling/from_str/16384` is the case that motivated
+this** (Criterion's id for the group is `protocol/payload_scaling`; the gate
+and its globs use the on-disk name). It started as a
+`--override */from_str/16384=0.75` entry after repeatedly producing
+tight-CI swings past the 50 % default on provably unchanged code. PR #99
+showed that 75 % isn't a ceiling either — the investigation, dated
+2026-07-29:
 
 1. Two separate CI runs on the **same commit** measured `from_str/16384`
    at +169 % and +175 %, both with confidence intervals about 1
@@ -269,7 +303,7 @@ that 75 % isn't a ceiling either — the investigation, dated 2026-07-29:
    same exact-CI-build method, showed every single commit as an
    *improvement* (-5 % to -21 %) on this benchmark — never a regression,
    at any point in the PR's history.
-5. `protocol/payload_scaling/from_slice/16384` — same payload size, same
+5. `protocol_payload_scaling/from_slice/16384` — same payload size, same
    `Message`/`Part` `Deserialize` implementation, entered via a
    different reader constructor — never moved. If the regression were
    in shared deserialization logic, both would show it.
@@ -279,12 +313,12 @@ is small (hence the tight CIs — all 30 samples in a run share that
 launch's memory layout), but its *launch-to-launch* variance is large
 enough to exceed even a 75 % tolerance, in either direction, on
 byte-identical code. That is a description of ASLR/cache-layout luck at
-an unusually small scale (~2 µs per call, small enough that layout
-effects are a large fraction of the total), not of a percentage that
-was merely set too low. No single fixed override could have caught
-real regressions here without also flagging this noise, so gating on
-it at all was the wrong tool — hence exclusion rather than a larger
-override.
+an unusually small scale (about 2 µs per call in the 2026-07-29 runs,
+small enough that layout effects are a large fraction of the total), not
+of a percentage that was merely set too low. No single fixed override
+could have caught real regressions here without also flagging this noise,
+so gating on it at all was the wrong tool — hence exclusion rather than a
+larger override.
 
 If a future change to this benchmark's payload size or implementation
 changes this calculus (e.g. batching multiple parses per sample to

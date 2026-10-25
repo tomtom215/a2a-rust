@@ -12,7 +12,8 @@ chapter covers what proves where content came from:
   including the machine-readable "AI-generated" marker that EU AI Act
   Article 50(2) asks for.
 
-All of this needs the `signing` feature.
+Signing, verifying and key sets need the `signing` feature; marking content
+(`mark_ai_generated`) does not.
 
 ## Verifying an agent card
 
@@ -38,8 +39,9 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
   signatures, so a fetch that returned an unsigned card would return the
   altered one unverified. If some of your agents do not sign,
   `.with_require_signature(false)` verifies signatures only when present,
-  which is all §14 asks: a signed card must still verify, and an unsigned
-  one is returned as it is, whoever removed its signatures.
+  which is all §14.3 asks (and §8.4.3 asks a client only to SHOULD verify):
+  a signed card must still verify, and an unsigned one is returned as it
+  is, whoever removed its signatures.
 
 - **As received:** the fetch verifies the card's JSON before reading it into
   an `AgentCard`. The signer signed every field it serves, and `AgentCard`
@@ -57,8 +59,9 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
 - **Algorithms:** ES256 (P-256) and EdDSA (Ed25519). A key is only ever
   tried under the algorithm its type is for.
 - **Revoking a key:** remove it from the set. A verifier that re-fetches the
-  set stops accepting signatures made with it; nothing in the SDK caches a
-  set.
+  set stops accepting signatures made with it; nothing that verifies card or
+  content signatures caches a set. (The server's `JwtAuthInterceptor` caches
+  the JWKS it uses for JWT login, which is a separate key set.)
 - **Expiring a key:** publish it with an `exp` member (seconds since the
   epoch; `Jwk::with_expiry`). RFC 7517 defines none, but some key sets carry
   it, and a key at or past it is never used to verify (spec §8.4.3).
@@ -72,9 +75,9 @@ let card = resolve_agent_card_with_options("https://agent.example.com", &options
 - **A single key:** `verify_agent_card` takes the raw key (the 65-byte P-256
   point, or the 32-byte Ed25519 key) or its `SubjectPublicKeyInfo` DER, as
   `openssl pkey -pubout -outform DER` writes it.
-- **Fetching:** `fetch_jwks` needs `https://`, or plain `http://` to
-  `localhost` for development. It caps the set at 256 KiB, and the same time
-  budget covers the whole fetch.
+- **Fetching:** `fetch_jwks` needs `https://`, or plain `http://` to a
+  loopback host (`localhost`, `127.0.0.1`, `[::1]`) for development. It caps
+  the set at 256 KiB, and the same time budget covers the whole fetch.
 
 To sign a card: `sign_card_es256` or `sign_card_ed25519`, with a PKCS#8
 key and the key id a verifier will look the key up by. The protected header
@@ -88,6 +91,12 @@ in 0.16.0: call `sign_card_es256` with the key id instead.
 (the JWK Set URL, which must be `https://`) that §8.4.2 allows. A verifier
 still chooses which key sets to trust; this SDK's verification never
 follows a card's `jku`.
+
+A card you hand to `RequestHandlerBuilder` must already declare the
+extensions the builder would add (the failure and budget extensions always;
+idempotency, lease and approval when the handler uses them): `build()`
+refuses a signed card it would have to edit. Declare them, then sign
+([Security](./security.md#agent-card-signing-and-the-part-people-miss)).
 
 ## Marking and signing content
 
@@ -128,13 +137,14 @@ if provenance.ai_generated {
 
 ### Signing everything a server sends
 
-`RequestHandlerBuilder::with_content_signer` signs every agent message and
-every artifact the server sends (ADR 0027): stream frames, pushes, and what
-`SendMessage`, `GetTask`, `ListTasks`, `CancelTask` and `SubscribeToTask`
-return. Each is signed as it is sent, so a chunk on a stream verifies as that
-chunk and the merged artifact `GetTask` returns verifies as the whole.
-Content that already carries a signature, such as another agent's artifact
-you forward, keeps it, and messages in the caller's role are not signed.
+`RequestHandlerBuilder::with_content_signer` signs every artifact, status
+message and direct reply the server sends (ADR 0027): stream frames, pushes,
+and what `SendMessage`, `GetTask`, `ListTasks`, `CancelTask` and
+`SubscribeToTask` return. Each is signed as it is sent, so a chunk on a
+stream verifies as that chunk and the merged artifact `GetTask` returns
+verifies as the whole. Content that already carries a signature, such as
+another agent's artifact you forward, keeps it. A task's history is not
+signed: it holds the caller's messages as they arrived.
 
 ```rust,no_run
 use a2a_protocol_server::{RequestHandlerBuilder, agent_executor};
@@ -185,13 +195,14 @@ let handler = RequestHandlerBuilder::new(Agent)
 # }
 ```
 
-On the client, `ClientBuilder::with_content_keys(keys)` checks every artifact
-and agent message it receives; one whose signature fails ends the call or
-the stream with `ClientError::ContentNotVerified`. On either side,
+On the client, `ClientBuilder::with_content_keys(keys)` checks every
+artifact, status message and direct reply it receives; one whose signature
+fails ends the call or the stream with `ClientError::ContentNotVerified`. On either side,
 `require_signed_content()` refuses unsigned content as well, for a
-deployment that acts only on content from agents it knows. A2A has no way to
-learn a peer's content keys, so you supply them: the same JWK Set you trust
-for its card, or one its operator publishes.
+deployment that acts only on content from agents it knows. Call it after
+`with_content_keys`: before it, or without keys, it requires nothing. A2A has
+no way to learn a peer's content keys, so you supply them: the same JWK Set
+you trust for its card, or one its operator publishes.
 
 `verify_content` fails in these cases:
 
@@ -210,6 +221,9 @@ for its card, or one its operator publishes.
 - **The signature covers the JSON this SDK's types serialize.** Content that
   another implementation extended with fields these types do not model will
   not verify after a round trip through them.
+- **It signs content, not where it sits.** A task's state, an event's
+  `append` and `lastChunk`, and the task an artifact belongs to are not
+  covered, so a signed artifact can be replayed into another task.
 - **A signature says which key signed, not that the content is true.**
 
 The extension is described for other implementations in
