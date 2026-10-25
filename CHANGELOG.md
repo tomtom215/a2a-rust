@@ -10,7 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Book pages for the five examples that had none** (`book/src/examples/`):
+  [Resilient Agent](book/src/examples/resilient-agent.md),
+  [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
+  [Live Model](book/src/examples/live-model.md),
+  [Langfuse Agent](book/src/examples/langfuse-agent.md) and
+  [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
+  overview table and the doctest harness; the overview no longer says five
+  examples have no page.
+
+### Internal
+
+- **`scripts/check_book_examples.py` fails the build when an example has no
+  book page** (`ci.yml`, `static-checks`). Every directory under `examples/`
+  with a `Cargo.toml` needs `book/src/examples/<name>.md`, a `SUMMARY.md` entry
+  and an overview row, unless `scripts/book_examples_allowlist.txt` names it
+  with a reason (`harness`, the shared coverage-matrix library, is the one
+  entry). A page left for an example that no longer exists, and an exemption
+  whose example has gained a page, fail it too. Its proof in
+  `prove_gates_fail.sh` drops an example from `SUMMARY.md`.
+- **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
+  (10 s deadline, the exported span names in its failure message) instead of
+  sleeping one second. It failed once on Windows in the `v0.15.0` release run
+  ("1 renewals"); the same tree passed there 150 of 150 times in a probe, and
+  the cause of that failure is not established. No library code changed.
 
 ## [0.15.0] - 2026-10-25
 
