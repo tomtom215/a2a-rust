@@ -267,6 +267,14 @@ jobs:
       - name: Dependency snippets name the current release line
         run: python3 scripts/check_doc_versions.py
 
+      # The book had pages for ten of the sixteen crates under examples/ and
+      # said so in one sentence nothing kept true; check_book_code.sh asks
+      # whether a page that exists is compiled, and nothing asked whether it
+      # exists. Every example directory has a page, a SUMMARY.md entry and an
+      # overview row, or a reason in scripts/book_examples_allowlist.txt.
+      - name: Every example has a page in the book
+        run: python3 scripts/check_book_examples.py
+
       # Every documented feature table — each crate's README (its crates.io
       # page), crates/README.md and the two book pages — lists exactly the
       # manifest's features, with the manifest's defaults. The 2026-09-22

@@ -390,6 +390,8 @@ injection_for() {
             echo "doc_escapes" ;;
         *"check_doc_versions.py"*)
             echo "doc_versions" ;;
+        *"check_book_examples.py"*)
+            echo "book_examples" ;;
         *"check_feature_tables.py"*)
             echo "feature_tables" ;;
         *"check_sql_driver_isolation.sh"*)
@@ -557,6 +559,7 @@ expected_marker() {
         # Independent of both the injected version and the current release
         # line, so the marker does not need editing at every minor bump.
         doc_versions)     echo "prose names a version" ;;
+        book_examples)    echo "SUMMARY.md does not link it" ;;
         feature_tables)   echo "\`auth-jwt\` is a feature of a2a-protocol-server and is missing from the table" ;;
         sql_drivers)      echo "--features postgres links libsqlite3-sys" ;;
         store_delta_forwarding) echo "overrides \`save_status_delta\` but not \`try_save_status_delta\`" ;;
@@ -718,6 +721,31 @@ PROBE
             note_touched "crates/a2a-protocol-types/src/lib.rs"
             printf '\n/// gate probe.\\n/// second line that is not one.\n#[allow(dead_code)]\npub struct GateProbeDocEscape;\n' \
                 >>crates/a2a-protocol-types/src/lib.rs
+            ;;
+        book_examples)
+            # An example the book lists, dropped from the table of contents:
+            # the page and the crate stay, so only the link is missing. The
+            # last examples entry other than the overview is the one removed,
+            # so the injection does not depend on any one example.
+            note_touched "book/src/SUMMARY.md"
+            python3 - <<'PY'
+import pathlib
+import re
+import sys
+
+SUMMARY = pathlib.Path("book/src/SUMMARY.md")
+ENTRY = re.compile(r"^- \[[^\]]+\]\(\./examples/(?!overview\.md)[^)]+\.md\)\s*$")
+
+lines = SUMMARY.read_text(encoding="utf-8").splitlines(keepends=True)
+hits = [i for i, line in enumerate(lines) if ENTRY.match(line)]
+if not hits:
+    sys.exit(
+        "book_examples injection: SUMMARY.md lists no example page besides the "
+        "overview. Nothing was injected. Re-anchor this injection."
+    )
+del lines[hits[-1]]
+SUMMARY.write_text("".join(lines), encoding="utf-8")
+PY
             ;;
         doc_versions)
             # Leave one install snippet on the previous release line — the
