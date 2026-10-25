@@ -376,7 +376,7 @@ numbers it would move.
 Mutants that no test can kill, because the mutation does not change observable
 behaviour. Each is listed with the argument for its equivalence, so the claim
 can be checked rather than taken on trust. Per
-[ADR 0006](../../../docs/adr/0006-mutation-testing.md#equivalent-mutants) the
+[ADR 0006](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0006-mutation-testing.md#equivalent-mutants) the
 burden is "no test can distinguish it", not "no test occurred to me".
 
 > **Superseded 2026-08-09 — this list is now empty, and nothing is excluded.**
