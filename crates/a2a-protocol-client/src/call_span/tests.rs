@@ -314,7 +314,7 @@ fn each_binding_reports_the_status_it_was_answered_with() {
 /// crate's global test subscriber ([`crate::test_tracing`]), without which
 /// the call span can come back disabled.
 #[cfg(feature = "otel")]
-fn with_otel<R>(f: impl FnOnce() -> R) -> R {
+pub(super) fn with_otel<R>(f: impl FnOnce() -> R) -> R {
     use opentelemetry::trace::TracerProvider as _;
     use tracing_subscriber::layer::SubscriberExt as _;
     let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
@@ -343,7 +343,7 @@ fn propagated(
 }
 
 #[cfg(feature = "otel")]
-fn traceparent(
+pub(super) fn traceparent(
     headers: &std::collections::HashMap<String, String>,
 ) -> a2a_protocol_types::trace_context::TraceContext {
     use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TraceContext};
