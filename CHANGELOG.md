@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sleeping one second. It failed once on Windows in the `v0.15.0` release run
   ("1 renewals"); the same tree passed there 150 of 150 times in a probe, and
   the cause of that failure is not established. No library code changed.
+- **The SLIMRPC binding's lockfile moves `crypto-bigint` from 0.7.6 to 0.7.9.**
+  crates.io yanked 0.7.0 through 0.7.8 on 2026-10-25, and `cargo-deny`'s yanked
+  check then failed the "SLIMRPC binding (out-of-workspace)" job. 0.7.9 is the
+  one 0.7 release not yanked. The crate reaches the binding only through
+  `agntcy-slim-auth`'s `p256`, and no other lockfile holds it. Lockfile only:
+  the binding is unpublished. Cargo also re-resolved `tempfile`'s `getrandom` to
+  0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
+  The binding builds, passes `clippy --all-targets -D warnings`, and its tests
+  pass (133, 10 ignored: the SPIFFE suites need SPIRE).
 
 ## [0.15.0] - 2026-10-25
 
