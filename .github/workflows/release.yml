@@ -576,6 +576,30 @@ jobs:
             exit 1
           fi
 
+          # GitHub refuses a release body over 125,000 characters, and the
+          # 0.15.0 section is about 289,000: `gh release create` would fail
+          # here, before the publish job, with the tag already pushed. A
+          # section over the limit is released as the parts an adopter reads
+          # before upgrading, with a link to the whole section at the tag.
+          # CHANGELOG.md itself is not shortened.
+          LIMIT=120000
+          if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
+            echo "::warning::The $VERSION section is $(wc -m < release_notes.md) characters, over the $LIMIT a GitHub release body can carry; releasing its upgrade-critical sections and a link."
+            mv release_notes.md release_notes.full.md
+            {
+              echo "These are the sections to read before upgrading. The full notes for this release are in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/v${VERSION}/CHANGELOG.md) at this tag."
+              echo ""
+              awk '
+                /^### / { keep = ($0 ~ /^### (Known Limitations|Breaking Changes|Deprecated|Security)$/) }
+                keep    { print }
+              ' release_notes.full.md
+            } > release_notes.md
+            if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
+              echo "::error::Even the upgrade-critical sections of $VERSION are over $LIMIT characters."
+              exit 1
+            fi
+          fi
+
           echo "Release notes preview:"
           cat release_notes.md
           echo "::endgroup::"
