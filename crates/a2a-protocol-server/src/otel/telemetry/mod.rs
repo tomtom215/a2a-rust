@@ -37,22 +37,25 @@
 mod builder;
 mod compression;
 mod config;
+mod console;
 mod counting;
+mod detect;
+mod diagnostics;
 mod exporters;
 mod http;
 mod langfuse;
+mod propagators;
 mod proxy;
 mod runtime;
+mod selection;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing_subscriber::Layer;
 use tracing_subscriber::registry::LookupSpan;
@@ -117,6 +120,16 @@ pub struct Telemetry {
     /// Each signal's count of lost exports since the last report
     /// (`counting.rs`).
     failures: Vec<(Signal, Arc<AtomicU64>)>,
+    /// `OTEL_SDK_DISABLED` was set: nothing is built, nothing installed.
+    disabled: bool,
+    /// Log records go to standard output (`OTEL_LOGS_EXPORTER=console`), so
+    /// `install_subscriber` need not print them again on standard error.
+    logs_on_console: bool,
+    /// One entry per signal: where it goes, or `off` ([`describe`](Self::describe)).
+    report: Vec<String>,
+    /// What the configuration asked for that this SDK does not do and carried
+    /// on without ([`notices`](Self::notices)).
+    notices: Vec<String>,
 }
 
 impl Telemetry {
@@ -173,25 +186,41 @@ impl Telemetry {
         spans.and_then(logs)
     }
 
-    /// Installs [`layer`](Self::layer), on its own, as the process's global
-    /// `tracing` subscriber — what a binary with no subscriber of its own
-    /// needs. Does nothing when neither traces nor logs were built, so a
-    /// process run without a collector keeps no subscriber at all. Returns
-    /// whether it installed one: `false` also when a global subscriber was
-    /// already set, which this never replaces. A process with its own
-    /// subscriber adds `layer()` to it instead.
+    /// Installs [`layer`](Self::layer) as the process's global `tracing`
+    /// subscriber, with a layer that prints warnings and errors to standard
+    /// error and logs [`describe`](Self::describe) once — what a binary with
+    /// no subscriber of its own needs. Without the printing layer a process
+    /// whose export is failing, or that was never given a collector, shows
+    /// nothing at all.
+    ///
+    /// `RUST_LOG` sets what is printed, in `target=level` form (default: `warn`
+    /// everywhere, `info` for this module's own startup line). Installs
+    /// nothing under `OTEL_SDK_DISABLED=true`. Returns whether it installed a
+    /// subscriber: `false` also when a global subscriber was already set,
+    /// which this never replaces. A process with its own subscriber adds
+    /// `layer()` to it instead.
     // Called for its effect; the result is for a caller that cares.
     #[allow(clippy::must_use_candidate)]
     pub fn install_subscriber(&self) -> bool {
         use tracing_subscriber::layer::SubscriberExt as _;
         use tracing_subscriber::util::SubscriberInitExt as _;
-        if self.tracer.is_none() && self.logger.is_none() {
+        if self.disabled {
             return false;
         }
-        tracing_subscriber::registry()
+        let (filter, not_understood) =
+            diagnostics::filter(std::env::var("RUST_LOG").ok().as_deref());
+        let installed = tracing_subscriber::registry()
             .with(self.layer())
+            .with(diagnostics::layer(filter, self.logs_on_console))
             .try_init()
-            .is_ok()
+            .is_ok();
+        if installed {
+            tracing::info!("{}", self.describe());
+            for notice in not_understood.iter().chain(&self.notices) {
+                tracing::warn!("{notice}");
+            }
+        }
+        installed
     }
 
     /// An [`OtelMetrics`](super::OtelMetrics) recording through this
@@ -226,11 +255,38 @@ impl Telemetry {
     }
 
     /// `exporter`, counting its lost exports into a new counter for
-    /// `signal` that [`report_failures`](Self::report_failures) reads.
-    fn counting<E>(&mut self, signal: Signal, exporter: E) -> Counting<E> {
+    /// `signal` that [`report_failures`](Self::report_failures) reads, and
+    /// saying so, now and then, while they keep being lost.
+    fn counting<E>(&mut self, signal: Signal, exporter: E, destination: &str) -> Counting<E> {
         let counter = Arc::new(AtomicU64::new(0));
         self.failures.push((signal, Arc::clone(&counter)));
-        Counting::new(exporter, counter)
+        Counting::new(exporter, counter).reporting(signal, destination)
+    }
+
+    /// What the environment or the code asked for that this SDK does not do,
+    /// and went on without: a propagator it does not have, for one. Each is
+    /// also logged at `warn` by [`install_subscriber`](Self::install_subscriber);
+    /// an application with its own subscriber reads them here.
+    #[must_use]
+    pub fn notices(&self) -> &[String] {
+        &self.notices
+    }
+
+    /// Where each signal goes, in one line: the transport, the endpoint
+    /// (with any login removed), gzip, the proxy it is sent through, or
+    /// `off`; or why nothing is exported at all. `install_subscriber` logs it
+    /// at startup; a binary with its own subscriber can log it too.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        if self.disabled {
+            return "telemetry: disabled by OTEL_SDK_DISABLED".to_owned();
+        }
+        if self.tracer.is_none() && self.meter.is_none() && self.logger.is_none() {
+            return "telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send \
+                    it to a collector, or OTEL_TRACES_EXPORTER=console to print spans"
+                .to_owned();
+        }
+        format!("telemetry: {}", self.report.join("; "))
     }
 
     /// Adds to `failed` each signal with exports lost since the last report
@@ -402,5 +458,7 @@ impl std::error::Error for TelemetryError {
     }
 }
 
+#[cfg(test)]
+mod report_tests;
 #[cfg(test)]
 mod tests;

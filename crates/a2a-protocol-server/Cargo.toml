@@ -204,7 +204,9 @@ opentelemetry-http = { version = "0.33", optional = true, default-features = fal
 opentelemetry-appender-tracing = { version = "0.33", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
 # and 0.3.18-0.3.19 carry RUSTSEC-2025-0055 (`check_advisory_floors.py`).
-tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std"] }
+# `fmt` is the stderr layer `Telemetry::install_subscriber` adds; without the `ansi`
+# feature it writes no colour codes and pulls no crate the registry did not.
+tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std", "fmt"] }
 async-trait = { version = ">=0.1.80, <0.2", optional = true }
 http = { version = ">=1.1, <2", optional = true }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }

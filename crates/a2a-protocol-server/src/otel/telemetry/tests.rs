@@ -145,7 +145,7 @@ fn langfuse_traces_ignore_a_grpc_protocol_variable() {
 
 #[test]
 fn a_bad_variable_fails_the_build_naming_it() {
-    let err = with_env(&[("OTEL_LOGS_EXPORTER", "console")])
+    let err = with_env(&[("OTEL_LOGS_EXPORTER", "zipkin")])
         .build()
         .unwrap_err();
     assert!(err.to_string().contains("OTEL_LOGS_EXPORTER"), "{err}");
@@ -463,8 +463,13 @@ fn a_grpc_endpoint_comes_from_the_environment_and_an_http_one_is_left_unset() {
         Some("https://metrics.example:4317")
     );
     assert_eq!(endpoint(&[grpc]), None);
+    // OTLP/HTTP leaves it to the exporter, which reads the variable itself
+    // (and needs a scheme: `a_schemeless_http_endpoint_is_refused_…`).
     assert_eq!(
-        endpoint(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"), general]),
+        endpoint(&[
+            ("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318"),
+        ]),
         None
     );
 }

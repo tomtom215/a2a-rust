@@ -16,18 +16,79 @@
 //! and then accepted would be reported lost. tonic's client offers no hook
 //! at all, so per-response counting also left gRPC unreported.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use opentelemetry::logs::Severity;
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::logs::{LogBatch, LogExporter};
 use opentelemetry_sdk::metrics::Temporality;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use opentelemetry_sdk::metrics::exporter::PushMetricExporter;
 use opentelemetry_sdk::trace::{SpanData, SpanExporter};
+
+use super::config::Signal;
+
+/// How often a lost export is reported while it keeps being lost: a collector
+/// that is down loses a batch every few seconds, and a line for each would
+/// drown the log it is meant to be found in.
+const REPORT_EVERY: Duration = Duration::from_secs(30);
+
+/// Says, at most once per [`REPORT_EVERY`], that an export was lost — on the
+/// `tracing` target this module's diagnostics use, which is never exported
+/// (`SELF_TARGETS`) and is shown by `Telemetry::install_subscriber`.
+///
+/// The lost batches were silent before: the SDK logs them through `tracing`
+/// under its own target, which no subscriber of a process that only called
+/// `install_subscriber` showed. Measured 2026-10-26: a collector that was
+/// not there, nine seconds, no output at all.
+#[derive(Debug)]
+struct Notice {
+    signal: Signal,
+    destination: String,
+    last: Mutex<Option<Instant>>,
+    held_back: AtomicU64,
+}
+
+impl Notice {
+    /// Whether a report may be made at `now`, and how many were held back
+    /// since the last one.
+    fn permit(&self, now: Instant) -> Option<u64> {
+        let too_soon = {
+            let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
+            let too_soon = last.is_some_and(|t| now.saturating_duration_since(t) < REPORT_EVERY);
+            if !too_soon {
+                *last = Some(now);
+            }
+            too_soon
+        };
+        if too_soon {
+            self.held_back.fetch_add(1, Ordering::Relaxed);
+            None
+        } else {
+            Some(self.held_back.swap(0, Ordering::Relaxed))
+        }
+    }
+
+    fn lost(&self, error: &OTelSdkError) {
+        let Some(held_back) = self.permit(Instant::now()) else {
+            return;
+        };
+        let more = if held_back == 0 {
+            String::new()
+        } else {
+            format!(" ({held_back} more since the last report)")
+        };
+        tracing::warn!(
+            "OTLP export of {} to {} failed after the exporter's retries and the batch \
+             was dropped{more}: {error}",
+            self.signal.name(),
+            self.destination
+        );
+    }
+}
 
 /// An exporter that adds one to `lost` for each export that fails after
 /// whatever retries `inner` makes. Every other method is forwarded, so the
@@ -36,16 +97,36 @@ use opentelemetry_sdk::trace::{SpanData, SpanExporter};
 pub(super) struct Counting<E> {
     inner: E,
     lost: Arc<AtomicU64>,
+    notice: Option<Notice>,
 }
 
 impl<E> Counting<E> {
     pub(super) const fn new(inner: E, lost: Arc<AtomicU64>) -> Self {
-        Self { inner, lost }
+        Self {
+            inner,
+            lost,
+            notice: None,
+        }
+    }
+
+    /// Also report a lost export, rate-limited, naming `signal` and where it
+    /// was going.
+    pub(super) fn reporting(mut self, signal: Signal, destination: &str) -> Self {
+        self.notice = Some(Notice {
+            signal,
+            destination: destination.to_owned(),
+            last: Mutex::new(None),
+            held_back: AtomicU64::new(0),
+        });
+        self
     }
 
     fn count(&self, result: OTelSdkResult) -> OTelSdkResult {
-        if result.is_err() {
+        if let Err(error) = &result {
             self.lost.fetch_add(1, Ordering::Relaxed);
+            if let Some(notice) = &self.notice {
+                notice.lost(error);
+            }
         }
         result
     }
@@ -273,5 +354,96 @@ mod tests {
         c.inner.resource_set = false;
         LogExporter::set_resource(&mut c, &resource);
         assert!(c.inner.resource_set, "logs");
+    }
+
+    // ── Saying so ────────────────────────────────────────────────────────
+
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    /// A `tracing` layer that keeps each event's target and message.
+    #[derive(Clone, Default)]
+    struct Events(Arc<Mutex<Vec<(String, String)>>>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Events {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            struct Message(String);
+            impl tracing::field::Visit for Message {
+                fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
+                    if f.name() == "message" {
+                        self.0 = format!("{v:?}");
+                    }
+                }
+            }
+            let mut message = Message(String::new());
+            event.record(&mut message);
+            self.0
+                .lock()
+                .unwrap()
+                .push((event.metadata().target().to_owned(), message.0));
+        }
+    }
+
+    /// Records through `events` on this thread, until the guard drops.
+    fn recording(events: &Events) -> tracing::subscriber::DefaultGuard {
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(events.clone()))
+    }
+
+    /// A lost export is said once, naming the signal and where it was going,
+    /// on a target that is never exported — otherwise reporting the loss of an
+    /// export would itself produce something to export.
+    #[tokio::test]
+    async fn a_lost_export_is_reported_on_a_target_that_is_never_exported() {
+        let events = Events::default();
+        let _guard = recording(&events);
+        let (c, _) = counting(true);
+        let c = c.reporting(Signal::Traces, "http://collector:4318/v1/traces");
+        assert!(SpanExporter::export(&c, Vec::new()).await.is_err());
+        let seen = events.0.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        let (target, message) = &seen[0];
+        assert!(super::super::is_self_target(target), "{target}");
+        assert!(
+            message.contains("traces")
+                && message.contains("http://collector:4318/v1/traces")
+                && message.contains("dropped"),
+            "{message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_export_and_an_unreporting_wrapper_say_nothing() {
+        let events = Events::default();
+        let _guard = recording(&events);
+        let (ok, _) = counting(false);
+        let ok = ok.reporting(Signal::Logs, "http://c:1");
+        assert!(LogExporter::export(&ok, LogBatch::new(&[])).await.is_ok());
+        let (silent, lost) = counting(true);
+        assert!(SpanExporter::export(&silent, Vec::new()).await.is_err());
+        assert_eq!(lost.load(Ordering::Relaxed), 1);
+        assert!(events.0.lock().unwrap().is_empty());
+    }
+
+    /// While exports keep failing the report repeats only every
+    /// [`REPORT_EVERY`], and says how many it held back.
+    #[test]
+    fn reports_are_rate_limited_and_count_what_they_held_back() {
+        let notice = Notice {
+            signal: Signal::Metrics,
+            destination: String::new(),
+            last: Mutex::new(None),
+            held_back: AtomicU64::new(0),
+        };
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        assert_eq!(notice.permit(t0), Some(0));
+        assert_eq!(notice.permit(t0 + s(1)), None);
+        assert_eq!(notice.permit(t0 + s(29)), None);
+        assert_eq!(notice.permit(t0 + s(30)), Some(2));
+        assert_eq!(notice.permit(t0 + s(31)), None);
+        assert_eq!(notice.permit(t0 + s(61)), Some(1));
     }
 }

@@ -17,6 +17,7 @@ mod body;
 mod certs;
 mod collector;
 mod compression;
+mod console;
 mod forward_proxy;
 mod logs;
 mod proxy;

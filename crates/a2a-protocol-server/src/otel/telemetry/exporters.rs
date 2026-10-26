@@ -12,7 +12,7 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
 use super::TelemetryError;
 use super::compression::OtlpCompression;
-use super::config::{OtlpProtocol, Signal};
+use super::config::{Env, OtlpProtocol, Signal};
 use super::http::ExportHttpClient;
 use super::proxy;
 use super::runtime::ExportRuntime;
@@ -34,11 +34,27 @@ pub(super) struct Target {
     pub(super) compression: Option<OtlpCompression>,
     /// Which destinations go through which HTTP proxy (`proxy.rs`).
     pub(super) proxy: Arc<Matcher>,
+    /// Where this exporter sends, as a person reads it: the endpoint with any
+    /// login in the URL removed. For the startup line and for the message
+    /// when an export is lost.
+    pub(super) destination: String,
     pub(super) timeout: Duration,
     /// Extra CA certificates, PEM, trusted alongside the Mozilla roots.
     pub(super) ca_pem: Vec<u8>,
     /// The client certificate presented for mutual TLS, if any.
     pub(super) client_identity: Option<ClientIdentity>,
+}
+
+/// `url` without a `user:password@` in its authority.
+fn without_userinfo(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let (authority, path) = rest.find('/').map_or((rest, ""), |i| rest.split_at(i));
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    format!("{scheme}://{host}{path}")
 }
 
 /// A client certificate chain (leaf first) and its private key, PEM.
@@ -70,6 +86,37 @@ impl ClientIdentity {
 }
 
 impl Target {
+    /// The endpoint this exporter will use, for display: the configured one,
+    /// else what `OTEL_EXPORTER_OTLP_*ENDPOINT` names (the general variable
+    /// gaining the signal's path on OTLP/HTTP, as `opentelemetry-otlp` does),
+    /// else the transport's `localhost` default; userinfo removed.
+    pub(super) fn destination_for(
+        env: &Env,
+        signal: Signal,
+        protocol: OtlpProtocol,
+        endpoint: Option<&str>,
+    ) -> String {
+        let url = match (endpoint, signal.otlp_var(env, "ENDPOINT")) {
+            (Some(url), _) => url.to_owned(),
+            (None, Some((var, value))) if var == "OTEL_EXPORTER_OTLP_ENDPOINT" => {
+                Self::endpoint_from_base(&value, signal, protocol)
+            }
+            (None, Some((_, value))) => value,
+            (None, None) if protocol.is_http() => {
+                format!("http://localhost:4318/{}", signal.http_path())
+            }
+            (None, None) => "http://localhost:4317".to_owned(),
+        };
+        without_userinfo(&url)
+    }
+
+    /// The proxy `destination` goes through, if one applies, for display.
+    pub(super) fn proxy_display(&self) -> Option<String> {
+        let uri = self.destination.parse::<http::Uri>().ok()?;
+        let via = proxy::intercept(&self.proxy, &uri)?;
+        Some(via.uri().to_string().trim_end_matches('/').to_owned())
+    }
+
     /// The endpoint for `signal` given a base URL, as
     /// `OTEL_EXPORTER_OTLP_ENDPOINT` is interpreted: OTLP/HTTP appends the
     /// signal's path, gRPC does not.
@@ -348,6 +395,58 @@ pub(super) fn logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_login_in_a_url_is_not_displayed() {
+        assert_eq!(
+            without_userinfo("https://user:p%40ss@collector.example:4318/v1/traces"),
+            "https://collector.example:4318/v1/traces"
+        );
+        assert_eq!(without_userinfo("http://c:4317"), "http://c:4317");
+        assert_eq!(
+            without_userinfo("https://tok@c.example"),
+            "https://c.example"
+        );
+        assert_eq!(without_userinfo("not a url"), "not a url");
+    }
+
+    #[test]
+    fn the_destination_is_the_endpoint_the_exporter_will_use() {
+        let none = |_: &str| None;
+        let general =
+            |k: &str| (k == "OTEL_EXPORTER_OTLP_ENDPOINT").then(|| "http://g:4318/".to_owned());
+        let own = |k: &str| {
+            (k == "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").then(|| "http://own:1/x".to_owned())
+        };
+        let d = |env: &Env, signal, protocol, endpoint| {
+            Target::destination_for(env, signal, protocol, endpoint)
+        };
+        assert_eq!(
+            d(&none, Signal::Traces, OtlpProtocol::HttpProtobuf, None),
+            "http://localhost:4318/v1/traces"
+        );
+        assert_eq!(
+            d(&none, Signal::Traces, OtlpProtocol::Grpc, None),
+            "http://localhost:4317"
+        );
+        assert_eq!(
+            d(&general, Signal::Metrics, OtlpProtocol::HttpProtobuf, None),
+            "http://g:4318/v1/metrics"
+        );
+        assert_eq!(
+            d(&own, Signal::Logs, OtlpProtocol::HttpProtobuf, None),
+            "http://own:1/x"
+        );
+        assert_eq!(
+            d(
+                &general,
+                Signal::Logs,
+                OtlpProtocol::HttpProtobuf,
+                Some("http://code/v1/logs")
+            ),
+            "http://code/v1/logs"
+        );
+    }
 
     #[test]
     fn a_base_endpoint_gains_the_signal_path_on_http_only() {
