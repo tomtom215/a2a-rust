@@ -77,6 +77,15 @@ fn the_console_exporter_reports_cumulative_temporality() {
     assert_eq!(Temporality::default(), Temporality::Cumulative);
 }
 
+/// The exporter only ever asks the SDK for running totals, so `temporality`
+/// is handed `Cumulative` by every metric line it prints; `Delta` is named
+/// here because no exporter-driven test can reach that arm.
+#[test]
+fn a_temporality_is_named_in_words() {
+    assert_eq!(temporality(Temporality::Delta), "delta");
+    assert_eq!(temporality(Temporality::Cumulative), "cumulative");
+}
+
 /// A duration exactly on a boundary is shown in the larger unit.
 #[test]
 fn a_duration_on_a_unit_boundary_is_shown_in_the_larger_unit() {
@@ -119,6 +128,23 @@ fn a_span_is_one_line_with_ids_status_and_attributes() {
         "a root span has no parent: {line}"
     );
     assert!(!line.contains(" events="), "no events, no count: {line}");
+}
+
+/// An error status with no description is `status=error` and nothing after
+/// it; the text of an empty description would otherwise print as `error:""`.
+#[test]
+fn an_error_status_with_no_description_has_no_colon_after_it() {
+    let (console, buf) = buffer();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(console)
+        .build();
+    let tracer = provider.tracer("t");
+    let mut span = tracer.start("failed");
+    span.set_status(Status::error(""));
+    span.end();
+    let line = &lines(&buf)[0];
+    assert!(line.contains(" status=error"), "{line}");
+    assert!(!line.contains("status=error:"), "{line}");
 }
 
 #[test]

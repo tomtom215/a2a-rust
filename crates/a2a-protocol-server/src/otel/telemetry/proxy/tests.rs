@@ -337,3 +337,85 @@ async fn flush_waits_for_the_tls_bytes_the_socket_has_not_taken() {
     );
     server.abort();
 }
+
+/// One request and its reply across a `Conn` to a real socket, to the
+/// collector (`proxied` false) or to a forward proxy (`proxied` true).
+///
+/// The peer reads the request to its end before it answers, and reaches the
+/// end only when the client shuts its write half. So the reply arrives only if
+/// `poll_write` put the bytes on the socket and said how many, `poll_shutdown`
+/// closed the write half, and `poll_read` handed back what the peer sent.
+async fn request_and_reply(proxied: bool) {
+    use hyper::rt::{Read as _, ReadBuf, Write as _};
+    use std::future::poll_fn;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tower_service::Service as _;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("address").port();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut request = Vec::new();
+        socket
+            .read_to_end(&mut request)
+            .await
+            .expect("read the request to its end");
+        socket.write_all(b"pong").await.expect("reply");
+        request
+    });
+
+    let proxy = format!("http://127.0.0.1:{port}");
+    let pairs = if proxied {
+        vec![("HTTP_PROXY", proxy.as_str())]
+    } else {
+        vec![]
+    };
+    let destination = if proxied {
+        "http://collector.invalid:4318".to_owned()
+    } else {
+        proxy.clone()
+    };
+    let rules = std::sync::Arc::new(matcher(&*env(&pairs), &ProxySetting::Environment));
+    let mut connector = ProxyConnector::new(&tls_pair().1, rules);
+    let conn = connector.call(uri(&destination)).await.expect("connect");
+    assert_eq!(matches!(conn, Conn::Forwarded { .. }), proxied);
+    let mut conn = std::pin::pin!(conn);
+
+    let sent = poll_fn(|cx| conn.as_mut().poll_write(cx, b"ping"))
+        .await
+        .expect("write");
+    assert_eq!(sent, 4, "poll_write must report the bytes it took");
+    poll_fn(|cx| conn.as_mut().poll_shutdown(cx))
+        .await
+        .expect("shutdown");
+    let mut reply = Vec::new();
+    while reply.len() < 4 {
+        let mut chunk = [0_u8; 4];
+        let mut buf = ReadBuf::new(&mut chunk);
+        poll_fn(|cx| conn.as_mut().poll_read(cx, buf.unfilled()))
+            .await
+            .expect("read");
+        if buf.filled().is_empty() {
+            break;
+        }
+        reply.extend_from_slice(buf.filled());
+    }
+    assert_eq!(reply, b"pong");
+    assert_eq!(server.await.expect("server"), b"ping");
+}
+
+#[tokio::test]
+async fn a_direct_connection_carries_a_request_and_its_reply() {
+    tokio::time::timeout(std::time::Duration::from_secs(10), request_and_reply(false))
+        .await
+        .expect("the request and its reply crossed within 10 s");
+}
+
+#[tokio::test]
+async fn a_connection_to_a_forward_proxy_carries_a_request_and_its_reply() {
+    tokio::time::timeout(std::time::Duration::from_secs(10), request_and_reply(true))
+        .await
+        .expect("the request and its reply crossed within 10 s");
+}

@@ -262,6 +262,19 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   is the SDK's own default (a test asserts that). Both carry
   `#[mutants::skip]`, and so does `force_flush`, the same shape as the first.
   No behaviour changed.
+- **Three survivors from the third `cargo-mutants` run, closed.** All three
+  were tests too weak to see a change. Nothing checked that `Conn::poll_shutdown`
+  closes the write half of the socket (shard 0): a request and its reply now
+  cross a `Conn` to a real socket, to the collector and through a forward
+  proxy, and the peer answers only after the client has shut its write half, so
+  `poll_write`, `poll_shutdown` and `poll_read` are each needed for the reply
+  to arrive. The `Delta` arm of the console's `temporality` text (shard 6) is
+  unreachable through the exporter, which only asks for running totals, so a
+  test names both values. And an error status with no description was not
+  checked to print `status=error` with nothing after it (shard 13). Shard 13's
+  runner was shut down by GitHub before it ran a mutant, so its 25 mutants were
+  run locally with the CI selection and flags; this was the one that survived.
+  Each test fails with its mutant applied by hand. No behaviour changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run
