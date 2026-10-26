@@ -27,8 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     nothing and the process printed nothing.
   - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
     both transports, `none` accepted, `zstd` and anything else an error naming
-    the variable. One traces export went from 6,633 to 1,799 bytes and one
-    metrics export from 2,896 to 1,216. New `TelemetryBuilder::with_compression`
+    the variable. The first traces export of `hello-agent` went from 6,031 to
+    1,607 bytes and the first metrics export from 2,484 to 1,080 (body bytes
+    on the wire, one run each, 2026-10-26). New `TelemetryBuilder::with_compression`
     and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
     warns when it was not built for a compression, and `Telemetry` had no
     subscriber when it built the exporters.
@@ -56,10 +57,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     removed) and **`Telemetry::notices`**.
   - OTLP/HTTP endpoints with no scheme are refused with what to write; the
     message was "invalid format".
+  - **Why an export failed.** `opentelemetry-otlp` 0.33.1 reports every
+    OTLP/HTTP transport failure as `HTTP export failed: network error`, so a
+    refused connection, an unknown CA, a gRPC-only collector and a missing proxy
+    read the same. The loss warning now appends the transport's own error
+    (`cause: client error (Connect): invalid peer certificate: UnknownIssuer`)
+    and, only where the failure itself names the fix, a `Hint`: an unknown
+    issuer (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's
+    roots, never the operating system's), a certificate for another name or an
+    expired one, a `401` or `403` (the headers), a `404` over OTLP/HTTP (the
+    paths), and a failure with no HTTP status to port 4317 over HTTP or 4318
+    over gRPC (the other transport's usual port). A bare refused connection
+    gets none.
+  - **A base endpoint that already ends in `/v1/traces`** (or `/v1/metrics`,
+    `/v1/logs`) posts to a doubled path and a `404`; a startup notice now says
+    what it would post to and what to give instead.
+  - **`OTEL_RESOURCE_ATTRIBUTES` is percent-decoded**, as the specification
+    requires for `,` and `=` in a value (`prod%2Cwest` is `prod,west`);
+    `opentelemetry_sdk` 0.33.1 kept it literal. An entry that is not valid
+    percent-encoding is kept as written and reported at startup.
+  - **`TelemetryBuilder::without_startup_summary`** keeps `install_subscriber`'s
+    startup line off while warnings and errors still print. The `a2a` CLI uses
+    it, so a one-shot command prints nothing extra.
   Book: [Observability](book/src/deployment/observability.md), "Seeing it with
   no collector", "When something is wrong", "Proxies, compression and private
   CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
   [troubleshooting](book/src/deployment/troubleshooting.md) entry.
+- **`shutdown_signal()`**, a future that resolves on `SIGTERM` or `SIGINT`
+  (Ctrl-C elsewhere than Unix), for `Server::serve_with_shutdown`. A server
+  that waits on `tokio::signal::ctrl_c()` alone is ended by the `SIGTERM` a
+  container runtime sends, without returning from `main`, so no `Telemetry`
+  guard is dropped: measured on `hello-agent`, the collector received no spans
+  and no metrics. With it the server drains, `main` returns and the guard
+  flushes. The flush after `SIGTERM` took 0.1 s to a collector that answers,
+  1.8 s to a port that refuses and 15.0 s to one that accepts and never
+  answers (each provider waits up to 5 s; `OTEL_EXPORTER_OTLP_TIMEOUT=2000`
+  made that 4.1 s; one run each), so a pod's `terminationGracePeriodSeconds`
+  has to include it. Exported from the server crate and the SDK prelude.
 - **A Compliance part in the book** (`book/src/compliance/`): a
   [Compliance Overview](book/src/compliance/overview.md) with an obligation to
   page table, the 88-provision control map summarised by framework and the
@@ -93,8 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to standard error (`RUST_LOG` in `target=level` form decides what; default
   `warn`) and logs `Telemetry::describe()` once. It still never replaces a
   global subscriber already set. Code that calls it and then installs its own
-  with `.init()` finds the slot taken now when it did not before: install yours
-  first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
+  with `.init()` now panics (the slot is taken) where it did not before:
+  install yours first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
   asserted the old contract and now asserts this one.
 - **A lost export is reported.** After the exporter's retries, a `warn` names the
   signal and the destination, at most once every 30 s with a count of the ones
@@ -107,6 +141,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subscriber printed warnings.
 - **Exports carry five more resource attributes** (above); an export to a party
   that should not learn them uses `without_resource_detection`.
+- **The proxy variables are read for the export.** `HTTP_PROXY`, `HTTPS_PROXY`,
+  `ALL_PROXY` and `NO_PROXY` (upper or lower case; upper wins when both are set,
+  unlike curl) were ignored by the exporter and now decide where it connects. A
+  pod that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
+  collector now sends the export to the proxy, which cannot reach the collector,
+  unless `NO_PROXY` lists it: `.cluster.local` or `.svc.cluster.local` for a
+  `*.svc.cluster.local` name (`.svc` alone does not match, and a CIDR matches
+  only a destination written as an IP). The startup line says `via proxy`, and
+  a lost export names the proxy. `without_proxy()` restores the old behaviour.
+
+### Fixed
+
+- **`hello-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team`,
+  `incident-response` and the SLIMRPC `slim_node` waited on Ctrl-C alone**, so a
+  `SIGTERM` ended them without a flush (and `slim_node` without
+  `service.shutdown()`). They wait on `shutdown_signal()` now. Compiled, not
+  run: they need a model or a second process.
+- **`langfuse-agent` exited 1 when run with no environment**: it built every
+  signal to `localhost:4318` and its final `shutdown()?` reported the three
+  lost exports. It now exports only where an endpoint is named (the Langfuse
+  preset names one for traces). With an unreachable endpoint configured it still
+  fails, and says so.
+- **`describe()` printed `console every 0 s`** for a metric interval under one
+  second; it prints `500 ms` now.
+- **Documentation that was wrong or out of date**, each checked against the
+  code or by running it: the server and SDK READMEs' default features and the
+  feature a `Telemetry` needs; `examples/README.md` and the book's overview on
+  which binaries print a startup line and build nothing without an endpoint;
+  the Collector example's `otlp` exporter comment (Langfuse takes OTLP/HTTP
+  only); the `otel` module docs and the pipeline docs (it exports metrics
+  only, gRPC only); the exported description of `a2a.server.push_deliveries`
+  (four outcomes); `observability.md`'s claims about warnings, `OTEL_SDK_DISABLED`,
+  which `OTEL_*` variables win over code, the self-targets filtered from the
+  layer, test coverage, panel descriptions, the alerts and the console sample
+  (now one run); the production guide's shutdown snippets (`ctrl_c()` only);
+  `README.md`'s "zero cost when disabled" and "each panel checked"; the deploy-agent
+  Dockerfile's claim that the agent reads the image's CA certificates (the SDK
+  trusts its bundled Mozilla roots only) and its manifest's grace period,
+  now 45 s to include the telemetry flush.
 
 ### Internal
 

@@ -60,8 +60,9 @@ let _client = ClientBuilder::new("http://localhost:3000").build()?;
 ## Features
 
 Each feature forwards to the constituent crates named; `tls-rustls`,
-`tracing` and `webhook` are the defaults. The SDK takes those crates without
-their own defaults, so `default-features = false` here removes all three.
+`tracing`, `otel`, `otlp` and `webhook` are the defaults. The SDK takes those
+crates without their own defaults, so `default-features = false` here removes
+all five.
 
 | Feature | Default | Forwards to |
 |---------|---------|-------------|

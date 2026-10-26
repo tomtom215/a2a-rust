@@ -43,7 +43,8 @@ file serves; set it for any other instance, including Langfuse Cloud
 
 The program prints the orchestrator's report and the session id to open in
 Langfuse. Without `LANGFUSE_PUBLIC_KEY` it exports to whatever
-`OTEL_EXPORTER_OTLP_*` names, or nothing with `OTEL_SDK_DISABLED=true`.
+`OTEL_EXPORTER_OTLP_*` names, and to nothing when none is set or with
+`OTEL_SDK_DISABLED=true`.
 
 ## What you will see
 

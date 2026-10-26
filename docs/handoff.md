@@ -31,8 +31,7 @@ only: when something here is done, delete it rather than annotating it.
   `CHANGELOG.md` under *Behaviour Changes*. **Not done:** `cargo deny` was not
   run locally; `host.name` is absent on a macOS process that does not export
   `HOSTNAME`; clippy `-D warnings` has findings in files this branch did not
-  touch (this toolchain, 1.97); the CHANGELOG's "0.16" assumes that is the next
-  release. The commits are authored as the container's identity with no
+  touch (this toolchain, 1.97). The commits are authored as the container's identity with no
   `Signed-off-by`: re-author and sign off before opening the pull request
   (`scripts/check_dco.sh`).
   Also **ADR 0028 (Proposed)** and `docs/adr/0028-wasm-spike/`: the real

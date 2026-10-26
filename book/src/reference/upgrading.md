@@ -13,7 +13,15 @@ the URL, it resolves none, and the request is served from the default tenant
 or, under `require_resolved_tenant()`, refused. Use
 `BearerTokenTenantResolver`, or `HeaderTenantResolver` behind a proxy that
 sets the header and strips any inbound copy; the `[0.14.1]` entry in
-CHANGELOG.md has the advisory.) A test,
+CHANGELOG.md has the advisory. 0.15.1 breaks no API but changes two behaviours
+of `Telemetry` that existing code can notice: `install_subscriber` now always
+installs a subscriber, so a `tracing_subscriber` `.init()` after it panics
+(install yours first, or add `Telemetry::layer()` to it); and `HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` now apply to the export, so a pod
+that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
+collector must list the collector in `NO_PROXY`
+([Observability](../deployment/observability.md#quick-start-pick-your-deployment)
+has the entries that match and the ones that do not).) A test,
 `book-tests/tests/upgrading_guide.rs`, fails when the changelog calls a
 release from 0.7 on breaking and this page has no `## X.Y → X.Z` section for
 its boundary (A2A v1.0.1 §1.4: migration guidance MUST be provided when

@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:159 \"### Breaking Changes\""
+    "CHANGELOG.md:232 \"### Breaking Changes\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -3742,7 +3742,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:48 RequestHandler::warn_if_undeclared",
     "crates/a2a-protocol-server/src/serve/mod.rs:114 Dispatcher::protocol_binding",
-    "crates/a2a-protocol-server/src/serve/graceful/mod.rs:269 Server::serve_with_shutdown",
+    "crates/a2a-protocol-server/src/serve/graceful/mod.rs:267 Server::serve_with_shutdown",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:445 WebSocketDispatcher::accept_loop",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:306 GrpcDispatcher::build_router",
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:153 A2aRouter::into_router",
@@ -4668,7 +4668,7 @@
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38 Server::with_tls",
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:55 Server::with_tls_pem",
     "crates/a2a-protocol-server/src/serve/graceful/connection.rs:20 spawn_connection",
-    "book/src/deployment/production.md:87 \"The **server** terminates TLS itself\""
+    "book/src/deployment/production.md:85 \"The **server** terminates TLS itself\""
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/serve_tls.rs:28 the_agent_card_is_served_over_https_on_http1_and_http2",

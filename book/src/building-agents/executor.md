@@ -260,7 +260,7 @@ default when nobody said (`activated_extensions()` returns an empty slice):
 | `ctx.http_header(name)` | One inbound header, matched case-insensitively |
 | `ctx.activated_extensions()` | The URIs from the `A2A-Extensions` header that the agent card declares, in request order (spec §14.2.2, §4.6.3); an undeclared URI is left out. With no card, the request's list unchanged |
 | `ctx.request_id()` | The caller's `X-Request-ID`, if they sent one |
-| `ctx.trace_context()` | The caller's W3C trace (`Option<&TraceContext>`), when it sent a `traceparent`; propagate it on outbound A2A calls so a delegation chain is one trace |
+| `ctx.trace_context()` | The W3C trace this hop continues (`Option<&TraceContext>`). With a recording `tracing-opentelemetry` layer (what `Telemetry` installs) it names this server's own span, a new root when the caller sent no `traceparent`, and the client then propagates it without any code of yours; without one, it is the caller's `traceparent` when it sent one the SDK accepted, else `None`. See [Trace context](../deployment/observability.md#trace-context) |
 
 ```rust
 # use a2a_protocol_sdk::prelude::*;

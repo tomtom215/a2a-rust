@@ -145,9 +145,11 @@ existing `init_otlp_pipeline*` functions stay, deprecated.
   calls and asserts the span tree (remote parent, executor child, downstream
   span id recorded) and every catalogued instrument. It fails on `main` on
   the day this ADR is written; each step of the work turns part of it green.
-- `tracing` spans cost nothing when the feature is off and a disabled-level
-  check when it is on without a subscriber; the cost with an exporter
-  installed is measured before and after, not asserted.
+- `tracing` spans cost nothing when the feature is off. When it is on with
+  nothing installed, a send cost 4.6% and 6.6% more in two runs
+  (`docs/readiness-bar.md`, 2026-10), which retracted the earlier "a level
+  check"; the cost with an exporter installed is measured before and after,
+  not asserted.
 
   **Measured 2026-09-24**, a blocking `SendMessage` round trip over
   loopback to `serve_with_addr` with a trivial executor (criterion, bench

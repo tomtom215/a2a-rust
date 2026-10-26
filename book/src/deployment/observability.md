@@ -17,9 +17,125 @@ what could not be delivered. Spans and logs also need a `tracing` subscriber
 (`Telemetry::install_subscriber` installs one, and with it a process says what
 it is doing: warnings and errors go to standard error, and one line says where
 each signal goes, or that nothing is exported and how to change that). If you
-see no metrics, the answer is almost always this page's first section. (Before 0.15 exporting was
-off by default: `otel`, which then carried the exporter, was not a default
-feature.)
+see no metrics, the answer is almost always [the quick start](#quick-start-pick-your-deployment)
+or [Turning them on](#turning-them-on). (Before 0.15 exporting was off by
+default: `otel`, which then carried the exporter, was not a default feature.)
+
+**New in 0.15.1**, and absent from 0.15.0: proxy support, gzip compression,
+the `console` and `prometheus` exporters, resource detection, `OTEL_PROPAGATORS`,
+`Telemetry::describe` and `notices`, the printed startup line and lost-export
+warnings (with the transport's cause, and a hint where the failure names the
+fix), the percent-decoding of `OTEL_RESOURCE_ATTRIBUTES`, and
+`shutdown_signal`. Nothing else on this page is marked with a version.
+
+## Quick start: pick your deployment
+
+The code is the same everywhere; the environment changes. This is what
+`hello-agent` does:
+
+```rust,no_run
+use a2a_protocol_sdk::prelude::*;
+
+# async fn serve(dispatcher: JsonRpcDispatcher) -> Result<(), Box<dyn std::error::Error>> {
+let telemetry = Telemetry::builder()
+    .with_default_service_name("my-agent") // OTEL_SERVICE_NAME wins over it
+    .with_export_where_configured()        // export only what the environment names
+    .build()?;
+telemetry.install_subscriber(); // warnings to stderr, and one line saying where each signal goes
+
+let server = Server::bind("0.0.0.0:3000").await?;
+server.serve_with_shutdown(dispatcher, shutdown_signal()).await; // returns on SIGTERM or Ctrl-C
+// `telemetry` is dropped as this function returns, and that flushes.
+# Ok(())
+# }
+```
+
+* **Your machine, no collector.** Set nothing: nothing is exported, and the
+  line on standard error says so. To see the telemetry anyway:
+  `OTEL_TRACES_EXPORTER=console OTEL_METRICS_EXPORTER=console OTEL_LOGS_EXPORTER=console`
+  prints it on standard output.
+* **A collector on your machine.** `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`.
+  4318 is OTLP/HTTP, the default protocol. The Collector's gRPC receiver is
+  4317 and also needs `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`; the wrong pairing is
+  reported with a hint.
+* **Docker.** `localhost` inside a container is the container. Name the
+  collector by its service name on a shared network
+  (`http://otel-collector:4318`, as [`deploy/observability`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
+  does) or by an address the container can reach.
+* **Kubernetes.** Name the collector's Service, and give each pod its own
+  `service.instance.id`, which is what tells replicas apart (Prometheus's
+  `instance` label). Without it each process invents a random one, and every
+  restart is a new series.
+
+  ```yaml
+  env:
+    - name: POD_NAME
+      valueFrom: {fieldRef: {fieldPath: metadata.name}}
+    - name: POD_NAMESPACE
+      valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://otel-collector.observability.svc.cluster.local:4318"
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: "service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE)"
+  ```
+
+  Kubernetes replaces `$(POD_NAME)`, and only with a variable defined earlier
+  in the list. The SDK detects no `k8s.*` attribute itself: `host.name` is the
+  container's hostname (a pod's name, unless the manifest sets another) and
+  `process.pid` is 1 when the binary is the entry point. Stop the pod with
+  `shutdown_signal()`, as below. `examples/deploy-agent/deployment.yaml` carries
+  this block, commented out.
+* **HTTPS.** `OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example:4318`. A
+  certificate from a public CA needs nothing more: the exporter trusts
+  Mozilla's roots and never reads the operating system's store, so a CA added
+  to `/etc/ssl/certs` changes nothing. For a private CA, mount its PEM file and
+  name it: `OTEL_EXPORTER_OTLP_CERTIFICATE=/etc/otel/ca.pem` (trusted in
+  addition to the Mozilla roots). A collector that requires a client
+  certificate takes `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and
+  `OTEL_EXPORTER_OTLP_CLIENT_KEY`, also PEM files. An unreadable file stops the
+  process at startup, naming the variable. Without the CA, the warning says
+  what to set.
+* **Behind a proxy.** `HTTPS_PROXY`, `HTTP_PROXY` or `ALL_PROXY` (an
+  `http://` proxy, in upper or lower case) send the export through it, and the
+  startup line says `via proxy`. Exempt a collector inside the cluster with
+  `NO_PROXY`, because a proxy cannot reach it. With `HTTP_PROXY` pointing at
+  nothing, a collector at `otel-collector.observability.svc.cluster.local` was
+  still sent through the proxy, and lost, with `NO_PROXY=.svc`, and went direct
+  with `.cluster.local`, `.svc.cluster.local` and
+  `.svc,.cluster.local,10.0.0.0/8`. A CIDR entry matches a collector addressed
+  by IP and never one addressed by name, even a name that resolves into the
+  range.
+* **Prometheus scraping the pod, no collector.** Build with the
+  `otel-prometheus` feature (off by default, and `deploy-agent` is built
+  without it), set `OTEL_METRICS_EXPORTER=prometheus`, and set
+  `OTEL_EXPORTER_PROMETHEUS_HOST=0.0.0.0` so a scraper in another pod can
+  connect: the default is `localhost`, port 9464. It is plain HTTP with no
+  authentication. Without the feature the value is an error naming it, and the
+  process does not start.
+* **Stopping.** `shutdown_signal()` resolves on SIGTERM, which is what
+  Kubernetes and Docker send, and on Ctrl-C. A server that waits on
+  `tokio::signal::ctrl_c()` alone is ended by SIGTERM without a flush:
+  measured on `hello-agent`, the collector then received no spans and no
+  metrics. The flush that follows costs what the collector costs: on
+  `hello-agent` the process exited 0.1 s after SIGTERM to a collector that
+  answers, 1.8 s to a port that refuses, and 15.0 s to one that accepts the
+  connection and never answers (each of the three providers waits up to 5 s);
+  `OTEL_EXPORTER_OTLP_TIMEOUT=2000` made the last 4.1 s (one run each, debug
+  build). Count that in a pod's `terminationGracePeriodSeconds`.
+* **It does not work.** Read the line printed at startup, then the warning
+  that follows a lost export; each says what it knows. See
+  [Troubleshooting](./troubleshooting.md#telemetry-is-configured-and-nothing-reaches-the-collector).
+
+**What these were run against.** `hello-agent` and the `a2a` CLI, on one Linux
+machine on 2026-10-26, against stand-in receivers on loopback (a small Python
+OTLP/HTTP receiver with TLS and client-certificate options, and this
+repository's own `hyper` and `tonic` test collectors and forward proxy). Not
+run: a real OpenTelemetry Collector, Kubernetes (the manifest was parsed as
+YAML and its `$(NAME)` references checked, nothing more), IPv6, an endpoint
+with a public CA, and a production proxy server. A gRPC-only receiver was
+imitated by a socket that closes the connection, and a real one may answer
+differently, though the hint depends only on the port and on the failure
+carrying no HTTP status.
 
 ## Turning them on
 
@@ -46,7 +162,8 @@ a2a-protocol-sdk = "0.15"   # `tracing`, `otel` and `otlp` are default features
   see [Prometheus: scrape instead of push](#prometheus-scrape-instead-of-push)).
 * **`otlp-json`** — off by default: OTLP/HTTP with JSON bodies.
 
-With `otlp`, the whole setup is this, and the rest of the page explains it:
+With a subscriber of your own, the setup is this (the quick start above uses
+`install_subscriber` instead), and the rest of the page explains it:
 
 ```rust,no_run
 use a2a_protocol_sdk::server::otel::Telemetry;
@@ -60,17 +177,17 @@ let telemetry = Telemetry::builder()
     .build()?;
 tracing_subscriber::registry().with(telemetry.layer()).init();
 
-// Build handlers after this: one given no `with_metrics` records to the meter
-// provider it installed. Serve, and on the way out:
+// Serve, and on the way out:
 telemetry.shutdown()?; // or let it drop: both flush
 # Ok(())
 # }
 ```
 
 Built plainly, as here, `Telemetry` exports every signal, so an export with
-nothing listening where it goes is lost. A warning says so as it happens (see
-[When something is wrong](#when-something-is-wrong)), and `shutdown` returns an
-error naming the signal and the count.
+nothing listening where it goes is lost. `shutdown` returns an error naming the
+signal and the count, and a warning says so as it happens wherever a layer
+that prints warnings is installed, as `install_subscriber` does (the registry
+above has none; see [When something is wrong](#when-something-is-wrong)).
 [`with_export_where_configured`](#exporting-with-telemetry) (below) builds a
 signal only when an endpoint names where it goes.
 
@@ -150,9 +267,10 @@ endpoint names where it goes — `OTEL_EXPORTER_OTLP_ENDPOINT`, the signal's own
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_METRICS_` / `_LOGS_ENDPOINT`, or
 `with_otlp_endpoint` in code — and a signal with none has no exporter and no
 export thread. Every agent and CLI binary in this repository does this, except
-`examples/langfuse-agent` (it applies the Langfuse preset, which names its own
-endpoint) and the few that start no telemetry at all, which
-`scripts/check_otel_wiring.py` lists with the reason for each:
+the few that start no telemetry at all, which `scripts/check_otel_wiring.py`
+lists with the reason for each (`examples/langfuse-agent` does it too: with
+`LANGFUSE_PUBLIC_KEY` set the preset names the traces endpoint, and without it
+and without an endpoint nothing is built):
 
 ```rust,no_run
 use a2a_protocol_sdk::server::otel::Telemetry;
@@ -171,12 +289,18 @@ Each process also reports a `service.instance.id`, a random UUID unless
 `OTEL_RESOURCE_ATTRIBUTES` names one: it is what tells replicas of one
 service apart (Prometheus turns it into the `instance` label).
 
-It reads the environment as the OpenTelemetry specification defines it, and
-refuses a value it cannot act on rather than ignoring it:
+It reads the environment as the OpenTelemetry specification defines it. A value
+for an exporter, a protocol, a compression, a timeout, a certificate or a
+header that it cannot act on is an error naming the variable; a few are
+reported and skipped instead (an `OTEL_PROPAGATORS` name it does not have, a
+proxy kind it does not speak), and the OpenTelemetry crates fall back on their
+own for others (an unrecognised `OTEL_TRACES_SAMPLER` becomes
+`parentbased_always_on`, with a warning printed before any subscriber exists, so
+it is usually not seen):
 
 | Variable | Effect |
 |---|---|
-| `OTEL_SDK_DISABLED=true` | Builds nothing; the layer records nothing |
+| `OTEL_SDK_DISABLED=true` | Builds no providers and no exporters, and the layer records nothing; the W3C propagators are still installed. Only `true` (in any case) disables: `1` does not |
 | `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | A comma list per signal: `otlp`, `console` (print to standard output) and, for metrics with the `otel-prometheus` feature, `prometheus` (serve `/metrics`); `none` anywhere turns the signal off. Any other value (`zipkin`, `jaeger`, …) is an error naming it |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc`, `http/protobuf` (the default) or, with the `otlp-json` feature, `http/json`; without it `http/json` is an error naming the feature |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` (and per signal) | The collector; OTLP/HTTP appends `/v1/traces`, `/v1/metrics` or `/v1/logs` to the general one |
@@ -188,13 +312,15 @@ refuses a value it cannot act on rather than ignoring it:
 | `OTEL_PROPAGATORS` | `tracecontext`, `baggage`, `none`, in a list; another name (`b3`, `jaeger`, …) is reported and skipped, not an error |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` (and per signal) | A PEM file of CA certificates trusted alongside the bundled Mozilla roots |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` (and per signal) | PEM files of the client certificate chain and its key, for a collector that requires mutual TLS; one without the other is an error |
-| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name` |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name`. In `OTEL_RESOURCE_ATTRIBUTES`, `,` and `=` inside a value are written percent-encoded (`prod%2Cwest` is `prod,west`) and decoded; an entry that is not valid percent-encoding is kept as written and reported at startup |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*`, `OTEL_BLRP_*`, `OTEL_METRIC_EXPORT_INTERVAL`, `OTEL_SPAN_*_LIMIT`, `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | Read by the OpenTelemetry crates themselves (the sampler, the delta temporality and the headers were each run against a collector, 2026-10-26) |
 | `RUST_LOG` | What `install_subscriber` prints to standard error, in `target=level` form; see [When something is wrong](#when-something-is-wrong) |
 
 The builder's `with_otlp_endpoint` and `with_otlp_protocol` set the same
 things in code, and — as in the OpenTelemetry SDK — a value set in code wins
-over the variable. Three settings differ: a header variable that names the
+over the variable. Four settings differ: `OTEL_TRACES_EXPORTER`,
+`OTEL_METRICS_EXPORTER` and `OTEL_LOGS_EXPORTER` win over `with_traces`,
+`with_metrics` and `with_logs`; a header variable that names the
 same header as `with_otlp_header` wins over it (headers with different names
 are all sent); `with_ca_certificate_pem` adds to the CA file
 `OTEL_EXPORTER_OTLP_CERTIFICATE` names rather than replacing it, and both are
@@ -216,15 +342,16 @@ exporters.
 span, per metric data point and per log record. It needs no collector and no
 network, and a process that prints and sends nothing else starts no export
 thread. The values are a comma list, so `otlp,console` sends and prints at
-once. These are `hello-agent`'s own lines for one `SendMessage`, shortened
-at the right:
+once. These are `hello-agent`'s own lines from one run (one `SendMessage`, then
+SIGTERM, which printed the metrics a last time), shortened at the right:
 
 ```text
-2026-10-26T08:31:46.201Z LOG INFO dispatching JSON-RPC request method="\"SendMessage\""
-2026-10-26T08:31:46.202Z LOG INFO handling send message trace=774ca132226adab1187f3086733dfe50 span=49312828cad270a5 method=SendMessage streaming=false
-2026-10-26T08:31:46.202Z SPAN "invoke_agent hello-agent" internal 1.4ms trace=774ca132226adab1187f3086733dfe50 span=d6d454061aa524b3 parent=49312828cad270a5 events=4 a2a.task.id=48bc629f-…
-2026-10-26T08:31:46.201Z SPAN lf.a2a.v1.A2AService/SendMessage server 2.9ms trace=774ca132226adab1187f3086733dfe50 span=49312828cad270a5 events=7 rpc.system.name=jsonrpc …
-2026-10-26T08:30:32.808Z METRIC rpc.server.call.duration{rpc.system.name=jsonrpc,rpc.method=lf.a2a.v1.A2AService/SendMessage} histogram count=1 sum=0.002844698 s cumulative min=0.002844698 max=0.002844698
+2026-10-26T11:49:38.791Z LOG INFO dispatching JSON-RPC request method="\"SendMessage\""
+2026-10-26T11:49:38.791Z LOG INFO handling send message trace=041b7a3f712ac2bfa0b7597940c4458e span=5aaeaa8e92dbcf3f method=SendMessage streaming=false
+2026-10-26T11:49:38.792Z SPAN "invoke_agent hello-agent" internal 1.1ms trace=041b7a3f712ac2bfa0b7597940c4458e span=aab988af2f4d0357 parent=5aaeaa8e92dbcf3f events=4 target=a2a_protocol_server::rpc a2a.task.id=…
+2026-10-26T11:49:38.791Z SPAN lf.a2a.v1.A2AService/SendMessage server 2.7ms trace=041b7a3f712ac2bfa0b7597940c4458e span=5aaeaa8e92dbcf3f events=7 target=a2a_protocol_server::rpc rpc.system.name=jsonrpc …
+2026-10-26T11:49:39.300Z METRIC a2a.server.requests{method=SendMessage} sum 1 {request} cumulative
+2026-10-26T11:49:39.300Z METRIC rpc.server.call.duration{rpc.system.name=jsonrpc,rpc.method=lf.a2a.v1.A2AService/SendMessage} histogram count=1 sum=0.002532315 s cumulative min=0.002532315 max=0.002532315
 ```
 
 Metrics are printed once per export interval, 60 s unless
@@ -239,12 +366,18 @@ for parsing, and may change; send OTLP to anything that parses.
 ### When something is wrong
 
 `install_subscriber` prints what a person needs when export does not work, on
-standard error. First, once at startup, where each signal goes:
+standard error. First, once at startup, where each signal goes, or, when all
+three are off, that nothing is exported and how to change that (one of these
+two lines, not both):
 
 ```text
 INFO a2a_protocol_server::otel::telemetry: telemetry: traces → otlp http/protobuf http://127.0.0.1:4318/v1/traces, gzip; metrics → off; logs → off
 INFO a2a_protocol_server::otel::telemetry: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
 ```
+
+A program that wants no startup line (a command-line tool, say) builds with
+`TelemetryBuilder::without_startup_summary()`: warnings and errors still print.
+The `a2a` CLI does.
 
 The destination has any `user:password@` removed from its URL, and names
 gzip and the proxy it goes through when there is one. Second, when an export is
@@ -252,12 +385,21 @@ lost after the exporter's retries, a warning naming the signal and where it was
 going, at most once every 30 s with a count of the ones held back:
 
 ```text
-WARN a2a_protocol_server::otel::telemetry::counting: OTLP export of traces to http://127.0.0.1:4399/v1/traces failed after the exporter's retries and the batch was dropped: Operation failed: HTTP export failed: network error
+WARN a2a_protocol_server::otel::telemetry::counting: OTLP export of traces to https://localhost:4318/v1/traces failed after the exporter's retries and the batch was dropped: Operation failed: HTTP export failed: network error (cause: client error (Connect): invalid peer certificate: UnknownIssuer). Hint: the collector's certificate was not issued by a CA this exporter trusts (it trusts Mozilla's roots, not the operating system's): for a private CA, set OTEL_EXPORTER_OTLP_CERTIFICATE=/path/to/ca.pem
 ```
 
-Before 0.16 that case was silent: with `hello-agent` pointed at a port nothing
-listened on, nine seconds produced no output at all, and a process given no
-collector said nothing about how to give it one. What is printed is
+`opentelemetry-otlp` 0.33.1 reports every OTLP/HTTP transport failure as the
+fixed text `HTTP export failed: network error`, so this crate keeps the
+transport's own error and appends it as the `cause`. The `Hint` appears only
+where a fact in the failure names the fix: a certificate from a CA the exporter
+does not trust, one for another host name, or one that has expired; a `401` or
+`403` (the headers); a `404` over OTLP/HTTP (the paths the exporter posts to);
+and a failure with no HTTP status to port 4317 over HTTP or port 4318 over gRPC
+(the other transport's usual port). A bare refused connection gets no hint.
+
+Before 0.15.1 a lost export was silent: with `hello-agent` pointed at a port
+nothing listened on, nine seconds produced no output at all, and a process
+given no collector said nothing about how to give it one. What is printed is
 warnings and errors from everywhere, plus the startup line;
 `RUST_LOG=my_agent=debug,warn` (the `target=level` form, not the full
 `EnvFilter` syntax) changes it, and a value that is not understood is said, not
@@ -271,9 +413,13 @@ subscriber prints them its own way.
 
 ### Proxies, compression and private CAs
 
-**Proxies.** `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in either
-case, are read as curl reads them (`NO_PROXY` is a comma list of hosts, domain
-suffixes, CIDR ranges and `*`). A collector at an `https://` address is
+**Proxies.** `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` are read in
+upper or lower case, and the upper-case one wins when both are set (curl reads
+`http_proxy` in lower case only and prefers lower case, so a process that sets
+both differently behaves differently here and in curl). `NO_PROXY` is a comma
+list of hosts, domain suffixes, CIDR ranges and `*`; `.svc` does not match
+`x.ns.svc.cluster.local` (use `.svc.cluster.local` or `.cluster.local`), and a
+CIDR matches only a destination written as an IP address. A collector at an `https://` address is
 reached through an `HTTP CONNECT` tunnel with TLS inside it, so its certificate
 is still checked against your CAs. A plain `http://` collector over OTLP/HTTP is
 sent as a forward-proxy request, with `Proxy-Authorization` from the login in
@@ -282,24 +428,30 @@ spoken: a `socks5://` or `https://` value is ignored with one warning and the
 export goes direct, rather than the process refusing to start over a variable
 set for every other tool it runs. In code, `with_proxy(url)` names one proxy for
 every destination and, being explicit, does not consult `NO_PROXY`;
-`without_proxy()` ignores the environment. Before 0.16 none of these variables
-was read: with `HTTP_PROXY` set and a collector only the proxy could resolve,
-the proxy received nothing.
+`without_proxy()` ignores the environment. Before 0.15.1 none of these
+variables was read, so a process with `HTTP_PROXY` set exported direct: that
+was right for an in-cluster collector and wrong for one only the proxy could
+resolve. Now the proxy is used unless `NO_PROXY` exempts the destination, which
+is the change to check when upgrading a pod that sets `HTTP_PROXY` for its
+other traffic.
 
 **Compression.** `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and the per-signal
 forms) sends bodies as `Content-Encoding: gzip` over OTLP/HTTP and
-`grpc-encoding: gzip` over OTLP/gRPC. On `hello-agent` one traces export went
-from 6,633 to 1,799 bytes and one metrics export from 2,896 to 1,216.
+`grpc-encoding: gzip` over OTLP/gRPC. On `hello-agent` the first traces export
+went from 6,031 to 1,607 bytes and the first metrics export from 2,484 to 1,080
+(body bytes on the wire, one run each; sizes vary a little with the process).
 `with_compression(OtlpCompression::Gzip)` asks for it in code; code cannot turn
 off what the variable turned on. `zstd` is an error, because it needs a C
-library. Before 0.16 the variable was ignored without a word: the exporter
+library. Before 0.15.1 the variable was ignored without a word: the exporter
 crate warns when it was not built for a compression, and `Telemetry` had no
 subscriber yet when it built the exporters.
 
 **An endpoint needs its scheme over OTLP/HTTP.** `127.0.0.1:4318` is an error
 that says to write `http://127.0.0.1:4318` or `https://…`, where it was
-"invalid format". OTLP/gRPC reads a bare `host:port` as `https://`, or as
-`http://` when `OTEL_EXPORTER_OTLP_INSECURE=true`.
+"invalid format". OTLP/gRPC reads a bare `host:port` in
+`OTEL_EXPORTER_OTLP_ENDPOINT` as `https://`, or as `http://` when
+`OTEL_EXPORTER_OTLP_INSECURE=true`; in code, give `with_otlp_endpoint` a full
+URL.
 
 A private CA and mutual TLS are in the table above
 (`OTEL_EXPORTER_OTLP_CERTIFICATE`, `…_CLIENT_CERTIFICATE`, `…_CLIENT_KEY`).
@@ -317,7 +469,8 @@ it is the same translation: on `hello-agent` one `SendMessage` made
 `a2a_server_requests_total{method="SendMessage",otel_scope_name="a2a.server"} 1`
 and `rpc_server_call_duration_seconds_count{…} 1`. The listener is bound when
 `Telemetry` is built, so a port in use fails there and names the variable. It
-answers `GET` and `HEAD` on `/metrics`, `404` elsewhere. It is plain HTTP and
+answers `GET` and `HEAD` on `/metrics`, `405` with `Allow: GET, HEAD` to any other
+method there, and `404` elsewhere. It is plain HTTP and
 unauthenticated: with `OTEL_EXPORTER_PROMETHEUS_HOST=0.0.0.0` (a scraper on
 another machine needs that or an address) anyone who can reach the port can
 read every metric, so it belongs behind the network policy that already
@@ -332,13 +485,16 @@ and `process.executable.name`, each only if `OTEL_RESOURCE_ATTRIBUTES` does not
 name it (on `hello-agent`, `host.name=from-env` won). `host.name` is `HOSTNAME`
 or `COMPUTERNAME`, else the kernel's hostname file on Linux: this crate forbids
 `unsafe`, which `gethostname(2)` needs, so a macOS process that does not
-export `HOSTNAME` carries none rather than a wrong one. These identify the
-machine and the process to whoever receives the export;
+export `HOSTNAME` carries none rather than a wrong one. In a container these are the
+container's hostname and the container's process ids, and no `k8s.*` attribute is
+detected: see the Kubernetes recipe in the [quick start](#quick-start-pick-your-deployment).
+These identify the machine and the process to whoever receives the export;
 `TelemetryBuilder::without_resource_detection()` leaves them out. Prometheus
 shows them on `target_info`.
 
-Things it gets right that hand-wiring tends not to, each covered by a test in
-`crates/a2a-protocol-server/tests/telemetry_export/`:
+Things it gets right that hand-wiring tends not to, each covered by a test (in
+`crates/a2a-protocol-server/tests/telemetry_export/` or the unit tests beside
+the code), except the one that `deny.toml` enforces:
 
 * **It works from anywhere**: a plain `fn main`, a `current_thread` runtime,
   a test. Export runs on a private runtime of its own, so building the gRPC
@@ -355,8 +511,9 @@ Things it gets right that hand-wiring tends not to, each covered by a test in
   in tonic 0.14 enables no roots; `Telemetry` passes the Mozilla roots and
   any extra CA explicitly.
 * **The exporter's own stack is never exported.** Spans and events from
-  `opentelemetry*`, `hyper`, `h2`, `tonic`, `tower` and `rustls` are filtered
-  out of the layer, so an export cannot produce telemetry that needs
+  `opentelemetry`, `opentelemetry_sdk`, `opentelemetry_otlp`, `opentelemetry_http`,
+  `hyper`, `hyper_util`, `h2`, `tonic`, `tower`, `rustls` and this crate's own
+  `otel::telemetry` module are filtered out of the layer, so an export cannot produce telemetry that needs
   exporting. They still reach your other layers, so a `fmt` layer still shows
   an export error.
 * **A lost export is reported, on either transport.** `opentelemetry-otlp`
@@ -653,7 +810,8 @@ other exporters and backends read.
 [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
 ships three Grafana dashboards, provisioned with Prometheus recording and
 alerting rules for the metrics on this page. Its README says how to point an
-agent at them. Each panel carries a description of what it shows; hover the
+agent at them. Every panel on the server and GenAI dashboards, and two of the
+four on the client dashboard, carries a description of what it shows; hover the
 ⓘ beside its title. The screenshots below are the dashboards as they ship,
 over 15 minutes of traffic from this repository's test harness: three
 tool-loop agents against a local model (one whose model answers, one whose
@@ -688,7 +846,14 @@ calls each run took.
 ## The four signals worth alerting on
 
 The rules in [`deploy/observability/`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
-alert on these, and the [dashboards](#the-dashboards) above chart them.
+alert on these, and the [dashboards](#the-dashboards) above chart them. Two of
+the alerts are narrower than the names below suggest: `A2AServerErrorRatioHigh`
+measures the share of `rpc.server.call.duration` points with `error_type` set
+(the RPC conventions' definition of failure, over five minutes, for ten), not
+`errors / requests`; and `A2AQueueDepthGrowing` fires only when the depth is
+also above 100. `A2AAgentSilent` is `critical` and keyed on the instance, so
+every instance a rollout retires fires it, from ten minutes after its last
+export until an hour has passed.
 
 **`errors` / `requests`.** The obvious one. Split by `method`: a rising error
 rate confined to `SendStreamingMessage` is a different incident from one across
@@ -823,9 +988,10 @@ keeps one name per call on every binding (ADR 0013), as its gRPC rule does.
 through `BindingSpan`: it names itself with a `CustomBinding` — its own
 `rpc.system.name` and the function that turns a `ServerError` into the status
 it sends — and runs each `RequestHandler` call inside
-`BindingSpan::open(..).run(..)`. `a2a-protocol-slimrpc` does this for all
-eleven methods, as `slimrpc`. Its `tests/telemetry.rs` checks the span and
-the metric over a real in-process SLIM fabric.
+`BindingSpan::open(..).run(..)`. `a2a-protocol-slimrpc` does this at
+all eleven methods, as `slimrpc`. Its `tests/telemetry.rs` checks the span and
+the metric over a real in-process SLIM fabric for two of them, `SendMessage`
+and `GetTask`.
 
 Work spawned for the call runs in `INTERNAL` children of that span:
 `a2a.process_events`, `a2a.deliver_push`, `a2a.sse`, and the executor's run.
@@ -944,7 +1110,10 @@ on, every agent in a chain sees the same trace id, so whatever does record
 spans can stitch them together. Because `traceparent` is a wire format rather
 than a Rust type, agents in other languages should join the same trace; that
 has not been run against the Python, JavaScript, Go and Java agents under
-`itk/` (the Integration Test Kit).
+`itk/` (the Integration Test Kit). It was run between this repository's own
+processes, 2026-10-26: the `a2a` CLI's `SendMessage` span and the server's
+spans carried one trace id. The agent-card fetch the CLI makes first sends no
+`traceparent`, so on each side it is a trace of its own.
 
 **Serving.** The server parses an inbound `traceparent`, advances the span,
 and hands it to the executor:

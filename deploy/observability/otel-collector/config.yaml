@@ -12,7 +12,9 @@
 # Telemetry's; for 4317 also set OTEL_EXPORTER_OTLP_PROTOCOL=grpc.
 #
 # Traces and logs go to the `debug` exporter here; replace it with your
-# tracing and log backends (an `otlp` exporter to Tempo, Jaeger, Langfuse ...).
+# tracing and log backends. The Collector's `otlp` exporter speaks gRPC;
+# Langfuse takes OTLP over HTTP only, so forward to it with `otlphttp` and its
+# two headers (book: Deployment > Langfuse).
 
 receivers:
   otlp:

@@ -7,7 +7,9 @@ Prometheus configuration, recording and alerting rules, an OpenTelemetry
 Collector configuration and Grafana dashboards for the metrics a2a-rust
 emits (the catalogue is in `book/src/deployment/observability.md`). Every
 metric and label name below was read from a live Prometheus fed by an agent
-built from this repository, not derived from the code.
+built from this repository, not derived from the code, except the executor's
+(`a2a_server_executor_duration_seconds` and its labels), which was added later
+and follows the book's translation rule.
 
 | Path | What it is |
 |---|---|
@@ -15,7 +17,7 @@ built from this repository, not derived from the code.
 | `prometheus/prometheus-collector.yml` | Prometheus scraping an OpenTelemetry Collector instead (`honor_labels: true`, see the comment) |
 | `otel-collector/config.yaml` | The Collector: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889 |
 | `prometheus/rules/a2a-recording.yml` | Recording rules: call rate, error ratio and latency quantiles per binding and method, unanswered requests, push-delivery outcomes, client-side calls |
-| `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent |
+| `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent (`A2AAgentSilent`, `critical`, also fires for an instance a rollout retired: from ten minutes after its last export until an hour has passed) |
 | `prometheus/tests/a2a-alerts.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
 | `grafana/dashboards/a2a-server.json`, `a2a-client.json`, `a2a-genai.json` | Three dashboards (server, client, and the tool loop's GenAI metrics), folder "A2A", data source uid `a2a-prometheus`; screenshots in `book/src/images/dashboards/` |
 | `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` |
@@ -51,8 +53,12 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
 my-agent
 ```
 
-Set `service.instance.id` per replica. `service.name` becomes the `job`
-label and `service.instance.id` the `instance` label. `Telemetry` sets a
+Set `service.instance.id` per replica. In Kubernetes `$(hostname)` is not a
+shell: a manifest's `$(NAME)` names another variable in the same list, so take
+the pod's name from the downward API and use that (the book's
+[quick start](../../book/src/deployment/observability.md#quick-start-pick-your-deployment)
+has the block). `service.name` becomes the `job` label and
+`service.instance.id` the `instance` label. `Telemetry` sets a
 random `service.instance.id` per process unless `OTEL_RESOURCE_ATTRIBUTES`
 names one; set it yourself, as above, for a stable per-replica label.
 
