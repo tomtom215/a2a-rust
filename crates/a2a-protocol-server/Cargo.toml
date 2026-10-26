@@ -82,6 +82,8 @@ otlp = [
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
     "dep:http", "dep:tonic", "dep:tower-service",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
+    # `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` for export (`telemetry/proxy.rs`).
+    "hyper-util/client-proxy",
 ]
 ## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`,
 ## `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`), for a collector or proxy that
@@ -189,12 +191,15 @@ opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", 
 # (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
 # reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
 # gRPC exporter the same ring provider and Mozilla roots the client uses.
+# `gzip-http` and `gzip-tonic`: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip`. Without them
+# `opentelemetry-otlp` warns and sends uncompressed (`telemetry/compression.rs`).
+# flate2 runs on `miniz_oxide`, pure Rust, and is in the graph already.
 # No tonic TLS feature: OTLP/gRPC to an `https://` collector runs over this
 # crate's own rustls connector (`otel::telemetry::exporters`). With tonic's
 # TLS compiled in, tonic refuses every `https://` channel it was not given a
 # TLS config for, which broke a dependent dialling TLS through a connector of
 # its own (the SLIMRPC binding's SLIM client, 2026-10-23).
-opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs"] }
+opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "gzip-http", "gzip-tonic", "metrics", "trace", "logs"] }
 opentelemetry-http = { version = "0.33", optional = true, default-features = false }
 opentelemetry-appender-tracing = { version = "0.33", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
@@ -251,9 +256,11 @@ opentelemetry-proto = { version = "0.33", default-features = false, features = [
 prost = { workspace = true }
 # `tls-ring` for the stand-in collector's TLS listener; `Telemetry` itself
 # links no tonic TLS (see `opentelemetry-otlp` above).
-tonic = { workspace = true, features = ["tls-ring"] }
+tonic = { workspace = true, features = ["tls-ring", "gzip"] }
 tokio-stream = { workspace = true, features = ["net"] }
 rustls-pki-types = { version = ">=1.9, <2" }
+# The stand-in collector inflates gzip export bodies (`OTEL_EXPORTER_OTLP_COMPRESSION`).
+flate2 = { version = ">=1.1, <2" }
 
 [[bench]]
 name = "handler_bench"

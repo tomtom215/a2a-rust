@@ -152,6 +152,33 @@ fn a_bad_variable_fails_the_build_naming_it() {
 }
 
 #[test]
+fn compression_comes_from_the_environment_and_code_wins() {
+    let t = |b: TelemetryBuilder| b.target(Signal::Traces).unwrap().compression;
+    assert_eq!(t(with_env(&[])), None);
+    assert_eq!(
+        t(with_env(&[("OTEL_EXPORTER_OTLP_COMPRESSION", "gzip")])),
+        Some(OtlpCompression::Gzip)
+    );
+    assert_eq!(
+        t(with_env(&[("OTEL_EXPORTER_OTLP_COMPRESSION", "none")])
+            .with_compression(OtlpCompression::Gzip)),
+        Some(OtlpCompression::Gzip)
+    );
+}
+
+#[test]
+fn a_compression_this_crate_cannot_act_on_fails_the_build_naming_it() {
+    for (var, value) in [
+        ("OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", "zstd"),
+        ("OTEL_EXPORTER_OTLP_COMPRESSION", "brotli"),
+    ] {
+        let err = with_env(&[(var, value)]).build().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(var) && msg.contains(value), "{msg}");
+    }
+}
+
+#[test]
 fn an_unreadable_certificate_file_fails_the_build_naming_the_variable() {
     let err = with_env(&[("OTEL_EXPORTER_OTLP_CERTIFICATE", "/nonexistent/ca.pem")])
         .build()
@@ -322,6 +349,7 @@ fn the_export_client_debugs_as_its_timeout() {
         runtime.handle().clone(),
         &tls,
         std::time::Duration::from_secs(7),
+        Arc::new(hyper_util::client::proxy::matcher::Matcher::builder().build()),
     );
     let shown = format!("{client:?}");
     assert!(shown.starts_with("ExportHttpClient"), "{shown}");

@@ -99,7 +99,7 @@ impl Signal {
     }
 
     /// The signal-specific variable, falling back to the general one.
-    fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
+    pub(super) fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
         let specific = format!("OTEL_EXPORTER_OTLP_{}_{suffix}", self.upper());
         if let Some(v) = env(&specific) {
             return Some((specific, v));

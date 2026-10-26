@@ -16,6 +16,8 @@ pub struct TelemetryBuilder {
     endpoint: Option<String>,
     protocol: Option<OtlpProtocol>,
     headers: Vec<(String, String)>,
+    compression: Option<OtlpCompression>,
+    proxy: ProxySetting,
     ca_pem: Vec<u8>,
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
@@ -26,7 +28,7 @@ pub struct TelemetryBuilder {
 
 impl std::fmt::Debug for TelemetryBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Headers are not printed: they carry credentials.
+        // Headers and the proxy URL are not printed: they carry credentials.
         f.debug_struct("TelemetryBuilder")
             .field("default_service_name", &self.default_service_name)
             .field("traces", &self.traces)
@@ -34,6 +36,7 @@ impl std::fmt::Debug for TelemetryBuilder {
             .field("logs", &self.logs)
             .field("endpoint", &self.endpoint)
             .field("protocol", &self.protocol)
+            .field("compression", &self.compression)
             .field("langfuse", &self.langfuse)
             .field("where_configured", &self.where_configured)
             .finish_non_exhaustive()
@@ -51,6 +54,8 @@ impl TelemetryBuilder {
             endpoint: None,
             protocol: None,
             headers: Vec::new(),
+            compression: None,
+            proxy: ProxySetting::default(),
             ca_pem: Vec::new(),
             client_identity: None,
             langfuse: None,
@@ -151,6 +156,40 @@ impl TelemetryBuilder {
         self
     }
 
+    /// Compresses every export body. `OTEL_EXPORTER_OTLP_COMPRESSION` (and
+    /// the per-signal forms) asks for the same from the environment, and
+    /// this wins over it. Code cannot turn off what the variable turned on:
+    /// unset the variable, or set it to `none`. Without either, bodies are
+    /// sent as they are.
+    #[must_use]
+    pub const fn with_compression(mut self, compression: OtlpCompression) -> Self {
+        self.compression = Some(compression);
+        self
+    }
+
+    /// Sends every export through this HTTP proxy, as `ALL_PROXY` would, and
+    /// wins over `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY`. `NO_PROXY` does
+    /// not apply to it: a proxy chosen in code is explicit, and does not
+    /// change with the machine's environment. Credentials go in the URL
+    /// (`http://user:pass@proxy:3128`). Only `http://` proxies are spoken; an
+    /// `https://` or `socks5://` one is ignored with a warning, and the
+    /// export goes direct.
+    #[must_use]
+    pub fn with_proxy(mut self, url: impl Into<String>) -> Self {
+        self.proxy = ProxySetting::Url(url.into());
+        self
+    }
+
+    /// Sends exports straight to the collector, ignoring `HTTP_PROXY`,
+    /// `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`. Without this, and without
+    /// [`with_proxy`](Self::with_proxy), those variables apply as they do to
+    /// curl.
+    #[must_use]
+    pub fn without_proxy(mut self) -> Self {
+        self.proxy = ProxySetting::Off;
+        self
+    }
+
     /// CA certificates, PEM, to trust alongside the bundled Mozilla roots —
     /// for a collector behind a private CA. `OTEL_EXPORTER_OTLP_CERTIFICATE`
     /// names a file of them and is read too.
@@ -242,12 +281,19 @@ impl TelemetryBuilder {
             None => self.client_identity.clone(),
         };
         let timeout = config::timeout(env, signal)?;
+        let proxy = Arc::new(proxy::matcher(env, &self.proxy));
+        let compression = match self.compression {
+            Some(c) => Some(c),
+            None => compression::from_env(env, signal)?,
+        };
         if let (Signal::Traces, Some(lf)) = (signal, &self.langfuse) {
             return Ok(Target {
                 signal,
                 protocol: OtlpProtocol::HttpProtobuf,
                 endpoint: Some(lf.traces_endpoint()),
                 headers: lf.headers(),
+                compression,
+                proxy,
                 timeout,
                 ca_pem,
                 client_identity,
@@ -267,6 +313,8 @@ impl TelemetryBuilder {
             protocol,
             endpoint,
             headers: self.headers.clone(),
+            compression,
+            proxy,
             timeout,
             ca_pem,
             client_identity,

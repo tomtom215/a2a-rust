@@ -66,7 +66,8 @@ pub(crate) use global::GlobalOtelMetrics;
 pub use pipeline::{init_otlp_pipeline, init_otlp_pipeline_with_endpoint};
 #[cfg(feature = "otlp")]
 pub use telemetry::{
-    LANGFUSE_SELF_HOSTED, Langfuse, OtlpProtocol, Telemetry, TelemetryBuilder, TelemetryError,
+    LANGFUSE_SELF_HOSTED, Langfuse, OtlpCompression, OtlpProtocol, Telemetry, TelemetryBuilder,
+    TelemetryError,
 };
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────

@@ -35,11 +35,13 @@
 //! nothing and the layer records nothing.
 
 mod builder;
+mod compression;
 mod config;
 mod counting;
 mod exporters;
 mod http;
 mod langfuse;
+mod proxy;
 mod runtime;
 
 use std::sync::Arc;
@@ -56,19 +58,21 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::registry::LookupSpan;
 
 pub use builder::TelemetryBuilder;
+pub use compression::OtlpCompression;
 pub use config::OtlpProtocol;
 pub use langfuse::{LANGFUSE_SELF_HOSTED, Langfuse};
 
 use config::{Env, Signal};
 use counting::Counting;
 use exporters::{ClientIdentity, Target};
+use proxy::ProxySetting;
 use runtime::ExportRuntime;
 
 /// The instrumentation scope this crate's spans are recorded under.
 const SCOPE: &str = "a2a-protocol-server";
 
 /// Targets whose spans and events are never exported: the exporter's own
-/// stack. Exporting them would make every export produce telemetry that
+/// stack, and this module's own diagnostics (a lost export, an ignored proxy). Exporting them would make every export produce telemetry that
 /// needs exporting, and an export failure would log a record whose export
 /// fails. They still reach the application's other layers — a `fmt` layer
 /// still shows an export error.
@@ -83,6 +87,7 @@ const SELF_TARGETS: &[&str] = &[
     "tonic",
     "tower",
     "rustls",
+    "a2a_protocol_server::otel::telemetry",
 ];
 
 fn is_self_target(target: &str) -> bool {
