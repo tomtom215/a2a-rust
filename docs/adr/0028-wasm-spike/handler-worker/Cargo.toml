@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
 # The real `RequestHandler` as a Cloudflare Worker. Builds only with
 # `../server-wasm32.patch` applied (see ../README.md).
 #
