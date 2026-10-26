@@ -224,6 +224,13 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   type (`a2a-codegen --check`, ADR 0016) and is `MessageText`. All were found by
   CI (the `manual_async_fn` one on Windows) and reproduced, with rustc 1.99.1 or
   the codegen tool, before they were fixed.
+- **The coverage job frees the workspace's instrumented build output before it
+  builds the SLIMRPC binding** (`coverage.yml`: `rm -rf target/llvm-cov-target`
+  once the report is written). On this release's PR the runner reported 33 MB
+  free after that build and the job's post step failed with `No space left on
+  device`; two earlier attempts died with a `rust-lld` Bus error while linking a
+  SLIMRPC test binary, which is inferred, not shown, to be the same cause. CI
+  only; no library code changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

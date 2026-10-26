@@ -107,6 +107,19 @@ jobs:
       - name: Generate coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info
 
+      # The report is written, and nothing after this step reads the
+      # workspace's instrumented build output (the upload names only the two
+      # `lcov.info` files), but it was still on the runner's disk while the
+      # SLIMRPC binding below built in a target directory of its own. On
+      # 2026-10-26 the runner reported "Free space left: 33 MB" right after
+      # that build, then `No space left on device`, and `rust-lld` died with
+      # SIGBUS while linking a SLIMRPC test binary on two earlier attempts of
+      # the same job (the second cause is inferred, not shown: those logs
+      # carry no disk warning). Removing the directory gives the binding's
+      # build the room back; `Swatinem/rust-cache` then saves less.
+      - name: Free the workspace build output
+        run: rm -rf target/llvm-cov-target
+
       # The SLIMRPC binding is not a workspace member (ci.yml's
       # `slimrpc-binding` job says why), so `--workspace` above never sees it
       # and until 2026-09-10 nothing measured it — docs/v0.9.0-post-release-
