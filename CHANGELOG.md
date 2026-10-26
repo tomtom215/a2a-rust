@@ -220,8 +220,10 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   `shutdown_signal` allows `manual_async_fn` off Unix, where it has no handlers to
   register before returning its future; and its doc comment no longer links to
   `Telemetry`, which exists only with `otlp`, so `cargo doc -p
-  a2a-protocol-server` builds. The first two and the last were found by CI, the
-  third on Windows; each was reproduced with rustc 1.99.1 before it was fixed.
+  a2a-protocol-server` builds. A test helper named `Message` shadowed a generated
+  type (`a2a-codegen --check`, ADR 0016) and is `MessageText`. All were found by
+  CI (the `manual_async_fn` one on Windows) and reproduced, with rustc 1.99.1 or
+  the codegen tool, before they were fixed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

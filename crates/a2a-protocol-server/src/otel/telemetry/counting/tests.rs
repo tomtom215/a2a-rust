@@ -168,15 +168,15 @@ struct Events(Arc<Mutex<Vec<(String, String)>>>);
 
 impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Events {
     fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
-        struct Message(String);
-        impl tracing::field::Visit for Message {
+        struct MessageText(String);
+        impl tracing::field::Visit for MessageText {
             fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
                 if f.name() == "message" {
                     self.0 = format!("{v:?}");
                 }
             }
         }
-        let mut message = Message(String::new());
+        let mut message = MessageText(String::new());
         event.record(&mut message);
         self.0
             .lock()
