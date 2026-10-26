@@ -62,8 +62,8 @@ async fn main() -> std::io::Result<()> {
     // OpenTelemetry from the standard `OTEL_*` environment: with
     // `OTEL_EXPORTER_OTLP_ENDPOINT` set, traces, metrics and logs go there;
     // without it nothing is built. Built before the handler, whose metrics
-    // bind the global meter provider it installs; dropped at exit, which
-    // flushes.
+    // bind the global meter provider it installs; dropped when `main`
+    // returns, which flushes.
     let telemetry = Telemetry::builder()
         .with_default_service_name("hello-agent")
         .with_export_where_configured()
@@ -79,8 +79,16 @@ async fn main() -> std::io::Result<()> {
             .expect("handler config is static, so this cannot fail at runtime"),
     );
 
+    let server = Server::bind("127.0.0.1:3000").await?;
     println!("hello-agent listening on {url}");
-    serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
+    // Returns on SIGTERM (what a container runtime sends) or Ctrl-C, once
+    // in-flight work has ended. `serve(..)` never returns, so a signal would
+    // kill the process before `telemetry` flushed and the last spans and up to
+    // a minute of metrics would be lost.
+    server
+        .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
+        .await;
+    Ok(())
 }
 
 #[cfg(test)]

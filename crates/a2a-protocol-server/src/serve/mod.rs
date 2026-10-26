@@ -55,6 +55,9 @@ use hyper::body::Incoming;
 
 mod connections;
 mod graceful;
+mod signal;
+
+pub use signal::shutdown_signal;
 
 pub use graceful::{
     DEFAULT_COMPLETION_GRACE, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,

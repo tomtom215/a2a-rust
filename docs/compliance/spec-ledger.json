@@ -3741,7 +3741,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/undeclared_binding.rs:48 RequestHandler::warn_if_undeclared",
-    "crates/a2a-protocol-server/src/serve/mod.rs:111 Dispatcher::protocol_binding",
+    "crates/a2a-protocol-server/src/serve/mod.rs:114 Dispatcher::protocol_binding",
     "crates/a2a-protocol-server/src/serve/graceful/mod.rs:269 Server::serve_with_shutdown",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:445 WebSocketDispatcher::accept_loop",
     "crates/a2a-protocol-server/src/dispatch/grpc/dispatcher.rs:306 GrpcDispatcher::build_router",
