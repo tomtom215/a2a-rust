@@ -51,7 +51,7 @@ fn percent_decode(text: &str) -> Option<String> {
         if bytes[i] == b'%' {
             let high = hex(*bytes.get(i + 1)?)?;
             let low = hex(*bytes.get(i + 2)?)?;
-            out.push(high << 4 | low);
+            out.push((high << 4) + low);
             i += 3;
         } else {
             out.push(bytes[i]);

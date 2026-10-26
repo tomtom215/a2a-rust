@@ -231,6 +231,24 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   device`; two earlier attempts died with a `rust-lld` Bus error while linking a
   SLIMRPC test binary, which is inferred, not shown, to be the same cause. CI
   only; no library code changed.
+- **Eight gaps the `mutation-test` label's first `cargo-mutants` run found in
+  this release's own code, closed.** Five were tests too weak to see a change.
+  The resource-detection test asserted 8 of the 16 names in `os_type` and
+  `host_arch`, so the `aix` arm, the `netbsd` arm and six others could be
+  deleted unseen. The `rfc3339` test had no date after 2100-02-28, before which
+  one term of the century correction is zero. The warning that an `https://`
+  proxy is not supported, said once, was not tested to be said once.
+  `Conn::poll_flush` was not tested to wait for TLS bytes the socket had not
+  taken; it is now, against a peer that stops reading. And the `prometheus`
+  arm for traces and logs was asserted by two words the fallback message also
+  contains. Three were mutants no test could tell from the original.
+  `percent_decode` combined hex digits with `high << 4 | low`, where `|` can
+  become `^` unseen; it is `(high << 4) + low`, identical for all 256 digit
+  pairs. `prometheus` exporter selection went through a helper whose whole body
+  was `Ok(true)` with the feature on; it is inline in its match arm.
+  `ProxyConnector::poll_ready` is `Poll::Ready(Ok(()))`, the value its mutant
+  returns, so it carries `#[mutants::skip]` as ADR 0006 asks. No behaviour
+  changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

@@ -68,7 +68,25 @@ pub(super) fn from_env(
             // `logging` is the specification's deprecated name for `console`.
             "console" | "logging" => chosen.console = true,
             "prometheus" if signal == Signal::Metrics => {
-                chosen.prometheus = prometheus_compiled_in(var, &value)?;
+                // The feature split is inside this one arm, not in two arms and
+                // not in a helper that returns a constant: under
+                // `--all-features` a `not(otel-prometheus)` arm is compiled out,
+                // so deleting it builds and passes every test, and a helper
+                // whose whole body is `Ok(true)` has a mutant (`Ok(true)`) that
+                // nothing can tell from it.
+                #[cfg(feature = "otel-prometheus")]
+                {
+                    chosen.prometheus = true;
+                }
+                #[cfg(not(feature = "otel-prometheus"))]
+                {
+                    return Err(TelemetryError::config(
+                        var,
+                        &value,
+                        "Prometheus export is not compiled in: enable the `otel-prometheus` \
+                         feature, or use `otlp`",
+                    ));
+                }
             }
             "prometheus" => {
                 return Err(TelemetryError::config(
@@ -87,33 +105,6 @@ pub(super) fn from_env(
         }
     }
     Ok(chosen)
-}
-
-/// Whether Prometheus export is compiled in.
-///
-/// One function with the feature split inside it rather than two `#[cfg]`
-/// match arms, for the reason `config::http_json` gives: under
-/// `--all-features` the `not(otel-prometheus)` arm is compiled out, so
-/// deleting it builds and passes every test.
-#[cfg_attr(
-    feature = "otel-prometheus",
-    allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)
-)]
-fn prometheus_compiled_in(var: &str, value: &str) -> Result<bool, TelemetryError> {
-    #[cfg(feature = "otel-prometheus")]
-    {
-        let _ = (var, value);
-        Ok(true)
-    }
-    #[cfg(not(feature = "otel-prometheus"))]
-    {
-        Err(TelemetryError::config(
-            var,
-            value,
-            "Prometheus export is not compiled in: enable the `otel-prometheus` feature, \
-             or use `otlp`",
-        ))
-    }
 }
 
 #[cfg(test)]
@@ -219,10 +210,9 @@ mod tests {
                 ("OTEL_LOGS_EXPORTER", "prometheus"),
             ]);
             let msg = from_env(&*e, signal, true).unwrap_err().to_string();
-            assert!(
-                msg.contains("prometheus") && msg.contains("metrics"),
-                "{msg}"
-            );
+            // The arm's own words: the fallback for an unknown exporter also
+            // names `prometheus` and `metrics`, in its list of what is supported.
+            assert!(msg.contains("not an exporter for this signal"), "{msg}");
         }
     }
 

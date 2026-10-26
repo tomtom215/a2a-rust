@@ -136,15 +136,24 @@ mod tests {
             ("linux", "linux"),
             ("macos", "darwin"),
             ("windows", "windows"),
+            ("freebsd", "freebsd"),
+            ("netbsd", "netbsd"),
+            ("openbsd", "openbsd"),
             ("dragonfly", "dragonflybsd"),
+            ("solaris", "solaris"),
+            ("illumos", "solaris"),
+            ("aix", "aix"),
         ] {
             assert_eq!(os_type(os), Some(expected), "{os}");
         }
         for (arch, expected) in [
             ("x86_64", "amd64"),
             ("aarch64", "arm64"),
+            ("x86", "x86"),
             ("arm", "arm32"),
+            ("powerpc", "ppc32"),
             ("powerpc64", "ppc64"),
+            ("s390x", "s390x"),
         ] {
             assert_eq!(host_arch(arch), Some(expected), "{arch}");
         }

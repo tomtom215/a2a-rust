@@ -189,3 +189,151 @@ fn userinfo_in_the_proxy_url_becomes_basic_proxy_authorization() {
         "Basic dXNlcjpwQHNz"
     );
 }
+
+/// What `tracing` recorded at `WARN`.
+#[derive(Clone, Default)]
+struct Warnings(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        struct Message(String);
+        impl tracing::field::Visit for Message {
+            fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
+                if f.name() == "message" {
+                    self.0 = format!("{v:?}");
+                }
+            }
+        }
+        if *event.metadata().level() == tracing::Level::WARN {
+            let mut message = Message(String::new());
+            event.record(&mut message);
+            self.0.lock().expect("lock").push(message.0);
+        }
+    }
+}
+
+/// A proxy of a kind the export cannot use is named when the first connection
+/// is made, and not again: the warning is for the person who configured it,
+/// not one line per batch.
+#[test]
+fn an_unsupported_proxy_is_named_on_the_first_connection_and_only_then() {
+    use tower_service::Service as _;
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    let warnings = Warnings::default();
+    let _guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(warnings.clone()));
+    let tls = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("protocol versions")
+    .with_root_certificates(rustls::RootCertStore::empty())
+    .with_no_client_auth();
+    let rules = std::sync::Arc::new(matcher(
+        &*env(&[("ALL_PROXY", "https://p:443")]),
+        &ProxySetting::Environment,
+    ));
+    let mut connector = ProxyConnector::new(&tls, rules);
+
+    // The warning is said by `call` itself; the future is never polled, so
+    // nothing connects.
+    drop(connector.call(uri("http://c:4318")));
+    let said = warnings.0.lock().expect("lock").clone();
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].contains("http://c:4318") && said[0].contains("`https://`"),
+        "{said:?}"
+    );
+
+    drop(connector.call(uri("http://c:4318")));
+    let said = warnings.0.lock().expect("lock").clone();
+    assert_eq!(said.len(), 1, "said again: {said:?}");
+}
+
+/// A server config presenting a `localhost` certificate from a throwaway CA,
+/// and a client config that trusts that CA.
+fn tls_pair() -> (rustls::ServerConfig, rustls::ClientConfig) {
+    let mut ca_params = rcgen::CertificateParams::new(vec![]).expect("ca params");
+    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let ca_key = rcgen::KeyPair::generate().expect("ca key");
+    let ca_cert = ca_params.self_signed(&ca_key).expect("ca cert");
+    let issuer = rcgen::Issuer::new(ca_params, ca_key);
+    let server_key = rcgen::KeyPair::generate().expect("server key");
+    let server_cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+        .expect("server params")
+        .signed_by(&server_key, &issuer)
+        .expect("server cert");
+
+    let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+    let server = rustls::ServerConfig::builder_with_provider(std::sync::Arc::clone(&provider))
+        .with_safe_default_protocol_versions()
+        .expect("protocol versions")
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![server_cert.der().clone()],
+            rustls_pki_types::PrivateKeyDer::try_from(server_key.serialize_der()).expect("key"),
+        )
+        .expect("server config");
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(ca_cert.der().clone()).expect("root");
+    let client = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("protocol versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    (server, client)
+}
+
+/// `poll_flush` must not say "done" while bytes the socket has not taken are
+/// still inside the TLS layer. The peer completes the handshake and then never
+/// reads, so the socket fills, `poll_write` reports `Pending`, and some
+/// ciphertext is still unsent; a flush that answers `Ready` at once would let
+/// a caller go on believing a request had left the process.
+#[tokio::test]
+async fn flush_waits_for_the_tls_bytes_the_socket_has_not_taken() {
+    use hyper::rt::Write as _;
+    use std::task::{Context, Poll, Waker};
+    use tower_service::Service as _;
+
+    let (server_tls, client_tls) = tls_pair();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("address").port();
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(server_tls));
+    let server = tokio::spawn(async move {
+        let (tcp, _) = listener.accept().await.expect("accept");
+        let _held = acceptor.accept(tcp).await.expect("handshake");
+        std::future::pending::<()>().await;
+    });
+
+    let rules = std::sync::Arc::new(matcher(&*env(&[]), &ProxySetting::Environment));
+    let mut connector = ProxyConnector::new(&client_tls, rules);
+    let conn = connector
+        .call(uri(&format!("https://localhost:{port}")))
+        .await
+        .expect("connect");
+    let mut conn = std::pin::pin!(conn);
+    let mut cx = Context::from_waker(Waker::noop());
+
+    let chunk = vec![0_u8; 64 * 1024];
+    let mut full = false;
+    for _ in 0..4_096 {
+        match conn.as_mut().poll_write(&mut cx, &chunk) {
+            Poll::Ready(written) => {
+                written.expect("write");
+            }
+            Poll::Pending => {
+                full = true;
+                break;
+            }
+        }
+    }
+    assert!(full, "the socket never filled");
+    assert!(
+        conn.as_mut().poll_flush(&mut cx).is_pending(),
+        "flush said done with TLS bytes still unsent"
+    );
+    server.abort();
+}
