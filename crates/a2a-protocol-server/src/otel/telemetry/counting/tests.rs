@@ -263,6 +263,38 @@ fn reports_are_rate_limited_and_count_what_they_held_back() {
     assert_eq!(notice.permit(t0 + s(61)), Some(1));
 }
 
+/// A report that follows held-back ones says how many; the first one, and any
+/// other with none held back, does not.
+#[test]
+fn the_report_counts_what_was_held_back_only_when_some_was() {
+    let events = Events::default();
+    let _guard = recording(&events);
+    let notice = |held_back: u64| Notice {
+        signal: Signal::Metrics,
+        destination: "http://c:4318".to_owned(),
+        via: None,
+        route: route(OtlpProtocol::HttpProtobuf, "http://c:4318"),
+        cause: Arc::default(),
+        last: Mutex::new(None),
+        held_back: AtomicU64::new(held_back),
+    };
+    let error = OTelSdkError::InternalFailure("export".to_owned());
+    notice(0).lost(&error);
+    notice(3).lost(&error);
+    let seen = events.0.lock().unwrap().clone();
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert!(
+        !seen[0].1.contains("more since the last report"),
+        "{}",
+        seen[0].1
+    );
+    assert!(
+        seen[1].1.contains("(3 more since the last report)"),
+        "{}",
+        seen[1].1
+    );
+}
+
 fn route(protocol: OtlpProtocol, url: &str) -> Route {
     Route::of(protocol, url)
 }

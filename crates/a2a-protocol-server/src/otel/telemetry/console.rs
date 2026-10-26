@@ -96,14 +96,26 @@ impl PushMetricExporter for Console {
         std::future::ready(Ok(()))
     }
 
+    // Equivalent mutant (this and `shutdown_with_timeout`): cargo-mutants
+    // replaces the body with `Ok(Default::default())`, `OTelSdkResult` is
+    // `Result<(), OTelSdkError>`, and `Default::default()` for `()` is the `()`
+    // written here. No test can distinguish the two (ADR 0006).
+    #[mutants::skip]
     fn force_flush(&self) -> OTelSdkResult {
         Ok(())
     }
 
+    #[mutants::skip]
     fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
         Ok(())
     }
 
+    // Equivalent mutant: cargo-mutants replaces the body with
+    // `Default::default()`, and `Temporality`'s default is `Cumulative` (the
+    // `#[default]` variant, opentelemetry_sdk 0.33), the value written here.
+    // `the_console_exporter_reports_cumulative_temporality` asserts that
+    // default, so a release that changes it fails there (ADR 0006).
+    #[mutants::skip]
     fn temporality(&self) -> Temporality {
         Temporality::Cumulative
     }

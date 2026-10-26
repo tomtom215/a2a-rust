@@ -197,6 +197,12 @@ mod tests {
     fn a_slot_hands_over_what_was_recorded_once() {
         let slot = Cause::default();
         assert_eq!(slot.take(), None);
+        // An error is recorded as its whole chain, and read before anything
+        // else is written.
+        slot.record(&Layered("first", Some(Box::new(Layered("because", None)))));
+        assert_eq!(slot.take().as_deref(), Some("first: because"));
+        assert_eq!(slot.take(), None);
+        // The latest write wins, whichever way it was made.
         slot.record(&Layered("first", None));
         slot.record_text("second".to_owned());
         assert_eq!(slot.take().as_deref(), Some("second"));

@@ -251,6 +251,17 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   `ProxyConnector::poll_ready` is `Poll::Ready(Ok(()))`, the value its mutant
   returns, so it carries `#[mutants::skip]` as ADR 0006 asks. No behaviour
   changed.
+- **Six more survivors from the second `cargo-mutants` run, closed.** Four were
+  tests too weak to see a change: nothing asserted the "(N more since the last
+  report)" suffix of a lost-export warning, present or absent; `Target::proxied`
+  had no direct test; nothing tested the unit boundaries of `human` at exactly
+  1 µs, 1 ms and 1 s; and the test of the cause slot overwrote what
+  `Cause::record` wrote before reading it. Two were mutants no test could tell
+  from the original, in the console metric exporter: `shutdown_with_timeout`
+  returns `Ok(())`, and `temporality` returns `Temporality::Cumulative`, which
+  is the SDK's own default (a test asserts that). Both carry
+  `#[mutants::skip]`, and so does `force_flush`, the same shape as the first.
+  No behaviour changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

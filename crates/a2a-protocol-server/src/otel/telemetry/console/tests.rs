@@ -67,6 +67,25 @@ fn durations_use_the_unit_that_keeps_the_number_short() {
     assert_eq!(human(Duration::from_millis(1_250)), "1.25s");
 }
 
+/// The console exporter keeps running totals, and the SDK's own default is
+/// the same, which is what lets `Console::temporality` carry
+/// `#[mutants::skip]`: `Default::default()` could not be told from it.
+#[test]
+fn the_console_exporter_reports_cumulative_temporality() {
+    use opentelemetry_sdk::metrics::exporter::PushMetricExporter as _;
+    assert_eq!(Console::stdout().temporality(), Temporality::Cumulative);
+    assert_eq!(Temporality::default(), Temporality::Cumulative);
+}
+
+/// A duration exactly on a boundary is shown in the larger unit.
+#[test]
+fn a_duration_on_a_unit_boundary_is_shown_in_the_larger_unit() {
+    assert_eq!(human(Duration::from_nanos(999)), "999ns");
+    assert_eq!(human(Duration::from_micros(1)), "1µs");
+    assert_eq!(human(Duration::from_millis(1)), "1.0ms");
+    assert_eq!(human(Duration::from_secs(1)), "1.00s");
+}
+
 #[test]
 fn a_span_is_one_line_with_ids_status_and_attributes() {
     let (console, buf) = buffer();
