@@ -19,6 +19,27 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+- **OTLP and WebAssembly (branch `claude/kind-curie-jskrn8`, 2026-10-26).**
+  The maintainer's review of OTLP was tested claim by claim
+  (`docs/adr/0013-observability.md`, 2026-10-26 section): "does not work out
+  of the box" did not hold; eight setups did not work and said nothing. Built
+  and pushed in four commits: gzip, HTTP proxies, the `console` exporter,
+  `otel-prometheus`, a stderr layer with a startup summary and rate-limited
+  export-failure lines, resource detection, `OTEL_PROPAGATORS`. The two
+  behaviour changes (`install_subscriber` now always installs a subscriber
+  unless `OTEL_SDK_DISABLED`; a benign `warn` became `debug`) are in
+  `CHANGELOG.md` under *Behaviour Changes*. **Not done:** `cargo deny` was not
+  run locally; `host.name` is absent on a macOS process that does not export
+  `HOSTNAME`; clippy `-D warnings` has findings in files this branch did not
+  touch (this toolchain, 1.97); the CHANGELOG's "0.16" assumes that is the next
+  release. The commits are authored as the container's identity with no
+  `Signed-off-by`: re-author and sign off before opening the pull request
+  (`scripts/check_dco.sh`).
+  Also **ADR 0028 (Proposed)** and `docs/adr/0028-wasm-spike/`: the real
+  `RequestHandler` was run inside `workerd` (11 of 11 checks, native lib suite
+  unchanged at 1,545). Nothing from it is in the crates. The next session
+  should start by running `docs/adr/0028-wasm-spike/reproduce.sh`; if the base
+  commit has moved, the patch needs a rebase and `results.txt` regenerating.
 - **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
   the newest release; 0.14.1 (2026-09-30) is the one before. It is the first
   signed tag: SSH-signed by the key in `.github/release-signers/`, and
@@ -366,6 +387,16 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Waiting on the maintainer
 
+- **ADR 0028: whether Tokio stays mandatory on `wasm32-unknown-unknown`.**
+  Proposed, not accepted. It asks you to qualify ADR 0003 (Tokio is mandatory
+  on native targets; on wasm32 the crates assume no Tokio runtime) so that a
+  runtime seam can be landed as phase 1, behaviour-neutral on native and
+  proven so by the lib suite, with a wasm32 `cargo check` and a lint on the
+  trap APIs in CI. Phases 2 to 4 (a dispatch entry point that does not take
+  `hyper::Request<Incoming>`, the client over `fetch`, Durable Object or D1
+  stores) are unbuilt. Not measured: anything on Cloudflare's network, the
+  1-second startup limit, durable state, a fan-out Worker. If you decline, the
+  Worker-in-front-of-a-native-agent deployment needs no change here.
 - **File GHSA-hr9h-6jvf-wvg6 with RustSec** (found 2026-10-21 by the CRA
   review). The project's own advisory (fixed in 0.14.1) is on GitHub only:
   the RustSec database and OSV have no entry (OSV queried 2026-10-21), so

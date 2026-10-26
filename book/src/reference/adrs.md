@@ -142,9 +142,10 @@ on the changed lines, and the required check fails until the label is present.
 | 0025 | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store (and, since ADR 0027, a content signer), and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged (Accepted) |
 | 0026 | Tool calls carry idempotency keys, HMAC-SHA256 under the loop's secret of the task and message, the tool and its canonical arguments; a repeated call to a tool not declared read-only is answered from the first; `Delegation` keys its sends to agents that honour keys (Accepted) |
 | 0027 | Content is signed when served and verified when received: `with_content_signer` signs every artifact, status message and direct reply a server sends (not a task's history), over exactly what is sent; `with_content_keys` on the server and the client refuses altered content and marks unsigned content unverified; the production profile requires a signer (Accepted) |
+| 0028 | WebAssembly and Cloudflare Workers: the real `RequestHandler` was run inside `workerd` behind a runtime seam (`crate::rt`) and a `Send` timer; the server builds for `wasm32-unknown-unknown` with that patch, the client does not; proposes pursuing the seam in four phases and qualifying ADR 0003 for wasm32; nothing landed (Proposed) |
 
 Only ADRs 0001–0008 have a section above; the table is the summary for all
-twenty-seven.
+twenty-eight.
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

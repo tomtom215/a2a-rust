@@ -110,6 +110,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **ADR 0028 (Proposed), and the experiment behind it in
+  `docs/adr/0028-wasm-spike/`: the server on Cloudflare Workers.** The real
+  `RequestHandler` was run inside `workerd` (`wrangler dev --local`) behind a
+  runtime seam; 11 of 11 checks pass, the native lib suite is unchanged (1,545
+  passed, identical per-test results), and `reproduce.sh` regenerates every
+  figure from a clean worktree. **No crate changed**: the server and client do
+  not build for `wasm32-unknown-unknown` at this commit, and the types crate
+  builds but panics on its first timestamp. The ADR asks the maintainer to
+  qualify ADR 0003 before any of it lands.
 - **`scripts/check_book_examples.py` fails the build when an example has no
   book page** (`ci.yml`, `static-checks`). Every directory under `examples/`
   with a `Cargo.toml` needs `book/src/examples/<name>.md`, a `SUMMARY.md` entry
