@@ -350,6 +350,7 @@ fn the_export_client_debugs_as_its_timeout() {
         &tls,
         std::time::Duration::from_secs(7),
         Arc::new(hyper_util::client::proxy::matcher::Matcher::builder().build()),
+        Arc::default(),
     );
     let shown = format!("{client:?}");
     assert!(shown.starts_with("ExportHttpClient"), "{shown}");

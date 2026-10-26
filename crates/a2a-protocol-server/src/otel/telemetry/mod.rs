@@ -42,12 +42,14 @@ mod counting;
 mod detect;
 mod diagnostics;
 mod exporters;
+mod hints;
 mod http;
 mod langfuse;
 #[cfg(feature = "otel-prometheus")]
 mod prometheus;
 mod propagators;
 mod proxy;
+mod resource_env;
 mod runtime;
 mod selection;
 
@@ -124,6 +126,8 @@ pub struct Telemetry {
     failures: Vec<(Signal, Arc<AtomicU64>)>,
     /// `OTEL_SDK_DISABLED` was set: nothing is built, nothing installed.
     disabled: bool,
+    /// Whether `install_subscriber` logs [`describe`](Self::describe).
+    startup_summary: bool,
     /// Log records go to standard output (`OTEL_LOGS_EXPORTER=console`), so
     /// `install_subscriber` need not print them again on standard error.
     logs_on_console: bool,
@@ -220,7 +224,9 @@ impl Telemetry {
             .try_init()
             .is_ok();
         if installed {
-            tracing::info!("{}", self.describe());
+            if self.startup_summary {
+                tracing::info!("{}", self.describe());
+            }
             for notice in not_understood.iter().chain(&self.notices) {
                 tracing::warn!("{notice}");
             }
@@ -262,10 +268,16 @@ impl Telemetry {
     /// `exporter`, counting its lost exports into a new counter for
     /// `signal` that [`report_failures`](Self::report_failures) reads, and
     /// saying so, now and then, while they keep being lost.
-    fn counting<E>(&mut self, signal: Signal, exporter: E, destination: &str) -> Counting<E> {
+    fn counting<E>(&mut self, signal: Signal, exporter: E, target: &Target) -> Counting<E> {
         let counter = Arc::new(AtomicU64::new(0));
         self.failures.push((signal, Arc::clone(&counter)));
-        Counting::new(exporter, counter).reporting(signal, destination)
+        Counting::new(exporter, counter).reporting(
+            signal,
+            &target.destination,
+            hints::Route::of(target.protocol, &target.destination),
+            target.proxy_display(),
+            Arc::clone(&target.cause),
+        )
     }
 
     /// The address `/metrics` is served on under
@@ -472,6 +484,8 @@ impl std::error::Error for TelemetryError {
     }
 }
 
+#[cfg(test)]
+mod notice_tests;
 #[cfg(test)]
 mod report_tests;
 #[cfg(test)]

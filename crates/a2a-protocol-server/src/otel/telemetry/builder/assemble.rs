@@ -66,6 +66,7 @@ impl TelemetryBuilder {
             runtime: None,
             failures: Vec::new(),
             disabled: config::sdk_disabled(&*self.env),
+            startup_summary: self.startup_summary,
             logs_on_console: chosen[2].console,
             report: Vec::new(),
             notices: Vec::new(),
@@ -80,7 +81,8 @@ impl TelemetryBuilder {
         } else {
             None
         };
-        let resource = self.resource();
+        let (resource, resource_notices) = self.resource_and_notices();
+        telemetry.notices.extend(resource_notices);
         let [traces, metrics, logs] = chosen;
         telemetry.tracer =
             self.tracer_provider(&mut telemetry, traces, runtime.as_ref(), &resource)?;
@@ -89,6 +91,11 @@ impl TelemetryBuilder {
         telemetry.logger =
             self.logger_provider(&mut telemetry, logs, runtime.as_ref(), &resource)?;
         telemetry.runtime = runtime;
+        telemetry.notices.extend(self.base_endpoint_notice([
+            chosen[0].otlp,
+            chosen[1].otlp,
+            chosen[2].otlp,
+        ]));
         let propagators = Propagators::from_env(&*self.env);
         telemetry.notices.extend(propagators.notice());
         if self.install_globally {
@@ -117,11 +124,8 @@ impl TelemetryBuilder {
         {
             let target = self.target(Signal::Traces)?;
             let exporter = exporters::spans(&target, runtime)?;
-            builder = builder.with_batch_exporter(telemetry.counting(
-                Signal::Traces,
-                exporter,
-                &target.destination,
-            ));
+            builder =
+                builder.with_batch_exporter(telemetry.counting(Signal::Traces, exporter, &target));
             parts.push(otlp_part(&target));
         }
         if chosen.console {
@@ -147,12 +151,8 @@ impl TelemetryBuilder {
             let target = self.target(Signal::Metrics)?;
             let exporter = exporters::metrics(&target, runtime)?;
             builder = builder.with_reader(
-                PeriodicReader::builder(telemetry.counting(
-                    Signal::Metrics,
-                    exporter,
-                    &target.destination,
-                ))
-                .build(),
+                PeriodicReader::builder(telemetry.counting(Signal::Metrics, exporter, &target))
+                    .build(),
             );
             parts.push(otlp_part(&target));
         }
@@ -190,11 +190,8 @@ impl TelemetryBuilder {
         {
             let target = self.target(Signal::Logs)?;
             let exporter = exporters::logs(&target, runtime)?;
-            builder = builder.with_batch_exporter(telemetry.counting(
-                Signal::Logs,
-                exporter,
-                &target.destination,
-            ));
+            builder =
+                builder.with_batch_exporter(telemetry.counting(Signal::Logs, exporter, &target));
             parts.push(otlp_part(&target));
         }
         if chosen.console {

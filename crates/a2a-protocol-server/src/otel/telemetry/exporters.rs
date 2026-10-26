@@ -13,6 +13,7 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use super::TelemetryError;
 use super::compression::OtlpCompression;
 use super::config::{Env, OtlpProtocol, Signal};
+use super::hints::Cause;
 use super::http::ExportHttpClient;
 use super::proxy;
 use super::runtime::ExportRuntime;
@@ -38,6 +39,9 @@ pub(super) struct Target {
     /// login in the URL removed. For the startup line and for the message
     /// when an export is lost.
     pub(super) destination: String,
+    /// What the HTTP client last failed with, kept for the loss report
+    /// (`hints.rs`): the exporter crate discards it.
+    pub(super) cause: Arc<Cause>,
     pub(super) timeout: Duration,
     /// Extra CA certificates, PEM, trusted alongside the Mozilla roots.
     pub(super) ca_pem: Vec<u8>,
@@ -352,6 +356,7 @@ macro_rules! http_exporter {
             &target.rustls_config()?,
             target.timeout,
             Arc::clone(&target.proxy),
+            Arc::clone(&target.cause),
         );
         let mut builder = <$exporter>::builder()
             .with_http()

@@ -13,6 +13,8 @@ use opentelemetry::metrics::MeterProvider as _;
 use super::collector::unreachable;
 
 const CHILD: &str = "A2A_CONSOLE_TEST_CHILD";
+/// Set on the child to build without the startup line, as a command-line tool does.
+const QUIET: &str = "A2A_CONSOLE_TEST_QUIET";
 
 /// Runs only as the child: starts `Telemetry` from the environment alone,
 /// installs its subscriber, and records one span, one metric and some events.
@@ -21,10 +23,11 @@ fn record_as_the_child_process() {
     if std::env::var_os(CHILD).is_none() {
         return;
     }
-    let telemetry = Telemetry::builder()
-        .with_default_service_name("telemetry-test")
-        .build()
-        .expect("build from the environment");
+    let mut builder = Telemetry::builder().with_default_service_name("telemetry-test");
+    if std::env::var_os(QUIET).is_some() {
+        builder = builder.without_startup_summary();
+    }
+    let telemetry = builder.build().expect("build from the environment");
     assert!(telemetry.install_subscriber(), "a fresh process has none");
     {
         let span = tracing::info_span!("unit-of-work", answer = 42);
@@ -58,6 +61,7 @@ fn run_child(vars: &[(&str, &str)]) -> Ran {
             "--nocapture",
         ])
         .env(CHILD, "1")
+        .env_remove(QUIET)
         .env_remove("RUST_LOG");
     for (name, _) in std::env::vars().filter(|(k, _)| k.starts_with("OTEL_")) {
         child.env_remove(name);
@@ -124,6 +128,53 @@ fn install_subscriber_says_where_telemetry_goes_and_shows_warnings_only() {
         "{err}"
     );
     assert!(!err.contains("an informational event"), "{err}");
+}
+
+/// A command-line tool asks for no startup line: with nothing configured, or
+/// with a signal configured, its standard error carries only what is wrong. The
+/// line is what a server's operator wants and, once per run, noise to a tool
+/// whose output is parsed. `describe()` and the warnings are unaffected.
+#[test]
+fn without_a_startup_summary_only_warnings_reach_standard_error() {
+    let nothing = [
+        ("OTEL_TRACES_EXPORTER", "none"),
+        ("OTEL_METRICS_EXPORTER", "none"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+        (QUIET, "1"),
+    ];
+    let startup_line =
+        |err: &str| err.contains("telemetry: traces") || err.contains("telemetry: nothing");
+    let ran = run_child(&nothing);
+    assert!(!startup_line(&ran.stderr), "{}", ran.stderr);
+    assert!(
+        ran.stderr.contains("a warning to be seen"),
+        "{}",
+        ran.stderr
+    );
+    // The positive control for that case: without the switch it is said.
+    let ran = run_child(&nothing[..3]);
+    assert!(
+        ran.stderr.contains("telemetry: nothing is exported"),
+        "{}",
+        ran.stderr
+    );
+
+    let mut configured = SPANS_ONLY.to_vec();
+    configured.push((QUIET, "1"));
+    let ran = run_child(&configured);
+    assert!(!startup_line(&ran.stderr), "{}", ran.stderr);
+    assert!(
+        ran.stderr.contains("a warning to be seen"),
+        "{}",
+        ran.stderr
+    );
+    // And the same configuration without the switch says it.
+    let ran = run_child(&SPANS_ONLY);
+    assert!(
+        ran.stderr.contains("telemetry: traces → console"),
+        "{}",
+        ran.stderr
+    );
 }
 
 /// With the console log exporter on, every event is already printed in full

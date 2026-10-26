@@ -97,12 +97,16 @@ async fn main() -> ExitCode {
 /// `examples/langfuse-agent`: with an OTLP endpoint configured for a signal
 /// (`OTEL_EXPORTER_OTLP_ENDPOINT`, or that signal's own
 /// `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT`), the signal goes there; without one
-/// nothing is built or installed — no exporter, no export thread, no
-/// subscriber. Keep it for the life of the process: dropping it flushes.
+/// no exporter and no export thread are built. The subscriber it installs
+/// prints warnings and errors on standard error (a lost export, a setting that
+/// was not honoured) and, because this is a command whose every run would
+/// otherwise carry one more line there, not the startup line a server logs.
+/// Keep it for the life of the process: dropping it flushes.
 fn telemetry() -> a2a_protocol_server::otel::Telemetry {
     let telemetry = a2a_protocol_server::otel::Telemetry::builder()
         .with_default_service_name(env!("CARGO_BIN_NAME"))
         .with_export_where_configured()
+        .without_startup_summary()
         .build()
         .expect("the OTEL_* environment names a configuration Telemetry cannot use");
     telemetry.install_subscriber();

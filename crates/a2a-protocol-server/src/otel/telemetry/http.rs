@@ -24,6 +24,7 @@ use hyper_util::rt::TokioExecutor;
 use opentelemetry_http::{HttpClient, HttpError};
 use tokio::runtime::Handle;
 
+use super::hints::Cause;
 use super::proxy::{self, ProxyConnector};
 
 /// The most of a collector's response body read. An OTLP response is a
@@ -39,6 +40,8 @@ pub(super) struct ExportHttpClient {
     client: Client<ProxyConnector, Full<Bytes>>,
     timeout: Duration,
     rules: Arc<Matcher>,
+    /// Where a failed request's cause is kept for the loss report.
+    cause: Arc<Cause>,
 }
 
 impl std::fmt::Debug for ExportHttpClient {
@@ -52,12 +55,13 @@ impl std::fmt::Debug for ExportHttpClient {
 impl ExportHttpClient {
     /// A client verifying servers against `tls`, sending each request
     /// through the proxy `rules` name for it, and giving up on a request after
-    /// `timeout`.
+    /// `timeout`. A failed request's cause chain is recorded in `cause`.
     pub(super) fn new(
         handle: Handle,
         tls: &rustls::ClientConfig,
         timeout: Duration,
         rules: Arc<Matcher>,
+        cause: Arc<Cause>,
     ) -> Self {
         let connector = ProxyConnector::new(tls, Arc::clone(&rules));
         let client = Client::builder(TokioExecutor::new()).build(connector);
@@ -66,6 +70,7 @@ impl ExportHttpClient {
             client,
             timeout,
             rules,
+            cause,
         }
     }
 }
@@ -108,7 +113,13 @@ impl HttpClient for ExportHttpClient {
         // stops it only after the providers' final flush, so this is the
         // flush of a provider someone kept alive past the guard.
         match self.handle.spawn(exchange).await {
-            Ok(result) => result,
+            Ok(Err(e)) => {
+                // The exporter crate replaces this with "network error"; the
+                // loss report is where a person reads it.
+                self.cause.record(&*e);
+                Err(e)
+            }
+            Ok(ok) => ok,
             Err(e) => Err(e.into()),
         }
     }

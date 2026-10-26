@@ -10,6 +10,7 @@ use super::*;
 mod assemble;
 
 /// Configures and builds a [`Telemetry`]; see [`Telemetry::builder`].
+#[allow(clippy::struct_excessive_bools)] // independent switches, each set by its own method
 pub struct TelemetryBuilder {
     default_service_name: Option<String>,
     traces: Option<bool>,
@@ -22,6 +23,7 @@ pub struct TelemetryBuilder {
     compression: Option<OtlpCompression>,
     proxy: ProxySetting,
     detect_resource: bool,
+    startup_summary: bool,
     ca_pem: Vec<u8>,
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
@@ -61,6 +63,7 @@ impl TelemetryBuilder {
             compression: None,
             proxy: ProxySetting::default(),
             detect_resource: true,
+            startup_summary: true,
             ca_pem: Vec::new(),
             client_identity: None,
             langfuse: None,
@@ -207,6 +210,19 @@ impl TelemetryBuilder {
         self
     }
 
+    /// Leaves the startup line (`describe()`) out of what
+    /// [`Telemetry::install_subscriber`] logs. By default it logs where each
+    /// signal goes, or that nothing is exported and how to change that, once
+    /// at INFO: what a server's operator wants and a one-shot command-line tool
+    /// does not, where it would be a line on standard error of every run.
+    /// Warnings and errors (a lost export, a setting that was not honoured)
+    /// are still printed, and `describe()` still returns the line.
+    #[must_use]
+    pub const fn without_startup_summary(mut self) -> Self {
+        self.startup_summary = false;
+        self
+    }
+
     /// CA certificates, PEM, to trust alongside the bundled Mozilla roots —
     /// for a collector behind a private CA. `OTEL_EXPORTER_OTLP_CERTIFICATE`
     /// names a file of them and is read too.
@@ -304,19 +320,71 @@ impl TelemetryBuilder {
         }
     }
 
+    /// A warning when the base endpoint over OTLP/HTTP already ends in one of
+    /// the paths the exporter appends to it.
+    ///
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT` is a base: the specification has the
+    /// exporter add `/v1/traces`, `/v1/metrics` or `/v1/logs`, so a value
+    /// copied from a signal's full URL (`http://c:4318/v1/traces`) posts to
+    /// `/v1/traces/v1/traces`, which a collector answers with a 404. The
+    /// signal's own `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the full URL, and
+    /// is not checked. `otlp` says which signals go over OTLP.
+    pub(super) fn base_endpoint_notice(&self, otlp: [bool; 3]) -> Option<String> {
+        const SIGNALS: [Signal; 3] = [Signal::Traces, Signal::Metrics, Signal::Logs];
+        const PATHS: [&str; 3] = ["/v1/traces", "/v1/metrics", "/v1/logs"];
+        for (signal, over_otlp) in SIGNALS.into_iter().zip(otlp) {
+            let Ok(protocol) = config::protocol(&*self.env, signal, self.protocol) else {
+                continue;
+            };
+            if !over_otlp || !protocol.is_http() {
+                continue;
+            }
+            let (origin, base) = match self.endpoint.as_deref() {
+                Some(base) => ("the endpoint given in code".to_owned(), base.to_owned()),
+                None => match signal.otlp_var(&*self.env, "ENDPOINT") {
+                    Some((var, value)) if var == "OTEL_EXPORTER_OTLP_ENDPOINT" => (var, value),
+                    _ => continue,
+                },
+            };
+            let trimmed = base.trim_end_matches('/');
+            let Some(suffix) = PATHS.iter().find(|p| trimmed.ends_with(**p)) else {
+                continue;
+            };
+            let root = &trimmed[..trimmed.len() - suffix.len()];
+            return Some(format!(
+                "{origin} is {base}, which already ends in {suffix}: over OTLP/HTTP the exporter \
+                 appends /v1/traces, /v1/metrics or /v1/logs to it, so {} would go to {}. Give the \
+                 base URL ({root}), or a complete URL in OTEL_EXPORTER_OTLP_{}_ENDPOINT.",
+                signal.name(),
+                Target::endpoint_from_base(&base, signal, protocol),
+                signal.name().to_uppercase(),
+            ));
+        }
+        None
+    }
+
+    /// The client certificate and key the environment names for `signal`,
+    /// else the ones given to the builder.
+    fn client_identity_for(
+        &self,
+        signal: Signal,
+    ) -> Result<Option<ClientIdentity>, TelemetryError> {
+        Ok(match config::client_identity_files(&*self.env, signal)? {
+            Some([(cert_var, cert_path), (key_var, key_path)]) => Some(ClientIdentity {
+                cert_pem: read_file(&cert_var, &cert_path)?,
+                key_pem: read_file(&key_var, &key_path)?,
+            }),
+            None => self.client_identity.clone(),
+        })
+    }
+
     pub(super) fn target(&self, signal: Signal) -> Result<Target, TelemetryError> {
         let env = &*self.env;
         let mut ca_pem = self.ca_pem.clone();
         if let Some((var, path)) = config::certificate_file(env, signal) {
             ca_pem.extend_from_slice(&read_file(&var, &path)?);
         }
-        let client_identity = match config::client_identity_files(env, signal)? {
-            Some([(cert_var, cert_path), (key_var, key_path)]) => Some(ClientIdentity {
-                cert_pem: read_file(&cert_var, &cert_path)?,
-                key_pem: read_file(&key_var, &key_path)?,
-            }),
-            None => self.client_identity.clone(),
-        };
+        let client_identity = self.client_identity_for(signal)?;
         let timeout = config::timeout(env, signal)?;
         let proxy = Arc::new(proxy::matcher(env, &self.proxy));
         let compression = match self.compression {
@@ -338,6 +406,7 @@ impl TelemetryBuilder {
                 headers: lf.headers(),
                 compression,
                 proxy,
+                cause: Arc::default(),
                 timeout,
                 ca_pem,
                 client_identity,
@@ -363,13 +432,29 @@ impl TelemetryBuilder {
             headers: self.headers.clone(),
             compression,
             proxy,
+            cause: Arc::default(),
             timeout,
             ca_pem,
             client_identity,
         })
     }
 
+    #[cfg(test)]
     pub(super) fn resource(&self) -> Resource {
+        self.resource_and_notices().0
+    }
+
+    /// The resource, with `OTEL_RESOURCE_ATTRIBUTES` percent-decoded as the
+    /// specification requires (`resource_env.rs`), and what could not be.
+    pub(super) fn resource_and_notices(&self) -> (Resource, Vec<String>) {
+        let decoded = super::resource_env::decode(&*self.env);
+        (
+            super::resource_env::apply(self.sdk_resource(), decoded.attributes),
+            decoded.notices,
+        )
+    }
+
+    fn sdk_resource(&self) -> Resource {
         // `Resource::builder` reads `OTEL_SERVICE_NAME` and
         // `OTEL_RESOURCE_ATTRIBUTES` itself; the defaults are added only when
         // they name none, so they never overwrite them.
