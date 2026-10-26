@@ -19,13 +19,24 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **Released:** 0.14.1 (tag `v0.14.1`, 2026-09-30) is the newest release.
-  0.15.0 is prepared in pull request #180 and not tagged: the four crates and
-  `tools/a2a-cli` at 0.15.0, the SLIMRPC binding at 0.7.0, `CHANGELOG.md`
-  dated 2026-10-25 above an empty `[Unreleased]`, the maintainer's public
-  signing key in `.github/release-signers/`, and `docs/provenance-manifest.md`
-  regenerated last. Merge with a merge commit, never a squash, then tag the
-  merge commit (*Waiting on the maintainer*).
+- **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
+  the newest release; 0.14.1 (2026-09-30) is the one before. It is the first
+  signed tag: SSH-signed by the key in `.github/release-signers/`, and
+  `scripts/verify_tag_signature.sh` accepts it against the keys on `main`.
+  Release run 40196985363: attempt 1 failed `test · Windows` on
+  `lease_renewals_are_in_the_parents_trace` ("1 renewals"; it needs 2), a
+  re-run of that job passed, and the run finished green at 14:25 UTC.
+  crates.io lists all four crates at 0.15.0 (published 14:24 to 14:25 UTC;
+  each checksum equals the release's `SHA256SUMS`), docs.rs built all four,
+  and GitHub accepted the shortened release body (40,600 characters). The
+  release has no CLI binaries: `PUBLISH_CLI_BINARIES` is unset
+  (`packaging/README.md`). **The Windows failure's cause is not
+  established.** The same tree passed Windows twice in the pull request and
+  150 of 150 times in a probe on `windows-latest` (renewal 2 started at 679 to
+  707 ms; the test's window closed at about 1,022 ms, so a stall of over
+  ~315 ms would explain it, and nothing showed one). The test now waits for
+  two recorded renewals, with a 10 s deadline and the span names in its
+  failure message, instead of sleeping a fixed second.
 - **Book audit (2026-10-25):** 13 readers checked every book page against
   the code, the specification and the changelog, and 13 editors applied what
   held up. Checked mechanically afterwards: the book's doctests (281 passed,
@@ -48,9 +59,9 @@ only: when something here is done, delete it rather than annotating it.
   findings.md` §1 says 87 passing and 5 failing "cannot be reconciled" with
   114, and an editor's arithmetic suggests it can (87 + 5 + 1 + 21), which
   nobody has resolved.
-- **Working branch:** `claude/sleepy-knuth-3lnx7k`, started 2026-10-24
-  from `main` at `2781bb69`, the merge of pull request #179. `git log
-  2781bb69..` lists what it holds that `main` lacks.
+- **Working branch:** `claude/sleepy-knuth-3lnx7k`, restarted 2026-10-25 from
+  `main` after pull request #180 merged (merge commit `e4fc3bc1`, the 0.15.0
+  tag). `git log origin/main..` lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
   2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
   `6707f4d` had 104 check runs, 98 success and 6 skipped by their own
@@ -345,17 +356,13 @@ only: when something here is done, delete it rather than annotating it.
    graded, 8 of the 9 baselined failing (STREAM-SUB-003 not graded there);
    required-extension CORE-CAP-004 passed on JSON-RPC and HTTP+JSON. All
    three gates exit 0. Re-run after any further wire change.
-6. **After the 0.15.0 tag:** drop the README's "unreleased 0.15.0" callout and
-   `STABILITY.md` §1's "unreleased" sentence; bump
-   `benches/sdk-comparison/harness/agent-a2a-rust` from `=0.14.1`; change
-   `book/src/deployment/cicd.md`'s "`/v0.14/` is 0.14.1" and
-   `docs/openssf-best-practices.md`'s release dates; record the first signed
-   tag in `book/src/deployment/security.md` ("No released tag is signed
-   yet"), `.github/release-signers/README.md` and the
-   `docs/compliance/controls.toml` gap row; decide whether to publish the
-   SLIMRPC binding (it is not on crates.io, and `book/src/bindings/slimrpc.md`
-   shows a path dependency until it is). Then debt, starting with the
-   changelog's size (*Open engineering* below).
+6. **After 0.15.0:** `benches/sdk-comparison/harness/agent-a2a-rust` is pinned
+   `=0.14.1` and the results under `benches/sdk-comparison/results/` were
+   measured at 0.14.1, so moving the pin means re-measuring
+   (`benches/sdk-comparison/README.md`); decide whether to publish the SLIMRPC
+   binding (it is not on crates.io, and `book/src/bindings/slimrpc.md` shows a
+   path dependency until it is). Then debt, starting with the changelog's size
+   (*Open engineering* below).
 
 ## Waiting on the maintainer
 
@@ -383,20 +390,10 @@ only: when something here is done, delete it rather than annotating it.
   contract custom stores implement, so it is the maintainer's call. It
   does not make concurrent turns on two replicas safe; that needs
   cross-replica single-writer admission (a lease row per task).
-- **Tagging 0.15.0.** `.github/release-signers/allowed_signers` holds the
-  public half of the maintainer's `id_ed25519_signing` key; the private half
-  never enters an agent session. After the pull request merges, on the
-  machine that holds the key: `git tag -s v0.15.0 <merge commit> -m "Release
-  v0.15.0"`, `scripts/verify_tag_signature.sh v0.15.0`, push the tag, approve
-  the `crates-io` environment. Tag the merge commit itself, before the
-  benchmark bot pushes to `main`: the tagged tree may differ from the
-  manifest's pinned commit only by the manifest file. Not verified: that
-  `release.yml` accepts a tag this key signed (no tag has been signed yet),
-  that the `crates-io` environment's credentials exist, and that GitHub
-  accepts the shortened release body (the 0.15.0 changelog section is about
-  290,000 characters against the API's 125,000; `release.yml` posts the
-  upgrade-relevant subsections and links the rest). A `v*` tag ruleset is
-  still unset; `ROADMAP.md` tracks it.
+- **A `v*` tag ruleset** is unset (a repository setting; `ROADMAP.md` tracks
+  it). Without it, a tag on an unreviewed commit whose workflow has been
+  edited is what `release.yml`'s validation cannot stop, because the workflow
+  runs from the tagged tree (`.github/release-signers/README.md`).
 - **Code-scanning alerts on `main` (2026-10-25: six open, read from a
   screenshot; the alerts API is not readable from a session).** Two are
   OSV-Scanner's `idna` (CVE-2026-45409, fixed in 3.15): the peers job scans
@@ -413,7 +410,9 @@ only: when something here is done, delete it rather than annotating it.
   requires pull requests or checks would also need `github-actions` as a
   bypass actor, because the benchmark workflow pushes to `main` directly.
   Code-Review: Scorecard wants an approval from someone other than the
-  author, and there is one maintainer. CII-Best-Practices: the badge below.
+  author, and there is one maintainer. CII-Best-Practices: the badge is registered at the passing level (project
+  15899); Scorecard's documentation scores passing 5 of 10, so the alert may
+  stay open, and the next scan of `main` will show.
 - **Upstream drafts to send**, all in `docs/upstream/` (its README lists
   each with its status), held on 2026-10-15 for re-verification. The a2a-go
   draft for R19 is deliberately not committed: it was never checked against
@@ -421,8 +420,6 @@ only: when something here is done, delete it rather than annotating it.
 - **A private advisory to a2a-python** (GHSA, filed by the maintainer; see
   `handoff-history.md`, `claude/nifty-fermat-roj04f`). Do not file anything
   public about it while it is open.
-- **The OpenSSF Best Practices badge** is not registered;
-  `docs/openssf-best-practices.md` has the answers.
 - **§3.1.2, decided (2026-10-23):** the maintainer chose the spec's
   reading that a follow-up to an existing task has no direct reply (§3.1.2
   "no task tracking", §3.7 "Status Messages"): a turn that continues a task

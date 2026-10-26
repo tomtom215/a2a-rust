@@ -10,7 +10,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A Compliance part in the book** (`book/src/compliance/`): a
+  [Compliance Overview](book/src/compliance/overview.md) with an obligation to
+  page table, the 88-provision control map summarised by framework and the
+  protections that are off until switched on; a
+  [GDPR](book/src/compliance/gdpr.md) page (where personal data sits, article
+  by article what the SDK carries and leaves, erasure and what it does not
+  reach); and a
+  [Cyber Resilience Act](book/src/compliance/cyber-resilience-act.md) page (what
+  the project publishes, Annex I property by property, the advisory missing from
+  RustSec). The EU AI Act chapter (retitled "EU AI Act: Is Your Agent
+  High-Risk?"), Audit Trail, Human Oversight and Provenance and Signatures move
+  into the part; their URLs are unchanged. Every claim is taken from a row of
+  `docs/compliance/controls.toml`, and none says the SDK is compliant with
+  anything.
+- **Book pages for the five examples that had none** (`book/src/examples/`):
+  [Resilient Agent](book/src/examples/resilient-agent.md),
+  [Tool-Loop Agent](book/src/examples/tool-loop-agent.md),
+  [Live Model](book/src/examples/live-model.md),
+  [Langfuse Agent](book/src/examples/langfuse-agent.md) and
+  [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
+  overview table and the doctest harness; the overview no longer says five
+  examples have no page.
+
+### Internal
+
+- **`scripts/check_book_examples.py` fails the build when an example has no
+  book page** (`ci.yml`, `static-checks`). Every directory under `examples/`
+  with a `Cargo.toml` needs `book/src/examples/<name>.md`, a `SUMMARY.md` entry
+  and an overview row, unless `scripts/book_examples_allowlist.txt` names it
+  with a reason (`harness`, the shared coverage-matrix library, is the one
+  entry). A page left for an example that no longer exists, and an exemption
+  whose example has gained a page, fail it too. Its proof in
+  `prove_gates_fail.sh` drops an example from `SUMMARY.md`.
+- **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
+  (10 s deadline, the exported span names in its failure message) instead of
+  sleeping one second. It failed once on Windows in the `v0.15.0` release run
+  ("1 renewals"); the same tree passed there 150 of 150 times in a probe, and
+  the cause of that failure is not established. No library code changed.
+- **The SLIMRPC binding's lockfile moves `crypto-bigint` from 0.7.6 to 0.7.9.**
+  crates.io yanked 0.7.0 through 0.7.8 on 2026-10-25, and `cargo-deny`'s yanked
+  check then failed the "SLIMRPC binding (out-of-workspace)" job. 0.7.9 is the
+  one 0.7 release not yanked. The crate reaches the binding only through
+  `agntcy-slim-auth`'s `p256`, and no other lockfile holds it. Lockfile only:
+  the binding is unpublished. Cargo also re-resolved `tempfile`'s `getrandom` to
+  0.3.4 (its own range is `>=0.3.0, <0.5`; both versions were already locked).
+  The binding builds, passes `clippy --all-targets -D warnings`, and its tests
+  pass (133, 10 ignored: the SPIFFE suites need SPIRE).
 
 ## [0.15.0] - 2026-10-25
 

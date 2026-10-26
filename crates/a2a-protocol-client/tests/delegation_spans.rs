@@ -86,10 +86,11 @@ async fn named(child: &mut Delegation) -> String {
 }
 
 /// Runs `body` on one thread, inside a span named `parent`, with every span
-/// exported; returns the spans and the parent's trace id.
+/// exported; returns the spans and the parent's trace id. `body` is given the
+/// store the exporter fills, to wait on.
 fn traced<F, Fut>(body: F) -> (Vec<SpanData>, String)
 where
-    F: FnOnce() -> Fut,
+    F: FnOnce(Keep) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     let keep = Keep::default();
@@ -103,7 +104,7 @@ where
             .build()
             .unwrap();
         let parent = tracing::info_span!("parent");
-        runtime.block_on(tracing::Instrument::instrument(body(), parent));
+        runtime.block_on(tracing::Instrument::instrument(body(keep.clone()), parent));
     });
     let spans = std::mem::take(&mut *keep.0.lock().unwrap());
     let parent = spans
@@ -123,11 +124,16 @@ fn client_spans<'a>(spans: &'a [SpanData], name: &str) -> Vec<&'a SpanData> {
         .collect()
 }
 
+/// The lease renewals exported so far: each is a `GetTask` client span.
+fn recorded_renewals(keep: &Keep) -> usize {
+    client_spans(&keep.0.lock().unwrap(), GET_TASK).len()
+}
+
 /// The cancel a dropped handle sends runs on a spawned task, after the
 /// code that dropped it has moved on; its call is still in the trace.
 #[test]
 fn the_cancel_a_dropped_handle_sends_is_in_the_parents_trace() {
-    let (spans, trace) = traced(|| async {
+    let (spans, trace) = traced(|_| async {
         let client = worker().await;
         let mut child = Delegation::start(Arc::clone(&client), job())
             .await
@@ -161,15 +167,36 @@ fn the_cancel_a_dropped_handle_sends_is_in_the_parents_trace() {
 #[test]
 fn lease_renewals_are_in_the_parents_trace() {
     let ttl = Duration::from_secs(1);
-    let (spans, trace) = traced(|| async move {
+    let (spans, trace) = traced(|keep| async move {
         let client = worker().await;
         let mut child = Delegation::start_leased(Arc::clone(&client), job(), ttl)
             .await
             .expect("start");
         named(&mut child).await;
-        // Three renewal periods: at least two renewals.
-        tokio::time::sleep(ttl).await;
+        // A renewal is due every third of the ttl, so the second comes about
+        // two thirds of the way in. Wait for it, not for a fixed time, so a
+        // slow moment on a busy machine delays this test and does not fail it;
+        // if it never comes, fail after 10 s and say what was recorded.
+        let both = tokio::time::timeout(Duration::from_secs(10), async {
+            while recorded_renewals(&keep) < 2 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
         let _ = child.cancel().await;
+        // Read before asserting: a panic holding the lock would poison it for
+        // the exporter, which locks it on every span it receives.
+        let names: Vec<_> = keep
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|s| s.name.to_string())
+            .collect();
+        assert!(
+            both.is_ok(),
+            "fewer than 2 renewals in 10 s; spans: {names:?}"
+        );
     });
     let renewals = client_spans(&spans, GET_TASK);
     assert!(renewals.len() >= 2, "{} renewals", renewals.len());

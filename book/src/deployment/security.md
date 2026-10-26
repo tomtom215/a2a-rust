@@ -285,14 +285,15 @@ Stated because a security page that lists only strengths is not one.
   encrypted end-to-end. Use [GitHub Security
   Advisories](https://github.com/tomtom215/a2a-rust/security/advisories/new)
   instead, which keeps a report private without needing a key.
-* **No released tag is signed yet.** Tags since `v0.8.0` are annotated, and
-  `release.yml` refuses a lightweight tag. Since 2026-10-08 it also refuses a
-  tag not signed by a key in `.github/release-signers/`. That directory lists
-  the maintainer's SSH key as of 0.15.0, but no release has passed the gate
-  yet, so until a signed tag exists `git tag -v` verifies no release. For a
-  cryptographic link from a published version to this repository, use the
-  build provenance attestations (`gh attestation verify`, step 3 of
-  `RELEASING.md`), not the tag.
+* **Only `v0.15.0` and later release tags are signed.** Tags since `v0.8.0` are
+  annotated, and `release.yml` refuses a lightweight tag. Since 2026-10-08 it
+  also refuses a tag not signed by a key in `.github/release-signers/`, which
+  lists the maintainer's SSH key. `v0.15.0` (2026-10-25) is the first tag to
+  pass that gate; `scripts/verify_tag_signature.sh v0.15.0` checks it. Every
+  earlier tag is lightweight or annotated but unsigned, so `git tag -v`
+  verifies none of them. For a cryptographic link from a published version to
+  this repository, use the build provenance attestations (`gh attestation
+  verify`, step 3 of `RELEASING.md`), not the tag.
 * **No rate limiting is applied unless you wire it.** `rate_limit_rps` is
   counted in an interceptor; setting the field does nothing unless a
   `RateLimitInterceptor` is installed and given the tenant configuration with

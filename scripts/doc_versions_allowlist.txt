@@ -21,4 +21,3 @@
 
 book/src/reference/upgrading.md  0.7  # the "before" half of the 0.7 -> 0.8 pair showing the removal of grpc-legacy-json; the old version is the content
 book/src/reference/upgrading.md  0.8  # the "after" half of that same pair, pinned to the release that removed the feature
-README.md  0.14  # the newest published release, named so a crates.io reader has a working line until 0.15.0 ships; delete this entry and the README note at that release

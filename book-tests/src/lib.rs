@@ -146,6 +146,15 @@ pub mod page_deployment_observability {}
 #[doc = include_str!("../../book/src/deployment/langfuse.md")]
 pub mod page_deployment_langfuse {}
 
+#[doc = include_str!("../../book/src/compliance/overview.md")]
+pub mod page_compliance_overview {}
+
+#[doc = include_str!("../../book/src/compliance/gdpr.md")]
+pub mod page_compliance_gdpr {}
+
+#[doc = include_str!("../../book/src/compliance/cyber-resilience-act.md")]
+pub mod page_compliance_cyber_resilience_act {}
+
 #[doc = include_str!("../../book/src/deployment/audit.md")]
 pub mod page_deployment_audit {}
 
@@ -192,6 +201,12 @@ pub mod page_examples_hello_agent {}
 #[doc = include_str!("../../book/src/examples/incident-response.md")]
 pub mod page_examples_incident_response {}
 
+#[doc = include_str!("../../book/src/examples/langfuse-agent.md")]
+pub mod page_examples_langfuse_agent {}
+
+#[doc = include_str!("../../book/src/examples/live-model.md")]
+pub mod page_examples_live_model {}
+
 #[doc = include_str!("../../book/src/examples/mcp-agent.md")]
 pub mod page_examples_mcp_agent {}
 
@@ -204,8 +219,17 @@ pub mod page_examples_multi_lang_team {}
 #[doc = include_str!("../../book/src/examples/overview.md")]
 pub mod page_examples_overview {}
 
+#[doc = include_str!("../../book/src/examples/resilient-agent.md")]
+pub mod page_examples_resilient_agent {}
+
 #[doc = include_str!("../../book/src/examples/rig-agent.md")]
 pub mod page_examples_rig_agent {}
+
+#[doc = include_str!("../../book/src/examples/swarm.md")]
+pub mod page_examples_swarm {}
+
+#[doc = include_str!("../../book/src/examples/tool-loop-agent.md")]
+pub mod page_examples_tool_loop_agent {}
 
 #[doc = include_str!("../../book/src/getting-started/first-agent.md")]
 pub mod page_getting_started_first_agent {}

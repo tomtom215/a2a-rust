@@ -23,8 +23,8 @@ One key is configured: the maintainer's SSH key, `SHA256:ziO4yysBwOPEyekQKir3ahI
 `.pub` file and with the signing keys on the maintainer's GitHub profile). The
 gate accepts a tag signed by it and refuses every other. Until it was added the
 gate refused every release, deliberately: the alternative is a gate that passes
-unsigned tags while it waits, which is the gap it exists to close. No release
-has passed the gate yet.
+unsigned tags while it waits, which is the gap it exists to close. `v0.15.0`
+(2026-10-25) is the first release to pass it.
 
 ## Adding the maintainer's SSH key
 

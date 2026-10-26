@@ -48,11 +48,16 @@
 - [Incident-Response Team](./examples/incident-response.md)
 - [Echo Agent](./examples/echo-agent.md)
 - [Agent Team](./examples/agent-team.md)
+- [Resilient Agent](./examples/resilient-agent.md)
 - [Genai Agent](./examples/genai-agent.md)
 - [Rig Agent](./examples/rig-agent.md)
+- [Tool-Loop Agent](./examples/tool-loop-agent.md)
+- [Live Model](./examples/live-model.md)
 - [MCP Agent](./examples/mcp-agent.md)
 - [A2A → MCP Bridge](./examples/mcp-bridge.md)
+- [Langfuse Agent](./examples/langfuse-agent.md)
 - [Multi-Language Team](./examples/multi-lang-team.md)
+- [Swarm](./examples/swarm.md)
 
 # Testing & Deployment
 
@@ -67,13 +72,19 @@
 - [Multi-Tenancy](./deployment/multi-tenancy.md)
 - [Observability](./deployment/observability.md)
     - [Langfuse](./deployment/langfuse.md)
-- [Audit Trail](./deployment/audit.md)
-- [Human Oversight](./deployment/oversight.md)
-- [Is Your Agent High-Risk?](./deployment/ai-act-classification.md)
-- [Provenance and Signatures](./deployment/provenance.md)
 - [Troubleshooting](./deployment/troubleshooting.md)
 - [Running More Than One Replica](./deployment/horizontal-scaling.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)
+
+# Compliance
+
+- [Compliance Overview](./compliance/overview.md)
+- [EU AI Act](./deployment/ai-act-classification.md)
+- [GDPR](./compliance/gdpr.md)
+- [Cyber Resilience Act](./compliance/cyber-resilience-act.md)
+- [Audit Trail](./deployment/audit.md)
+- [Human Oversight](./deployment/oversight.md)
+- [Provenance and Signatures](./deployment/provenance.md)
 
 # Reference
 

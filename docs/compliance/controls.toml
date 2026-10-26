@@ -190,7 +190,7 @@ id = "AIA-6"
 source = "ai-act"
 provision = "Art. 6(1)–(4); Art. 3(14) as replaced and Art. 6(1a)–(1c) inserted by Regulation (EU) 2026/1744"
 requirement = "An AI system is high-risk where it is intended to be used as a safety component of a product, or is itself a product, covered by the Union harmonisation legislation of Annex I, and that product must undergo a third-party conformity assessment under it (6(1)); and where it is listed in Annex III (6(2)), unless it poses no significant risk of harm to health, safety or fundamental rights because it performs a narrow procedural task, improves the result of a completed human activity, detects decision-making patterns without replacing human assessment, or performs a preparatory task — but never where it profiles natural persons (6(3)). A provider that considers an Annex III system not high-risk documents that assessment before placing it on the market, registers under Art. 49(2), and gives the documentation to national competent authorities on request (6(4)). A safety component fulfils a safety function, its intended purpose being to prevent or mitigate risks to the health and safety of persons or property (Art. 3(14)). AI systems used solely for non-safety aspects of user assistance, performance optimisation, service efficiency, automation, convenience or quality control are not safety components (6(1a)), unless their failure or malfunction would endanger health and safety (6(1b)); a product needing third-party assessment only for risks other than health and safety does not meet Art. 6(1)(b) (6(1c))."
-sdk = "The book's chapter \"Is Your Agent High-Risk?\" walks a provider through Article 6: the Annex I and Annex III routes, the 6(3) exception and that profiling always stays high-risk, and the 6(4) duty to document an assessment and register; it maps the SDK's features to the obligations of a high-risk system and lists what stays the provider's. The SDK itself is not an AI system (Art. 3(1)) and has no intended purpose in a product of its own."
+sdk = "The book's chapter \"EU AI Act: Is Your Agent High-Risk?\" walks a provider through Article 6: the Annex I and Annex III routes, the 6(3) exception and that profiling always stays high-risk, and the 6(4) duty to document an assessment and register; it maps the SDK's features to the obligations of a high-risk system and lists what stays the provider's. The SDK itself is not an AI system (Art. 3(1)) and has no intended purpose in a product of its own."
 status = "integrator"
 gap = "Whether a system built with the SDK is high-risk, under Art. 6(1) or Annex III, and any Art. 6(3) assessment that it is not, turn on the intended purpose its provider determines and are the provider's to document."
 ci = ["python3 scripts/check_compliance_map.py --check"]
@@ -666,7 +666,7 @@ sdk = "Per-crate CycloneDX SBOMs (every release since v0.7.0) and SLSA build-pro
 status = "supported"
 ci = ["Generate CycloneDX SBOMs", "Attest build provenance (SLSA)", "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml", "cargo-deny (the workspace dependency tree)"]
 evidence = ["SECURITY.md", "PROVENANCE.md", "RELEASING.md", "docs/openssf-best-practices.md"]
-remainder = "The due diligence is the manufacturer's act: verifying the attestations (`gh attestation verify`), folding the SBOM into its own, and scanning its own lockfile, which, not this repository's, decides the versions it builds. Release-tag signing is required but no release has been signed yet (CRA-AI-II-7)."
+remainder = "The due diligence is the manufacturer's act: verifying the attestations (`gh attestation verify`), folding the SBOM into its own, and scanning its own lockfile, which, not this repository's, decides the versions it builds. Release-tag signing is required and `v0.15.0` is the first signed tag; earlier tags are unsigned (CRA-AI-II-7)."
 
 [[control]]
 id = "CRA-13-6"
@@ -999,7 +999,7 @@ ci = [
   "Obtain a crates.io token via Trusted Publishing",
 ]
 evidence = ["RELEASING.md", ".github/release-signers/README.md"]
-gap = "A release key is configured (`.github/release-signers/allowed_signers` holds one SSH key, checked 2026-10-25) but no release has passed the signature gate yet: 0.15.0 would be the first. Whether a tag ruleset restricts `v*` tags is a repository setting this tree cannot show. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
+gap = "`v0.15.0` (2026-10-25) is the first tag to pass the signature gate: it is SSH-signed by the one key in `.github/release-signers/allowed_signers`, and `scripts/verify_tag_signature.sh` accepts it against the keys on `main`. Whether a tag ruleset restricts `v*` tags is a repository setting this tree cannot show. Tags v0.2.0 to v0.7.0 are lightweight and v0.8.0 to v0.14.1 annotated but unsigned. A `.crate` on crates.io carries a checksum, not a signature; the attestations live on GitHub. Getting the update into deployed products, automatically where applicable, is the integrator's."
 
 [[control]]
 id = "CRA-13-8"

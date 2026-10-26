@@ -78,6 +78,11 @@ GATE_INPUTS: list[tuple[str, list[str]]] = [
     (r"check_doc_versions\.py", ["**/*.md", "crates/*/src/**/*.rs",
                                  "crates/a2a-protocol-types/Cargo.toml",
                                  "scripts/doc_versions_allowlist.txt"]),
+    # The example crates, the pages and links that must answer them, and the
+    # list of examples that need no page.
+    (r"check_book_examples\.py", ["examples/*/Cargo.toml", "book/src/SUMMARY.md",
+                                   "book/src/examples/*.md",
+                                   "scripts/book_examples_allowlist.txt"]),
     (r"check_panic_paths\.py", ["crates/*/src/**/*.rs"]),
     (r"check_codecov_ignores\.py", ["codecov.yml"]),
     (r"check_provenance_manifest\.py", ["**"]),

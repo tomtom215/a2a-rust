@@ -115,7 +115,7 @@ DOC_CLAIMS = {
     ],
     "AIA-2-12": _LICENCE,
     "AIA-6": [
-        ("book/src/SUMMARY.md", "[Is Your Agent High-Risk?](./deployment/ai-act-classification.md)"),
+        ("book/src/SUMMARY.md", "[EU AI Act](./deployment/ai-act-classification.md)"),
         ("book/src/deployment/ai-act-classification.md", "## The two routes to high-risk (Article 6)"),
         ("book/src/deployment/ai-act-classification.md", "**An Annex III system that profiles natural persons is always high-risk.**"),
         ("book/src/deployment/ai-act-classification.md", "Article 6(4): if you decide an Annex III system is not high-risk, you document that assessment before placing it on the market, register under Article 49(2)"),

@@ -22,6 +22,7 @@
 [![MSRV](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org)
 [![A2A Conformance](https://img.shields.io/badge/official%20TCK-83%2F114%20MUST%2C%205%20failing-blue)](docs/official-tck-findings.md)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tomtom215/a2a-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/tomtom215/a2a-rust)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15899/badge)](https://www.bestpractices.dev/projects/15899)
 
 A Rust implementation (no OpenSSL) of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.1** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
 
@@ -161,10 +162,6 @@ the version-coupling rule that independence does *not* remove.
 a2a-protocol-sdk = "0.15"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
-
-> `main` is the unreleased 0.15.0, and this page describes it. The latest
-> release on crates.io is 0.14.1: use `a2a-protocol-sdk = "0.14"` and read
-> [the README at v0.14.1](https://github.com/tomtom215/a2a-rust/tree/v0.14.1).
 
 ### A complete agent, and a client that calls it
 
