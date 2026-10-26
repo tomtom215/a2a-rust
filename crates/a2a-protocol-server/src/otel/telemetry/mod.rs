@@ -111,8 +111,13 @@ fn is_self_target(target: &str) -> bool {
 /// Dropping it flushes and shuts every provider down, best-effort;
 /// [`shutdown`](Self::shutdown) does the same and reports what it can see
 /// failed.
-/// Either may block for up to the export timeout per signal, and is safe on
-/// any thread, inside a Tokio runtime of either flavour or outside one.
+/// Either is safe on any thread, inside a Tokio runtime of either flavour or
+/// outside one, and may block while a collector is slow: each of the three
+/// providers is given the SDK's 5 s shutdown timeout (`opentelemetry_sdk`
+/// 0.33.1), one after the other. Measured on `hello-agent` after `SIGTERM`
+/// (debug build, one run each): 0.1 s to a collector that answers, 1.8 s to a
+/// port that refuses, 15.0 s to one that accepts the connection and never
+/// answers, 4.1 s to that one with `OTEL_EXPORTER_OTLP_TIMEOUT=2000`.
 #[derive(Debug)]
 pub struct Telemetry {
     tracer: Option<SdkTracerProvider>,

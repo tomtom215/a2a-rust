@@ -71,7 +71,7 @@
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //! | [`tenant_resolver`] | [`TenantResolver`], [`HeaderTenantResolver`], [`BearerTokenTenantResolver`], [`PathSegmentTenantResolver`] |
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
-//! | `otel` | `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+//! | `otel` | `OtelMetrics`, `OtelMetricsBuilder` (`otel` feature); `Telemetry`, `init_otlp_pipeline` (`otlp` feature) |
 //! | `tool_loop` | `ToolLoop`, `ToolLoopExecutor`, `ToolModel`, `Tool`, `ToolSet`, `OpenAiChatModel`: tool calling inside a task (`tool-loop` feature, ADR 0022) |
 //!
 //! # Axum integration

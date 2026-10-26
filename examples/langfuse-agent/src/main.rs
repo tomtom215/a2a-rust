@@ -24,8 +24,8 @@
 //! ```
 //!
 //! Without `LANGFUSE_PUBLIC_KEY` it exports to whatever `OTEL_EXPORTER_OTLP_*`
-//! names instead (an OpenTelemetry Collector, say), or nothing with
-//! `OTEL_SDK_DISABLED=true`. The README has a self-hosted Langfuse in two
+//! names instead (an OpenTelemetry Collector, say), and to nothing when none is
+//! set or with `OTEL_SDK_DISABLED=true`. The README has a self-hosted Langfuse in two
 //! commands.
 
 use std::sync::Arc;
@@ -162,7 +162,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use tracing_subscriber::layer::SubscriberExt as _;
     use tracing_subscriber::util::SubscriberInitExt as _;
 
-    let mut builder = Telemetry::builder().with_default_service_name("langfuse-agent");
+    let mut builder = Telemetry::builder()
+        .with_default_service_name("langfuse-agent")
+        .with_export_where_configured();
     let to_langfuse = std::env::var_os("LANGFUSE_PUBLIC_KEY").is_some();
     if to_langfuse {
         builder = builder.with_langfuse(Langfuse::from_env()?);
@@ -189,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if to_langfuse {
             "Langfuse"
         } else {
-            "the OTLP endpoint in OTEL_EXPORTER_OTLP_*"
+            "the endpoint OTEL_EXPORTER_OTLP_ENDPOINT names (nothing is sent while it is unset)"
         }
     );
     // Flushes every span before the process exits.

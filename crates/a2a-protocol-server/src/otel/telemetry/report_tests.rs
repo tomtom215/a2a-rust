@@ -56,6 +56,22 @@ fn a_signal_can_go_to_a_collector_and_the_console_at_once() {
 }
 
 #[test]
+fn a_console_interval_that_is_not_whole_seconds_is_not_rounded_down_to_zero() {
+    let t = with_env(&[
+        ("OTEL_METRICS_EXPORTER", "console"),
+        ("OTEL_METRIC_EXPORT_INTERVAL", "500"),
+        ("OTEL_TRACES_EXPORTER", "none"),
+        ("OTEL_LOGS_EXPORTER", "none"),
+    ])
+    .build()
+    .unwrap();
+    assert_eq!(
+        t.describe(),
+        "telemetry: traces → off; metrics → console every 500 ms; logs → off"
+    );
+}
+
+#[test]
 fn describe_names_gzip_and_the_proxy_and_never_a_login() {
     let t = with_env(&[("OTEL_EXPORTER_OTLP_COMPRESSION", "gzip")])
         .with_otlp_endpoint("https://user:secret@collector.example:4318")

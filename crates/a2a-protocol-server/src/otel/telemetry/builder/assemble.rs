@@ -167,10 +167,13 @@ impl TelemetryBuilder {
         }
         if chosen.console {
             builder = builder.with_reader(PeriodicReader::builder(Console::stdout()).build());
-            parts.push(format!(
-                "console every {} s",
-                metric_interval_ms(&*self.env) / 1_000
-            ));
+            let ms = metric_interval_ms(&*self.env);
+            let every = if ms.is_multiple_of(1_000) {
+                format!("{} s", ms / 1_000)
+            } else {
+                format!("{ms} ms")
+            };
+            parts.push(format!("console every {every}"));
         }
         telemetry.report.push(signal_line(Signal::Metrics, &parts));
         Ok(chosen.any().then(|| builder.build()))

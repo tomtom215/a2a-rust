@@ -6,7 +6,7 @@
 //! subscriber, and never replaces one already set. Its own binary because the
 //! global subscriber is process state.
 //!
-//! Until 0.16 it installed nothing when no trace or log provider was built, so
+//! Before 0.15.1 it installed nothing when no trace or log provider was built, so
 //! "a process run without a collector keeps no subscriber at all". That left a
 //! process with no collector showing nothing — not its own warnings, not how to
 //! turn export on — so it now always installs one (except under

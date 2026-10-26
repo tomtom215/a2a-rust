@@ -6,9 +6,11 @@
 //! OpenTelemetry integration for the A2A server.
 //!
 //! This module provides [`OtelMetrics`], an implementation of the [`Metrics`]
-//! trait that records request counts, error counts, latency histograms, and
-//! queue depth to OpenTelemetry instruments. Data is exported via the OTLP
-//! protocol (gRPC) using the `opentelemetry-otlp` crate.
+//! trait that records the server's counters, histograms and gauges (the
+//! catalogue is in the book's Observability chapter) to OpenTelemetry
+//! instruments, through the OpenTelemetry API only: to the meter provider the
+//! process has installed, or to nothing. `Telemetry` (feature `otlp`) installs
+//! providers that export metrics, traces and logs over OTLP/HTTP or gRPC.
 //!
 //! # Module structure
 //!
@@ -16,7 +18,8 @@
 //! |---|---|
 //! | (this file) | `OtelMetrics` struct and `Metrics` trait impl |
 //! | `builder` | `OtelMetricsBuilder` — fluent configuration |
-//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — OTLP export setup |
+//! | `telemetry` | `Telemetry` — OTLP export of traces, metrics and logs from the `OTEL_*` environment (feature `otlp`) |
+//! | `pipeline` | `init_otlp_pipeline` / `init_otlp_pipeline_with_endpoint` — the older metrics-only, gRPC-only setup |
 //!
 //! # Feature flags
 //!
@@ -28,19 +31,21 @@
 //! # Quick start
 //!
 //! ```rust,no_run
-//! // `init_otlp_pipeline` needs the `otlp` feature (on by default in
+//! // `Telemetry` needs the `otlp` feature (on by default in
 //! // `a2a-protocol-sdk`).
 //! # #[cfg(feature = "otlp")]
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! use a2a_protocol_server::otel::{OtelMetricsBuilder, init_otlp_pipeline};
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use a2a_protocol_server::otel::Telemetry;
 //!
-//! // 1. Initialise the OTLP export pipeline (sets the global MeterProvider).
-//! let provider = init_otlp_pipeline(Some("my-a2a-agent"))?;
-//!
-//! // 2. Build the metrics instance.
-//! let metrics = OtelMetricsBuilder::new().meter_name("a2a.server").build();
-//!
-//! // 3. Pass `metrics` to `RequestHandlerBuilder::metrics(metrics)`.
+//! // Exports each signal the `OTEL_*` environment names an endpoint for, and
+//! // installs the global providers. Handlers built with no `with_metrics`
+//! // record through `OtelMetrics` to them; there is nothing to pass.
+//! let telemetry = Telemetry::builder()
+//!     .with_default_service_name("my-a2a-agent")
+//!     .with_export_where_configured()
+//!     .build()?;
+//! telemetry.install_subscriber();
+//! // Dropping `telemetry` (or `telemetry.shutdown()`) flushes.
 //! # Ok(())
 //! # }
 //! ```
@@ -263,7 +268,7 @@ impl OtelMetrics {
             .u64_counter("a2a.server.push_deliveries")
             .with_description(
                 "Push notification delivery attempts, by outcome \
-                 (delivered / failed / timeout)",
+                 (delivered / failed / timeout / timeout_truncated)",
             )
             .with_unit("{delivery}")
             .build();
