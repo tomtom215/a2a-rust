@@ -68,30 +68,32 @@ impl Console {
     }
 }
 
+// None of the three `export`s awaits anything, so each returns a ready future
+// rather than an `async fn` (clippy 1.98's `unused_async_trait_impl`).
 impl SpanExporter for Console {
-    async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+    fn export(&self, batch: Vec<SpanData>) -> impl Future<Output = OTelSdkResult> + Send {
         for span in &batch {
             self.sink.line(&span_line(span));
         }
-        Ok(())
+        std::future::ready(Ok(()))
     }
 }
 
 impl LogExporter for Console {
-    async fn export(&self, batch: LogBatch<'_>) -> OTelSdkResult {
+    fn export(&self, batch: LogBatch<'_>) -> impl Future<Output = OTelSdkResult> + Send {
         for (record, _scope) in batch.iter() {
             self.sink.line(&log_line(record));
         }
-        Ok(())
+        std::future::ready(Ok(()))
     }
 }
 
 impl PushMetricExporter for Console {
-    async fn export(&self, metrics: &ResourceMetrics) -> OTelSdkResult {
+    fn export(&self, metrics: &ResourceMetrics) -> impl Future<Output = OTelSdkResult> + Send {
         for line in metric_lines(metrics) {
             self.sink.line(&line);
         }
-        Ok(())
+        std::future::ready(Ok(()))
     }
 
     fn force_flush(&self) -> OTelSdkResult {

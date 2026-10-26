@@ -213,6 +213,15 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   entry). A page left for an example that no longer exists, and an exemption
   whose example has gained a page, fail it too. Its proof in
   `prove_gates_fail.sh` drops an example from `SUMMARY.md`.
+- **Lints CI's clippy 1.99.1 reported on this release's own code, fixed.** The
+  console exporter's three `export` impls were `async fn`s that never await
+  (`unused_async_trait_impl`) and return ready futures now; eight
+  `assert!(x.is_empty())` in the new tests are `assert_eq!` (`assert_is_empty`);
+  `shutdown_signal` allows `manual_async_fn` off Unix, where it has no handlers to
+  register before returning its future; and its doc comment no longer links to
+  `Telemetry`, which exists only with `otlp`, so `cargo doc -p
+  a2a-protocol-server` builds. The first two and the last were found by CI, the
+  third on Windows; each was reproduced with rustc 1.99.1 before it was fixed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

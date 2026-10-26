@@ -12,7 +12,7 @@ use std::future::Future;
 /// Pass it to [`Server::serve_with_shutdown`](super::Server::serve_with_shutdown)
 /// so the server stops accepting, lets in-flight tasks end, and *returns*;
 /// whatever follows it in `main` then runs, and a
-/// [`Telemetry`](crate::otel::Telemetry) guard still alive there is dropped,
+/// `Telemetry` guard (feature `otlp`) still alive there is dropped,
 /// which flushes. Waiting on `tokio::signal::ctrl_c()` alone is the common
 /// mistake: a pod is stopped with `SIGTERM`, which nothing then handles, so the
 /// process is ended with no drain and no flush. Measured 2026-10-26 on
@@ -35,6 +35,10 @@ use std::future::Future;
 /// # Ok(())
 /// # }
 /// ```
+// On Unix the handlers are registered here, before the future is returned, so
+// this cannot be an `async fn`. Elsewhere there is nothing to register, and
+// clippy would have it be one.
+#[cfg_attr(not(unix), allow(clippy::manual_async_fn))]
 pub fn shutdown_signal() -> impl Future<Output = ()> + Send + 'static {
     #[cfg(unix)]
     let registered = {

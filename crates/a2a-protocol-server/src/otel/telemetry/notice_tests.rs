@@ -83,30 +83,36 @@ fn an_endpoint_given_in_code_is_checked_like_the_variable() {
 #[test]
 fn a_base_url_a_signals_own_variable_or_grpc_is_left_alone() {
     // A base with no signal path: what the specification expects.
-    assert!(notices(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c:4318")]).is_empty());
-    assert!(notices(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c:4318/otlp")]).is_empty());
+    assert_eq!(
+        notices(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c:4318")]),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        notices(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c:4318/otlp")]),
+        Vec::<String>::new()
+    );
     // The signal's own variable is the complete URL, and ends in the path by design.
-    assert!(
+    assert_eq!(
         notices(&[(
             "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
             "http://c:4318/v1/traces"
-        )])
-        .is_empty()
+        )]),
+        Vec::<String>::new()
     );
     // gRPC has no path to append.
-    assert!(
+    assert_eq!(
         notices(&[
             ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c:4317/v1/traces"),
             ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
-        ])
-        .is_empty()
+        ]),
+        Vec::<String>::new()
     );
     // A signal that does not go over OTLP is not exported to the endpoint.
-    assert!(
+    assert_eq!(
         notices(&[
             ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://c:4318/v1/traces"),
             ("OTEL_TRACES_EXPORTER", "console"),
-        ])
-        .is_empty()
+        ]),
+        Vec::<String>::new()
     );
 }

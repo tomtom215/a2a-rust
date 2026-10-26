@@ -139,7 +139,10 @@ fn an_unsupported_propagator_is_a_notice_not_an_error() {
         .unwrap();
     assert_eq!(t.notices().len(), 1, "{:?}", t.notices());
     assert!(t.notices()[0].contains("b3"), "{:?}", t.notices());
-    assert!(with_env(&[]).build().unwrap().notices().is_empty());
+    assert_eq!(
+        with_env(&[]).build().unwrap().notices(),
+        Vec::<String>::new()
+    );
 }
 
 /// The resource says where the process runs, unless told not to, and

@@ -49,10 +49,11 @@ only: when something here is done, delete it rather than annotating it.
      (installing it was refused; the claim that nothing public was removed comes
      from a diff of `pub` lines against `v0.15.0`, and CI runs the real tool on
      the pull request), `cargo deny` and `promtool`.
-  4. *Toolchain.* This session's clippy (1.97) reports, in the server crate at
-     the last count, 49 `duration_suboptimal_units` and 7 `doc_markdown`
-     findings, and more in the client crate, all in files this branch did not
-     touch; none is in a file it changed. CI's stable may differ.
+  4. *Toolchain.* CI's stable was rustc 1.99.1 on 2026-10-26. A session's
+     clippy 1.97 passed code that 1.99.1 rejects (`assert_is_empty`,
+     `unused_async_trait_impl`) and flagged files this branch did not touch that
+     1.99.1 does not, so lint with `rustup toolchain install 1.99.1` before
+     pushing. `cargo +nightly doc` with `--cfg docsrs` is the third doc build.
   Also **ADR 0028 (Proposed)** and `docs/adr/0028-wasm-spike/`: the real
   `RequestHandler` was run inside `workerd` (11 of 11 checks, native lib suite
   unchanged at 1,545). Nothing from it is in the crates. The next session

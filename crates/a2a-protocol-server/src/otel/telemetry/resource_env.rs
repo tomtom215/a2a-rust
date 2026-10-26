@@ -135,7 +135,7 @@ mod tests {
                 ("k8s.pod.label".to_owned(), "app=web".to_owned()),
             ]
         );
-        assert!(d.notices.is_empty());
+        assert_eq!(d.notices, Vec::<String>::new());
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
     fn text_with_no_percent_is_left_to_the_sdk() {
         let d = decode(&*env("service.name=a,deployment.environment=prod"));
         assert!(d.attributes.is_empty() && d.notices.is_empty());
-        assert!(decode(&|_: &str| None).attributes.is_empty());
+        assert_eq!(decode(&|_: &str| None).attributes, []);
     }
 
     #[test]
