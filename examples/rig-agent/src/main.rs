@@ -365,7 +365,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
         println!("Rig A2A agent listening on {url}");
-        tokio::signal::ctrl_c().await?;
+        a2a_protocol_server::shutdown_signal().await;
         return Ok(());
     }
 

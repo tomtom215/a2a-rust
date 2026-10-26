@@ -267,7 +267,7 @@ pub async fn run(
     }
     println!("Done. The three agents are still serving — probe them with curl or");
     println!("the TCK (cargo run -p a2a-tck -- --url {triage_url}),");
-    println!("or press Ctrl+C to stop.");
-    tokio::signal::ctrl_c().await?;
+    println!("or press Ctrl+C (or send SIGTERM) to stop.");
+    a2a_protocol_server::shutdown_signal().await;
     Ok(())
 }

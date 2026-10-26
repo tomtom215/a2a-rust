@@ -148,10 +148,7 @@ async fn main() -> ExitCode {
         println!("warning: no --tls-cert/--tls-key, serving plaintext");
     }
 
-    if let Err(e) = tokio::signal::ctrl_c().await {
-        eprintln!("could not wait for shutdown signal: {e}");
-        return ExitCode::FAILURE;
-    }
+    a2a_protocol_server::shutdown_signal().await;
 
     println!("shutting down");
     let _ = service.shutdown().await;

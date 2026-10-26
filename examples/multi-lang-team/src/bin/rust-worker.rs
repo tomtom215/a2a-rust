@@ -27,10 +27,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bound = worker::start(&addr).await?;
     println!("Rust worker agent listening on http://{bound}");
     println!(
-        "Replies to every message with \"{}<text>\"; Ctrl+C to stop.",
+        "Replies to every message with \"{}<text>\"; Ctrl+C or SIGTERM to stop.",
         worker::REPLY_PREFIX
     );
-    tokio::signal::ctrl_c().await?;
+    a2a_protocol_server::shutdown_signal().await;
     Ok(())
 }
 

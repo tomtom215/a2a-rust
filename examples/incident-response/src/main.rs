@@ -234,13 +234,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "logs" => {
             let ep = start_logs_agent().await?;
             println!("logs agent listening on {}", ep.http);
-            tokio::signal::ctrl_c().await?;
+            a2a_protocol_server::shutdown_signal().await;
             Ok(())
         }
         "runbook" => {
             let ep = start_runbook_agent().await?;
             println!("runbook agent listening on {}", ep.http);
-            tokio::signal::ctrl_c().await?;
+            a2a_protocol_server::shutdown_signal().await;
             Ok(())
         }
         "triage" => {
@@ -251,7 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             println!("triage agent listening on {}", ep.http);
             println!("(expects logs on :{LOGS_PORT} and runbook on :{RUNBOOK_PORT})");
-            tokio::signal::ctrl_c().await?;
+            a2a_protocol_server::shutdown_signal().await;
             Ok(())
         }
         // Act 5 on its own, for when the question is "is this deployable?"

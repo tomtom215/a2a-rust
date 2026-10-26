@@ -341,7 +341,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if bind_addr.is_ok() {
         println!("MCP A2A agent listening on {url}");
-        tokio::signal::ctrl_c().await?;
+        a2a_protocol_server::shutdown_signal().await;
         return Ok(());
     }
 

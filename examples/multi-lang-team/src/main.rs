@@ -420,7 +420,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
         println!("Coordinator listening on http://{addr}");
-        tokio::signal::ctrl_c().await?;
+        a2a_protocol_server::shutdown_signal().await;
         return Ok(());
     }
 

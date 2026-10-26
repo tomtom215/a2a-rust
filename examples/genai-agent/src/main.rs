@@ -417,7 +417,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("WebSocket also listening on ws://{addr}");
         }
 
-        tokio::signal::ctrl_c().await?;
+        a2a_protocol_server::shutdown_signal().await;
         return Ok(());
     }
 
