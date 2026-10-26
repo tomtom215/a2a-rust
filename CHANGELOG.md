@@ -221,9 +221,11 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   register before returning its future; and its doc comment no longer links to
   `Telemetry`, which exists only with `otlp`, so `cargo doc -p
   a2a-protocol-server` builds. A test helper named `Message` shadowed a generated
-  type (`a2a-codegen --check`, ADR 0016) and is `MessageText`. All were found by
-  CI (the `manual_async_fn` one on Windows) and reproduced, with rustc 1.99.1 or
-  the codegen tool, before they were fixed.
+  type (`a2a-codegen --check`, ADR 0016) and is `MessageText`; so is a second,
+  in a test the mutation-testing fixes added. All were found by CI (the
+  `manual_async_fn` one on Windows). Each was reproduced, with rustc 1.99.1 or
+  the codegen tool, before it was fixed, except that second `Message`, which CI
+  reported and which the tool passes once renamed.
 - **The coverage job frees the workspace's instrumented build output before it
   builds the SLIMRPC binding** (`coverage.yml`: `rm -rf target/llvm-cov-target`
   once the report is written). On this release's PR the runner reported 33 MB
