@@ -236,9 +236,11 @@ pub(super) fn span_line(span: &SpanData) -> String {
             let _ = write!(line, " status=error:{}", text(description));
         }
     }
-    let events: Vec<_> = span.events.iter().map(|e| e.name.as_ref()).collect();
-    if !events.is_empty() {
-        let _ = write!(line, " events={}", events.join(","));
+    // A count: a span's events are mostly the `tracing` events that ran
+    // inside it, which are `LOG` lines of their own when logs are printed too.
+    let events = span.events.iter().count();
+    if events > 0 {
+        let _ = write!(line, " events={events}");
     }
     line.push_str(&attributes(&span.attributes));
     line

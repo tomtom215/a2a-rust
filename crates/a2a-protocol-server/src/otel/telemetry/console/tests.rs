@@ -91,6 +91,23 @@ fn a_span_is_one_line_with_ids_status_and_attributes() {
         !line.contains(" parent="),
         "a root span has no parent: {line}"
     );
+    assert!(!line.contains(" events="), "no events, no count: {line}");
+}
+
+#[test]
+fn a_span_counts_its_events_without_listing_them() {
+    let (console, buf) = buffer();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(console)
+        .build();
+    let tracer = provider.tracer("t");
+    let mut span = tracer.start("busy");
+    span.add_event("first thing that happened", vec![]);
+    span.add_event("second thing", vec![]);
+    span.end();
+    let line = &lines(&buf)[0];
+    assert!(line.contains(" events=2"), "{line}");
+    assert!(!line.contains("first thing"), "{line}");
 }
 
 #[test]

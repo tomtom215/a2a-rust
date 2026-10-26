@@ -14,8 +14,10 @@ exporter only for a signal whose endpoint is configured, while a plain
 `Telemetry::builder().build()` exports every signal, to `localhost` (port
 4318, or 4317 over gRPC) when no endpoint is named, and its `shutdown` reports
 what could not be delivered. Spans and logs also need a `tracing` subscriber
-(`Telemetry::install_subscriber` installs one). If you see no metrics, the
-answer is almost always this page's first section. (Before 0.15 exporting was
+(`Telemetry::install_subscriber` installs one, and with it a process says what
+it is doing: warnings and errors go to standard error, and one line says where
+each signal goes, or that nothing is exported and how to change that). If you
+see no metrics, the answer is almost always this page's first section. (Before 0.15 exporting was
 off by default: `otel`, which then carried the exporter, was not a default
 feature.)
 
@@ -39,6 +41,10 @@ a2a-protocol-sdk = "0.15"   # `tracing`, `otel` and `otlp` are default features
   export of traces, metrics and logs, configured by the standard `OTEL_*`
   environment. On by default in the SDK only; on `a2a-protocol-server`
   directly, ask for it (`features = ["otlp"]`).
+* **`otel-prometheus`** — off by default, in the SDK as well: serves the metrics
+  at `/metrics` for a Prometheus that scrapes (`OTEL_METRICS_EXPORTER=prometheus`;
+  see [Prometheus: scrape instead of push](#prometheus-scrape-instead-of-push)).
+* **`otlp-json`** — off by default: OTLP/HTTP with JSON bodies.
 
 With `otlp`, the whole setup is this, and the rest of the page explains it:
 
@@ -62,8 +68,9 @@ telemetry.shutdown()?; // or let it drop: both flush
 ```
 
 Built plainly, as here, `Telemetry` exports every signal, so an export with
-nothing listening where it goes is lost, and `shutdown` returns an error naming
-the signal and the count.
+nothing listening where it goes is lost. A warning says so as it happens (see
+[When something is wrong](#when-something-is-wrong)), and `shutdown` returns an
+error naming the signal and the count.
 [`with_export_where_configured`](#exporting-with-telemetry) (below) builds a
 signal only when an endpoint names where it goes.
 
@@ -132,7 +139,10 @@ and returns a guard whose drop — or explicit `shutdown` — flushes all three.
 `telemetry.layer()` is the `tracing` layer that turns spans into OpenTelemetry
 spans and events into OpenTelemetry log records; add it next to whatever other
 layers you run, or call `telemetry.install_subscriber()` to install it as the
-process's only subscriber (it never replaces one already set).
+process's only subscriber (it never replaces one already set). The subscriber
+it installs also prints warnings and errors to standard error and logs
+`telemetry.describe()` once; an application with a subscriber of its own gets
+the same two things from `telemetry.describe()` and `telemetry.notices()`.
 
 A binary that must run as well without a collector as with one builds it with
 `with_export_where_configured()`: each signal is then built only when an
@@ -167,15 +177,20 @@ refuses a value it cannot act on rather than ignoring it:
 | Variable | Effect |
 |---|---|
 | `OTEL_SDK_DISABLED=true` | Builds nothing; the layer records nothing |
-| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` or `none` per signal; any other value (`console`, `prometheus`, …) is an error naming it |
+| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | A comma list per signal: `otlp`, `console` (print to standard output) and, for metrics with the `otel-prometheus` feature, `prometheus` (serve `/metrics`); `none` anywhere turns the signal off. Any other value (`zipkin`, `jaeger`, …) is an error naming it |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_TRACES_` / `_METRICS_` / `_LOGS_`) | `grpc`, `http/protobuf` (the default) or, with the `otlp-json` feature, `http/json`; without it `http/json` is an error naming the feature |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` (and per signal) | The collector; OTLP/HTTP appends `/v1/traces`, `/v1/metrics` or `/v1/logs` to the general one |
 | `OTEL_EXPORTER_OTLP_HEADERS` (and per signal) | Sent with every export |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` (and per signal) | Milliseconds; 10 s when unset |
+| `OTEL_EXPORTER_OTLP_COMPRESSION` (and per signal) | `gzip` or `none`; `zstd` (it needs a C library) and anything else is an error naming the variable |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (either case) | Export goes through an `http://` proxy, as curl reads them; see [Proxies, compression and private CAs](#proxies-compression-and-private-cas) |
+| `OTEL_EXPORTER_PROMETHEUS_HOST`, `OTEL_EXPORTER_PROMETHEUS_PORT` | Where `prometheus` serves: `localhost` and 9464 when unset |
+| `OTEL_PROPAGATORS` | `tracecontext`, `baggage`, `none`, in a list; another name (`b3`, `jaeger`, …) is reported and skipped, not an error |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` (and per signal) | A PEM file of CA certificates trusted alongside the bundled Mozilla roots |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` (and per signal) | PEM files of the client certificate chain and its key, for a collector that requires mutual TLS; one without the other is an error |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource; either naming the service wins over `with_default_service_name` |
-| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*` | Read by the OpenTelemetry SDK itself |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*`, `OTEL_BLRP_*`, `OTEL_METRIC_EXPORT_INTERVAL`, `OTEL_SPAN_*_LIMIT`, `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | Read by the OpenTelemetry crates themselves (the sampler, the delta temporality and the headers were each run against a collector, 2026-10-26) |
+| `RUST_LOG` | What `install_subscriber` prints to standard error, in `target=level` form; see [When something is wrong](#when-something-is-wrong) |
 
 The builder's `with_otlp_endpoint` and `with_otlp_protocol` set the same
 things in code, and — as in the OpenTelemetry SDK — a value set in code wins
@@ -193,6 +208,134 @@ JSON bodies (`http/json`) are the `otlp-json` feature, off by default even in
 the protocol of every exporter in the process that is built without one, and
 Cargo's feature unification would impose that on an application's own
 exporters.
+
+### Seeing it with no collector
+
+`OTEL_TRACES_EXPORTER=console`, and `OTEL_METRICS_EXPORTER=console` and
+`OTEL_LOGS_EXPORTER=console`, print a signal to standard output: one line per
+span, per metric data point and per log record. It needs no collector and no
+network, and a process that prints and sends nothing else starts no export
+thread. The values are a comma list, so `otlp,console` sends and prints at
+once. These are `hello-agent`'s own lines for one `SendMessage`, shortened
+at the right:
+
+```text
+2026-10-26T08:31:46.201Z LOG INFO dispatching JSON-RPC request method="\"SendMessage\""
+2026-10-26T08:31:46.202Z LOG INFO handling send message trace=774ca132226adab1187f3086733dfe50 span=49312828cad270a5 method=SendMessage streaming=false
+2026-10-26T08:31:46.202Z SPAN "invoke_agent hello-agent" internal 1.4ms trace=774ca132226adab1187f3086733dfe50 span=d6d454061aa524b3 parent=49312828cad270a5 events=4 a2a.task.id=48bc629f-…
+2026-10-26T08:31:46.201Z SPAN lf.a2a.v1.A2AService/SendMessage server 2.9ms trace=774ca132226adab1187f3086733dfe50 span=49312828cad270a5 events=7 rpc.system.name=jsonrpc …
+2026-10-26T08:30:32.808Z METRIC rpc.server.call.duration{rpc.system.name=jsonrpc,rpc.method=lf.a2a.v1.A2AService/SendMessage} histogram count=1 sum=0.002844698 s cumulative min=0.002844698 max=0.002844698
+```
+
+Metrics are printed once per export interval, 60 s unless
+`OTEL_METRIC_EXPORT_INTERVAL` (milliseconds) says otherwise, and once more when
+`Telemetry` is shut down. A span line names its parent, the span's events are
+counted rather than listed (the `tracing` events inside a span are `LOG` lines
+of their own when logs are printed too), and the `code.*`, `thread.*`,
+`busy_ns` and `idle_ns` attributes `tracing-opentelemetry` adds to every span
+are left off the line — they are still exported. The format is for reading, not
+for parsing, and may change; send OTLP to anything that parses.
+
+### When something is wrong
+
+`install_subscriber` prints what a person needs when export does not work, on
+standard error. First, once at startup, where each signal goes:
+
+```text
+INFO a2a_protocol_server::otel::telemetry: telemetry: traces → otlp http/protobuf http://127.0.0.1:4318/v1/traces, gzip; metrics → off; logs → off
+INFO a2a_protocol_server::otel::telemetry: telemetry: nothing is exported; set OTEL_EXPORTER_OTLP_ENDPOINT to send it to a collector, or OTEL_TRACES_EXPORTER=console to print spans
+```
+
+The destination has any `user:password@` removed from its URL, and names
+gzip and the proxy it goes through when there is one. Second, when an export is
+lost after the exporter's retries, a warning naming the signal and where it was
+going, at most once every 30 s with a count of the ones held back:
+
+```text
+WARN a2a_protocol_server::otel::telemetry::counting: OTLP export of traces to http://127.0.0.1:4399/v1/traces failed after the exporter's retries and the batch was dropped: Operation failed: HTTP export failed: network error
+```
+
+Before 0.16 that case was silent: with `hello-agent` pointed at a port nothing
+listened on, nine seconds produced no output at all, and a process given no
+collector said nothing about how to give it one. What is printed is
+warnings and errors from everywhere, plus the startup line;
+`RUST_LOG=my_agent=debug,warn` (the `target=level` form, not the full
+`EnvFilter` syntax) changes it, and a value that is not understood is said, not
+ignored. With the console log exporter on, events are not printed a second
+time on standard error. `OTEL_SDK_DISABLED=true` installs nothing.
+
+`Telemetry::describe()` returns the startup line and `Telemetry::notices()`
+what the configuration asked for that this SDK does not do and went on without
+(an `OTEL_PROPAGATORS` name it does not have), for an application whose own
+subscriber prints them its own way.
+
+### Proxies, compression and private CAs
+
+**Proxies.** `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in either
+case, are read as curl reads them (`NO_PROXY` is a comma list of hosts, domain
+suffixes, CIDR ranges and `*`). A collector at an `https://` address is
+reached through an `HTTP CONNECT` tunnel with TLS inside it, so its certificate
+is still checked against your CAs. A plain `http://` collector over OTLP/HTTP is
+sent as a forward-proxy request, with `Proxy-Authorization` from the login in
+the proxy's URL; over OTLP/gRPC it is tunnelled too. Only `http://` proxies are
+spoken: a `socks5://` or `https://` value is ignored with one warning and the
+export goes direct, rather than the process refusing to start over a variable
+set for every other tool it runs. In code, `with_proxy(url)` names one proxy for
+every destination and, being explicit, does not consult `NO_PROXY`;
+`without_proxy()` ignores the environment. Before 0.16 none of these variables
+was read: with `HTTP_PROXY` set and a collector only the proxy could resolve,
+the proxy received nothing.
+
+**Compression.** `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and the per-signal
+forms) sends bodies as `Content-Encoding: gzip` over OTLP/HTTP and
+`grpc-encoding: gzip` over OTLP/gRPC. On `hello-agent` one traces export went
+from 6,633 to 1,799 bytes and one metrics export from 2,896 to 1,216.
+`with_compression(OtlpCompression::Gzip)` asks for it in code; code cannot turn
+off what the variable turned on. `zstd` is an error, because it needs a C
+library. Before 0.16 the variable was ignored without a word: the exporter
+crate warns when it was not built for a compression, and `Telemetry` had no
+subscriber yet when it built the exporters.
+
+**An endpoint needs its scheme over OTLP/HTTP.** `127.0.0.1:4318` is an error
+that says to write `http://127.0.0.1:4318` or `https://…`, where it was
+"invalid format". OTLP/gRPC reads a bare `host:port` as `https://`, or as
+`http://` when `OTEL_EXPORTER_OTLP_INSECURE=true`.
+
+A private CA and mutual TLS are in the table above
+(`OTEL_EXPORTER_OTLP_CERTIFICATE`, `…_CLIENT_CERTIFICATE`, `…_CLIENT_KEY`).
+
+### Prometheus: scrape instead of push
+
+With the `otel-prometheus` feature, `OTEL_METRICS_EXPORTER=prometheus` serves
+the metrics at `/metrics` in the Prometheus text format, for a Prometheus that
+scrapes this process with no collector between them. It listens on
+`OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT` (9464), the
+specification's defaults, and is the `otlp,prometheus` list's other half if you
+want both. The names are the ones in
+[What these become in Prometheus](#what-these-become-in-prometheus), because
+it is the same translation: on `hello-agent` one `SendMessage` made
+`a2a_server_requests_total{method="SendMessage",otel_scope_name="a2a.server"} 1`
+and `rpc_server_call_duration_seconds_count{…} 1`. The listener is bound when
+`Telemetry` is built, so a port in use fails there and names the variable. It
+answers `GET` and `HEAD` on `/metrics`, `404` elsewhere. It is plain HTTP and
+unauthenticated: with `OTEL_EXPORTER_PROMETHEUS_HOST=0.0.0.0` (a scraper on
+another machine needs that or an address) anyone who can reach the port can
+read every metric, so it belongs behind the network policy that already
+protects your other metrics ports. Without the feature the value is an error
+naming it.
+
+### What the resource says
+
+Besides `service.name`, `service.instance.id` and `telemetry.sdk.*`, each
+export's resource carries `host.name`, `host.arch`, `os.type`, `process.pid`
+and `process.executable.name`, each only if `OTEL_RESOURCE_ATTRIBUTES` does not
+name it (on `hello-agent`, `host.name=from-env` won). `host.name` is `HOSTNAME`
+or `COMPUTERNAME`, else the kernel's hostname file on Linux: this crate forbids
+`unsafe`, which `gethostname(2)` needs, so a macOS process that does not
+export `HOSTNAME` carries none rather than a wrong one. These identify the
+machine and the process to whoever receives the export;
+`TelemetryBuilder::without_resource_detection()` leaves them out. Prometheus
+shows them on `target_info`.
 
 Things it gets right that hand-wiring tends not to, each covered by a test in
 `crates/a2a-protocol-server/tests/telemetry_export/`:
@@ -616,11 +759,12 @@ With `tracing` enabled and a subscriber installed:
 RUST_LOG=a2a_protocol_server=debug,a2a_protocol_client=debug cargo run
 ```
 
-`RUST_LOG` takes effect only through an `EnvFilter` your subscriber installs
-(`tracing_subscriber::EnvFilter::from_default_env()`, with
+`RUST_LOG` takes effect in your own subscriber only through an `EnvFilter` you
+install (`tracing_subscriber::EnvFilter::from_default_env()`, with
 `tracing-subscriber`'s `env-filter` feature). `Telemetry::install_subscriber`
-installs none, so with it every span is exported and events at `INFO` and
-above become log records.
+reads it for what it prints to standard error (warnings by default, in the
+`target=level` form), not for what is exported: with it every span is
+exported and events at `INFO` and above become log records.
 
 Task and context identifiers are on the executor's span (`a2a.task.id`,
 `a2a.context.id`), so one request can be followed through **this** process.

@@ -82,6 +82,7 @@ enable them:
 | `otel` | client, server | On by default. Server: `OtelMetrics` and the spans' OpenTelemetry bridge. Client: each call's `traceparent` names the call's own span. The OpenTelemetry API only |
 | `otlp` | server | `Telemetry`, OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, with a Langfuse preset; on by default in the SDK only |
 | `otlp-json` | server | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default everywhere (implies `otlp`) |
+| `otel-prometheus` | server | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes; off by default everywhere (implies `otlp`) |
 | `axum` | server | Axum framework integration |
 | `tool-loop` | server | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` (ADR 0022) |
 | `auth-jwt` | server | JWT bearer-token authentication (HS256/RS256/ES256, static or remote JWKS with OIDC discovery) via `ring`; the header/token interceptors (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature |

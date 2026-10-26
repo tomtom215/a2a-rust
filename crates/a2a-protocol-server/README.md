@@ -147,6 +147,7 @@ println!("{report:?}");
 | `otel` | Yes | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`; no exporter) |
 | `otlp` | No | `otel::Telemetry`: OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, configured by `OTEL_*`, with a Langfuse preset; and `init_otlp_pipeline` (implies `otel`) |
 | `otlp-json` | No | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`); off by default because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
+| `otel-prometheus` | No | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and `_PORT`, default 9464); off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | No | Axum integration (`A2aRouter`) |
 | `tool-loop` | No | Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, `ToolLoopExecutor`, and `OpenAiChatModel` for the chat-completions API; each tool call carries an idempotency key and a repeated call runs once (ADR 0026); HTTPS to the model needs `tls-rustls` |

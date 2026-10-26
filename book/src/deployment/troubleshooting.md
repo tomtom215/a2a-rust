@@ -77,6 +77,37 @@ and on a dashboard each looks the same as a broken exporter.
 See [Observability](./observability.md) for the full catalogue and for how to
 tell "not installed" from "installed and exporting nowhere".
 
+## Telemetry is configured and nothing reaches the collector
+
+Start with what the process says on standard error (a process that calls
+`Telemetry::install_subscriber`, as every binary in this repository does):
+
+```text
+INFO a2a_protocol_server::otel::telemetry: telemetry: traces → otlp http/protobuf http://127.0.0.1:4318/v1/traces; metrics → off; logs → off
+```
+
+That line is where each signal is going, as the process understood its
+environment. A signal that says `off` is off because `OTEL_*_EXPORTER=none`, or
+because `with_export_where_configured()` found no endpoint for it; a line that
+says `nothing is exported` means no endpoint was found at all. Then:
+
+* **A `WARN … OTLP export of traces to … failed after the exporter's retries`**
+  means the process reached for the collector and could not get an answer: the
+  address, the port, a firewall, or (over TLS) a CA the process does not trust.
+  Behind a proxy, check `HTTPS_PROXY` and `NO_PROXY` (the line names the proxy
+  an export goes through). It is reported at most every 30 s.
+* **No warning and no data** with a plain `http://` collector: add
+  `OTEL_TRACES_EXPORTER=otlp,console` to see that spans are being made at all.
+  Spans appear when they end, so a request still running has none yet.
+* **The process refuses to start naming a variable**: it is a value the
+  exporter cannot act on, and it says which and why (`zstd` compression, an
+  OTLP/HTTP endpoint with no scheme, `prometheus` where the `otel-prometheus`
+  feature is not built).
+* **Warnings from the SDK you did not ask for** are shown too; they were
+  silent before. `RUST_LOG=error` quiets them.
+
+[Observability](./observability.md) has each of these in full.
+
 ## Push notifications never arrive
 
 Read the outcome label before doing anything else:

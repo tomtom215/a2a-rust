@@ -91,6 +91,7 @@ no logging, no OpenTelemetry and no webhook receiver.
 | `otel` | `OtelMetrics` and the spans' OpenTelemetry bridge, through the API only (on by default) |
 | `otlp` | `Telemetry`: OTLP export of traces, metrics and logs, gRPC or HTTP/protobuf, with a Langfuse preset (implies `otel`) |
 | `otlp-json` | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default because it would also make JSON the default of an application's own `opentelemetry-otlp` exporters (implies `otlp`) |
+| `otel-prometheus` | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between; off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Axum framework integration (`A2aRouter`) |
 | `tool-loop` | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor` and the chat-completions client `OpenAiChatModel` |
@@ -113,6 +114,7 @@ no logging, no OpenTelemetry and no webhook receiver.
 | `otel` | Enables `otel` in the server and the client (on by default) |
 | `otlp` | Enables the server's `otlp`: `Telemetry` and OTLP export (on by default) |
 | `otlp-json` | Enables the server's `otlp-json`: OTLP/HTTP with JSON bodies (off by default) |
+| `otel-prometheus` | Enables the server's `otel-prometheus`: `OTEL_METRICS_EXPORTER=prometheus` serves `/metrics` (off by default; implies `otlp`) |
 | `axum` | Enables Axum integration in the server |
 | `tool-loop` | Enables `tool-loop` in the server (`server::tool_loop`) |
 | `auth-jwt` | Enables JWT bearer-token authentication in the server |

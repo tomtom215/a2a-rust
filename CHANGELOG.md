@@ -12,6 +12,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OTLP export works from more setups, and says what it is doing.** Each item
+  was found by running the repository's `hello-agent` against a stand-in
+  collector (2026-10-26) and was silent or refused before.
+  - **Proxies**: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in
+    either case, as curl reads them. An `https://` collector is reached
+    through a `CONNECT` tunnel with TLS inside it (its certificate is still
+    checked); a plain `http://` one over OTLP/HTTP as a forward-proxy request
+    with `Proxy-Authorization` from the proxy URL's login; OTLP/gRPC is
+    tunnelled for both. Only `http://` proxies are spoken: any other kind is
+    ignored with one warning and the export goes direct. New
+    `TelemetryBuilder::with_proxy` (does not consult `NO_PROXY`) and
+    `without_proxy`. Before, a collector only the proxy could resolve received
+    nothing and the process printed nothing.
+  - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
+    both transports, `none` accepted, `zstd` and anything else an error naming
+    the variable. One traces export went from 6,633 to 1,799 bytes and one
+    metrics export from 2,896 to 1,216. New `TelemetryBuilder::with_compression`
+    and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
+    warns when it was not built for a compression, and `Telemetry` had no
+    subscriber when it built the exporters.
+  - **A console exporter**: `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` and
+    `OTEL_LOGS_EXPORTER` take a comma list of `otlp`, `console` (and the
+    deprecated `logging`) and `none`; `console` was refused. One line per span,
+    metric data point and log record on standard output, no collector and, for a
+    console-only process, no export thread.
+  - **A Prometheus endpoint**: with the new, off-by-default `otel-prometheus`
+    feature (server and SDK crates), `OTEL_METRICS_EXPORTER=prometheus` serves
+    `/metrics` on `OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT`
+    (9464) for a Prometheus that scrapes, under the names the book's Prometheus
+    table gives. Plain HTTP, unauthenticated. Adds `opentelemetry-prometheus` and
+    `prometheus` to the lockfile. `Telemetry::prometheus_addr` reports where.
+  - **Resource attributes** `host.name`, `host.arch`, `os.type`, `process.pid`
+    and `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES` does
+    not name it; `TelemetryBuilder::without_resource_detection` omits them.
+    `host.name` is `HOSTNAME`, `COMPUTERNAME` or the kernel's hostname file
+    (this crate forbids `unsafe`, which `gethostname(2)` needs), so a macOS
+    process that does not export `HOSTNAME` has none.
+  - **`OTEL_PROPAGATORS`**: `tracecontext`, `baggage` and `none` are honoured; a
+    name this SDK does not have (`b3`, `jaeger`, …) is reported by
+    `Telemetry::notices` and a warning, not an error.
+  - **`Telemetry::describe`** (where each signal goes, with any login in a URL
+    removed) and **`Telemetry::notices`**.
+  - OTLP/HTTP endpoints with no scheme are refused with what to write; the
+    message was "invalid format".
+  Book: [Observability](book/src/deployment/observability.md), "Seeing it with
+  no collector", "When something is wrong", "Proxies, compression and private
+  CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
+  [troubleshooting](book/src/deployment/troubleshooting.md) entry.
 - **A Compliance part in the book** (`book/src/compliance/`): a
   [Compliance Overview](book/src/compliance/overview.md) with an obligation to
   page table, the 88-provision control map summarised by framework and the
@@ -34,6 +82,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Swarm](book/src/examples/swarm.md). Each is in the table of contents, the
   overview table and the doctest harness; the overview no longer says five
   examples have no page.
+
+### Behaviour Changes
+
+- **`Telemetry::install_subscriber` always installs a subscriber** (except under
+  `OTEL_SDK_DISABLED=true`). It installed nothing when no trace or log provider
+  was built, "so a process run without a collector keeps no subscriber at all",
+  which left such a process showing nothing: not its own warnings, not how to
+  turn export on. The subscriber now has a layer that prints warnings and errors
+  to standard error (`RUST_LOG` in `target=level` form decides what; default
+  `warn`) and logs `Telemetry::describe()` once. It still never replaces a
+  global subscriber already set. Code that calls it and then installs its own
+  with `.init()` finds the slot taken now when it did not before: install yours
+  first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
+  asserted the old contract and now asserts this one.
+- **A lost export is reported.** After the exporter's retries, a `warn` names the
+  signal and the destination, at most once every 30 s with a count of the ones
+  held back, on a target `Telemetry` never exports. The SDK's own per-batch
+  `ExportError` event is left out of the printed output (the warning supersedes
+  it). Before, a collector that was not there produced no output in nine seconds.
+- **"no live event subscribers; event persisted only" is `debug`, not `warn`.**
+  The code's own comment says it is not an error: it is the ordinary path of
+  every blocking call. It was three warnings a request, unseen until a
+  subscriber printed warnings.
+- **Exports carry five more resource attributes** (above); an export to a party
+  that should not learn them uses `without_resource_detection`.
 
 ### Internal
 
