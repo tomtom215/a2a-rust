@@ -19,17 +19,26 @@ pub(super) struct Selection {
     pub(super) otlp: bool,
     /// Printed to standard output (`console`).
     pub(super) console: bool,
+    /// Served for a Prometheus to scrape (`prometheus`, metrics only).
+    pub(super) prometheus: bool,
 }
 
 impl Selection {
     pub(super) const OFF: Self = Self {
         otlp: false,
         console: false,
+        prometheus: false,
     };
 
     /// Whether the signal is recorded at all.
     pub(super) const fn any(self) -> bool {
-        self.otlp || self.console
+        self.otlp || self.console || self.prometheus
+    }
+
+    /// Whether anything is sent to, or served for, a process outside this one:
+    /// the cases that need the export runtime.
+    pub(super) const fn needs_runtime(self) -> bool {
+        self.otlp || self.prometheus
     }
 }
 
@@ -48,7 +57,7 @@ pub(super) fn from_env(
     let Some(value) = env(var) else {
         return Ok(Selection {
             otlp: default_otlp,
-            console: false,
+            ..Selection::OFF
         });
     };
     let mut chosen = Selection::OFF;
@@ -58,16 +67,53 @@ pub(super) fn from_env(
             "otlp" => chosen.otlp = true,
             // `logging` is the specification's deprecated name for `console`.
             "console" | "logging" => chosen.console = true,
+            "prometheus" if signal == Signal::Metrics => {
+                chosen.prometheus = prometheus_compiled_in(var, &value)?;
+            }
+            "prometheus" => {
+                return Err(TelemetryError::config(
+                    var,
+                    &value,
+                    "`prometheus` exports metrics; it is not an exporter for this signal",
+                ));
+            }
             _ => {
                 return Err(TelemetryError::config(
                     var,
                     &value,
-                    "only `otlp`, `console` and `none` are supported",
+                    "only `otlp`, `console`, `prometheus` (metrics) and `none` are supported",
                 ));
             }
         }
     }
     Ok(chosen)
+}
+
+/// Whether Prometheus export is compiled in.
+///
+/// One function with the feature split inside it rather than two `#[cfg]`
+/// match arms, for the reason `config::http_json` gives: under
+/// `--all-features` the `not(otel-prometheus)` arm is compiled out, so
+/// deleting it builds and passes every test.
+#[cfg_attr(
+    feature = "otel-prometheus",
+    allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)
+)]
+fn prometheus_compiled_in(var: &str, value: &str) -> Result<bool, TelemetryError> {
+    #[cfg(feature = "otel-prometheus")]
+    {
+        let _ = (var, value);
+        Ok(true)
+    }
+    #[cfg(not(feature = "otel-prometheus"))]
+    {
+        Err(TelemetryError::config(
+            var,
+            value,
+            "Prometheus export is not compiled in: enable the `otel-prometheus` feature, \
+             or use `otlp`",
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -85,11 +131,11 @@ mod tests {
 
     const OTLP: Selection = Selection {
         otlp: true,
-        console: false,
+        ..Selection::OFF
     };
     const CONSOLE: Selection = Selection {
-        otlp: false,
         console: true,
+        ..Selection::OFF
     };
 
     #[test]
@@ -124,7 +170,8 @@ mod tests {
             from_env(&*e, Signal::Traces, false).unwrap(),
             Selection {
                 otlp: true,
-                console: true
+                console: true,
+                ..Selection::OFF
             }
         );
     }
@@ -154,7 +201,52 @@ mod tests {
     }
 
     #[test]
-    fn any_is_true_for_either_exporter() {
-        assert!(OTLP.any() && CONSOLE.any() && !Selection::OFF.any());
+    fn any_is_true_for_each_exporter_and_only_a_remote_one_needs_the_runtime() {
+        let prometheus = Selection {
+            prometheus: true,
+            ..Selection::OFF
+        };
+        assert!(OTLP.any() && CONSOLE.any() && prometheus.any() && !Selection::OFF.any());
+        assert!(OTLP.needs_runtime() && prometheus.needs_runtime());
+        assert!(!CONSOLE.needs_runtime() && !Selection::OFF.needs_runtime());
+    }
+
+    #[test]
+    fn prometheus_is_for_metrics_alone() {
+        for signal in [Signal::Traces, Signal::Logs] {
+            let e = env(&[
+                ("OTEL_TRACES_EXPORTER", "prometheus"),
+                ("OTEL_LOGS_EXPORTER", "prometheus"),
+            ]);
+            let msg = from_env(&*e, signal, true).unwrap_err().to_string();
+            assert!(
+                msg.contains("prometheus") && msg.contains("metrics"),
+                "{msg}"
+            );
+        }
+    }
+
+    #[cfg(not(feature = "otel-prometheus"))]
+    #[test]
+    fn prometheus_without_its_feature_is_refused_naming_the_feature() {
+        let e = env(&[("OTEL_METRICS_EXPORTER", "prometheus")]);
+        let msg = from_env(&*e, Signal::Metrics, true)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("OTEL_METRICS_EXPORTER") && msg.contains("otel-prometheus"),
+            "{msg}"
+        );
+    }
+
+    #[cfg(feature = "otel-prometheus")]
+    #[test]
+    fn prometheus_with_its_feature_is_chosen_alone_or_beside_otlp() {
+        let only = env(&[("OTEL_METRICS_EXPORTER", "prometheus")]);
+        let got = from_env(&*only, Signal::Metrics, true).unwrap();
+        assert!(got.prometheus && !got.otlp && !got.console);
+        let both = env(&[("OTEL_METRICS_EXPORTER", "otlp,prometheus")]);
+        let got = from_env(&*both, Signal::Metrics, false).unwrap();
+        assert!(got.prometheus && got.otlp);
     }
 }

@@ -56,6 +56,9 @@ otel = ["a2a-protocol-server/otel", "a2a-protocol-client/otel"]
 ## OTLP export: `server::otel::Telemetry`, the `Langfuse` preset and
 ## `init_otlp_pipeline` (on by default).
 otlp = ["otel", "a2a-protocol-server/otlp"]
+## `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics`; off by
+## default, as in the server crate, whose entry says why.
+otel-prometheus = ["otlp", "a2a-protocol-server/otel-prometheus"]
 ## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off by default, as
 ## in the server crate, whose entry says why.
 otlp-json = ["otlp", "a2a-protocol-server/otlp-json"]

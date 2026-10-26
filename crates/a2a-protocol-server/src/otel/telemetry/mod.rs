@@ -44,6 +44,8 @@ mod diagnostics;
 mod exporters;
 mod http;
 mod langfuse;
+#[cfg(feature = "otel-prometheus")]
+mod prometheus;
 mod propagators;
 mod proxy;
 mod runtime;
@@ -130,6 +132,9 @@ pub struct Telemetry {
     /// What the configuration asked for that this SDK does not do and carried
     /// on without ([`notices`](Self::notices)).
     notices: Vec<String>,
+    /// Where the Prometheus endpoint listens ([`prometheus_addr`](Self::prometheus_addr)).
+    #[cfg(feature = "otel-prometheus")]
+    prometheus: Option<std::net::SocketAddr>,
 }
 
 impl Telemetry {
@@ -261,6 +266,15 @@ impl Telemetry {
         let counter = Arc::new(AtomicU64::new(0));
         self.failures.push((signal, Arc::clone(&counter)));
         Counting::new(exporter, counter).reporting(signal, destination)
+    }
+
+    /// The address `/metrics` is served on under
+    /// `OTEL_METRICS_EXPORTER=prometheus` — the port the operating system
+    /// chose when `OTEL_EXPORTER_PROMETHEUS_PORT` is `0`.
+    #[cfg(feature = "otel-prometheus")]
+    #[must_use]
+    pub const fn prometheus_addr(&self) -> Option<std::net::SocketAddr> {
+        self.prometheus
     }
 
     /// What the environment or the code asked for that this SDK does not do,

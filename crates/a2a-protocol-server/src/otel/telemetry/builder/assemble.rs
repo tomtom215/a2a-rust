@@ -69,10 +69,13 @@ impl TelemetryBuilder {
             logs_on_console: chosen[2].console,
             report: Vec::new(),
             notices: Vec::new(),
+            #[cfg(feature = "otel-prometheus")]
+            prometheus: None,
         };
         // The export thread exists only when something is sent to a
-        // collector; a console-only process starts none.
-        let runtime = if chosen.iter().any(|s| s.otlp) {
+        // collector or served for a scraper; a console-only process starts
+        // none.
+        let runtime = if chosen.iter().any(|s| s.needs_runtime()) {
             Some(ExportRuntime::start().map_err(TelemetryError::Runtime)?)
         } else {
             None
@@ -152,6 +155,15 @@ impl TelemetryBuilder {
                 .build(),
             );
             parts.push(otlp_part(&target));
+        }
+        #[cfg(feature = "otel-prometheus")]
+        if chosen.prometheus
+            && let Some(runtime) = runtime
+        {
+            let started = super::super::prometheus::start(&*self.env, runtime)?;
+            builder = builder.with_reader(started.reader);
+            parts.push(format!("prometheus http://{}/metrics", started.addr));
+            telemetry.prometheus = Some(started.addr);
         }
         if chosen.console {
             builder = builder.with_reader(PeriodicReader::builder(Console::stdout()).build());

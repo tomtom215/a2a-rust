@@ -85,6 +85,14 @@ otlp = [
     # `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` for export (`telemetry/proxy.rs`).
     "hyper-util/client-proxy",
 ]
+## `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` in the
+## Prometheus text format, for a Prometheus that scrapes and no collector in
+## between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and
+## `_PORT`, default 9464). Off by default, here and in `a2a-protocol-sdk`:
+## it adds `opentelemetry-prometheus` and `prometheus` to the lockfile (their
+## other dependencies are in the graph already), and a listener most processes
+## do not want.
+otel-prometheus = ["otlp", "dep:opentelemetry-prometheus", "dep:prometheus"]
 ## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`,
 ## `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`), for a collector or proxy that
 ## takes only JSON. Off by default, here and in `a2a-protocol-sdk`:
@@ -201,6 +209,11 @@ opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", 
 # its own (the SLIMRPC binding's SLIM client, 2026-10-23).
 opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "gzip-http", "gzip-tonic", "metrics", "trace", "logs"] }
 opentelemetry-http = { version = "0.33", optional = true, default-features = false }
+# `otel-prometheus`: the reader that keeps the Prometheus registry current, and
+# the registry and text encoder it fills. `prometheus` without its default
+# `protobuf` feature: the text format needs none.
+opentelemetry-prometheus = { version = "0.33", optional = true }
+prometheus = { version = "0.14", optional = true, default-features = false }
 opentelemetry-appender-tracing = { version = "0.33", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
 # and 0.3.18-0.3.19 carry RUSTSEC-2025-0055 (`check_advisory_floors.py`).
