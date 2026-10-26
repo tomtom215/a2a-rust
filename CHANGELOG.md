@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.15.1] - 2026-10-26
+
+Telemetry export works in more deployments and says what it is doing: proxies,
+gzip, a console exporter and a Prometheus endpoint; a warning when an export
+is lost, with the transport's cause and, where the failure names the fix, a
+hint; and `shutdown_signal()`, so a pod stopped by `SIGTERM` flushes. A diff of
+the public items against `v0.15.0` finds only additions: `shutdown_signal`,
+`OtlpCompression`, five `TelemetryBuilder` methods, three `Telemetry` methods
+and the off-by-default `otel-prometheus` feature. Two behaviours change, under
+*Behaviour Changes*; the proxy one affects any pod that sets `HTTP_PROXY`.
+
 ### Added
 
 - **OTLP export works from more setups, and says what it is doing.** Each item

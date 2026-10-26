@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.15.0** (prepared 2026-10-25; the tag is the maintainer's act). MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
+Current release: **0.15.1** (prepared 2026-10-26; the tag is the maintainer's act). MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
 
 ## What this file is
 
