@@ -60,8 +60,9 @@ let _client = ClientBuilder::new("http://localhost:3000").build()?;
 ## Features
 
 Each feature forwards to the constituent crates named; `tls-rustls`,
-`tracing` and `webhook` are the defaults. The SDK takes those crates without
-their own defaults, so `default-features = false` here removes all three.
+`tracing`, `otel`, `otlp` and `webhook` are the defaults. The SDK takes those
+crates without their own defaults, so `default-features = false` here removes
+all five.
 
 | Feature | Default | Forwards to |
 |---------|---------|-------------|
@@ -73,6 +74,7 @@ their own defaults, so `default-features = false` here removes all three.
 | `otel` | Yes | `a2a-protocol-server`, `a2a-protocol-client` |
 | `otlp` | Yes | `a2a-protocol-server` (implies `otel`) |
 | `otlp-json` | No | `a2a-protocol-server` (implies `otlp`) |
+| `otel-prometheus` | No | `a2a-protocol-server` (implies `otlp`) |
 | `websocket` | No | `a2a-protocol-client`, `a2a-protocol-server` |
 | `sqlite` | No | `a2a-protocol-server` |
 | `postgres` | No | `a2a-protocol-server` |

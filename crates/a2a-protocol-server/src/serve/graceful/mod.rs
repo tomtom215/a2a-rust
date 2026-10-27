@@ -63,7 +63,7 @@
 //! # }
 //! use std::sync::Arc;
 //! use std::time::Duration;
-//! use a2a_protocol_server::serve::{ServeConfig, Server};
+//! use a2a_protocol_server::serve::{ServeConfig, Server, shutdown_signal};
 //! use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 //! use a2a_protocol_server::RequestHandlerBuilder;
 //! # struct MyExecutor;
@@ -83,13 +83,11 @@
 //!         .with_drain_timeout(Duration::from_secs(15)),
 //! );
 //!
-//! // On Ctrl-C: stop accepting, let in-flight tasks finish for up to
-//! // `completion_grace`, cancel the rest and give their executors
+//! // On SIGTERM or Ctrl-C: stop accepting, let in-flight tasks finish for up
+//! // to `completion_grace`, cancel the rest and give their executors
 //! // `task_grace` to end them, then drain the connections.
 //! let report = server
-//!     .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), async {
-//!         tokio::signal::ctrl_c().await.ok();
-//!     })
+//!     .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), shutdown_signal())
 //!     .await;
 //!
 //! // Last: the executor's cleanup hook. By now the work has ended, so there

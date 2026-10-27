@@ -42,6 +42,7 @@ use opentelemetry_proto::tonic::trace::v1::Span;
 use prost::Message as _;
 use tokio::sync::oneshot;
 
+use super::body;
 use super::certs::TestCerts;
 
 /// One export request as the collector saw it. gRPC requests are recorded
@@ -195,10 +196,11 @@ impl Collector {
             if let Some(tls) = tls {
                 server = server.tls_config(tls).expect("server TLS");
             }
+            let gzip = tonic::codec::CompressionEncoding::Gzip;
             let _ = server
-                .add_service(TraceServiceServer::new(svc.clone()))
-                .add_service(MetricsServiceServer::new(svc.clone()))
-                .add_service(LogsServiceServer::new(svc))
+                .add_service(TraceServiceServer::new(svc.clone()).accept_compressed(gzip))
+                .add_service(MetricsServiceServer::new(svc.clone()).accept_compressed(gzip))
+                .add_service(LogsServiceServer::new(svc).accept_compressed(gzip))
                 .serve_with_incoming_shutdown(incoming, async {
                     let _ = stopped.await;
                 })
@@ -358,15 +360,18 @@ async fn serve_http(
                                 (k.as_str().to_owned(), v.to_str().unwrap_or("").to_owned())
                             })
                             .collect();
-                        let json = headers_say_json(&headers);
+                        let json = body::says_json(&headers);
+                        let gzipped =
+                            headers.get("content-encoding").map(String::as_str) == Some("gzip");
                         let body = req
                             .into_body()
                             .collect()
                             .await
                             .map(|b| b.to_bytes().to_vec())
                             .unwrap_or_default();
+                        let body = if gzipped { body::gunzip(&body) } else { body };
                         let body = if json {
-                            json_to_protobuf(&path, &body)
+                            body::json_to_protobuf(&path, &body)
                         } else {
                             body
                         };
@@ -413,30 +418,6 @@ async fn serve_http(
                 }
             }
         });
-    }
-}
-
-fn headers_say_json(headers: &HashMap<String, String>) -> bool {
-    headers
-        .get("content-type")
-        .is_some_and(|t| t.starts_with("application/json"))
-}
-
-/// An OTLP/JSON request body, decoded as a collector does and re-encoded as
-/// protobuf, so one decoder serves both encodings. A body that does not
-/// decode panics the collector's connection, and the export fails.
-fn json_to_protobuf(path: &str, body: &[u8]) -> Vec<u8> {
-    match path {
-        "/v1/traces" => serde_json::from_slice::<ExportTraceServiceRequest>(body)
-            .expect("an OTLP/JSON trace request")
-            .encode_to_vec(),
-        "/v1/metrics" => serde_json::from_slice::<ExportMetricsServiceRequest>(body)
-            .expect("an OTLP/JSON metrics request")
-            .encode_to_vec(),
-        "/v1/logs" => serde_json::from_slice::<ExportLogsServiceRequest>(body)
-            .expect("an OTLP/JSON logs request")
-            .encode_to_vec(),
-        other => panic!("no OTLP signal at {other}"),
     }
 }
 

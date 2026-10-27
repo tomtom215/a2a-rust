@@ -607,7 +607,12 @@ impl InMemoryQueueWriter {
         match self.tx.send(event) {
             Ok(_) => Ok(()),
             Err(_) if self.persistence_tx.is_some() && !collector_gone => {
-                trace_warn!("no live event subscribers; event persisted only");
+                // `debug`, not `warn`: this is the ordinary path of every
+                // blocking call, which has no SSE subscriber, and of a
+                // streaming client that dropped. Three `WARN`s a request
+                // showed up once a subscriber was installed that printed
+                // them (2026-10-26, `hello-agent`).
+                trace_debug!("no live event subscribers; event persisted only");
                 Ok(())
             }
             Err(_) => Err(A2aError::internal("event queue: no active receivers")),

@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# What runs on workerd and what does not, one route per primitive, on
+# `a2a-protocol-types` alone. Needs no patch.
+[workspace]
+
+[package]
+name = "probe-worker"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+worker = "0.8.7"
+a2a-protocol-types = { path = "../../../../crates/a2a-protocol-types" }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "js"] }
+console_error_panic_hook = "0.1"
+tokio = { version = "1", default-features = false, features = ["sync", "time", "rt", "macros"] }
+futures = { version = "0.3", default-features = false, features = ["std", "async-await", "executor"] }
+wasmtimer = { version = "0.4.3", features = ["tokio"] }
+web-time = "1"
+tokio_with_wasm = { version = "0.9.2", features = ["rt", "time", "sync", "macros"] }
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+url = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

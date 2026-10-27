@@ -14,6 +14,8 @@ Rust async code is runtime-agnostic at the language level, but practical HTTP li
 
 **Tokio is the mandatory async runtime.** It is listed as a mandatory dep (not optional, not feature-gated for the I/O crates).
 
+*Qualification proposed 2026-10-26 — [ADR 0028](0028-webassembly-and-cloudflare-workers.md), not yet accepted: on `wasm32-unknown-unknown`, which has no Tokio runtime, spawning, timers and clocks would go through a runtime seam.*
+
 Tokio features are pinned to the minimum needed:
 
 | Crate | Tokio features |

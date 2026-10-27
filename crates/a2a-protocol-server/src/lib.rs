@@ -71,7 +71,7 @@
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //! | [`tenant_resolver`] | [`TenantResolver`], [`HeaderTenantResolver`], [`BearerTokenTenantResolver`], [`PathSegmentTenantResolver`] |
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
-//! | `otel` | `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+//! | `otel` | `OtelMetrics`, `OtelMetricsBuilder` (`otel` feature); `Telemetry`, `init_otlp_pipeline` (`otlp` feature) |
 //! | `tool_loop` | `ToolLoop`, `ToolLoopExecutor`, `ToolModel`, `Tool`, `ToolSet`, `OpenAiChatModel`: tool calling inside a task (`tool-loop` feature, ADR 0022) |
 //!
 //! # Axum integration
@@ -220,7 +220,9 @@ pub use rate_limit::PostgresRateLimitCounter;
 pub use rate_limit::{RateLimitConfig, RateLimitCounter, RateLimitInterceptor};
 pub use request_context::RequestContext;
 pub use rpc_span::{BindingSpan, CustomBinding, StreamEnd, StreamOutcome};
-pub use serve::{Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr};
+pub use serve::{
+    Dispatcher, ServeConfig, ServeReport, Server, serve, serve_with_addr, shutdown_signal,
+};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,

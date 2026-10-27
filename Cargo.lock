@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-cli"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -131,7 +131,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-sdk"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "a2a-protocol-types",
  "async-trait",
@@ -164,6 +164,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "criterion",
+ "flate2",
  "futures-util",
  "http",
  "http-body-util",
@@ -175,9 +176,11 @@ dependencies = [
  "opentelemetry-appender-tracing",
  "opentelemetry-http",
  "opentelemetry-otlp",
+ "opentelemetry-prometheus",
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "pin-project-lite",
+ "prometheus",
  "prost",
  "protoc-bin-vendored",
  "rcgen",
@@ -208,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "base64 0.23.1",
  "criterion",
@@ -2588,6 +2591,7 @@ version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0756af24841e367128ef31c831999937b8b5c5197d47914590d8f4e2e88c2e1a"
 dependencies = [
+ "flate2",
  "http",
  "httpdate",
  "opentelemetry",
@@ -2600,6 +2604,19 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-types",
+]
+
+[[package]]
+name = "opentelemetry-prometheus"
+version = "0.33.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9b52a5722eb64d198d6b6f1189e6b75a3c5ddfd224f48ede00c4330e0f11c66"
+dependencies = [
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "prometheus",
+ "tracing",
 ]
 
 [[package]]
@@ -2855,6 +2872,20 @@ dependencies = [
  "tokio",
  "tracing",
  "windows",
+]
+
+[[package]]
+name = "prometheus"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "thiserror",
 ]
 
 [[package]]
@@ -4468,6 +4499,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
+ "flate2",
  "h2",
  "http",
  "http-body",

@@ -110,8 +110,8 @@ pub mod prelude {
     pub use a2a_protocol_server::{
         AgentExecutor, ApiKeyAuthInterceptor, BearerTokenAuthInterceptor, Dispatcher, EventEmitter,
         EventQueueWriter, JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor, RequestContext,
-        RequestHandler, RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
-        boxed_future, serve, serve_with_addr,
+        RequestHandler, RequestHandlerBuilder, RestDispatcher, Server, ServerError, ServerResult,
+        boxed_future, serve, serve_with_addr, shutdown_signal,
     };
 
     // `agent_executor!` generates the whole `AgentExecutor` impl, so it is the

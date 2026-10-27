@@ -145,10 +145,37 @@ fn langfuse_traces_ignore_a_grpc_protocol_variable() {
 
 #[test]
 fn a_bad_variable_fails_the_build_naming_it() {
-    let err = with_env(&[("OTEL_LOGS_EXPORTER", "console")])
+    let err = with_env(&[("OTEL_LOGS_EXPORTER", "zipkin")])
         .build()
         .unwrap_err();
     assert!(err.to_string().contains("OTEL_LOGS_EXPORTER"), "{err}");
+}
+
+#[test]
+fn compression_comes_from_the_environment_and_code_wins() {
+    let t = |b: TelemetryBuilder| b.target(Signal::Traces).unwrap().compression;
+    assert_eq!(t(with_env(&[])), None);
+    assert_eq!(
+        t(with_env(&[("OTEL_EXPORTER_OTLP_COMPRESSION", "gzip")])),
+        Some(OtlpCompression::Gzip)
+    );
+    assert_eq!(
+        t(with_env(&[("OTEL_EXPORTER_OTLP_COMPRESSION", "none")])
+            .with_compression(OtlpCompression::Gzip)),
+        Some(OtlpCompression::Gzip)
+    );
+}
+
+#[test]
+fn a_compression_this_crate_cannot_act_on_fails_the_build_naming_it() {
+    for (var, value) in [
+        ("OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", "zstd"),
+        ("OTEL_EXPORTER_OTLP_COMPRESSION", "brotli"),
+    ] {
+        let err = with_env(&[(var, value)]).build().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(var) && msg.contains(value), "{msg}");
+    }
 }
 
 #[test]
@@ -322,6 +349,8 @@ fn the_export_client_debugs_as_its_timeout() {
         runtime.handle().clone(),
         &tls,
         std::time::Duration::from_secs(7),
+        Arc::new(hyper_util::client::proxy::matcher::Matcher::builder().build()),
+        Arc::default(),
     );
     let shown = format!("{client:?}");
     assert!(shown.starts_with("ExportHttpClient"), "{shown}");
@@ -435,8 +464,13 @@ fn a_grpc_endpoint_comes_from_the_environment_and_an_http_one_is_left_unset() {
         Some("https://metrics.example:4317")
     );
     assert_eq!(endpoint(&[grpc]), None);
+    // OTLP/HTTP leaves it to the exporter, which reads the variable itself
+    // (and needs a scheme: `a_schemeless_http_endpoint_is_refused_…`).
     assert_eq!(
-        endpoint(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"), general]),
+        endpoint(&[
+            ("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318"),
+        ]),
         None
     );
 }

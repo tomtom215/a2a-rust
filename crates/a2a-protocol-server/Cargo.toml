@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.15.0"
+version     = "0.15.1"
 description = "Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 
@@ -82,7 +82,17 @@ otlp = [
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
     "dep:http", "dep:tonic", "dep:tower-service",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
+    # `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` for export (`telemetry/proxy.rs`).
+    "hyper-util/client-proxy",
 ]
+## `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` in the
+## Prometheus text format, for a Prometheus that scrapes and no collector in
+## between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and
+## `_PORT`, default 9464). Off by default, here and in `a2a-protocol-sdk`:
+## it adds `opentelemetry-prometheus` and `prometheus` to the lockfile (their
+## other dependencies are in the graph already), and a listener most processes
+## do not want.
+otel-prometheus = ["otlp", "dep:opentelemetry-prometheus", "dep:prometheus"]
 ## OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`,
 ## `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`), for a collector or proxy that
 ## takes only JSON. Off by default, here and in `a2a-protocol-sdk`:
@@ -121,7 +131,7 @@ encryption = ["dep:ring", "dep:zeroize"]
 audit = ["a2a-protocol-types/audit"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.15.0", path = "../a2a-protocol-types" }
+a2a-protocol-types      = { version = "0.15.1", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
 # `#[mutants::skip]` for the mutants no test can distinguish (ADR 0006,
 # "Equivalent mutants"). Attribute-only, zero transitive dependencies, MIT,
@@ -189,17 +199,27 @@ opentelemetry_sdk = { version = "0.33", optional = true, features = ["metrics", 
 # (hyper + rustls, `otel/telemetry/http.rs`), because `deny.toml` keeps
 # reqwest out of this crate's graph. `tls-ring` + `tls-webpki-roots` give the
 # gRPC exporter the same ring provider and Mozilla roots the client uses.
+# `gzip-http` and `gzip-tonic`: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip`. Without them
+# `opentelemetry-otlp` warns and sends uncompressed (`telemetry/compression.rs`).
+# flate2 runs on `miniz_oxide`, pure Rust, and is in the graph already.
 # No tonic TLS feature: OTLP/gRPC to an `https://` collector runs over this
 # crate's own rustls connector (`otel::telemetry::exporters`). With tonic's
 # TLS compiled in, tonic refuses every `https://` channel it was not given a
 # TLS config for, which broke a dependent dialling TLS through a connector of
 # its own (the SLIMRPC binding's SLIM client, 2026-10-23).
-opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "metrics", "trace", "logs"] }
+opentelemetry-otlp = { version = "0.33", optional = true, default-features = false, features = ["grpc-tonic", "http-proto", "gzip-http", "gzip-tonic", "metrics", "trace", "logs"] }
 opentelemetry-http = { version = "0.33", optional = true, default-features = false }
+# `otel-prometheus`: the reader that keeps the Prometheus registry current, and
+# the registry and text encoder it fills. `prometheus` without its default
+# `protobuf` feature: the text format needs none.
+opentelemetry-prometheus = { version = "0.33", optional = true }
+prometheus = { version = "0.14", optional = true, default-features = false }
 opentelemetry-appender-tracing = { version = "0.33", optional = true, default-features = false }
 # Not the workspace's `>=0.3.18`: this is a dependency of the published crate,
 # and 0.3.18-0.3.19 carry RUSTSEC-2025-0055 (`check_advisory_floors.py`).
-tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std"] }
+# `fmt` is the stderr layer `Telemetry::install_subscriber` adds; without the `ansi`
+# feature it writes no colour codes and pulls no crate the registry did not.
+tracing-subscriber = { version = ">=0.3.20, <0.4", optional = true, default-features = false, features = ["registry", "std", "fmt"] }
 async-trait = { version = ">=0.1.80, <0.2", optional = true }
 http = { version = ">=1.1, <2", optional = true }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
@@ -223,7 +243,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1.11.1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.15.0", path = "../a2a-protocol-types" }
+a2a-protocol-types = { version = "0.15.1", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true, features = ["sqlite"] }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }
@@ -251,9 +271,11 @@ opentelemetry-proto = { version = "0.33", default-features = false, features = [
 prost = { workspace = true }
 # `tls-ring` for the stand-in collector's TLS listener; `Telemetry` itself
 # links no tonic TLS (see `opentelemetry-otlp` above).
-tonic = { workspace = true, features = ["tls-ring"] }
+tonic = { workspace = true, features = ["tls-ring", "gzip"] }
 tokio-stream = { workspace = true, features = ["net"] }
 rustls-pki-types = { version = ">=1.9, <2" }
+# The stand-in collector inflates gzip export bodies (`OTEL_EXPORTER_OTLP_COMPRESSION`).
+flate2 = { version = ">=1.1, <2" }
 
 [[bench]]
 name = "handler_bench"

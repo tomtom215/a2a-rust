@@ -24,9 +24,12 @@ spec:
     spec:
       # Must exceed the shutdown budget in main.rs (up to 5 s + 10 s for
       # in-flight tasks, the HTTP drain, then one 5 s budget for the queue
-      # drain and the cleanup hook), or SIGKILL arrives before the drain
-      # finishes and the graceful shutdown is cut short.
-      terminationGracePeriodSeconds: 30
+      # drain and the cleanup hook) plus, with telemetry on, the flush that
+      # runs as main returns: up to 15 s when the collector accepts
+      # connections and never answers, 1.8 s when it refuses them (measured on
+      # hello-agent, 2026-10-26). Otherwise SIGKILL arrives before the drain or
+      # the flush finishes and the shutdown is cut short.
+      terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -44,6 +47,21 @@ spec:
             # and clients read the card, call the address on it, and fail.
             - name: AGENT_URL
               value: "http://deploy-agent.default.svc.cluster.local"
+            # Telemetry: nothing is exported until a collector is named.
+            # Uncomment to send traces, metrics and logs to one in the
+            # cluster (OTLP/HTTP is port 4318; 4317 is gRPC and also needs
+            # OTEL_EXPORTER_OTLP_PROTOCOL=grpc). A `$(NAME)` in a value is
+            # Kubernetes's, and NAME must be defined earlier in this list.
+            # `service.instance.id` is what tells the replicas apart; without
+            # it each process invents a random one.
+            # - name: POD_NAME
+            #   valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            # - name: POD_NAMESPACE
+            #   valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            #   value: "http://otel-collector.observability.svc.cluster.local:4318"
+            # - name: OTEL_RESOURCE_ATTRIBUTES
+            #   value: "service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE)"
           # Liveness restarts a wedged process. It points at /healthz, which
           # checks nothing on purpose: a liveness probe with a dependency turns
           # that dependency's outage into a restart loop.

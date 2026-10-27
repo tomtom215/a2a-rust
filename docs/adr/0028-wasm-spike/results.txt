@@ -1,0 +1,200 @@
+# Results behind ADR 0028. Every number the ADR quotes is in this file.
+# Part 1 is the output of docs/adr/0028-wasm-spike/reproduce.sh, unedited except that the working directory prints as WORKDIR. Part 2 is what it does not run, with the command.
+# Run 2026-10-26, Linux x86_64, in a container. Base commit 6a82edcde4d5b2c84fe7e273e03738a6bec0f678.
+
+## Toolchain
+rustc 1.97.0 (2d8144b78 2026-07-07), target wasm32-unknown-unknown; clang 18; node v22.22.0
+wrangler 4.152.0; workerd 2026-10-19; worker-build 0.8.7; compatibility_date 2026-10-01; 'wrangler dev --local' (the workerd binary on loopback, not Cloudflare's network)
+resolved by the Workers' lockfiles: worker 0.8.7, wasm-bindgen 0.2.129, tokio_with_wasm 0.9.2, web-time 1.1.0, ring 0.17.14
+patch: 274442 bytes, sha256 (first 16) 9157eb1ebef961db; 147 files
+
+################ PART 1: reproduce.sh ################
+
+== clean worktree of 6a82edcde4d5b2c84fe7e273e03738a6bec0f678 in WORKDIR/tree, patch applied
+Preparing worktree (detached HEAD 6a82edc)
+PASS  patch applies to 6a82edcde4d5b2c84fe7e273e03738a6bec0f678
+Preparing worktree (detached HEAD 6a82edc)
+
+== unpatched 6a82edcde4d5b2c84fe7e273e03738a6bec0f678 on wasm32-unknown-unknown
+PASS  cargo check -p a2a-protocol-types --target wasm32-unknown-unknown
+PASS  (expected failure: unsupported by mio) cargo check -p a2a-protocol-server --target wasm32-unknown-unknown
+PASS  (expected failure: unsupported by mio) cargo check -p a2a-protocol-client --target wasm32-unknown-unknown
+PASS  (expected failure: getrandom) cargo check -p a2a-protocol-types --features signing --target wasm32-unknown-unknown
+
+== patched tree on wasm32-unknown-unknown
+PASS  cargo check -p a2a-protocol-types -p a2a-protocol-server --target wasm32-unknown-unknown
+PASS  (expected failure: unsupported by mio) cargo check -p a2a-protocol-client --target wasm32-unknown-unknown
+PASS  (expected failure: unsupported by mio) cargo check -p a2a-protocol-server --features otlp --target wasm32-unknown-unknown
+
+== native: every crate still builds on its own, and the workspace with all targets
+PASS  cargo check -p a2a-protocol-types
+PASS  cargo check -p a2a-protocol-types --no-default-features
+PASS  cargo check -p a2a-protocol-client
+PASS  cargo check -p a2a-protocol-client --no-default-features
+PASS  cargo check -p a2a-protocol-server
+PASS  cargo check -p a2a-protocol-server --no-default-features
+PASS  cargo check -p a2a-protocol-sdk
+PASS  cargo check -p a2a-protocol-sdk --no-default-features
+PASS  cargo check --workspace --all-targets
+
+== trap-API lint on the wasm32 build (expect 0 hits)
+disallowed-method hits: 0
+PASS  lint clean
+
+== native regression: cargo test -p a2a-protocol-server --lib, patched against unpatched, by test name and outcome
+test result: ok. 1545 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 37.12s
+test result: ok. 1545 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 37.15s
+PASS  1546 test lines identical, patched and unpatched
+
+== build handler-worker (with signing) and probe-worker
+PASS  handler-worker builds
+handler wasm: 1784549 bytes raw, 615897 bytes gzip -9
+
+== battery.py against the handler Worker (workerd, wrangler dev --local)
+PASS  blocking SendMessage completes with the executor's artifact  [42 ms]
+PASS  GetTask in a later request returns the same completed task
+PASS  executor timer fires on 3 consecutive requests (each >= 80 ms)  [92 ms, 92 ms, 91 ms]
+PASS  executor_timeout (400 ms) fails a hung executor, in under 2 s  [412 ms]
+PASS  CancelTask ends a running executor; GetTask then reports CANCELED
+PASS  SendStreamingMessage streams task, working, artifact, completed as SSE  [['task', 'statusUpdate', 'artifactUpdate', 'statusUpdate']]
+PASS  30 concurrent sends all complete, with 30 distinct task ids
+PASS  an unknown method is a JSON-RPC error
+PASS  non-blocking send whose executor needs a timer completes with ctx.wait_until(wait_idle)  [TASK_STATE_COMPLETED]
+PASS  HAZARD (expected): the same send without wait_until never completes  [TASK_STATE_WORKING]
+PASS  ES256 signed artifact verifies; a tampered copy is rejected  [genuine_verifies=true tampered_rejected=true sig_in_metadata=true]
+
+all passed
+panics in the workerd log: 0
+
+== wait_until A/B, one request per fresh isolate (expect COMPLETED, WORKING, COMPLETED)
+hold=1 -> TASK_STATE_COMPLETED
+hold=0 -> TASK_STATE_WORKING
+hold=1 -> TASK_STATE_COMPLETED
+
+== probe-worker: what runs on workerd
+sync             ok: oneshot=7 mpsc_sum=3 broadcast=9 mutex=2 [HTTP 200] 
+std-instant      Error: The Workers runtime canceled this request because it detected that your Worker's code had hung and would never generate a response. R
+tokio-sleep      Error: The Workers runtime canceled this request because it detected that your Worker's code had hung and would never generate a response. R
+tokio-spawn      Error: The Workers runtime canceled this request because it detected that your Worker's code had hung and would never generate a response. R
+wasmtimer        ok: web_time elapsed over sleep+timeout=73ms timeout_fired=true [HTTP 200] 
+tokio-with-wasm  ok: spawn=5 timeout_fired=true [HTTP 200] 
+send-fetch       ok: status=200 bytes=399 [HTTP 200] 
+types-timestamp  {"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-26T10:32:59.117Z"} [HTTP 200] 
+
+== types crate clock, unpatched 6a82edcde4d5b2c84fe7e273e03738a6bec0f678 (the probe-worker's /std-time must fail)
+types-timestamp  Error: The Workers runtime canceled this request because it detected that your Worker's code had hung and woul
+PASS  unpatched types crate panics: time not implemented on this platform
+
+== done: all checks passed
+worktrees left behind: WORKDIR/tree and WORKDIR/base (git worktree remove --force <path>)
+reproduce.sh exit=0
+
+################ PART 2: measured outside reproduce.sh ################
+
+## Size of the handler Worker's wasm: printed in part 1 ('handler wasm: ...')
+Cloudflare's limit, per https://developers.cloudflare.com/workers/platform/limits/ and its 2026-09-04 changelog, read 2026-10-26:
+  uncompressed bundle 64 MiB on Free and Paid; the earlier compressed limits (3 MB free / 10 MB paid) were removed; no compressed limit.
+  Startup: 1 second to parse and run global scope. NOT measured here.
+
+## types + signing on wasm32 (manual, patched types crate): what the application's manifest must add
+unpatched HEAD, --features signing: error: could not compile `getrandom` (lib) ['the wasm*-unknown-unknown targets are not supported by default, you may need to enable the "js" feature'] (reproduce.sh asserts this)
++ getrandom 0.2 features=[js]:        4 x E0277 'the trait bound `SystemRandom: SecureRandom` is not satisfied' (sign.rs:48, sign.rs:93, signing.rs:349, signing.rs:353)
++ ring 0.17 features=[wasm32_unknown_unknown_js]: Finished (clang 18 present)
+handler-worker's manifest carries both, and its signing check passes in part 1.
+
+## strip = true (the workspace's release profile sets it: Cargo.toml:104)
+probe-worker with 'strip = true' in [profile.release]: worker-build exit=1
+   Compiling console_error_panic_hook v0.1.7
+error: failed to generate catch wrappers
+    externref table required for catch wrappers
+same crate without it: worker-build exit=0
+
+## Why the client does not build for wasm32 (cargo tree -p a2a-protocol-client --target wasm32-unknown-unknown -e features -i tokio)
+tokio feature "net" <- hyper-util feature "client-legacy" <- hyper-rustls (default feature tls-rustls) and tokio-tungstenite feature "connect"
+tokio feature "mio" <- "net"; mio: compile_error!('This wasm target is unsupported by mio. If using Tokio, disable the net feature.')
+
+## hyper::body::Incoming constructors, hyper 1.12.0 src/body/incoming.rs
+84:    pub(crate) fn channel() -> (Sender, Incoming) {
+89:    pub(crate) fn new_channel(content_length: DecodedLength, wanter: bool) -> (Sender, Incoming) {
+96:    fn new(kind: Kind) -> Incoming {
+101:    pub(crate) fn empty() -> Incoming {
+106:    pub(crate) fn ffi() -> Incoming {
+111:    pub(crate) fn h2(
+(none is pub: JsonRpcDispatcher, RestDispatcher and CombinedDispatcher take hyper::Request<Incoming>)
+dispatch layer at HEAD, non-test files: 39 files, 14439 lines
+handler-worker/src/lib.rs, the Worker's `fetch` function: 123 lines
+rt/timers.rs in the patch: 176 lines; spawn_tracked call sites: 7
+
+## Trap-API lint, native control on the final tree (cargo clippy -p a2a-protocol-server -- -A clippy::all -W clippy::disallowed_methods, CLIPPY_CONF_DIR with clippy-wasm-traps.toml appended)
+native hits: 101  (the lint is live; part 1 shows 0 on the wasm32 build)
+     35 use of a disallowed method `std::time::Instant::now`
+     15 use of a disallowed method `tokio::time::Instant::now`
+     14 use of a disallowed method `tokio::time::timeout`
+     10 use of a disallowed method `tokio::time::sleep`
+     10 use of a disallowed method `tokio::spawn`
+      9 use of a disallowed method `std::time::SystemTime::now`
+      2 use of a disallowed method `tokio::time::timeout_at`
+      2 use of a disallowed method `tokio::time::interval`
+      2 use of a disallowed method `tokio::task::spawn_blocking`
+      2 use of a disallowed method `tokio::runtime::Handle::try_current`
+The wasm32 build of the patch as first written had 1 hit: agent_card/hot_reload.rs:281 tokio::task::spawn_blocking, in a helper whose callers were already compiled out for wasm32 (dead code there).
+
+## Observations from development: transcribed from this session's terminal output; reproduce.sh cannot regenerate them, because they are states of the patch that no longer exist
+-- wasmtimer, handler Worker, request order: slow, slow, hello, slow, slow (one fresh isolate, executor and handler timers on wasmtimer)
+slow     TASK_STATE_COMPLETED [HTTP 200 0.115281s]
+slow     Error: The Workers runtime canceled this request because it detected that your Worker's co [HTTP 500 0.012506s]
+hello    TASK_STATE_COMPLETED [HTTP 200 0.008865s]
+slow     Error: The Workers runtime canceled this request because it detected that your Worker's co [HTTP 500 0.008742s]
+slow     Error: The Workers runtime canceled this request because it detected that your Worker's co [HTTP 500 0.010537s]
+-- the same order after the per-sleep timers (rt/timers.rs)
+slow     TASK_STATE_COMPLETED [HTTP 200 0.121542s]
+slow     TASK_STATE_COMPLETED [HTTP 200 0.090977s]
+hello    TASK_STATE_COMPLETED [HTTP 200 0.008180s]
+slow     TASK_STATE_COMPLETED [HTTP 200 0.092408s]
+slow     TASK_STATE_COMPLETED [HTTP 200 0.089514s]
+-- TaskTracker::spawn, first request to the handler Worker built with the tracker unchanged
+panicked at crates/a2a-protocol-server/src/handler/messaging/execute.rs:203:14: there is no reactor running, must be called from the context of a Tokio 1.x runtime
+-- tokio_with_wasm timers in the server (first of several): error: future cannot be sent between threads safely
+   --> crates/a2a-protocol-server/src/handler/messaging/execute.rs:239:10 ; the trait `std::marker::Send` is not implemented for `(dyn futures_util::Future<Output = ()> + 'static)`
+-- wait_until A/B, first attempt: registered at the top of the request, before the send. Timeline from console_log in the Worker:
+   T wait_until registered / T wait_idle returned / T executor: before sleep      (wait_idle returned before the executor existed)
+   fresh isolate, hold=1 alone: TASK_STATE_WORKING;  hang then hold=1: WORKING;  cancel then hold=1: WORKING;  stream then hold=1: WORKING;  hold=0 then hold=1: COMPLETED
+   (the last passed because hold=0's orphaned executor kept wait_idle waiting). After registering after the send: hold=1 COMPLETED, hold=0 WORKING, hold=1 COMPLETED (in part 1).
+-- the patch as first written, client crate, native: cargo check -p a2a-protocol-client --no-default-features
+   unpatched HEAD: Finished.   patched: error: could not compile `a2a-protocol-client` (lib) due to 9 previous errors; error[E0433]: cannot find `client` in `hyper_util`
+   (default features built, because hyper-rustls re-enables hyper-util/client-legacy). Fixed in the patch; part 1 builds every crate both ways.
+-- the first reproduce.sh: two FAILs that were the script's, not the code's: `cargo check | grep -q` under pipefail reported SIGPIPE as failure. Fixed (output captured first).
+-- wrangler leak: the first reproduce.sh recorded the pid of a backgrounded subshell, so its group kill missed; wrangler supervisors accumulated. Fixed (session leader's pid; kill by session; refuses if 8787 answers).
+
+## Sites coupled to a native runtime, HEAD (count_sites.sh; lines; upper bounds: inline #[cfg(test)] modules are not excluded)
+crates/a2a-protocol-types/src: 53 source files
+  tokio::spawn / rt::spawn                             0
+  TaskTracker (spawn goes through tokio::spawn)        0
+  spawn_blocking                                       0
+  tokio::time::* (sleep/timeout/interval/Instant)      0
+  std::time Instant::now / SystemTime::now             6
+  tokio::runtime::Handle                               0
+  tokio::net / TcpStream / TcpListener                 0
+  std::fs / tokio::fs                                  2
+  hyper::body::Incoming                                0
+crates/a2a-protocol-server/src: 292 source files
+  tokio::spawn / rt::spawn                             75
+  TaskTracker (spawn goes through tokio::spawn)        9
+  spawn_blocking                                       5
+  tokio::time::* (sleep/timeout/interval/Instant)      179
+  std::time Instant::now / SystemTime::now             101
+  tokio::runtime::Handle                               4
+  tokio::net / TcpStream / TcpListener                 61
+  std::fs / tokio::fs                                  54
+  hyper::body::Incoming                                45
+crates/a2a-protocol-client/src: 72 source files
+  tokio::spawn / rt::spawn                             68
+  TaskTracker (spawn goes through tokio::spawn)        0
+  spawn_blocking                                       0
+  tokio::time::* (sleep/timeout/interval/Instant)      112
+  std::time Instant::now / SystemTime::now             65
+  tokio::runtime::Handle                               1
+  tokio::net / TcpStream / TcpListener                 30
+  std::fs / tokio::fs                                  0
+  hyper::body::Incoming                                9
+client files naming hyper_util::client, HttpConnector, tokio::net or TcpStream: 12 of 72

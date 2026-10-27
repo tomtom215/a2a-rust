@@ -19,7 +19,7 @@ card does not declare; `ServeReport::refused` says why.
 use std::sync::Arc;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::profile::Profile;
-use a2a_protocol_server::serve::{ServeConfig, Server};
+use a2a_protocol_server::serve::{ServeConfig, Server, shutdown_signal};
 use a2a_protocol_server::store::{InMemoryHaltStore, InMemoryLeaseStore};
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder, agent_executor};
 use a2a_protocol_types::agent_card::{AgentCard, AgentInterface, AgentSkill};
@@ -56,9 +56,7 @@ async fn run(signing_key_pkcs8: &[u8]) -> Result<(), Box<dyn std::error::Error>>
     let report = Server::bind("0.0.0.0:3000")
         .await?
         .with_config(config)
-        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::new(handler)), async {
-            tokio::signal::ctrl_c().await.ok();
-        })
+        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::new(handler)), shutdown_signal())
         .await;
     if let Some(why) = report.refused {
         return Err(why.into());
@@ -292,7 +290,7 @@ order that works:
 use std::sync::Arc;
 use std::time::Duration;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::{ServeConfig, Server};
+use a2a_protocol_server::serve::{ServeConfig, Server, shutdown_signal};
 use a2a_protocol_server::RequestHandler;
 
 async fn run(handler: Arc<RequestHandler>) -> std::io::Result<()> {
@@ -303,9 +301,7 @@ async fn run(handler: Arc<RequestHandler>) -> std::io::Result<()> {
             .with_drain_timeout(Duration::from_secs(15)),
     );
     let report = server
-        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), async {
-            tokio::signal::ctrl_c().await.ok();
-        })
+        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), shutdown_signal())
         .await;
     // Last, the executor's cleanup hook.
     let handler_report = handler.shutdown().await;
@@ -461,6 +457,16 @@ tracing_subscriber::fmt()
 ```
 
 Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_protocol_server=debug` for server-specific logs.
+
+### Metrics and Traces
+
+Metrics are recorded by default and traces are spans of the same `tracing`
+subscriber; `Telemetry` exports both, and the logs, over OTLP, configured from
+the standard `OTEL_*` variables. [Observability](./observability.md) has the
+quick start for a laptop, Kubernetes, HTTPS with a private CA and a proxy, the
+metric catalogue, and the dashboards and alerts that ship. Stop the process
+with `shutdown_signal()`, as the snippets in this chapter do, so that a pod
+stopped by SIGTERM flushes what it has not yet exported.
 
 ### Health Checks
 

@@ -154,9 +154,11 @@ a2a-rust/
 │   │       │   ├── hot_reload.rs   # HotReloadAgentCardHandler
 │   │       │   └── caching.rs      # ETag/Last-Modified caching
 │   │       ├── otel/           # OpenTelemetry (feature-gated)
-│   │       │   ├── mod.rs          # Re-exports
-│   │       │   ├── pipeline.rs     # OTLP pipeline setup
-│   │       │   └── builder.rs      # OtelMetrics builder
+│   │       │   ├── mod.rs          # Re-exports, OtelMetrics
+│   │       │   ├── global.rs       # Metrics resolved against the global meter provider
+│   │       │   ├── pipeline.rs     # init_otlp_pipeline (the older, metrics-only setup)
+│   │       │   ├── builder.rs      # OtelMetrics builder
+│   │       │   └── telemetry/      # Telemetry: OTLP export of traces, metrics and logs (otlp feature)
 │   │       ├── call_context.rs # CallContext with HTTP headers
 │   │       ├── conformance/    # AgentExecutor conformance harness (feature-gated)
 │   │       ├── metrics/        # Metrics trait

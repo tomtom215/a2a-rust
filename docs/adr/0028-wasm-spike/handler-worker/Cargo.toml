@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# The real `RequestHandler` as a Cloudflare Worker. Builds only with
+# `../server-wasm32.patch` applied (see ../README.md).
+#
+# Its own workspace root: this directory sits inside the repository's tree,
+# and cargo would otherwise refuse it as a stray member of the workspace.
+[workspace]
+
+[package]
+name = "handler-worker"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+worker = "0.8.7"
+a2a-protocol-server = { path = "../../../../crates/a2a-protocol-server", features = ["signing"] }
+a2a-protocol-types = { path = "../../../../crates/a2a-protocol-types", features = ["signing"] }
+# `signing` on wasm32-unknown-unknown needs both of these from the application:
+# without them `getrandom` refuses to build, and `ring`'s `SystemRandom` does
+# not implement `SecureRandom`. See ../README.md.
+ring = { version = "0.17.12", features = ["wasm32_unknown_unknown_js"] }
+getrandom = { version = "0.2", features = ["js"] }
+serde = "1"
+serde_json = "1"
+console_error_panic_hook = "0.1"
+wasm-bindgen-futures = "0.4"
+futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+
+# No `strip = true`: with it `worker-build` fails with "externref table
+# required for catch wrappers" (measured, ../results.txt).
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

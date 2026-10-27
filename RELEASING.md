@@ -331,7 +331,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — currently `0.7.0` against the SDK's `0.15.0`. Numbering it
+It is versioned independently — currently `0.7.0` against the SDK's `0.15.1`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 
@@ -371,14 +371,13 @@ SDK, which is the failure mode this note exists to prevent.
 > to the binding. It cannot cover the *first* publish: a trusted publisher is
 > configured per crate, on that crate's own settings page on crates.io, which
 > presupposes the crate exists and is owned — and this one does not exist on
-> the index at all (see the note below, dated 2026-09-01). So version one goes
-> up by hand with `CARGO_REGISTRY_TOKEN`, and only after that can a trusted
-> publisher be configured and the step automated. **Not re-verified against
-> crates.io** — re-checked 2026-09-20, the index still answers HTTP 403 through
-> the sandbox proxy this file is edited behind, so confirm the Trusted
-> Publishing half against crates.io's own documentation before acting on it.
-> The crate's absence from the index is the dated observation below, not a
-> fresh one.
+> the index at all (re-observed 2026-10-26, see the note below). So version one
+> goes up by hand with `CARGO_REGISTRY_TOKEN`, and only after that can a trusted
+> publisher be configured and the step automated. **The Trusted Publishing half
+> is not confirmed against crates.io's own documentation** — confirm it before
+> acting on it. On 2026-10-26 the crates.io API answered from the sandbox this
+> file was edited in (earlier notes recorded HTTP 403), and said
+> ``crate `a2a-protocol-slimrpc` does not exist``.
 
 > **Step 4 has never actually been run.** As of 2026-09-01 the crate does not
 > exist on crates.io at all:
@@ -422,16 +421,16 @@ SDK, which is the failure mode this note exists to prevent.
 >
 > Two things to settle before the first publish, neither of which blocks it:
 >
-> * **The crate's `rust-version` is declared but unmeasured.** This used to
->   read "the crate declares no `rust-version`"; that is no longer true —
->   `bindings/a2a-protocol-slimrpc/Cargo.toml:21` reads
->   `rust-version = "1.88"`, a literal, since the crate is its own workspace
->   and inherits nothing from the root. Verify with
+> * **The crate's `rust-version` is declared but unmeasured.** It is a
+>   literal, since the crate is its own workspace and inherits nothing from
+>   the root: `rust-version = "1.94"` on 2026-10-26, matching the four SDK
+>   crates (it read `1.88` until the MSRV moved on 2026-10-23). Verify with
 >   `grep -n 'rust-version' bindings/a2a-protocol-slimrpc/Cargo.toml`.
 >
->   What has *not* changed is the substance of the note: 1.88 matches the
->   four SDK crates, but nothing has built this crate against 1.88 to confirm
->   it. Its true MSRV is at least 1.88 and may be higher, because the
+>   What has *not* changed is the substance of the note: the `slimrpc-binding`
+>   job in `ci.yml` builds it on `stable` only, so nothing has built this
+>   crate against 1.94 to confirm it. Its true MSRV is at least what
+>   `a2a-protocol-server` needs and may be higher, because the
 >   `agntcy-slim-*` dependencies have their own floors. A declared MSRV that
 >   has not been built against is a claim, not a fact — and a declared one is
 >   worse than an absent one, because it looks checked.

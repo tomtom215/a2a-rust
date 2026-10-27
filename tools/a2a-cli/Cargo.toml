@@ -5,7 +5,7 @@
 name        = "a2a-cli"
 # The release's version, checked against the tag with the four library
 # crates (release.yml), so a release binary reports what it is.
-version     = "0.15.0"
+version     = "0.15.1"
 description = "Command-line client for A2A agents, built on a2a-protocol-client"
 # Unpublished, like the examples: it depends on the client crate by bare
 # `path`, and it exists to exercise the SDK from the outside — a released

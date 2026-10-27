@@ -14,8 +14,8 @@ url: "https://a2a-rust.com"
 license: Apache-2.0
 # Latest published release (crates.io / GitHub release tag). Bumped as part
 # of the release-prep commit; release.yml validates it matches the tag.
-version: "0.15.0"
-date-released: "2026-10-25"
+version: "0.15.1"
+date-released: "2026-10-26"
 keywords:
   - a2a
   - agent2agent

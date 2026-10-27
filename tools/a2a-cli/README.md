@@ -71,8 +71,9 @@ its bundled roots, with no way to turn it off here.
 With `OTEL_EXPORTER_OTLP_ENDPOINT` set, `a2a` exports each call's `CLIENT`
 span and `rpc.client.call.duration` there through the SDK's `Telemetry`,
 configured by the standard `OTEL_*` environment (service name `a2a` unless
-`OTEL_SERVICE_NAME` says otherwise), and flushes before it exits. Unset,
-nothing is built and nothing is sent.
+`OTEL_SERVICE_NAME` says otherwise), and flushes before it exits. Unset, no
+exporter is built and nothing is sent; warnings and errors still print on
+standard error, but no startup line.
 
 ## Exit codes
 

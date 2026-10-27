@@ -80,7 +80,8 @@ fn parse_args() -> Result<Args, String> {
 /// The SDK's telemetry for this process, from the standard `OTEL_*`
 /// environment, as every other binary in the repository sets it up: with an
 /// OTLP endpoint configured for a signal, SLIM's own traces and logs go
-/// there; without one nothing is built or installed. Kept for the life of
+/// there; without one no exporter and no export thread are built, and the
+/// subscriber still prints warnings and errors. Kept for the life of
 /// the process, since dropping it flushes.
 ///
 #[cfg(feature = "otlp")]
@@ -148,10 +149,7 @@ async fn main() -> ExitCode {
         println!("warning: no --tls-cert/--tls-key, serving plaintext");
     }
 
-    if let Err(e) = tokio::signal::ctrl_c().await {
-        eprintln!("could not wait for shutdown signal: {e}");
-        return ExitCode::FAILURE;
-    }
+    a2a_protocol_server::shutdown_signal().await;
 
     println!("shutting down");
     let _ = service.shutdown().await;

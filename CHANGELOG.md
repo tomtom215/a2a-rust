@@ -10,8 +10,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.15.1] - 2026-10-26
+
+Telemetry export works in more deployments and says what it is doing: proxies,
+gzip, a console exporter and a Prometheus endpoint; a warning when an export
+is lost, with the transport's cause and, where the failure names the fix, a
+hint; and `shutdown_signal()`, so a pod stopped by `SIGTERM` flushes. A diff of
+the public items against `v0.15.0` finds only additions: `shutdown_signal`,
+`OtlpCompression`, five `TelemetryBuilder` methods, three `Telemetry` methods
+and the off-by-default `otel-prometheus` feature. Two behaviours change, under
+*Behaviour Changes*; the proxy one affects any pod that sets `HTTP_PROXY`.
+
 ### Added
 
+- **OTLP export works from more setups, and says what it is doing.** Each item
+  was found by running the repository's `hello-agent` against a stand-in
+  collector (2026-10-26) and was silent or refused before.
+  - **Proxies**: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`, in
+    either case, as curl reads them. An `https://` collector is reached
+    through a `CONNECT` tunnel with TLS inside it (its certificate is still
+    checked); a plain `http://` one over OTLP/HTTP as a forward-proxy request
+    with `Proxy-Authorization` from the proxy URL's login; OTLP/gRPC is
+    tunnelled for both. Only `http://` proxies are spoken: any other kind is
+    ignored with one warning and the export goes direct. New
+    `TelemetryBuilder::with_proxy` (does not consult `NO_PROXY`) and
+    `without_proxy`. Before, a collector only the proxy could resolve received
+    nothing and the process printed nothing.
+  - **Compression**: `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` (and per signal) on
+    both transports, `none` accepted, `zstd` and anything else an error naming
+    the variable. The first traces export of `hello-agent` went from 6,031 to
+    1,607 bytes and the first metrics export from 2,484 to 1,080 (body bytes
+    on the wire, one run each, 2026-10-26). New `TelemetryBuilder::with_compression`
+    and `OtlpCompression`. Before, the value was ignored: `opentelemetry-otlp`
+    warns when it was not built for a compression, and `Telemetry` had no
+    subscriber when it built the exporters.
+  - **A console exporter**: `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` and
+    `OTEL_LOGS_EXPORTER` take a comma list of `otlp`, `console` (and the
+    deprecated `logging`) and `none`; `console` was refused. One line per span,
+    metric data point and log record on standard output, no collector and, for a
+    console-only process, no export thread.
+  - **A Prometheus endpoint**: with the new, off-by-default `otel-prometheus`
+    feature (server and SDK crates), `OTEL_METRICS_EXPORTER=prometheus` serves
+    `/metrics` on `OTEL_EXPORTER_PROMETHEUS_HOST` (`localhost`) and `_PORT`
+    (9464) for a Prometheus that scrapes, under the names the book's Prometheus
+    table gives. Plain HTTP, unauthenticated. Adds `opentelemetry-prometheus` and
+    `prometheus` to the lockfile. `Telemetry::prometheus_addr` reports where.
+  - **Resource attributes** `host.name`, `host.arch`, `os.type`, `process.pid`
+    and `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES` does
+    not name it; `TelemetryBuilder::without_resource_detection` omits them.
+    `host.name` is `HOSTNAME`, `COMPUTERNAME` or the kernel's hostname file
+    (this crate forbids `unsafe`, which `gethostname(2)` needs), so a macOS
+    process that does not export `HOSTNAME` has none.
+  - **`OTEL_PROPAGATORS`**: `tracecontext`, `baggage` and `none` are honoured; a
+    name this SDK does not have (`b3`, `jaeger`, …) is reported by
+    `Telemetry::notices` and a warning, not an error.
+  - **`Telemetry::describe`** (where each signal goes, with any login in a URL
+    removed) and **`Telemetry::notices`**.
+  - OTLP/HTTP endpoints with no scheme are refused with what to write; the
+    message was "invalid format".
+  - **Why an export failed.** `opentelemetry-otlp` 0.33.1 reports every
+    OTLP/HTTP transport failure as `HTTP export failed: network error`, so a
+    refused connection, an unknown CA, a gRPC-only collector and a missing proxy
+    read the same. The loss warning now appends the transport's own error
+    (`cause: client error (Connect): invalid peer certificate: UnknownIssuer`)
+    and, only where the failure itself names the fix, a `Hint`: an unknown
+    issuer (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's
+    roots, never the operating system's), a certificate for another name or an
+    expired one, a `401` or `403` (the headers), a `404` over OTLP/HTTP (the
+    paths), and a failure with no HTTP status to port 4317 over HTTP or 4318
+    over gRPC (the other transport's usual port). A bare refused connection
+    gets none.
+  - **A base endpoint that already ends in `/v1/traces`** (or `/v1/metrics`,
+    `/v1/logs`) posts to a doubled path and a `404`; a startup notice now says
+    what it would post to and what to give instead.
+  - **`OTEL_RESOURCE_ATTRIBUTES` is percent-decoded**, as the specification
+    requires for `,` and `=` in a value (`prod%2Cwest` is `prod,west`);
+    `opentelemetry_sdk` 0.33.1 kept it literal. An entry that is not valid
+    percent-encoding is kept as written and reported at startup.
+  - **`TelemetryBuilder::without_startup_summary`** keeps `install_subscriber`'s
+    startup line off while warnings and errors still print. The `a2a` CLI uses
+    it, so a one-shot command prints nothing extra.
+  Book: [Observability](book/src/deployment/observability.md), "Seeing it with
+  no collector", "When something is wrong", "Proxies, compression and private
+  CAs", "Prometheus: scrape instead of push" and "What the resource says", and a
+  [troubleshooting](book/src/deployment/troubleshooting.md) entry.
+- **`shutdown_signal()`**, a future that resolves on `SIGTERM` or `SIGINT`
+  (Ctrl-C elsewhere than Unix), for `Server::serve_with_shutdown`. A server
+  that waits on `tokio::signal::ctrl_c()` alone is ended by the `SIGTERM` a
+  container runtime sends, without returning from `main`, so no `Telemetry`
+  guard is dropped: measured on `hello-agent`, the collector received no spans
+  and no metrics. With it the server drains, `main` returns and the guard
+  flushes. The flush after `SIGTERM` took 0.1 s to a collector that answers,
+  1.8 s to a port that refuses and 15.0 s to one that accepts and never
+  answers (each provider waits up to 5 s; `OTEL_EXPORTER_OTLP_TIMEOUT=2000`
+  made that 4.1 s; one run each), so a pod's `terminationGracePeriodSeconds`
+  has to include it. Exported from the server crate and the SDK prelude.
 - **A Compliance part in the book** (`book/src/compliance/`): a
   [Compliance Overview](book/src/compliance/overview.md) with an obligation to
   page table, the 88-provision control map summarised by framework and the
@@ -35,8 +130,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overview table and the doctest harness; the overview no longer says five
   examples have no page.
 
+### Behaviour Changes
+
+- **`Telemetry::install_subscriber` always installs a subscriber** (except under
+  `OTEL_SDK_DISABLED=true`). It installed nothing when no trace or log provider
+  was built, "so a process run without a collector keeps no subscriber at all",
+  which left such a process showing nothing: not its own warnings, not how to
+  turn export on. The subscriber now has a layer that prints warnings and errors
+  to standard error (`RUST_LOG` in `target=level` form decides what; default
+  `warn`) and logs `Telemetry::describe()` once. It still never replaces a
+  global subscriber already set. Code that calls it and then installs its own
+  with `.init()` now panics (the slot is taken) where it did not before:
+  install yours first, or use `Telemetry::layer()` in it. `tests/telemetry_install_subscriber.rs`
+  asserted the old contract and now asserts this one.
+- **A lost export is reported.** After the exporter's retries, a `warn` names the
+  signal and the destination, at most once every 30 s with a count of the ones
+  held back, on a target `Telemetry` never exports. The SDK's own per-batch
+  `ExportError` event is left out of the printed output (the warning supersedes
+  it). Before, a collector that was not there produced no output in nine seconds.
+- **"no live event subscribers; event persisted only" is `debug`, not `warn`.**
+  The code's own comment says it is not an error: it is the ordinary path of
+  every blocking call. It was three warnings a request, unseen until a
+  subscriber printed warnings.
+- **Exports carry five more resource attributes** (above); an export to a party
+  that should not learn them uses `without_resource_detection`.
+- **The proxy variables are read for the export.** `HTTP_PROXY`, `HTTPS_PROXY`,
+  `ALL_PROXY` and `NO_PROXY` (upper or lower case; upper wins when both are set,
+  unlike curl) were ignored by the exporter and now decide where it connects. A
+  pod that sets `HTTP_PROXY` for its other traffic and exports to an in-cluster
+  collector now sends the export to the proxy, which cannot reach the collector,
+  unless `NO_PROXY` lists it: `.cluster.local` or `.svc.cluster.local` for a
+  `*.svc.cluster.local` name (`.svc` alone does not match, and a CIDR matches
+  only a destination written as an IP). The startup line says `via proxy`, and
+  a lost export names the proxy. `without_proxy()` restores the old behaviour.
+
+### Fixed
+
+- **`hello-agent`, `genai-agent`, `rig-agent`, `mcp-agent`, `multi-lang-team`,
+  `incident-response` and the SLIMRPC `slim_node` waited on Ctrl-C alone**, so a
+  `SIGTERM` ended them without a flush (and `slim_node` without
+  `service.shutdown()`). They wait on `shutdown_signal()` now. Compiled, not
+  run: they need a model or a second process.
+- **`langfuse-agent` exited 1 when run with no environment**: it built every
+  signal to `localhost:4318` and its final `shutdown()?` reported the three
+  lost exports. It now exports only where an endpoint is named (the Langfuse
+  preset names one for traces). With an unreachable endpoint configured it still
+  fails, and says so.
+- **`describe()` printed `console every 0 s`** for a metric interval under one
+  second; it prints `500 ms` now.
+- **Documentation that was wrong or out of date**, each checked against the
+  code or by running it: the server and SDK READMEs' default features and the
+  feature a `Telemetry` needs; `examples/README.md` and the book's overview on
+  which binaries print a startup line and build nothing without an endpoint;
+  the Collector example's `otlp` exporter comment (Langfuse takes OTLP/HTTP
+  only); the `otel` module docs and the pipeline docs (it exports metrics
+  only, gRPC only); the exported description of `a2a.server.push_deliveries`
+  (four outcomes); `observability.md`'s claims about warnings, `OTEL_SDK_DISABLED`,
+  which `OTEL_*` variables win over code, the self-targets filtered from the
+  layer, test coverage, panel descriptions, the alerts and the console sample
+  (now one run); the production guide's shutdown snippets (`ctrl_c()` only);
+  `README.md`'s "zero cost when disabled" and "each panel checked"; the deploy-agent
+  Dockerfile's claim that the agent reads the image's CA certificates (the SDK
+  trusts its bundled Mozilla roots only) and its manifest's grace period,
+  now 45 s to include the telemetry flush.
+
 ### Internal
 
+- **ADR 0028 (Proposed), and the experiment behind it in
+  `docs/adr/0028-wasm-spike/`: the server on Cloudflare Workers.** The real
+  `RequestHandler` was run inside `workerd` (`wrangler dev --local`) behind a
+  runtime seam; 11 of 11 checks pass, the native lib suite is unchanged (1,545
+  passed, identical per-test results), and `reproduce.sh` regenerates every
+  figure from a clean worktree. **No crate changed**: the server and client do
+  not build for `wasm32-unknown-unknown` at this commit, and the types crate
+  builds but panics on its first timestamp. The ADR asks the maintainer to
+  qualify ADR 0003 before any of it lands.
 - **`scripts/check_book_examples.py` fails the build when an example has no
   book page** (`ci.yml`, `static-checks`). Every directory under `examples/`
   with a `Cargo.toml` needs `book/src/examples/<name>.md`, a `SUMMARY.md` entry
@@ -45,6 +213,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry). A page left for an example that no longer exists, and an exemption
   whose example has gained a page, fail it too. Its proof in
   `prove_gates_fail.sh` drops an example from `SUMMARY.md`.
+- **Lints CI's clippy 1.99.1 reported on this release's own code, fixed.** The
+  console exporter's three `export` impls were `async fn`s that never await
+  (`unused_async_trait_impl`) and return ready futures now; eight
+  `assert!(x.is_empty())` in the new tests are `assert_eq!` (`assert_is_empty`);
+  `shutdown_signal` allows `manual_async_fn` off Unix, where it has no handlers to
+  register before returning its future; and its doc comment no longer links to
+  `Telemetry`, which exists only with `otlp`, so `cargo doc -p
+  a2a-protocol-server` builds. A test helper named `Message` shadowed a generated
+  type (`a2a-codegen --check`, ADR 0016) and is `MessageText`; so is a second,
+  in a test the mutation-testing fixes added. All were found by CI (the
+  `manual_async_fn` one on Windows). Each was reproduced, with rustc 1.99.1 or
+  the codegen tool, before it was fixed, except that second `Message`, which CI
+  reported and which the tool passes once renamed.
+- **The coverage job frees the workspace's instrumented build output before it
+  builds the SLIMRPC binding** (`coverage.yml`: `rm -rf target/llvm-cov-target`
+  once the report is written). On this release's PR the runner reported 33 MB
+  free after that build and the job's post step failed with `No space left on
+  device`; two earlier attempts died with a `rust-lld` Bus error while linking a
+  SLIMRPC test binary, which is inferred, not shown, to be the same cause. CI
+  only; no library code changed.
+- **Eight gaps the `mutation-test` label's first `cargo-mutants` run found in
+  this release's own code, closed.** Five were tests too weak to see a change.
+  The resource-detection test asserted 8 of the 16 names in `os_type` and
+  `host_arch`, so the `aix` arm, the `netbsd` arm and six others could be
+  deleted unseen. The `rfc3339` test had no date after 2100-02-28, before which
+  one term of the century correction is zero. The warning that an `https://`
+  proxy is not supported, said once, was not tested to be said once.
+  `Conn::poll_flush` was not tested to wait for TLS bytes the socket had not
+  taken; it is now, against a peer that stops reading. And the `prometheus`
+  arm for traces and logs was asserted by two words the fallback message also
+  contains. Three were mutants no test could tell from the original.
+  `percent_decode` combined hex digits with `high << 4 | low`, where `|` can
+  become `^` unseen; it is `(high << 4) + low`, identical for all 256 digit
+  pairs. `prometheus` exporter selection went through a helper whose whole body
+  was `Ok(true)` with the feature on; it is inline in its match arm.
+  `ProxyConnector::poll_ready` is `Poll::Ready(Ok(()))`, the value its mutant
+  returns, so it carries `#[mutants::skip]` as ADR 0006 asks. No behaviour
+  changed.
+- **Six more survivors from the second `cargo-mutants` run, closed.** Four were
+  tests too weak to see a change: nothing asserted the "(N more since the last
+  report)" suffix of a lost-export warning, present or absent; `Target::proxied`
+  had no direct test; nothing tested the unit boundaries of `human` at exactly
+  1 µs, 1 ms and 1 s; and the test of the cause slot overwrote what
+  `Cause::record` wrote before reading it. Two were mutants no test could tell
+  from the original, in the console metric exporter: `shutdown_with_timeout`
+  returns `Ok(())`, and `temporality` returns `Temporality::Cumulative`, which
+  is the SDK's own default (a test asserts that). Both carry
+  `#[mutants::skip]`, and so does `force_flush`, the same shape as the first.
+  No behaviour changed.
+- **Three survivors from the third `cargo-mutants` run, closed.** All three
+  were tests too weak to see a change. Nothing checked that `Conn::poll_shutdown`
+  closes the write half of the socket (shard 0): a request and its reply now
+  cross a `Conn` to a real socket, to the collector and through a forward
+  proxy, and the peer answers only after the client has shut its write half, so
+  `poll_write`, `poll_shutdown` and `poll_read` are each needed for the reply
+  to arrive. The `Delta` arm of the console's `temporality` text (shard 6) is
+  unreachable through the exporter, which only asks for running totals, so a
+  test names both values. And an error status with no description was not
+  checked to print `status=error` with nothing after it (shard 13). Shard 13's
+  runner was shut down by GitHub before it ran a mutant, so its 25 mutants were
+  run locally with the CI selection and flags; this was the one that survived.
+  Each test fails with its mutant applied by hand. No behaviour changed.
+- **One more survivor, from the fourth `cargo-mutants` run, closed.** Deleting
+  the `"zstd"` arm of `compression::from_env` sent `zstd` to the arm for unknown
+  values, and the test asserted the variable, the value and `gzip`, all of which
+  that arm's message also carries. It now asserts the reason, `not supported`.
+  The three earlier runs had recorded this mutant as caught, because a
+  PostgreSQL test unrelated to compression ran past its time limit while the
+  mutant was applied. No behaviour changed.
+- **`a_call_the_caller_drops_is_recorded_as_cancelled` accepts a recorded
+  duration of half the wait or more**, where it accepted the wait less 10 ms.
+  On this release's PR the macOS stable job failed twice running, measuring
+  49.8 ms and then 48.0 ms of a 60 ms wait (59.8 ms on 2026-10-25, which the
+  10 ms was added for); Linux reads 61 to 62 ms. Why macOS reads short is not
+  established. The test still fails for a recorded duration of 0 or of 5 ms
+  (both checked by applying them by hand). Test only; no library code changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

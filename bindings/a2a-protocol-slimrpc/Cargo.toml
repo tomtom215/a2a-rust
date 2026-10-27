@@ -71,7 +71,8 @@ a2a-protocol-client = { version = "0.15", path = "../../crates/a2a-protocol-clie
 # 2026-10-23 this was `default-features = false`, left from before `tracing`
 # and `otel` were the server's defaults (2026-10-14), so a SLIMRPC call
 # recorded no span outside this crate's own tests.
-a2a-protocol-server = { version = "0.15", path = "../../crates/a2a-protocol-server" }
+# 0.15.1, not 0.15: `slim_node` waits on `shutdown_signal`, which 0.15.0 lacks.
+a2a-protocol-server = { version = "0.15.1", path = "../../crates/a2a-protocol-server" }
 
 # SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
 # types its constructors take.

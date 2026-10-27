@@ -49,19 +49,16 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 ///
 /// # Only metrics — there is no span export
 ///
-/// This pipeline exports **metrics and nothing else**. The `otel` feature
-/// installs no `TracerProvider` and exports no spans, so nothing here
-/// measures a duration or records a parent/child relationship.
+/// This pipeline exports **metrics and nothing else**: it installs no
+/// `TracerProvider` and exports no spans. [`Telemetry`](crate::otel::Telemetry)
+/// (feature `otlp`) exports the spans the SDK records, with metrics and logs,
+/// and is what new code should use.
 ///
-/// What the SDK *does* do, since 0.13, is **propagate** W3C trace context:
-/// the server parses an inbound `traceparent` into
+/// Since 0.13 the SDK also **propagates** W3C trace context: the server parses
+/// an inbound `traceparent` into
 /// [`RequestContext::trace_context`](crate::RequestContext::trace_context),
 /// and `a2a-protocol-client`'s `TracePropagationInterceptor` writes one on
-/// the way out, so a delegation chain shares one trace id across agents and
-/// across languages. That makes this SDK a correct participant in whatever
-/// tracing system the operator runs; it does not make it a tracer. If you
-/// want spans recorded, install your own `TracerProvider` and start them
-/// from the propagated context.
+/// the way out, so a delegation chain shares one trace id across agents.
 ///
 /// # Errors
 ///

@@ -59,7 +59,8 @@ async fn main() -> std::io::Result<()> {
 The file's `main` also starts the SDK's `Telemetry` from the `OTEL_*`
 environment (a `Telemetry::builder()` chain and `install_subscriber()`, left
 out above): with `OTEL_EXPORTER_OTLP_ENDPOINT` set, traces, metrics and logs go
-there; without it nothing is built. The file's comments and its longer
+there; without it nothing is built, and a line on standard error says so
+(`OTEL_TRACES_EXPORTER=console` prints spans instead). The file's comments and its longer
 `expect` messages are left out too.
 
 ## Talking to it

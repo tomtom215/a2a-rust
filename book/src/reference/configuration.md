@@ -257,6 +257,7 @@ and the `with_*` setters.
 | `otel` | On | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`) |
 | `otlp` | Off | `Telemetry`: OTLP export of traces, metrics and logs (gRPC or HTTP/protobuf), the Langfuse preset, and `init_otlp_pipeline` (implies `otel`) |
 | `otlp-json` | Off | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`); off because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
+| `otel-prometheus` | Off | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between; off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | Off | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | Off | Axum framework integration (`A2aRouter`) |
 | `tool-loop` | Off | Tool calling inside a task: `tool_loop::ToolLoop`, `ToolLoopExecutor`, `OpenAiChatModel` |
@@ -301,6 +302,7 @@ and the `with_*` setters.
 | `otel` | On | Enables `otel` in the server and the client |
 | `otlp` | On | Enables the server's `otlp` (implies `otel`) |
 | `otlp-json` | Off | Enables the server's `otlp-json` (implies `otlp`) |
+| `otel-prometheus` | Off | Enables the server's `otel-prometheus`: `OTEL_METRICS_EXPORTER=prometheus` serves `/metrics` (off by default; implies `otlp`) |
 | `axum` | Off | Enables `axum` in the server |
 | `tool-loop` | Off | Enables `tool-loop` in the server |
 | `auth-jwt` | Off | Enables `auth-jwt` in the server |
@@ -313,7 +315,7 @@ and the `with_*` setters.
 | Variable | Description |
 |----------|-------------|
 | `RUST_LOG` | Log level filter (when the `tracing` feature is enabled — the client's, server's and SDK's default — and the application's subscriber reads it) |
-| `OTEL_*` | Read by `Telemetry` (server `otlp` feature, on in the SDK) and the OpenTelemetry crates beneath it: `OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (`otlp` or `none`), `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` / `_HEADERS` / `_TIMEOUT` (10 s) / `_CERTIFICATE` / `_CLIENT_CERTIFICATE` / `_CLIENT_KEY` / `_INSECURE` and their per-signal forms, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`; see [Observability](../deployment/observability.md) |
+| `OTEL_*` | Read by `Telemetry` (server `otlp` feature, on in the SDK) and the OpenTelemetry crates beneath it: `OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` (a list of `otlp`, `console` and, for metrics with the `otel-prometheus` feature, `prometheus`; or `none`), `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` / `_HEADERS` / `_COMPRESSION` / `_TIMEOUT` (10 s) / `_CERTIFICATE` / `_CLIENT_CERTIFICATE` / `_CLIENT_KEY` and their per-signal forms, `_INSECURE` (only for a scheme-less OTLP/gRPC endpoint), `OTEL_EXPORTER_PROMETHEUS_HOST` / `_PORT`, `OTEL_PROPAGATORS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`; and `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` for the export; see [Observability](../deployment/observability.md) |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Read by `Langfuse::from_env()`; the base URL defaults to `http://localhost:3000` |
 | `PROTOC` | The `proto`/`grpc` build scripts use a vendored `protoc` unless this names another |
 

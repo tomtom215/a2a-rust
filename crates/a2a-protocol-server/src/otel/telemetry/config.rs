@@ -48,7 +48,7 @@ impl Signal {
     }
 
     /// `OTEL_{TRACES,METRICS,LOGS}_EXPORTER`.
-    const fn exporter_var(self) -> &'static str {
+    pub(super) const fn exporter_var(self) -> &'static str {
         match self {
             Self::Traces => "OTEL_TRACES_EXPORTER",
             Self::Metrics => "OTEL_METRICS_EXPORTER",
@@ -99,7 +99,7 @@ impl Signal {
     }
 
     /// The signal-specific variable, falling back to the general one.
-    fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
+    pub(super) fn otlp_var(self, env: &Env, suffix: &str) -> Option<(String, String)> {
         let specific = format!("OTEL_EXPORTER_OTLP_{}_{suffix}", self.upper());
         if let Some(v) = env(&specific) {
             return Some((specific, v));
@@ -125,6 +125,16 @@ pub enum OtlpProtocol {
 }
 
 impl OtlpProtocol {
+    /// The name `OTEL_EXPORTER_OTLP_PROTOCOL` gives it.
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Grpc => "grpc",
+            Self::HttpProtobuf => "http/protobuf",
+            #[cfg(feature = "otlp-json")]
+            Self::HttpJson => "http/json",
+        }
+    }
+
     /// Whether the transport is OTLP/HTTP, whose endpoint is per signal.
     pub(super) const fn is_http(self) -> bool {
         !matches!(self, Self::Grpc)
@@ -134,38 +144,6 @@ impl OtlpProtocol {
 /// `OTEL_SDK_DISABLED=true` turns every signal off.
 pub(super) fn sdk_disabled(env: &Env) -> bool {
     env("OTEL_SDK_DISABLED").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
-}
-
-/// Whether `signal` is exported: `OTEL_*_EXPORTER` when set, else `default`.
-///
-/// The variable is a comma-separated list. `none` turns the signal off;
-/// `otlp` turns it on; anything else (`console`, `prometheus`, `zipkin`, …)
-/// is refused rather than ignored, because a value that names an exporter
-/// this crate does not have would otherwise export nothing and say nothing.
-pub(super) fn exporter_enabled(
-    env: &Env,
-    signal: Signal,
-    default: bool,
-) -> Result<bool, TelemetryError> {
-    let var = signal.exporter_var();
-    let Some(value) = env(var) else {
-        return Ok(default);
-    };
-    let mut otlp = false;
-    for item in value.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        match item.to_ascii_lowercase().as_str() {
-            "none" => return Ok(false),
-            "otlp" => otlp = true,
-            _ => {
-                return Err(TelemetryError::config(
-                    var,
-                    &value,
-                    "only `otlp` and `none` are supported",
-                ));
-            }
-        }
-    }
-    Ok(otlp)
 }
 
 /// The transport for `signal`: `explicit` when given, else
@@ -303,33 +281,6 @@ mod tests {
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
             .collect();
         Box::new(move |k| map.get(k).cloned().filter(|v| !v.trim().is_empty()))
-    }
-
-    #[test]
-    fn exporter_variable_overrides_the_default_both_ways() {
-        let e = env(&[
-            ("OTEL_LOGS_EXPORTER", "none"),
-            ("OTEL_METRICS_EXPORTER", "otlp"),
-        ]);
-        assert!(!exporter_enabled(&*e, Signal::Logs, true).unwrap());
-        assert!(exporter_enabled(&*e, Signal::Metrics, false).unwrap());
-        assert!(exporter_enabled(&*e, Signal::Traces, true).unwrap());
-        assert!(!exporter_enabled(&*e, Signal::Traces, false).unwrap());
-    }
-
-    #[test]
-    fn none_anywhere_in_the_list_wins() {
-        let e = env(&[("OTEL_TRACES_EXPORTER", "otlp, none")]);
-        assert!(!exporter_enabled(&*e, Signal::Traces, true).unwrap());
-    }
-
-    #[test]
-    fn an_exporter_this_crate_lacks_is_refused_with_its_name() {
-        let e = env(&[("OTEL_METRICS_EXPORTER", "prometheus")]);
-        let err = exporter_enabled(&*e, Signal::Metrics, true).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("OTEL_METRICS_EXPORTER"), "{msg}");
-        assert!(msg.contains("prometheus"), "{msg}");
     }
 
     #[test]
@@ -484,8 +435,7 @@ mod tests {
 
     #[test]
     fn an_empty_value_is_unset() {
-        let e = env(&[("OTEL_TRACES_EXPORTER", "  "), ("OTEL_SERVICE_NAME", "")]);
-        assert!(exporter_enabled(&*e, Signal::Traces, true).unwrap());
+        let e = env(&[("OTEL_SERVICE_NAME", "")]);
         assert!(!service_name_from_env(&*e));
     }
 }

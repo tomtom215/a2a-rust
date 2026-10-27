@@ -42,7 +42,7 @@ is on docs.rs.
 | [0010](adr/0010-auth-integration.md) | First-party authentication helpers | Which auth schemes ship in-tree, and where they sit |
 | [0011](adr/0011-task-retention.md) | Task Retention | Explicit, opt-in purging; the store schedules nothing |
 | [0012](adr/0012-event-log-and-resumption.md) | Event Log and Resumption | An append-only log beside the snapshot; SSE `id:` and `Last-Event-ID` |
-| [0013](adr/0013-observability.md) | Observability | `tracing` spans exported through `tracing-opentelemetry`; one RPC span shape on every binding; semconv metrics beside the deprecated catalogue; one entry point, `otel::Telemetry`. The ADR still reads "Proposed", though its decision has shipped |
+| [0013](adr/0013-observability.md) | Observability | `tracing` spans exported through `tracing-opentelemetry`; one RPC span shape on every binding; semconv metrics beside the deprecated catalogue; one entry point, `otel::Telemetry` |
 | [0014](adr/0014-auth-rejection-status.md) | Auth Rejection Status | A refused credential answers `401`/`403` and gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED`; supersedes ADR 0010's `400` mapping |
 | [0015](adr/0015-audit-trail.md) | Audit Trail | Every call, run, task event and cancel request in a hash chain per tenant, content by digest, signed checkpoints, six-month retention floor, legal holds |
 | [0016](adr/0016-types-generated-from-the-proto.md) | Types Generated from the Proto | The public types are generated from `a2a.proto`, and CI fails on drift |

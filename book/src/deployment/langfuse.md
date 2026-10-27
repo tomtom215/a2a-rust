@@ -85,7 +85,7 @@ cargo run -p langfuse-agent -- "summarise the quarterly report"
 ```
 
 Without `LANGFUSE_PUBLIC_KEY` it exports to whatever `OTEL_EXPORTER_OTLP_*`
-names.
+names, and exports nothing, without an error, when none is set.
 
 ## What the preset sets
 

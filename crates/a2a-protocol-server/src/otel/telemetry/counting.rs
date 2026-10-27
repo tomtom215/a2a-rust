@@ -16,18 +16,95 @@
 //! and then accepted would be reported lost. tonic's client offers no hook
 //! at all, so per-response counting also left gRPC unreported.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use opentelemetry::logs::Severity;
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::logs::{LogBatch, LogExporter};
 use opentelemetry_sdk::metrics::Temporality;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use opentelemetry_sdk::metrics::exporter::PushMetricExporter;
 use opentelemetry_sdk::trace::{SpanData, SpanExporter};
+
+use super::config::Signal;
+use super::hints::{self, Cause, Route};
+
+/// How often a lost export is reported while it keeps being lost: a collector
+/// that is down loses a batch every few seconds, and a line for each would
+/// drown the log it is meant to be found in.
+const REPORT_EVERY: Duration = Duration::from_secs(30);
+
+/// Says, at most once per [`REPORT_EVERY`], that an export was lost — on the
+/// `tracing` target this module's diagnostics use, which is never exported
+/// (`SELF_TARGETS`) and is shown by `Telemetry::install_subscriber`.
+///
+/// The lost batches were silent before: the SDK logs them through `tracing`
+/// under its own target, which no subscriber of a process that only called
+/// `install_subscriber` showed. Measured 2026-10-26: a collector that was
+/// not there, nine seconds, no output at all.
+#[derive(Debug)]
+struct Notice {
+    signal: Signal,
+    destination: String,
+    /// The proxy the export goes through, when one applies.
+    via: Option<String>,
+    route: Route,
+    /// The transport's own words for the last failure, when the HTTP client
+    /// kept them (`hints.rs`); gRPC's error already carries its own.
+    cause: Arc<Cause>,
+    last: Mutex<Option<Instant>>,
+    held_back: AtomicU64,
+}
+
+impl Notice {
+    /// Whether a report may be made at `now`, and how many were held back
+    /// since the last one.
+    fn permit(&self, now: Instant) -> Option<u64> {
+        let too_soon = {
+            let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
+            let too_soon = last.is_some_and(|t| now.saturating_duration_since(t) < REPORT_EVERY);
+            if !too_soon {
+                *last = Some(now);
+            }
+            too_soon
+        };
+        if too_soon {
+            self.held_back.fetch_add(1, Ordering::Relaxed);
+            None
+        } else {
+            Some(self.held_back.swap(0, Ordering::Relaxed))
+        }
+    }
+
+    fn lost(&self, error: &OTelSdkError) {
+        let Some(held_back) = self.permit(Instant::now()) else {
+            return;
+        };
+        let more = if held_back == 0 {
+            String::new()
+        } else {
+            format!(" ({held_back} more since the last report)")
+        };
+        let error = error.to_string();
+        let cause = self.cause.take();
+        let hint = hints::hint(&self.route, &error, cause.as_deref());
+        let via = self
+            .via
+            .as_ref()
+            .map_or_else(String::new, |proxy| format!(" via proxy {proxy}"));
+        let cause = cause.map_or_else(String::new, |c| format!(" (cause: {c})"));
+        let hint = hint.map_or_else(String::new, |h| format!(". Hint: {h}"));
+        tracing::warn!(
+            "OTLP export of {} to {}{via} failed after the exporter's retries and the batch \
+             was dropped{more}: {error}{cause}{hint}",
+            self.signal.name(),
+            self.destination
+        );
+    }
+}
 
 /// An exporter that adds one to `lost` for each export that fails after
 /// whatever retries `inner` makes. Every other method is forwarded, so the
@@ -36,16 +113,46 @@ use opentelemetry_sdk::trace::{SpanData, SpanExporter};
 pub(super) struct Counting<E> {
     inner: E,
     lost: Arc<AtomicU64>,
+    notice: Option<Notice>,
 }
 
 impl<E> Counting<E> {
     pub(super) const fn new(inner: E, lost: Arc<AtomicU64>) -> Self {
-        Self { inner, lost }
+        Self {
+            inner,
+            lost,
+            notice: None,
+        }
+    }
+
+    /// Also report a lost export, rate-limited, naming `signal` and where it
+    /// was going, with the transport's cause and a hint where one is certain.
+    pub(super) fn reporting(
+        mut self,
+        signal: Signal,
+        destination: &str,
+        route: Route,
+        via: Option<String>,
+        cause: Arc<Cause>,
+    ) -> Self {
+        self.notice = Some(Notice {
+            signal,
+            destination: destination.to_owned(),
+            via,
+            route,
+            cause,
+            last: Mutex::new(None),
+            held_back: AtomicU64::new(0),
+        });
+        self
     }
 
     fn count(&self, result: OTelSdkResult) -> OTelSdkResult {
-        if result.is_err() {
+        if let Err(error) = &result {
             self.lost.fetch_add(1, Ordering::Relaxed);
+            if let Some(notice) = &self.notice {
+                notice.lost(error);
+            }
         }
         result
     }
@@ -118,160 +225,4 @@ impl<E: LogExporter> LogExporter for Counting<E> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use opentelemetry_sdk::error::OTelSdkError;
-
-    /// An exporter whose answers the test chooses. Each method other than
-    /// `export` fails with its own name, so a test can tell that the
-    /// wrapper's answer came from this method and not from a default.
-    #[derive(Debug, Default)]
-    struct Fake {
-        fail_export: bool,
-        enabled: bool,
-        resource_set: bool,
-    }
-
-    fn failed(what: &str) -> OTelSdkResult {
-        Err(OTelSdkError::InternalFailure(what.to_owned()))
-    }
-
-    fn export_result(fake: &Fake) -> OTelSdkResult {
-        if fake.fail_export {
-            failed("export")
-        } else {
-            Ok(())
-        }
-    }
-
-    /// The name the inner exporter failed with; panics on anything else.
-    fn failure(result: OTelSdkResult) -> String {
-        match result {
-            Err(OTelSdkError::InternalFailure(what)) => what,
-            other => panic!("expected the inner exporter's failure, got {other:?}"),
-        }
-    }
-
-    impl SpanExporter for Fake {
-        fn export(&self, _: Vec<SpanData>) -> impl Future<Output = OTelSdkResult> + Send {
-            std::future::ready(export_result(self))
-        }
-        fn shutdown_with_timeout(&self, _: Duration) -> OTelSdkResult {
-            failed("shutdown_with_timeout")
-        }
-        fn shutdown(&self) -> OTelSdkResult {
-            failed("shutdown")
-        }
-        fn force_flush(&self) -> OTelSdkResult {
-            failed("force_flush")
-        }
-        fn set_resource(&mut self, _: &Resource) {
-            self.resource_set = true;
-        }
-    }
-
-    impl PushMetricExporter for Fake {
-        fn export(&self, _: &ResourceMetrics) -> impl Future<Output = OTelSdkResult> + Send {
-            std::future::ready(export_result(self))
-        }
-        fn force_flush(&self) -> OTelSdkResult {
-            failed("force_flush")
-        }
-        fn shutdown_with_timeout(&self, _: Duration) -> OTelSdkResult {
-            failed("shutdown_with_timeout")
-        }
-        fn shutdown(&self) -> OTelSdkResult {
-            failed("shutdown")
-        }
-        fn temporality(&self) -> Temporality {
-            // Not the default (`Cumulative`), so a defaulted answer shows.
-            Temporality::Delta
-        }
-    }
-
-    impl LogExporter for Fake {
-        fn export(&self, _: LogBatch<'_>) -> impl Future<Output = OTelSdkResult> + Send {
-            std::future::ready(export_result(self))
-        }
-        fn shutdown_with_timeout(&self, _: Duration) -> OTelSdkResult {
-            failed("shutdown_with_timeout")
-        }
-        fn shutdown(&self) -> OTelSdkResult {
-            failed("shutdown")
-        }
-        fn event_enabled(&self, _: Severity, _: &str, _: Option<&str>) -> bool {
-            self.enabled
-        }
-        fn set_resource(&mut self, _: &Resource) {
-            self.resource_set = true;
-        }
-    }
-
-    fn counting(fail_export: bool) -> (Counting<Fake>, Arc<AtomicU64>) {
-        let lost = Arc::new(AtomicU64::new(0));
-        let fake = Fake {
-            fail_export,
-            ..Fake::default()
-        };
-        (Counting::new(fake, Arc::clone(&lost)), lost)
-    }
-
-    /// A failed export is counted once and still returned; a successful one
-    /// is not counted. On each of the three signals.
-    #[tokio::test]
-    async fn only_a_failed_export_is_counted() {
-        for fail in [false, true] {
-            let (c, lost) = counting(fail);
-            let results = [
-                SpanExporter::export(&c, Vec::new()).await,
-                PushMetricExporter::export(&c, &ResourceMetrics::default()).await,
-                LogExporter::export(&c, LogBatch::new(&[])).await,
-            ];
-            for result in results {
-                assert_eq!(result.is_err(), fail, "{result:?}");
-            }
-            assert_eq!(lost.load(Ordering::Relaxed), if fail { 3 } else { 0 });
-        }
-    }
-
-    /// Every other method answers with the inner exporter's answer.
-    #[test]
-    fn every_other_method_is_forwarded() {
-        let (mut c, lost) = counting(false);
-        let t = Duration::from_secs(1);
-        assert_eq!(failure(SpanExporter::shutdown(&c)), "shutdown");
-        assert_eq!(
-            failure(SpanExporter::shutdown_with_timeout(&c, t)),
-            "shutdown_with_timeout"
-        );
-        assert_eq!(failure(SpanExporter::force_flush(&c)), "force_flush");
-        assert_eq!(failure(PushMetricExporter::shutdown(&c)), "shutdown");
-        assert_eq!(
-            failure(PushMetricExporter::shutdown_with_timeout(&c, t)),
-            "shutdown_with_timeout"
-        );
-        assert_eq!(failure(PushMetricExporter::force_flush(&c)), "force_flush");
-        assert_eq!(PushMetricExporter::temporality(&c), Temporality::Delta);
-        assert_eq!(failure(LogExporter::shutdown(&c)), "shutdown");
-        assert_eq!(
-            failure(LogExporter::shutdown_with_timeout(&c, t)),
-            "shutdown_with_timeout"
-        );
-        for enabled in [false, true] {
-            c.inner.enabled = enabled;
-            assert_eq!(
-                LogExporter::event_enabled(&c, Severity::Info, "t", None),
-                enabled
-            );
-        }
-        // None of those is an export, so none is counted.
-        assert_eq!(lost.load(Ordering::Relaxed), 0);
-
-        let resource = Resource::builder_empty().build();
-        SpanExporter::set_resource(&mut c, &resource);
-        assert!(c.inner.resource_set, "spans");
-        c.inner.resource_set = false;
-        LogExporter::set_resource(&mut c, &resource);
-        assert!(c.inner.resource_set, "logs");
-    }
-}
+mod tests;

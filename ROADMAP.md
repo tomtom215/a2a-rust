@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.15.0** (prepared 2026-10-25; the tag is the maintainer's act). MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
+Current release: **0.15.1** (prepared 2026-10-26; the tag is the maintainer's act). MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
 
 ## What this file is
 
@@ -61,6 +61,8 @@ as the comment. ADR 0006 records the review.
 | `handler/messaging/terminal.rs` — `TerminalTracking::close` → a future of `Ok(())` (2026-09-22) | The body forwards to `InMemoryQueueWriter::close`, itself a no-op returning `Ok(())`: the channel closes when the writer drops. |
 | `interceptor/mod.rs` — the default `ServerInterceptor::on_complete` → `Box::pin(async move { () })` (2026-09-26) | The body is an empty future, and so is the mutant. |
 | `dispatch/grpc/well_known.rs` — `WellKnownCard::poll_ready` → `Poll::from(Ok(()))` (2026-10-14) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`; `Result<(), Infallible>` has no other value to return. |
+| `otel/telemetry/proxy.rs` — `ProxyConnector::poll_ready` → `Poll::from(Ok(()))` (2026-10-26) | The body is `Poll::Ready(Ok(()))`, and `Poll::from(t)` is `Poll::Ready(t)`: the mutant is the same value. Found by the first incremental run with the `mutation-test` label on the 0.15.1 pull request. |
+| `otel/telemetry/console.rs` — `Console::force_flush` and `Console::shutdown_with_timeout` (`PushMetricExporter`) → `Ok(Default::default())`, and `Console::temporality` → `Default::default()` (2026-10-26) | The first two bodies are `Ok(())`; `OTelSdkResult` is `Result<(), OTelSdkError>`, and `Default::default()` for `()` is `()`. The third is `Temporality::Cumulative`, which is `Temporality`'s `#[default]` in opentelemetry_sdk 0.33; a test asserts that default, so an SDK that changes it fails there. Found by the second incremental run with the `mutation-test` label on the 0.15.1 pull request. |
 | `provenance.rs` — `Inbound::check` without `signing` → `Ok(Default::default())` (2026-10-22) | The body is `Ok(ContentCheck::NotChecked)`, and `NotChecked` is `ContentCheck`'s `#[default]`. The gate also builds with every feature, where this function is compiled out. |
 | `store/halt/mod.rs` — the default `HaltStore::publish_cancel` → `Box::pin(async move { Ok(()) })` (2026-10-23) | The default body is an empty future answering `Ok(())`, and so is the mutant. |
 | `rpc_span/tool.rs` — `AgentRun::start` without `otel` → `Default::default()` (2026-10-24) | Not an equivalence the tests could see either way: the stub is `#[cfg(not(feature = "otel"))]` and the gate builds `--all-features`, so it is not compiled, and every mutant of it builds and passes unchanged. `AgentRun` there is a unit struct with nothing to record. |

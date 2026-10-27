@@ -88,7 +88,7 @@ unknown-registry = "deny"
 ### Positive
 
 - Compile time for `a2a-protocol-types` is dominated by serde proc-macros only (~8s cold).
-- No system library requirements; cross-compilation to `musl` and `wasm32` is possible.
+- No system library requirements; cross-compilation to `musl` and `wasm32` is possible. *(2026-10-26: `wasm32` compiles for the types crate, which then panics on its first timestamp; the server and client do not compile for it. See [ADR 0028](0028-webassembly-and-cloudflare-workers.md).)*
 - License audit is simple: everything is MIT/Apache-2.0.
 - Downstream crates with strict dep policies can audit a short list.
 

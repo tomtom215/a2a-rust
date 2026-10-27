@@ -74,7 +74,7 @@ timeouts but no connection cap; set one with `with_max_connections`:
 # agent_executor!(MyAgent, |ctx, queue| async {
 #     EventEmitter::new(ctx, queue).status(TaskState::Completed).await
 # });
-use a2a_protocol_server::{ServeConfig, Server};
+use a2a_protocol_server::{ServeConfig, Server, shutdown_signal};
 
 # #[tokio::main]
 # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,9 +83,7 @@ use a2a_protocol_server::{ServeConfig, Server};
 let report = Server::bind("0.0.0.0:3000")
     .await?
     .with_config(ServeConfig::default().with_max_connections(10_000))
-    .serve_with_shutdown(JsonRpcDispatcher::new(handler), async {
-        let _ = tokio::signal::ctrl_c().await;
-    })
+    .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
     .await;
 println!("{report:?}");
 # Ok(())
@@ -132,7 +130,7 @@ println!("{report:?}");
 
 ## Features
 
-`tracing` is the only feature on by default.
+`tracing` and `otel` are on by default; `otlp`, which exports, is not.
 
 | Feature | Default | Purpose |
 |---------|---------|---------|
@@ -147,6 +145,7 @@ println!("{report:?}");
 | `otel` | Yes | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`; no exporter) |
 | `otlp` | No | `otel::Telemetry`: OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, configured by `OTEL_*`, with a Langfuse preset; and `init_otlp_pipeline` (implies `otel`) |
 | `otlp-json` | No | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`); off by default because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
+| `otel-prometheus` | No | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and `_PORT`, default 9464); off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |
 | `axum` | No | Axum integration (`A2aRouter`) |
 | `tool-loop` | No | Tool calling inside a task (ADR 0022): `tool_loop::ToolLoop`, `ToolLoopExecutor`, and `OpenAiChatModel` for the chat-completions API; each tool call carries an idempotency key and a repeated call runs once (ADR 0026); HTTPS to the model needs `tls-rustls` |
@@ -194,9 +193,11 @@ request naming a tenant.
 ## Observability
 
 - `Metrics` trait for custom metrics callbacks
-- `otel::Telemetry` (feature: `otel`): one-call OTLP export of traces,
+- `otel::Telemetry` (feature: `otlp`): one-call OTLP export of traces,
   metrics and logs, configured from `OTEL_*`, with a Langfuse preset
-- `OtelMetrics` (feature: `otel`) for OTLP metrics alone
+- `OtelMetrics` (feature: `otel`): records through the OpenTelemetry API to
+  whatever meter provider the process installs (`Telemetry` installs one that
+  exports)
 - `tracing` integration (feature: `tracing`)
 
 ## License

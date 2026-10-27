@@ -4,9 +4,13 @@
 //! [`TelemetryBuilder`]: what to export, where, and how, read from the
 //! environment and overridden in code.
 
+use super::selection::{self, Selection};
 use super::*;
 
+mod assemble;
+
 /// Configures and builds a [`Telemetry`]; see [`Telemetry::builder`].
+#[allow(clippy::struct_excessive_bools)] // independent switches, each set by its own method
 pub struct TelemetryBuilder {
     default_service_name: Option<String>,
     traces: Option<bool>,
@@ -16,6 +20,10 @@ pub struct TelemetryBuilder {
     endpoint: Option<String>,
     protocol: Option<OtlpProtocol>,
     headers: Vec<(String, String)>,
+    compression: Option<OtlpCompression>,
+    proxy: ProxySetting,
+    detect_resource: bool,
+    startup_summary: bool,
     ca_pem: Vec<u8>,
     client_identity: Option<ClientIdentity>,
     langfuse: Option<Langfuse>,
@@ -26,7 +34,7 @@ pub struct TelemetryBuilder {
 
 impl std::fmt::Debug for TelemetryBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Headers are not printed: they carry credentials.
+        // Headers and the proxy URL are not printed: they carry credentials.
         f.debug_struct("TelemetryBuilder")
             .field("default_service_name", &self.default_service_name)
             .field("traces", &self.traces)
@@ -34,6 +42,7 @@ impl std::fmt::Debug for TelemetryBuilder {
             .field("logs", &self.logs)
             .field("endpoint", &self.endpoint)
             .field("protocol", &self.protocol)
+            .field("compression", &self.compression)
             .field("langfuse", &self.langfuse)
             .field("where_configured", &self.where_configured)
             .finish_non_exhaustive()
@@ -51,6 +60,10 @@ impl TelemetryBuilder {
             endpoint: None,
             protocol: None,
             headers: Vec::new(),
+            compression: None,
+            proxy: ProxySetting::default(),
+            detect_resource: true,
+            startup_summary: true,
             ca_pem: Vec::new(),
             client_identity: None,
             langfuse: None,
@@ -151,6 +164,65 @@ impl TelemetryBuilder {
         self
     }
 
+    /// Compresses every export body. `OTEL_EXPORTER_OTLP_COMPRESSION` (and
+    /// the per-signal forms) asks for the same from the environment, and
+    /// this wins over it. Code cannot turn off what the variable turned on:
+    /// unset the variable, or set it to `none`. Without either, bodies are
+    /// sent as they are.
+    #[must_use]
+    pub const fn with_compression(mut self, compression: OtlpCompression) -> Self {
+        self.compression = Some(compression);
+        self
+    }
+
+    /// Sends every export through this HTTP proxy, as `ALL_PROXY` would, and
+    /// wins over `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY`. `NO_PROXY` does
+    /// not apply to it: a proxy chosen in code is explicit, and does not
+    /// change with the machine's environment. Credentials go in the URL
+    /// (`http://user:pass@proxy:3128`). Only `http://` proxies are spoken; an
+    /// `https://` or `socks5://` one is ignored with a warning, and the
+    /// export goes direct.
+    #[must_use]
+    pub fn with_proxy(mut self, url: impl Into<String>) -> Self {
+        self.proxy = ProxySetting::Url(url.into());
+        self
+    }
+
+    /// Sends exports straight to the collector, ignoring `HTTP_PROXY`,
+    /// `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`. Without this, and without
+    /// [`with_proxy`](Self::with_proxy), those variables apply as they do to
+    /// curl.
+    #[must_use]
+    pub fn without_proxy(mut self) -> Self {
+        self.proxy = ProxySetting::Off;
+        self
+    }
+
+    /// Leaves the process's own description out of the resource. By default
+    /// it carries `host.name`, `host.arch`, `os.type`, `process.pid` and
+    /// `process.executable.name`, each only when `OTEL_RESOURCE_ATTRIBUTES`
+    /// does not name it; turn this off for an export to a party that should
+    /// not learn them. `service.name`, `service.instance.id` and
+    /// `telemetry.sdk.*` stay.
+    #[must_use]
+    pub const fn without_resource_detection(mut self) -> Self {
+        self.detect_resource = false;
+        self
+    }
+
+    /// Leaves the startup line (`describe()`) out of what
+    /// [`Telemetry::install_subscriber`] logs. By default it logs where each
+    /// signal goes, or that nothing is exported and how to change that, once
+    /// at INFO: what a server's operator wants and a one-shot command-line tool
+    /// does not, where it would be a line on standard error of every run.
+    /// Warnings and errors (a lost export, a setting that was not honoured)
+    /// are still printed, and `describe()` still returns the line.
+    #[must_use]
+    pub const fn without_startup_summary(mut self) -> Self {
+        self.startup_summary = false;
+        self
+    }
+
     /// CA certificates, PEM, to trust alongside the bundled Mozilla roots —
     /// for a collector behind a private CA. `OTEL_EXPORTER_OTLP_CERTIFICATE`
     /// names a file of them and is read too.
@@ -209,9 +281,9 @@ impl TelemetryBuilder {
         self
     }
 
-    fn enabled(&self, signal: Signal) -> Result<bool, TelemetryError> {
+    fn selection(&self, signal: Signal) -> Result<Selection, TelemetryError> {
         if config::sdk_disabled(&*self.env) {
-            return Ok(false);
+            return Ok(Selection::OFF);
         }
         let (explicit, preset_default) = match signal {
             Signal::Traces => (self.traces, true),
@@ -225,7 +297,85 @@ impl TelemetryBuilder {
         } else {
             preset_default
         };
-        config::exporter_enabled(&*self.env, signal, explicit.unwrap_or(default))
+        selection::from_env(&*self.env, signal, explicit.unwrap_or(default))
+    }
+
+    /// OTLP/HTTP's endpoint must carry a scheme. `opentelemetry-otlp` answers
+    /// `127.0.0.1:4318` with "invalid format", naming nothing to change; the
+    /// gRPC path accepts it (`https://`, or `http://` under
+    /// `OTEL_EXPORTER_OTLP_INSECURE`), but OTLP/HTTP has no such variable, so
+    /// guessing `http` or `https` for the user would be a guess about TLS.
+    fn require_scheme(&self, signal: Signal) -> Result<(), TelemetryError> {
+        let given = self.endpoint.as_deref().map_or_else(
+            || signal.otlp_var(&*self.env, "ENDPOINT"),
+            |base| Some(("the endpoint given in code".to_owned(), base.to_owned())),
+        );
+        match given {
+            Some((var, value)) if !value.contains("://") => Err(TelemetryError::config(
+                &var,
+                &value,
+                format!("OTLP/HTTP needs a scheme: write `http://{value}` or `https://{value}`"),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// A warning when the base endpoint over OTLP/HTTP already ends in one of
+    /// the paths the exporter appends to it.
+    ///
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT` is a base: the specification has the
+    /// exporter add `/v1/traces`, `/v1/metrics` or `/v1/logs`, so a value
+    /// copied from a signal's full URL (`http://c:4318/v1/traces`) posts to
+    /// `/v1/traces/v1/traces`, which a collector answers with a 404. The
+    /// signal's own `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the full URL, and
+    /// is not checked. `otlp` says which signals go over OTLP.
+    pub(super) fn base_endpoint_notice(&self, otlp: [bool; 3]) -> Option<String> {
+        const SIGNALS: [Signal; 3] = [Signal::Traces, Signal::Metrics, Signal::Logs];
+        const PATHS: [&str; 3] = ["/v1/traces", "/v1/metrics", "/v1/logs"];
+        for (signal, over_otlp) in SIGNALS.into_iter().zip(otlp) {
+            let Ok(protocol) = config::protocol(&*self.env, signal, self.protocol) else {
+                continue;
+            };
+            if !over_otlp || !protocol.is_http() {
+                continue;
+            }
+            let (origin, base) = match self.endpoint.as_deref() {
+                Some(base) => ("the endpoint given in code".to_owned(), base.to_owned()),
+                None => match signal.otlp_var(&*self.env, "ENDPOINT") {
+                    Some((var, value)) if var == "OTEL_EXPORTER_OTLP_ENDPOINT" => (var, value),
+                    _ => continue,
+                },
+            };
+            let trimmed = base.trim_end_matches('/');
+            let Some(suffix) = PATHS.iter().find(|p| trimmed.ends_with(**p)) else {
+                continue;
+            };
+            let root = &trimmed[..trimmed.len() - suffix.len()];
+            return Some(format!(
+                "{origin} is {base}, which already ends in {suffix}: over OTLP/HTTP the exporter \
+                 appends /v1/traces, /v1/metrics or /v1/logs to it, so {} would go to {}. Give the \
+                 base URL ({root}), or a complete URL in OTEL_EXPORTER_OTLP_{}_ENDPOINT.",
+                signal.name(),
+                Target::endpoint_from_base(&base, signal, protocol),
+                signal.name().to_uppercase(),
+            ));
+        }
+        None
+    }
+
+    /// The client certificate and key the environment names for `signal`,
+    /// else the ones given to the builder.
+    fn client_identity_for(
+        &self,
+        signal: Signal,
+    ) -> Result<Option<ClientIdentity>, TelemetryError> {
+        Ok(match config::client_identity_files(&*self.env, signal)? {
+            Some([(cert_var, cert_path), (key_var, key_path)]) => Some(ClientIdentity {
+                cert_pem: read_file(&cert_var, &cert_path)?,
+                key_pem: read_file(&key_var, &key_path)?,
+            }),
+            None => self.client_identity.clone(),
+        })
     }
 
     pub(super) fn target(&self, signal: Signal) -> Result<Target, TelemetryError> {
@@ -234,26 +384,38 @@ impl TelemetryBuilder {
         if let Some((var, path)) = config::certificate_file(env, signal) {
             ca_pem.extend_from_slice(&read_file(&var, &path)?);
         }
-        let client_identity = match config::client_identity_files(env, signal)? {
-            Some([(cert_var, cert_path), (key_var, key_path)]) => Some(ClientIdentity {
-                cert_pem: read_file(&cert_var, &cert_path)?,
-                key_pem: read_file(&key_var, &key_path)?,
-            }),
-            None => self.client_identity.clone(),
-        };
+        let client_identity = self.client_identity_for(signal)?;
         let timeout = config::timeout(env, signal)?;
+        let proxy = Arc::new(proxy::matcher(env, &self.proxy));
+        let compression = match self.compression {
+            Some(c) => Some(c),
+            None => compression::from_env(env, signal)?,
+        };
         if let (Signal::Traces, Some(lf)) = (signal, &self.langfuse) {
+            let endpoint = lf.traces_endpoint();
             return Ok(Target {
                 signal,
                 protocol: OtlpProtocol::HttpProtobuf,
-                endpoint: Some(lf.traces_endpoint()),
+                destination: Target::destination_for(
+                    env,
+                    signal,
+                    OtlpProtocol::HttpProtobuf,
+                    Some(&endpoint),
+                ),
+                endpoint: Some(endpoint),
                 headers: lf.headers(),
+                compression,
+                proxy,
+                cause: Arc::default(),
                 timeout,
                 ca_pem,
                 client_identity,
             });
         }
         let protocol = config::protocol(env, signal, self.protocol)?;
+        if protocol.is_http() {
+            self.require_scheme(signal)?;
+        }
         // OTLP/HTTP leaves an unset endpoint to `opentelemetry-otlp`. gRPC
         // resolves it here, because an `https://` one is dialled over this
         // crate's own TLS connector, which needs the endpoint to build.
@@ -265,15 +427,34 @@ impl TelemetryBuilder {
         Ok(Target {
             signal,
             protocol,
+            destination: Target::destination_for(env, signal, protocol, endpoint.as_deref()),
             endpoint,
             headers: self.headers.clone(),
+            compression,
+            proxy,
+            cause: Arc::default(),
             timeout,
             ca_pem,
             client_identity,
         })
     }
 
+    #[cfg(test)]
     pub(super) fn resource(&self) -> Resource {
+        self.resource_and_notices().0
+    }
+
+    /// The resource, with `OTEL_RESOURCE_ATTRIBUTES` percent-decoded as the
+    /// specification requires (`resource_env.rs`), and what could not be.
+    pub(super) fn resource_and_notices(&self) -> (Resource, Vec<String>) {
+        let decoded = super::resource_env::decode(&*self.env);
+        (
+            super::resource_env::apply(self.sdk_resource(), decoded.attributes),
+            decoded.notices,
+        )
+    }
+
+    fn sdk_resource(&self) -> Resource {
         // `Resource::builder` reads `OTEL_SERVICE_NAME` and
         // `OTEL_RESOURCE_ATTRIBUTES` itself; the defaults are added only when
         // they name none, so they never overwrite them.
@@ -296,77 +477,14 @@ impl TelemetryBuilder {
                 uuid::Uuid::new_v4().to_string(),
             ));
         }
+        if self.detect_resource {
+            for found in detect::attributes(&*self.env) {
+                if !config::resource_attribute_from_env(&*self.env, found.key.as_str()) {
+                    builder = builder.with_attribute(found);
+                }
+            }
+        }
         builder.build()
-    }
-
-    /// Builds every enabled signal's exporter and provider.
-    ///
-    /// # Errors
-    ///
-    /// [`TelemetryError`] for a variable with a value this crate cannot act
-    /// on — named, with the value, except for headers — an exporter that
-    /// cannot be built, a CA file that cannot be read, or an export thread
-    /// that cannot be started. Nothing is installed on error.
-    pub fn build(self) -> Result<Telemetry, TelemetryError> {
-        let traces = self.enabled(Signal::Traces)?;
-        let metrics = self.enabled(Signal::Metrics)?;
-        let logs = self.enabled(Signal::Logs)?;
-        let mut telemetry = Telemetry {
-            tracer: None,
-            meter: None,
-            logger: None,
-            log_level: self.log_level,
-            runtime: None,
-            failures: Vec::new(),
-        };
-        if traces || metrics || logs {
-            let runtime = ExportRuntime::start().map_err(TelemetryError::Runtime)?;
-            let resource = self.resource();
-            if traces {
-                let exporter = exporters::spans(&self.target(Signal::Traces)?, &runtime)?;
-                let exporter = telemetry.counting(Signal::Traces, exporter);
-                telemetry.tracer = Some(
-                    SdkTracerProvider::builder()
-                        .with_batch_exporter(exporter)
-                        .with_resource(resource.clone())
-                        .build(),
-                );
-            }
-            if metrics {
-                let exporter = exporters::metrics(&self.target(Signal::Metrics)?, &runtime)?;
-                let exporter = telemetry.counting(Signal::Metrics, exporter);
-                telemetry.meter = Some(
-                    SdkMeterProvider::builder()
-                        .with_reader(PeriodicReader::builder(exporter).build())
-                        .with_resource(resource.clone())
-                        .build(),
-                );
-            }
-            if logs {
-                let exporter = exporters::logs(&self.target(Signal::Logs)?, &runtime)?;
-                let exporter = telemetry.counting(Signal::Logs, exporter);
-                telemetry.logger = Some(
-                    SdkLoggerProvider::builder()
-                        .with_batch_exporter(exporter)
-                        .with_resource(resource)
-                        .build(),
-                );
-            }
-            telemetry.runtime = Some(runtime);
-        }
-        if self.install_globally {
-            if let Some(tracer) = &telemetry.tracer {
-                opentelemetry::global::set_tracer_provider(tracer.clone());
-            }
-            if let Some(meter) = &telemetry.meter {
-                opentelemetry::global::set_meter_provider(meter.clone());
-            }
-            opentelemetry::global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
-                Box::new(TraceContextPropagator::new()),
-                Box::new(BaggagePropagator::new()),
-            ]));
-        }
-        Ok(telemetry)
     }
 }
 

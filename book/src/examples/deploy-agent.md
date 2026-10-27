@@ -68,11 +68,13 @@ Two details in those files matter more than they look:
 - The `ENTRYPOINT` is exec form, so the binary is PID 1 and receives `SIGTERM`
   directly. The shell form puts `/bin/sh` there, which does not forward signals
   — graceful shutdown silently stops working and rollouts start cutting streams.
-- `terminationGracePeriodSeconds: 30` must exceed the shutdown budget in
+- `terminationGracePeriodSeconds: 45` must exceed the shutdown budget in
   `main.rs`: up to 5 s for tasks to end on their own, then cancellation and up
   to 10 s for the executors to act on it, then the HTTP drain, then one 5 s
-  budget shared by the event-queue drain and the executor's cleanup hook. A
-  task still running after 5 s is
+  budget shared by the event-queue drain and the executor's cleanup hook, then,
+  with telemetry on, the flush as `main` returns: up to 15 s when the collector
+  accepts connections and never answers, 1.8 s when it refuses them (measured
+  on `hello-agent`, 2026-10-26). A task still running after 5 s is
   cancelled, however long its stream would have been. If `SIGKILL` lands
   before the budget is spent, the graceful shutdown is cut short.
 

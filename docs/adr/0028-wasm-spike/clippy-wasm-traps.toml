@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# Appended to the repository's clippy.toml by reproduce.sh. Each of these compiles
+# for wasm32-unknown-unknown and then panics (or never completes) when reached.
+disallowed-methods = [
+  { path = "std::time::Instant::now", reason = "panics on wasm32: use crate::rt::time" },
+  { path = "std::time::SystemTime::now", reason = "panics on wasm32: use crate::rt::time" },
+  { path = "tokio::spawn", reason = "needs a reactor: use crate::rt::spawn" },
+  { path = "tokio::task::spawn_blocking", reason = "no threads on wasm32" },
+  { path = "tokio_util::task::TaskTracker::spawn", reason = "calls tokio::spawn: use crate::rt::spawn_tracked" },
+  { path = "tokio::time::sleep", reason = "needs a timer driver: use crate::rt::time" },
+  { path = "tokio::time::timeout", reason = "needs a timer driver: use crate::rt::time" },
+  { path = "tokio::time::timeout_at", reason = "needs a timer driver: use crate::rt::time" },
+  { path = "tokio::time::interval", reason = "needs a timer driver: use crate::rt::time" },
+  { path = "tokio::time::Instant::now", reason = "needs a timer driver: use crate::rt::time" },
+  { path = "tokio::runtime::Handle::try_current", reason = "no runtime on wasm32" },
+]

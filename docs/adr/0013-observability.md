@@ -145,9 +145,11 @@ existing `init_otlp_pipeline*` functions stay, deprecated.
   calls and asserts the span tree (remote parent, executor child, downstream
   span id recorded) and every catalogued instrument. It fails on `main` on
   the day this ADR is written; each step of the work turns part of it green.
-- `tracing` spans cost nothing when the feature is off and a disabled-level
-  check when it is on without a subscriber; the cost with an exporter
-  installed is measured before and after, not asserted.
+- `tracing` spans cost nothing when the feature is off. When it is on with
+  nothing installed, a send cost 4.6% and 6.6% more in two runs
+  (`docs/readiness-bar.md`, 2026-10), which retracted the earlier "a level
+  check"; the cost with an exporter installed is measured before and after,
+  not asserted.
 
   **Measured 2026-09-24**, a blocking `SendMessage` round trip over
   loopback to `serve_with_addr` with a trivial executor (criterion, bench
@@ -383,3 +385,102 @@ run. Decided with it:
   `invoke_agent` span covers any executor; only the loop knows how many
   turns and calls a run made, and a loop run outside an executor is still
   an agent invocation.
+
+## 2026-10-26: setups the exporter did not reach, and what it did not say
+
+The maintainer's review said OTLP "does not work out of the box and does not
+work for every setup", is "not intuitive devex", is not "industry standard or
+best practice" and is "not complete". Each part was tested rather than taken as
+read: the repository's `hello-agent` was run against a stand-in collector
+(a threading HTTP server that decodes the protobuf; 2026-10-26), with the
+environment cleared to the variables under test.
+
+**What held.** "Does not work out of the box" did not: with
+`OTEL_EXPORTER_OTLP_ENDPOINT` set, traces, metrics and logs arrived with the
+right span names and cumulative metrics, and the 32 export tests passed.
+Headers, `OTEL_TRACES_SAMPLER` (`always_off` exported no spans), delta
+temporality (`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`), resource
+attributes and the log/trace correlation each worked as documented.
+
+**What did not**, each reproduced before it was changed:
+
+| Setup | Before |
+|---|---|
+| `OTEL_EXPORTER_OTLP_COMPRESSION=gzip` | Ignored: no `Content-Encoding`, the same 6,633-byte body |
+| `HTTP_PROXY` with a collector only the proxy can resolve | Ignored: the proxy received nothing |
+| A collector that is not there | Nine seconds, no output |
+| No endpoint configured | One line, "listening"; no hint how to export |
+| `OTEL_TRACES_EXPORTER=console`, `…_METRICS_EXPORTER=prometheus` | Refused (a panic in the examples) |
+| Resource | `service.*` and `telemetry.sdk.*` only: no host, OS or process |
+| `OTEL_PROPAGATORS=b3` | Accepted and ignored |
+| `OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4318` over HTTP | "invalid format" |
+
+**The cause of the silent ones is one thing.** `opentelemetry-otlp` *warns and
+ignores* a value it was not built for (compression, here), through `tracing`;
+`Telemetry` builds its exporters before any subscriber exists, and
+`install_subscriber` then installed only the exporting layers, which exclude the
+exporter's own targets on purpose (an export that logs a failure must not
+produce something to export). So the warning, the SDK's per-batch
+`ExportError`, hyper's and rustls's messages all went nowhere. The ADR's own
+text said `Telemetry` "refuses a value it cannot act on rather than ignoring
+it"; for this variable that was false. The fixes follow from the cause:
+
+1. **Read the variables whose upstream failure is a warning ourselves, and
+   refuse what cannot be honoured** (`compression.rs`, `selection.rs`,
+   `propagators.rs`), except where refusing is the wrong default. The
+   exception is `OTEL_PROPAGATORS` and a proxy variable of a kind not spoken
+   (`socks5://`): both are commonly set once for a fleet of other processes, so
+   they are reported (`Telemetry::notices`, one warning) and skipped. A bad
+   *exporter* value stays an error: it would otherwise export nothing and say so
+   nowhere.
+2. **Give the process somewhere to see it.** `install_subscriber` now adds a
+   layer printing warnings and errors to standard error (`RUST_LOG` in
+   `target=level` form, parsed by `Targets`, not `EnvFilter`, whose regex
+   engine would be a dependency for a convenience) and logs
+   `Telemetry::describe()` once. **This reverses the 2026-10-06 contract** that
+   it installs nothing when no trace or log provider was built; a process with no
+   collector showed nothing, which is the case that needed it most. The cost is
+   that a program that later calls `.init()` on its own subscriber finds the slot
+   taken; the CHANGELOG says so and no binary in this repository does it.
+3. **Report a lost export where it happens** (`counting.rs`): signal,
+   destination (userinfo removed), at most once per 30 s with a count, on a
+   target in `SELF_TARGETS`. The SDK's own `…ExportError` event is filtered from
+   the printing layer because this supersedes it; without that, an outage printed
+   an ERROR every batch.
+
+**Options considered and not taken.**
+
+- *`opentelemetry-stdout` for the console exporter.* It prints several lines a
+  record and depends on `chrono`. A one-line form is something to read; written
+  in-tree (`console.rs`, about 250 lines) with the SDK's public accessors.
+- *`EnvFilter` for `RUST_LOG`.* A regex engine and more for a convenience.
+- *`gethostname` for `host.name`.* `unsafe` is forbidden here and a crate for one
+  call is a dependency the policy asks to avoid when ≤100 lines do it. The cost:
+  no `host.name` on a macOS process that does not export `HOSTNAME`.
+- *Prometheus rendered in-tree.* The text format's name, unit and suffix rules
+  are the translation the book's table was measured through; the official crate
+  is the one source for it. It is a non-default feature (`otel-prometheus`) so
+  the default graph does not grow, as `otlp-json` is.
+- *`zstd`.* It needs a C library; `gzip` is pure Rust (`miniz_oxide`, already in
+  the graph).
+- *Proxy support through `reqwest`.* Banned (`deny.toml`); `hyper-util`'s
+  `Matcher` and `Tunnel` do it from the stack in use.
+
+**Found while testing it.**
+
+- A proxy given in code must not consult `NO_PROXY`: the integration tests failed
+  on a host whose `NO_PROXY` names `localhost`, because an ambient variable
+  changed what an explicit setting did.
+- `"no live event subscribers; event persisted only"` was a `warn` on the
+  ordinary path of every blocking call, which its own comment says is not an
+  error. Invisible until something printed warnings; now `debug`.
+- `tracing-opentelemetry` puts `code.*`, `thread.*`, `busy_ns` and `idle_ns` on
+  every span; they are exported, and left off console lines.
+
+**Not done, and why.** The default metrics export interval (60 s) is the
+specification's and is kept for the console exporter, so a console reader sees
+metrics at exit or after `OTEL_METRIC_EXPORT_INTERVAL`. Exemplars,
+exponential-histogram selection and the `otel.sdk.*` self-observability metrics
+were not examined. `OTEL_EXPORTER_OTLP_*` over a Unix socket and SOCKS/HTTPS
+proxies are not spoken. WebAssembly targets (no threads, no sockets, no Tokio
+runtime) cannot run this exporter at all; that is ADR 0028's subject.

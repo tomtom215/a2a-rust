@@ -81,6 +81,33 @@ The SLIMRPC binding (`bindings/a2a-protocol-slimrpc`) is versioned
 independently and is not part of the tagged release; `release.yml` does not
 touch it.
 
+## v0.15.1 (2026-10-26)
+
+A patch release that makes OpenTelemetry export work in more deployments and
+say what it is doing. A diff of the public items against v0.15.0 finds only
+additions. Two behaviours change, and the second affects any pod that sets
+`HTTP_PROXY`; [Upgrading Between Minor Versions](./upgrading.md) has both, and
+[CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
+has every item in full.
+
+- **A quick start per deployment**, in [Observability](../deployment/observability.md):
+  a laptop with and without a collector, Docker, Kubernetes, HTTPS with a
+  public or private CA and mutual TLS, behind a proxy, Prometheus scraping,
+  and stopping a pod.
+- **`shutdown_signal()`**: a server that waited on Ctrl-C alone was ended by
+  SIGTERM without a flush, and the collector received no spans and no metrics.
+- **Proxies, gzip, a console exporter and a Prometheus endpoint** for the
+  OTLP export; a startup line saying where each signal goes; a warning when
+  an export is lost, with the transport's cause and, where the failure names the
+  fix, a hint (an unknown CA, a `401`, a `404`, HTTP to port 4317 or gRPC to
+  4318).
+- **Behaviour changes**: `Telemetry::install_subscriber` always installs a
+  subscriber, so a later `.init()` panics; and the proxy variables now apply to
+  the export, so a pod with `HTTP_PROXY` set must list an in-cluster collector
+  in `NO_PROXY`.
+- **Fixed**: `langfuse-agent` exited 1 with no environment; examples that
+  waited on Ctrl-C alone; documentation that was wrong, stale or overstated.
+
 ## v0.15.0 (2026-10-25)
 
 A minor release that follows the A2A v1.0.1 specification where the SDK did

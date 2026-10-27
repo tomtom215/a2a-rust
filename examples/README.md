@@ -52,7 +52,10 @@ standard `OTEL_*` environment, as `langfuse-agent` does: set
 `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector and its traces, metrics and logs
 go there (`OTEL_SERVICE_NAME` overrides the default service name, the
 binary's); leave it unset and nothing is built, so a plain `cargo run` needs
-no collector. The one: `mcp-agent`'s `tool_server`, an MCP server that runs
+no collector. Those that install the SDK's subscriber (all but `echo-agent`,
+`agent-team` and `langfuse-agent`, which keep one of their own) also say so in
+one line on standard error, with how to turn export on. `OTEL_TRACES_EXPORTER=console` (and the metrics and logs siblings)
+prints the signal to standard output instead, which needs no collector either. The one: `mcp-agent`'s `tool_server`, an MCP server that runs
 no A2A code. So do `tck/sut`, the ITK agent in `itk/` and the `a2a` CLI.
 `scripts/check_otel_wiring.py` (CI) fails a `fn main` that starts none and is
 not on its list of exemptions, each with its reason.

@@ -13,9 +13,14 @@
 #![cfg(feature = "otlp")]
 
 mod agent_spans;
+mod body;
 mod certs;
 mod collector;
+mod compression;
+mod console;
+mod forward_proxy;
 mod logs;
+mod proxy;
 mod tls_and_json;
 #[cfg(feature = "tool-loop")]
 mod tool_loop_spans;
@@ -55,7 +60,7 @@ pub(crate) fn record_one_of_each(telemetry: &Telemetry) {
     }
 }
 
-fn assert_all_three_arrived(collector: &Collector) {
+pub(crate) fn assert_all_three_arrived(collector: &Collector) {
     let spans = collector.spans();
     let (resource, span) = spans
         .iter()

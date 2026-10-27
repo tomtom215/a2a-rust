@@ -420,6 +420,7 @@ are rustdoc's job.
 | `Server` | A bound listener that has not started accepting yet; binding is separated from serving so the caller can learn the address |
 | `ServeConfig` | Limits applied to a `Server`; `ServeConfig::production()` makes it refuse plaintext beyond loopback and a binding the agent card does not declare (ADR 0025) |
 | `ServeReport` | What a shutdown did — `Server::serve_with_shutdown`, or the gRPC and WebSocket dispatchers' `serve_with_shutdown`: connections accepted, drained or abandoned, and (with a handler-backed dispatcher) the `InFlightReport` for its tasks; `refused` says why a `ServeConfig::production()` server declined to start |
+| `shutdown_signal() -> impl Future<Output = ()>` | Resolves on SIGTERM or SIGINT (Ctrl-C on non-Unix); pass it to `Server::serve_with_shutdown` so a pod stop drains in-flight work, returns from `main`, and lets a live `Telemetry` guard flush |
 | `DispatchConfig` | Configuration for dispatch-layer limits shared by both JSON-RPC and REST dispatchers |
 | `GrpcConfig` | Configuration for the gRPC dispatcher (`grpc` feature) |
 | `validate_version_metadata(metadata, required)` | Validates the A2A version carried in a binding's request metadata |

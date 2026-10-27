@@ -19,6 +19,46 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+- **0.15.1 is prepared on branch `claude/kind-curie-jskrn8` (2026-10-26); it is
+  not tagged and no pull request is open.** Versions, the eight dependency
+  pins, the four lockfiles, `CHANGELOG.md` (`[0.15.1] - 2026-10-26`, an empty
+  `[Unreleased]`), `CITATION.cff`, `ROADMAP.md`, the book's changelog page and
+  `docs/provenance-manifest.md` (last) are done. Content: OTLP export for
+  proxies, gzip, a console exporter, `otel-prometheus`, a stderr layer with a
+  startup line and lost-export warnings (with the transport's cause and a hint
+  where the failure names the fix), resource detection, `OTEL_PROPAGATORS`,
+  percent-decoded `OTEL_RESOURCE_ATTRIBUTES`, `shutdown_signal()`, a quick start
+  per deployment in `observability.md`, and the corrections two read-only audits
+  found (each verified before it was applied; the reports were leads).
+  **For the maintainer, before opening the pull request:**
+  1. *Sign-off.* The commits are authored as the container's identity with no
+     `Signed-off-by`; `scripts/check_dco.sh` will refuse them. Re-author and
+     sign off.
+  2. *Patch or minor.* The release adds public API (`shutdown_signal`,
+     `OtlpCompression`, five `TelemetryBuilder` and three `Telemetry` methods),
+     an off-by-default feature and two behaviour changes (a later `.init()`
+     after `install_subscriber` panics; `HTTP_PROXY` now applies to the export).
+     `check_release_tree.py` accepts it as a patch (no `### Breaking Changes`),
+     but the book's changelog page defines a patch as bug fixes, and 0.14.1 was
+     one advisory with no API change. 0.16.0 is the other reading; the choice is
+     yours, and `CHANGELOG.md`, the manifests and `CITATION.cff` follow it.
+  3. *Not run, and so not claimed:* a real OpenTelemetry Collector (building one
+     was refused in the session, so every collector was a stand-in), Kubernetes
+     (the manifest was parsed as YAML; `$(POD_NAME)` expansion is Kubernetes's),
+     IPv6, a public-CA endpoint, a production proxy, `cargo-semver-checks`
+     (installing it was refused; the claim that nothing public was removed comes
+     from a diff of `pub` lines against `v0.15.0`, and CI runs the real tool on
+     the pull request), `cargo deny` and `promtool`.
+  4. *Toolchain.* CI's stable was rustc 1.99.1 on 2026-10-26. A session's
+     clippy 1.97 passed code that 1.99.1 rejects (`assert_is_empty`,
+     `unused_async_trait_impl`) and flagged files this branch did not touch that
+     1.99.1 does not, so lint with `rustup toolchain install 1.99.1` before
+     pushing. `cargo +nightly doc` with `--cfg docsrs` is the third doc build.
+  Also **ADR 0028 (Proposed)** and `docs/adr/0028-wasm-spike/`: the real
+  `RequestHandler` was run inside `workerd` (11 of 11 checks, native lib suite
+  unchanged at 1,545). Nothing from it is in the crates. The next session
+  should start by running `docs/adr/0028-wasm-spike/reproduce.sh`; if the base
+  commit has moved, the patch needs a rebase and `results.txt` regenerating.
 - **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
   the newest release; 0.14.1 (2026-09-30) is the one before. It is the first
   signed tag: SSH-signed by the key in `.github/release-signers/`, and
@@ -366,6 +406,16 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Waiting on the maintainer
 
+- **ADR 0028: whether Tokio stays mandatory on `wasm32-unknown-unknown`.**
+  Proposed, not accepted. It asks you to qualify ADR 0003 (Tokio is mandatory
+  on native targets; on wasm32 the crates assume no Tokio runtime) so that a
+  runtime seam can be landed as phase 1, behaviour-neutral on native and
+  proven so by the lib suite, with a wasm32 `cargo check` and a lint on the
+  trap APIs in CI. Phases 2 to 4 (a dispatch entry point that does not take
+  `hyper::Request<Incoming>`, the client over `fetch`, Durable Object or D1
+  stores) are unbuilt. Not measured: anything on Cloudflare's network, the
+  1-second startup limit, durable state, a fan-out Worker. If you decline, the
+  Worker-in-front-of-a-native-agent deployment needs no change here.
 - **File GHSA-hr9h-6jvf-wvg6 with RustSec** (found 2026-10-21 by the CRA
   review). The project's own advisory (fixed in 0.14.1) is on GitHub only:
   the RustSec database and OSV have no entry (OSV queried 2026-10-21), so

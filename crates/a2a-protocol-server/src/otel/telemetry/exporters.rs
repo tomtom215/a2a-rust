@@ -6,12 +6,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use hyper_util::client::proxy::matcher::Matcher;
 use rustls_pki_types::pem::PemObject as _;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
 use super::TelemetryError;
-use super::config::{OtlpProtocol, Signal};
+use super::compression::OtlpCompression;
+use super::config::{Env, OtlpProtocol, Signal};
+use super::hints::Cause;
 use super::http::ExportHttpClient;
+use super::proxy;
 use super::runtime::ExportRuntime;
 
 /// Where one signal's exporter sends, and how.
@@ -25,11 +29,36 @@ pub(super) struct Target {
     /// Added to `OTEL_EXPORTER_OTLP_*_HEADERS`, which the exporter still
     /// reads; a variable naming the same header wins.
     pub(super) headers: Vec<(String, String)>,
+    /// How export bodies are compressed: set in code, or named by
+    /// `OTEL_EXPORTER_OTLP_*COMPRESSION`, which `compression::from_env`
+    /// resolved. `None` sends them as they are.
+    pub(super) compression: Option<OtlpCompression>,
+    /// Which destinations go through which HTTP proxy (`proxy.rs`).
+    pub(super) proxy: Arc<Matcher>,
+    /// Where this exporter sends, as a person reads it: the endpoint with any
+    /// login in the URL removed. For the startup line and for the message
+    /// when an export is lost.
+    pub(super) destination: String,
+    /// What the HTTP client last failed with, kept for the loss report
+    /// (`hints.rs`): the exporter crate discards it.
+    pub(super) cause: Arc<Cause>,
     pub(super) timeout: Duration,
     /// Extra CA certificates, PEM, trusted alongside the Mozilla roots.
     pub(super) ca_pem: Vec<u8>,
     /// The client certificate presented for mutual TLS, if any.
     pub(super) client_identity: Option<ClientIdentity>,
+}
+
+/// `url` without a `user:password@` in its authority.
+fn without_userinfo(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let (authority, path) = rest.find('/').map_or((rest, ""), |i| rest.split_at(i));
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    format!("{scheme}://{host}{path}")
 }
 
 /// A client certificate chain (leaf first) and its private key, PEM.
@@ -61,6 +90,37 @@ impl ClientIdentity {
 }
 
 impl Target {
+    /// The endpoint this exporter will use, for display: the configured one,
+    /// else what `OTEL_EXPORTER_OTLP_*ENDPOINT` names (the general variable
+    /// gaining the signal's path on OTLP/HTTP, as `opentelemetry-otlp` does),
+    /// else the transport's `localhost` default; userinfo removed.
+    pub(super) fn destination_for(
+        env: &Env,
+        signal: Signal,
+        protocol: OtlpProtocol,
+        endpoint: Option<&str>,
+    ) -> String {
+        let url = match (endpoint, signal.otlp_var(env, "ENDPOINT")) {
+            (Some(url), _) => url.to_owned(),
+            (None, Some((var, value))) if var == "OTEL_EXPORTER_OTLP_ENDPOINT" => {
+                Self::endpoint_from_base(&value, signal, protocol)
+            }
+            (None, Some((_, value))) => value,
+            (None, None) if protocol.is_http() => {
+                format!("http://localhost:4318/{}", signal.http_path())
+            }
+            (None, None) => "http://localhost:4317".to_owned(),
+        };
+        without_userinfo(&url)
+    }
+
+    /// The proxy `destination` goes through, if one applies, for display.
+    pub(super) fn proxy_display(&self) -> Option<String> {
+        let uri = self.destination.parse::<http::Uri>().ok()?;
+        let via = proxy::intercept(&self.proxy, &uri)?;
+        Some(via.uri().to_string().trim_end_matches('/').to_owned())
+    }
+
     /// The endpoint for `signal` given a base URL, as
     /// `OTEL_EXPORTER_OTLP_ENDPOINT` is interpreted: OTLP/HTTP appends the
     /// signal's path, gRPC does not.
@@ -127,6 +187,25 @@ impl Target {
             .unwrap_or_else(|| "http://localhost:4317".to_owned())
     }
 
+    /// `inner`, with this crate's TLS over it, offering ALPN `h2`, dialled as
+    /// `https` whatever scheme tonic hands it ([`DialsTls`]).
+    fn dials_tls<T>(&self, inner: T) -> Result<DialsTls<T>, TelemetryError> {
+        Ok(DialsTls(
+            hyper_rustls::HttpsConnectorBuilder::new()
+                .with_tls_config(self.rustls_config()?)
+                .https_only()
+                .enable_http2()
+                .wrap_connector(inner),
+        ))
+    }
+
+    /// Whether `endpoint` is reached through an HTTP proxy (`proxy.rs`).
+    fn proxied(&self, endpoint: &str) -> bool {
+        endpoint
+            .parse::<http::Uri>()
+            .is_ok_and(|uri| proxy::intercept(&self.proxy, &uri).is_some())
+    }
+
     /// A tonic channel to an `https://` collector over this crate's rustls
     /// stack: the roots, extra CAs and client certificate
     /// [`rustls_config`](Self::rustls_config) builds, offering ALPN `h2`
@@ -139,21 +218,36 @@ impl Target {
     /// TLS enabled", tonic 0.14.6 `connector.rs`), whoever dials it. TLS is
     /// not optional on this path: the connector is `https_only`. The channel
     /// connects on first use.
+    ///
+    /// Through an HTTP proxy the connector first opens a `CONNECT` tunnel to
+    /// the collector, and the TLS above runs inside it, so the collector's
+    /// certificate is still checked; a plaintext `http://` collector is
+    /// tunnelled too, since HTTP/2 cannot be forwarded as a plain request.
     fn grpc_channel(&self, endpoint: &str) -> Result<tonic::transport::Channel, TelemetryError> {
-        let tls = self.rustls_config()?;
-        let mut tcp = hyper_util::client::legacy::connect::HttpConnector::new();
+        use hyper_util::client::legacy::connect::HttpConnector;
+        let mut tcp = HttpConnector::new();
         tcp.enforce_http(false);
-        let connector = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_tls_config(tls)
-            .https_only()
-            .enable_http2()
-            .wrap_connector(tcp);
-        let plain = format!("http://{}", endpoint.trim_start_matches("https://"));
+        let tunnel = endpoint
+            .parse::<http::Uri>()
+            .ok()
+            .and_then(|uri| proxy::intercept(&self.proxy, &uri))
+            .map(|via| proxy::tunnel(&via, tcp.clone()));
+        let https = endpoint.starts_with("https://");
+        let plain = format!(
+            "http://{}",
+            endpoint
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+        );
         let channel = tonic::transport::Endpoint::from_shared(plain)
-            .map_err(|e| TelemetryError::config("OTLP endpoint", endpoint, e.to_string()))?;
-        Ok(channel
-            .timeout(self.timeout)
-            .connect_with_connector_lazy(DialsTls(connector)))
+            .map_err(|e| TelemetryError::config("OTLP endpoint", endpoint, e.to_string()))?
+            .timeout(self.timeout);
+        Ok(match (https, tunnel) {
+            (true, Some(tunnel)) => channel.connect_with_connector_lazy(self.dials_tls(tunnel)?),
+            (true, None) => channel.connect_with_connector_lazy(self.dials_tls(tcp)?),
+            (false, Some(tunnel)) => channel.connect_with_connector_lazy(tunnel),
+            (false, None) => channel.connect_lazy(),
+        })
     }
 
     fn grpc_metadata(
@@ -180,18 +274,16 @@ impl Target {
 /// The OTLP/gRPC connector: dials every URI it is given as `https`, through
 /// a TLS connector. See [`Target::grpc_channel`].
 #[derive(Clone)]
-struct DialsTls(hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>);
+struct DialsTls<T>(hyper_rustls::HttpsConnector<T>);
 
-impl tower_service::Service<http::Uri> for DialsTls {
-    type Response = <hyper_rustls::HttpsConnector<
-        hyper_util::client::legacy::connect::HttpConnector,
-    > as tower_service::Service<http::Uri>>::Response;
-    type Error = <hyper_rustls::HttpsConnector<
-        hyper_util::client::legacy::connect::HttpConnector,
-    > as tower_service::Service<http::Uri>>::Error;
-    type Future = <hyper_rustls::HttpsConnector<
-        hyper_util::client::legacy::connect::HttpConnector,
-    > as tower_service::Service<http::Uri>>::Future;
+impl<T> tower_service::Service<http::Uri> for DialsTls<T>
+where
+    hyper_rustls::HttpsConnector<T>: tower_service::Service<http::Uri>,
+{
+    type Response =
+        <hyper_rustls::HttpsConnector<T> as tower_service::Service<http::Uri>>::Response;
+    type Error = <hyper_rustls::HttpsConnector<T> as tower_service::Service<http::Uri>>::Error;
+    type Future = <hyper_rustls::HttpsConnector<T> as tower_service::Service<http::Uri>>::Future;
 
     fn poll_ready(
         &mut self,
@@ -229,13 +321,16 @@ macro_rules! build_exporter {
                 let mut builder = <$exporter>::builder()
                     .with_tonic()
                     .with_timeout(target.timeout);
-                builder = if endpoint.starts_with("https://") {
+                builder = if endpoint.starts_with("https://") || target.proxied(&endpoint) {
                     builder.with_channel(target.grpc_channel(&endpoint)?)
                 } else {
                     builder.with_endpoint(endpoint)
                 };
                 if !target.headers.is_empty() {
                     builder = builder.with_metadata(target.grpc_metadata()?);
+                }
+                if let Some(compression) = target.compression {
+                    builder = builder.with_compression(compression.to_upstream());
                 }
                 builder.build()
             }
@@ -260,6 +355,8 @@ macro_rules! http_exporter {
             runtime.handle().clone(),
             &target.rustls_config()?,
             target.timeout,
+            Arc::clone(&target.proxy),
+            Arc::clone(&target.cause),
         );
         let mut builder = <$exporter>::builder()
             .with_http()
@@ -271,6 +368,9 @@ macro_rules! http_exporter {
         }
         if !target.headers.is_empty() {
             builder = builder.with_headers(target.headers.iter().cloned().collect());
+        }
+        if let Some(compression) = target.compression {
+            builder = builder.with_compression(compression.to_upstream());
         }
         builder.build()
     }};
@@ -298,18 +398,4 @@ pub(super) fn logs(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_base_endpoint_gains_the_signal_path_on_http_only() {
-        assert_eq!(
-            Target::endpoint_from_base("http://c:4318/", Signal::Logs, OtlpProtocol::HttpProtobuf),
-            "http://c:4318/v1/logs"
-        );
-        assert_eq!(
-            Target::endpoint_from_base("http://c:4317", Signal::Logs, OtlpProtocol::Grpc),
-            "http://c:4317"
-        );
-    }
-}
+mod tests;

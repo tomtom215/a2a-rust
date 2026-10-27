@@ -18,10 +18,12 @@ WORKDIR /src
 COPY . .
 RUN cargo build --release -p deploy-agent
 
-# Debian slim rather than distroless or scratch: the binary links glibc and
-# needs CA certificates the moment the agent makes an outbound HTTPS call.
-# Starting from scratch works right up until the first push notification, and
-# then fails with a TLS error that reads like a code bug.
+# Debian slim rather than distroless or scratch: the binary links glibc. The
+# SDK verifies TLS (push notifications, the client, the telemetry exporters)
+# against its bundled Mozilla roots and never reads this image's certificate
+# store, so `ca-certificates` below is for tools run inside the container, not
+# for the agent. A private CA reaches the agent through the SDK's CA options,
+# and reaches telemetry through OTEL_EXPORTER_OTLP_CERTIFICATE (a mounted PEM).
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
 RUN apt-get update \
