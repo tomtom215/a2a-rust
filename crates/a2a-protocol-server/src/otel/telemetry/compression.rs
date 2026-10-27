@@ -129,6 +129,9 @@ mod tests {
                 && msg.contains("gzip"),
             "{msg}"
         );
+        // The fallback message for an unknown value carries the variable, the
+        // value and "gzip" too; only the reason tells the two arms apart.
+        assert!(msg.contains("not supported"), "{msg}");
     }
 
     #[test]

@@ -275,6 +275,13 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   runner was shut down by GitHub before it ran a mutant, so its 25 mutants were
   run locally with the CI selection and flags; this was the one that survived.
   Each test fails with its mutant applied by hand. No behaviour changed.
+- **One more survivor, from the fourth `cargo-mutants` run, closed.** Deleting
+  the `"zstd"` arm of `compression::from_env` sent `zstd` to the arm for unknown
+  values, and the test asserted the variable, the value and `gzip`, all of which
+  that arm's message also carries. It now asserts the reason, `not supported`.
+  The three earlier runs had recorded this mutant as caught, because a
+  PostgreSQL test unrelated to compression ran past its time limit while the
+  mutant was applied. No behaviour changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run
