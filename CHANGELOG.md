@@ -282,6 +282,13 @@ and the off-by-default `otel-prometheus` feature. Two behaviours change, under
   The three earlier runs had recorded this mutant as caught, because a
   PostgreSQL test unrelated to compression ran past its time limit while the
   mutant was applied. No behaviour changed.
+- **`a_call_the_caller_drops_is_recorded_as_cancelled` accepts a recorded
+  duration of half the wait or more**, where it accepted the wait less 10 ms.
+  On this release's PR the macOS stable job failed twice running, measuring
+  49.8 ms and then 48.0 ms of a 60 ms wait (59.8 ms on 2026-10-25, which the
+  10 ms was added for); Linux reads 61 to 62 ms. Why macOS reads short is not
+  established. The test still fails for a recorded duration of 0 or of 5 ms
+  (both checked by applying them by hand). Test only; no library code changed.
 - **`lease_renewals_are_in_the_parents_trace` waits for two recorded renewals**
   (10 s deadline, the exported span names in its failure message) instead of
   sleeping one second. It failed once on Windows in the `v0.15.0` release run

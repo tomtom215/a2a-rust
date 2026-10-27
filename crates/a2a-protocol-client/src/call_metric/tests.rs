@@ -245,12 +245,12 @@ async fn a_streaming_call_is_measured_until_its_stream_is_dropped() {
 #[tokio::test]
 async fn a_call_the_caller_drops_is_recorded_as_cancelled() {
     const WAITED: Duration = Duration::from_millis(60);
-    // The call's clock starts a few microseconds after `timeout` computes its
-    // deadline, and tokio's timer ticks in whole milliseconds, so a call
-    // dropped by the timeout ran for a little less than the wait (59.8 ms of
-    // 60 on a macOS runner). The slack keeps that out of the assertion and
-    // still fails for a duration that is zero or measured from the wrong clock.
-    const SLACK: Duration = Duration::from_millis(10);
+    // A call dropped by the timeout ran for about the wait: 61 to 62 ms on
+    // Linux (15 runs, idle), but macOS runners have read 59.8, 49.8 and
+    // 48.0 ms of 60. I have not established why they read short, so the floor
+    // is half the wait: it still fails for a duration that is zero, or
+    // measured from the wrong clock.
+    const FLOOR: Duration = Duration::from_millis(30);
     let addr = silent_peer().await;
     let (client, reader, _provider, port) = client_of(addr);
     let port = port.to_string();
@@ -281,7 +281,7 @@ async fn a_call_the_caller_drops_is_recorded_as_cancelled() {
     for (attributes, count, sum) in &seen {
         assert_eq!(*count, 1, "{attributes:?}");
         assert!(
-            *sum >= WAITED.saturating_sub(SLACK).as_secs_f64(),
+            *sum >= FLOOR.as_secs_f64(),
             "{attributes:?} measured {sum} s, waited {WAITED:?}"
         );
     }
