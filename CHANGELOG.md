@@ -188,9 +188,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   database's timeout, so at 100 ms the first DDL statement failed (`57014`)
   and the store could not be built; a replica panicked at startup in a live
   run. The schema transaction now lifts the timeout for itself
-  (`SET LOCAL statement_timeout = 0`, `store::pg_schema::lock`), and a test
-  builds the store and runs every migration under 1 ms. `lock_timeout` is
-  untouched.
+  (`SET LOCAL statement_timeout = 0`, `store::pg_schema::lock`). A test
+  starts the store, and runs every migration, while another session holds
+  the schema lock for longer than a 100 ms timeout, as a second replica
+  starting at the same moment does; it fails with `57014` without the fix.
+  `lock_timeout` is untouched.
 
 - **A turn whose executor emitted more than its queue held during a store
   outage failed, and its task was left unfinished** (server). While the

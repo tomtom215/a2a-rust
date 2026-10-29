@@ -249,28 +249,78 @@ async fn a_statement_run_again_is_counted() {
     db.drop_db().await;
 }
 
-/// A database whose `statement_timeout` is shorter than creating the schema
-/// takes still lets a store start: the schema transaction lifts the timeout
-/// for itself. Until 2026-10-29 the first DDL statement failed with `57014`
-/// (canceling statement due to statement timeout) and the replica could not
-/// start; at 100 ms it panicked at startup in a live run.
+/// A store starts on a database whose `statement_timeout` is shorter than
+/// it waits for the schema lock, as a replica does when another is making
+/// the schema at the same moment: the schema transaction lifts the timeout
+/// for itself. Until 2026-10-29 the wait failed with `57014` (canceling
+/// statement due to statement timeout) and the replica could not start; at
+/// 100 ms one panicked at startup in a live run.
+///
+/// The lock is held by another session rather than relying on the schema
+/// being slow to make: on an empty database it takes a few milliseconds, so
+/// no timeout tells the fixed code from the broken one, and a 1 ms timeout
+/// failed ordinary statements on a slow CI runner instead.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
 async fn a_strict_statement_timeout_does_not_stop_the_schema_being_made() {
     let db = Scratch::create("strict_timeout").await;
     sqlx::query(sqlx::AssertSqlSafe(format!(
-        "ALTER DATABASE {} SET statement_timeout = '1ms'",
+        "ALTER DATABASE {} SET statement_timeout = '100ms'",
         db.name
     )))
     .execute(&db.admin)
     .await
     .expect("set the timeout");
-    PostgresTaskStore::new(&db.url)
-        .await
-        .expect("the plain store makes its schema under a 1 ms statement_timeout");
-    PostgresTaskStore::with_migrations(&db.url)
-        .await
-        .expect("the migrations run under a 1 ms statement_timeout");
+    // `pg_schema::SCHEMA_LOCK_KEY`: the bytes of "a2a_schm".
+    let schema_lock = i64::from_be_bytes(*b"a2a_schm");
+    for migrations in [false, true] {
+        let other = sqlx::PgPool::connect(&db.url).await.expect("connect");
+        let mut tx = other.begin().await.expect("begin");
+        sqlx::query("SET LOCAL statement_timeout = 0")
+            .execute(&mut *tx)
+            .await
+            .expect("no timeout here");
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(schema_lock)
+            .execute(&mut *tx)
+            .await
+            .expect("hold the schema lock");
+        let url = db.url.clone();
+        let starting = tokio::spawn(async move {
+            if migrations {
+                PostgresTaskStore::with_migrations(&url).await.map(|_| ())
+            } else {
+                PostgresTaskStore::new(&url).await.map(|_| ())
+            }
+        });
+        // Once the store waits on the lock, hold it three timeouts more.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted \
+                 AND database = (SELECT oid FROM pg_database WHERE datname = $1)",
+            )
+            .bind(&db.name)
+            .fetch_one(&db.admin)
+            .await
+            .expect("read pg_locks");
+            if waiting > 0 || starting.is_finished() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the store never waited on the schema lock"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        tx.commit().await.expect("release the schema lock");
+        other.close().await;
+        starting
+            .await
+            .expect("join")
+            .unwrap_or_else(|e| panic!("migrations {migrations}: the store did not start: {e}"));
+    }
     db.drop_db().await;
 }
 
