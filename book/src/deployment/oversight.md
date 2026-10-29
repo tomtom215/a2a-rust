@@ -44,7 +44,9 @@ While a scope is halted:
   `UNAVAILABLE`, and JSON-RPC an internal error. Each message reads `halted: <reason>`.
 - **Running tasks are stopped.** Each task's cancellation token fires. An
   executor that returns on it without a terminal state has its task ended
-  `canceled` by its `cancel` hook, as on shutdown. An executor that uses a
+  `canceled` by its `cancel` hook. (A shutdown, by contrast, ends such a task
+  `failed`, failure class `transient`: see
+  [graceful shutdown](production/graceful-shutdown.md).) An executor that uses a
   [`Delegation`](../client/delegation.md) for its sub-tasks cancels them too.
 - **Reads and cancels are still served,** so whoever halted it can see what
   stopped.

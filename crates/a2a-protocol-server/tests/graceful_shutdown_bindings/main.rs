@@ -14,7 +14,8 @@
 //! The scenario is `graceful_shutdown_tasks.rs`'s: an executor that streams
 //! `Working`, then waits for its token and "cancels downstream". Shutdown
 //! must cancel it before the server returns, and the client must see the
-//! task end `Canceled` rather than a stream that stops.
+//! task end — `Failed`, failure class `transient`, since audit E-F2 —
+//! rather than a stream that stops.
 
 #![cfg(any(feature = "grpc", feature = "websocket"))]
 
@@ -156,7 +157,8 @@ fn assert_delegation_ended(outcome: &Outcome) {
         "the executor must be told to cancel before the server returns: {report:?}"
     );
     assert!(
-        states.iter().any(|s| s == "TASK_STATE_CANCELED"),
+        states.iter().any(|s| s == "TASK_STATE_FAILED")
+            && !states.iter().any(|s| s == "TASK_STATE_CANCELED"),
         "the client must see the task end, not a stream that stops: {states:?}"
     );
     assert!(report.drained && report.abandoned == 0, "{report:?}");

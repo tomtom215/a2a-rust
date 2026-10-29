@@ -492,6 +492,26 @@ impl GrpcTransport {
         serde_json::to_value(value).map_err(ClientError::Serialization)
     }
 
+    /// `UNAVAILABLE`: with a `RetryInfo` detail it is the server refusing
+    /// before any work (one shutting down, audit E-F2), and a send may be
+    /// repeated: the HTTP bindings' `503` with `Retry-After`. Without one it
+    /// may come from a proxy or a dropped connection after the request ran,
+    /// and stays a transport error a send is not repeated on.
+    fn unavailable_to_error(status: &tonic::Status) -> ClientError {
+        use tonic_types::StatusExt as _;
+        status
+            .get_details_retry_info()
+            .and_then(|i| i.retry_delay)
+            .map_or_else(
+                || ClientError::HttpClient(format!("gRPC unavailable: {}", status.message())),
+                |delay| ClientError::UnexpectedStatus {
+                    status: 503,
+                    body: status.message().to_owned(),
+                    retry_after: Some(delay.min(std::time::Duration::from_secs(3600))),
+                },
+            )
+    }
+
     fn status_to_error(status: &tonic::Status) -> ClientError {
         if is_truncation(status) {
             // The response ended with no `grpc-status`: the peer or something
@@ -523,9 +543,7 @@ impl GrpcTransport {
                 body: status.message().to_owned(),
                 retry_after: None,
             },
-            tonic::Code::Unavailable => {
-                ClientError::HttpClient(format!("gRPC unavailable: {}", status.message()))
-            }
+            tonic::Code::Unavailable => Self::unavailable_to_error(status),
             // ResourceExhausted is the gRPC analog of HTTP 429 (rate limited /
             // over quota): a transient, retryable condition. Mapping it through
             // the wildcard would make it a non-retryable `Protocol(InvalidParams)`,
@@ -1490,6 +1508,31 @@ mod tests {
         assert_eq!(delay(Some(secs(7))), Some(secs(7)));
         assert_eq!(delay(Some(secs(86_400))), Some(secs(3600)));
         assert_eq!(delay(None), None);
+    }
+
+    /// An `UNAVAILABLE` with a `RetryInfo` is a refusal before any work, as
+    /// a `503` with `Retry-After` is: a send may be repeated. Without one it
+    /// stays a transport error (audit E-F2).
+    #[test]
+    fn unavailable_with_a_delay_is_a_refusal_a_send_may_repeat() {
+        use tonic_types::StatusExt as _;
+        let status = tonic::Status::with_error_details(
+            tonic::Code::Unavailable,
+            "shutting down",
+            tonic_types::ErrorDetails::with_retry_info(Some(std::time::Duration::from_secs(1))),
+        );
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(
+                err,
+                ClientError::UnexpectedStatus { status: 503, retry_after: Some(d), .. }
+                    if d == std::time::Duration::from_secs(1)
+            ),
+            "{err:?}"
+        );
+        assert!(err.is_retryable());
+        let bare = GrpcTransport::status_to_error(&tonic::Status::unavailable("gone"));
+        assert!(matches!(bare, ClientError::HttpClient(_)), "{bare:?}");
     }
 
     #[test]

@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:10872 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:10914 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -268,7 +268,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:139 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -441,7 +441,7 @@
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:623 process_folded_message",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:773 SyncCollector::fold_message",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:80 continues",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:176 TerminalTracking::repark_if_silent"
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:247 TerminalTracking::repark_if_silent"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/event_processing_tests/streaming_mode.rs:269 a_message_only_stream_is_exactly_one_message",
@@ -519,7 +519,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1333 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1567 InMemoryQueueReader::next_live",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with",
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:151 TerminalTracking::cancel_with",
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:240 RequestHandler::executor_future"
    ],
@@ -528,7 +528,7 @@
     "crates/a2a-protocol-server/tests/stream_closes_on_terminal.rs:34 the_stream_ends_at_the_terminal_status",
     "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:104 a_cancel_the_hook_does_not_write_still_ends_the_stream",
     "crates/a2a-protocol-server/tests/cancel_override_terminal.rs:155 a_halt_the_hook_does_not_write_still_ends_the_task",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:430 a_cancel_writes_canceled_only_when_the_hook_did_not_end_the_task"
+    "crates/a2a-protocol-server/src/handler/messaging/terminal_tests.rs:143 a_cancel_writes_canceled_only_when_the_hook_did_not_end_the_task"
    ],
    "notes": "Since 2026-10-12 a reader ends once it has delivered a terminal state (and whatever was queued ahead of it), instead of waiting for the executor to drop its writer; an executor still running, or writing, after its terminal status no longer holds the stream open. The conformance harness reads the raw channel so nothing_after_terminal still sees such writes. The test failed before the change (stream open after 5 s). A cancelled task reaches its terminal state on the queue whatever its executor's cancel hook writes (2026-10-13): only the default hook wrote Canceled there, so CancelTask against a hook overridden to release state stored Canceled while the send stream ended after Working with no terminal frame, and a halt or shutdown left such a task Working. After a hook that returns Ok without a terminal state the handler writes Canceled itself (TerminalTracking::cancel_with). Both tests failed before the change.",
    "auditor": "A",
@@ -895,7 +895,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81 RequestHandler::subscribe_reattach_hook",
     "crates/a2a-protocol-server/src/handler/limits/mod.rs:286 HandlerLimits::default",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1333 InMemoryQueueReader::next_frame",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with"
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:151 TerminalTracking::cancel_with"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:859 resubscribe_nonterminal_no_queue_waits_for_the_terminal_state",
@@ -1654,9 +1654,9 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1126 http_status_task_not_found_is_404",
-    "crates/a2a-protocol-types/src/error.rs:1200 grpc_status_task_not_found_is_not_found",
-    "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape"
+    "crates/a2a-protocol-types/src/error.rs:1147 http_status_task_not_found_is_404",
+    "crates/a2a-protocol-types/src/error.rs:1221 grpc_status_task_not_found_is_not_found",
+    "crates/a2a-protocol-types/src/error.rs:1355 error_info_data_for_a2a_error_has_expected_shape"
    ],
    "notes": "Every ServerError maps to an ErrorCode, HTTP status and gRPC code; covered by per-code unit tests.",
    "auditor": "B",
@@ -1857,7 +1857,7 @@
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:164 reject_whitespace_only_context_id",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:235 reject_empty_parts",
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:262 reject_oversized_metadata",
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:841 reference_task_ids_are_validated_like_the_other_ids",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:837 reference_task_ids_are_validated_like_the_other_ids",
     "crates/a2a-protocol-server/tests/audit_tests/edge_cases.rs:70 a_page_size_over_100_is_invalid_params",
     "crates/a2a-protocol-server/tests/edge_case_tests/handler_basics.rs:211 list_tasks_page_size_zero_is_invalid_params"
    ],
@@ -1962,7 +1962,7 @@
     "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status",
     "crates/a2a-protocol-server/src/sql_error.rs:29 sql_error",
-    "crates/a2a-protocol-server/src/error/mod.rs:254 ServerError::not_retry_safe"
+    "crates/a2a-protocol-server/src/error/mod.rs:253 ServerError::not_retry_safe"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:330 server_error_overloaded_maps_to_503",
@@ -2036,7 +2036,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape",
+    "crates/a2a-protocol-types/src/error.rs:1355 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:156 json_rpc_answers_a_missing_bearer_token_401_with_the_body_unchanged",
     "crates/a2a-protocol-sdk/tests/binding_equivalence/errors.rs:118 every_binding_s_error_carries_a_code_and_a_message",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:764 an_unsupported_version_is_refused_with_version_not_supported"
@@ -2055,14 +2055,14 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
+    "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-server/src/streaming/sse.rs:351 error_details",
     "crates/a2a-protocol-server/src/streaming/sse.rs:243 jsonrpc_error_from",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:135 server_error_to_response",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape",
+    "crates/a2a-protocol-types/src/error.rs:1355 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:103 other_data_becomes_a_struct",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker",
@@ -2082,13 +2082,13 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
+    "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-types/src/error.rs:99 ErrorCode::a2a_reason",
-    "crates/a2a-protocol-server/src/error/mod.rs:306 ServerError::to_a2a_error"
+    "crates/a2a-protocol-server/src/error/mod.rs:305 ServerError::to_a2a_error"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:73 jsonrpc_invalid_params_name_the_field",
-    "crates/a2a-protocol-types/src/error.rs:1092 a2a_reason_all_a2a_variants_distinct_and_non_empty",
+    "crates/a2a-protocol-types/src/error.rs:1113 a2a_reason_all_a2a_variants_distinct_and_non_empty",
     "crates/a2a-protocol-server/tests/bad_request_details.rs:109 a_handler_check_names_the_field_over_http_json",
     "crates/a2a-protocol-server/tests/bad_request_details.rs:124 a_handler_check_names_the_field_over_jsonrpc",
     "crates/a2a-protocol-server/src/error/status_tests.rs:90 an_invalid_field_is_invalid_params_with_a_bad_request_detail"
@@ -2112,8 +2112,8 @@
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:45 error_response_bytes"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1205 grpc_status_task_not_cancelable_is_failed_precondition",
-    "crates/a2a-protocol-types/src/error.rs:1136 http_status_task_not_cancelable_is_400"
+    "crates/a2a-protocol-types/src/error.rs:1226 grpc_status_task_not_cancelable_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1157 http_status_task_not_cancelable_is_400"
    ],
    "notes": "Per-code mappings to HTTP status and gRPC code are unit tested.",
    "auditor": "B",
@@ -2247,7 +2247,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:139 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:30 RequestHandler::on_get_extended_agent_card"
    ],
@@ -2340,7 +2340,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:71 RequestHandler::resolve_context_id"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:703 multi_turn_same_context_id",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:699 multi_turn_same_context_id",
     "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:90 context_id_from_client_is_preserved_verbatim"
    ],
    "notes": "Client contextId used verbatim after validation. Asserts a client contextId is kept verbatim on the response, the stored task and the agent request context; shown able to fail by replacing client contextIds with generated ones in resolve_context_id (2026-10-20)",
@@ -2456,7 +2456,7 @@
     "crates/a2a-protocol-server/src/store/retention/mod.rs:128 RetentionPolicy"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:657 task_store_config_both_ttl_and_capacity",
+    "crates/a2a-protocol-server/tests/validation_edge_tests.rs:653 task_store_config_both_ttl_and_capacity",
     "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:156 context_expiration_removes_finished_tasks_after_ttl"
    ],
    "notes": "Task-store TTL/capacity and retention modules. Asserts that with a task TTL a finished context is listed before expiry and gone after, while a context with an open task is kept; shown able to fail by disabling evict_expired (2026-10-20)",
@@ -2953,7 +2953,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:484 rest_response_has_a2a_version_header",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1252 add_metadata_injects_a2a_version"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1270 add_metadata_injects_a2a_version"
    ],
    "notes": "A2A_VERSION = \"1.0\" used for headers and card builder; some test fixtures use \"1.0.0\" but no production path does.",
    "auditor": "B",
@@ -2998,7 +2998,7 @@
     "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs:188 SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1252 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1270 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
     "crates/a2a-protocol-client/src/discovery.rs:1735 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:168 every_call_declares_the_protocol_version",
@@ -3590,7 +3590,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:139 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:174 RequestHandler::on_set_push_config",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
@@ -3693,10 +3693,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
-    "crates/a2a-protocol-server/src/error/mod.rs:230 ServerError::retry_after",
+    "crates/a2a-protocol-server/src/error/mod.rs:229 ServerError::retry_after",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:946 with_detail_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:964 with_detail_data"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:646 bind_equiv_003",
@@ -3704,8 +3704,8 @@
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1436 status_to_error_keeps_a_struct_detail_as_data",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1496 status_to_error_keeps_field_violations_as_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1454 status_to_error_keeps_a_struct_detail_as_data",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1539 status_to_error_keeps_field_violations_as_data"
    ],
    "notes": "Single ErrorCode table drives HTTP status, gRPC code and JSON-RPC code. A malformed query value on HTTP+JSON is InvalidParams as on JSON-RPC and gRPC (2026-10-13); it was read as absent. A gRPC error carries its data as the JSON bindings do (2026-10-13): a BadRequest as google.rpc.BadRequest, any other data as a google.protobuf.Struct detail, and a stream's error as a unary call's. gRPC dropped data, and a stream's error was INTERNAL \"event queue error\", so a lagged stream could not be told from an executor failure; the gRPC client decodes the details back into data.",
    "auditor": "C",
@@ -3845,8 +3845,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1126 http_status_task_not_found_is_404",
-    "crates/a2a-protocol-types/src/error.rs:1200 grpc_status_task_not_found_is_not_found",
+    "crates/a2a-protocol-types/src/error.rs:1147 http_status_task_not_found_is_404",
+    "crates/a2a-protocol-types/src/error.rs:1221 grpc_status_task_not_found_is_not_found",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -3868,8 +3868,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1136 http_status_task_not_cancelable_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1205 grpc_status_task_not_cancelable_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1157 http_status_task_not_cancelable_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1226 grpc_status_task_not_cancelable_is_failed_precondition",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -3891,8 +3891,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1153 http_status_push_not_supported_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1229 grpc_status_push_not_supported_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1174 http_status_push_not_supported_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1250 grpc_status_push_not_supported_is_failed_precondition",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -3914,8 +3914,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1158 http_status_unsupported_operation_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1237 grpc_status_unsupported_operation_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1179 http_status_unsupported_operation_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1258 grpc_status_unsupported_operation_is_failed_precondition",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -3937,8 +3937,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1141 http_status_content_type_not_supported_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1273 grpc_status_content_type_not_supported_is_invalid_argument",
+    "crates/a2a-protocol-types/src/error.rs:1162 http_status_content_type_not_supported_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1294 grpc_status_content_type_not_supported_is_invalid_argument",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -3960,8 +3960,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1148 http_status_invalid_agent_response_is_500",
-    "crates/a2a-protocol-types/src/error.rs:1296 grpc_status_invalid_agent_response_is_internal",
+    "crates/a2a-protocol-types/src/error.rs:1169 http_status_invalid_agent_response_is_500",
+    "crates/a2a-protocol-types/src/error.rs:1317 grpc_status_invalid_agent_response_is_internal",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -3983,8 +3983,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1163 http_status_extended_card_not_configured_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1213 grpc_status_extended_card_not_configured_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1184 http_status_extended_card_not_configured_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1234 grpc_status_extended_card_not_configured_is_failed_precondition",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -4006,8 +4006,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1168 http_status_extension_support_required_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1221 grpc_status_extension_support_required_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1189 http_status_extension_support_required_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1242 grpc_status_extension_support_required_is_failed_precondition",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -4029,8 +4029,8 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1173 http_status_version_not_supported_is_400",
-    "crates/a2a-protocol-types/src/error.rs:1245 grpc_status_version_not_supported_is_failed_precondition",
+    "crates/a2a-protocol-types/src/error.rs:1194 http_status_version_not_supported_is_400",
+    "crates/a2a-protocol-types/src/error.rs:1266 grpc_status_version_not_supported_is_failed_precondition",
     "crates/a2a-protocol-types/tests/tck_wire_format.rs:776 tck_error_code_values"
    ],
    "notes": "Matches the v1.0.1 table (identical to main). Unit-level assertions on the table functions; gRPC dispatcher derives tonic::Code from grpc_status().",
@@ -5114,7 +5114,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1333 InMemoryQueueReader::next_frame",
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:99 TerminalTracking::terminal_written"
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:136 TerminalTracking::terminal_written"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_required_in_task.rs:107 the_stream_stays_open_across_auth_required_until_the_task_ends"
@@ -5154,7 +5154,7 @@
    "status": "PARTIAL",
    "severity": "low",
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with",
+    "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:151 TerminalTracking::cancel_with",
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:123 RequestHandler::resolve_task_id",
     "crates/a2a-protocol-server/src/handler/messaging/admission.rs:60 RequestHandler::reject_in_flight_send"
    ],
@@ -6380,15 +6380,15 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:141 error_response",
-    "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
+    "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-server/src/streaming/sse.rs:243 jsonrpc_error_from",
     "crates/a2a-protocol-server/src/streaming/sse.rs:351 error_details"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:1334 error_info_data_for_a2a_error_has_expected_shape",
+    "crates/a2a-protocol-types/src/error.rs:1355 error_info_data_for_a2a_error_has_expected_shape",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response",
     "crates/a2a-protocol-client/tests/jsonrpc_stream_lag_tests.rs:57 a_lagged_jsonrpc_stream_is_recognised_as_lagged",
-    "crates/a2a-protocol-types/src/error.rs:1442 the_lag_marker_is_found_in_either_data_shape",
+    "crates/a2a-protocol-types/src/error.rs:1463 the_lag_marker_is_found_in_either_data_shape",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data",
     "crates/a2a-protocol-server/src/streaming/sse.rs:1091 an_object_data_is_a_protojson_any_holding_a_struct",
     "crates/a2a-protocol-client/src/transport/rest/error_frame.rs:157 a_protojson_any_struct_detail_is_the_errors_data"
@@ -6435,7 +6435,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2815 ws_lagged_stream_reports_server_error_code",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2538 ws_unary_error_carries_error_info",
-    "crates/a2a-protocol-types/src/error.rs:800 error_code_roundtrip_all_variants",
+    "crates/a2a-protocol-types/src/error.rs:821 error_code_roundtrip_all_variants",
     "crates/a2a-protocol-server/tests/content_type_essence.rs:78 json_rpc_reads_the_media_type"
    ],
    "notes": "A2A errors use -32001..-32099 on every JSON-RPC surface. The WebSocket binding's -32000 (mid-stream and over-capacity) is gone: mid-stream errors keep their own code, and over-capacity is sent as an overload (-32603), as the JSON-RPC HTTP binding sends one.",
@@ -6452,7 +6452,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
+    "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-server/src/streaming/sse.rs:351 error_details",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:45 error_response_bytes",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:141 error_response",
@@ -6463,7 +6463,7 @@
     "crates/a2a-protocol-server/tests/streaming_prestream_errors.rs:144 subscribe_to_unknown_task_is_a_plain_json_error",
     "crates/a2a-protocol-server/tests/streaming_error_envelope_tests.rs:98 jsonrpc_stream_error_is_a_jsonrpc_error_response",
     "crates/a2a-protocol-client/tests/jsonrpc_stream_lag_tests.rs:57 a_lagged_jsonrpc_stream_is_recognised_as_lagged",
-    "crates/a2a-protocol-types/src/error.rs:1442 the_lag_marker_is_found_in_either_data_shape",
+    "crates/a2a-protocol-types/src/error.rs:1463 the_lag_marker_is_found_in_either_data_shape",
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:100 unary_errors_keep_their_data"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry the same array (sse::error_details), and every element has @type: ErrorInfo, RetryInfo for a rate limit, then A2aError.data as itself when it names its @type or as a google.protobuf.Struct. The stream test asserts every element has @type.",
@@ -6480,7 +6480,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
+    "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-server/src/streaming/sse.rs:254 bad_request_detail",
     "crates/a2a-protocol-server/src/streaming/sse.rs:287 invalid_params_for",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail"
@@ -6533,13 +6533,13 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:37 validated_metadata",
     "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:495 GrpcTransport::status_to_error"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:515 GrpcTransport::status_to_error"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:237 extract_metadata_ascii_keys",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1252 add_metadata_injects_a2a_version",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1267 add_metadata_injects_extra_headers",
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:258 extract_metadata_ascii_keys",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1270 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1285 add_metadata_injects_extra_headers",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
    "notes": "Client puts a2a-version plus all interceptor headers into tonic metadata. The server copies ASCII metadata into the header map that the handler reads.",
    "auditor": "E",
@@ -6555,13 +6555,13 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:495 GrpcTransport::status_to_error",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:515 GrpcTransport::status_to_error",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1277 add_metadata_fails_closed_on_invalid_header",
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:237 extract_metadata_ascii_keys",
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1295 add_metadata_fails_closed_on_invalid_header",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:258 extract_metadata_ascii_keys",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
    "notes": "Binary (-bin) metadata is skipped on ingress (keys ending -bin are dropped). That is fine because A2A parameters are ASCII.",
    "auditor": "E",
@@ -6584,7 +6584,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:760 parse_extensions_header_drops_empty_segments",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:133 grpc_sends_the_extensions_asked_for",
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:250 extract_metadata_joins_repeated_entries_and_skips_binary_ones",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:186 grpc_reads_both_lines"
    ],
    "notes": "The client sends one a2a-extensions entry, the comma-joined list ClientBuilder::with_extensions asks for (one entry per key: extra_headers is a HashMap). On ingress, repeated a2a-extensions entries are one field, joined in order with \", \" (extract_metadata through dispatch::header_fields); until 2026-10-13 they collapsed to the last one.",
@@ -6606,7 +6606,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:37 validated_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:276 validated_metadata_accepts_1_0_with_any_patch",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:297 validated_metadata_accepts_1_0_with_any_patch",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:721 default_config_rejects_a_versionless_rpc"
    ],
    "notes": "All 11 RPCs go through A2aServiceImpl::admit (dispatch/grpc/admit.rs), which reads the metadata with helpers::request_headers, itself validated_metadata, and passes the headers to the handler (corrected 2026-10-23: the note named validated_metadata as called by each RPC).",
@@ -6627,8 +6627,8 @@
     "crates/a2a-protocol-server/src/dispatch/version.rs:134 is_served_version"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:288 validated_metadata_rejects_absent_version_by_default",
-    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:320 validated_metadata_rejects_unsupported_versions"
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:309 validated_metadata_rejects_absent_version_by_default",
+    "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:341 validated_metadata_rejects_unsupported_versions"
    ],
    "notes": "Absent and empty values, and any version but 1.0 with some patch, are rejected with FAILED_PRECONDITION plus ErrorInfo VERSION_NOT_SUPPORTED under the default require_version_header=true.",
    "auditor": "E",
@@ -6651,7 +6651,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:158 a2a_error_status_carries_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1515 status_to_error_prefers_error_info_reason",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1558 status_to_error_prefers_error_info_reason",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
@@ -6994,7 +6994,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/error.rs:676 A2aError::error_info_data",
+    "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-server/src/streaming/sse.rs:351 error_details",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:135 server_error_to_response",
     "crates/a2a-protocol-server/src/streaming/sse.rs:326 rest_stream_error"
@@ -7609,7 +7609,7 @@
     "crates/a2a-protocol-server/src/handler/mod.rs:355 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner"
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:139 RequestHandler::send_message_inner"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
@@ -8918,7 +8918,7 @@
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs:84 a_throttled_rest_call_is_429_with_retry_after",
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs:107 a_throttled_jsonrpc_call_carries_retry_info",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:43 a_rate_limited_error_maps_to_resource_exhausted_with_retry_info",
-    "crates/a2a-protocol-types/src/error.rs:1549 a_rate_limited_error_carries_retry_info"
+    "crates/a2a-protocol-types/src/error.rs:1570 a_rate_limited_error_carries_retry_info"
    ],
    "notes": "RateLimitInterceptor refuses with A2aError::rate_limited, retrying when the window ends: HTTP+JSON 429 / RESOURCE_EXHAUSTED with Retry-After, gRPC RESOURCE_EXHAUSTED, and a google.rpc.RetryInfo detail on JSON-RPC, HTTP+JSON, WebSocket and gRPC; the SLIMRPC binding answers RESOURCE_EXHAUSTED without it (no details field). The JSON-RPC code stays -32603, the code §3.3.2 (spec line 536) gives as its example for 'rate limit exceeded'. Until 2026-10-10 the refusal was a plain internal error (500 / INTERNAL), indistinguishable from a server fault. The WebSocket binding sends the JSON-RPC error object HTTP does (sse::jsonrpc_error_from), RetryInfo included, since 2026-10-11; no test throttles a WebSocket call.",
    "auditor": "F",
@@ -11665,7 +11665,7 @@
     "impl_evidence": [
      "crates/a2a-protocol-server/src/interceptor/mod.rs:210 ServerInterceptorChain::run_before",
      "crates/a2a-protocol-server/src/handler/mod.rs:316 RequestHandler::admit",
-     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with"
+     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:151 TerminalTracking::cancel_with"
     ],
     "test_evidence": [
      "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:170 auth_required_state_does_not_authorize_the_continuation"

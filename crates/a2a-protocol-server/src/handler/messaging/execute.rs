@@ -29,7 +29,7 @@ use crate::streaming::{EventQueueManager, EventQueueWriter, InMemoryQueueWriter}
 use super::super::budget;
 #[cfg(feature = "tracing")]
 use super::create::continues;
-use super::terminal::TerminalTracking;
+use super::terminal::{Stop, TerminalTracking};
 
 mod run_timer;
 use run_timer::{RunTimer, run_outcome};
@@ -317,13 +317,13 @@ impl RequestHandler {
                 run_executor(executor.as_ref(), &ctx, &writer, timeout)
             })
             .await;
-            let stopped = shutdown.is_cancelled() || turn.is_halted();
+            let stop = Stop::of(turn.is_halted(), shutdown.is_cancelled());
             run.finish(run_outcome(
                 &result,
-                stopped || ctx.cancellation_token.is_cancelled(),
+                stop != Stop::No || ctx.cancellation_token.is_cancelled(),
             ));
             writer
-                .finish_run(executor.as_ref(), &ctx, result, stopped)
+                .finish_run(executor.as_ref(), &ctx, result, stop)
                 .await;
             // The queue is released, and a continuation admitted, only once
             // the turn's events are logged and stored: its numbering resumes
@@ -412,7 +412,11 @@ pub(super) async fn write_failure_event(
 
 /// The `Failed` status, carrying the error as an agent-role message with one
 /// text part.
-fn failure_status(ctx: &RequestContext, error: &A2aError, class: FailureClass) -> TaskStatus {
+pub(super) fn failure_status(
+    ctx: &RequestContext,
+    error: &A2aError,
+    class: FailureClass,
+) -> TaskStatus {
     let mut status = TaskStatus::with_timestamp(TaskState::Failed);
     let mut note = Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),

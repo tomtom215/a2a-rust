@@ -110,6 +110,11 @@ pub trait AgentExecutor: Send + Sync + 'static {
     /// written for it, after it returns, so the task's open streams still end
     /// on it.
     ///
+    /// The handler also runs this hook when its own shutdown stops a task.
+    /// The task then ends `Failed` with failure class `transient` instead,
+    /// and a `Canceled` written here is written as that failure: nobody
+    /// cancelled it, and its caller may send it again.
+    ///
     /// Before 0.7 the default refused with `TaskNotCancelable`, which left
     /// `Working` tasks uncancelable out of the box and reported it as the
     /// task's fault. Every reference SDK requires agents to support cancel.

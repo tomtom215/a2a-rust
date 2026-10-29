@@ -143,11 +143,13 @@ fn grpc_code(err: &ServerError, a2a_code: a2a_protocol_types::error::ErrorCode) 
     // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
     // gRPC RESOURCE_EXHAUSTED status (the retryable overload signal), so
     // special-case them before the code-based mapping.
-    if matches!(err, ServerError::Overloaded(_)) || err.retry_after().is_some() {
-        return tonic::Code::ResourceExhausted;
-    }
+    // A temporary failure first: one that names a delay (a server going
+    // away) is still UNAVAILABLE, not RESOURCE_EXHAUSTED.
     if matches!(err, ServerError::Halted(_)) || err.is_unavailable() {
         return tonic::Code::Unavailable;
+    }
+    if matches!(err, ServerError::Overloaded(_)) || err.retry_after().is_some() {
+        return tonic::Code::ResourceExhausted;
     }
     // A refused credential has its own codes (N36); `status_name` is the
     // one place that names them.

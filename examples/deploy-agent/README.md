@@ -127,7 +127,10 @@ turn claims, then, with telemetry on, the flush as `main` returns: up to 15 s
 when the collector accepts connections and never answers, 1.8 s when it
 refuses them (measured on `hello-agent`, 2026-10-26; `OTEL_EXPORTER_OTLP_TIMEOUT`
 shortens the first). A task still running 5 s after the drain delay is
-cancelled, however long its stream would have been. If `SIGKILL` lands
+stopped, however long its stream would have been, and ends `failed` with
+failure class `transient`, telling its caller it may send again; a send that
+arrives after the drain delay is refused with a `503` and `Retry-After`, so
+a client with a retry policy sends it to the other replica. If `SIGKILL` lands
 before that finishes, the turn claims are left to expire and the graceful
 shutdown is decorative.
 

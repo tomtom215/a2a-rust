@@ -86,7 +86,9 @@ impl RequestHandler {
     /// `cancel_in_flight` before its drain, so calling this after it finds
     /// nothing left to cut.
     ///
-    /// Tasks admitted after this call start with their tokens cancelled.
+    /// A send after this call is refused, retryably, as during
+    /// [`finish_in_flight`](RequestHandler::finish_in_flight); see
+    /// [`admits_sends`](RequestHandler::admits_sends).
     ///
     /// [`Server::serve_with_shutdown`]: crate::serve::Server::serve_with_shutdown
     pub async fn shutdown(&self) -> ShutdownReport {

@@ -25,6 +25,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`A2aError::with_retry_after`** (types) and
+  **`RequestHandler::admits_sends`** (server): a temporary failure that
+  names a retry delay, which says the request was refused before any work
+  so even a send may be repeated, and whether a handler still takes sends.
+  Both serve the shutdown change under *Behaviour Changes*.
 - **The client trusts a private CA, a pinned self-signed certificate, or
   presents a client certificate, on the HTTP bindings** (client;
   `ClientBuilder::with_tls_config`, `tls::tls_config_from_pem`,
@@ -222,6 +227,33 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **Shutdown no longer ends running tasks `canceled`, and no longer admits
+  sends it will stop** (server; audit E-F2). Once `finish_in_flight`,
+  `cancel_in_flight` or a `shutdown` method begins (so from the end of
+  `ServeConfig`'s drain delay on `Server`), a `SendMessage` or
+  `SendStreamingMessage` is refused before any work: HTTP `503` with
+  `Retry-After`, gRPC `UNAVAILABLE`, a `RetryInfo` detail on every binding.
+  Before, it was admitted with its token already cancelled and ended
+  `Canceled` a moment later, on every rolling deploy. A task the shutdown
+  stops without a terminal state of its own ends `Failed` with failure class
+  `transient` and a message saying it may be sent again; its `cancel` hook
+  still runs, and a `Canceled` the hook writes is written as that failure.
+  Nobody cancelled such a task, and a client does not repeat a cancelled
+  one. A halt still ends tasks `Canceled`; an executor that writes its own
+  terminal state keeps it. `tests/shutdown_in_flight_tests.rs`,
+  `tests/graceful_shutdown_tasks.rs`, `tests/graceful_shutdown_bindings/`,
+  and end to end on all four bindings (`a2a-protocol-client`
+  `tests/send_refused_while_shutting_down.rs`, `a2a-protocol-sdk`
+  `tests/send_refused_while_shutting_down.rs`), each shown failing with its
+  part of the change reverted.
+- **An error that is both temporary and names a delay is `503` and gRPC
+  `UNAVAILABLE`** (server), where the rate-limit rule made it `429` and
+  `RESOURCE_EXHAUSTED`. No error before this release was both.
+- **The gRPC client reads `UNAVAILABLE` with a `RetryInfo` detail as a
+  refusal a send may be repeated on** (client): `UnexpectedStatus { status:
+  503, retry_after }`, as the HTTP bindings give it. A bare `UNAVAILABLE`,
+  which a proxy or a dropped connection also produces, stays the transport
+  error it was.
 - **`with_timeout` no longer bounds a blocking `SendMessage`** (client;
   likewise `GrpcTransportConfig`'s `timeout` and
   `WebSocketTransportConfig::with_request_timeout`): a send that waits for

@@ -107,11 +107,15 @@ async fn run(setup: Setup) -> Outcome {
         closed,
         "the server must close the socket with a Close frame"
     );
-    let states = ["TASK_STATE_WORKING", "TASK_STATE_CANCELED"]
-        .into_iter()
-        .filter(|s| seen.contains(s))
-        .map(str::to_owned)
-        .collect();
+    let states = [
+        "TASK_STATE_WORKING",
+        "TASK_STATE_CANCELED",
+        "TASK_STATE_FAILED",
+    ]
+    .into_iter()
+    .filter(|s| seen.contains(s))
+    .map(str::to_owned)
+    .collect();
     Outcome {
         states,
         report,

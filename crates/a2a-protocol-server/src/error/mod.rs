@@ -197,14 +197,13 @@ impl ServerError {
         }
         // An overload carries a retry hint too, but it is the server that is
         // full, not the caller that sent too much: 503, with `Retry-After`.
-        if matches!(self, Self::Overloaded(_)) {
+        // So is a temporary failure that names a delay (a server going
+        // away): 503 before the rate-limit rule below makes it 429.
+        if matches!(self, Self::Overloaded(_)) || self.is_unavailable() {
             return 503;
         }
         if self.retry_after().is_some() {
             return 429;
-        }
-        if self.is_unavailable() {
-            return 503;
         }
         match self {
             Self::PayloadTooLarge(_) => 413,

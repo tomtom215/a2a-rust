@@ -28,11 +28,11 @@ only: when something here is done, delete it rather than annotating it.
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
     count it rather than trusting a figure here. At this commit, 220 rows:
-    168 `open`, 4 `confirmed (read)`, 40 `fixed`, 2 `fixed (part)`, 4
+    167 `open`, 4 `confirmed (read)`, 41 `fixed`, 2 `fixed (part)`, 4
     `verified live`, 1 refuted, 1 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
-    E-F2 (a rolling update cancels in-flight tasks), E-F3 (a claim held
+    E-F3 (a claim held
     through webhook delivery), D-02 (inline push stalls persistence), D-15
     (failover error 25006 treated as permanent), SEC-03 (WebSocket accepts
     any `Origin`), SEC-04 (JWKS refetch without cooldown), SEC-06 (JWT

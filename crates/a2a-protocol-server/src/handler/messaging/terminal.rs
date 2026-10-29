@@ -56,7 +56,43 @@ pub struct TerminalTracking {
     recorder: Option<crate::rpc_span::OutputRecorder>,
     /// The caller's budget, reported on each status update (ADR 0023).
     budget: Option<BudgetHandle>,
+    /// While the cancel hook runs for a shutdown: the status a `Canceled`
+    /// it writes is replaced by ([`finish_run`](Self::finish_run)).
+    instead_of_canceled: std::sync::Mutex<Option<TaskStatus>>,
 }
+
+/// How a run that ended without a terminal state of its own was stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Stop {
+    /// It was not: it returned on its own, or a caller's `CancelTask` stopped
+    /// it (which writes its own terminal state).
+    No,
+    /// The halt switch (ADR 0024): the operator stopped it, so it ends
+    /// `Canceled`.
+    Halted,
+    /// This replica is shutting down. Nobody cancelled the task, and another
+    /// replica can run it: it ends `Failed`, failure class `transient`.
+    ShutDown,
+}
+
+impl Stop {
+    /// How a run was stopped, from whether its turn was halted and whether
+    /// shutdown had begun when it returned. A halt wins: the operator's stop
+    /// is a cancellation.
+    pub(super) const fn of(halted: bool, shut_down: bool) -> Self {
+        if halted {
+            Self::Halted
+        } else if shut_down {
+            Self::ShutDown
+        } else {
+            Self::No
+        }
+    }
+}
+
+/// The status message of a turn shutdown ended (audit E-F2).
+pub const SHUT_DOWN: &str = "the server running this task shut down before the turn \
+    ended; the task did not complete, and sending it again may succeed";
 
 impl TerminalTracking {
     /// Wraps the task's writer.
@@ -70,6 +106,7 @@ impl TerminalTracking {
             #[cfg(feature = "tracing")]
             recorder: None,
             budget: None,
+            instead_of_canceled: std::sync::Mutex::new(None),
         }
     }
 
@@ -126,40 +163,74 @@ impl TerminalTracking {
 
 impl TerminalTracking {
     /// What follows the executor's return: a failure is written as one; a run
-    /// shut down or halted (`stopped`) without a terminal state is ended as
-    /// `CancelTask` would end it; anything else that left a continued task
-    /// unsettled is re-parked ([`TerminalTracking::repark_if_silent`]).
+    /// halted without a terminal state is ended as `CancelTask` would end it,
+    /// and one shut down is ended `Failed` with failure class `transient`
+    /// ([`Stop`]); anything else that left a continued task unsettled is
+    /// re-parked ([`TerminalTracking::repark_if_silent`]).
     pub(super) async fn finish_run<T>(
         &self,
         executor: &dyn AgentExecutor,
         ctx: &RequestContext,
         result: Result<T, (A2aError, FailureClass)>,
-        stopped: bool,
+        stop: Stop,
     ) {
         if let Err((ref e, class)) = result {
             super::execute::write_failure_event(self, ctx, e, class).await;
-        } else if stopped && !self.terminal_written() {
-            // Shut down or halted, not cancelled by a caller:
-            // `CancelTask` runs this hook itself, and cancels only the
-            // task's own child token. The executor saw its token and returned without a
-            // terminal state, so end the task the way `CancelTask`
-            // would — the hook, or after a hook that writes none
-            // `cancel_with`, writes `Canceled` — and every stream still
-            // open on it gets a terminal event instead of simply
-            // stopping. After `execute` returned, never beside
-            // it: an executor that wrote its own terminal state while
-            // the hook wrote another would have the second rejected as
-            // an invalid transition and the task marked `Failed`.
+        } else if stop == Stop::Halted && !self.terminal_written() {
+            // Halted, not cancelled by a caller: `CancelTask` runs this hook
+            // itself, and cancels only the task's own child token. The
+            // executor saw its token and returned without a terminal state,
+            // so end the task the way `CancelTask` would — the hook, or after
+            // a hook that writes none `cancel_with`, writes `Canceled` — and
+            // every stream still open on it gets a terminal event instead of
+            // simply stopping. After `execute` returned, never beside it: an
+            // executor that wrote its own terminal state while the hook wrote
+            // another would have the second rejected as an invalid
+            // transition and the task marked `Failed`.
             if let Err(_e) = self.cancel_with(executor, ctx).await {
                 trace_warn!(
                     task_id = %ctx.task_id,
                     error = %_e,
-                    "cancel hook failed during shutdown"
+                    "cancel hook failed during halt"
                 );
             }
+        } else if stop == Stop::ShutDown && !self.terminal_written() {
+            self.end_for_shutdown(executor, ctx).await;
         } else {
             self.repark_if_silent(ctx).await;
         }
+    }
+
+    /// Ends a turn this replica's shutdown stopped: `Failed`, failure class
+    /// `transient`, saying it may be sent again (audit E-F2). `Canceled`
+    /// would tell the caller someone cancelled it, and a caller does not
+    /// repeat a cancelled task; here nobody did, and another replica can run
+    /// it. The cancel hook still runs, for what it releases; a `Canceled` it
+    /// writes is written as this failure instead.
+    async fn end_for_shutdown(&self, executor: &dyn AgentExecutor, ctx: &RequestContext) {
+        let error = A2aError::unavailable(SHUT_DOWN);
+        *self.replacement() = Some(super::execute::failure_status(
+            ctx,
+            &error,
+            FailureClass::Transient,
+        ));
+        if let Err(_e) = executor.cancel(ctx, self).await {
+            trace_warn!(
+                task_id = %ctx.task_id,
+                error = %_e,
+                "cancel hook failed during shutdown"
+            );
+        }
+        *self.replacement() = None;
+        if !self.terminal_written() {
+            super::execute::write_failure_event(self, ctx, &error, FailureClass::Transient).await;
+        }
+    }
+
+    fn replacement(&self) -> std::sync::MutexGuard<'_, Option<TaskStatus>> {
+        self.instead_of_canceled
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Re-parks a continued task the executor answered with messages alone.
@@ -227,6 +298,15 @@ impl TerminalTracking {
     #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
     async fn put(&self, event: StreamResponse, seen: Option<&StreamResponse>) -> A2aResult<()> {
         let mut event = event;
+        if state_of(&event) == Some(TaskState::Canceled)
+            && let Some(failed) = self.replacement().clone()
+        {
+            match &mut event {
+                StreamResponse::Task(t) => t.status = failed,
+                StreamResponse::StatusUpdate(u) => u.status = failed,
+                _ => {}
+            }
+        }
         super::super::budget::report(&mut event, self.budget.as_ref());
         let terminal = is_terminal(&event);
         #[cfg(feature = "tracing")]
@@ -300,146 +380,5 @@ impl EventQueueWriter for TerminalTracking {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    use a2a_protocol_types::events::TaskStatusUpdateEvent;
-    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
-
-    fn status(state: TaskState) -> StreamResponse {
-        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            metadata: None,
-        })
-    }
-
-    fn snapshot(state: TaskState) -> StreamResponse {
-        StreamResponse::Task(Task {
-            id: TaskId::new("t"),
-            context_id: ContextId::new("c"),
-            status: TaskStatus::new(state),
-            history: None,
-            artifacts: None,
-            metadata: None,
-        })
-    }
-
-    #[tokio::test]
-    async fn records_a_terminal_status_or_snapshot_and_nothing_else() {
-        for (event, terminal) in [
-            (status(TaskState::Working), false),
-            (snapshot(TaskState::Working), false),
-            (status(TaskState::Canceled), true),
-            (snapshot(TaskState::Completed), true),
-        ] {
-            let (writer, _reader) =
-                crate::streaming::event_queue::new_in_memory_queue_with_capacity(8);
-            let tracking = TerminalTracking::new(Arc::new(writer), Arc::default());
-            assert!(!tracking.terminal_written());
-            tracking.write(event.clone()).await.unwrap();
-            assert_eq!(tracking.terminal_written(), terminal, "{event:?}");
-        }
-    }
-
-    #[tokio::test]
-    async fn a_terminal_write_that_failed_is_not_recorded() {
-        // An event over the size cap is refused; the task did not end.
-        let (writer, _reader) = crate::streaming::event_queue::new_in_memory_queue_with_options(
-            8,
-            8,
-            std::time::Duration::from_secs(1),
-        );
-        let tracking = TerminalTracking::new(Arc::new(writer), Arc::default());
-        assert!(tracking.write(status(TaskState::Completed)).await.is_err());
-        assert!(!tracking.terminal_written());
-    }
-
-    /// N21: the flag admission reads. It follows the latest state written,
-    /// in both directions, and is set even when the write itself fails —
-    /// a spurious "parked" costs a bounded wait, a missing one refuses a
-    /// legitimate continuation.
-    #[tokio::test]
-    async fn records_whether_the_latest_state_parks_the_task() {
-        let (writer, _reader) = crate::streaming::event_queue::new_in_memory_queue_with_capacity(8);
-        let turn = Arc::new(ExecutorTurn::default());
-        let tracking = TerminalTracking::new(Arc::new(writer), Arc::clone(&turn));
-        assert!(!turn.is_parked());
-        for (event, parked) in [
-            (status(TaskState::Working), false),
-            (status(TaskState::InputRequired), true),
-            (status(TaskState::Working), false),
-            (snapshot(TaskState::AuthRequired), true),
-            (snapshot(TaskState::Completed), false),
-        ] {
-            tracking.write(event.clone()).await.unwrap();
-            assert_eq!(turn.is_parked(), parked, "{event:?}");
-        }
-    }
-
-    struct DefaultHook;
-    crate::agent_executor!(DefaultHook, |_ctx, _queue| async { Ok(()) });
-
-    struct EndsItself;
-    crate::agent_executor!(EndsItself,
-        execute: |_ctx, _queue| async { Ok(()) },
-        cancel: |_ctx, queue| async { queue.write(status(TaskState::Completed)).await }
-    );
-
-    struct Releases;
-    crate::agent_executor!(Releases,
-        execute: |_ctx, _queue| async { Ok(()) },
-        cancel: |_ctx, _queue| async { Ok(()) }
-    );
-
-    struct Refuses;
-    crate::agent_executor!(Refuses,
-        execute: |_ctx, _queue| async { Ok(()) },
-        cancel: |_ctx, _queue| async {
-            Err(a2a_protocol_types::error::A2aError::internal("still held"))
-        }
-    );
-
-    /// The states `cancel_with` puts on the queue, and its result. Read from
-    /// the raw channel: a reader ends at the first terminal state, so it
-    /// would not show a second one.
-    async fn cancel_through(executor: &dyn AgentExecutor) -> (Vec<TaskState>, bool) {
-        let (writer, _reader) = crate::streaming::event_queue::new_in_memory_queue_with_capacity(8);
-        let mut raw = writer.raw_subscribe();
-        let tracking = TerminalTracking::new(Arc::new(writer), Arc::default());
-        let ctx = RequestContext::new(
-            a2a_protocol_types::message::Message::user_text("m", "stop"),
-            TaskId::new("t"),
-            "c".to_owned(),
-        );
-        let ok = tracking.cancel_with(executor, &ctx).await.is_ok();
-        drop(tracking);
-        let mut states = Vec::new();
-        while let Ok(shared) = raw.try_recv() {
-            if let Some(state) = state_of(&shared.as_ref().as_ref().unwrap().event) {
-                states.push(state);
-            }
-        }
-        (states, ok)
-    }
-
-    /// One terminal state reaches the queue however the hook ends the task,
-    /// and none after a hook that failed.
-    #[tokio::test]
-    async fn a_cancel_writes_canceled_only_when_the_hook_did_not_end_the_task() {
-        assert_eq!(
-            cancel_through(&DefaultHook).await,
-            (vec![TaskState::Canceled], true)
-        );
-        assert_eq!(
-            cancel_through(&EndsItself).await,
-            (vec![TaskState::Completed], true)
-        );
-        assert_eq!(
-            cancel_through(&Releases).await,
-            (vec![TaskState::Canceled], true)
-        );
-        assert_eq!(cancel_through(&Refuses).await, (vec![], false));
-    }
-}
+#[path = "terminal_tests.rs"]
+mod tests;

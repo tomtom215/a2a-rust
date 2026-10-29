@@ -126,3 +126,21 @@ fn an_overload_asks_to_be_retried_on_every_binding() {
     assert_eq!(err.retry_after(), Some(std::time::Duration::from_secs(1)));
     assert_eq!(err.http_status(), 503);
 }
+
+/// A temporary failure that names a delay — a server going away (audit
+/// E-F2) — is `503 UNAVAILABLE` with `Retry-After`, not the `429` of a rate
+/// limit; and `not_retry_safe` is not what produces it, so the delay that
+/// tells a client the send never ran survives.
+#[test]
+fn a_temporary_failure_with_a_delay_is_503_and_keeps_its_delay() {
+    let err = ServerError::Protocol(
+        A2aError::unavailable("shutting down").with_retry_after(std::time::Duration::from_secs(1)),
+    );
+    assert_eq!(err.http_status(), 503);
+    assert_eq!(err.status_name(), "UNAVAILABLE");
+    assert_eq!(err.retry_after(), Some(std::time::Duration::from_secs(1)));
+    let wire = err.to_a2a_error();
+    assert_eq!(wire.retry_after(), Some(std::time::Duration::from_secs(1)));
+    let details = wire.error_info_data(None).to_string();
+    assert!(details.contains("google.rpc.RetryInfo"), "{details}");
+}

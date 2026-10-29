@@ -36,6 +36,9 @@ use super::super::RequestHandler;
 pub struct InFlight {
     /// Parent of every task's cancellation token.
     shutdown: CancellationToken,
+    /// Cancelled when shutdown starts ending in-flight work: from then on a
+    /// send is refused, retryably, instead of admitted and stopped.
+    admission: CancellationToken,
     /// Every spawned executor.
     executors: TaskTracker,
     /// Every background event processor and push delivery job: what persists
@@ -68,9 +71,21 @@ impl InFlight {
         &self.background
     }
 
-    /// Fires every task's token, present and future.
+    /// Fires every task's token, present and future, and closes admission.
     pub(crate) fn cancel_all(&self) {
+        self.admission.cancel();
         self.shutdown.cancel();
+    }
+
+    /// Refuses every send from now on; see
+    /// [`RequestHandler::admits_sends`].
+    pub(crate) fn close_admission(&self) {
+        self.admission.cancel();
+    }
+
+    /// Whether sends are still admitted.
+    pub(crate) fn admits(&self) -> bool {
+        !self.admission.is_cancelled()
     }
 
     /// Waits until every tracked executor and background job has finished.
@@ -108,6 +123,15 @@ pub struct InFlightReport {
 }
 
 impl RequestHandler {
+    /// Whether this handler still admits sends: `false` once
+    /// [`finish_in_flight`](Self::finish_in_flight),
+    /// [`cancel_in_flight`](Self::cancel_in_flight) or a `shutdown` method
+    /// has begun.
+    #[must_use]
+    pub fn admits_sends(&self) -> bool {
+        self.in_flight.admits()
+    }
+
     /// Cancels every in-flight task and waits, up to `grace`, for their
     /// executors to act on it.
     ///
@@ -124,14 +148,17 @@ impl RequestHandler {
     /// [`AgentExecutor::execute`](crate::executor::AgentExecutor::execute) —
     /// can cancel what it delegated and return. If it returns without having
     /// written a terminal state, the handler then calls its
-    /// [`cancel`](crate::executor::AgentExecutor::cancel) hook, exactly as a
-    /// `CancelTask` would, so the default implementation writes `Canceled`
-    /// and every open stream ends with a terminal event instead of simply
-    /// stopping. The call returns once every executor and every background
+    /// [`cancel`](crate::executor::AgentExecutor::cancel) hook, for what it
+    /// releases, and ends the task `Failed` with failure class `transient`
+    /// (a `Canceled` the hook writes is written as that failure), so every
+    /// open stream ends with a terminal event that tells its caller it may
+    /// send again, instead of simply stopping. Not `Canceled`: nobody
+    /// cancelled the task, and a caller does not repeat a cancelled one
+    /// (audit E-F2). The call returns once every executor and every background
     /// event processor has finished, or when `grace` runs out.
     ///
-    /// A task admitted after this call starts with its token already
-    /// cancelled. Calling it twice is harmless: the second call cancels
+    /// A send that arrives after this call is refused, as during
+    /// [`finish_in_flight`](Self::finish_in_flight)'s window. Calling it twice is harmless: the second call cancels
     /// nothing new and waits only for what is still running.
     ///
     /// An executor that never looks at its token cannot be stopped from
@@ -176,13 +203,19 @@ impl RequestHandler {
     /// the platform allows. The window serves the first kind and the cancel
     /// serves the second; a `completion` of zero is `cancel_in_flight`.
     ///
-    /// Requests that arrive during the window, on connections still open,
-    /// are admitted as usual and cancelled with the rest when it closes.
+    /// A send that arrives once this is called, on a connection still open,
+    /// is refused before any work begins, with a temporary error that names
+    /// a retry delay (HTTP `503` with `Retry-After`, gRPC `UNAVAILABLE`, a
+    /// `RetryInfo` detail on every binding), so a client sends it again,
+    /// to another replica behind the same address. Admitting it would only
+    /// have it stopped when the window closes (audit E-F2). Reads, cancels
+    /// and subscriptions are still served.
     ///
     /// It also [begins draining](Self::begin_draining), so `/ready` answers
     /// not ready while the window runs.
     pub async fn finish_in_flight(&self, completion: Duration, grace: Duration) -> InFlightReport {
         self.begin_draining();
+        self.in_flight.close_admission();
         let running = self.in_flight.executors().len();
         trace_info!(
             executors = running,
