@@ -114,14 +114,13 @@ pub(super) fn read_claim_outcome(outcome: &str) -> (bool, bool) {
 /// running a task: the sign that a rolling upgrade is still under way.
 fn legacy_turn_seen(_task_id: &str) {
     static LOGGED: crate::trace::Throttle = crate::trace::Throttle::every(60);
-    if !LOGGED.allow() {
-        return;
+    if LOGGED.allow() {
+        trace_info!(
+            task_id = %_task_id,
+            "a replica of an earlier release is running this task; this replica waits for its \
+             turn to end (a rolling upgrade is under way, or one is left behind)"
+        );
     }
-    trace_info!(
-        task_id = %_task_id,
-        "a replica of an earlier release is running this task; this replica waits for its \
-         turn to end (a rolling upgrade is under way, or one is left behind)"
-    );
 }
 
 /// Whether `token` still holds the claim on `task_id`: how a store tells a fenced write's
