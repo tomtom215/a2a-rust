@@ -161,14 +161,25 @@ impl TurnClaimStore for SqliteTurnClaims {
         })
     }
 
-    fn renew<'a>(&'a self, owner: &'a str, ttl: Duration) -> Fut<'a, Vec<HeldClaim>> {
+    fn renew<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        ttl: Duration,
+    ) -> Fut<'a, Vec<HeldClaim>> {
         Box::pin(async move {
+            // SQLite has no array parameter: the tokens go in as one JSON
+            // array, read back row by row with `json_each`.
+            let tokens = serde_json::to_string(tokens)
+                .map_err(|e| A2aError::internal(format!("turn claims renew: {e}")))?;
             let rows: Vec<(String, i64)> = sqlx::query_as(
                 "UPDATE a2a_task_claims SET expires_at_ms = ?2
-                 WHERE owner = ?1 RETURNING token, cancel_requested",
+                 WHERE owner = ?1 AND token IN (SELECT value FROM json_each(?3))
+                 RETURNING token, cancel_requested",
             )
             .bind(owner)
             .bind(now_ms().saturating_add(millis(ttl)))
+            .bind(tokens)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| failed("renew", &e))?;

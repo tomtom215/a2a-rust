@@ -269,7 +269,9 @@ async fn replicas_share_one_task_at_a_time(url: &str) {
     let killed = Instant::now();
     let refused = send(&b.addr, "finish", Some(&orphan), false).await;
     assert!(
-        refused.is_err(),
+        refused
+            .as_ref()
+            .is_err_and(|e| e.to_string().contains("already being processed")),
         "the dead replica's claim still holds the task: {refused:?}"
     );
     let finished = loop {

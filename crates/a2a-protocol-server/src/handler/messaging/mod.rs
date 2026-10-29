@@ -267,8 +267,10 @@ impl RequestHandler {
             .settled_task(&task_id, resolution.continues.or(stored_task))
             .await?;
         // A decision is checked against the request pending on the task it
-        // continues, before anything is claimed; see `crate::approval`.
-        let gated = self.gate_decision(stored_task.as_ref(), &params.message, call_ctx);
+        // continues, before anything is claimed; see `crate::approval`. With
+        // turn claims a quorum is counted under the claim (`claimed`).
+        let count = self.turn_claims.is_none();
+        let gated = self.gate_decision(stored_task.as_ref(), &params.message, call_ctx, count);
         let mut approval = match Box::pin(gated).await? {
             quorum::Gated::Pass(approval) => approval,
             quorum::Gated::Waiting(task) => return Ok(Committed::Waiting(task)),
@@ -304,6 +306,7 @@ impl RequestHandler {
         let turn = match Box::pin(claimed).await? {
             Claimed::Turn(turn) => turn,
             Claimed::Waiting(task) => return Ok(Committed::Waiting(task)),
+            Claimed::Replay(task) => return Ok(Committed::Replay(task)),
         };
         if let Regated::Yes(regated) = turn.regated {
             approval = *regated;

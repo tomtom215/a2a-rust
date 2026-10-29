@@ -161,7 +161,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
                 "tenant_tasks.state",
                 "EXCLUDED.state",
                 " AND "
-            ), crate::store::claim::fence_sql!("$8::text")))
+            ), crate::store::claim::fence_sql!(postgres "$8::text")))
             .bind(&tenant)
             .bind(id)
             .bind(context_id)

@@ -56,7 +56,7 @@ const CLAIM_SQL: &str = "INSERT INTO a2a_task_claims
 
 const RENEW_SQL: &str = "UPDATE a2a_task_claims
     SET expires_at = now() + $2 * interval '1 millisecond'
-    WHERE owner = $1
+    WHERE owner = $1 AND token = ANY($3)
     RETURNING token, cancel_requested";
 
 /// Turn claims in a PostgreSQL table, `a2a_task_claims`.
@@ -138,11 +138,17 @@ impl TurnClaimStore for PostgresTurnClaims {
         })
     }
 
-    fn renew<'a>(&'a self, owner: &'a str, ttl: Duration) -> Fut<'a, Vec<HeldClaim>> {
+    fn renew<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        ttl: Duration,
+    ) -> Fut<'a, Vec<HeldClaim>> {
         Box::pin(async move {
             let rows: Vec<(String, bool)> = sqlx::query_as(RENEW_SQL)
                 .bind(owner)
                 .bind(millis(ttl))
+                .bind(tokens)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(|e| failed("renew", &e))?;

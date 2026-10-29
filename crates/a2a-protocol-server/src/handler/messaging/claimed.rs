@@ -20,7 +20,8 @@ use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId};
 
 use super::super::RequestHandler;
-use super::super::claims::TurnClaim;
+use super::super::claims::{TurnAttempt, TurnClaim};
+use super::idempotency::SendKey;
 use super::quorum::Gated;
 use crate::approval::VerifiedApproval;
 use crate::call_context::CallContext;
@@ -33,6 +34,9 @@ pub(super) enum Claimed {
     /// The gate, run again on the task as it now is, recorded an approval
     /// toward a quorum that is still short.
     Waiting(Box<Task>),
+    /// The send waited for another replica's turn, and a retry of it took
+    /// its idempotency key meanwhile: the retry's task, executing nothing.
+    Replay(Box<Task>),
 }
 
 /// A turn that may run, as the claim left it.
@@ -68,6 +72,13 @@ impl RequestHandler {
     /// run releases `send_key`, the idempotency key it claimed, so the
     /// caller's retry is not answered with a task that was never created.
     ///
+    /// A send that has to wait for another replica's turn waits without its
+    /// key, and claims it again once it holds the turn: a retry routed to
+    /// another replica meanwhile would otherwise be answered "accepted" by
+    /// the key while this send could still be refused when its wait ran
+    /// out. Without the key, the retry claims it and waits its own turn; the
+    /// first of the two to hold the turn runs, and the other replays it.
+    ///
     /// # Errors
     ///
     /// `claim_turn`'s; [`ServerError::UnsupportedOperation`] when the task
@@ -82,8 +93,24 @@ impl RequestHandler {
         call_ctx: &CallContext,
         send_key: Option<&str>,
     ) -> ServerResult<Claimed> {
+        let claim = match self.try_claim_turn(task_id).await {
+            Ok(TurnAttempt::Off) => None,
+            Ok(TurnAttempt::Held(claim)) => Some(claim),
+            // Holds no key from here on, whatever the wait comes to: a
+            // release now could free a retry's.
+            Ok(TurnAttempt::Busy) => match self.wait_for_turn(task_id, message, send_key).await? {
+                Waited::Turn(claim) => claim,
+                Waited::Replay(task) => return Ok(Claimed::Replay(task)),
+            },
+            Err(e) => {
+                if let Some(key) = send_key {
+                    self.release_send_key(key).await;
+                }
+                return Err(e);
+            }
+        };
         let claimed = self
-            .claim_and_read(task_id, stored, message, call_ctx)
+            .read_under_claim(task_id, claim, stored, message, call_ctx)
             .await;
         if !matches!(claimed, Ok(Claimed::Turn(_)))
             && let Some(key) = send_key
@@ -93,14 +120,39 @@ impl RequestHandler {
         claimed
     }
 
-    async fn claim_and_read(
+    /// Waits for the turn another replica holds, without `send_key` (see
+    /// `claimed_view`), and claims the key again once the turn is held.
+    async fn wait_for_turn(
         &self,
         task_id: &TaskId,
+        message: &Message,
+        send_key: Option<&str>,
+    ) -> ServerResult<Waited> {
+        if let Some(key) = send_key {
+            self.release_send_key(key).await;
+        }
+        let claim = self.claim_turn(task_id).await?;
+        if send_key.is_none() {
+            return Ok(Waited::Turn(claim));
+        }
+        match self.claim_send_key(message, task_id).await? {
+            SendKey::Claimed(_) | SendKey::Absent => Ok(Waited::Turn(claim)),
+            // The send holding the key has had its turn: a waiting send
+            // holds none, so it took the key with its turn. This one runs
+            // nothing, and dropping the claim releases the turn.
+            SendKey::Replay(task) => Ok(Waited::Replay(task)),
+        }
+    }
+
+    async fn read_under_claim(
+        &self,
+        task_id: &TaskId,
+        claim: Option<TurnClaim>,
         stored: Option<Task>,
         message: &Message,
         call_ctx: &CallContext,
     ) -> ServerResult<Claimed> {
-        let Some(claim) = self.claim_turn(task_id).await? else {
+        let Some(claim) = claim else {
             return Ok(turn(None, stored, Regated::No));
         };
         // Only a continuation of `task_id` read the task it goes on from.
@@ -118,12 +170,18 @@ impl RequestHandler {
                 fresh.id, fresh.status.state
             )));
         }
-        if same_view(before, &fresh) {
+        // A quorum is counted here, under the claim, whether or not the task
+        // changed: the first gate only checked it (`quorum`).
+        let quorum = self
+            .approval_gate
+            .as_ref()
+            .is_some_and(crate::approval::ApprovalGate::has_quorum);
+        if same_view(before, &fresh) && !quorum {
             return Ok(turn(Some(claim), Some(fresh), Regated::No));
         }
         // The approval request the gate checks a decision against may have
         // been stored only now.
-        match Box::pin(self.gate_decision(Some(&fresh), message, call_ctx)).await? {
+        match Box::pin(self.gate_decision(Some(&fresh), message, call_ctx, true)).await? {
             Gated::Pass(approval) => Ok(turn(
                 Some(claim),
                 Some(fresh),
@@ -132,6 +190,14 @@ impl RequestHandler {
             Gated::Waiting(task) => Ok(Claimed::Waiting(task)),
         }
     }
+}
+
+/// How a wait for another replica's turn ended.
+enum Waited {
+    /// The turn is this send's, and so is its key again.
+    Turn(Option<TurnClaim>),
+    /// A retry holds the key: its task.
+    Replay(Box<Task>),
 }
 
 /// Whether two reads of one task show the same turn's result: the state and

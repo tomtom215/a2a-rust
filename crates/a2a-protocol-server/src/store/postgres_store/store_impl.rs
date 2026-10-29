@@ -152,7 +152,7 @@ impl TaskStore for PostgresTaskStore {
                     "EXCLUDED.state",
                     " AND "
                 ),
-                crate::store::claim::fence_sql!("$7::text")
+                crate::store::claim::fence_sql!(postgres "$7::text")
             ))
             .bind(id)
             .bind(context_id)
@@ -321,7 +321,7 @@ impl TaskStore for PostgresTaskStore {
                     "$2",
                     " AND "
                 ),
-                crate::store::claim::fence_sql!("$6::text")
+                crate::store::claim::fence_sql!(postgres "$6::text")
             ))
             .bind(&status)
             .bind(&state)

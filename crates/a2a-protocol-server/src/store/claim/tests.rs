@@ -39,11 +39,15 @@ async fn an_expired_claim_is_taken_over_and_its_owner_learns_at_renewal() {
     tokio::time::sleep(Duration::from_millis(40)).await;
     assert!(claims.claim("", "t", "b", "tok-b", TTL).await.unwrap());
     assert!(
-        claims.renew("a", TTL).await.unwrap().is_empty(),
+        claims
+            .renew("a", &["tok-a".to_owned()], TTL)
+            .await
+            .unwrap()
+            .is_empty(),
         "the old owner's renewal no longer reports the claim"
     );
     assert_eq!(
-        claims.renew("b", TTL).await.unwrap(),
+        claims.renew("b", &["tok-b".to_owned()], TTL).await.unwrap(),
         [HeldClaim {
             token: "tok-b".to_owned(),
             cancel_requested: false
@@ -60,7 +64,7 @@ async fn a_cancel_request_marks_only_a_live_claim() {
     );
     assert!(claims.claim("", "t", "a", "tok", TTL).await.unwrap());
     assert!(claims.request_cancel("", "t").await.unwrap());
-    let report = claims.renew("a", TTL).await.unwrap();
+    let report = claims.renew("a", &["tok".to_owned()], TTL).await.unwrap();
     assert!(report[0].cancel_requested);
 }
 
@@ -80,6 +84,38 @@ async fn a_sweep_removes_only_long_expired_claims() {
     assert!(!claims.holds("tok-old"));
 }
 
+#[tokio::test]
+async fn a_renewal_extends_only_the_tokens_it_names() {
+    let claims = InMemoryTurnClaims::new();
+    let short = Duration::from_millis(20);
+    assert!(
+        claims
+            .claim("", "kept", "a", "tok-kept", short)
+            .await
+            .unwrap()
+    );
+    assert!(
+        claims
+            .claim("", "orphan", "a", "tok-orphan", short)
+            .await
+            .unwrap()
+    );
+    let report = claims
+        .renew("a", &["tok-kept".to_owned()], TTL)
+        .await
+        .unwrap();
+    assert_eq!(report.len(), 1, "{report:?}");
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert!(
+        claims.claim("", "orphan", "b", "tok-b", TTL).await.unwrap(),
+        "a claim its owner no longer names expires"
+    );
+    assert!(
+        !claims.claim("", "kept", "b", "tok-b2", TTL).await.unwrap(),
+        "a named one was extended"
+    );
+}
+
 #[test]
 fn a_claim_lost_error_round_trips_and_is_not_a_terminal_conflict() {
     let err = ClaimLost::new(TaskId::new("t")).into_error();
@@ -97,5 +133,10 @@ fn the_fence_condition_names_its_placeholder_twice() {
     assert_eq!(
         fence_sql!("?4"),
         "(?4 IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ?4))"
+    );
+    assert_eq!(
+        fence_sql!(postgres "$4::text"),
+        "($4::text IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c \
+         WHERE c.token = $4::text FOR KEY SHARE))"
     );
 }

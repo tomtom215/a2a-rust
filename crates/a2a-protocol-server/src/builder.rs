@@ -486,10 +486,12 @@ impl RequestHandlerBuilder {
     /// task store's own (`TaskStore::turn_claims`): one replica at a time
     /// runs a task, however many share the store (`crate::store::claim`).
     ///
-    /// Not needed with the bundled PostgreSQL and SQLite stores, which
-    /// provide their claims; for a custom store several replicas share,
-    /// whose writes must then also be fenced with
-    /// [`current_fence`](crate::store::claim::current_fence).
+    /// For a custom store several replicas share, whose writes must then
+    /// also be fenced with
+    /// [`current_fence`](crate::store::claim::current_fence). `build`
+    /// refuses it over a store that provides claims of its own (the bundled
+    /// PostgreSQL and SQLite stores): their writes are fenced against those,
+    /// so claims kept anywhere else would refuse every write.
     #[must_use]
     pub fn with_turn_claims(mut self, claims: impl crate::store::TurnClaimStore) -> Self {
         self.turn_claims = TurnClaimsChoice::Given(Arc::new(claims));
@@ -1433,6 +1435,15 @@ impl RequestHandlerBuilder {
         // Read before `task_store` moves into the handler.
         let turn_claims = match self.turn_claims {
             TurnClaimsChoice::Off => None,
+            // A store with claims of its own fences each write against them,
+            // in its own database: claims kept anywhere else never satisfy
+            // that fence, and every turn's first write would be refused.
+            TurnClaimsChoice::Given(_) if task_store.turn_claims().is_some() => {
+                return Err(crate::error::ServerError::InvalidParams(
+                    "with_turn_claims: this task store provides its own turn claims and                      fences its writes against them, so claims kept elsewhere would refuse                      every write; drop with_turn_claims to use the store's own"
+                        .to_owned(),
+                ));
+            }
             TurnClaimsChoice::Given(store) => Some(store),
             TurnClaimsChoice::FromStore => task_store.turn_claims(),
         }
@@ -1735,6 +1746,44 @@ mod tests {
             h.tenant_config().is_none(),
             "default builder should have no tenant config"
         );
+    }
+
+    #[test]
+    fn build_refuses_turn_claim_timing_a_renewal_cannot_keep_alive() {
+        let build = |ttl, every| {
+            RequestHandlerBuilder::new(TestExecutor)
+                .without_agent_card()
+                .with_turn_claims(crate::store::InMemoryTurnClaims::new())
+                .with_turn_claim_timing(ttl, every)
+                .build()
+        };
+        let min = crate::handler::MIN_TURN_CLAIM_TTL;
+        assert_eq!(
+            min,
+            Duration::from_secs(3),
+            "the cases below are written for it"
+        );
+        assert!(build(min, min / 3).is_ok());
+        assert!(build(Duration::from_millis(2999), Duration::from_millis(500)).is_err());
+        assert!(build(min, Duration::ZERO).is_err());
+        assert!(build(min, min / 3 + Duration::from_millis(1)).is_err());
+    }
+
+    /// Claims kept apart from a store that fences its writes against its own
+    /// would refuse every write, so `build` refuses the combination.
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn build_refuses_foreign_turn_claims_over_a_store_with_its_own() {
+        let store = crate::store::SqliteTaskStore::new("sqlite::memory:")
+            .await
+            .expect("store");
+        let err = RequestHandlerBuilder::new(TestExecutor)
+            .without_agent_card()
+            .with_task_store(store)
+            .with_turn_claims(crate::store::InMemoryTurnClaims::new())
+            .build()
+            .expect_err("foreign claims over a fenced store");
+        assert!(err.to_string().contains("drop with_turn_claims"), "{err}");
     }
 
     #[test]

@@ -123,14 +123,24 @@ pub trait TurnClaimStore: Send + Sync + 'static {
     /// The storage's.
     fn release<'a>(&'a self, token: &'a str) -> Fut<'a, ()>;
 
-    /// Extends every claim `owner` holds to `ttl` from now, and reports each
-    /// one. A token the owner registered that is missing from the answer
-    /// was taken over.
+    /// Extends the claims among `tokens` that `owner` still holds to `ttl`
+    /// from now, and reports each one. A token missing from the answer was
+    /// taken over or released.
+    ///
+    /// Only the named tokens are extended, never every claim of the owner: a
+    /// claim the owner no longer tracks (a release that failed, a request
+    /// dropped while its claim was being written) must expire after its time
+    /// to live rather than be kept alive by the owner's other turns.
     ///
     /// # Errors
     ///
     /// The storage's.
-    fn renew<'a>(&'a self, owner: &'a str, ttl: Duration) -> Fut<'a, Vec<HeldClaim>>;
+    fn renew<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        ttl: Duration,
+    ) -> Fut<'a, Vec<HeldClaim>>;
 
     /// Marks the live claim on the task, if there is one, so its owner
     /// cancels the turn at its next renewal. Whether a claim was marked.
@@ -276,13 +286,18 @@ impl TurnClaimStore for InMemoryTurnClaims {
         })
     }
 
-    fn renew<'a>(&'a self, owner: &'a str, ttl: Duration) -> Fut<'a, Vec<HeldClaim>> {
+    fn renew<'a>(
+        &'a self,
+        owner: &'a str,
+        tokens: &'a [String],
+        ttl: Duration,
+    ) -> Fut<'a, Vec<HeldClaim>> {
         Box::pin(async move {
             let expires = Instant::now() + ttl;
             Ok(self
                 .lock()
                 .values_mut()
-                .filter(|e| e.owner == owner)
+                .filter(|e| e.owner == owner && tokens.contains(&e.token))
                 .map(|e| {
                     e.expires = expires;
                     HeldClaim {
@@ -324,8 +339,27 @@ mod tests;
 /// token, or its token still holds a claim. `$param` is the placeholder the
 /// token is bound to, typed where the dialect needs it (`"$7::text"` for
 /// PostgreSQL, `"?7"` for SQLite); it appears twice and is bound once.
+///
+/// The PostgreSQL form (`fence_sql!(postgres "$7::text")`) also locks the
+/// claim `FOR KEY SHARE`. Under READ COMMITTED the subquery otherwise reads
+/// the statement's snapshot: a write that started before another replica's
+/// takeover committed, then waited on the task row that replica was
+/// writing, would re-check only the task row and land over the new turn's
+/// write. The lock makes a takeover (which changes the unique token) or a
+/// release wait for the write, and the write re-read a claim changed under
+/// it; renewals and cancel marks change no key column and never wait on it.
+/// SQLite runs one writer at a time, so its form needs no lock.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 macro_rules! fence_sql {
+    (postgres $param:literal) => {
+        concat!(
+            "(",
+            $param,
+            " IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ",
+            $param,
+            " FOR KEY SHARE))"
+        )
+    };
     ($param:literal) => {
         concat!(
             "(",

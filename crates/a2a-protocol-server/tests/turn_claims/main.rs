@@ -436,4 +436,7 @@ pub async fn a_turns_terminal_event_is_logged_before_its_claim_is_released(db: &
     let _ = a.shutdown().await;
 }
 
+mod lifecycle;
+pub use lifecycle::*;
+
 mod backends;

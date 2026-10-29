@@ -32,6 +32,7 @@ fn a_cancel_asked_for_elsewhere_fires_the_executors_token() {
     let quiet = hold(&claims, "b");
     act_on(
         &claims,
+        &["a".to_owned(), "b".to_owned()],
         &[
             HeldClaim {
                 token: "a".to_owned(),
@@ -61,6 +62,7 @@ fn a_claim_missing_from_the_renewal_was_lost_and_stops_its_executor() {
     let kept = hold(&claims, "b");
     act_on(
         &claims,
+        &["a".to_owned(), "b".to_owned()],
         &[HeldClaim {
             token: "b".to_owned(),
             cancel_requested: false,
@@ -72,6 +74,44 @@ fn a_claim_missing_from_the_renewal_was_lost_and_stops_its_executor() {
         !claims.held().contains_key("a"),
         "a lost claim is no longer renewed"
     );
+}
+
+#[test]
+fn a_claim_taken_while_a_renewal_was_in_flight_is_not_lost() {
+    // The renewal was sent holding only "a"; "b" was claimed before its
+    // answer came back, so the answer cannot name it. Judging "b" by that
+    // answer would cancel a turn that holds its claim.
+    let claims = claims();
+    let a = hold(&claims, "a");
+    let sent = vec!["a".to_owned()];
+    let b = hold(&claims, "b");
+    act_on(
+        &claims,
+        &sent,
+        &[HeldClaim {
+            token: "a".to_owned(),
+            cancel_requested: false,
+        }],
+    );
+    assert!(!a.is_cancelled());
+    assert!(
+        !b.is_cancelled(),
+        "a claim newer than the renewal is left running"
+    );
+    assert!(
+        claims.held().contains_key("b"),
+        "and is renewed at the next interval"
+    );
+}
+
+#[test]
+fn a_claim_released_while_a_renewal_was_in_flight_is_skipped() {
+    let claims = claims();
+    let a = hold(&claims, "a");
+    let sent = vec!["a".to_owned()];
+    claims.held().remove("a");
+    act_on(&claims, &sent, &[]);
+    assert!(!a.is_cancelled(), "a released turn is not cancelled");
 }
 
 #[test]

@@ -60,6 +60,22 @@ mod sqlite {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_retry_while_its_send_waits_on_another_replica_is_not_replayed() {
+        a_retry_while_its_send_waits_on_another_replica_is_not_replayed(&TempDb::new("retry"))
+            .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_replica_shut_down_releases_its_claims_at_once() {
+        a_replica_shut_down_releases_its_claims_at_once(&TempDb::new("shutdown")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_renewal_extends_only_the_tokens_it_names() {
+        a_renewal_extends_only_the_tokens_it_names(&TempDb::new("renew")).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sqlite_a_send_to_a_task_another_replica_runs_is_refused() {
         a_send_to_a_task_another_replica_runs_is_refused(&TempDb::new("refused")).await;
     }
@@ -160,6 +176,30 @@ mod postgres {
                 .expect("delete");
             pool.close().await;
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_retry_while_its_send_waits_on_another_replica_is_not_replayed() {
+        let db = TestDb::create("retry").await;
+        a_retry_while_its_send_waits_on_another_replica_is_not_replayed(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_replica_shut_down_releases_its_claims_at_once() {
+        let db = TestDb::create("shutdown").await;
+        a_replica_shut_down_releases_its_claims_at_once(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_renewal_extends_only_the_tokens_it_names() {
+        let db = TestDb::create("renew").await;
+        a_renewal_extends_only_the_tokens_it_names(&db).await;
+        db.drop_db().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

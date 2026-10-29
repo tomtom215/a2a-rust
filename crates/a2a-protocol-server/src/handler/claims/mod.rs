@@ -203,32 +203,66 @@ impl RequestHandler {
             let runs_here = self.cancellation_tokens.read().await.contains_key(task_id);
             let now = tokio::time::Instant::now();
             if runs_here || now >= deadline {
-                return Err(ServerError::UnsupportedOperation(format!(
-                    "task {task_id} is already being processed; \
-                     wait for it to reach input-required or a terminal state before sending again"
-                )));
+                return Err(busy(task_id));
             }
             tokio::time::sleep(wait.min(deadline - now)).await;
             wait = (wait * 2).min(RETRY_MAX);
         }
-        claims.held().insert(
-            token.clone(),
-            Held {
-                task_id: task_id.clone(),
-                cancel: None,
-            },
-        );
-        claims.start_renewer();
-        if !TenantContext::set_fence(&token) {
-            // A send is always made inside a request scope, which has an
-            // empty fence slot: unreachable unless this is called twice in
-            // one request, which would be a bug in the send path.
-            trace_error!(task_id = %task_id, "turn claim taken outside a fresh request scope");
+        Ok(Some(hold(claims, task_id, token)))
+    }
+
+    /// One attempt at [`claim_turn`](Self::claim_turn), without waiting:
+    /// [`TurnAttempt::Busy`] when a turn on another replica holds the task.
+    ///
+    /// # Errors
+    ///
+    /// As `claim_turn`'s, at once.
+    pub(super) async fn try_claim_turn(&self, task_id: &TaskId) -> ServerResult<TurnAttempt> {
+        let Some(claims) = &self.turn_claims else {
+            return Ok(TurnAttempt::Off);
+        };
+        let token = uuid::Uuid::new_v4().to_string();
+        if claims
+            .store
+            .claim(
+                &TenantContext::partition(),
+                &task_id.0,
+                &claims.owner,
+                &token,
+                claims.ttl,
+            )
+            .await?
+        {
+            return Ok(TurnAttempt::Held(hold(claims, task_id, token)));
         }
-        Ok(Some(TurnClaim {
-            claims: Arc::clone(claims),
-            token,
-        }))
+        if self.cancellation_tokens.read().await.contains_key(task_id) {
+            return Err(busy(task_id));
+        }
+        Ok(TurnAttempt::Busy)
+    }
+
+    /// Releases every claim this handler holds, so the tasks it was running
+    /// can continue on another replica at once rather than after the claims'
+    /// time to live: for shutdown, within `budget`. An executor still
+    /// running then has its next write refused, as after a takeover.
+    pub(crate) async fn release_turn_claims(&self, budget: Duration) {
+        let Some(claims) = &self.turn_claims else {
+            return;
+        };
+        let tokens: Vec<String> = claims.held().drain().map(|(token, _)| token).collect();
+        let release = async {
+            for token in &tokens {
+                if let Err(_e) = claims.store.release(token).await {
+                    trace_warn!(
+                        error = %_e,
+                        "turn claim not released at shutdown; its task waits for it to expire"
+                    );
+                }
+            }
+        };
+        if tokio::time::timeout(budget, release).await.is_err() {
+            trace_warn!("turn claims not all released within the shutdown budget");
+        }
     }
 
     /// Asks the replica running `task_id`, if another one is, to cancel it
@@ -254,6 +288,47 @@ impl RequestHandler {
     }
 }
 
+/// What a send goes on with after one attempt at the claim.
+pub(super) enum TurnAttempt {
+    /// The handler takes no claims.
+    Off,
+    /// The claim, now this turn's.
+    Held(TurnClaim),
+    /// A turn on another replica holds it.
+    Busy,
+}
+
+/// The refusal of a send to a task another turn is running.
+fn busy(task_id: &TaskId) -> ServerError {
+    ServerError::UnsupportedOperation(format!(
+        "task {task_id} is already being processed; \
+         wait for it to reach input-required or a terminal state before sending again"
+    ))
+}
+
+/// Registers a claim just taken with the renewer, and fences the rest of
+/// the request's writes with it.
+fn hold(claims: &Arc<TurnClaims>, task_id: &TaskId, token: String) -> TurnClaim {
+    claims.held().insert(
+        token.clone(),
+        Held {
+            task_id: task_id.clone(),
+            cancel: None,
+        },
+    );
+    claims.start_renewer();
+    if !TenantContext::set_fence(&token) {
+        // A send is always made inside a request scope, which has an empty
+        // fence slot: unreachable unless a request takes two claims, which
+        // would be a bug in the send path.
+        trace_error!(task_id = %task_id, "turn claim taken outside a fresh request scope");
+    }
+    TurnClaim {
+        claims: Arc::clone(claims),
+        token,
+    }
+}
+
 impl TurnClaims {
     /// Starts the handler's renewer, once.
     fn start_renewer(self: &Arc<Self>) {
@@ -275,11 +350,14 @@ async fn renew_loop(claims: Weak<TurnClaims>, every: Duration) {
         let Some(claims) = claims.upgrade() else {
             return;
         };
-        if claims.held().is_empty() {
+        // Judged against the tokens held when the renewal was sent: a claim
+        // taken while it was in flight is not in its answer, and is not lost.
+        let sent: Vec<String> = claims.held().keys().cloned().collect();
+        if sent.is_empty() {
             continue;
         }
-        match claims.store.renew(&claims.owner, claims.ttl).await {
-            Ok(report) => act_on(&claims, &report),
+        match claims.store.renew(&claims.owner, &sent, claims.ttl).await {
+            Ok(report) => act_on(&claims, &sent, &report),
             Err(_e) => {
                 // An outage is not evidence that another replica took over:
                 // the fence decides that, write by write.
@@ -295,14 +373,21 @@ async fn renew_loop(claims: Weak<TurnClaims>, every: Duration) {
     }
 }
 
-fn act_on(claims: &TurnClaims, report: &[crate::store::HeldClaim]) {
+/// Acts on a renewal of the tokens in `sent`: fires the cancel asked for
+/// elsewhere, and stops each turn whose claim is missing from `report`. A
+/// token released since is no longer held and is skipped; one claimed since
+/// is not in `sent` and is left for the next renewal.
+fn act_on(claims: &TurnClaims, sent: &[String], report: &[crate::store::HeldClaim]) {
     let reported: HashMap<&str, bool> = report
         .iter()
         .map(|c| (c.token.as_str(), c.cancel_requested))
         .collect();
     let mut held = claims.held();
     let mut lost = Vec::new();
-    for (token, turn) in held.iter() {
+    for token in sent {
+        let Some(turn) = held.get(token) else {
+            continue;
+        };
         match reported.get(token.as_str()) {
             Some(true) => {
                 if let Some(cancel) = &turn.cancel
