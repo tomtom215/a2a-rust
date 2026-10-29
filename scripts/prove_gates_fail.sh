@@ -399,6 +399,8 @@ injection_for() {
             echo "doc_versions" ;;
         *"check_book_examples.py"*)
             echo "book_examples" ;;
+        *"check_book_links.py"*)
+            echo "book_links" ;;
         *"check_feature_tables.py"*)
             echo "feature_tables" ;;
         *"check_sql_driver_isolation.sh"*)
@@ -552,6 +554,7 @@ expected_marker() {
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
         sitemap)          echo "out of sync with SUMMARY.md" ;;
+        book_links)       echo "gate-probe-missing.html" ;;
         # Since 2026-09-10 the gate runs both directions, and the rename
         # below is both defects at once: `TaskRevision` is a name no crate
         # defines (stale), and `TaskVersion` is a root export the page no
@@ -880,6 +883,12 @@ PY
             note_touched "book/src/concepts/streaming.md"
             printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
                 >>book/src/concepts/streaming.md
+            ;;
+        book_links)
+            # A link to a page that does not exist — what a page split or a
+            # rename leaves behind, and what mdBook builds without a word.
+            note_touched "book/src/introduction.md"
+            printf '\n[Gate probe](./gate-probe-missing.md)\n' >>book/src/introduction.md
             ;;
         sitemap)
             # Add a page to the table of contents without regenerating the
