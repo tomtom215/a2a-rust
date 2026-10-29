@@ -134,6 +134,7 @@ fn the_fence_condition_names_its_placeholder_twice() {
         fence_sql!("?4"),
         "(?4 IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ?4))"
     );
+    #[cfg(feature = "postgres")]
     assert_eq!(
         fence_sql!(postgres "$4::text"),
         "(set_config('a2a.claims', 'on', true) = 'on' AND ($4::text IS NULL OR \

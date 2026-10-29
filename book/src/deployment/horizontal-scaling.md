@@ -319,26 +319,47 @@ An approval toward a quorum (`with_approval_gate`, `with_quorum`) is counted
 under the claim, so two approvals arriving at two replicas at once are
 counted one after the other and the executor resumes once.
 
-**What it costs.** `tests/soak_multi_replica.rs` (two replicas, one
+**What it costs.** `tests/soak_multi_replica.rs`: two replicas, one
 PostgreSQL 17 database, eight clients each sending a new task to one replica
-and reading it from the other, 60 s), release build, on one 4-vCPU Linux
-container with the database on the same host, three runs each way,
-alternating (2026-10-28): 360 pairs/s with claims (±17, standard deviation),
-423 without (±14), so 15% fewer; median latency per pair 21.4 ms against
-18.6 ms. Every claim was released by the end of each run. A deployment whose
-database is across a network pays the two extra round trips per turn at its
-own latency; measure it there before relying on this figure.
+and reading it from the other, release build, one 4-vCPU Linux container,
+2026-10-28. The database was reached directly, then through toxiproxy 2.12.0
+adding latency each way; the round trip is what was measured on the link
+(the smallest of 20 PostgreSQL SSL-request exchanges), not what was set.
+Three 30 s runs per row, alternating:
 
-What a claim does not change: the first terminal state either way is final
-(every shipped store refuses to move a stored terminal task to another state,
-atomically with the write), and a stream on a replica not running the task is
-still fed by polling the event log (above).
+| Round trip to the database | With claims | Without | Median per pair, with / without |
+|---|---|---|---|
+| direct (0.15 ms) | 334 ± 31 pairs/s | — | 21.8 ms |
+| 1.2 ms (proxy alone) | 238 ± 3 | 267 ± 6 | 33.3 / 29.8 ms |
+| 2.6 ms | 67 ± 1 | 72 ± 1 | 121.7 / 113.7 ms |
+| 11.1 ms | 21 ± 1 | 22 ± 0 | 387 ms / not recorded |
 
-Measured: `tests/turn_claims/` runs each case on SQLite and PostgreSQL, and
-`tests/replica_processes.rs` runs two replica processes over each, killing one
-mid-turn with `SIGKILL`: the other took its task over 2.82 s after the kill,
-with a 3 s time to live and a 0.5 s renewal interval (2026-10-28, PostgreSQL
-17.11 and SQLite).
+The claim adds a near-constant two or three round trips to a turn (3.5 ms at
+1.2 ms, 8 ms at 2.6 ms), so its share falls as the network slows: 11% fewer
+pairs at 1.2 ms, 7% at 2.6 ms, 5% at 11.1 ms. What dominates on a real
+network is the rest of the send path: a send and a read together took 35 to
+43 sequential round trips (113.7 ms without claims, against a link whose round
+trip measured 2.6 ms at its smallest and 3.2 ms at its median), so put the
+database close to the replicas. Every claim was released by the end of
+every run, and no run had a failed request or a task one replica could not
+read from the other. An earlier run of three 60 s each way, direct, measured
+360 ± 17 pairs/s with claims and 423 ± 14 without.
+
+**When the network fails** (2026-10-28, two replicas as separate processes,
+each reaching PostgreSQL through its own toxiproxy link, default timing):
+
+- Cut the running replica's link for 5 s, under the claim's 15 s time to
+  live: a continuation sent to the other replica meanwhile was refused after
+  its 5 s wait; when the link came back the turn went on writing (its
+  artifact grew from 5 parts to 23 in the next 9 s, none lost), and a cancel
+  sent to the other replica stopped its executor 0.71 s later.
+- Cut it for 20 s, past the time to live: the other replica ran a
+  continuation 16.1 s after the cut, to `completed`; the cut-off replica's
+  executor, still running, had every write refused once its link was back (the
+  artifact stayed at the 4 parts it had at the takeover), and was stopped on
+  its first renewal, about 2.5 s after the link returned.
+- Restart PostgreSQL mid-turn: the turn went on writing once the database was
+  back (5 parts before, 15 five seconds after it was ready).
 
 ### Upgrading a fleet to this release
 
@@ -372,7 +393,10 @@ The first new replica installs this when it starts (or `PgMigrationRunner`
 does, as migration 9); old replicas keep running against the migrated
 database, since they skip migrations they do not know. Once the last old
 replica is gone nothing is left to do: a marked write skips the triggers in
-their `WHEN` condition, without calling them.
+their `WHEN` condition, without calling them. Measured with the soak above,
+direct to the database, three 30 s runs each way: 334 ± 31 pairs/s with the
+triggers, 344 ± 41 with them disabled, a difference three runs cannot tell
+from noise.
 
 What it does not cover:
 

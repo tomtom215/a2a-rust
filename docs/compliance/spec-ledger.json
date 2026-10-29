@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:462 \"### Breaking Changes\""
+    "CHANGELOG.md:513 \"### Breaking Changes\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -715,7 +715,7 @@
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/cursor.rs:23 encode",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1014 SqliteTaskStore::list",
-    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:386 PostgresTaskStore::list"
+    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:387 PostgresTaskStore::list"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1810 list_pagination_is_stable_across_pages",
@@ -736,7 +736,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1014 SqliteTaskStore::list",
-    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:386 PostgresTaskStore::list",
+    "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:387 PostgresTaskStore::list",
     "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:469 TenantAwareSqliteTaskStore::list"
    ],
    "test_evidence": [
@@ -8972,7 +8972,7 @@
     "crates/a2a-protocol-server/src/store/caller_keys.rs:110 CallerErasure",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:347 TenantAwareInMemoryTaskStore::erase_caller",
     "crates/a2a-protocol-server/src/store/tenant_sqlite_store/caller_keys.rs:87 TenantAwareSqliteTaskStore::erase_caller",
-    "crates/a2a-protocol-server/src/store/tenant_postgres_store/caller_keys.rs:87 TenantAwarePostgresTaskStore::erase_caller",
+    "crates/a2a-protocol-server/src/store/tenant_postgres_store/caller_keys.rs:89 TenantAwarePostgresTaskStore::erase_caller",
     "crates/a2a-protocol-server/src/push/tenant_config_store.rs:127 TenantAwareInMemoryPushConfigStore::erase_caller",
     "crates/a2a-protocol-server/src/push/tenant_sqlite_config_store/caller_keys.rs:89 TenantAwareSqlitePushConfigStore::erase_caller",
     "crates/a2a-protocol-server/src/push/tenant_postgres_config_store/caller_keys.rs:89 TenantAwarePostgresPushConfigStore::erase_caller",

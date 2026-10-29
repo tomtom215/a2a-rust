@@ -580,12 +580,39 @@ async fn two_replicas_survive_sustained_load() {
          keys than callers means they are sharing a bucket, which is what \
          happens when the caller key falls back to the shared \"anon\" bucket"
     );
-    assert!(
-        peak_rl <= ceiling,
-        "the shared counter's table reached {peak_rl} rows for {WORKERS} callers \
-         over ~{windows_spanned} windows — the sweep is not keeping it bounded, \
-         so it grows for the life of the deployment"
-    );
+    // The sweep runs on every `SWEEP_INTERVAL`-th count
+    // (`rate_limit/shared.rs`), not on a clock, so at a low request rate more
+    // windows pass between sweeps. Measured 2026-10-28 through a link adding
+    // 11 ms per round trip: 21 pairs/s, the table rose to 48 rows (8 callers,
+    // 6 windows) and fell to 8 when the sweep ran at 25 s. The fixed ceiling
+    // above holds at a rate that sweeps within four windows; below it, the
+    // run must show the sweep running (a later sample under the peak) and the
+    // peak must be no more than the windows one sweep interval spans at the
+    // measured rate allow, plus the two a sweep leaves.
+    const SWEEP_INTERVAL: u64 = 1_000;
+    let counts_per_sec = (2.0 * total as f64 / seconds as f64).max(1.0);
+    let windows_per_sweep =
+        (SWEEP_INTERVAL as f64 / counts_per_sec / WINDOW_SECS as f64).ceil() as u64;
+    let rate_bound = i64::try_from(WORKERS as u64 * (windows_per_sweep + 2)).unwrap_or(i64::MAX);
+    if peak_rl > ceiling {
+        let at_peak = samples.iter().position(|s| s.3 == peak_rl).unwrap_or(0);
+        let swept = samples[at_peak..].iter().any(|s| s.3 >= 0 && s.3 < peak_rl);
+        println!(
+            "at {counts_per_sec:.0} counts/s one sweep interval spans ~{windows_per_sweep} windows: \
+             bound {rate_bound} rows; swept after the peak: {swept}"
+        );
+        assert!(
+            swept && peak_rl <= rate_bound,
+            "the shared counter's table reached {peak_rl} rows for {WORKERS} callers over \
+             ~{windows_spanned} windows, and {} — the sweep is not keeping it bounded, so it \
+             grows for the life of the deployment (run longer if no sweep had time to run)",
+            if swept {
+                format!("exceeds the {rate_bound} this rate allows")
+            } else {
+                "never fell".to_owned()
+            }
+        );
+    }
 
     let recorded = latencies.lock().expect("latency lock").clone();
     let mut all: Vec<u64> = recorded.iter().map(|(_, us)| *us).collect();

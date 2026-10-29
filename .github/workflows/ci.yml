@@ -722,8 +722,9 @@ jobs:
           fi
           cat "$log"
           ran=$(awk '/^test result:/ { n += $4 } END { print n + 0 }' "$log")
-          if [ "$ran" -lt 10 ]; then
-            echo "::error::the turn-claim suites ran $ran test(s) against PostgreSQL, fewer than the 10 they hold. A test was renamed or is no longer #[ignore]d."
+          # 18 since the rolling-upgrade cases (`tests/turn_claims/upgrade.rs`).
+          if [ "$ran" -lt 18 ]; then
+            echo "::error::the turn-claim suites ran $ran test(s) against PostgreSQL, fewer than the 18 they hold. A test was renamed or is no longer #[ignore]d."
             exit 1
           fi
           echo "turn claims, live database: $ran test(s) ran"

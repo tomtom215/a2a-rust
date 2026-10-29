@@ -87,7 +87,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   0.15.0 replica process (4 of 4 cases; 1 of 4 with the triggers disabled)
   and in `tests/turn_claims/upgrade.rs`, which replays 0.15.0's statements
   and checks that every write this release makes is marked (each of five
-  mutants of the guard fails at least one case). SQLite gets none of this:
+  mutants of the guard fails at least one case). Its cost to a fleet that has
+  finished upgrading was not distinguishable from noise (334 ± 31 pairs/s
+  with the triggers, 344 ± 41 without, three runs each). SQLite gets none of this:
   processes sharing one file are on one host and are replaced together.
 - **`deploy/observability/docker-compose.prod.yml`**: the stack closed down
   for a shared host (a Grafana login from `GRAFANA_ADMIN_PASSWORD`, only
@@ -108,7 +110,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   uses. Measured with `tests/soak_multi_replica.rs` (two replicas, PostgreSQL
   17 on the same 4-vCPU host, release build, three 60 s runs each way): 15%
   fewer send-and-read pairs per second with claims (360 ± 17 against
-  423 ± 14), 21.4 ms against 18.6 ms median per pair.
+  423 ± 14), 21.4 ms against 18.6 ms median per pair. Through a proxy adding
+  latency the claim costs a near-constant two or three round trips, so its
+  share falls: 11% at a 1.2 ms round trip, 7% at 2.6 ms, 5% at 11.1 ms (book:
+  Running More Than One Replica, *What it costs*, with partitions and a
+  database restart mid-turn).
 - **On PostgreSQL, a 0.15 replica's write to a task a newer replica is
   running is refused** (SQLSTATE `A2A01`), and a newer replica waits for a
   task a 0.15 replica is running, so a fleet can be replaced one replica at a
@@ -175,6 +181,28 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`echo-agent`'s server mode, `tck/sut`, the ITK agent and `mcp-bridge` did
   not flush telemetry on `SIGTERM`**: each ran until killed. They now return
   on `shutdown_signal()`, which drops their `Telemetry`.
+
+### Internal
+
+- **CI runs the test matrix under cargo-nextest** (`--profile ci`: each test
+  in its own process, a hung test killed and named at two minutes, no
+  retries, a JUnit report uploaded), with the doctests, which nextest does not
+  run, in their own steps under default, all and no default features. The
+  nextest version is read from the mutation gate's install script. The whole
+  workspace with every feature passed under it locally: 5,851 tests.
+- **The `deploy-agent` image caches its dependencies** (cargo-chef 0.1.78):
+  after a change to the source only, the dependency layer was reused and the
+  build took 221 s instead of 428 s (measured in a sandbox build; the rest is
+  the workspace's own crates under fat LTO).
+- **The multi-replica soak's rate-limit check holds at any request rate.**
+  The sweep runs every 1,000th count, so through a slow link (11 ms per round
+  trip) more windows passed between sweeps than the fixed 32-row ceiling
+  allowed, and every such run failed though the sweep ran. Below the rate the
+  ceiling assumes, the run must now show a sweep and stay within what one
+  sweep interval allows at the measured rate; with the sweep removed, it still
+  fails.
+- **A turn-claim test raced the previous turn's claim release** and failed
+  when the release had not run yet; it retries as a replica does.
 
 ## [0.15.1] - 2026-10-26
 

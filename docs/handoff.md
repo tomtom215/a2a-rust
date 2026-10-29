@@ -93,8 +93,9 @@ only: when something here is done, delete it rather than annotating it.
   **Not run, and so not claimed:** Kubernetes (kind could not start a pod
   sandbox here: nested `runc` fails, "can't get final child's PID from
   pipe"; Kubernetes 1.35's kubelet also refuses this host's cgroup v1), IPv6
-  on the wire, a public-CA collector, PgBouncer, a network between
-  replicas and database, `cargo-semver-checks`, `cargo deny`, `promtool` (the
+  on the wire, a public-CA collector, PgBouncer, a network between replicas
+  and database other than a local proxy adding latency, `cargo-semver-checks`,
+  `cargo deny`, `promtool` (the
   rules were exercised live by Prometheus, not unit-tested), the official
   TCK. **For the maintainer:** (1) the release number, now 0.16.0 by the
   book's own definition (public API added, which sends are refused changed;
@@ -102,10 +103,30 @@ only: when something here is done, delete it rather than annotating it.
   was never tagged); (2) sign-off: the commits are authored as the session's
   identity and signed off by it alone, so `scripts/check_dco.sh` will want
   them re-authored and signed off by you, as with the 0.15.1 branch; (3) the
-  rolling-upgrade rule (a fleet mixing this release with 0.15.x is not
-  protected; book: Running More Than One Replica, *Upgrading a fleet*): it is
-  in the CHANGELOG's Behaviour Changes, and the release notes should lead
-  with it.
+  release notes should say that a 0.15 replica's write to a task a newer
+  replica runs is now refused (`A2A01`), which is what makes the rolling
+  upgrade safe, and that SQL of an operator's own against the task tables is
+  treated the same way unless it sets `a2a.claims`.
+- **Rolling upgrades from 0.15, safe without affinity (PostgreSQL)**
+  (`store::claim::upgrade`, pg migration 9): every write this release makes
+  marks itself; triggers refuse an unmarked (0.15) write to a task a newer
+  replica holds, let a 0.15 cancel through and forward it to the claim, and
+  turn a 0.15 write into a claim newer replicas wait for. Verified against a
+  real 0.15.0 replica built from the tag (the program is not committed; it
+  was `scratchpad/legacy-e2e`, one source built against both trees): 4 of 4
+  scenarios, 1 of 4 with the triggers disabled. `tests/turn_claims/upgrade.rs`
+  replays 0.15.0's own SQL; five mutants of the guard are each caught. All
+  database-gated tests pass on PostgreSQL 16.15 and 17.11 (2,478 each).
+- **Replicas over a network** (toxiproxy 2.12.0 between each replica and the
+  database): the claim costs two or three round trips a turn, 11% to 5% of
+  throughput as the round trip grows from 1.2 to 11.1 ms; a 5 s cut, a 20 s
+  cut (taken over at 16.1 s, the cut-off writer fenced and stopped 2.5 s after
+  its link returned) and a database restart mid-turn all behaved as the book
+  says (*What it costs*, *When the network fails*).
+- **cargo-chef and nextest**: the `deploy-agent` image caches dependencies
+  (rebuild after a source change 221 s against 428 s); CI's test matrix runs
+  nextest with doctests in their own steps. Neither the image build in CI nor
+  the edited `ci.yml` has run on GitHub yet.
   ADR 0028 (Proposed) and `docs/adr/0028-wasm-spike/` are unchanged from the
   previous session; its `reproduce.sh` was not re-run.
 - **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
@@ -567,9 +588,17 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   not running the task is still fed by polling the event log every
   `subscribe_reattach_interval` (250 ms); `LISTEN`/`NOTIFY` could push it,
   unbuilt. A cancel reaches another replica's executor at the owner's next
-  renewal (1 s), not at once, unless a halt store pushes it. Measured on one
-  host only (15% throughput, *Now*); not measured: a real network between
-  replicas and database, a partition, PgBouncer. From the review, left as
+  renewal (1 s), not at once, unless a halt store pushes it. Measured through
+  a local proxy adding latency and cutting links (*Now*); not measured: a
+  real network, PgBouncer. Under PgBouncer in transaction mode the upgrade
+  guard should still hold, since its mark (`set_config(…, true)`) and its
+  advisory locks last one transaction, which such a pooler keeps on one
+  server connection; that is reasoned, not run. The send
+  path itself takes 35 to 43 sequential round trips for a send and a read,
+  which is what dominates on a slow link; nobody has looked at which.
+  `.config/nextest.toml`'s default profile (the mutation gate's) kills at
+  45 s, and four tests now take 30 to 31 s by design; its rationale still
+  says the slowest test takes 5 s. From the review, left as
   they are: the fence checks that the token holds *a* claim, not the claim
   on the task written, so a write to another task from inside a turn passes
   (scoping it would refuse such a write if any legitimate path makes one,

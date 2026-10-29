@@ -68,7 +68,7 @@ macro_rules! legacy_ttl {
 
 macro_rules! check_function {
     () => {
-        r#"CREATE OR REPLACE FUNCTION a2a_legacy_write_check() RETURNS trigger
+        "CREATE OR REPLACE FUNCTION a2a_legacy_write_check() RETURNS trigger
 LANGUAGE plpgsql AS $fn$
 DECLARE
     task text;
@@ -93,7 +93,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END
-$fn$"#
+$fn$"
     };
 }
 /// The check before each unmarked write. Replaced on every start, as are the
@@ -137,7 +137,7 @@ pub const RECORD_FUNCTION_SQL: &str = record_function!();
 
 macro_rules! claim_function {
     () => {
-        r#"CREATE OR REPLACE FUNCTION a2a_claim_turn(
+        "CREATE OR REPLACE FUNCTION a2a_claim_turn(
     p_scope text, p_task text, p_owner text, p_token text, p_ttl_ms bigint
 ) RETURNS text
 LANGUAGE plpgsql AS $fn$
@@ -159,7 +159,7 @@ BEGIN
     END IF;
     RETURN 'held';
 END
-$fn$"#
+$fn$"
     };
 }
 /// A new replica's claim: under the task's lock, refused while an earlier
