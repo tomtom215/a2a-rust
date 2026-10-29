@@ -213,9 +213,11 @@ impl PgMigrationRunner {
     /// Returns an error if the database cannot be queried.
     pub async fn current_version(&self) -> Result<u32, sqlx::Error> {
         self.ensure_version_table().await?;
-        let row = sqlx::query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_versions")
-            .fetch_one(&self.pool)
-            .await?;
+        let row = super::pg_retry::retry(|| {
+            sqlx::query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_versions")
+                .fetch_one(&self.pool)
+        })
+        .await?;
         let version: i32 = row.get("v");
         #[allow(clippy::cast_sign_loss)]
         Ok(version as u32)
@@ -257,7 +259,7 @@ impl PgMigrationRunner {
                 continue;
             }
 
-            let mut tx = self.pool.begin().await?;
+            let mut tx = super::pg_retry::retry(|| self.pool.begin()).await?;
 
             // The crate-wide schema lock first, so a migration cannot run
             // alongside another store's `from_pool` DDL on the same tables.

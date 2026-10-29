@@ -598,11 +598,14 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   (CHANGELOG *Fixed*): 8 and 11 statements, the ping sqlx makes as each
   connection returns to the pool, and a ping before a connection idle a
   second or more (`store::pg_retry`, whose module docs say why each kind of
-  statement may run twice). Nothing but review keeps a new statement on the
-  task stores' pools inside `pg_retry::retry` or `checked`: one left out
-  works until its connection dies, then fails where it used to be pinged
-  first. A mechanical check would have to tell a statement's closure from
-  the statements around it; none is written. A turn's event writes are
+  statement may run twice). `scripts/check_pg_retry.py` (a CI step) fails
+  on a statement on those pools outside `pg_retry::retry` or `checked`, and
+  checks every PostgreSQL module by default: one that runs on a pool of its
+  own with sqlx's ping is listed in its `EXCLUDED` with the reason. It reads
+  the source, not types: a statement reached through a helper that takes the
+  pool as a plain argument is caught only if the helper's own file is in
+  scope, which every file under `store/` with `postgres` or `pg_` in its
+  path is. A turn's event writes are
   retried while the store is unavailable, up to `store_write_retry`; during
   an outage sqlx itself waits in `acquire` (30 s by default) before any
   statement fails, so that retry is what covers statement-level failures (a

@@ -222,6 +222,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Internal
 
+- `scripts/check_pg_retry.py`, a CI step: every statement on a PostgreSQL
+  task store's pool runs inside `pg_retry::retry` or `checked`, since those
+  pools no longer ping before each statement; a PostgreSQL module on a pool
+  of its own is listed with the reason. It found the migration runner's
+  version read and `BEGIN` outside both, now inside `retry`.
 - `otel_pipeline_default_endpoint` asserted that the final flush failed
   against the default endpoint, so it failed wherever a collector listened on
   `localhost:4317`; it now runs in a child whose `OTEL_EXPORTER_OTLP_ENDPOINT`

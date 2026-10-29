@@ -388,6 +388,16 @@ jobs:
       - name: Timeouts fit inside the bounds that enclose them
         run: python3 scripts/check_timeout_nesting.py
 
+      # The PostgreSQL task stores' pools do not ping a connection before
+      # every statement (store/pg_retry.rs): each statement on them runs in
+      # `pg_retry::retry` (run again on a lost connection) or `checked`
+      # (pinged first). One left out works until the server ends its
+      # connection, then fails where sqlx's ping used to replace it. Without
+      # the retry, ending every backend mid-turn lost an event (3 live runs
+      # of 3). The rules are self-tested first.
+      - name: Statements on a PostgreSQL task store's pool are retried or checked
+        run: python3 scripts/check_pg_retry.py --self-test && python3 scripts/check_pg_retry.py
+
       # The question an adopter of a protocol library actually has is whether a
       # malformed peer can take their process down. Until this gate existed the
       # answer was unquotable — a grep for `.unwrap()` counts matches in doc
