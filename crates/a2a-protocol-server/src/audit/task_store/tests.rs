@@ -165,6 +165,28 @@ fn the_wrapper_reports_the_wrapped_stores_capabilities() {
     );
 }
 
+/// The wrapper hands on the wrapped store's turn claims: without them an
+/// audited store shared by replicas would run every task's turns at once
+/// (a `None` here survived the mutation gate).
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn the_wrapper_hands_on_the_wrapped_stores_turn_claims() {
+    let wrap = |inner: Arc<dyn TaskStore>| AuditedTaskStore {
+        inner,
+        log: Arc::new(AuditLog::new(Arc::new(InMemoryAuditStore::new()))),
+        metrics: Arc::new(NoopMetrics),
+    };
+    let sqlite = crate::store::SqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("store");
+    assert!(wrap(Arc::new(sqlite)).turn_claims().is_some());
+    assert!(
+        wrap(Arc::new(InMemoryTaskStore::new()))
+            .turn_claims()
+            .is_none()
+    );
+}
+
 /// A stream reading through the audit wrapper holds the wrapped store's log.
 /// The mutation gate found the forwarding untested: `None` survived.
 #[test]
