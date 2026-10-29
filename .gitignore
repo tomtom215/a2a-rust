@@ -72,3 +72,6 @@ pr-src.diff
 
 # The SDK comparison harness crates are standalone and keep their own target/.
 benches/sdk-comparison/harness/*/target/
+
+# The live scripts' replica resolves fresh, with no lock committed (scripts/live/README.md).
+scripts/live/replica/**/Cargo.lock

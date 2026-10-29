@@ -112,8 +112,8 @@ only: when something here is done, delete it rather than annotating it.
   marks itself; triggers refuse an unmarked (0.15) write to a task a newer
   replica holds, let a 0.15 cancel through and forward it to the claim, and
   turn a 0.15 write into a claim newer replicas wait for. Verified against a
-  real 0.15.0 replica built from the tag (the program is not committed; it
-  was `scratchpad/legacy-e2e`, one source built against both trees): 4 of 4
+  real 0.15.0 replica built from the tag (`scripts/live/upgrade_live.py`,
+  with `scripts/live/replica` built against both trees): 4 of 4
   scenarios, 1 of 4 with the triggers disabled. `tests/turn_claims/upgrade.rs`
   replays 0.15.0's own SQL; five mutants of the guard are each caught. All
   database-gated tests pass on PostgreSQL 16.15 and 17.11 (2,478 each).
@@ -620,8 +620,10 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   to finish it (`write_failure_event` logs and moves on). A breaker that
   stops retrying once one write has used the whole budget, and a direct
   store write of the failure, are the candidates; neither is built. The
-  live scripts were `scratchpad/py/{terminate,lock,restart}_live.py`, not
-  committed; `tests/transient_store_errors.rs` holds two of them.
+  live scripts behind these figures (round trips, outages, partitions, the
+  upgrade, the soak matrix) are in `scripts/live/`, with a README saying what
+  each needs; `tests/transient_store_errors.rs` holds the CI-sized outage
+  cases.
   `.config/nextest.toml`'s default profile (the mutation gate's) kills at
   45 s, and four tests now take 30 to 31 s by design; its rationale still
   says the slowest test takes 5 s. From the review, left as
