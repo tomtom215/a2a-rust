@@ -283,3 +283,24 @@ async fn tenant_aware_postgres_fences_a_token_to_its_own_task() {
     a_token_fences_only_its_own_task(&store).await;
     a_cancel_marks_only_a_held_claim(&store).await;
 }
+
+/// Only `'claimed'` grants the turn, and only `'legacy'` says an earlier
+/// release's turn holds it, which this replica logs while it waits.
+#[cfg(feature = "postgres")]
+#[test]
+fn the_claim_answer_is_read_one_meaning_each() {
+    use super::postgres::read_claim_outcome;
+    assert_eq!(read_claim_outcome("claimed"), (true, false));
+    assert_eq!(read_claim_outcome("legacy"), (false, true));
+    assert_eq!(read_claim_outcome("held"), (false, false));
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn tenant_aware_sqlite_fences_a_token_to_its_own_task() {
+    let store = crate::store::TenantAwareSqliteTaskStore::new("sqlite::memory:")
+        .await
+        .unwrap();
+    a_token_fences_only_its_own_task(&store).await;
+    a_cancel_marks_only_a_held_claim(&store).await;
+}

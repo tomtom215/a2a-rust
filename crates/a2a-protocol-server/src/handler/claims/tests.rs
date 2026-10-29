@@ -173,3 +173,105 @@ fn an_unnamed_replica_owns_its_claims_as_its_host() {
         claims.owner
     );
 }
+
+/// Counts claim attempts on a store that never grants one, and refuses to
+/// count past a cap: a wait that stopped growing would poll without end.
+struct NeverGranted(Arc<std::sync::atomic::AtomicUsize>);
+
+impl crate::store::TurnClaimStore for NeverGranted {
+    fn claim<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a str,
+        _: &'a str,
+        _: Duration,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<bool>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let n = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        assert!(
+            n <= 50,
+            "{n} claim attempts in one wait: the backoff stopped growing"
+        );
+        Box::pin(async { Ok(false) })
+    }
+    fn release<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+    fn renew<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a [String],
+        _: Duration,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<Vec<HeldClaim>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    fn request_cancel<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<bool>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Ok(false) })
+    }
+    fn sweep(
+        &self,
+        _: Duration,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<u64>> + Send + '_,
+        >,
+    > {
+        Box::pin(async { Ok(0) })
+    }
+}
+
+/// A send waiting on another replica's turn polls with a growing wait, 20 ms
+/// doubling to 250 ms, until the drain timeout: about eight attempts in a
+/// second, not a busy loop against the database.
+#[tokio::test(start_paused = true)]
+async fn a_send_waiting_on_another_replica_backs_off() {
+    struct Idle;
+    crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let handler = crate::RequestHandlerBuilder::new(Idle)
+        .without_agent_card()
+        .with_turn_claims(NeverGranted(Arc::clone(&attempts)))
+        .with_handler_limits(
+            crate::handler::HandlerLimits::default()
+                .with_executor_drain_timeout(Duration::from_secs(1)),
+        )
+        .build()
+        .expect("handler");
+    let refused = handler.claim_turn(&TaskId::new("held-elsewhere")).await;
+    assert!(
+        refused.is_err(),
+        "the turn is never granted, so the wait ends refused"
+    );
+    let attempts = attempts.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        (5..=12).contains(&attempts),
+        "{attempts} attempts in one second"
+    );
+}

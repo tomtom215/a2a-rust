@@ -103,6 +103,13 @@ fn millis(ttl: Duration) -> i64 {
     i64::try_from(ttl.as_millis()).unwrap_or(i64::MAX)
 }
 
+/// What `a2a_claim_turn` answered: whether the claim is this call's, and
+/// whether a turn of an earlier release holds the task (`'claimed'`,
+/// `'legacy'`, or `'held'` by a replica of this release).
+pub(super) fn read_claim_outcome(outcome: &str) -> (bool, bool) {
+    (outcome == "claimed", outcome == "legacy")
+}
+
 /// Says, at most once a minute, that a replica of an earlier release is
 /// running a task: the sign that a rolling upgrade is still under way.
 fn legacy_turn_seen(_task_id: &str) {
@@ -151,10 +158,11 @@ impl TurnClaimStore for PostgresTurnClaims {
             })
             .await
             .map_err(|e| failed("claim", &e))?;
-            if outcome == "legacy" {
+            let (claimed, legacy) = read_claim_outcome(&outcome);
+            if legacy {
                 legacy_turn_seen(task_id);
             }
-            Ok(outcome == "claimed")
+            Ok(claimed)
         })
     }
 
