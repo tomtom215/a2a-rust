@@ -398,6 +398,13 @@ jobs:
       - name: Statements on a PostgreSQL task store's pool are retried or checked
         run: python3 scripts/check_pg_retry.py --self-test && python3 scripts/check_pg_retry.py
 
+      # The PostgreSQL job finds its suites (`run_postgres_suites.py`) except
+      # those a step names with flags of its own; the script lists those and
+      # where. This fails when a listed step no longer names its suite, so a
+      # suite cannot drop out of both.
+      - name: Every PostgreSQL suite is run by some CI step
+        run: python3 scripts/run_postgres_suites.py --check
+
       # The question an adopter of a protocol library actually has is whether a
       # malformed peer can take their process down. Until this gate existed the
       # answer was unquotable — a grep for `.unwrap()` counts matches in doc
@@ -738,6 +745,16 @@ jobs:
             exit 1
           fi
           echo "turn claims, live database: $ran test(s) ran"
+
+      # Every other suite with PostgreSQL cases, found rather than named: a
+      # test target or library module that reads A2A_TEST_POSTGRES_URL is
+      # run with --ignored, and each must run at least one test. The steps
+      # above name their suites by hand, and on 2026-10-28 nine test targets
+      # and four library modules were in no job: their cases were ignored on
+      # every run and the job was green. Suites a step above runs, and the
+      # one not run in CI, are listed in the script with where and why.
+      - name: Test (every other PostgreSQL suite, found, live database)
+        run: python3 scripts/run_postgres_suites.py
 
       # EncryptedTaskStore over both PostgreSQL stores: no plaintext part in
       # what they hold, and every part read back. The other stores run in the
