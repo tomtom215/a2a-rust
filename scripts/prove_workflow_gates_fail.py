@@ -1011,6 +1011,12 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "can fail, from its ci.yml call site; a second proof of one script is "
         "the duplicate ownership this harness's header rules out"
     )
+    reg["benchmarks.yml::bench::Generated pages keep the book's links whole"] = Exempt(
+        "scripts/prove_gates_fail.sh already proves check_book_links.py can "
+        "fail, from its ci.yml call site with the same three commands; a "
+        "second proof of one script is the duplicate ownership this "
+        "harness's header rules out"
+    )
 
     # Installation, not a verdict about this repository. The script fails on
     # exactly three things — a download that does not match the pinned
