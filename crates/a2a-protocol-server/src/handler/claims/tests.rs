@@ -122,6 +122,21 @@ fn the_owner_names_the_replica_and_is_unique_per_handler() {
     assert_ne!(a.owner, b.owner, "two handlers never share an owner");
 }
 
+#[test]
+fn a_claims_debug_names_its_owner_and_not_its_token() {
+    let claims = Arc::new(claims());
+    let claim = TurnClaim {
+        claims: Arc::clone(&claims),
+        token: "tok-secret".to_owned(),
+    };
+    let shown = format!("{claim:?}");
+    assert_eq!(
+        shown,
+        format!("TurnClaim {{ owner: {:?}, .. }}", claims.owner)
+    );
+    assert!(!shown.contains("tok-secret"), "{shown}");
+}
+
 #[tokio::test]
 async fn a_dropped_claim_is_released() {
     let store = Arc::new(InMemoryTurnClaims::new());
