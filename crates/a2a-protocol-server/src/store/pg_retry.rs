@@ -43,7 +43,8 @@
 //!
 //! A pool passed in by the caller (`from_pool`) keeps its own settings; with
 //! sqlx's default it pings before every statement, and [`retry`] still runs a
-//! statement again on a lost connection.
+//! statement again on a lost connection. `PostgresTaskStore::pool_options`
+//! hands these options to a caller who builds the pool.
 
 use std::future::Future;
 use std::time::Duration;

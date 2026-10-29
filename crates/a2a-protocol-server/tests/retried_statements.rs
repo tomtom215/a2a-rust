@@ -16,6 +16,12 @@
 //! the retry hands the method its second run's answer, and a method that
 //! holds up run twice holds up then.
 //!
+//! The handler makes the same promise of every task store, not only
+//! PostgreSQL's: a turn's event writes are made again while the store says
+//! "not now" (`TaskStore`'s "Writes the handler makes again"). So the task
+//! store cases run on all six stores, plain and tenant-aware; those without
+//! a database run in every test run.
+//!
 //! Each case runs on two twin tasks, once on one and twice on the other,
 //! and compares them. `#[ignore]`d without a database:
 //!
@@ -28,7 +34,10 @@
 
 use std::time::Duration;
 
-use a2a_protocol_server::store::{ArtifactDelta, PostgresTaskStore, TaskStore};
+use a2a_protocol_server::store::{
+    ArtifactDelta, InMemoryTaskStore, PostgresTaskStore, TaskStore, TenantAwareInMemoryTaskStore,
+    TenantAwarePostgresTaskStore, TenantContext,
+};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
@@ -89,7 +98,7 @@ fn status_event(id: &str, state: TaskState) -> StreamResponse {
 }
 
 /// What the store holds for `id`, with `id` blanked so twins compare equal.
-async fn held(store: &PostgresTaskStore, id: &str) -> (serde_json::Value, Vec<(u64, String)>) {
+async fn held(store: &dyn TaskStore, id: &str) -> (serde_json::Value, Vec<(u64, String)>) {
     let row = store
         .get(&TaskId::new(id))
         .await
@@ -140,13 +149,9 @@ macro_rules! once_and_twice {
     }};
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "needs a live PostgreSQL (see the module docs)"]
-async fn every_retried_task_store_write_run_twice_leaves_what_one_run_leaves() {
-    let db = Scratch::create("task_store").await;
-    let store = PostgresTaskStore::new(&db.url).await.expect("store");
-    let s = &store;
-
+/// Every write a turn's event consumer makes again (`TaskStore`'s "Writes
+/// the handler makes again"), each run once and twice on `s`.
+async fn every_write_twice(s: &dyn TaskStore) {
     once_and_twice!(s, "save (insert)", |id| s.save(&task(
         id,
         TaskState::Submitted,
@@ -189,8 +194,54 @@ async fn every_retried_task_store_write_run_twice_leaves_what_one_run_leaves() {
         two_parts.clone()
     )));
     once_and_twice!(s, "delete", |id| s.delete(&TaskId::new(id)));
+}
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn every_retried_task_store_write_run_twice_leaves_what_one_run_leaves() {
+    let db = Scratch::create("task_store").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+    every_write_twice(&store).await;
     db.drop_db().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn the_tenant_postgres_store_too() {
+    let db = Scratch::create("tenant_store").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("store");
+    TenantContext::scope("tenant-a", every_write_twice(&store)).await;
+    db.drop_db().await;
+}
+
+/// The stores that need no database: the contract is the trait's, not
+/// PostgreSQL's.
+#[tokio::test]
+async fn the_in_memory_stores_too() {
+    every_write_twice(&InMemoryTaskStore::new()).await;
+    TenantContext::scope(
+        "tenant-a",
+        every_write_twice(&TenantAwareInMemoryTaskStore::new()),
+    )
+    .await;
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn the_sqlite_stores_too() {
+    use a2a_protocol_server::store::{SqliteTaskStore, TenantAwareSqliteTaskStore};
+    every_write_twice(
+        &SqliteTaskStore::new("sqlite::memory:")
+            .await
+            .expect("store"),
+    )
+    .await;
+    let tenant = TenantAwareSqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("store");
+    TenantContext::scope("tenant-a", every_write_twice(&tenant)).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

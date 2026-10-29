@@ -97,6 +97,11 @@ impl TenantAwarePostgresTaskStore {
 
     /// Creates a store from an existing connection pool.
     ///
+    /// The pool keeps its own settings; for the ones [`new`](Self::new)
+    /// uses, build it from
+    /// [`PostgresTaskStore::pool_options`](super::PostgresTaskStore::pool_options),
+    /// which says what else may share it.
+    ///
     /// # Errors
     ///
     /// Returns an error if the schema migration fails.

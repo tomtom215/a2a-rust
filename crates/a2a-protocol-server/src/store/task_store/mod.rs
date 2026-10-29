@@ -45,6 +45,25 @@ pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 ///
 /// Do not add `async fn` methods; use the explicit `Pin<Box<...>>` form.
 ///
+/// # Writes the handler makes again
+///
+/// When one of [`save`](Self::save), [`save_status_delta`](Self::save_status_delta),
+/// [`save_artifact_delta`](Self::save_artifact_delta) or
+/// [`append_event`](Self::append_event) fails with an error that says "not
+/// now" ([`A2aError::is_unavailable`]), a turn's event consumer makes the same
+/// call again, for up to
+/// [`HandlerLimits::store_write_retry`](crate::handler::HandlerLimits::store_write_retry).
+/// The first call may have applied before its answer was lost, so each of
+/// these must leave the store as one call would when called twice with the
+/// same arguments: a save writes the same row, a delta that already applied
+/// changes nothing or refuses as its compare-and-set would, and an append at
+/// a position the log already holds does nothing. Answer "not now" only for a
+/// failure a later call may get past (a lost connection, a timeout, a lock);
+/// anything else is returned to the turn at once. The stores in this crate
+/// keep this; `tests/retried_statements.rs` runs each of them twice.
+///
+/// [`A2aError::is_unavailable`]: a2a_protocol_types::error::A2aError::is_unavailable
+///
 /// # Example
 ///
 /// ```rust

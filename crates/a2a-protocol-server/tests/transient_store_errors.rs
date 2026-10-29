@@ -389,3 +389,59 @@ async fn a_statement_run_again_is_counted() {
     );
     db.drop_db().await;
 }
+
+/// A database whose `statement_timeout` is shorter than creating the schema
+/// takes still lets a store start: the schema transaction lifts the timeout
+/// for itself. Until 2026-10-29 the first DDL statement failed with `57014`
+/// (canceling statement due to statement timeout) and the replica could not
+/// start; at 100 ms it panicked at startup in a live run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_strict_statement_timeout_does_not_stop_the_schema_being_made() {
+    let db = Scratch::create("strict_timeout").await;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "ALTER DATABASE {} SET statement_timeout = '1ms'",
+        db.name
+    )))
+    .execute(&db.admin)
+    .await
+    .expect("set the timeout");
+    PostgresTaskStore::new(&db.url)
+        .await
+        .expect("the plain store makes its schema under a 1 ms statement_timeout");
+    PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("the migrations run under a 1 ms statement_timeout");
+    db.drop_db().await;
+}
+
+/// A pool the caller builds from `PostgresTaskStore::pool_options` behaves as
+/// the store's own: a read on a connection the server ended a moment ago is
+/// run again on a new one rather than failing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_pool_built_from_the_stores_options_survives_ended_connections() {
+    let db = Scratch::create("pool_options").await;
+    let pool = PostgresTaskStore::pool_options()
+        .max_connections(2)
+        .connect(&db.url)
+        .await
+        .expect("pool");
+    let store = PostgresTaskStore::from_pool(pool).await.expect("store");
+    let id = TaskId::new("t-pool-options");
+    for _ in 0..3 {
+        store.get(&id).await.expect("warm the pool");
+        assert!(
+            db.terminate_all().await > 0,
+            "no backend was connected to end"
+        );
+        assert_eq!(
+            store
+                .get(&id)
+                .await
+                .expect("a read after the backends ended"),
+            None
+        );
+    }
+    db.drop_db().await;
+}

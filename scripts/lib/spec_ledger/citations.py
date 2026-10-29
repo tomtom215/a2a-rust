@@ -141,7 +141,9 @@ def _relocate(root: Path, ev: str, test: bool) -> tuple[str | None, str]:
         else:
             where = _symbol_lines(path, m["sym"])
         if len(where) != 1:
-            return None, f"found {len(where)} times"
+            hint = ("; cite a line whose text is unique instead (a heading above "
+                    "it), which this can move on its own") if len(where) > 1 else ""
+            return None, f"found {len(where)} times{hint}"
         start, end = m.span("line")
         return ev[:start] + str(where[0]) + ev[end:], ""
     return None, "not in a citation form"

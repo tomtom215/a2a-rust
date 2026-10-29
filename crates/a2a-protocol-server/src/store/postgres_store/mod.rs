@@ -122,7 +122,41 @@ impl PostgresTaskStore {
         })
     }
 
+    /// The options [`new`](Self::new) opens its pool with, to build a pool
+    /// for [`from_pool`](Self::from_pool) that behaves the same: sqlx pings a
+    /// connection before handing it out only when it has been idle a second
+    /// or more, and a statement that lost its connection runs once more on a
+    /// new one where that is safe. That saves a round trip per statement over
+    /// sqlx's default, which pings every time.
+    ///
+    /// Share such a pool only with the PostgreSQL task stores, plain and
+    /// tenant-aware, which write every statement for it. The push-config,
+    /// rate-limit and audit stores do not: give them a pool with sqlx's
+    /// defaults, or a statement of theirs can meet a connection the server
+    /// closed while it sat idle.
+    ///
+    /// ```rust,no_run
+    /// # async fn f() -> Result<(), sqlx::Error> {
+    /// use a2a_protocol_server::store::PostgresTaskStore;
+    ///
+    /// let pool = PostgresTaskStore::pool_options()
+    ///     .max_connections(20)
+    ///     .connect("postgres://localhost/a2a")
+    ///     .await?;
+    /// let store = PostgresTaskStore::from_pool(pool).await?;
+    /// # Ok(()) }
+    /// ```
+    #[must_use]
+    pub fn pool_options() -> sqlx::postgres::PgPoolOptions {
+        crate::store::pg_retry::pool_options()
+    }
+
     /// Creates a store from an existing connection pool.
+    ///
+    /// The pool keeps its own settings; with sqlx's defaults it pings each
+    /// connection before every statement. See
+    /// [`pool_options`](Self::pool_options) for the settings
+    /// [`new`](Self::new) uses.
     ///
     /// # Errors
     ///

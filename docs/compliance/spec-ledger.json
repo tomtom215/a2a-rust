@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:588 \"### Breaking Changes\""
+    "CHANGELOG.md:10618 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -2811,7 +2811,7 @@
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:827 InMemoryTaskStore::append_event",
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:887 InMemoryTaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/task_store/config.rs:353 TaskStoreConfig::with_max_held_events_factor",
-    "crates/a2a-protocol-server/src/store/task_store/mod.rs:785 TaskStore::hold_events",
+    "crates/a2a-protocol-server/src/store/task_store/mod.rs:804 TaskStore::hold_events",
     "crates/a2a-protocol-server/src/store/tenant/store.rs:618 TenantAwareInMemoryTaskStore::hold_events",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1299 InMemoryQueueReader::read",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1114 InMemoryQueueReader::owed_after",

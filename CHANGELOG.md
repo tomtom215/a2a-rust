@@ -25,6 +25,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`PostgresTaskStore::pool_options()`** (server): the pool options `new`
+  uses (a ping only for a connection idle a second or more), for a caller
+  who builds the pool for `from_pool`. Its docs say which stores may share
+  such a pool: the PostgreSQL task stores, not the push-config, rate-limit
+  or audit stores.
+- **The `TaskStore` trait states what a write retried by the handler must
+  keep** ("Writes the handler makes again"): `save`, `save_status_delta`,
+  `save_artifact_delta` and `append_event` leave the store as one call would
+  when called twice, and "not now" is only for a failure a later call may
+  get past. It was documented only on `HandlerLimits::store_write_retry`,
+  where a custom store's author would not look. `tests/retried_statements.rs`
+  now runs those writes twice on all six stores in this crate, the in-memory
+  and SQLite ones in every test run.
+
 - **`Metrics::on_store_retry(operation, cause)`** and the OpenTelemetry
   counter `a2a.server.store_retries` (server): every store write a turn makes
   again because the store said "not now" (`cause = "unavailable"`, under
@@ -157,6 +171,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `SIGABRT` (status 134) in the release profile.
 
 ### Fixed
+
+- **A PostgreSQL database with a short `statement_timeout` stopped replicas
+  starting** (server). Creating the schema, and each migration, ran under the
+  database's timeout, so at 100 ms the first DDL statement failed (`57014`)
+  and the store could not be built; a replica panicked at startup in a live
+  run. The schema transaction now lifts the timeout for itself
+  (`SET LOCAL statement_timeout = 0`, `store::pg_schema::lock`), and a test
+  builds the store and runs every migration under 1 ms. `lock_timeout` is
+  untouched.
 
 - **A turn whose executor emitted more than its queue held during a store
   outage failed, and its task was left unfinished** (server). While the
