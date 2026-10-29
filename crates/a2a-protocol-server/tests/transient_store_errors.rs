@@ -302,3 +302,37 @@ async fn a_claim_run_again_by_its_own_token_is_held_by_it() {
     );
     db.drop_db().await;
 }
+
+/// A statement that is never run twice (`pg_retry::checked`) pings its
+/// connection first: one the server ended a moment ago, too recently used to
+/// be pinged for idling, is replaced rather than failing the call.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_checked_statement_replaces_a_connection_ended_a_moment_ago() {
+    let db = Scratch::create("checked").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+    let task: a2a_protocol_types::task::Task = serde_json::from_value(serde_json::json!({
+        "id": "t-checked", "contextId": "c-checked", "status": { "state": "TASK_STATE_WORKING" }
+    }))
+    .expect("task");
+    for _ in 0..3 {
+        store.get(&task.id).await.expect("warm the pool");
+        assert!(
+            db.terminate_all().await > 0,
+            "no backend was connected to end"
+        );
+        assert!(
+            store
+                .insert_if_absent(&task)
+                .await
+                .expect("insert_if_absent on a pool whose connections were just ended"),
+            "the first insert inserts"
+        );
+        store
+            .release_idempotency_key("k-checked")
+            .await
+            .expect("release on a pool whose connections were just ended");
+        store.delete(&task.id).await.expect("delete");
+    }
+    db.drop_db().await;
+}
