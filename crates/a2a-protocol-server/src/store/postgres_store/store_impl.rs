@@ -140,7 +140,8 @@ impl TaskStore for PostgresTaskStore {
             let written = sqlx::query(concat!(
                 sql_write_allowed!(
                     "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
-                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()), $6)
+                 SELECT $1, $2, $3, $4, COALESCE(($5)::timestamptz, now()), $6
+                 WHERE set_config('a2a.claims', 'on', true) = 'on'
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
@@ -529,11 +530,13 @@ impl TaskStore for PostgresTaskStore {
 
             let status_ts =
                 crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
-            let result = sqlx::query(
+            let result = sqlx::query(concat!(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()))
-                 ON CONFLICT(id) DO NOTHING",
-            )
+                 SELECT $1, $2, $3, $4, COALESCE(($5)::timestamptz, now())
+                 WHERE ",
+                crate::store::claim::upgrade::claims_writer!(),
+                " ON CONFLICT(id) DO NOTHING"
+            ))
             .bind(id)
             .bind(context_id)
             .bind(&state)

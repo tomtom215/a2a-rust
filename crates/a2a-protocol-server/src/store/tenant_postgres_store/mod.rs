@@ -144,6 +144,14 @@ impl TenantAwarePostgresTaskStore {
                 // Read by the fence in every task write (`crate::store::claim`).
                 crate::store::claim::postgres::CREATE_TABLE_SQL,
                 crate::store::claim::postgres::CREATE_OWNER_INDEX_SQL,
+                // What keeps a replica of an earlier release off a task a
+                // replica of this one runs, during a rolling upgrade
+                // (`crate::store::claim::upgrade`).
+                crate::store::claim::upgrade::CHECK_FUNCTION_SQL,
+                crate::store::claim::upgrade::RECORD_FUNCTION_SQL,
+                crate::store::claim::upgrade::CLAIM_FUNCTION_SQL,
+                crate::store::claim::upgrade::INSTALL_ON_TENANT_TASKS_SQL,
+                crate::store::claim::upgrade::INSTALL_ON_TENANT_TASK_EVENTS_SQL,
             ],
         )
         .await?;

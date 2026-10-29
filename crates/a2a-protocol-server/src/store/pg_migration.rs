@@ -21,6 +21,7 @@
 //! | 6 | Add `CHECK (seq > 0)` to `task_events` |
 //! | 7 | Add `applied_seq` to `tasks` — the log position each write stores |
 //! | 8 | Add `a2a_task_claims` — which replica runs each task's current turn |
+//! | 9 | Add the triggers and functions that keep a replica of an earlier release off a task a newer replica runs |
 //!
 //! This table listed 1 and 2 while five existed. [`BUILTIN_PG_MIGRATIONS`] is
 //! the list; the test below fails if the two stop agreeing on how many there
@@ -56,7 +57,9 @@ pub struct PgMigration {
     /// Short human-readable description of the migration.
     pub description: &'static str,
     /// SQL statements to execute. Multiple statements can be separated by
-    /// semicolons; they run inside a single transaction.
+    /// semicolons; they run inside a single transaction, sent as one script,
+    /// so a semicolon inside a string literal or a function body is part of
+    /// its statement.
     pub sql: &'static str,
 }
 
@@ -137,6 +140,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         // every task write's fence reads this table, so a store without it
         // fails every write a turn makes (`crate::store::claim`).
         sql: super::claim::postgres::MIGRATION_SQL,
+    },
+    PgMigration {
+        version: 9,
+        description: "Keep replicas of an earlier release off a task a replica takes claims for",
+        // Shared with `from_pool`, which installs the same functions and
+        // triggers (`crate::store::claim::upgrade`). The functions' bodies
+        // contain semicolons, which is why the runner sends a migration
+        // whole.
+        sql: super::claim::upgrade::MIGRATION_SQL,
     },
 ];
 
@@ -270,13 +282,10 @@ impl PgMigrationRunner {
                 continue;
             }
 
-            for statement in migration.sql.split(';') {
-                let trimmed = statement.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                sqlx::query(trimmed).execute(&mut *tx).await?;
-            }
+            // Sent whole, in the simple protocol, which takes several
+            // statements. Splitting it on `;` here cut every function body
+            // and every string literal that contains one.
+            sqlx::raw_sql(migration.sql).execute(&mut *tx).await?;
 
             #[allow(clippy::cast_possible_wrap)] // migration versions are small constants (<100)
             let version_i32 = migration.version as i32;

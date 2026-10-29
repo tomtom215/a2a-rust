@@ -49,8 +49,8 @@ affinity**: each turn of a task claims it in the database, so two replicas
 never run one task at once (below). Before turn claims (2026-10-28) the
 shared store did not do this, and the guidance was to route every turn of a task to one replica;
 affinity still saves a cross-replica stream its poll, but it is no longer what
-keeps tasks correct, except while a fleet is being upgraded from 0.15.1 or
-earlier ([below](#upgrading-a-fleet-to-this-release)).
+keeps tasks correct, and an upgrade from 0.15 does not need it either
+([below](#upgrading-a-fleet-to-this-release)).
 
 ## Share the store
 
@@ -342,20 +342,62 @@ with a 3 s time to live and a 0.5 s renewal interval (2026-10-28, PostgreSQL
 
 ### Upgrading a fleet to this release
 
-Replicas on 0.15.1 or earlier take no claims and fence no writes. In a fleet
-that mixes them with this release, a new replica's claim does not stop an old
-replica from running the same task, and an old replica's writes pass every
-fence. The database is not the problem: the new replica's migration adds the
-claims table, and the old ones ignore it. So during the rollout either:
+Replace replicas one at a time, in any order, with no session affinity: a
+Kubernetes `RollingUpdate` as it comes. Replicas on 0.15.1 or earlier take no
+claims and fence no writes, so on PostgreSQL the database keeps them and the
+new replicas off each other's turns (`store::claim::upgrade`):
 
-- route every turn of a task to one replica, as 0.15 required (session
-  affinity on the task or context id), until no old replica is left; or
-- replace the fleet at once: stop the old replicas, then start the new ones
-  (or switch a blue/green deployment's traffic in one step).
+- **Every write a new replica makes is marked** with a setting local to its
+  transaction (`a2a.claims`), in the statement itself. A trigger on `tasks`,
+  `task_events`, `tenant_tasks` and `tenant_task_events` checks every
+  unmarked write, which is an old replica's.
+- **An old replica cannot write a task a new replica is running.** Its write
+  is refused (SQLSTATE `A2A01`, "task … is running on a replica that takes
+  turn claims"), and its client gets an internal error for that send; the
+  task goes on, on the new replica. A cancel is the exception: it wins, as a
+  cancel between new replicas does, and marks the new replica's claim so its
+  executor stops within about a second.
+- **A new replica waits for an old replica's turn.** An old replica's write
+  that leaves a task `submitted` or `working` claims it, and a new replica
+  waits for that claim as it waits for another new replica's, then refuses
+  the send as "already being processed". A write that leaves the task
+  anywhere else (parked, finished) releases it, so the next turn runs at once
+  and starts from everything the old turn stored. An old replica killed
+  mid-turn holds its task for 5 minutes after its last write
+  (`ALTER DATABASE … SET a2a.legacy_claim_ttl = '1 minute'` changes it).
+- **Neither acts on a stale view of the other**: both take one lock per task
+  (`pg_advisory_xact_lock`) before they look.
 
-A Kubernetes `RollingUpdate` without affinity runs old and new side by side for
-the length of the rollout, and is the case the first option exists for. Once
-every replica runs this release, the affinity can go.
+The first new replica installs this when it starts (or `PgMigrationRunner`
+does, as migration 9); old replicas keep running against the migrated
+database, since they skip migrations they do not know. Once the last old
+replica is gone nothing is left to do: a marked write skips the triggers in
+their `WHEN` condition, without calling them.
+
+What it does not cover:
+
+- **Two old replicas on one task**, which 0.15 did not cover either. If your
+  0.15 fleet ran with session affinity, as 0.15 required, keep it until the
+  last old replica is gone; the new replicas do not need it.
+- **SQLite.** It has no per-session setting a trigger can read. Processes
+  sharing one SQLite file are on one host: replace them together.
+- **SQL of your own** that writes those tables is treated as an old replica's
+  unless it runs `SET LOCAL a2a.claims = 'on'` first.
+
+Measured, 2026-10-28, against a real 0.15.0 replica: the same program built
+twice, once against tag `v0.15.0` and once against this release, both on one
+PostgreSQL 17 database, the old one started first. A task the new replica ran
+could not be written by the old one (its send got `-32603`, and the stored
+task was unchanged); a cancel sent to the old replica stopped the new
+replica's executor 1.01 s later; a continuation sent to the new replica while
+the old one ran the task was refused after its 5 s wait; and a task the old
+replica parked continued on the new one in 0.03 s with both of the old turn's
+artifacts. With the triggers disabled, the same run failed three of those
+four: the old replica overwrote the running task, the cancel never reached
+the new executor, and the new replica ran a second turn at once.
+`tests/turn_claims/upgrade.rs` replays 0.15.0's own statements, copied from
+the tag, for the same cases, and checks that every write this release makes
+is marked.
 
 ### Cancelling a task that runs elsewhere
 

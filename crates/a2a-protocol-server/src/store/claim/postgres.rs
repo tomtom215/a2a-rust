@@ -43,16 +43,9 @@ pub const CREATE_OWNER_INDEX_SQL: &str = create_owner_index!();
 /// Both, for pg migration 8.
 pub const MIGRATION_SQL: &str = concat!(create_table!(), ";", create_owner_index!());
 
-/// Inserts, or takes over an expired claim; the `WHERE` on the conflict
-/// update is what makes a live claim win. `now()` is the database's clock.
-const CLAIM_SQL: &str = "INSERT INTO a2a_task_claims
-        (scope, task_id, owner, token, cancel_requested, expires_at)
-    VALUES ($1, $2, $3, $4, FALSE, now() + $5 * interval '1 millisecond')
-    ON CONFLICT (scope, task_id) DO UPDATE
-    SET owner = EXCLUDED.owner, token = EXCLUDED.token,
-        cancel_requested = FALSE, expires_at = EXCLUDED.expires_at
-    WHERE a2a_task_claims.expires_at < now()
-    RETURNING token";
+/// Inserts, or takes over an expired claim, unless a write from an earlier
+/// release holds the task (`upgrade`). `now()` is the database's clock.
+const CLAIM_SQL: &str = "SELECT a2a_claim_turn($1, $2, $3, $4, $5)";
 
 const RENEW_SQL: &str = "UPDATE a2a_task_claims
     SET expires_at = now() + $2 * interval '1 millisecond'
@@ -74,9 +67,19 @@ impl PostgresTurnClaims {
     ///
     /// [`A2aError::internal`] if the table cannot be created.
     pub async fn from_pool(pool: PgPool) -> A2aResult<Self> {
-        crate::store::pg_schema::apply(&pool, &[CREATE_TABLE_SQL, CREATE_OWNER_INDEX_SQL])
-            .await
-            .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
+        let [check, record, claim] = super::upgrade::FUNCTIONS;
+        crate::store::pg_schema::apply(
+            &pool,
+            &[
+                CREATE_TABLE_SQL,
+                CREATE_OWNER_INDEX_SQL,
+                check,
+                record,
+                claim,
+            ],
+        )
+        .await
+        .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
         Ok(Self { pool })
     }
 
@@ -92,6 +95,25 @@ fn failed(what: &str, e: &sqlx::Error) -> A2aError {
 
 fn millis(ttl: Duration) -> i64 {
     i64::try_from(ttl.as_millis()).unwrap_or(i64::MAX)
+}
+
+/// Says, at most once a minute, that a replica of an earlier release is
+/// running a task: the sign that a rolling upgrade is still under way.
+fn legacy_turn_seen(_task_id: &str) {
+    static LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    let mut last = LAST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if last.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60)) {
+        return;
+    }
+    *last = Some(std::time::Instant::now());
+    drop(last);
+    trace_info!(
+        task_id = %_task_id,
+        "a replica of an earlier release is running this task; this replica waits for its \
+         turn to end (a rolling upgrade is under way, or one is left behind)"
+    );
 }
 
 /// Whether `token` still holds a claim: how a store tells a fenced write's
@@ -114,16 +136,19 @@ impl TurnClaimStore for PostgresTurnClaims {
         ttl: Duration,
     ) -> Fut<'a, bool> {
         Box::pin(async move {
-            let row: Option<(String,)> = sqlx::query_as(CLAIM_SQL)
+            let (outcome,): (String,) = sqlx::query_as(CLAIM_SQL)
                 .bind(scope)
                 .bind(task_id)
                 .bind(owner)
                 .bind(token)
                 .bind(millis(ttl))
-                .fetch_optional(&self.pool)
+                .fetch_one(&self.pool)
                 .await
                 .map_err(|e| failed("claim", &e))?;
-            Ok(row.is_some())
+            if outcome == "legacy" {
+                legacy_turn_seen(task_id);
+            }
+            Ok(outcome == "claimed")
         })
     }
 

@@ -73,6 +73,22 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   span to its logs, a log line to its trace). Before, the Collector
   configuration sent traces and logs only to its `debug` exporter, and the
   README's addresses named services nothing defined.
+- **Rolling upgrades from 0.15 need no affinity and no ordering**
+  (PostgreSQL; `store::claim::upgrade`). Every write this release makes marks
+  itself with a transaction-local setting; triggers on `tasks`, `task_events`,
+  `tenant_tasks` and `tenant_task_events` refuse an unmarked write (an
+  earlier release's) to a task a newer replica holds a claim on, except a
+  cancel, which wins and stops the newer replica's executor; an unmarked
+  write that leaves a task `submitted` or `working` claims it until 5 minutes
+  after its last write (`a2a.legacy_claim_ttl`), so newer replicas wait for
+  that turn, and one that parks or ends the task releases it. Both sides take
+  a per-task advisory lock before they look. Installed by every PostgreSQL
+  store at startup and by PostgreSQL migration 9. Tested against a real
+  0.15.0 replica process (4 of 4 cases; 1 of 4 with the triggers disabled)
+  and in `tests/turn_claims/upgrade.rs`, which replays 0.15.0's statements
+  and checks that every write this release makes is marked (each of five
+  mutants of the guard fails at least one case). SQLite gets none of this:
+  processes sharing one file are on one host and are replaced together.
 - **`deploy/observability/docker-compose.prod.yml`**: the stack closed down
   for a shared host (a Grafana login from `GRAFANA_ADMIN_PASSWORD`, only
   Grafana and the Collector's OTLP ports published, a memory limit on the
@@ -93,10 +109,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   17 on the same 4-vCPU host, release build, three 60 s runs each way): 15%
   fewer send-and-read pairs per second with claims (360 ± 17 against
   423 ± 14), 21.4 ms against 18.6 ms median per pair.
-- **Upgrade every replica at once, or keep session affinity until the last
-  0.15.1 replica is gone.** A replica on 0.15.1 or earlier takes no claims and
-  fences no writes, so in a mixed fleet two replicas can still run one task
-  (book: Running More Than One Replica, *Upgrading a fleet*).
+- **On PostgreSQL, a 0.15 replica's write to a task a newer replica is
+  running is refused** (SQLSTATE `A2A01`), and a newer replica waits for a
+  task a 0.15 replica is running, so a fleet can be replaced one replica at a
+  time with no session affinity (*Added*, the upgrade guard). Its client gets
+  an internal error for that send, where before the two replicas both ran
+  the task. SQL of your own that writes the task tables is treated as an old
+  replica's unless it runs `SET LOCAL a2a.claims = 'on'` first.
 - **Log lines on standard error are coloured only on a terminal**, and never
   with `NO_COLOR` set (`Telemetry::install_subscriber`). Every line in a file,
   a pipe, or a Docker or Kubernetes log carried ANSI escape codes.
@@ -149,6 +168,10 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`NO_PROXY=[::1]` exempted nothing**: a bracketed IPv6 address, the form a
   URL writes it in, is now read as the bare one (`::1` and ranges such as
   `fd00::/8` already worked).
+- **`PgMigrationRunner` cut every migration at each `;`**, including one
+  inside a string literal or a function body, which then failed. A
+  migration is now sent whole, in the simple protocol, inside its
+  transaction.
 - **`echo-agent`'s server mode, `tck/sut`, the ITK agent and `mcp-bridge` did
   not flush telemetry on `SIGTERM`**: each ran until killed. They now return
   on `shutdown_signal()`, which drops their `Telemetry`.

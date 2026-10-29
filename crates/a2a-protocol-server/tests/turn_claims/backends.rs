@@ -31,7 +31,7 @@ mod sqlite {
             ));
             Self(path)
         }
-        fn url(&self) -> String {
+        pub(crate) fn url(&self) -> String {
             format!("sqlite://{}", self.0.display())
         }
     }
@@ -110,20 +110,20 @@ mod sqlite {
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
 
 #[cfg(feature = "postgres")]
-mod postgres {
+pub(crate) mod postgres {
     use super::*;
     use a2a_protocol_server::store::PostgresTaskStore;
 
     const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 
     /// A scratch database for one test, force-dropped at the end.
-    struct TestDb {
+    pub(crate) struct TestDb {
         admin_url: String,
         name: String,
     }
 
     impl TestDb {
-        async fn create(tag: &str) -> Self {
+        pub(crate) async fn create(tag: &str) -> Self {
             let admin_url = std::env::var(URL_ENV)
                 .unwrap_or_else(|_| panic!("{URL_ENV} must be set for the PostgreSQL cases"));
             let name = format!("a2a_turn_claims_{tag}");
@@ -143,12 +143,12 @@ mod postgres {
             Self { admin_url, name }
         }
 
-        fn url(&self) -> String {
+        pub(crate) fn url(&self) -> String {
             let base = self.admin_url.rsplit_once('/').expect("url has a path").0;
             format!("{base}/{}", self.name)
         }
 
-        async fn drop_db(self) {
+        pub(crate) async fn drop_db(self) {
             if let Ok(pool) = sqlx::postgres::PgPool::connect(&self.admin_url).await {
                 let _ = sqlx::query(sqlx::AssertSqlSafe(format!(
                     "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",

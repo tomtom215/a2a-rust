@@ -78,6 +78,8 @@ use a2a_protocol_types::task::TaskId;
 pub(crate) mod postgres;
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
+#[cfg(feature = "postgres")]
+pub(crate) mod upgrade;
 
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresTurnClaims;
@@ -348,16 +350,21 @@ mod tests;
 /// write. The lock makes a takeover (which changes the unique token) or a
 /// release wait for the write, and the write re-read a claim changed under
 /// it; renewals and cancel marks change no key column and never wait on it.
-/// SQLite runs one writer at a time, so its form needs no lock.
+/// SQLite runs one writer at a time, so its form needs no lock. The
+/// PostgreSQL form also marks the write as this release's
+/// ([`upgrade`](crate::store::claim::upgrade)), so a statement that carries
+/// the fence carries the mark.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 macro_rules! fence_sql {
     (postgres $param:literal) => {
         concat!(
             "(",
+            $crate::store::claim::upgrade::claims_writer!(),
+            " AND (",
             $param,
             " IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ",
             $param,
-            " FOR KEY SHARE))"
+            " FOR KEY SHARE)))"
         )
     };
     ($param:literal) => {

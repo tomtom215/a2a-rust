@@ -136,7 +136,7 @@ fn the_fence_condition_names_its_placeholder_twice() {
     );
     assert_eq!(
         fence_sql!(postgres "$4::text"),
-        "($4::text IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c \
-         WHERE c.token = $4::text FOR KEY SHARE))"
+        "(set_config('a2a.claims', 'on', true) = 'on' AND ($4::text IS NULL OR \
+         EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = $4::text FOR KEY SHARE)))"
     );
 }

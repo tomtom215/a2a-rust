@@ -589,39 +589,69 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # protoc is bundled via the `protoc-bin-vendored` crate (see above).
+      #
+      # Tests run under cargo-nextest: each test in its own process (a test
+      # that touches process-global state cannot disturb another), a hung test
+      # killed and named after two minutes instead of the job timing out
+      # silently (`.config/nextest.toml`, profile `ci`), and a failure's output
+      # printed at the end of the run. Nextest runs no doctests, so the
+      # doctests run in their own steps below, under the three feature sets
+      # that between them compile every example: default, all, and none. The
+      # version is the one the mutation gate pins, read from its install
+      # script so the two cannot drift. 2026-10-28: the whole workspace with
+      # every feature, 5,851 tests, passed under nextest as under `cargo test`.
+      - name: Install cargo-nextest
+        shell: bash
+        run: |
+          version=$(sed -n 's/^CARGO_NEXTEST_VERSION=//p' scripts/install_cargo_mutants.sh)
+          test -n "$version"
+          cargo install --locked cargo-nextest --version "$version"
       - name: Test (default features)
-        run: cargo test --workspace
+        run: cargo nextest run --profile ci --workspace
       - name: Test (signing feature)
-        run: cargo test --workspace --features signing
+        run: cargo nextest run --profile ci --workspace --features signing
       - name: Test (tracing feature)
-        run: cargo test --workspace --features tracing
+        run: cargo nextest run --profile ci --workspace --features tracing
       - name: Test (tls-rustls feature)
-        run: cargo test -p a2a-protocol-client --features tls-rustls
+        run: cargo nextest run --profile ci -p a2a-protocol-client --features tls-rustls
       - name: Test (tls-rustls feature, server — live-TLS push E2E)
-        run: cargo test -p a2a-protocol-server --features tls-rustls
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features tls-rustls
       - name: Test (sqlite feature)
-        run: cargo test -p a2a-protocol-server --features sqlite
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features sqlite
       - name: Test (postgres feature)
-        run: cargo test -p a2a-protocol-server --features postgres
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
-        run: cargo test -p a2a-protocol-server --features axum
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features axum
       - name: Test (tool-loop feature)
-        run: cargo test -p a2a-protocol-server --features tool-loop
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features tool-loop
       # Dedicated websocket/grpc legs: --all-features also compiles these,
       # but a feature-specific regression (missing gate, dep drift) only
       # surfaces when the feature is built in isolation.
       - name: Test (websocket feature)
-        run: cargo test --workspace --features websocket
+        run: cargo nextest run --profile ci --workspace --features websocket
       - name: Test (grpc feature)
-        run: cargo test --workspace --features grpc
+        run: cargo nextest run --profile ci --workspace --features grpc
       - name: Test (auth-jwt feature)
-        run: cargo test -p a2a-protocol-server --features auth-jwt
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features auth-jwt
       - name: Test (auth-jwt + tls-rustls — live-TLS JWKS E2E)
-        run: cargo test -p a2a-protocol-server --features auth-jwt,tls-rustls
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features auth-jwt,tls-rustls
       - name: Test (all features)
-        run: cargo test --workspace --all-features
+        run: cargo nextest run --profile ci --workspace --all-features
       - name: Test (no default features)
-        run: cargo test --workspace --no-default-features
+        run: cargo nextest run --profile ci --workspace --no-default-features
+      - name: Doctests (default features)
+        run: cargo test --doc --workspace
+      - name: Doctests (all features)
+        run: cargo test --doc --workspace --all-features
+      - name: Doctests (no default features)
+        run: cargo test --doc --workspace --no-default-features
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.os }}-${{ matrix.rust }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   # ── PostgreSQL-backed store integration tests ───────────────────────────
   #

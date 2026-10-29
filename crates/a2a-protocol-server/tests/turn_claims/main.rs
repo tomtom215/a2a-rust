@@ -305,20 +305,26 @@ pub async fn a_dead_replicas_claim_is_taken_over_once_it_expires(db: &impl Db) {
         .await
         .expect("A opens");
     assert_eq!(task.status.state, TaskState::InputRequired);
-    // A replica that took the task's next turn and died at once.
+    // A replica that took the task's next turn and died at once. A's claim
+    // is released just after its answer (from `Drop`, on a spawned task), so
+    // this retries as a replica's own claim does; claiming once failed
+    // whenever the release had not run yet.
     let claims = store.turn_claims().expect("a SQL store has claims");
-    assert!(
-        claims
-            .claim(
-                "",
-                &task.id.0,
-                "dead-replica",
-                "dead-token",
-                Duration::from_secs(2)
-            )
-            .await
-            .expect("claim")
-    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !claims
+        .claim(
+            "",
+            &task.id.0,
+            "dead-replica",
+            "dead-token",
+            Duration::from_secs(2),
+        )
+        .await
+        .expect("claim")
+    {
+        assert!(Instant::now() < deadline, "A never released its claim");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     let refused = send(&b, params("finish", Some(&task), false)).await;
     assert!(
@@ -438,5 +444,7 @@ pub async fn a_turns_terminal_event_is_logged_before_its_claim_is_released(db: &
 
 mod lifecycle;
 pub use lifecycle::*;
+#[cfg(feature = "postgres")]
+mod upgrade;
 
 mod backends;

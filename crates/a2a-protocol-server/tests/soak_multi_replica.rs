@@ -64,6 +64,9 @@
 //! `A2A_SOAK_TURN_CLAIMS=off` builds both replicas `without_turn_claims`, so
 //! two runs measure what the claims cost per send; with them (the default)
 //! the run also checks that every claim is released by the end.
+//! `A2A_SOAK_UPGRADE_GUARD=off` disables the triggers that keep a replica of
+//! an earlier release off a task (`store::claim::upgrade`) once both replicas
+//! have installed them, so two runs measure what they cost.
 
 #![cfg(feature = "postgres")]
 
@@ -272,6 +275,7 @@ async fn two_replicas_survive_sustained_load() {
         .unwrap_or(DEFAULT_SECONDS);
     let duration = Duration::from_secs(seconds);
     let claims = std::env::var("A2A_SOAK_TURN_CLAIMS").as_deref() != Ok("off");
+    let guard = std::env::var("A2A_SOAK_UPGRADE_GUARD").as_deref() != Ok("off");
 
     // A scratch database, so row counts mean what they say.
     let admin = sqlx::postgres::PgPool::connect(&admin_url)
@@ -303,6 +307,17 @@ async fn two_replicas_survive_sustained_load() {
     let observer = sqlx::postgres::PgPool::connect(&db_url)
         .await
         .expect("observer connect");
+    if !guard {
+        for table in ["tasks", "task_events"] {
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "ALTER TABLE {table} DISABLE TRIGGER a2a_legacy_write_check; \
+                 ALTER TABLE {table} DISABLE TRIGGER a2a_legacy_write_record"
+            )))
+            .execute(&observer)
+            .await
+            .expect("disable the upgrade guard");
+        }
+    }
 
     let stop = Arc::new(AtomicBool::new(false));
     let completed = Arc::new(AtomicU64::new(0));
@@ -468,10 +483,11 @@ async fn two_replicas_survive_sustained_load() {
     let failed = failures.load(Ordering::Relaxed);
     let misses = cross_replica_misses.load(Ordering::Relaxed);
     println!(
-        "\nsoak: {seconds}s, {WORKERS} workers, 2 replicas, turn claims {}, {total} request \
-         pairs ({:.0}/s), {failed} failures, {misses} cross-replica misses, {claims_left} \
-         claims left after shutdown",
+        "\nsoak: {seconds}s, {WORKERS} workers, 2 replicas, turn claims {}, upgrade guard {}, \
+         {total} request pairs ({:.0}/s), {failed} failures, {misses} cross-replica misses, \
+         {claims_left} claims left after shutdown",
         if claims { "on" } else { "off" },
+        if guard { "on" } else { "off" },
         total as f64 / seconds as f64
     );
     println!(

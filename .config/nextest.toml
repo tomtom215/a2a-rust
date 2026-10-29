@@ -3,12 +3,11 @@
 #
 # cargo-nextest configuration.
 #
-# CI runs `cargo test`, not nextest, and deliberately so: nextest does not
-# execute doctests, and this workspace documents its public API with runnable
-# examples that are part of the tested surface. The one place nextest *is* used
-# is mutation testing — `.github/workflows/mutants.yml` passes
-# `--test-tool=nextest` — so this file exists for that run and for anyone
-# running nextest by hand.
+# Two users. CI's test matrix runs `cargo nextest run --profile ci`
+# (`.github/workflows/ci.yml`, job `test`); nextest does not execute doctests,
+# so that job runs them with `cargo test --doc` in their own steps. Mutation
+# testing — `.github/workflows/mutants.yml` passes `--test-tool=nextest` — runs
+# the default profile below.
 #
 # ── Why there is a per-test kill ────────────────────────────────────────────
 #
@@ -78,3 +77,26 @@
 
 [profile.default]
 slow-timeout = { period = "15s", terminate-after = 3 }
+
+# ── CI ──────────────────────────────────────────────────────────────────────
+#
+# Not the default profile's 45 s kill. Measured 2026-10-28, the whole
+# workspace with every feature on a 4-vCPU Linux container: 5,851 tests, and
+# four of them take 30 to 31 s by design (each waits out a timeout it tests:
+# `hostile_server_tests`, `jwks_fetch_budget`,
+# `serve_with_addr_cuts_off_a_peer_that_never_finishes_its_headers`,
+# `conformance::halt::tests::each_flaw_is_named`). That leaves the default
+# profile 14 s of margin, which a slower macOS or Windows runner could spend.
+# Two minutes still names a hung test long before the job's own timeout. The
+# default profile's numbers, and the measurement under them, predate those
+# tests; they are the mutation gate's and are left to it.
+#
+# No retries: a test that passes on its second try is a flaky test, and a
+# retry would turn it green.
+[profile.ci]
+slow-timeout = { period = "30s", terminate-after = 4 }
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"

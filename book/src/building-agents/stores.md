@@ -597,7 +597,11 @@ should:
 A store that takes the default, `None`, gets neither: the handler takes no
 claims and refuses a second send to a running task only within its own
 process. That is right for a store one process uses; with several replicas,
-route every turn of a task to one of them. `with_turn_claims` on the builder
+route every turn of a task to one of them. The guard that keeps a replica of
+an earlier release off a task during a rolling upgrade
+([Running More Than One Replica](../deployment/horizontal-scaling.md#upgrading-a-fleet-to-this-release))
+belongs to the bundled PostgreSQL stores; a custom store's own upgrade is its
+own. `with_turn_claims` on the builder
 supplies claims for a store that does not provide them, but the fence is still
 the store's to apply. A wrapper that forwards to another store must forward
 `turn_claims` (`scripts/check_store_delta_forwarding.py` checks the ones in
