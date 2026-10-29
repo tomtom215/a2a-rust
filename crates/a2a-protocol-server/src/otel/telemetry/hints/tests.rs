@@ -377,3 +377,34 @@ fn the_matching_port_and_protocol_say_nothing() {
         None
     );
 }
+
+#[test]
+fn a_400_is_the_plaintext_to_tls_hint_only_for_plaintext_http() {
+    let plaintext = hint(
+        route(OtlpProtocol::HttpProtobuf, "http://c:4318/v1/traces"),
+        "HTTP export failed with status code: 400",
+        None,
+    )
+    .expect("a hint");
+    assert!(
+        plaintext.contains("write the endpoint with https://"),
+        "{plaintext}"
+    );
+    // Already TLS, or not HTTP: a 400 is something else.
+    assert_eq!(
+        hint(
+            route(OtlpProtocol::HttpProtobuf, "https://c:4318/v1/traces"),
+            "HTTP export failed with status code: 400",
+            None,
+        ),
+        None
+    );
+    assert_eq!(
+        hint(
+            route(OtlpProtocol::Grpc, "http://c:4317"),
+            "status code: 400",
+            None
+        ),
+        None
+    );
+}

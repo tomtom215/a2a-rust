@@ -150,7 +150,6 @@ fn the_fence_condition_names_its_placeholder_twice() {
 /// task let the write through.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 async fn a_token_fences_only_its_own_task(store: &dyn crate::store::TaskStore) {
-    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
     use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
     use crate::store::tenant::TenantContext;
@@ -186,25 +185,52 @@ async fn a_token_fences_only_its_own_task(store: &dyn crate::store::TaskStore) {
             .await
             .expect_err("another task is not written under A's claim");
         assert!(ClaimLost::from_error(&err).is_some(), "{err}");
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new(&b),
-            context_id: ContextId::new("fenced"),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        });
-        let _ = store.append_event(&TaskId::new(&b), 1, &event).await;
-        assert_eq!(
-            store
-                .read_events(&TaskId::new(&b), 0, 10)
-                .await
-                .unwrap()
-                .len(),
-            0,
-            "another task's log is not appended to under A's claim"
-        );
+        appends_are_fenced_to_their_own_task(store, &a, &b).await;
     })
     .await;
     claims.release(&token).await.unwrap();
+}
+
+/// The appends of `a_token_fences_only_its_own_task`, under the claim on `a`:
+/// one that inserts nothing is a replay while the claim holds, and refused
+/// once it does not.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+async fn appends_are_fenced_to_their_own_task(
+    store: &dyn crate::store::TaskStore,
+    a: &str,
+    b: &str,
+) {
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    let event = |id: &str| {
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new(id),
+            context_id: ContextId::new("fenced"),
+            status: TaskStatus::new(TaskState::Working),
+            metadata: None,
+        })
+    };
+    for _ in 0..2 {
+        store
+            .append_event(&TaskId::new(a), 1, &event(a))
+            .await
+            .expect("the claimed task's log is appended to, and the replay is no error");
+    }
+    let err = store
+        .append_event(&TaskId::new(b), 1, &event(b))
+        .await
+        .expect_err("another task's log is not appended to under A's claim");
+    assert!(ClaimLost::from_error(&err).is_some(), "{err}");
+    assert_eq!(
+        store
+            .read_events(&TaskId::new(b), 0, 10)
+            .await
+            .unwrap()
+            .len(),
+        0,
+        "another task's log is not appended to under A's claim"
+    );
 }
 
 #[cfg(feature = "sqlite")]

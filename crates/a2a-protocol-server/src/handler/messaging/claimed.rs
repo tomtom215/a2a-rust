@@ -223,3 +223,49 @@ fn same_view(a: &Task, b: &Task) -> bool {
         && a.history.as_ref().map(Vec::len) == b.history.as_ref().map(Vec::len)
         && a.artifacts.as_ref().map(Vec::len) == b.artifacts.as_ref().map(Vec::len)
 }
+
+#[cfg(test)]
+mod tests {
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    use super::*;
+
+    fn task() -> Task {
+        let mut status = TaskStatus::new(TaskState::InputRequired);
+        status.timestamp = Some("2026-10-29T00:00:00Z".into());
+        Task {
+            id: TaskId::new("t"),
+            context_id: ContextId::new("ctx"),
+            status,
+            history: Some(vec![Message::user_text("m", "x")]),
+            artifacts: Some(vec![Artifact::new("a", vec![Part::text("x")])]),
+            metadata: None,
+        }
+    }
+
+    /// Each of the four differs alone, with the rest the same: a change in
+    /// any one is a different view, so the gate runs again under the claim.
+    #[test]
+    fn two_reads_are_the_same_view_only_when_all_four_match() {
+        assert!(same_view(&task(), &task()));
+        let mut state = task();
+        state.status.state = TaskState::Working;
+        let mut stamp = task();
+        stamp.status.timestamp = Some("2026-10-29T00:00:01Z".into());
+        let mut history = task();
+        history.history = None;
+        let mut artifacts = task();
+        artifacts.artifacts = Some(Vec::new());
+        for (what, other) in [
+            ("state", state),
+            ("timestamp", stamp),
+            ("history", history),
+            ("artifacts", artifacts),
+        ] {
+            assert!(!same_view(&task(), &other), "{what} differs");
+            assert!(!same_view(&other, &task()), "{what} differs");
+        }
+    }
+}
