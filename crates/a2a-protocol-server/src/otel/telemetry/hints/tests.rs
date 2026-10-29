@@ -408,3 +408,32 @@ fn a_400_is_the_plaintext_to_tls_hint_only_for_plaintext_http() {
         None
     );
 }
+
+#[test]
+fn a_broken_pipe_is_the_tls_hint_only_for_plaintext_grpc() {
+    // On ports neither transport uses, so no port hint answers instead.
+    let grpc = hint(
+        route(OtlpProtocol::Grpc, "http://c:9999"),
+        "transport error: broken pipe",
+        None,
+    )
+    .expect("a hint");
+    assert!(grpc.contains("closed the connection unanswered"), "{grpc}");
+    // Already TLS, or not gRPC: a broken pipe is something else.
+    assert_eq!(
+        hint(
+            route(OtlpProtocol::Grpc, "https://c:9999"),
+            "transport error: broken pipe",
+            None
+        ),
+        None
+    );
+    assert_eq!(
+        hint(
+            route(OtlpProtocol::HttpProtobuf, "http://c:9999/v1/traces"),
+            "HTTP export failed: broken pipe",
+            None,
+        ),
+        None
+    );
+}
