@@ -245,8 +245,17 @@ async fn a_send_and_a_read_make_the_statements_they_made() {
     let store = PostgresTaskStore::new(&url).await.expect("store");
     let direct_url = format!("{}/{name}", admin_url.rsplit_once('/').expect("path").0);
     let direct = sqlx::PgPool::connect(&direct_url).await.expect("direct");
+    // The renewer renews held claims every second by default, and a window
+    // that spanned a tick counted one statement more: (9, 11) in the first
+    // round of a mutation job's slower build, and (13-15, 17-19) with a 1 ms
+    // renewal. Renewal is the turn's background cost, not the send's, so it
+    // is moved out of the measurement.
     let handler = RequestHandlerBuilder::new(Parker)
         .without_agent_card()
+        .with_turn_claim_timing(
+            std::time::Duration::from_secs(3 * 3600),
+            std::time::Duration::from_secs(3600),
+        )
         .with_task_store(store)
         .build()
         .expect("handler");
