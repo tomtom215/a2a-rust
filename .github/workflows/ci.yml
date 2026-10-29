@@ -169,6 +169,25 @@ jobs:
       - name: Sitemap matches the book table of contents
         run: python3 scripts/gen_sitemap.py --check
 
+      # No pull request built the book: docs.yml runs `mdbook build` only on
+      # main and on release, so a SUMMARY entry naming a missing page
+      # (`create-missing = false`) failed after merge. And mdBook does not
+      # check links, so a page split or a renamed heading left links to the
+      # old place dead with nothing to say so. This builds the book with the
+      # version docs.yml deploys and checks every internal link and #anchor.
+      - name: Install mdBook
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Book builds and its links resolve
+        run: |
+          mdbook build book
+          cp -r book/static/. book/book/
+          python3 scripts/check_book_links.py book/book
+
       # The API Quick Reference is 299 hand-written lines listing every public
       # type, trait and function — and nothing generated or checked it, so it
       # could only get less true with every rename. Same decay class as the
