@@ -53,6 +53,19 @@ impl LeaseRead {
         Self { task, position }
     }
 
+    /// The read taken under the claim, at `position`, for a continuation:
+    /// the lease uses it rather than reading the row again (`claimed`).
+    pub(super) fn under_claim(
+        position: Option<u64>,
+        stored: Option<&Task>,
+        continues: bool,
+    ) -> Option<Self> {
+        position
+            .filter(|_| continues)
+            .zip(stored.cloned())
+            .map(|(position, task)| Self::new(task, position))
+    }
+
     pub(super) const fn position(&self) -> u64 {
         self.position
     }

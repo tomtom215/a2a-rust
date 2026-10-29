@@ -108,13 +108,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   the store (the claim and its release), and a handler holding claims renews
   them once a second; `without_turn_claims()` opts out for a store one replica
   uses. Measured with `tests/soak_multi_replica.rs` (two replicas, PostgreSQL
-  17 on the same 4-vCPU host, release build, three 60 s runs each way): 15%
-  fewer send-and-read pairs per second with claims (360 ± 17 against
-  423 ± 14), 21.4 ms against 18.6 ms median per pair. Through a proxy adding
-  latency the claim costs a near-constant two or three round trips, so its
-  share falls: 11% at a 1.2 ms round trip, 7% at 2.6 ms, 5% at 11.1 ms (book:
-  Running More Than One Replica, *What it costs*, with partitions and a
-  database restart mid-turn).
+  17 on the same 4-vCPU host, release build, three 30 s runs each way,
+  through a proxy adding latency): the claim costs a near-constant two or
+  three round trips, 15% fewer send-and-read pairs per second at a 0.97 ms
+  round trip (319 ± 12 against 376 ± 12), 10% at 2.75 ms, 11% at 11.4 ms
+  (book: Running More Than One Replica, *What it costs*, with partitions and
+  a database restart mid-turn).
 - **On PostgreSQL, a 0.15 replica's write to a task a newer replica is
   running is refused** (SQLSTATE `A2A01`), and a newer replica waits for a
   task a 0.15 replica is running, so a fleet can be replaced one replica at a
@@ -131,6 +130,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A send made 45 round trips to PostgreSQL**, counting its read back, and
+  on a slow link those dominated. A new task's send and read now make 24 (8
+  statements), a continuation's 33 (11): a context the send minted is not
+  looked up; a send naming a task reads that task, not the context's newest
+  (a count and a page); a new task's event numbering starts at 0 without
+  reading the log; the turn reuses the row it read under its claim; and a new
+  task, or a continuation read under its claim, is saved whole, so neither
+  the save nor the event consumer reads the row back. Without a claim a
+  continuation still appends its message to the stored history, which
+  another replica's turn may have written since. Measured with
+  `tests/soak_multi_replica.rs` (as above, claims on): 334 ± 31 to 466 ± 25
+  send-and-read pairs per second direct, 67 ± 1 to 105 ± 1 at a 2.6–2.75 ms
+  round trip, 21 ± 1 to 33 ± 0 at 11.1–11.4 ms.
 - **`examples/deploy-agent/deployment.yaml` ran two replicas on in-memory
   stores**: through a round-robin balancer, every second `GetTask` answered
   `TaskNotFound` (measured with two processes behind HAProxy). The manifest

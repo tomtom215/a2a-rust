@@ -14,6 +14,9 @@ use a2a_protocol_types::params::MessageSendParams;
 use super::super::RequestHandler;
 use super::super::helpers::{unset_if_empty, validate_id, validate_metadata_object};
 use super::decisions::json_byte_len;
+use super::mode::SendMode;
+use super::start::Committed;
+use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 use crate::portable::{inexact_number, standard_base64};
 
@@ -29,6 +32,48 @@ pub enum FileUrls {
 }
 
 impl RequestHandler {
+    /// Takes the tenant's concurrency slot, validates the request, and
+    /// commits the task.
+    ///
+    /// Nothing with a side effect happens before validation is through, so
+    /// a refused request leaves no queue, no task row and no cancellation
+    /// token behind; [`commit_task`](Self::commit_task) is where side effects
+    /// begin, and it releases what it admitted on every failure.
+    ///
+    /// The slot is taken first: a refused request must not cost the tenant
+    /// the very resources the limit protects. The permit is moved into the
+    /// spawned executor and released when that task ends, however it ends —
+    /// which is why the commit is this method's tail expression.
+    pub(super) async fn validate_and_commit(
+        &self,
+        mut params: MessageSendParams,
+        streaming: bool,
+        call_ctx: &CallContext,
+    ) -> ServerResult<(SendMode, Committed)> {
+        let tenant_slot = self.acquire_tenant_slot().await?;
+
+        // SPEC §3.3.4: a streaming send is only permitted when the configured
+        // agent card advertises `capabilities.streaming == true`. Reject with
+        // UnsupportedOperationError otherwise. (No-op when no card is configured.)
+        if streaming {
+            self.ensure_streaming_supported()?;
+        }
+
+        // Before an approval is counted or a send key's replay answered.
+        let content_check = self.validate_send_params(&mut params)?;
+
+        let mode = SendMode::of(&params, streaming);
+        self.commit_task(
+            params,
+            mode.use_background,
+            tenant_slot,
+            call_ctx,
+            content_check,
+        )
+        .await
+        .map(|started| (mode, started))
+    }
+
     /// Validates the request in place: proto3 defaults are unset, then ids,
     /// parts and every `metadata` field are checked against the handler's
     /// limits.

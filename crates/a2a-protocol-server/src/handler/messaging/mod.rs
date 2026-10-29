@@ -55,7 +55,6 @@ pub use validation::FileUrls;
 #[cfg(test)]
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
 pub use decisions::TASK_HISTORY_LIMIT;
-use mode::SendMode;
 
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
@@ -179,48 +178,6 @@ impl RequestHandler {
         call.finish(result).await
     }
 
-    /// Takes the tenant's concurrency slot, validates the request, and
-    /// commits the task.
-    ///
-    /// Nothing with a side effect happens before validation is through, so
-    /// a refused request leaves no queue, no task row and no cancellation
-    /// token behind; [`commit_task`](Self::commit_task) is where side effects
-    /// begin, and it releases what it admitted on every failure.
-    ///
-    /// The slot is taken first: a refused request must not cost the tenant
-    /// the very resources the limit protects. The permit is moved into the
-    /// spawned executor and released when that task ends, however it ends —
-    /// which is why the commit is this method's tail expression.
-    async fn validate_and_commit(
-        &self,
-        mut params: MessageSendParams,
-        streaming: bool,
-        call_ctx: &CallContext,
-    ) -> ServerResult<(SendMode, Committed)> {
-        let tenant_slot = self.acquire_tenant_slot().await?;
-
-        // SPEC §3.3.4: a streaming send is only permitted when the configured
-        // agent card advertises `capabilities.streaming == true`. Reject with
-        // UnsupportedOperationError otherwise. (No-op when no card is configured.)
-        if streaming {
-            self.ensure_streaming_supported()?;
-        }
-
-        // Before an approval is counted or a send key's replay answered.
-        let content_check = self.validate_send_params(&mut params)?;
-
-        let mode = SendMode::of(&params, streaming);
-        self.commit_task(
-            params,
-            mode.use_background,
-            tenant_slot,
-            call_ctx,
-            content_check,
-        )
-        .await
-        .map(|started| (mode, started))
-    }
-
     /// Resolves the task the message belongs to and commits it: the queue
     /// lease, the cancellation token, the store row, the inline push config,
     /// and finally the executor. Every failure after the lease releases the
@@ -254,16 +211,9 @@ impl RequestHandler {
         // is done (see `commit_guard`).
         let context_guard = context_lock.lock_owned().await;
 
-        // A context minted for this send holds no task, so it is not looked
-        // up: on PostgreSQL that lookup was two statements, each a round trip
-        // to the database, on every send that started a conversation.
-        let stored_task = if minted {
-            None
-        } else if let Some(named) = &params.message.task_id {
-            self.find_named_task(&context_id, named).await?
-        } else {
-            self.find_task_by_context(&context_id).await?
-        };
+        let stored_task = self
+            .stored_for(&context_id, minted, &params.message)
+            .await?;
         let resolution = self
             .resolve_task_id(&params.message, stored_task.as_ref())
             .await?;
@@ -362,12 +312,8 @@ impl RequestHandler {
             );
             // The same decision `build_initial_task` makes.
             let continues = create::continues(&task_id, stored_task.as_ref());
-            // The read taken under the claim, which the lease would otherwise
-            // take again (`claimed`).
-            let known = claim_read_at
-                .filter(|_| continues)
-                .zip(stored_task.clone())
-                .map(|(position, task)| basis::LeaseRead::new(task, position));
+            let known =
+                basis::LeaseRead::under_claim(claim_read_at, stored_task.as_ref(), continues);
             let mut ctx = create::build_request_context(
                 params.message,
                 task_id.clone(),

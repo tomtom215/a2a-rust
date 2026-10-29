@@ -329,21 +329,30 @@ Three 30 s runs per row, alternating:
 
 | Round trip to the database | With claims | Without | Median per pair, with / without |
 |---|---|---|---|
-| direct (0.15 ms) | 334 ± 31 pairs/s | — | 21.8 ms |
-| 1.2 ms (proxy alone) | 238 ± 3 | 267 ± 6 | 33.3 / 29.8 ms |
-| 2.6 ms | 67 ± 1 | 72 ± 1 | 121.7 / 113.7 ms |
-| 11.1 ms | 21 ± 1 | 22 ± 0 | 387 ms / not recorded |
+| direct | 466 ± 25 pairs/s | — | 16.3 ms |
+| 0.97 ms (proxy alone) | 319 ± 12 | 376 ± 12 | 24.5 / 21.4 ms |
+| 2.75 ms | 105 ± 1 | 117 ± 1 | 77.5 / 69.4 ms |
+| 11.4 ms | 33 ± 0 | 37 ± 0 | 241 / 216 ms |
 
-The claim adds a near-constant two or three round trips to a turn (3.5 ms at
-1.2 ms, 8 ms at 2.6 ms), so its share falls as the network slows: 11% fewer
-pairs at 1.2 ms, 7% at 2.6 ms, 5% at 11.1 ms. What dominates on a real
-network is the rest of the send path: a send and a read together took 35 to
-43 sequential round trips (113.7 ms without claims, against a link whose round
-trip measured 2.6 ms at its smallest and 3.2 ms at its median), so put the
-database close to the replicas. Every claim was released by the end of
+The claim adds a near-constant two or three round trips to a turn (3.0 ms at
+0.97 ms, 8.1 ms at 2.75 ms, 25.5 ms at 11.4 ms): 10% to 15% fewer pairs.
+What dominates on a real network is the rest of the send path, so put the
+database close to the replicas. Counted at the wire (a proxy logging each
+time the client waited on the server), a send that starts a task and a read
+of it make 8 statements; with the ping sqlx sends before handing out a
+connection and the one after taking it back, 24 round trips, 16 of them on
+the request's path. A send that continues a task and a read make 11
+statements, 33 round trips. Both were 45 before 2026-10-28, when the same
+soak measured 334 ± 31 pairs/s direct, 238 ± 3 at 1.2 ms, 67 ± 1 at 2.6 ms
+and 21 ± 1 at 11.1 ms, with claims. Every claim was released by the end of
 every run, and no run had a failed request or a task one replica could not
-read from the other. An earlier run of three 60 s each way, direct, measured
-360 ± 17 pairs/s with claims and 423 ± 14 without.
+read from the other.
+
+The ping before each statement stays. Skipping it for a connection used in
+the last second saved another 8 round trips a send, and lost an event: with
+every backend terminated mid-turn (`pg_terminate_backend`, no outage), the
+next write went to a dead connection and its event was in neither the log
+nor the task, in 3 runs of 3; with the ping, none was lost in 3 of 3.
 
 **When the network fails** (2026-10-28, two replicas as separate processes,
 each reaching PostgreSQL through its own toxiproxy link, default timing):

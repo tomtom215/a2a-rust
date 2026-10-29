@@ -188,12 +188,7 @@ impl RequestHandler {
                 // dropped. Here, and not inside `write`, because this is the
                 // one moment no event can be in flight.
                 let mut read = None;
-                if self.task_store.supports_event_log() && fresh {
-                    // What the reads below would answer for an id minted in
-                    // this send, without the two round trips.
-                    writer.seed_seq(0);
-                    reader.starting_after(0);
-                } else if self.task_store.supports_event_log() {
+                if self.task_store.supports_event_log() {
                     // A failed read must not become `0`. Seeding at 0 restarts
                     // the numbering at 1, and because appends are idempotent
                     // *by position* every event of this turn then lands on a
@@ -202,7 +197,7 @@ impl RequestHandler {
                     // prevent, and invisible, because the sequence has no gap
                     // to show for it. A refused send is recoverable by retrying;
                     // a turn whose events were never recorded is not.
-                    match self.resume_after(task_id, known).await {
+                    match self.resume_after(task_id, fresh, known).await {
                         Ok((seq, lease_read)) => {
                             read = lease_read;
                             writer.seed_seq(seq);
@@ -261,8 +256,14 @@ impl RequestHandler {
     async fn resume_after(
         &self,
         task_id: &TaskId,
+        fresh: bool,
         known: Option<LeaseRead>,
     ) -> a2a_protocol_types::error::A2aResult<(u64, Option<LeaseRead>)> {
+        if fresh {
+            // What the reads below would answer for an id minted in this
+            // send, without their two round trips.
+            return Ok((0, None));
+        }
         let end = self.task_store.last_event_seq(task_id).await?;
         let read = match known {
             Some(read) => Some(read),

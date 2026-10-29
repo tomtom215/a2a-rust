@@ -84,6 +84,26 @@ impl RequestHandler {
         }
     }
 
+    /// The stored task a send in `context_id` is resolved against. A context
+    /// `minted` for this send holds no task, so it is not looked up: on
+    /// PostgreSQL that lookup was two statements, each a round trip to the
+    /// database, on every send that started a conversation. A send naming a
+    /// task reads that task (`find_named_task`).
+    pub(super) async fn stored_for(
+        &self,
+        context_id: &str,
+        minted: bool,
+        message: &Message,
+    ) -> ServerResult<Option<Task>> {
+        if minted {
+            Ok(None)
+        } else if let Some(named) = &message.task_id {
+            self.find_named_task(context_id, named).await
+        } else {
+            self.find_task_by_context(context_id).await
+        }
+    }
+
     /// Determines which task this send belongs to: the client-provided one
     /// when it names a live task in this context, otherwise a fresh one
     /// (A2A spec §3.4.3).

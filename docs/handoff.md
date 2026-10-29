@@ -118,8 +118,8 @@ only: when something here is done, delete it rather than annotating it.
   replays 0.15.0's own SQL; five mutants of the guard are each caught. All
   database-gated tests pass on PostgreSQL 16.15 and 17.11 (2,478 each).
 - **Replicas over a network** (toxiproxy 2.12.0 between each replica and the
-  database): the claim costs two or three round trips a turn, 11% to 5% of
-  throughput as the round trip grows from 1.2 to 11.1 ms; a 5 s cut, a 20 s
+  database): the claim costs two or three round trips a turn, 10% to 15% of
+  throughput at round trips from 0.97 to 11.4 ms; a 5 s cut, a 20 s
   cut (taken over at 16.1 s, the cut-off writer fenced and stopped 2.5 s after
   its link returned) and a database restart mid-turn all behaved as the book
   says (*What it costs*, *When the network fails*).
@@ -593,9 +593,24 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   real network, PgBouncer. Under PgBouncer in transaction mode the upgrade
   guard should still hold, since its mark (`set_config(…, true)`) and its
   advisory locks last one transaction, which such a pooler keeps on one
-  server connection; that is reasoned, not run. The send
-  path itself takes 35 to 43 sequential round trips for a send and a read,
-  which is what dominates on a slow link; nobody has looked at which.
+  server connection; that is reasoned, not run. A send and a read
+  now make 24 round trips (new task) or 33 (continuation), down from 45
+  (CHANGELOG *Fixed*); of the rest, 16 and 22 are sqlx's pings, one before
+  and one after each statement. Do not drop the ping before (sqlx's
+  `test_before_acquire`) to save them: tried 2026-10-28, a backend terminated
+  mid-turn (`pg_terminate_backend`) then lost one event, from log and task,
+  in 3 runs of 3. That exposed an older weakness, severity medium: a
+  processor whose event append fails on a store error drops that event and
+  goes on, so any failed write (a dead connection, a statement timeout) loses
+  it silently; the ping hides the commonest cause, not all. A retry of the
+  append, or of writes that provably never ran (SQLSTATE `57P01`, `57P05`),
+  would cover it and let the ping go; neither is built. The script was
+  `scratchpad/py/terminate_live.py`, not committed. Also unrelated and
+  measured flaky before this branch's last change as after: the ignored
+  `swarm_scale` experiment `fan_out::a_tail_can_recover_what_it_missed`
+  (replay of 0 positions in 1 of 2 runs of its binary on 18e2b80c), and
+  `otel_pipeline_default_endpoint` fails whenever a collector listens on
+  `localhost:4317`, as one did here.
   `.config/nextest.toml`'s default profile (the mutation gate's) kills at
   45 s, and four tests now take 30 to 31 s by design; its rationale still
   says the slowest test takes 5 s. From the review, left as
