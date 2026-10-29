@@ -93,7 +93,7 @@ only: when something here is done, delete it rather than annotating it.
   **Not run, and so not claimed:** Kubernetes (kind could not start a pod
   sandbox here: nested `runc` fails, "can't get final child's PID from
   pipe"; Kubernetes 1.35's kubelet also refuses this host's cgroup v1), IPv6
-  on the wire, a public-CA collector, PgBouncer, a network between replicas
+  on the wire, a public-CA collector, a network between replicas
   and database other than a local proxy adding latency, `cargo-semver-checks`,
   `cargo deny`, `promtool` (the
   rules were exercised live by Prometheus, not unit-tested), the official
@@ -590,10 +590,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   unbuilt. A cancel reaches another replica's executor at the owner's next
   renewal (1 s), not at once, unless a halt store pushes it. Measured through
   a local proxy adding latency and cutting links (*Now*); not measured: a
-  real network, PgBouncer. Under PgBouncer in transaction mode the upgrade
-  guard should still hold, since its mark (`set_config(…, true)`) and its
-  advisory locks last one transaction, which such a pooler keeps on one
-  server connection; that is reasoned, not run. A send and a read
+  real network. Through PgBouncer 1.26.1 in transaction mode
+  (`max_prepared_statements = 200`), 2026-10-29, the claim, replica and store
+  suites pass (book, *Behind PgBouncer*), the upgrade guard's included; the
+  one failure was `ALTER DATABASE … SET a2a.legacy_claim_ttl` not reaching
+  backends the pooler opened before it, now documented, and the test sets it
+  before anything connects. A send and a read
   now make 19 round trips (new task) or 25 (continuation), down from 45
   (CHANGELOG *Fixed*): 8 and 11 statements, the ping sqlx makes as each
   connection returns to the pool, and a ping before a connection idle a

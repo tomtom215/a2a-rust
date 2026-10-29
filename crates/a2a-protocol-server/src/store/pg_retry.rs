@@ -59,6 +59,14 @@ pub const PING_WHEN_IDLE_FOR: Duration = Duration::from_secs(1);
 tokio::task_local! {
     /// Set while a statement runs under [`checked`], or runs again under
     /// [`retry`]: every connection handed out to it is pinged first.
+    ///
+    /// A task-local, because the statement closures take the pool, not a
+    /// connection, and the pool's `before_acquire` hook is the one place a
+    /// connection is handed out. Like any task-local it does not cross
+    /// `tokio::spawn`: a statement future that spawned its acquire would lose
+    /// the ping without a compile error. That is guarded by test, not types:
+    /// with the hook ignoring this, four of the seven cases in
+    /// `tests/transient_store_errors` fail (2026-10-29).
     static CHECKING: ();
 }
 

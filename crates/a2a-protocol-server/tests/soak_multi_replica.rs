@@ -119,7 +119,12 @@ const REQUESTS_PER_WINDOW: u64 = u64::MAX;
 /// Ceiling on resident growth per completed request, as in `soak.rs`.
 const MAX_BYTES_PER_REQUEST: f64 = 4096.0;
 
-/// How much slower the tail of the run may be than its head.
+/// Request pairs after warm-up below which resident growth per pair is not
+/// measured: at 1,000, one 0.8 MiB allocator step reads as about 840 bytes a
+/// pair, well under [`MAX_BYTES_PER_REQUEST`].
+const MIN_PAIRS_FOR_GROWTH: f64 = 1_000.0;
+
+/// How much slower the tail of the run may be than its head, by median.
 const MAX_LATENCY_GROWTH: f64 = 3.0;
 
 /// An executor that produces a task with an artifact, so each request exercises
@@ -533,6 +538,15 @@ async fn two_replicas_survive_sustained_load() {
 
     let bytes_grown = last.1.saturating_sub(baseline.1) as f64;
     let requests_since = last.2.saturating_sub(baseline.2).max(1) as f64;
+    // Resident memory grows in allocator steps, not per pair: one step of
+    // 0.8 MiB over the 120 pairs a 3 s run at 5 ms latency made read as
+    // 6,963 bytes a pair, over the ceiling, where the same setup for 30 s
+    // read 431. Too few pairs say nothing either way, so say that.
+    assert!(
+        requests_since >= MIN_PAIRS_FOR_GROWTH,
+        "only {requests_since} request pairs after warm-up, too few to tell \
+         a leak from one allocator step; run longer (A2A_SOAK_SECS)"
+    );
     let per_request = bytes_grown / requests_since;
     println!(
         "\nresident growth after warm-up: {:.1} MiB over {requests_since} pairs \
@@ -635,13 +649,25 @@ async fn two_replicas_survive_sustained_load() {
         .map(|(_, us)| *us)
         .collect();
     if !head.is_empty() && !tail.is_empty() {
+        let median = |mut v: Vec<u64>| {
+            v.sort_unstable();
+            v[v.len() / 2]
+        };
+        let (head_p50, tail_p50) = (median(head.clone()), median(tail.clone()));
         let (head_p95, tail_p95) = (p95(head), p95(tail));
-        let growth = tail_p95 as f64 / head_p95.max(1) as f64;
-        println!("p95 latency: {head_p95}us -> {tail_p95}us ({growth:.2}x)");
+        let growth = tail_p50 as f64 / head_p50.max(1) as f64;
+        println!(
+            "p50 latency: {head_p50}us -> {tail_p50}us ({growth:.2}x); \
+             p95 {head_p95}us -> {tail_p95}us"
+        );
+        // By median: tables that grow (a missing index, a scan) slow every
+        // request, and so the median; CPU taken by another job on the machine
+        // slows some, and so the tail. On 2026-10-28 a run beside another
+        // build tripped a p95 assertion with nothing wrong with the tables.
         assert!(
             growth < MAX_LATENCY_GROWTH,
-            "p95 latency grew {growth:.2}x as the shared tables filled \
-             ({head_p95}us -> {tail_p95}us)"
+            "median latency grew {growth:.2}x as the shared tables filled \
+             ({head_p50}us -> {tail_p50}us)"
         );
     }
 }

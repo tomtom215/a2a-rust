@@ -242,13 +242,19 @@ async fn a_new_replica_waits_for_an_earlier_releases_turn() {
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
 async fn an_earlier_releases_claim_lapses_when_its_writes_stop() {
     let db = TestDb::create("upgrade_lapses").await;
-    let admin = PgPool::connect(&db.url()).await.expect("admin pool");
+    // Set from the server's admin database, before anything connects to
+    // this one: a database's settings reach only backends started after
+    // them, and a pooler such as PgBouncer would otherwise hand the replicas
+    // a backend opened before (the book's "Behind PgBouncer").
+    let admin_url = std::env::var("A2A_TEST_POSTGRES_URL").expect("the database URL");
+    let admin = PgPool::connect(&admin_url).await.expect("admin pool");
     sqlx::query(
         "ALTER DATABASE a2a_turn_claims_upgrade_lapses SET a2a.legacy_claim_ttl = '1 second'",
     )
     .execute(&admin)
     .await
     .expect("set the time to live");
+    admin.close().await;
     let probe = Arc::default();
     let new = replica(db.store().await, &probe, Duration::from_millis(200));
     let old = Legacy::connect(&db).await;

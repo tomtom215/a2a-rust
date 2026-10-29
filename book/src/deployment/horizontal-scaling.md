@@ -503,6 +503,11 @@ life of the deployment. That is asserted, and the assertion was checked by
 disabling the sweep: 104 rows against a ceiling of 32.
 
 **Latency did not degrade** as the `tasks` table grew past 65,000 rows.
+The test asserts it on the median, last quarter against first, under 3×:
+growing tables slow every request, while another job on the machine slows
+some, and a p95 assertion tripped on that alone. It also refuses to judge
+memory growth on fewer than 1,000 pairs after warm-up, where one allocator
+step reads as a leak.
 
 ### The `tasks` table grows until you tell it not to
 
@@ -588,10 +593,30 @@ id.
 ## What is still unevidenced
 
 `tests/replica_processes.rs` runs replicas as separate processes over one
-database, and kills one; everything else here runs two handlers in one
-process. All of it is loopback on one machine: no real network between the
-replicas and the database, no partition, no database failover, and no
-connection pooler. A pooler in transaction mode (PgBouncer) does not change
-the claims, which are single statements; it does stop the halt store's
-`LISTEN`, which then falls back to its poll. If you are running this at scale
-and have measurements, they would be welcome.
+database, and kills one; the tests otherwise run two handlers in one
+process. Everything here ran on one machine: the latency and the partitions
+above are toxiproxy's on loopback, not a real network, and no managed
+database's failover has been tried.
+
+**Behind PgBouncer.** On 2026-10-29 the claim, replica and store suites
+(`turn_claims`, `multi_replica`, `cross_replica_cancel`,
+`replica_processes`, `stale_write_position`, `continuation_save_vs_cancel`,
+`retried_statements`, `statement_count`, `postgres_store_tests`) ran with
+every connection through PgBouncer 1.26.1 in transaction mode, with
+`max_prepared_statements = 200` (sqlx prepares its statements, and a
+transaction-mode pooler needs that setting to carry them), in front of
+PostgreSQL 17.11, and so did a 30 s soak (`soak_multi_replica`, release
+build, claims and the upgrade guard on): 20,807 request pairs, 694 a second,
+0 failures, 0 cross-replica misses, 0 claims left. All passed but one test,
+and that one is a setting, not the claims: a value set with `ALTER DATABASE … SET` reaches only server
+connections opened after it, and PgBouncer hands clients connections it
+opened before. So after setting `a2a.legacy_claim_ttl` (or a
+`statement_timeout`) that way, have the pooler reconnect (`RECONNECT` on its
+admin console) or wait for `server_lifetime`; until then the old value
+holds. The claims, the upgrade guard's mark and the schema lock each last
+one transaction, which a transaction-mode pooler keeps on one server
+connection. A pooler does stop the halt store's `LISTEN`, which then falls
+back to its poll.
+
+If you are running this at scale and have measurements, they would be
+welcome.
