@@ -79,6 +79,8 @@ async fn a_sweep_removes_only_long_expired_claims() {
     );
     assert!(claims.claim("", "new", "a", "tok-new", TTL).await.unwrap());
     tokio::time::sleep(Duration::from_millis(30)).await;
+    // Expired, but more recently than a minute ago: kept.
+    assert_eq!(claims.sweep(Duration::from_secs(60)).await.unwrap(), 0);
     assert_eq!(claims.sweep(Duration::from_millis(10)).await.unwrap(), 1);
     assert!(claims.holds("tok-new"));
     assert!(!claims.holds("tok-old"));
@@ -266,6 +268,18 @@ async fn sqlite_fences_a_token_to_its_own_task() {
 async fn postgres_fences_a_token_to_its_own_task() {
     let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
     let store = crate::store::PostgresTaskStore::new(&url).await.unwrap();
+    a_token_fences_only_its_own_task(&store).await;
+    a_cancel_marks_only_a_held_claim(&store).await;
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn tenant_aware_postgres_fences_a_token_to_its_own_task() {
+    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let store = crate::store::TenantAwarePostgresTaskStore::new(&url)
+        .await
+        .unwrap();
     a_token_fences_only_its_own_task(&store).await;
     a_cancel_marks_only_a_held_claim(&store).await;
 }
