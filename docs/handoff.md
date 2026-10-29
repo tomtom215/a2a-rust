@@ -24,6 +24,27 @@ only: when something here is done, delete it rather than annotating it.
   The maintainer judged 0.15.0 not ready in practice and asked for everything
   to be run live before another release. Done here, each item verified by the
   run named in `CHANGELOG.md` `[Unreleased]`, where every change is listed:
+  - **Pull request [#183](https://github.com/tomtom215/a2a-rust/pull/183)
+    (draft) carries this branch; first, read its CI.** On the last full run
+    every job passed except three, none a defect of the branch: "Sign-off and
+    authorship" (the commits are the assistant's; the maintainer re-authors
+    and signs off), "Rust lockfiles" (OSV GHSA-qwgh-2vcv-g2f7 on
+    `block-buffer` 0.10.4, red on `main` too, with no fixed release reachable
+    through `sha2` 0.10; a waiver is the maintainer's call, comment on the
+    PR), and "Mutation Testing (incremental)", which wants the
+    `mutation-test` label. Run `scripts/preflight.sh` (CONTRIBUTING) before
+    each push; three CI failures in this round were gates it runs.
+  - **The review's follow-ups (2026-10-29)**, each in `CHANGELOG.md` or a
+    commit message with its evidence: retry metrics
+    (`a2a.server.store_retries`); the queue's write wait tied to
+    `store_write_retry` (a chatty turn during an outage was failed and left
+    `Submitted`); startup under a short `statement_timeout`; the release of
+    an idempotency key or lease pinged rather than retried; every retried
+    write run twice on all six stores; round trips per send pinned
+    (`tests/statement_count.rs`); a cancel forced between a continuation's
+    read and save; the fence scoped to its task; every PostgreSQL suite run
+    in CI, found rather than listed; PgBouncer in transaction mode run;
+    `scripts/live/` committed.
   - **Replicas work without session affinity**: turn claims
     (`store::claim`, `handler::claims`), tested on SQLite and PostgreSQL in
     process (`tests/turn_claims/`) and as separate OS processes, one killed
@@ -43,10 +64,10 @@ only: when something here is done, delete it rather than annotating it.
     sessions; now `FOR KEY SHARE`); the quorum count was unfenced (two
     approvals on two replicas lost one, 3 of 3 runs); a waiting send held its
     idempotency key, so a retry elsewhere was told "accepted" for a send then
-    refused. Also fixed: shutdown now releases claims. Not changed, with the
-    reason in *Open engineering*: the fence is not scoped to a task, and a
-    send to a task whose cancelled executor still winds down is refused at
-    once.
+    refused. Also fixed: shutdown now releases claims, and (2026-10-29) the
+    fence names the task written. Not changed, with the reason in *Open
+    engineering*: a send to a task whose cancelled executor still winds down
+    is refused at once.
   - **Claims under load and their cost**: `tests/soak_multi_replica.rs`, now
     with `A2A_SOAK_TURN_CLAIMS=off` and a check that no claim outlives a run,
     three 60 s runs each way, alternating, release build, PostgreSQL 17 on
