@@ -71,7 +71,20 @@ where
     });
     tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
+        .with_ansi(colour(
+            std::io::IsTerminal::is_terminal(&std::io::stderr()),
+            std::env::var_os("NO_COLOR").as_deref(),
+        ))
         .with_filter(filter.and(shown))
+}
+
+/// Whether to colour the lines: only on a terminal, and not when `NO_COLOR`
+/// is set to anything but the empty string (<https://no-color.org>). A
+/// redirected stderr is a file, a container runtime's log or a pipe, where
+/// colour codes are noise in every line (they were, in Docker and Kubernetes
+/// logs, until 2026-10-28).
+fn colour(stderr_is_terminal: bool, no_color: Option<&std::ffi::OsStr>) -> bool {
+    stderr_is_terminal && no_color.is_none_or(std::ffi::OsStr::is_empty)
 }
 
 #[cfg(test)]
@@ -82,6 +95,21 @@ mod tests {
     /// Whether `targets` lets an event of `level` on `target` through.
     fn passes(targets: &Targets, target: &str, level: Level) -> bool {
         targets.would_enable(target, &level)
+    }
+
+    #[test]
+    fn lines_are_coloured_only_on_a_terminal_without_no_color() {
+        use std::ffi::OsStr;
+        assert!(colour(true, None));
+        assert!(
+            colour(true, Some(OsStr::new(""))),
+            "an empty NO_COLOR is unset"
+        );
+        assert!(!colour(true, Some(OsStr::new("1"))));
+        assert!(
+            !colour(false, None),
+            "a file, pipe or container log gets no codes"
+        );
     }
 
     #[test]

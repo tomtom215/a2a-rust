@@ -135,6 +135,20 @@ pub fn untraced() -> bool {
     UNTRACED.try_with(|u| *u).unwrap_or(false)
 }
 
+/// Runs `fut` recording no spans, for work that is not a call and would
+/// otherwise be the root of a trace of its own: a readiness probe's store
+/// read, run every few seconds by every replica. Metrics are still recorded.
+pub async fn quietly<F: std::future::Future>(fut: F) -> F::Output {
+    #[cfg(feature = "tracing")]
+    {
+        UNTRACED.scope(true, fut).await
+    }
+    #[cfg(not(feature = "tracing"))]
+    {
+        fut.await
+    }
+}
+
 impl ServerSpan {
     /// Opens the `SERVER` span for one inbound call.
     ///

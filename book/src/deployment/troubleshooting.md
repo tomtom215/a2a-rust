@@ -116,6 +116,14 @@ signals are off, whether no endpoint was found or each was set to `none`. Then:
   exporter cannot act on, and it says which and why (`zstd` compression, an
   OTLP/HTTP endpoint with no scheme, `prometheus` where the `otel-prometheus`
   feature is not built).
+* **`BatchSpanProcessor.SpansDropped … max_queue_size=2048`**: the process
+  made spans faster than the exporter sent them, and the queue between the
+  two was full, so spans were lost (metrics and logs are not affected). Raise
+  the queue with `OTEL_BSP_MAX_QUEUE_SIZE` (memory, one span each), or sample
+  with `OTEL_TRACES_SAMPLER=parentbased_traceidratio` and
+  `OTEL_TRACES_SAMPLER_ARG`. Measured on `examples/swarm`, 4,000 jobs in
+  about two seconds: 5,205 spans dropped at the default 2,048, none with
+  `OTEL_BSP_MAX_QUEUE_SIZE=65536` (2026-10-28).
 * **Warnings from the SDK you did not ask for** are shown too; they were
   silent before. `RUST_LOG=error` quiets them.
 
@@ -224,6 +232,13 @@ status. Overriding `AgentExecutor::cancel` is not how you opt in; it is how you
 handle). If your executor holds nothing, the default is correct.
 
 Check your `execute` loop observes `ctx.cancellation_token`.
+
+With several replicas, a cancel taken by one replica for a task another runs
+reaches that executor's token at the owner's next claim renewal, within about
+a second, when the store provides turn claims (the PostgreSQL and SQLite
+stores do; [Running More Than One Replica](./horizontal-scaling.md#cancelling-a-task-that-runs-elsewhere)).
+With a store that does not, or `without_turn_claims()`, it arrives only at the
+executor's next write, unless a halt store pushes it.
 
 ## The agent card fails signature verification
 

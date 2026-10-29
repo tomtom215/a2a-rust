@@ -182,3 +182,12 @@ fn only_a_store_that_names_its_database_is_wrapped() {
     assert!(!Arc::ptr_eq(&declared, &wrapped));
     assert_eq!(wrapped.database(), Some(DeclaresDatabase::declared()));
 }
+
+#[tokio::test]
+async fn a_quiet_scope_opens_no_store_span() {
+    let store = traced(Arc::new(crate::store::InMemoryTaskStore::new()));
+    assert!(
+        crate::rpc_span::quietly(async { store.span("count").is_none() }).await,
+        "inside `quietly` the store's span is disabled"
+    );
+}

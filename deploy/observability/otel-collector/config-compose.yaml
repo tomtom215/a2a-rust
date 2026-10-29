@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The Collector of docker-compose.yml: all three signals in on OTLP (4317
+# gRPC, 4318 HTTP), each sent on to the backend that stores it. Metrics go to
+# Prometheus's OTLP receiver, so `service.name` and `service.instance.id`
+# become `job` and `instance` exactly as when an agent pushes to Prometheus
+# directly, and the dashboards and rules need no change. Traces go to Tempo,
+# logs to Loki. `config.yaml` beside this file is the Collector on its own
+# (metrics scraped on 8889, traces and logs to the debug exporter).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  otlphttp/prometheus:
+    endpoint: http://prometheus:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki]

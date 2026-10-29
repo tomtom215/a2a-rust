@@ -54,14 +54,22 @@ server.serve_with_shutdown(dispatcher, shutdown_signal()).await; // returns on S
   line on standard error says so. To see the telemetry anyway:
   `OTEL_TRACES_EXPORTER=console OTEL_METRICS_EXPORTER=console OTEL_LOGS_EXPORTER=console`
   prints it on standard output.
+* **The whole stack on your machine.** `docker compose -f deploy/observability/docker-compose.yml up -d`
+  starts a Collector, Prometheus, Tempo, Loki and Grafana with this
+  repository's dashboards; then set
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` and open Grafana on
+  `http://localhost:3000` ([`deploy/observability`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)).
 * **A collector on your machine.** `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`.
   4318 is OTLP/HTTP, the default protocol. The Collector's gRPC receiver is
   4317 and also needs `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`; the wrong pairing is
   reported with a hint.
 * **Docker.** `localhost` inside a container is the container. Name the
   collector by its service name on a shared network
-  (`http://otel-collector:4318`, as [`deploy/observability`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)
-  does) or by an address the container can reach.
+  (`http://otel-collector:4318` on the compose stack's network,
+  `a2a-observability_default`) or by an address the container can reach. A
+  collector on the Docker host is `http://host.docker.internal:4318` on Docker
+  Desktop; on Linux, run the container with
+  `--add-host=host.docker.internal:host-gateway` for the same name.
 * **Kubernetes.** Name the collector's Service, and give each pod its own
   `service.instance.id`, which is what tells replicas apart (Prometheus's
   `instance` label). Without it each process invents a random one, and every
@@ -126,13 +134,21 @@ server.serve_with_shutdown(dispatcher, shutdown_signal()).await; // returns on S
   that follows a lost export; each says what it knows. See
   [Troubleshooting](./troubleshooting.md#telemetry-is-configured-and-nothing-reaches-the-collector).
 
-**What these were run against.** `hello-agent` and the `a2a` CLI, on one Linux
-machine on 2026-10-26, against stand-in receivers on loopback (a small Python
+**What these were run against.** On 2026-10-28, against real backends: the
+compose stack above (OpenTelemetry Collector 0.163.2, Prometheus 3.15.1,
+Tempo 2.9.0, Loki 3.7.9, Grafana 13.2.4), fed by `deploy-agent`, `tck/sut` and
+`live-model` over OTLP/HTTP and OTLP/gRPC, by `deploy-agent` straight to
+Prometheus's OTLP receiver, and to the console exporter; then by the
+`deploy-agent` image in Docker, on the stack's network. Every dashboard panel
+returned data (`check_dashboards.py`), a trace opened in Tempo and a log line
+linked to it, and logs carried `trace_id` and `span_id`. Before that,
+`hello-agent` and the `a2a` CLI, on one Linux machine on 2026-10-26, against
+stand-in receivers on loopback (a small Python
 OTLP/HTTP receiver with TLS and client-certificate options, and this
 repository's own `hyper` and `tonic` test collectors and forward proxy). Not
-run: a real OpenTelemetry Collector, Kubernetes (the manifest was parsed as
-YAML and its `$(NAME)` references checked, nothing more), IPv6, an endpoint
-with a public CA, and a production proxy server. A gRPC-only receiver was
+run: Kubernetes (the manifest was parsed as YAML and its `$(NAME)` references
+checked, nothing more; a cluster could not be started where this was
+tested), IPv6, an endpoint with a public CA, and a production proxy server. A gRPC-only receiver was
 imitated by a socket that closes the connection, and a real one may answer
 differently, though the hint depends only on the port and on the failure
 carrying no HTTP status.

@@ -28,7 +28,7 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Task> {
         let start = Instant::now();
-        trace_info!(method = "GetTask", task_id = ?params.id, "handling get task");
+        trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
         self.metrics.on_request("GetTask");
 
         let tenant = self

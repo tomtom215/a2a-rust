@@ -11,16 +11,46 @@ built from this repository, not derived from the code, except the executor's
 (`a2a_server_executor_duration_seconds` and its labels), which was added later
 and follows the book's translation rule.
 
+## The whole stack in one command
+
+```sh
+docker compose -f deploy/observability/docker-compose.yml up -d
+```
+
+starts a Collector, Prometheus, Tempo (traces), Loki (logs) and Grafana, with
+the dashboards, rules and data sources provisioned. Then run any agent with
+
+```sh
+OTEL_SERVICE_NAME=my-agent OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 my-agent
+```
+
+and open Grafana on <http://localhost:3000> (no login: the anonymous user is
+an admin, so keep it off any network you do not control). The dashboards are
+in the folder "A2A"; traces and logs are under Explore, and a span opens the
+log lines written inside it, a log line its trace. An agent in a container on
+the stack's network (`a2a-observability_default`) uses
+`http://otel-collector:4318`. Published ports: 3000 Grafana, 9090 Prometheus,
+4317/4318 the Collector, 3200 Tempo, 3100 Loki.
+
+Metrics travel Collector → Prometheus's OTLP receiver, so `service.name` and
+`service.instance.id` become `job` and `instance` exactly as when an agent
+pushes to Prometheus itself, and nothing below changes. Run it for a laptop or
+a test box; it keeps everything in local volumes and has no authentication.
+
 | Path | What it is |
 |---|---|
 | `prometheus/prometheus.yml` | Prometheus with its OTLP receiver: agents push metrics straight to it |
 | `prometheus/prometheus-collector.yml` | Prometheus scraping an OpenTelemetry Collector instead (`honor_labels: true`, see the comment) |
-| `otel-collector/config.yaml` | The Collector: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889 |
+| `docker-compose.yml` | The stack above: Collector, Prometheus, Tempo, Loki, Grafana |
+| `otel-collector/config-compose.yaml` | The Collector of the compose stack: metrics to Prometheus over OTLP, traces to Tempo, logs to Loki |
+| `tempo/tempo.yaml`, `loki/loki.yaml` | Tempo and Loki, single binary, local storage, OTLP in |
+| `grafana/provisioning/traces-and-logs.yml` | Tempo and Loki data sources, linked both ways; set `TEMPO_URL` and `LOKI_URL` (the compose stack mounts it) |
+| `otel-collector/config.yaml` | The Collector on its own: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889; traces and logs go to its `debug` exporter, so add exporters for your trace and log backends |
 | `prometheus/rules/a2a-recording.yml` | Recording rules: call rate, error ratio and latency quantiles per binding and method, unanswered requests, push-delivery outcomes, client-side calls |
 | `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent (`A2AAgentSilent`, `critical`, also fires for an instance a rollout retired: from ten minutes after its last export until an hour has passed) |
 | `prometheus/tests/a2a-alerts.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
 | `grafana/dashboards/a2a-server.json`, `a2a-client.json`, `a2a-genai.json` | Three dashboards (server, client, and the tool loop's GenAI metrics), folder "A2A", data source uid `a2a-prometheus`; screenshots in `book/src/images/dashboards/` |
-| `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` |
+| `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` (both are required: unset, Grafana substitutes an empty string and the data source or the dashboards are missing) |
 | `scripts/drive.sh`, `scripts/webhook_sink.py` | Traffic for a live check: every binding, errors, streams, push deliveries to a webhook that answers and one that does not |
 | `scripts/check_dashboards.py` | The live check: rules healthy and recording rules populated; every dashboard query returns data through Grafana's query API (or Prometheus's) |
 

@@ -162,7 +162,11 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "axisSoftMax": 0.1
+          }
         },
         "overrides": []
       },
@@ -198,7 +202,7 @@
             "type": "prometheus",
             "uid": "a2a-prometheus"
           },
-          "expr": "sum by (rpc_method) (a2a:rpc_server_calls:rate5m{job=~\"$job\"})",
+          "expr": "label_replace(sum by (rpc_method) (a2a:rpc_server_calls:rate5m{job=~\"$job\"}), \"rpc_method\", \"(unrouted)\", \"rpc_method\", \"\")",
           "legendFormat": "{{rpc_method}}"
         }
       ],
@@ -240,7 +244,7 @@
             "type": "prometheus",
             "uid": "a2a-prometheus"
           },
-          "expr": "sum by (rpc_method, rpc_system_name) (a2a:rpc_server_errors:rate5m{job=~\"$job\"})",
+          "expr": "label_replace(sum by (rpc_method, rpc_system_name) (a2a:rpc_server_errors:rate5m{job=~\"$job\"}), \"rpc_method\", \"(unrouted)\", \"rpc_method\", \"\")",
           "legendFormat": "{{rpc_method}} {{rpc_system_name}}"
         }
       ],
@@ -295,7 +299,7 @@
             "type": "prometheus",
             "uid": "a2a-prometheus"
           },
-          "expr": "max by (rpc_method) (a2a:rpc_server_unary_latency:p50_5m{job=~\"$job\"})",
+          "expr": "label_replace(max by (rpc_method) (a2a:rpc_server_unary_latency:p50_5m{job=~\"$job\"}), \"rpc_method\", \"(unrouted)\", \"rpc_method\", \"\")",
           "legendFormat": "p50 {{rpc_method}}"
         },
         {
@@ -304,7 +308,7 @@
             "type": "prometheus",
             "uid": "a2a-prometheus"
           },
-          "expr": "max by (rpc_method) (a2a:rpc_server_unary_latency:p95_5m{job=~\"$job\"})",
+          "expr": "label_replace(max by (rpc_method) (a2a:rpc_server_unary_latency:p95_5m{job=~\"$job\"}), \"rpc_method\", \"(unrouted)\", \"rpc_method\", \"\")",
           "legendFormat": "p95 {{rpc_method}}"
         },
         {
@@ -313,13 +317,14 @@
             "type": "prometheus",
             "uid": "a2a-prometheus"
           },
-          "expr": "max by (rpc_method) (a2a:rpc_server_unary_latency:p99_5m{job=~\"$job\"})",
+          "expr": "label_replace(max by (rpc_method) (a2a:rpc_server_unary_latency:p99_5m{job=~\"$job\"}), \"rpc_method\", \"(unrouted)\", \"rpc_method\", \"\")",
           "legendFormat": "p99 {{rpc_method}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "min": 0
         },
         "overrides": []
       },
@@ -699,7 +704,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "min": 0
         },
         "overrides": []
       },
@@ -763,7 +769,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "min": 0
         },
         "overrides": []
       },

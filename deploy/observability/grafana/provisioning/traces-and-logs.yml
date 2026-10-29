@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Tempo and Loki data sources for docker-compose.yml, which mounts this file
+# beside datasources/prometheus.yml. It lives outside datasources/ so that a
+# Grafana provisioned from that directory alone (Prometheus only) does not get
+# two data sources pointing nowhere. Set TEMPO_URL and LOKI_URL.
+#
+# The links: a span opens the logs written inside it (Loki, by trace id), and
+# a log line with a trace id opens its trace (Tempo).
+apiVersion: 1
+datasources:
+  - name: Tempo
+    uid: a2a-tempo
+    type: tempo
+    access: proxy
+    url: ${TEMPO_URL}
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: a2a-loki
+        filterByTraceID: true
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+      tracesToMetrics:
+        datasourceUid: a2a-prometheus
+      serviceMap:
+        datasourceUid: a2a-prometheus
+      nodeGraph:
+        enabled: true
+  - name: Loki
+    uid: a2a-loki
+    type: loki
+    access: proxy
+    url: ${LOKI_URL}
+    jsonData:
+      derivedFields:
+        - name: trace_id
+          datasourceUid: a2a-tempo
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
