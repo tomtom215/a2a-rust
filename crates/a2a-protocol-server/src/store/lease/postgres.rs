@@ -84,7 +84,7 @@ impl LeaseStore for PostgresLeaseStore {
         now_ms: i64,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
-            let done = crate::store::pg_retry::retry(|| {
+            let done = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
                 sqlx::query(
                     "UPDATE a2a_leases SET deadline_ms = $3 + ttl_ms
                  WHERE tenant = $1 AND task_id = $2",
@@ -106,16 +106,17 @@ impl LeaseStore for PostgresLeaseStore {
         task: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<i64>>> + Send + 'a>> {
         Box::pin(async move {
-            let row: Option<(i64,)> = crate::store::pg_retry::retry(|| {
-                sqlx::query_as(
-                    "SELECT deadline_ms FROM a2a_leases WHERE tenant = $1 AND task_id = $2",
-                )
-                .bind(tenant)
-                .bind(task)
-                .fetch_optional(&self.pool)
-            })
-            .await
-            .map_err(|e| failed("read", &e))?;
+            let row: Option<(i64,)> =
+                crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                    sqlx::query_as(
+                        "SELECT deadline_ms FROM a2a_leases WHERE tenant = $1 AND task_id = $2",
+                    )
+                    .bind(tenant)
+                    .bind(task)
+                    .fetch_optional(&self.pool)
+                })
+                .await
+                .map_err(|e| failed("read", &e))?;
             Ok(row.map(|(deadline,)| deadline))
         })
     }

@@ -56,6 +56,9 @@ const RENEW_SQL: &str = "UPDATE a2a_task_claims
 #[derive(Debug, Clone)]
 pub struct PostgresTurnClaims {
     pool: PgPool,
+    /// Where a statement run again after a lost connection is reported: the
+    /// task store's, when the store made this.
+    metrics: crate::metrics::MetricsHandle,
 }
 
 impl PostgresTurnClaims {
@@ -80,12 +83,15 @@ impl PostgresTurnClaims {
         )
         .await
         .map_err(|e| A2aError::internal(format!("turn claims migrate: {e}")))?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            metrics: crate::metrics::MetricsHandle::default(),
+        })
     }
 
     /// Over a pool whose schema the caller has already applied.
-    pub(crate) const fn over(pool: PgPool) -> Self {
-        Self { pool }
+    pub(crate) const fn over(pool: PgPool, metrics: crate::metrics::MetricsHandle) -> Self {
+        Self { pool, metrics }
     }
 }
 
@@ -119,7 +125,7 @@ fn legacy_turn_seen(_task_id: &str) {
 /// Whether `token` still holds a claim: how a store tells a fenced write's
 /// refusal from the terminal-state one.
 pub async fn holds(pool: &PgPool, token: &str) -> Result<bool, sqlx::Error> {
-    let row: Option<(i32,)> = crate::store::pg_retry::retry(|| {
+    let row: Option<(i32,)> = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
         sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = $1")
             .bind(token)
             .fetch_optional(pool)
@@ -138,7 +144,7 @@ impl TurnClaimStore for PostgresTurnClaims {
         ttl: Duration,
     ) -> Fut<'a, bool> {
         Box::pin(async move {
-            let (outcome,): (String,) = crate::store::pg_retry::retry(|| {
+            let (outcome,): (String,) = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query_as(CLAIM_SQL)
                     .bind(scope)
                     .bind(task_id)
@@ -158,7 +164,7 @@ impl TurnClaimStore for PostgresTurnClaims {
 
     fn release<'a>(&'a self, token: &'a str) -> Fut<'a, ()> {
         Box::pin(async move {
-            crate::store::pg_retry::retry(|| {
+            crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query("DELETE FROM a2a_task_claims WHERE token = $1")
                     .bind(token)
                     .execute(&self.pool)
@@ -176,7 +182,7 @@ impl TurnClaimStore for PostgresTurnClaims {
         ttl: Duration,
     ) -> Fut<'a, Vec<HeldClaim>> {
         Box::pin(async move {
-            let rows: Vec<(String, bool)> = crate::store::pg_retry::retry(|| {
+            let rows: Vec<(String, bool)> = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query_as(RENEW_SQL)
                     .bind(owner)
                     .bind(millis(ttl))
@@ -197,7 +203,7 @@ impl TurnClaimStore for PostgresTurnClaims {
 
     fn request_cancel<'a>(&'a self, scope: &'a str, task_id: &'a str) -> Fut<'a, bool> {
         Box::pin(async move {
-            let done = crate::store::pg_retry::retry(|| {
+            let done = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query(
                     "UPDATE a2a_task_claims SET cancel_requested = TRUE
                  WHERE scope = $1 AND task_id = $2 AND expires_at >= now()",
@@ -214,7 +220,7 @@ impl TurnClaimStore for PostgresTurnClaims {
 
     fn sweep(&self, older_than: Duration) -> Fut<'_, u64> {
         Box::pin(async move {
-            let done = crate::store::pg_retry::retry(|| {
+            let done = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query(
                     "DELETE FROM a2a_task_claims
                  WHERE expires_at < now() - $1 * interval '1 millisecond'",

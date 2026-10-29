@@ -249,9 +249,12 @@ pub(in crate::handler::event_processing) async fn record_event(
         // the agent emitted, so neither belongs in the record of what it did.
         return;
     };
-    let appended = super::persisting(retry, || {
-        task_store.append_event(task_id, seq, &event.event)
-    });
+    let appended = super::persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::EVENT_APPEND,
+        || task_store.append_event(task_id, seq, &event.event),
+    );
     if let Err(e) = appended.await {
         trace_warn!(
             task_id = %task_id,

@@ -213,7 +213,7 @@ impl PgMigrationRunner {
     /// Returns an error if the database cannot be queried.
     pub async fn current_version(&self) -> Result<u32, sqlx::Error> {
         self.ensure_version_table().await?;
-        let row = super::pg_retry::retry(|| {
+        let row = super::pg_retry::retry(&crate::metrics::NoopMetrics, || {
             sqlx::query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_versions")
                 .fetch_one(&self.pool)
         })
@@ -259,7 +259,8 @@ impl PgMigrationRunner {
                 continue;
             }
 
-            let mut tx = super::pg_retry::retry(|| self.pool.begin()).await?;
+            let mut tx =
+                super::pg_retry::retry(&crate::metrics::NoopMetrics, || self.pool.begin()).await?;
 
             // The crate-wide schema lock first, so a migration cannot run
             // alongside another store's `from_pool` DDL on the same tables.

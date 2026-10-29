@@ -57,6 +57,11 @@ impl<A: Metrics, B: Metrics> Metrics for Tee<A, B> {
         self.second.on_persistence_error(operation, error_kind);
     }
 
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        self.first.on_store_retry(operation, cause);
+        self.second.on_store_retry(operation, cause);
+    }
+
     fn on_push_delivery(&self, outcome: &str) {
         self.first.on_push_delivery(outcome);
         self.second.on_push_delivery(outcome);

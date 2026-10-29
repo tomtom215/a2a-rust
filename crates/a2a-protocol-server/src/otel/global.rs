@@ -103,6 +103,10 @@ impl Metrics for GlobalOtelMetrics {
         self.current().on_persistence_error(operation, error_kind);
     }
 
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        self.current().on_store_retry(operation, cause);
+    }
+
     fn on_push_delivery(&self, outcome: &str) {
         self.current().on_push_delivery(outcome);
     }

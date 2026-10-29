@@ -25,6 +25,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`Metrics::on_store_retry(operation, cause)`** and the OpenTelemetry
+  counter `a2a.server.store_retries` (server): every store write a turn makes
+  again because the store said "not now" (`cause = "unavailable"`, under
+  `store_write_retry`), and every PostgreSQL statement run again on a new
+  connection because its first lost one (`operation = "statement"`,
+  `cause = "connection_lost"`), reported through the store's `with_metrics`.
+  Their log lines are now throttled to one per ten seconds per kind: a
+  failover met every statement in flight and logged a warning for each. The
+  trait method has a default body, so existing implementations still compile;
+  the turn claims a PostgreSQL store hands out report through its metrics too.
+
 - **`HandlerLimits::store_write_retry`** (server; default 30 s): how long a
   turn's event consumer goes on writing one event while the task store
   answers that it is unavailable for now (*Fixed*).

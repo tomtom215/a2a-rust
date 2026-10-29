@@ -104,9 +104,12 @@ impl<'a> Processor<'a> {
         }
         self.last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
         let task = &self.last_task;
-        let saved = super::super::persisting(self.deps.limits.store_write_retry, || {
-            self.deps.task_store.save(task)
-        });
+        let saved = super::super::persisting(
+            self.deps.limits.store_write_retry,
+            self.deps.metrics,
+            crate::metrics::persistence_operation::FAILED_STATE,
+            || self.deps.task_store.save(task),
+        );
         if let Err(e) = saved.await {
             if let Some(conflict) = TerminalStateConflict::from_error(&e) {
                 self.supersede(&conflict, None, false).await;

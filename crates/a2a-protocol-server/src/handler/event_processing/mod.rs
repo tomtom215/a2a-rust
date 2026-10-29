@@ -37,29 +37,41 @@ pub struct ProcessorLinks {
 /// Runs `write`, one of a turn's store writes, again while it fails with an
 /// error that says "not now" ([`A2aError::is_unavailable`]): after 50 ms,
 /// then twice as long each time up to 1 s, while `retry` has not passed. Any
-/// other outcome is returned at once. See
+/// other outcome is returned at once. Each run again is reported to
+/// `metrics` under `operation` (one of
+/// [`persistence_operation`](crate::metrics::persistence_operation)), and
+/// logged at most once every ten seconds. See
 /// [`HandlerLimits::store_write_retry`](crate::handler::HandlerLimits::store_write_retry),
 /// which also says why a write run twice is safe here.
 ///
 /// [`A2aError::is_unavailable`]: a2a_protocol_types::error::A2aError::is_unavailable
 pub async fn persisting<T, F, Fut>(
     retry: std::time::Duration,
+    metrics: &dyn crate::metrics::Metrics,
+    operation: &str,
     mut write: F,
 ) -> a2a_protocol_types::error::A2aResult<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = a2a_protocol_types::error::A2aResult<T>>,
 {
+    static LOGGED: crate::trace::Throttle = crate::trace::Throttle::every(10);
     let deadline = tokio::time::Instant::now() + retry;
     let mut wait = std::time::Duration::from_millis(50);
     loop {
         match write().await {
             Err(e) if e.is_unavailable() && tokio::time::Instant::now() + wait <= deadline => {
-                trace_warn!(
-                    error = %e,
-                    retry_in_ms = wait.as_millis(),
-                    "task store unavailable; writing the event again"
-                );
+                metrics.on_store_retry(operation, "unavailable");
+                if LOGGED.allow() {
+                    trace_warn!(
+                        error = %e,
+                        operation,
+                        retry_in_ms = wait.as_millis(),
+                        "task store unavailable; writing the event again"
+                    );
+                } else {
+                    trace_debug!(error = %e, operation, "task store unavailable; writing the event again");
+                }
                 tokio::time::sleep(wait).await;
                 wait = (wait * 2).min(std::time::Duration::from_secs(1));
             }

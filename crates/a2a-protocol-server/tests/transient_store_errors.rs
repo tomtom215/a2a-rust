@@ -336,3 +336,56 @@ async fn a_checked_statement_replaces_a_connection_ended_a_moment_ago() {
     }
     db.drop_db().await;
 }
+
+/// Counts `on_store_retry` calls by `(operation, cause)`.
+#[derive(Default)]
+struct Retries(std::sync::Mutex<Vec<(String, String)>>);
+
+impl a2a_protocol_server::metrics::Metrics for Retries {
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        self.0
+            .lock()
+            .expect("lock")
+            .push((operation.to_owned(), cause.to_owned()));
+    }
+}
+
+/// A statement run again because its connection was lost is reported to the
+/// store's metrics, so an operator sees the retries a failover causes even
+/// though they lose nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs a live PostgreSQL (see the module docs)"]
+async fn a_statement_run_again_is_counted() {
+    let db = Scratch::create("counted").await;
+    let retries = Arc::new(Retries::default());
+    let store = PostgresTaskStore::new(&db.url)
+        .await
+        .expect("store")
+        .with_metrics(a2a_protocol_server::metrics::MetricsHandle::from_arc(
+            Arc::clone(&retries) as Arc<dyn a2a_protocol_server::metrics::Metrics>,
+        ));
+    let id = TaskId::new("t-counted");
+    store.get(&id).await.expect("warm the pool");
+    assert_eq!(
+        retries.0.lock().expect("lock").len(),
+        0,
+        "nothing retried yet"
+    );
+    assert!(
+        db.terminate_all().await > 0,
+        "no backend was connected to end"
+    );
+    assert_eq!(
+        store
+            .get(&id)
+            .await
+            .expect("a read run again on a new connection"),
+        None
+    );
+    assert_eq!(
+        *retries.0.lock().expect("lock"),
+        [("statement".to_owned(), "connection_lost".to_owned())],
+        "one statement lost its connection and ran once more"
+    );
+    db.drop_db().await;
+}

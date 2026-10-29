@@ -66,7 +66,7 @@ impl TenantAwarePostgresTaskStore {
             // sqlx 0.9 asks each runtime-built statement to be vouched for: the
             // text is the static clauses above and integer placeholder positions;
             // every caller-supplied value is a bind.
-            let n = crate::store::pg_retry::retry(|| {
+            let n = crate::store::pg_retry::retry(&*self.metrics, || {
                 let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql.clone()));
                 for val in &bind_values {
                     count = count.bind(val);
@@ -111,16 +111,18 @@ impl TenantAwarePostgresTaskStore {
         // sqlx 0.9 asks each runtime-built statement to be vouched for: the
         // text is the static clauses above and integer placeholder positions;
         // every caller-supplied value is a bind.
-        let rows: Vec<(String, serde_json::Value)> = crate::store::pg_retry::retry(|| {
-            let mut query =
-                sqlx::query_as::<_, (String, serde_json::Value)>(sqlx::AssertSqlSafe(sql.clone()));
-            for val in &bind_values {
-                query = query.bind(val);
-            }
-            query.fetch_all(&self.pool)
-        })
-        .await
-        .map_err(|e| to_a2a_error(&e))?;
+        let rows: Vec<(String, serde_json::Value)> =
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                let mut query = sqlx::query_as::<_, (String, serde_json::Value)>(
+                    sqlx::AssertSqlSafe(sql.clone()),
+                );
+                for val in &bind_values {
+                    query = query.bind(val);
+                }
+                query.fetch_all(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
 
         let mut rows: Vec<(String, Task)> = rows
             .into_iter()

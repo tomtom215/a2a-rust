@@ -608,6 +608,7 @@ announced in the CHANGELOG, as 0.15's was.
 | `a2a.server.request.duration` | histogram | s | Request duration (named `a2a.server.latency` before 0.15) |
 | `a2a.server.queue_depth` | gauge | `{queue}` | Active event queues |
 | `a2a.server.persistence_errors` | counter | `{error}` | Store writes that failed |
+| `a2a.server.store_retries` | counter | `{retry}` | Store operations run again after a failure that passed, by `operation` and `cause` (`unavailable`: the store said not now; `connection_lost`: a PostgreSQL statement ran again on a new connection) |
 | `a2a.server.push_deliveries` | counter | `{delivery}` | Push attempts, by `outcome` |
 | `a2a.server.pool.active` | gauge | `{connection}` | In-use HTTP connections |
 | `a2a.server.pool.idle` | gauge | `{connection}` | Idle HTTP connections |
@@ -828,6 +829,7 @@ histogram's name follows the rename, and every other name is unchanged):
 | `a2a.server.executor.duration` | `a2a_server_executor_duration_seconds` |
 | `a2a.server.queue_depth` | `a2a_server_queue_depth` |
 | `a2a.server.persistence_errors` | `a2a_server_persistence_errors_total` |
+| `a2a.server.store_retries` | `a2a_server_store_retries_total` |
 | `a2a.server.push_deliveries` | `a2a_server_push_deliveries_total` |
 | `a2a.server.pool.active` | `a2a_server_pool_active` |
 | `a2a.server.pool.idle` | `a2a_server_pool_idle` |
@@ -835,9 +837,9 @@ histogram's name follows the rename, and every other name is unchanged):
 | `a2a.server.pool.closed` | `a2a_server_pool_closed_total` |
 
 Counters gain `_total`, the histograms gain `_seconds` from their `s` unit,
-and gauges gain nothing. The `a2a.server.executor.duration` row follows from
-that rule: it was added after the measurement above, so it is derived, not
-measured. Every series also carries
+and gauges gain nothing. The `a2a.server.executor.duration` and
+`a2a.server.store_retries` rows follow from that rule: they were added after
+the measurement above, so they are derived, not measured. Every series also carries
 `otel_scope_name="a2a.server"` — the default meter name, changeable with
 `OtelMetricsBuilder::meter_name`. Alongside them the exporter emits
 `target_info`, a gauge whose `service_name` label is the service name:
@@ -910,6 +912,13 @@ everything.
 task's recorded state and its actual state have diverged. Streams recover from
 loss by refetching; this is the case where refetching returns the wrong answer.
 Alert on any non-zero rate rather than on a threshold.
+
+**`store_retries` rising.** Each is a write or statement that failed once and
+then succeeded, so nothing was lost; a failover shows as a burst, one per
+statement in flight. A rate that keeps rising is the store degrading before
+`persistence_errors` starts counting what it lost. The log line beside it is
+throttled to one every ten seconds per kind, so the counter, not the log, is
+the measure.
 
 **`queue_depth` that does not come down.** Each active stream holds a queue.
 A depth that grows monotonically is subscribers that never closed — usually a

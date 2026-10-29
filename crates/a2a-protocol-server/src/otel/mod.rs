@@ -90,6 +90,7 @@ pub use telemetry::{
 /// | `a2a.server.request.duration` | Histogram | `s` | Request duration in seconds (named `a2a.server.latency` before 0.15) |
 /// | `a2a.server.queue_depth` | Gauge | `{queue}` | Number of active event queues |
 /// | `a2a.server.persistence_errors` | Counter | `{error}` | Task writes that failed |
+/// | `a2a.server.store_retries` | Counter | `{retry}` | Store operations run again after a passing failure, by `operation` and `cause` |
 /// | `a2a.server.push_deliveries` | Counter | `{delivery}` | Push attempts, by `outcome` |
 /// | `a2a.server.pool.active` | Gauge | `{connection}` | Active (in-use) connections |
 /// | `a2a.server.pool.idle` | Gauge | `{connection}` | Idle connections |
@@ -118,6 +119,7 @@ pub struct OtelMetrics {
     pool_created_seen: AtomicU64,
     pool_closed_seen: AtomicU64,
     persistence_error_counter: Counter<u64>,
+    store_retry_counter: Counter<u64>,
     push_delivery_counter: Counter<u64>,
     executor_histogram: Histogram<f64>,
 }
@@ -160,31 +162,11 @@ impl OtelMetrics {
             .with_unit("{queue}")
             .build();
 
-        let pool_active_gauge = meter
-            .u64_gauge("a2a.server.pool.active")
-            .with_description("Number of active (in-use) HTTP connections")
-            .with_unit("{connection}")
-            .build();
+        let (pool_active_gauge, pool_idle_gauge, pool_created_counter, pool_closed_counter) =
+            Self::pool_instruments(meter);
 
-        let pool_idle_gauge = meter
-            .u64_gauge("a2a.server.pool.idle")
-            .with_description("Number of idle HTTP connections")
-            .with_unit("{connection}")
-            .build();
-
-        let pool_created_counter = meter
-            .u64_counter("a2a.server.pool.created")
-            .with_description("Total HTTP connections created since process start")
-            .with_unit("{connection}")
-            .build();
-
-        let pool_closed_counter = meter
-            .u64_counter("a2a.server.pool.closed")
-            .with_description("HTTP connections closed due to errors or timeouts")
-            .with_unit("{connection}")
-            .build();
-
-        let (persistence_error_counter, push_delivery_counter) = Self::failure_instruments(meter);
+        let (persistence_error_counter, push_delivery_counter, store_retry_counter) =
+            Self::failure_instruments(meter);
 
         let executor_histogram = Self::executor_instrument(meter);
 
@@ -202,6 +184,7 @@ impl OtelMetrics {
             pool_created_seen: AtomicU64::new(0),
             pool_closed_seen: AtomicU64::new(0),
             persistence_error_counter,
+            store_retry_counter,
             push_delivery_counter,
             executor_histogram,
         }
@@ -246,6 +229,40 @@ impl OtelMetrics {
             .build()
     }
 
+    /// The HTTP connection pool gauges and counters: active, idle, created,
+    /// closed.
+    fn pool_instruments(meter: &Meter) -> (Gauge<u64>, Gauge<u64>, Counter<u64>, Counter<u64>) {
+        let pool_active_gauge = meter
+            .u64_gauge("a2a.server.pool.active")
+            .with_description("Number of active (in-use) HTTP connections")
+            .with_unit("{connection}")
+            .build();
+
+        let pool_idle_gauge = meter
+            .u64_gauge("a2a.server.pool.idle")
+            .with_description("Number of idle HTTP connections")
+            .with_unit("{connection}")
+            .build();
+
+        let pool_created_counter = meter
+            .u64_counter("a2a.server.pool.created")
+            .with_description("Total HTTP connections created since process start")
+            .with_unit("{connection}")
+            .build();
+
+        let pool_closed_counter = meter
+            .u64_counter("a2a.server.pool.closed")
+            .with_description("HTTP connections closed due to errors or timeouts")
+            .with_unit("{connection}")
+            .build();
+        (
+            pool_active_gauge,
+            pool_idle_gauge,
+            pool_created_counter,
+            pool_closed_counter,
+        )
+    }
+
     /// The two failure signals the request path cannot see.
     ///
     /// Split out so `from_meter` stays readable, and kept together because they
@@ -253,7 +270,7 @@ impl OtelMetrics {
     /// added to [`Metrics`] with no-op defaults, which meant this exporter — the
     /// observability path the SDK actually ships — inherited the no-ops and
     /// dropped them. A callback nobody exports is not observability.
-    fn failure_instruments(meter: &Meter) -> (Counter<u64>, Counter<u64>) {
+    fn failure_instruments(meter: &Meter) -> (Counter<u64>, Counter<u64>, Counter<u64>) {
         let persistence_error_counter = meter
             .u64_counter("a2a.server.persistence_errors")
             .with_description(
@@ -273,7 +290,20 @@ impl OtelMetrics {
             .with_unit("{delivery}")
             .build();
 
-        (persistence_error_counter, push_delivery_counter)
+        let store_retry_counter = meter
+            .u64_counter("a2a.server.store_retries")
+            .with_description(
+                "Store operations run again after a failure that passed: the \
+                 store said not now, or a connection was lost. Nothing was \
+                 lost; a rising rate is a store degrading.",
+            )
+            .with_unit("{retry}")
+            .build();
+        (
+            persistence_error_counter,
+            push_delivery_counter,
+            store_retry_counter,
+        )
     }
 }
 
@@ -316,6 +346,16 @@ impl Metrics for OtelMetrics {
             &[
                 KeyValue::new("operation", operation.to_owned()),
                 KeyValue::new("error", error_kind.to_owned()),
+            ],
+        );
+    }
+
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        self.store_retry_counter.add(
+            1,
+            &[
+                KeyValue::new("operation", operation.to_owned()),
+                KeyValue::new("cause", cause.to_owned()),
             ],
         );
     }

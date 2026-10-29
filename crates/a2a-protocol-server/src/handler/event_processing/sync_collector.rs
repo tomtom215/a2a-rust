@@ -497,9 +497,12 @@ impl SyncCollector {
             if !state.task.status.state.is_terminal() {
                 state.task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 state.saw_task_shaped_event = true;
-                super::persisting(self.limits.store_write_retry, || {
-                    self.task_store.save(&state.task)
-                })
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::FAILED_STATE,
+                    || self.task_store.save(&state.task),
+                )
                 .await?;
             }
         }
@@ -559,9 +562,12 @@ impl SyncCollector {
                     message: update.status.message.clone(),
                     timestamp: update.status.timestamp.clone(),
                 };
-                super::persisting(self.limits.store_write_retry, || {
-                    self.task_store.save_status_delta(last_task)
-                })
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::STATUS_UPDATE,
+                    || self.task_store.save_status_delta(last_task),
+                )
                 .await?;
                 state.saw_task_shaped_event = true;
                 state.record_for_push(self.push_sender.is_some(), stream_resp);
@@ -613,14 +619,20 @@ impl SyncCollector {
                         count: appended,
                     };
                     let written = if metadata_changed {
-                        super::persisting(self.limits.store_write_retry, || {
-                            self.task_store.save(last_task)
-                        })
+                        super::persisting(
+                            self.limits.store_write_retry,
+                            &*self.metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || self.task_store.save(last_task),
+                        )
                         .await
                     } else {
-                        super::persisting(self.limits.store_write_retry, || {
-                            self.task_store.save_artifact_delta(last_task, delta)
-                        })
+                        super::persisting(
+                            self.limits.store_write_retry,
+                            &*self.metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || self.task_store.save_artifact_delta(last_task, delta),
+                        )
                         .await
                     };
                     if let Err(e) = written {
@@ -644,9 +656,12 @@ impl SyncCollector {
                 {
                     let previous =
                         std::mem::replace(&mut artifacts[index], update.artifact.clone());
-                    if let Err(e) = super::persisting(self.limits.store_write_retry, || {
-                        self.task_store.save(last_task)
-                    })
+                    if let Err(e) = super::persisting(
+                        self.limits.store_write_retry,
+                        &*self.metrics,
+                        crate::metrics::persistence_operation::ARTIFACT_PUSH,
+                        || self.task_store.save(last_task),
+                    )
                     .await
                     {
                         if let Some(slot) = last_task
@@ -701,9 +716,12 @@ impl SyncCollector {
                     });
                 }
                 *last_task = task;
-                super::persisting(self.limits.store_write_retry, || {
-                    self.task_store.save(last_task)
-                })
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                    || self.task_store.save(last_task),
+                )
                 .await?;
                 state.saw_task_shaped_event = true;
             }
@@ -719,9 +737,12 @@ impl SyncCollector {
                 history.push(msg);
                 // The same limit, by count and by bytes, as the send path.
                 crate::handler::messaging::TASK_HISTORY_LIMIT.trim(history);
-                super::persisting(self.limits.store_write_retry, || {
-                    self.task_store.save(last_task)
-                })
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::HISTORY_APPEND,
+                    || self.task_store.save(last_task),
+                )
                 .await?;
             }
             Ok(_) => {
@@ -729,9 +750,12 @@ impl SyncCollector {
             }
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                super::persisting(self.limits.store_write_retry, || {
-                    self.task_store.save_status_delta(last_task)
-                })
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::FAILED_STATE,
+                    || self.task_store.save_status_delta(last_task),
+                )
                 .await?;
                 state.saw_task_shaped_event = true;
                 return Err(ServerError::Protocol(e));
@@ -766,9 +790,12 @@ impl SyncCollector {
         let history = last_task.history.get_or_insert_with(Vec::new);
         history.push(message);
         crate::handler::messaging::TASK_HISTORY_LIMIT.trim(history);
-        super::persisting(self.limits.store_write_retry, || {
-            self.task_store.save(last_task)
-        })
+        super::persisting(
+            self.limits.store_write_retry,
+            &*self.metrics,
+            crate::metrics::persistence_operation::HISTORY_APPEND,
+            || self.task_store.save(last_task),
+        )
         .await?;
         if open {
             state.record_for_push(

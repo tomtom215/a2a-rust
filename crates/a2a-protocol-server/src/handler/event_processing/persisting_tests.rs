@@ -16,6 +16,7 @@ use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use super::persisting;
+use crate::metrics::persistence_operation::EVENT_APPEND as OP;
 use crate::store::{InMemoryTaskStore, TaskStore};
 
 /// A write that fails `fails` times with `error`, then succeeds; counts runs.
@@ -39,9 +40,14 @@ fn unavailable() -> A2aError {
 async fn a_write_the_store_cannot_take_now_is_made_again_until_it_can() {
     let runs = Arc::new(AtomicUsize::new(0));
     let started = tokio::time::Instant::now();
-    persisting(Duration::from_secs(30), flaky(3, unavailable, &runs))
-        .await
-        .expect("the fourth run succeeds");
+    persisting(
+        Duration::from_secs(30),
+        &crate::metrics::NoopMetrics,
+        OP,
+        flaky(3, unavailable, &runs),
+    )
+    .await
+    .expect("the fourth run succeeds");
     assert_eq!(runs.load(Ordering::SeqCst), 4);
     assert_eq!(
         started.elapsed(),
@@ -55,6 +61,8 @@ async fn any_other_failure_is_returned_at_once() {
     let runs = Arc::new(AtomicUsize::new(0));
     let e = persisting(
         Duration::from_secs(30),
+        &crate::metrics::NoopMetrics,
+        OP,
         flaky(1, || A2aError::internal("disk full"), &runs),
     )
     .await
@@ -69,6 +77,8 @@ async fn the_budget_bounds_the_retries_and_the_last_error_is_returned() {
     let started = tokio::time::Instant::now();
     let e = persisting(
         Duration::from_secs(1),
+        &crate::metrics::NoopMetrics,
+        OP,
         flaky(usize::MAX, unavailable, &runs),
     )
     .await
@@ -83,6 +93,8 @@ async fn the_budget_bounds_the_retries_and_the_last_error_is_returned() {
     let started = tokio::time::Instant::now();
     persisting(
         Duration::from_secs(60),
+        &crate::metrics::NoopMetrics,
+        OP,
         flaky(usize::MAX, unavailable, &runs),
     )
     .await
@@ -95,12 +107,58 @@ async fn the_budget_bounds_the_retries_and_the_last_error_is_returned() {
     );
 }
 
+/// Counts `on_store_retry` calls by `(operation, cause)`.
+#[derive(Default)]
+struct Retries(std::sync::Mutex<Vec<(String, String)>>);
+
+impl crate::metrics::Metrics for Retries {
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        self.0
+            .lock()
+            .expect("lock")
+            .push((operation.to_owned(), cause.to_owned()));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn each_run_again_is_counted_under_its_operation() {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let retries = Retries::default();
+    persisting(
+        Duration::from_secs(30),
+        &retries,
+        OP,
+        flaky(3, unavailable, &runs),
+    )
+    .await
+    .expect("the fourth run succeeds");
+    let seen = retries.0.into_inner().expect("lock");
+    assert_eq!(seen, vec![(OP.to_owned(), "unavailable".to_owned()); 3]);
+
+    let runs = Arc::new(AtomicUsize::new(0));
+    let retries = Retries::default();
+    persisting(
+        Duration::from_secs(30),
+        &retries,
+        OP,
+        flaky(1, || A2aError::internal("disk full"), &runs),
+    )
+    .await
+    .expect_err("not retried");
+    assert_eq!(retries.0.into_inner().expect("lock"), Vec::new());
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_zero_budget_writes_once() {
     let runs = Arc::new(AtomicUsize::new(0));
-    persisting(Duration::ZERO, flaky(1, unavailable, &runs))
-        .await
-        .expect_err("not retried");
+    persisting(
+        Duration::ZERO,
+        &crate::metrics::NoopMetrics,
+        OP,
+        flaky(1, unavailable, &runs),
+    )
+    .await
+    .expect_err("not retried");
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 }
 

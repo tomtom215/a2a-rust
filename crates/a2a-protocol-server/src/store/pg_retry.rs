@@ -94,14 +94,31 @@ pub fn connection_lost(e: &sqlx::Error) -> bool {
 /// the first run lost its connection. Only for a statement whose second run
 /// leaves the database, and answers, as one run would; see the [module
 /// documentation](self).
-pub async fn retry<T, F, Fut>(mut statement: F) -> Result<T, sqlx::Error>
+///
+/// Each second run is reported to `metrics`
+/// ([`Metrics::on_store_retry`](crate::metrics::Metrics::on_store_retry),
+/// operation `statement`, cause `connection_lost`) and logged at most once
+/// every ten seconds: a failover meets every statement in flight.
+pub async fn retry<T, F, Fut>(
+    metrics: &dyn crate::metrics::Metrics,
+    mut statement: F,
+) -> Result<T, sqlx::Error>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, sqlx::Error>>,
 {
+    static LOGGED: crate::trace::Throttle = crate::trace::Throttle::every(10);
     match statement().await {
         Err(e) if connection_lost(&e) => {
-            trace_info!(error = %e, "postgres: connection lost; running the statement again");
+            metrics.on_store_retry(
+                crate::metrics::persistence_operation::STATEMENT,
+                "connection_lost",
+            );
+            if LOGGED.allow() {
+                trace_warn!(error = %e, "postgres: connection lost; running the statement again");
+            } else {
+                trace_debug!(error = %e, "postgres: connection lost; running the statement again");
+            }
             CHECKING.scope((), statement()).await
         }
         done => done,

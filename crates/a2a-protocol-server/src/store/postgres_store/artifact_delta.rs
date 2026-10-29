@@ -95,7 +95,7 @@ impl PostgresTaskStore {
         // The last condition is the terminal guard (see
         // `crate::store::terminal`), on the writer's state: zero rows sends
         // the caller to `save`, which reports a refusal.
-        let rows = crate::store::pg_retry::retry(|| {
+        let rows = crate::store::pg_retry::retry(&*self.metrics, || {
             sqlx::query(concat!(
                 crate::store::terminal::sql_write_allowed!(
                     "UPDATE tasks SET data = jsonb_set(\
@@ -155,7 +155,7 @@ impl PostgresTaskStore {
             return Ok(None);
         };
 
-        let rows = crate::store::pg_retry::retry(|| {
+        let rows = crate::store::pg_retry::retry(&*self.metrics, || {
             sqlx::query(concat!(
                 crate::store::terminal::sql_write_allowed!(
                     "UPDATE tasks SET data = jsonb_set(\

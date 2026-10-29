@@ -63,7 +63,7 @@ pub async fn purge(
             break;
         }
         // `table` is `&'static str`; the cut-off and batch are binds.
-        let deleted = crate::store::pg_retry::retry(|| {
+        let deleted = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
             sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(&labels)
                 .bind(&interval)
@@ -87,7 +87,7 @@ pub async fn purge(
                 report.complete = false;
                 return Ok(report);
             }
-            let deleted = crate::store::pg_retry::retry(|| {
+            let deleted = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
                 sqlx::query(key_sweep)
                     .bind(&key_interval)
                     .bind(batch)

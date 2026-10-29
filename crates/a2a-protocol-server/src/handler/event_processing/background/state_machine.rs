@@ -92,9 +92,12 @@ async fn fail_invalid_transition(
         "invalid state transition rejected (background); marking task as failed"
     );
     last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-    if let Err(e) = crate::handler::event_processing::persisting(retry, || {
-        task_store.save_status_delta(last_task)
-    })
+    if let Err(e) = crate::handler::event_processing::persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::FAILED_STATE,
+        || task_store.save_status_delta(last_task),
+    )
     .await
     {
         if let Some(refused) = refusal(&e) {
@@ -186,9 +189,12 @@ pub(super) async fn process_event_with(
                 message: update.status.message.clone(),
                 timestamp: update.status.timestamp.clone(),
             };
-            if let Err(e) = crate::handler::event_processing::persisting(retry, || {
-                task_store.save_status_delta(last_task)
-            })
+            if let Err(e) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                crate::metrics::persistence_operation::STATUS_UPDATE,
+                || task_store.save_status_delta(last_task),
+            )
             .await
             {
                 if let Some(refused) = refusal(&e) {
@@ -263,20 +269,28 @@ pub(super) async fn process_event_with(
                 // the metadata is written whole (`merge_append`).
                 let written =
                     if crate::handler::event_processing::merge_append(existing, &update.artifact) {
-                        crate::handler::event_processing::persisting(retry, || {
-                            task_store.save(last_task)
-                        })
+                        crate::handler::event_processing::persisting(
+                            retry,
+                            metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || task_store.save(last_task),
+                        )
                         .await
                     } else {
-                        crate::handler::event_processing::persisting(retry, || {
-                            task_store.save_artifact_delta(
-                                last_task,
-                                ArtifactDelta::AppendedParts {
-                                    index,
-                                    count: appended,
-                                },
-                            )
-                        })
+                        crate::handler::event_processing::persisting(
+                            retry,
+                            metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || {
+                                task_store.save_artifact_delta(
+                                    last_task,
+                                    ArtifactDelta::AppendedParts {
+                                        index,
+                                        count: appended,
+                                    },
+                                )
+                            },
+                        )
                         .await
                     };
                 if let Err(e) = written {
@@ -324,9 +338,12 @@ pub(super) async fn process_event_with(
                 && let Some(index) = artifacts.iter().position(|a| a.id == update.artifact.id)
             {
                 let previous = std::mem::replace(&mut artifacts[index], update.artifact.clone());
-                if let Err(e) = crate::handler::event_processing::persisting(retry, || {
-                    task_store.save(last_task)
-                })
+                if let Err(e) = crate::handler::event_processing::persisting(
+                    retry,
+                    metrics,
+                    crate::metrics::persistence_operation::ARTIFACT_PUSH,
+                    || task_store.save(last_task),
+                )
                 .await
                 {
                     if let Some(refused) = refusal(&e) {
@@ -433,9 +450,13 @@ pub(super) async fn process_event_with(
             }
             let prev = last_task.clone();
             *last_task = task;
-            if let Err(e) =
-                crate::handler::event_processing::persisting(retry, || task_store.save(last_task))
-                    .await
+            if let Err(e) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                || task_store.save(last_task),
+            )
+            .await
             {
                 if let Some(refused) = refusal(&e) {
                     return refused;
@@ -463,9 +484,12 @@ pub(super) async fn process_event_with(
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-            if let Err(save_err) = crate::handler::event_processing::persisting(retry, || {
-                task_store.save_status_delta(last_task)
-            })
+            if let Err(save_err) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                crate::metrics::persistence_operation::FAILED_STATE,
+                || task_store.save_status_delta(last_task),
+            )
             .await
             {
                 if let Some(refused) = refusal(&save_err) {
@@ -507,8 +531,13 @@ async fn append_message(
     // The same limit, by count and by bytes, as the send path. What
     // it dropped is kept so a failed save can undo exactly the append.
     let dropped = crate::handler::messaging::TASK_HISTORY_LIMIT.trim_returning(history);
-    if let Err(e) =
-        crate::handler::event_processing::persisting(retry, || task_store.save(last_task)).await
+    if let Err(e) = crate::handler::event_processing::persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::HISTORY_APPEND,
+        || task_store.save(last_task),
+    )
+    .await
     {
         if let Some(refused) = refusal(&e) {
             return refused;
