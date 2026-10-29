@@ -102,7 +102,15 @@ server.serve_with_shutdown(dispatcher, shutdown_signal()).await; // returns on S
   certificate takes `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` and
   `OTEL_EXPORTER_OTLP_CLIENT_KEY`, also PEM files. An unreadable file stops the
   process at startup, naming the variable. Without the CA, the warning says
-  what to set.
+  what to set; so it does for a certificate for another host name, an expired
+  one, a collector that wants a client certificate and got none or one it
+  does not trust, and an `http://`/`https://` scheme that does not match the
+  receiver. A **self-signed** collector certificate is refused if it is marked
+  a CA, which `openssl req -x509` does unless told otherwise: make it with
+  `-addext basicConstraints=critical,CA:FALSE` (and the collector's host in
+  `subjectAltName`), then name the certificate itself in
+  `OTEL_EXPORTER_OTLP_CERTIFICATE`. An endpoint by IP address needs the
+  address in the certificate's `subjectAltName`.
 * **Behind a proxy.** `HTTPS_PROXY`, `HTTP_PROXY` or `ALL_PROXY` (an
   `http://` proxy, in upper or lower case) send the export through it, and the
   startup line says `via proxy`. Exempt a collector inside the cluster with
@@ -112,7 +120,11 @@ server.serve_with_shutdown(dispatcher, shutdown_signal()).await; // returns on S
   with `.cluster.local`, `.svc.cluster.local` and
   `.svc,.cluster.local,10.0.0.0/8`. A CIDR entry matches a collector addressed
   by IP and never one addressed by name, even a name that resolves into the
-  range.
+  range. An IPv6 address may be written bare or in brackets (`::1`, `[::1]`,
+  `fd00::/8`). A proxy that wants a login takes it in its URL
+  (`http://user:password@proxy:3128`); the startup line and the warnings show
+  the proxy without it. When the proxy refuses, the warning says it was the
+  proxy.
 * **Prometheus scraping the pod, no collector.** Build with the
   `otel-prometheus` feature (off by default, and `deploy-agent` is built
   without it), set `OTEL_METRICS_EXPORTER=prometheus`, and set
@@ -148,10 +160,29 @@ OTLP/HTTP receiver with TLS and client-certificate options, and this
 repository's own `hyper` and `tonic` test collectors and forward proxy). Not
 run: Kubernetes (the manifest was parsed as YAML and its `$(NAME)` references
 checked, nothing more; a cluster could not be started where this was
-tested), IPv6, an endpoint with a public CA, and a production proxy server. A gRPC-only receiver was
-imitated by a socket that closes the connection, and a real one may answer
-differently, though the hint depends only on the port and on the failure
-carrying no HTTP status.
+tested), IPv6 on the wire (the host had no IPv6 in its kernel; the endpoint
+and `NO_PROXY` handling of IPv6 addresses is unit-tested), and an endpoint with
+a public CA. A gRPC-only receiver was imitated by a socket that closes the
+connection, and a real one may answer differently, though the hint depends
+only on the port and on the failure carrying no HTTP status.
+
+**TLS and proxies, against a real collector and a real proxy** (2026-10-28,
+`tck/sut` exporting all three signals over OTLP/HTTP and OTLP/gRPC to
+otelcol-contrib 0.163.2): server TLS from a private CA, mutual TLS
+(`client_ca_file`), a self-signed certificate marked CA and one marked
+`CA:FALSE`, an expired certificate, a host name the certificate does not
+list, an IP address it does, and `http://` against a TLS receiver and the
+reverse; then through Squid 6.13 (forward requests for plaintext OTLP/HTTP,
+`CONNECT` tunnels for TLS and for gRPC, mutual TLS inside a tunnel), with
+`NO_PROXY` exempting the collector, a proxy that is not running, one that
+denies everything, and one that requires a login, given it, not given it and
+given a wrong one. Every working case delivered traces, metrics and logs
+(read from the collector's `debug` exporter, Squid's access log and the
+compose stack's backends), and every failing case ended with a warning
+naming its cause. Five of those warnings had no hint, and three hints never
+fired because they matched words rustls does not print; both are fixed, with
+the failures' own text as their tests
+(`crates/a2a-protocol-server/src/otel/telemetry/hints/tests.rs`).
 
 ## Turning them on
 

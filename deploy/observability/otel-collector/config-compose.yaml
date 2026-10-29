@@ -8,6 +8,16 @@
 # directly, and the dashboards and rules need no change. Traces go to Tempo,
 # logs to Loki. `config.yaml` beside this file is the Collector on its own
 # (metrics scraped on 8889, traces and logs to the debug exporter).
+# Hardening, as the Collector's own guidance has it: `memory_limiter` first in
+# every pipeline, so a burst is refused (the agent retries) rather than the
+# Collector killed for memory; its limits are a share of the container's
+# memory limit, so give the container one. `health_check` answers on 13133
+# for a liveness or readiness probe (`GET /` is 200 once the pipelines run).
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
   otlp:
     protocols:
@@ -17,6 +27,10 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
   batch: {}
 
 exporters:
@@ -34,16 +48,17 @@ exporters:
       insecure: true
 
 service:
+  extensions: [health_check]
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [otlphttp/prometheus]
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [otlp/tempo]
     logs:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [otlphttp/loki]

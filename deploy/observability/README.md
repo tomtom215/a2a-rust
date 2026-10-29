@@ -37,6 +37,27 @@ Metrics travel Collector → Prometheus's OTLP receiver, so `service.name` and
 pushes to Prometheus itself, and nothing below changes. Run it for a laptop or
 a test box; it keeps everything in local volumes and has no authentication.
 
+### On a shared host
+
+```sh
+GRAFANA_ADMIN_PASSWORD=... docker compose \
+  -f deploy/observability/docker-compose.yml \
+  -f deploy/observability/docker-compose.prod.yml up -d
+```
+
+adds a Grafana login (no anonymous user; Compose refuses to start without
+the password), publishes only Grafana and the Collector's OTLP ports, so
+Prometheus, Tempo and Loki are reachable on the Compose network only, and
+gives the Collector a 1 GiB memory limit. TLS on the OTLP receivers and on
+Grafana, authentication on the receivers for agents outside your network, and
+backups are still yours to add; the file says how far it goes.
+
+Both Collector configurations put `memory_limiter` first in every pipeline
+(a burst is refused and the agent retries, rather than the Collector being
+killed for memory; its limits are 80% and 20% of the container's memory
+limit) and answer health checks on 13133 (`GET /` is 200 once the pipelines
+run), for a Kubernetes liveness or readiness probe.
+
 | Path | What it is |
 |---|---|
 | `prometheus/prometheus.yml` | Prometheus with its OTLP receiver: agents push metrics straight to it |
@@ -45,6 +66,7 @@ a test box; it keeps everything in local volumes and has no authentication.
 | `otel-collector/config-compose.yaml` | The Collector of the compose stack: metrics to Prometheus over OTLP, traces to Tempo, logs to Loki |
 | `tempo/tempo.yaml`, `loki/loki.yaml` | Tempo and Loki, single binary, local storage, OTLP in |
 | `grafana/provisioning/traces-and-logs.yml` | Tempo and Loki data sources, linked both ways; set `TEMPO_URL` and `LOKI_URL` (the compose stack mounts it) |
+| `docker-compose.prod.yml` | The stack closed down for a shared host: Grafana login, only Grafana and OTLP published, a memory limit on the Collector |
 | `otel-collector/config.yaml` | The Collector on its own: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889; traces and logs go to its `debug` exporter, so add exporters for your trace and log backends |
 | `prometheus/rules/a2a-recording.yml` | Recording rules: call rate, error ratio and latency quantiles per binding and method, unanswered requests, push-delivery outcomes, client-side calls |
 | `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent (`A2AAgentSilent`, `critical`, also fires for an instance a rollout retired: from ten minutes after its last export until an hour has passed) |
@@ -168,3 +190,24 @@ here: the unanswered-requests rule first subtracted only responses, which
 counts every error as unanswered (an error is not counted as a response);
 and the Collector comment named port 4317 for an exporter that defaults to
 HTTP/protobuf on 4318.
+
+### TLS, proxies and the hardened stack (2026-10-28)
+
+otelcol-contrib 0.163.2 with its OTLP receivers on TLS (a private CA; mutual
+TLS with `client_ca_file`; a self-signed certificate marked CA and one marked
+`CA:FALSE`; an expired certificate), and Squid 6.13 in front of it (open,
+denying everything, and requiring a login), fed by `tck/sut` over OTLP/HTTP
+and OTLP/gRPC. Every configuration that should work delivered traces,
+metrics and logs; every one that should not ended with a warning naming the
+cause and what to change. The texts behind those warnings are the inputs of the
+hint tests (`crates/a2a-protocol-server/src/otel/telemetry/hints/tests.rs`): three of its four TLS hints had matched
+error names rustls never prints, and never fired.
+
+Then the compose stack with the hardened Collector configuration (the
+memory limiter configured itself from the container, the health check
+answered 200) and the production override: Prometheus, Tempo and Loki
+refused connections from the host, Grafana answered 401 without a login and
+with a wrong password and served the dashboards to `admin`, and an agent's
+metrics were read back through Grafana's data source proxy. Not run: the
+production override behind TLS, and either stack in Kubernetes.
+

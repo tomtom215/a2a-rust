@@ -18,6 +18,8 @@
 # An agent in a container on the same Docker network uses
 # http://otel-collector:4318 instead. Not a production deployment: no
 # authentication (Grafana's anonymous user is an admin), local volumes only.
+# docker-compose.prod.yml, added with a second -f, closes it down for a shared
+# host.
 name: a2a-observability
 
 services:

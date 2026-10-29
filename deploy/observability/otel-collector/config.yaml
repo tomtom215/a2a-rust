@@ -16,6 +16,16 @@
 # Langfuse takes OTLP over HTTP only, so forward to it with `otlphttp` and its
 # two headers (book: Deployment > Langfuse).
 
+# Hardening, as the Collector's own guidance has it: `memory_limiter` first in
+# every pipeline, so a burst is refused (the agent retries) rather than the
+# Collector killed for memory; its limits are a share of the container's
+# memory limit, so give the container one. `health_check` answers on 13133
+# for a liveness or readiness probe (`GET /` is 200 once the pipelines run).
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
   otlp:
     protocols:
@@ -25,6 +35,10 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
   batch: {}
 
 exporters:
@@ -39,16 +53,17 @@ exporters:
     verbosity: basic
 
 service:
+  extensions: [health_check]
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [prometheus]
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [debug]
     logs:
       receivers: [otlp]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [debug]

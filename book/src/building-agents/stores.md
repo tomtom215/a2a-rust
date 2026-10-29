@@ -578,7 +578,9 @@ should:
    every replica shares, and in the same database as its tasks, since the
    second step reads it. `PostgresTurnClaims::from_pool` and
    `SqliteTurnClaims::from_pool` are there to reuse when the store already
-   runs on one of those.
+   runs on one of those. One of your own must renew only the tokens
+   `renew` names, never every claim of the owner: a claim the handler no
+   longer tracks has to expire.
 2. **Fence every task write and event-log append.** Read
    `store::claim::current_fence()` at the start of each write method, before
    anything is spawned (it is a task-local, like the tenant). When it is
@@ -586,7 +588,11 @@ should:
    token still holding a claim (the SQL stores add `EXISTS (SELECT 1 FROM
    a2a_task_claims WHERE token = $n)` to the statement), and when it refuses,
    return `ClaimLost::new(task_id).into_error()`. A write with no fence (a
-   `CancelTask`, which must win wherever the task runs) is not checked.
+   `CancelTask`, which must win wherever the task runs) is not checked. On a
+   database whose statements read a snapshot taken when they start
+   (PostgreSQL's READ COMMITTED), lock the claim row in that condition (the
+   PostgreSQL stores add `FOR KEY SHARE`), or a write that waited on the task
+   row through a takeover passes on the claim as it was.
 
 A store that takes the default, `None`, gets neither: the handler takes no
 claims and refuses a second send to a running task only within its own

@@ -33,6 +33,39 @@ only: when something here is done, delete it rather than annotating it.
     Mutation-checked: claims off, all 10 claim tests fail; fence condition
     replaced by `TRUE`, exactly the 2 fence tests fail; the claim released
     at the old point, the terminal-event test fails 5 of 6 runs.
+  - **An independent review of turn claims** (a read-only agent, given the
+    commit and not this session's conclusions) reported 2 high, 4 medium and
+    5 low findings. Six were confirmed and fixed (`fa2785eb`), each with a
+    test that fails when the fix is reverted: a renewal racing a new claim
+    cancelled it; renewal by owner kept forgotten claims alive; foreign
+    claims over a fenced store refused every write; the PostgreSQL fence read
+    a stale snapshot under READ COMMITTED (reproduced with two `psql`
+    sessions; now `FOR KEY SHARE`); the quorum count was unfenced (two
+    approvals on two replicas lost one, 3 of 3 runs); a waiting send held its
+    idempotency key, so a retry elsewhere was told "accepted" for a send then
+    refused. Also fixed: shutdown now releases claims. Not changed, with the
+    reason in *Open engineering*: the fence is not scoped to a task, and a
+    send to a task whose cancelled executor still winds down is refused at
+    once.
+  - **Claims under load and their cost**: `tests/soak_multi_replica.rs`, now
+    with `A2A_SOAK_TURN_CLAIMS=off` and a check that no claim outlives a run,
+    three 60 s runs each way, alternating, release build, PostgreSQL 17 on
+    the same 4-vCPU host: 360 ± 17 pairs/s with claims, 423 ± 14 without
+    (15% fewer), median 21.4 ms against 18.6 ms; 0 failures, 0 cross-replica
+    misses, 0 claims left, in all six.
+  - **OTLP over TLS and through proxies, live**: otelcol-contrib 0.163.2 with
+    TLS from a private CA, mutual TLS, a self-signed certificate marked CA and
+    one `CA:FALSE`, an expired one, a wrong host name and an IP SAN, over
+    OTLP/HTTP and OTLP/gRPC; Squid 6.13 open, denying and requiring a login.
+    Everything that should work delivered all three signals. Of the warnings
+    for what should not, five had no hint and three hints never fired (they
+    matched error names rustls does not print); all fixed, tested on the
+    failures' own text. `NO_PROXY=[::1]` exempted nothing; fixed. IPv6 could
+    not be dialled (no IPv6 in this kernel), so its URL and `NO_PROXY`
+    handling is unit-tested only.
+  - **Collector hardening**: `memory_limiter` and `health_check` in both
+    Collector configurations, and `docker-compose.prod.yml` (Grafana login,
+    only Grafana and OTLP published, a memory limit), each run live.
   - **Every example run against llama.cpp `llama-server` b11913**
     (`ghcr.io/ggml-org/llama.cpp:server`, commit `7aca0d2ea`) with Qwen3.5-2B
     Q4_K_M (SHA-256 `aaf42c8b…9223`): all exit 0, after fixing four that sent
@@ -59,8 +92,8 @@ only: when something here is done, delete it rather than annotating it.
     Dockerfile is unchanged.
   **Not run, and so not claimed:** Kubernetes (kind could not start a pod
   sandbox here: nested `runc` fails, "can't get final child's PID from
-  pipe"; Kubernetes 1.35's kubelet also refuses this host's cgroup v1), IPv6,
-  a public-CA collector, a production proxy, PgBouncer, a network between
+  pipe"; Kubernetes 1.35's kubelet also refuses this host's cgroup v1), IPv6
+  on the wire, a public-CA collector, PgBouncer, a network between
   replicas and database, `cargo-semver-checks`, `cargo deny`, `promtool` (the
   rules were exercised live by Prometheus, not unit-tested), the official
   TCK. **For the maintainer:** (1) the release number, now 0.16.0 by the
@@ -69,7 +102,10 @@ only: when something here is done, delete it rather than annotating it.
   was never tagged); (2) sign-off: the commits are authored as the session's
   identity and signed off by it alone, so `scripts/check_dco.sh` will want
   them re-authored and signed off by you, as with the 0.15.1 branch; (3) the
-  quorum gate's unfenced `Waiting` save (*Waiting on the maintainer*).
+  rolling-upgrade rule (a fleet mixing this release with 0.15.x is not
+  protected; book: Running More Than One Replica, *Upgrading a fleet*): it is
+  in the CHANGELOG's Behaviour Changes, and the release notes should lead
+  with it.
   ADR 0028 (Proposed) and `docs/adr/0028-wasm-spike/` are unchanged from the
   previous session; its `reproduce.sh` was not re-run.
 - **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
@@ -446,12 +482,11 @@ only: when something here is done, delete it rather than annotating it.
   for (the continuation waits for the claim and reads the task again) and the
   concurrent turns that design did not, without a `version` column or a
   change to any existing `TaskStore` method; the one addition is the provided
-  `turn_claims` (default `None`). Two decisions for the maintainer: the
+  `turn_claims` (default `None`). One decision for the maintainer: the
   release number (it adds public API and changes which sends are refused,
-  so the book's definition of a patch does not fit it), and whether the
-  quorum gate's `Waiting` save, which runs before the claim is taken and so
-  unfenced, should take one (an edge found by the design review, not
-  reproduced).
+  so the book's definition of a patch does not fit it). The quorum gate's
+  save, the other open question, now runs under the claim (reproduced as a
+  lost approval first, then fixed).
 - **A `v*` tag ruleset** is unset (a repository setting; `ROADMAP.md` tracks
   it). Without it, a tag on an unreviewed commit whose workflow has been
   edited is what `release.yml`'s validation cannot stop, because the workflow
@@ -532,9 +567,21 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   not running the task is still fed by polling the event log every
   `subscribe_reattach_interval` (250 ms); `LISTEN`/`NOTIFY` could push it,
   unbuilt. A cancel reaches another replica's executor at the owner's next
-  renewal (1 s), not at once, unless a halt store pushes it. Not measured: the
-  per-send cost of the claim's two statements against PostgreSQL, a real
-  network between replicas and database, a partition, PgBouncer.
+  renewal (1 s), not at once, unless a halt store pushes it. Measured on one
+  host only (15% throughput, *Now*); not measured: a real network between
+  replicas and database, a partition, PgBouncer. From the review, left as
+  they are: the fence checks that the token holds *a* claim, not the claim
+  on the task written, so a write to another task from inside a turn passes
+  (scoping it would refuse such a write if any legitimate path makes one,
+  and none was audited); a send to a task whose executor was cancelled but
+  is still winding down is refused at once rather than waited for (the
+  cancel paths store a terminal state, after which it is refused anyway; not
+  tested); a continuation of a task parked in this process waits about one
+  20 ms retry for the claim's release, which runs on a spawned task. The
+  `swarm_scale` experiment `a_tail_can_recover_what_it_missed` failed 2 of 2
+  times run beside its 14 siblings and passed 3 of 3 alone or serially
+  (in-memory store, no claims; a 3 s tail window under contention is the
+  suspicion, not established).
 - **AES-GCM nonce budget is per process** (encryption verification,
   2026-10-21, medium, design). The 2^32-seal limit per key is counted per
   process and resets on restart, so R replicas can seal R × 2^32 under one
@@ -793,6 +840,19 @@ into this file: the commit that records it changes it.
   GitHub release downloads are refused; `go install` through the module
   proxy works (kind was installed that way). Kubernetes does not run here
   (kind: nested `runc` cannot start a pod sandbox).
+- **Live-testing pitfalls met in this sandbox** (2026-10-28): the kernel has
+  no IPv6 (no `/proc/net/if_inet6`; an AF_INET6 socket fails with errno 97),
+  so nothing IPv6 can be dialled. The sandbox's `NO_PROXY` covers 127.0.0.1
+  and curl applies it even to `-x`, so check a local proxy with
+  `--noproxy ''`, and start test processes under `env -i` with only the
+  variables meant. Squid (`mirror.gcr.io/ubuntu/squid`) cannot write
+  `/dev/stdout` as its `proxy` user: log to `/var/log/squid/`. A second
+  Collector on host networking collides on its own telemetry port 8888;
+  publish ports instead. `docker compose up` does not recreate a container
+  whose bind-mounted config changed: `--force-recreate`. A Collector on
+  `localhost:4318` makes `tests/otel_pipeline_default_endpoint.rs` fail
+  (it needs that port free). A debug build of the whole server suite needs
+  about 14 GB of disk; `CARGO_PROFILE_DEV_DEBUG=0` brings it under 4 GB.
 - **A model's thinking costs minutes on four CPUs**: Qwen3.5 reasons by
   default, and an uncapped call generated over 5,000 tokens at about 6.5
   tokens/s. Every model-backed example now caps output and turns thinking

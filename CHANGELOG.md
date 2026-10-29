@@ -34,12 +34,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   on its own replica, reads a continued task again under the claim, and
   releases it when the turn's executor and its event consumer have both
   ended. Every task write and event-log append a turn makes is fenced by the
-  claim's token in the same statement, so a replica whose claim was taken over
-  is refused (`ClaimLost`) and its executor cancelled. The owner renews its
-  claims every second; a `CancelTask` on another replica marks the claim and
-  the owner's next renewal fires the executor's token, with or without a halt
-  store; a dead replica's claims expire after 15 s and the next send takes the
-  task over. New: `store::claim` (`TurnClaimStore`, `HeldClaim`, `ClaimLost`,
+  claim's token in the same statement (on PostgreSQL locking the claim row
+  `FOR KEY SHARE`, so a write that waited through a takeover is refused too),
+  so a replica whose claim was taken over is refused (`ClaimLost`) and its
+  executor cancelled. The owner renews the claims it holds, by token, every
+  second; a `CancelTask` on another replica marks the claim and the owner's
+  next renewal fires the executor's token, with or without a halt store; a
+  dead replica's claims expire after 15 s and the next send takes the task
+  over; a replica that shuts down releases its claims at once. A send that
+  waits for another replica's turn gives up its idempotency key while it
+  waits, and an approval toward a quorum is counted under the claim, so
+  approvals on two replicas at once are both counted. `build` refuses
+  `with_turn_claims` over a store with claims of its own. New: `store::claim` (`TurnClaimStore`, `HeldClaim`, `ClaimLost`,
   `CLAIM_LOST_MARKER`, `current_fence`, `InMemoryTurnClaims`,
   `PostgresTurnClaims`, `SqliteTurnClaims`), the provided method
   `TaskStore::turn_claims` (default `None`: no claims, as before), and the
@@ -51,7 +57,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   SQLite and PostgreSQL), `tests/replica_processes.rs` (replicas as separate
   processes, one killed mid-turn: taken over 2.82 s after the kill with a 3 s
   time to live), `tests/multi_replica.rs`
-  `the_single_writer_refusal_crosses_replicas`.
+  `the_single_writer_refusal_crosses_replicas`, and
+  `tests/soak_multi_replica.rs`, which now checks that every claim is
+  released by the end of a run. An independent review of the first version
+  found six defects (a renewal racing a new claim cancelled it; renewal by
+  owner kept a forgotten claim alive; the PostgreSQL fence read a stale
+  snapshot; the quorum count, and a waiting send's key, were outside the
+  claim; foreign claims over a fenced store refused every write); each is
+  fixed here with a test that fails without the fix.
 - **`deploy/observability/docker-compose.yml`**: the whole stack in one
   command, a Collector receiving all three signals and sending metrics to
   Prometheus (through its OTLP receiver, so the dashboards and rules work
@@ -60,6 +73,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   span to its logs, a log line to its trace). Before, the Collector
   configuration sent traces and logs only to its `debug` exporter, and the
   README's addresses named services nothing defined.
+- **`deploy/observability/docker-compose.prod.yml`**: the stack closed down
+  for a shared host (a Grafana login from `GRAFANA_ADMIN_PASSWORD`, only
+  Grafana and the Collector's OTLP ports published, a memory limit on the
+  Collector). Both Collector configurations now run `memory_limiter` first in
+  every pipeline and answer health checks on 13133.
 - **`deploy-agent` takes `DATABASE_URL`**: tasks and push configs in
   PostgreSQL, which is what its Kubernetes manifest's two replicas need (see
   *Fixed*).
@@ -71,7 +89,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   both replicas ran the task. Each turn now costs two more statements against
   the store (the claim and its release), and a handler holding claims renews
   them once a second; `without_turn_claims()` opts out for a store one replica
-  uses.
+  uses. Measured with `tests/soak_multi_replica.rs` (two replicas, PostgreSQL
+  17 on the same 4-vCPU host, release build, three 60 s runs each way): 15%
+  fewer send-and-read pairs per second with claims (360 ± 17 against
+  423 ± 14), 21.4 ms against 18.6 ms median per pair.
+- **Upgrade every replica at once, or keep session affinity until the last
+  0.15.1 replica is gone.** A replica on 0.15.1 or earlier takes no claims and
+  fences no writes, so in a mixed fleet two replicas can still run one task
+  (book: Running More Than One Replica, *Upgrading a fleet*).
 - **Log lines on standard error are coloured only on a terminal**, and never
   with `NO_COLOR` set (`Telemetry::install_subscriber`). Every line in a file,
   a pipe, or a Docker or Kubernetes log carried ANSI escape codes.
@@ -111,6 +136,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   not JSON-RPC) showed as a series named `Value` in the per-method panels and
   is now `(unrouted)`. Found by looking at the panels after
   `check_dashboards.py` had passed them.
+- **Export warnings named the wrong fix, or none, for most TLS and proxy
+  failures** (`Telemetry`). Measured against a real Collector with TLS and a
+  real Squid: the hints for a certificate issued for another host and an
+  expired certificate never fired (they matched rustls's error names, which
+  its messages do not contain); a self-signed certificate marked CA, a
+  collector that wants a client certificate, one that does not trust the one
+  given, an `https://` endpoint on a plaintext receiver (and the reverse), a
+  proxy that refuses a tunnel and a proxy that wants a login all had no hint;
+  and a 403 from a proxy was blamed on the collector's credentials. Each now
+  says what it was and what to change, tested on the failures' own text.
+- **`NO_PROXY=[::1]` exempted nothing**: a bracketed IPv6 address, the form a
+  URL writes it in, is now read as the bare one (`::1` and ranges such as
+  `fd00::/8` already worked).
 - **`echo-agent`'s server mode, `tck/sut`, the ITK agent and `mcp-bridge` did
   not flush telemetry on `SIGTERM`**: each ran until killed. They now return
   on `shutdown_signal()`, which drops their `Telemetry`.

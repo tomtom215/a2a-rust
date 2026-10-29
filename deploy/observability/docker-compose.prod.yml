@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The stack of docker-compose.yml, closed down for a shared host:
+#
+#   GRAFANA_ADMIN_PASSWORD=... docker compose \
+#     -f deploy/observability/docker-compose.yml \
+#     -f deploy/observability/docker-compose.prod.yml up -d
+#
+# What changes:
+# - Grafana asks for a login: no anonymous user, admin's password from
+#   GRAFANA_ADMIN_PASSWORD (Compose refuses to start without it), no sign-up.
+# - Only Grafana (3000) and the Collector's OTLP ports (4317, 4318) are
+#   published; Prometheus, Tempo and Loki are reached on the Compose network
+#   only, so nothing on the host network can query or write to them directly.
+# - The Collector has a memory limit, which its memory_limiter takes its
+#   limits from, and a health check port (13133) on the Compose network.
+#
+# Still yours to add: TLS (put the Collector's receivers and Grafana behind
+# certificates, or a reverse proxy that has them), authentication on the
+# OTLP receivers if agents outside your network send to them, and backups
+# of the volumes. Requires Docker Compose 2.24 or later (`!override`).
+services:
+  otel-collector:
+    mem_limit: 1g
+    ports: !override
+      - "4317:4317"
+      - "4318:4318"
+
+  prometheus:
+    ports: !reset []
+
+  tempo:
+    ports: !reset []
+
+  loki:
+    ports: !reset []
+
+  grafana:
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}

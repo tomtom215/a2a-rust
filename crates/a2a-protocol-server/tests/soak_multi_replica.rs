@@ -61,6 +61,9 @@
 //! ```
 //!
 //! `A2A_SOAK_SECS` sets the duration, as with `soak.rs`.
+//! `A2A_SOAK_TURN_CLAIMS=off` builds both replicas `without_turn_claims`, so
+//! two runs measure what the claims cost per send; with them (the default)
+//! the run also checks that every claim is released by the end.
 
 #![cfg(feature = "postgres")]
 
@@ -197,6 +200,7 @@ fn get_task_body(n: u64, task_id: &str) -> String {
 async fn spawn_replica(
     db_url: &str,
     counter: Arc<PostgresRateLimitCounter>,
+    claims: bool,
 ) -> (
     std::net::SocketAddr,
     tokio::sync::oneshot::Sender<()>,
@@ -218,8 +222,14 @@ async fn spawn_replica(
     // would read the identity before anything had set it and bucket every
     // caller together — silently, which is the whole reason this soak counts
     // the keys in the table rather than trusting the configuration.
+    let builder = RequestHandlerBuilder::new(WorkingExec);
+    let builder = if claims {
+        builder
+    } else {
+        builder.without_turn_claims()
+    };
     let handler = Arc::new(
-        RequestHandlerBuilder::new(WorkingExec)
+        builder
             .without_agent_card()
             .with_task_store(store)
             .with_interceptor(ApiKeyAuthInterceptor::with_labelled_keys(
@@ -261,6 +271,7 @@ async fn two_replicas_survive_sustained_load() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_SECONDS);
     let duration = Duration::from_secs(seconds);
+    let claims = std::env::var("A2A_SOAK_TURN_CLAIMS").as_deref() != Ok("off");
 
     // A scratch database, so row counts mean what they say.
     let admin = sqlx::postgres::PgPool::connect(&admin_url)
@@ -283,8 +294,8 @@ async fn two_replicas_survive_sustained_load() {
             .expect("shared counter"),
     );
 
-    let (addr_a, stop_a, joined_a) = spawn_replica(&db_url, counter.clone()).await;
-    let (addr_b, stop_b, joined_b) = spawn_replica(&db_url, counter.clone()).await;
+    let (addr_a, stop_a, joined_a) = spawn_replica(&db_url, counter.clone(), claims).await;
+    let (addr_b, stop_b, joined_b) = spawn_replica(&db_url, counter.clone(), claims).await;
     let addrs = [addr_a, addr_b];
 
     // A separate pool for observing the tables, so the measurement does not
@@ -412,7 +423,7 @@ async fn two_replicas_survive_sustained_load() {
     }
 
     // Sample every second: memory, progress, and the two tables.
-    let mut samples: Vec<(u64, u64, u64, i64, i64)> = Vec::new();
+    let mut samples: Vec<(u64, u64, u64, i64, i64, i64)> = Vec::new();
     while start.elapsed() < duration {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let (rl_rows,): (i64,) = sqlx::query_as("SELECT count(*) FROM a2a_rate_limit")
@@ -423,12 +434,17 @@ async fn two_replicas_survive_sustained_load() {
             .fetch_one(&observer)
             .await
             .unwrap_or((-1,));
+        let (claim_rows,): (i64,) = sqlx::query_as("SELECT count(*) FROM a2a_task_claims")
+            .fetch_one(&observer)
+            .await
+            .unwrap_or((-1,));
         samples.push((
             start.elapsed().as_secs(),
             resident_bytes(),
             completed.load(Ordering::Relaxed),
             rl_rows,
             task_rows,
+            claim_rows,
         ));
     }
 
@@ -440,27 +456,36 @@ async fn two_replicas_survive_sustained_load() {
     stop_b.send(()).ok();
     let report_a = joined_a.await.expect("replica A joins");
     let report_b = joined_b.await.expect("replica B joins");
+    // Read once both replicas have shut down: their claims are released by
+    // then, by the turns that ended or by `shutdown`.
+    let (claims_left,): (i64,) = sqlx::query_as("SELECT count(*) FROM a2a_task_claims")
+        .fetch_one(&observer)
+        .await
+        .expect("claims count");
 
     // ── Report first: the numbers are the deliverable ───────────────────────
     let total = completed.load(Ordering::Relaxed);
     let failed = failures.load(Ordering::Relaxed);
     let misses = cross_replica_misses.load(Ordering::Relaxed);
     println!(
-        "\nsoak: {seconds}s, {WORKERS} workers, 2 replicas, {total} request pairs, \
-         {failed} failures, {misses} cross-replica misses"
+        "\nsoak: {seconds}s, {WORKERS} workers, 2 replicas, turn claims {}, {total} request \
+         pairs ({:.0}/s), {failed} failures, {misses} cross-replica misses, {claims_left} \
+         claims left after shutdown",
+        if claims { "on" } else { "off" },
+        total as f64 / seconds as f64
     );
     println!(
         "A: drained={} abandoned={}   B: drained={} abandoned={}",
         report_a.drained, report_a.abandoned, report_b.drained, report_b.abandoned
     );
     println!(
-        "\n{:>5}  {:>10}  {:>10}  {:>12}  {:>10}",
-        "t(s)", "rss(MiB)", "pairs", "rl_rows", "task_rows"
+        "\n{:>5}  {:>10}  {:>10}  {:>12}  {:>10}  {:>10}",
+        "t(s)", "rss(MiB)", "pairs", "rl_rows", "task_rows", "claim_rows"
     );
-    for (t, rss, done, rl, tasks) in &samples {
+    for (t, rss, done, rl, tasks, held) in &samples {
         if t % 5 == 0 || *t == seconds {
             println!(
-                "{t:>5}  {:>10.1}  {done:>10}  {rl:>12}  {tasks:>10}",
+                "{t:>5}  {:>10.1}  {done:>10}  {rl:>12}  {tasks:>10}  {held:>10}",
                 *rss as f64 / (1024.0 * 1024.0)
             );
         }
@@ -475,6 +500,10 @@ async fn two_replicas_survive_sustained_load() {
     assert_eq!(
         failed, 0,
         "{failed} request(s) failed outright during the run"
+    );
+    assert_eq!(
+        claims_left, 0,
+        "{claims_left} turn claim(s) outlived the turns and replicas that took them"
     );
     assert_eq!(
         misses, 0,
@@ -543,6 +572,14 @@ async fn two_replicas_survive_sustained_load() {
     );
 
     let recorded = latencies.lock().expect("latency lock").clone();
+    let mut all: Vec<u64> = recorded.iter().map(|(_, us)| *us).collect();
+    all.sort_unstable();
+    if let (Some(p50), Some(p99)) = (all.get(all.len() / 2), all.get(all.len() * 99 / 100)) {
+        println!(
+            "pair latency over the run: p50 {p50}us, p95 {}us, p99 {p99}us",
+            p95(all.clone())
+        );
+    }
     let quarter = duration.as_secs() / 4;
     let head: Vec<u64> = recorded
         .iter()

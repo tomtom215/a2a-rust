@@ -49,7 +49,8 @@ affinity**: each turn of a task claims it in the database, so two replicas
 never run one task at once (below). Before turn claims (2026-10-28) the
 shared store did not do this, and the guidance was to route every turn of a task to one replica;
 affinity still saves a cross-replica stream its poll, but it is no longer what
-keeps tasks correct.
+keeps tasks correct, except while a fleet is being upgraded from 0.15.1 or
+earlier ([below](#upgrading-a-fleet-to-this-release)).
 
 ## Share the store
 
@@ -267,7 +268,11 @@ tasks, and the handler takes a row in it for each turn:
    `executor_drain_timeout` (5 s by default), the same bound the in-process
    wait for a parked turn has. If it is still held then, the send is refused
    exactly as on the replica running the task: `UnsupportedOperation`, "task …
-   is already being processed".
+   is already being processed". A send that waits gives up its idempotency
+   key for the wait and claims it again once it holds the turn, so a retry of
+   it that reaches a third replica meanwhile is not answered "accepted" for a
+   send that is then refused: the retry claims the key and waits its own turn,
+   and the first of the two to hold the turn runs while the other replays it.
 3. **A continuation reads the task again** once it holds the claim, and starts
    from that read, so it keeps everything the last turn stored, wherever that
    turn ran.
@@ -280,12 +285,23 @@ tasks, and the handler takes a row in it for each turn:
    stalled for longer than the claim's time to live (a long pause, a partition
    from the database) and wakes up after another replica took the task over
    is refused on its first write; its executor is then cancelled and it writes
-   nothing more (`ClaimLost`).
-6. **A replica renews the claims it holds** every second, in one statement,
-   while it holds any. A replica that dies stops renewing; after the time to
-   live (15 s by default) the next send for one of its tasks takes the claim
-   over and continues the task, which is still `Working` in the store. That
-   is the longest a task waits after its replica dies.
+   nothing more (`ClaimLost`). On PostgreSQL the check locks the claim row
+   (`FOR KEY SHARE`). Without the lock, under READ COMMITTED, a write that
+   started before a takeover and then waited on the task row was checked
+   against the claim as it stood when the statement began, passed, and landed
+   over the new turn's write (reproduced with two `psql` sessions). Renewals
+   and cancel marks change no key column and never wait on the lock.
+6. **A replica renews the claims it holds** every second, in one statement
+   naming each one, while it holds any. A claim it no longer tracks (a release
+   the database did not answer, a request dropped while its claim was being
+   written) is not renewed and expires. A replica that dies stops renewing;
+   after the time to live (15 s by default) the next send for one of its tasks
+   takes the claim over and continues the task, which is still `Working` in
+   the store. That is the longest a task waits after its replica dies.
+7. **A replica that shuts down releases its claims** (`shutdown`,
+   `shutdown_with_timeout`), so a rolling restart does not hold its tasks for
+   the time to live. An executor still running then has its next write
+   refused, as after a takeover.
 
 `with_turn_claim_timing(ttl, renewal)` changes the two durations; `build`
 refuses a time to live under 3 s, or a renewal interval that is not at most a
@@ -294,7 +310,24 @@ replica uses: each turn then saves its two statements (the claim and its
 release) and the renewal. A custom store several replicas share provides
 claims by overriding `TaskStore::turn_claims` and fencing its writes with
 `store::claim::current_fence` ([Stores](../building-agents/stores.md)), or is
-given them with `with_turn_claims`.
+given them with `with_turn_claims`. `build` refuses `with_turn_claims` over a
+store that has claims of its own, the bundled ones included: their writes are
+fenced against their own table, so claims kept anywhere else would refuse
+every write.
+
+An approval toward a quorum (`with_approval_gate`, `with_quorum`) is counted
+under the claim, so two approvals arriving at two replicas at once are
+counted one after the other and the executor resumes once.
+
+**What it costs.** `tests/soak_multi_replica.rs` (two replicas, one
+PostgreSQL 17 database, eight clients each sending a new task to one replica
+and reading it from the other, 60 s), release build, on one 4-vCPU Linux
+container with the database on the same host, three runs each way,
+alternating (2026-10-28): 360 pairs/s with claims (±17, standard deviation),
+423 without (±14), so 15% fewer; median latency per pair 21.4 ms against
+18.6 ms. Every claim was released by the end of each run. A deployment whose
+database is across a network pays the two extra round trips per turn at its
+own latency; measure it there before relying on this figure.
 
 What a claim does not change: the first terminal state either way is final
 (every shipped store refuses to move a stored terminal task to another state,
@@ -306,6 +339,23 @@ Measured: `tests/turn_claims/` runs each case on SQLite and PostgreSQL, and
 mid-turn with `SIGKILL`: the other took its task over 2.82 s after the kill,
 with a 3 s time to live and a 0.5 s renewal interval (2026-10-28, PostgreSQL
 17.11 and SQLite).
+
+### Upgrading a fleet to this release
+
+Replicas on 0.15.1 or earlier take no claims and fence no writes. In a fleet
+that mixes them with this release, a new replica's claim does not stop an old
+replica from running the same task, and an old replica's writes pass every
+fence. The database is not the problem: the new replica's migration adds the
+claims table, and the old ones ignore it. So during the rollout either:
+
+- route every turn of a task to one replica, as 0.15 required (session
+  affinity on the task or context id), until no old replica is left; or
+- replace the fleet at once: stop the old replicas, then start the new ones
+  (or switch a blue/green deployment's traffic in one step).
+
+A Kubernetes `RollingUpdate` without affinity runs old and new side by side for
+the length of the rollout, and is the case the first option exists for. Once
+every replica runs this release, the affinity can go.
 
 ### Cancelling a task that runs elsewhere
 

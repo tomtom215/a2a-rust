@@ -65,6 +65,24 @@ fn first(env: &Env, names: &[&str]) -> String {
     names.iter().find_map(|n| env(n)).unwrap_or_default()
 }
 
+/// `NO_PROXY` with each bracketed IPv6 entry unbracketed (`[::1]` as
+/// `::1`, `[fd00::]/8` as `fd00::/8`). `hyper-util` matches an IPv6
+/// destination only against the bare address, so `[::1]`, the form a URL
+/// writes it in, otherwise exempted nothing.
+fn unbracketed(no_proxy: &str) -> String {
+    no_proxy
+        .split(',')
+        .map(|entry| {
+            let entry = entry.trim();
+            match entry.strip_prefix('[').and_then(|e| e.split_once(']')) {
+                Some((address, rest)) => format!("{address}{rest}"),
+                None => entry.to_owned(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// The rules `setting` and `env` give.
 pub(super) fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
     // CGI: a request header can set `HTTP_PROXY` there (httpoxy), so, like
@@ -79,7 +97,7 @@ pub(super) fn matcher(env: &Env, setting: &ProxySetting) -> Matcher {
             .all(first(env, &["ALL_PROXY", "all_proxy"]))
             .http(first(env, &["HTTP_PROXY", "http_proxy"]))
             .https(first(env, &["HTTPS_PROXY", "https_proxy"]))
-            .no(first(env, &["NO_PROXY", "no_proxy"]))
+            .no(unbracketed(&first(env, &["NO_PROXY", "no_proxy"])))
             .build(),
     }
 }
