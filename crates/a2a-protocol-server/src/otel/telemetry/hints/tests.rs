@@ -317,16 +317,35 @@ fn http_to_4317_and_grpc_to_4318_are_named_as_the_other_transports_port() {
         None,
     )
     .expect("a hint");
-    assert!(http.contains("OTEL_EXPORTER_OTLP_PROTOCOL=grpc"), "{http}");
+    assert!(
+        http.contains("port 4317 is OTLP/gRPC's usual port")
+            && http.contains("OTEL_EXPORTER_OTLP_PROTOCOL=grpc"),
+        "{http}"
+    );
+    // Evidence no other rule takes: a broken pipe would also draw the
+    // TLS rule's hint, which names the same variable, so the port's own
+    // hint went untested.
     let grpc = hint(
+        route(OtlpProtocol::Grpc, "http://c:4318"),
+        "transport error",
+        None,
+    )
+    .expect("a hint");
+    assert!(
+        grpc.contains("port 4318 is OTLP/HTTP's usual port")
+            && grpc.contains("OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf"),
+        "{grpc}"
+    );
+    // Before the TLS rule, too.
+    let piped = hint(
         route(OtlpProtocol::Grpc, "http://c:4318"),
         "transport error: broken pipe",
         None,
     )
     .expect("a hint");
     assert!(
-        grpc.contains("OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf"),
-        "{grpc}"
+        piped.contains("port 4318 is OTLP/HTTP's usual port"),
+        "{piped}"
     );
 }
 
