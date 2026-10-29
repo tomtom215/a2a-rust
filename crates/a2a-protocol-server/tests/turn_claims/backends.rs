@@ -105,6 +105,14 @@ mod sqlite {
     async fn sqlite_a_replica_whose_claim_was_taken_over_writes_nothing_more() {
         a_replica_whose_claim_was_taken_over_writes_nothing_more(&TempDb::new("fence")).await;
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sqlite_a_blocking_send_whose_claim_was_taken_over_stops_its_executor() {
+        a_blocking_send_whose_claim_was_taken_over_stops_its_executor(&TempDb::new(
+            "fence-blocking",
+        ))
+        .await;
+    }
 }
 
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
@@ -247,6 +255,14 @@ pub(crate) mod postgres {
     async fn postgres_a_replica_whose_claim_was_taken_over_writes_nothing_more() {
         let db = TestDb::create("fence").await;
         a_replica_whose_claim_was_taken_over_writes_nothing_more(&db).await;
+        db.drop_db().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a live PostgreSQL (see the module docs)"]
+    async fn postgres_a_blocking_send_whose_claim_was_taken_over_stops_its_executor() {
+        let db = TestDb::create("fence_blocking").await;
+        a_blocking_send_whose_claim_was_taken_over_stops_its_executor(&db).await;
         db.drop_db().await;
     }
 }

@@ -353,6 +353,17 @@ pub async fn a_dead_replicas_claim_is_taken_over_once_it_expires(db: &impl Db) {
 /// processor's own handling of a refused write went untested (a mutant that
 /// made it do nothing survived, 2026-10-29).
 pub async fn a_replica_whose_claim_was_taken_over_writes_nothing_more(db: &impl Db) {
+    taken_over(db, false).await;
+}
+
+/// The same takeover under a blocking send: the collector answering it, not
+/// the background processor, must stop the executor (an `Ok(())` in its
+/// place survived the mutation gate, 2026-10-29).
+pub async fn a_blocking_send_whose_claim_was_taken_over_stops_its_executor(db: &impl Db) {
+    taken_over(db, true).await;
+}
+
+async fn taken_over(db: &impl Db, blocking: bool) {
     let probe: Arc<Probe> = Arc::default();
     let store = db.store().await;
     let a = RequestHandlerBuilder::new(Exec {
@@ -367,13 +378,46 @@ pub async fn a_replica_whose_claim_was_taken_over_writes_nothing_more(db: &impl 
     .build()
     .expect("handler builds");
 
-    let task = send(&a, params("stream", None, true))
-        .await
-        .expect("A opens");
-    until(store.as_ref(), &task.id, "streamed three chunks", |t| {
-        parts_of(t, "s") >= 3
-    })
-    .await;
+    if blocking {
+        // A blocking send answers only once the turn ends, so the task is
+        // found in the store while it runs.
+        let (answer, ()) = tokio::join!(send(&a, params("stream", None, false)), async {
+            let task = streaming_task(store.as_ref()).await;
+            take_over(db, store.as_ref(), &task, &probe).await;
+        });
+        answer.expect("A answers the blocking send");
+    } else {
+        let task = send(&a, params("stream", None, true))
+            .await
+            .expect("A opens");
+        until(store.as_ref(), &task.id, "streamed three chunks", |t| {
+            parts_of(t, "s") >= 3
+        })
+        .await;
+        take_over(db, store.as_ref(), &task, &probe).await;
+    }
+    drop(a);
+}
+
+/// The one task A is streaming, once it has stored three chunks.
+async fn streaming_task(store: &dyn TaskStore) -> Task {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let listed = store
+            .list(&a2a_protocol_types::params::ListTasksParams::default())
+            .await
+            .expect("list");
+        if let Some(task) = listed.tasks.into_iter().find(|t| parts_of(t, "s") >= 3) {
+            return task;
+        }
+        assert!(Instant::now() < deadline, "A never streamed three chunks");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Takes `task`'s claim from A, as a replica would after A stalled past its
+/// time to live, and checks that A writes nothing more and is told to stop.
+async fn take_over(db: &impl Db, store: &dyn TaskStore, task: &Task, probe: &Probe) {
     db.drop_claims(&task.id.0).await;
     let claims = store.turn_claims().expect("a SQL store has claims");
     assert!(
@@ -388,11 +432,11 @@ pub async fn a_replica_whose_claim_was_taken_over_writes_nothing_more(db: &impl 
             .await
             .expect("claim")
     );
-    let at_takeover = parts_of(&get(store.as_ref(), &task.id).await, "s");
+    let at_takeover = parts_of(&get(store, &task.id).await, "s");
 
     // A's executor keeps emitting for up to three seconds.
     tokio::time::sleep(Duration::from_millis(3500)).await;
-    let after = get(store.as_ref(), &task.id).await;
+    let after = get(store, &task.id).await;
     assert!(
         parts_of(&after, "s") <= at_takeover + 1,
         "after the takeover A stored at most the one write already in flight: \
@@ -408,7 +452,6 @@ pub async fn a_replica_whose_claim_was_taken_over_writes_nothing_more(db: &impl 
         probe.cancelled.load(Ordering::SeqCst),
         "A's executor is told to stop once a write of its turn is refused"
     );
-    drop(a);
 }
 
 /// Every event of a turn reaches the log, its terminal one last: the claim
