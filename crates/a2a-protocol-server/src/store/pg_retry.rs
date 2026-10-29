@@ -10,8 +10,9 @@
 //!
 //! By default sqlx pings a pooled connection every time it is handed out, so
 //! that a connection the server closed while it sat idle is replaced rather
-//! than used. That is a round trip to the database before every statement:
-//! measured 2026-10-28, 8 of the 24 a send and a read of a new task made.
+//! than used. That is a round trip to the database before every statement,
+//! as many again as the statements themselves (`tests/statement_count.rs`
+//! counts those a send and a read make).
 //! Dropping it, alone, lost data: with every backend terminated mid-turn
 //! (`pg_terminate_backend`), the next write went to a dead connection and the
 //! event it carried was in neither the log nor the task, in 3 runs of 3.
