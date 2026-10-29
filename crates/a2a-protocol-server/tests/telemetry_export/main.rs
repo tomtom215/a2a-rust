@@ -21,6 +21,7 @@ mod console;
 mod forward_proxy;
 mod logs;
 mod proxy;
+mod span_level;
 mod tls_and_json;
 #[cfg(feature = "tool-loop")]
 mod tool_loop_spans;

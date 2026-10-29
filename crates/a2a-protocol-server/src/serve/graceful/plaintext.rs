@@ -92,7 +92,7 @@ mod tests {
                             .build()
                             .expect("handler"),
                     );
-                    super::super::Server::bind("0.0.0.0:0")
+                    let _ = super::super::Server::bind("0.0.0.0:0")
                         .await
                         .expect("bind")
                         .with_config(config)

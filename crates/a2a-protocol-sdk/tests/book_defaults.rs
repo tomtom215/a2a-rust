@@ -208,6 +208,7 @@ fn every_documented_default_is_the_default() {
         &client,
         Some(&[
             ("with_timeout", "request_timeout"),
+            ("with_send_timeout", "send_timeout"),
             ("with_connection_timeout", "connection_timeout"),
             ("with_stream_connect_timeout", "stream_connect_timeout"),
             (

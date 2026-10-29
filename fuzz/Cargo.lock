@@ -25,6 +25,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "mutants",
  "serde",
  "serde_json",
  "tokio",

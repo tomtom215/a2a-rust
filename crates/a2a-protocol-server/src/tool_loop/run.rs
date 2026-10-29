@@ -293,8 +293,15 @@ impl ToolLoop {
 
     /// The span of `call`, opened as it starts to run.
     fn tool_span(&self, call: &ToolCall) -> GenAiSpan {
-        let description = self.tools.get(&call.name).map(|t| t.description());
-        GenAiSpan::tool(&call.name, &call.id, description, &self.meter)
+        let tool = self.tools.get(&call.name);
+        let description = tool.map(|t| t.description());
+        GenAiSpan::tool(
+            &call.name,
+            tool.is_some(),
+            &call.id,
+            description,
+            &self.meter,
+        )
     }
 
     /// One model turn, in its span, abandoned if `cancel` fires.

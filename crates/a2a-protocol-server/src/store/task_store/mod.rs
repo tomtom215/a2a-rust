@@ -223,6 +223,24 @@ pub trait TaskStore: Send + Sync + 'static {
         Box::pin(async { Ok(0) })
     }
 
+    /// Whether the store can take a turn's writes now: what a readiness probe
+    /// asks ([`RequestHandler::task_store_health`](crate::RequestHandler::task_store_health)).
+    ///
+    /// The default asks [`count`](TaskStore::count). The SQL stores answer
+    /// with a statement that costs the same however many tasks they hold, and
+    /// the PostgreSQL stores refuse a standby, which takes no writes. Until
+    /// 2026-10-29 the probe was `count`, a `SELECT COUNT(*)` over every task:
+    /// it slowed as the table grew, until every replica's probe timed out at
+    /// once (audit A2, E-F5). A wrapper store forwards its inner store's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) when the
+    /// store cannot be reached or cannot take writes.
+    fn health<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move { self.count().await.map(|_| ()) })
+    }
+
     /// Whether this store partitions what it holds by tenant.
     ///
     /// A store answering `true` reads

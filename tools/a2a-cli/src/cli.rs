@@ -49,6 +49,7 @@ pub struct GlobalOpts {
     pub binding: Option<Binding>,
 
     /// Per-request timeout in seconds; also bounds establishing a stream.
+    /// `send` waits for the agent's turn, bounded by `--send-timeout`.
     #[arg(
         long,
         global = true,
@@ -57,6 +58,19 @@ pub struct GlobalOpts {
         value_parser = clap::value_parser!(u64).range(1..)
     )]
     pub timeout: u64,
+
+    /// How long `send` waits for the agent to finish its turn, in seconds. A
+    /// blocking send is answered only when the turn ends, which for an agent
+    /// calling a model takes as long as the model does; `stream` shows the
+    /// turn as it happens instead.
+    #[arg(
+        long,
+        global = true,
+        value_name = "SECS",
+        default_value_t = 600,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    pub send_timeout: u64,
 
     /// Extra HTTP header sent with every request, e.g. `--header
     /// "Authorization=Bearer TOKEN"`. Repeatable. Over gRPC these become

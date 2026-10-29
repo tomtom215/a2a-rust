@@ -72,6 +72,7 @@ pub struct TurnClaims {
     renew_every: Duration,
     held: Mutex<HashMap<String, Held>>,
     renewer_started: AtomicBool,
+    reaper_started: AtomicBool,
 }
 
 /// One held claim, as the renewer acts on it.
@@ -103,6 +104,7 @@ impl TurnClaims {
             renew_every,
             held: Mutex::new(HashMap::new()),
             renewer_started: AtomicBool::new(false),
+            reaper_started: AtomicBool::new(false),
         }
     }
 
@@ -334,6 +336,28 @@ fn hold(claims: &Arc<TurnClaims>, task_id: &TaskId, token: String) -> TurnClaim 
     }
 }
 
+impl RequestHandler {
+    /// Starts this handler's [reaper](reaper), once: from the first request,
+    /// where a Tokio runtime is certain.
+    pub(crate) fn start_reaper(&self) {
+        let Some(claims) = &self.turn_claims else {
+            return;
+        };
+        if claims.reaper_started.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let reaper = reaper::Reaper {
+            claims: Arc::downgrade(claims),
+            task_store: Arc::clone(&self.task_store),
+            push_config_store: Arc::clone(&self.push_config_store),
+            push_sender: self.push_sender.clone(),
+            limits: self.limits.clone(),
+            metrics: Arc::clone(&self.metrics),
+        };
+        tokio::spawn(reaper.run());
+    }
+}
+
 impl TurnClaims {
     /// Starts the handler's renewer, once.
     fn start_renewer(self: &Arc<Self>) {
@@ -419,5 +443,6 @@ fn act_on(claims: &TurnClaims, sent: &[String], report: &[crate::store::HeldClai
     }
 }
 
+mod reaper;
 #[cfg(test)]
 mod tests;

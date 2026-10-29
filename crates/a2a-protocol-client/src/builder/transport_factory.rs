@@ -37,9 +37,9 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized; after fallbacks, it names every interface tried.
     pub fn build(mut self) -> ClientResult<A2aClient> {
-        if self.config.request_timeout.is_zero() {
+        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Transport(
-                "request_timeout must be non-zero".into(),
+                "request_timeout and send_timeout must be non-zero".into(),
             ));
         }
         if self.config.stream_connect_timeout.is_zero() {
@@ -180,9 +180,9 @@ impl ClientBuilder {
     pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
         use crate::transport::grpc::{GrpcTransport, GrpcTransportConfig};
 
-        if self.config.request_timeout.is_zero() {
+        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
             return Err(ClientError::Transport(
-                "request_timeout must be non-zero".into(),
+                "request_timeout and send_timeout must be non-zero".into(),
             ));
         }
         // Validated here for the same reason `build()` validates it: this path
@@ -206,6 +206,7 @@ impl ClientBuilder {
         } else {
             let grpc_config = GrpcTransportConfig::default()
                 .with_timeout(self.config.request_timeout)
+                .with_send_timeout(self.config.send_timeout)
                 .with_connect_timeout(self.config.connection_timeout)
                 // Keep the response-size ceiling consistent across transports:
                 // a payload that fits the configured cap over JSON-RPC/REST
@@ -273,28 +274,62 @@ fn http_transport(
 ) -> ClientResult<Box<dyn Transport>> {
     match canonical_binding(binding) {
         Some(BINDING_JSONRPC) => Ok(Box::new(
-            JsonRpcTransport::with_all_timeouts(
+            JsonRpcTransport::from_client(
                 endpoint,
+                http_client(config, endpoint)?,
                 config.request_timeout,
                 config.stream_connect_timeout,
-                config.connection_timeout,
             )?
-            .with_max_response_size(config.max_response_size),
+            .with_max_response_size(config.max_response_size)
+            .with_send_timeout(config.send_timeout),
         )),
         Some(BINDING_HTTP_JSON) => Ok(Box::new(
-            RestTransport::with_all_timeouts(
+            RestTransport::from_client(
                 endpoint,
+                http_client(config, endpoint)?,
                 config.request_timeout,
                 config.stream_connect_timeout,
-                config.connection_timeout,
             )?
-            .with_max_response_size(config.max_response_size),
+            .with_max_response_size(config.max_response_size)
+            .with_send_timeout(config.send_timeout),
         )),
         Some(BINDING_GRPC) => Err(ClientError::Transport(GRPC_NOT_SYNC.into())),
         _ => Err(ClientError::Transport(format!(
             "unknown protocol binding: {binding}"
         ))),
     }
+}
+
+/// The HTTP client `config.tls` asks for, for a transport to `endpoint`.
+fn http_client(
+    config: &ClientConfig,
+    endpoint: &str,
+) -> ClientResult<crate::transport::HttpClient> {
+    use crate::config::TlsConfig;
+
+    let https = endpoint
+        .get(..8)
+        .is_some_and(|s| s.eq_ignore_ascii_case("https://"));
+    if matches!(config.tls, TlsConfig::Disabled) && https {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "{endpoint} is https:// and TLS is disabled (ClientBuilder::without_tls)"
+        )));
+    }
+    #[cfg(feature = "tls-rustls")]
+    {
+        let tls = match &config.tls {
+            TlsConfig::Custom(tls) => (**tls).clone(),
+            _ => crate::tls::default_tls_config(),
+        };
+        Ok(crate::tls::build_https_client_with_connect_timeout(
+            tls,
+            config.connection_timeout,
+        ))
+    }
+    #[cfg(not(feature = "tls-rustls"))]
+    Ok(crate::transport::plain_http_client(
+        config.connection_timeout,
+    ))
 }
 
 #[cfg(test)]

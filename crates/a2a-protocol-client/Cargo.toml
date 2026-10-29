@@ -33,7 +33,13 @@ default = ["tls-rustls", "tracing", "otel", "webhook"]
 ## of its own: the transport hands it this crate's `ring`-backed config and
 ## Mozilla roots, so the public `rustls-tls-*` features would only add a
 ## second root-store crate. The version range below pins the feature name.
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "tokio-tungstenite?/__rustls-tls"]
+##
+## The HTTP bindings, card discovery, JWKS and the token provider share one
+## connector: Mozilla's roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR` when set,
+## or the config given to `ClientBuilder::with_tls_config`; and the proxy
+## `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY` name, as curl reads
+## them (`hyper-util`'s matcher, already in the graph for OTLP export).
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "dep:tower-service", "dep:pin-project-lite", "hyper-util/client-proxy", "rustls-pki-types/std", "tokio-tungstenite?/__rustls-tls"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization),
 ## and let card discovery verify signatures.
 ##
@@ -107,6 +113,12 @@ hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features 
 rustls         = { version = ">=0.23.46, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
 webpki-roots   = { version = ">=1.0.10, <2", optional = true }
+# `#[mutants::skip]` for the one mutant no test can distinguish in the proxy
+# connector (ADR 0006), as in the server crate, which already depends on it.
+mutants          = { version = ">=0.0.4, <0.1" }
+# The proxy connector (`proxy.rs`); both already in the graph through hyper.
+tower-service  = { version = ">=0.3.3, <0.4", optional = true }
+pin-project-lite = { version = ">=0.2.14, <0.3", optional = true }
 tonic          = { workspace = true, optional = true }
 tonic-prost    = { workspace = true, optional = true }
 tonic-types    = { workspace = true, optional = true }
@@ -140,7 +152,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 a2a-protocol-types = { version = "0.15.1", path = "../a2a-protocol-types" }
 # `signing`: `tests/content_end_to_end.rs`, where this server signs what the
 # client verifies.
-a2a-protocol-server = { version = "0.15.1", path = "../a2a-protocol-server", features = ["websocket", "signing"] }
+a2a-protocol-server = { version = "0.15.1", path = "../a2a-protocol-server", features = ["websocket", "signing", "tls-rustls"] }
 futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
 # Read socket options back in the connector test; both already in the tree
 # through hyper-util.

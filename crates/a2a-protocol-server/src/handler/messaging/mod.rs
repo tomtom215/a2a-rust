@@ -77,7 +77,7 @@ impl RequestHandler {
             "SendMessage"
         };
         let start = Instant::now();
-        trace_info!(method = method_name, streaming, "handling send message");
+        trace_debug!(method = method_name, streaming, "handling send message");
         #[cfg(feature = "tracing")]
         crate::rpc_span::record_message(&params.message);
         self.metrics.on_request(method_name);

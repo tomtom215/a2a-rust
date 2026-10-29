@@ -18,15 +18,20 @@ PostgreSQL instance:
 #         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
 #         .with_capabilities(AgentCapabilities::none().with_streaming(true))
 # }
+# use a2a_protocol_server::push::PostgresPushConfigStore;
 # use a2a_protocol_server::store::PostgresTaskStore;
 # use a2a_protocol_server::{agent_executor, RequestHandlerBuilder};
 # struct MyExecutor;
 # agent_executor!(MyExecutor, |_ctx, _q| async { Ok(()) });
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let store = PostgresTaskStore::new(&std::env::var("DATABASE_URL")?).await?;
+let url = std::env::var("DATABASE_URL")?;
 let handler = RequestHandlerBuilder::new(MyExecutor)
     .with_agent_card(card())
-    .with_task_store(store)
+    .with_task_store(PostgresTaskStore::new(&url).await?)
+    // Push configs too: one registered through one replica must be found by
+    // the replica running the task. `build()` refuses a card that declares
+    // push notifications over a shared task store without this.
+    .with_push_config_store(PostgresPushConfigStore::new(&url).await?)
     .build()?;
 # Ok(())
 # }

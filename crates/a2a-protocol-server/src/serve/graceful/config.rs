@@ -131,6 +131,38 @@ pub struct ServeConfig {
     /// network. It silences the plaintext warning and lifts the
     /// [`production`](Self::production) refusal for it.
     pub tls_terminated_in_front: bool,
+
+    /// Host names a listener on loopback answers besides IP literals, names
+    /// of one label (`localhost`, `agent`) and `*.localhost` (see
+    /// [`host_check`](Self::host_check)).
+    pub allowed_hosts: Vec<String>,
+
+    /// Whether a listener bound to a loopback address refuses, with `403`, a
+    /// request whose `Host` is a DNS name of more than one label, other than
+    /// one under `.localhost` or in
+    /// [`allowed_hosts`](Self::allowed_hosts). On by default.
+    ///
+    /// This is the defence against DNS rebinding: a web page on
+    /// `evil.example` re-points its name at `127.0.0.1`, and the browser then
+    /// sends the page's requests, with `Host: evil.example`, to the agent on
+    /// the user's machine, and lets the page read the answers (audit SEC-02,
+    /// 2026-10-29). Only a loopback listener is checked: a listener on another
+    /// address is reached by names (a cluster DNS name, a load balancer's) it
+    /// cannot know. A reverse proxy on the same host that forwards its own
+    /// `Host` needs that name in [`with_allowed_hosts`](Self::with_allowed_hosts).
+    pub host_check: bool,
+
+    /// How long the server goes on accepting after its shutdown signal,
+    /// with `/ready` answering not ready (zero by default).
+    ///
+    /// A Kubernetes pod is sent `SIGTERM` at the moment it is removed from
+    /// its Service's endpoints, and the proxies and load balancers in front
+    /// learn of the removal seconds later: a server that stops accepting at
+    /// once refuses the requests still routed to it, on every rollout (audit
+    /// A5, 2026-10-29). Set this to that propagation time (5 s is typical)
+    /// and `terminationGracePeriodSeconds` to cover it with the rest of the
+    /// shutdown.
+    pub drain_delay: Duration,
 }
 
 impl Default for ServeConfig {
@@ -144,6 +176,9 @@ impl Default for ServeConfig {
             idle_timeout: Some(DEFAULT_IDLE_TIMEOUT),
             production: false,
             tls_terminated_in_front: false,
+            allowed_hosts: Vec::new(),
+            host_check: true,
+            drain_delay: Duration::ZERO,
         }
     }
 }
@@ -189,6 +224,36 @@ impl ServeConfig {
     #[must_use]
     pub const fn with_tls_terminated_in_front(mut self) -> Self {
         self.tls_terminated_in_front = true;
+        self
+    }
+
+    /// Adds host names a loopback listener answers: see
+    /// [`host_check`](Self::host_check). Matched case-insensitively, without
+    /// the port.
+    #[must_use]
+    pub fn with_allowed_hosts<I, S>(mut self, hosts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_hosts
+            .extend(hosts.into_iter().map(|h| h.into().to_ascii_lowercase()));
+        self
+    }
+
+    /// Turns the loopback listener's `Host` check off: see
+    /// [`host_check`](Self::host_check). Any web page the user visits can
+    /// then reach this listener through DNS rebinding.
+    #[must_use]
+    pub const fn without_host_check(mut self) -> Self {
+        self.host_check = false;
+        self
+    }
+
+    /// Sets [`drain_delay`](Self::drain_delay).
+    #[must_use]
+    pub const fn with_drain_delay(mut self, delay: Duration) -> Self {
+        self.drain_delay = delay;
         self
     }
 

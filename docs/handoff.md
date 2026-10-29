@@ -19,22 +19,45 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+- **Branch `claude/amazing-turing-y8pjhv` (2026-10-29), from `main` at
+  `8dc4331`: a pre-release audit, not a release.** The maintainer asked for
+  every remaining gap to be found and fixed before 0.15.1 or later, with live
+  runs against llama.cpp and small Qwen and Gemma models.
+  - **The task list is `docs/audits/2026-10-29/README.md`**: eight
+    read-only reviews (reports A to H beside it) plus findings from live runs
+    (section L), and four low findings from re-reading this branch's own
+    fixes (section M). Its `Status` column is the only record of what was checked;
+    count it rather than trusting a figure here. At this commit, 220 rows:
+    168 `open`, 4 `confirmed (read)`, 40 `fixed`, 2 `fixed (part)`, 4
+    `verified live`, 1 refuted, 1 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
+    including a "Breaking Changes" section.
+  - **Not release-ready.** Open and judged release-relevant, from that list:
+    E-F2 (a rolling update cancels in-flight tasks), E-F3 (a claim held
+    through webhook delivery), D-02 (inline push stalls persistence), D-15
+    (failover error 25006 treated as permanent), SEC-03 (WebSocket accepts
+    any `Origin`), SEC-04 (JWKS refetch without cooldown), SEC-06 (JWT
+    `iss`/`aud` defaults), SEC-07 (error text returned to callers), C-04
+    (alerts fire on every restart), A10/A11/E-F10 (DDL at every start), E-F6/D-17
+    (pool sizing), G-11 (configuration errors reported as `InvalidParams`),
+    L5 (no token streaming in the tool loop), L6 (no `a2a task subscribe`),
+    and mDNS discovery, which does not exist (B-24).
+  - **Not yet run live:** Qwen3.5-4B and Gemma 4 E2B (downloaded, not
+    exercised; only Qwen3.5-2B was); the client dashboard with a
+    long-lived client (L11: short-lived CLI processes never export);
+    `deploy-agent` as a container; PgBouncer since these changes; the proxy
+    support on the WebSocket and gRPC transports, which the new
+    `HTTPS_PROXY` handling does not cover.
+  - **First, next session:** read the task list's `open` rows in the order
+    above, confirm or refute each by running it, and keep the `Status`
+    column true.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything
   to be run live before another release. Done here, each item verified by the
   run named in `CHANGELOG.md` `[Unreleased]`, where every change is listed:
-  - **Pull request [#183](https://github.com/tomtom215/a2a-rust/pull/183)
-    (draft) carries this branch; first, read its CI.** On the last full run
-    every job passed except three, none a defect of the branch: "Sign-off and
-    authorship" (the commits are the assistant's; the maintainer re-authors
-    and signs off), "Rust lockfiles" (OSV GHSA-qwgh-2vcv-g2f7 on
-    `block-buffer` 0.10.4, red on `main` too; now waived beside the four
-    lockfiles that carry it, because 0.10.4 does not have the advisory's
-    inline cursor, checked under Miri: `osv-scanner.toml`; remove the
-    waivers when the lock reaches `block-buffer` 0.12.1), and "Mutation Testing (incremental)", which wants the
-    `mutation-test` label. Run `scripts/preflight.sh` (CONTRIBUTING) before
-    each push; three CI failures in this round were gates it runs.
+  - **Merged as pull request
+    [#183](https://github.com/tomtom215/a2a-rust/pull/183)** (`8dc4331`).
+    Run `scripts/preflight.sh` (CONTRIBUTING) before each push.
   - **The review's follow-ups (2026-10-29)**, each in `CHANGELOG.md` or a
     commit message with its evidence: retry metrics
     (`a2a.server.store_retries`); the queue's write wait tied to
@@ -210,8 +233,8 @@ only: when something here is done, delete it rather than annotating it.
   the book with stale claims (`tools/a2a-cli` exit codes and `--header` on
   `card`, `tck/README.md` on BIND-EQUIV-004, `packaging/README.md` on the
   signing key).
-- **Working branch:** `claude/intelligent-bohr-9qraxk`, from `main` at
-  `568fc6c1`. `git log origin/main..` lists what it holds that `main` lacks.
+- **Working branch:** `claude/amazing-turing-y8pjhv`, from `main` at
+  `8dc4331`. `git log origin/main..` lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
   2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
   `6707f4d` had 104 check runs, 98 success and 6 skipped by their own

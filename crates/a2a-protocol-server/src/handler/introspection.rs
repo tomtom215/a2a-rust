@@ -65,8 +65,10 @@ impl RequestHandler {
     /// turns that downstream's outage into a restart loop across every replica,
     /// which is how a degraded service becomes an unavailable one.
     ///
-    /// Implemented as [`count`](crate::store::TaskStore::count), which every bundled store answers
-    /// with a cheap query. It performs no write, so a store at its capacity
+    /// Implemented as [`health`](crate::store::TaskStore::health), which the
+    /// SQL stores answer with one statement whose cost does not grow with the
+    /// tasks they hold (the PostgreSQL stores also fail on a standby, which takes no
+    /// writes). It performs no write, so a store at its capacity
     /// limit still reports healthy — capacity is not the same question as
     /// reachability, and conflating them would drain traffic from a cluster
     /// that was merely full.
@@ -82,8 +84,45 @@ impl RequestHandler {
     /// be a trace of its own (a readiness probe every 5 s per replica, seen
     /// in Tempo, 2026-10-28). The store's duration metric is still recorded.
     pub async fn task_store_health(&self) -> a2a_protocol_types::error::A2aResult<()> {
-        crate::rpc_span::quietly(self.task_store.count())
+        crate::rpc_span::quietly(self.task_store.health()).await
+    }
+
+    /// Whether this replica should be sent traffic: not while it is
+    /// [draining](Self::begin_draining), nor while its task store fails
+    /// [`task_store_health`](Self::task_store_health). This is what `/ready`
+    /// answers on the HTTP+JSON dispatcher and the axum router.
+    ///
+    /// # Errors
+    ///
+    /// A bounded reason: `"draining"`, `"timeout"` when the store has not
+    /// answered within [`READINESS_TIMEOUT`](crate::handler::READINESS_TIMEOUT),
+    /// or the store error's
+    /// [`metric_label`](a2a_protocol_types::error::A2aError::metric_label),
+    /// never its message, which may name a host or a connection string.
+    pub async fn readiness(&self) -> Result<(), &'static str> {
+        if self.is_draining() {
+            return Err("draining");
+        }
+        tokio::time::timeout(crate::handler::READINESS_TIMEOUT, self.task_store_health())
             .await
-            .map(|_| ())
+            .map_or(Err("timeout"), |health| {
+                health.map_err(|e| e.metric_label())
+            })
+    }
+
+    /// Marks this replica as leaving: [`readiness`](Self::readiness) answers
+    /// `"draining"` from now on, so a load balancer that probes it stops
+    /// sending new requests, while those already sent are still served. A
+    /// [`Server`](crate::serve::Server) does this when its shutdown signal
+    /// fires, before [`ServeConfig::drain_delay`](crate::serve::ServeConfig::drain_delay).
+    pub fn begin_draining(&self) {
+        self.draining
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Whether [`begin_draining`](Self::begin_draining) was called.
+    #[must_use]
+    pub fn is_draining(&self) -> bool {
+        self.draining.load(std::sync::atomic::Ordering::Acquire)
     }
 }

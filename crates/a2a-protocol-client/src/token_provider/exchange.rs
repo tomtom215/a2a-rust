@@ -299,7 +299,12 @@ impl TokenExchange {
         let resp = tokio::time::timeout_at(deadline, self.client.request(self.build(request)?))
             .await
             .map_err(|_| ClientError::Timeout("token exchange timed out".into()))?
-            .map_err(|e| ClientError::HttpClient(format!("token exchange failed: {e}")))?;
+            .map_err(|e| {
+                ClientError::HttpClient(format!(
+                    "token exchange failed: {}",
+                    crate::error::chain(&e)
+                ))
+            })?;
         let status = resp.status();
         let body = crate::transport::collect_response_limited(
             resp,

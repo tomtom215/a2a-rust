@@ -261,12 +261,15 @@ impl MigrationRunner {
         let mut applied = Vec::new();
 
         for migration in self.migrations {
-            // Acquire a raw connection and use BEGIN EXCLUSIVE to prevent
-            // concurrent migration runners from both seeing the same version
-            // as unapplied. The exclusive lock serializes the version check +
-            // migration apply into a single atomic operation.
-            let mut conn = self.pool.acquire().await?;
-            sqlx::query("BEGIN EXCLUSIVE").execute(&mut *conn).await?;
+            // BEGIN EXCLUSIVE prevents concurrent migration runners from
+            // both seeing the same version as unapplied. The exclusive lock
+            // serializes the version check + migration apply into a single
+            // atomic operation. A `Transaction`, not a raw `BEGIN`: it rolls
+            // back when dropped, so an error (any `?` below) or a cancelled
+            // future does not return the connection to the pool with the
+            // exclusive transaction still open, holding the file against
+            // every other writer (audit D-14, 2026-10-29).
+            let mut conn = self.pool.begin_with("BEGIN EXCLUSIVE").await?;
 
             // Re-check the current version inside the exclusive lock to
             // prevent TOCTOU races with concurrent runners.
@@ -279,7 +282,7 @@ impl MigrationRunner {
 
             if migration.version <= current {
                 // Already applied by a concurrent runner; roll back and skip.
-                sqlx::query("ROLLBACK").execute(&mut *conn).await?;
+                conn.rollback().await?;
                 continue;
             }
 
@@ -316,7 +319,7 @@ impl MigrationRunner {
                 .execute(&mut *conn)
                 .await?;
 
-            sqlx::query("COMMIT").execute(&mut *conn).await?;
+            conn.commit().await?;
             applied.push(migration.version);
         }
 

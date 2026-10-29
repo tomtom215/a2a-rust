@@ -327,7 +327,12 @@ tier_default() {
     tier_fmt
     require_ci_gate 'cargo clippy --workspace --all-targets -- -D warnings'
     require_ci_gate 'cargo clippy --workspace --all-targets --all-features -- -D warnings'
-    require_ci_gate 'cargo test --workspace --all-features'
+    # CI's test job runs nextest, with the doctests (which nextest does not
+    # run) in a step of their own. This line named `cargo test --workspace
+    # --all-features` until 2026-10-29, after ci.yml had moved to nextest,
+    # and every preflight run refused with "gate drift detected".
+    require_ci_gate 'cargo nextest run --profile ci --workspace --all-features'
+    require_ci_gate 'cargo test --doc --workspace --all-features'
 }
 
 tier_full() {

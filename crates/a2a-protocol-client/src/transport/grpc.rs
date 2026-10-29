@@ -93,6 +93,9 @@ use proto::a2a_service_client::A2aServiceClient;
 pub struct GrpcTransportConfig {
     /// Request timeout for unary calls. Default: 30 seconds.
     pub timeout: Duration,
+    /// How long a blocking `SendMessage` waits for the agent's turn.
+    /// Default: [`DEFAULT_SEND_TIMEOUT`](super::DEFAULT_SEND_TIMEOUT).
+    pub send_timeout: Duration,
     /// Connection timeout. Default: 10 seconds.
     pub connect_timeout: Duration,
     /// Maximum inbound message size. Default: 4 MiB.
@@ -114,6 +117,7 @@ impl Default for GrpcTransportConfig {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(30),
+            send_timeout: super::DEFAULT_SEND_TIMEOUT,
             connect_timeout: Duration::from_secs(10),
             max_message_size: 4 * 1024 * 1024,
             stream_channel_capacity: 64,
@@ -129,6 +133,13 @@ impl GrpcTransportConfig {
     #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Sets [`send_timeout`](Self::send_timeout).
+    #[must_use]
+    pub const fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.send_timeout = timeout;
         self
     }
 
@@ -578,14 +589,24 @@ impl GrpcTransport {
         );
 
         let mut client = self.client();
+        let waits = super::waits_for_turn(method, &params);
+        let budget = if waits {
+            self.inner.config.send_timeout
+        } else {
+            self.inner.config.timeout
+        };
         tokio::time::timeout(
-            self.inner.config.timeout,
+            budget,
             self.dispatch_unary(&mut client, method, params, extra_headers),
         )
         .await
         .map_err(|_| {
             trace_error!(method, "gRPC request timed out");
-            ClientError::Timeout("gRPC request timed out".into())
+            if waits {
+                super::timed_out(true, budget)
+            } else {
+                ClientError::Timeout("gRPC request timed out".into())
+            }
         })?
     }
 
@@ -604,10 +625,18 @@ impl GrpcTransport {
     ) -> ClientResult<serde_json::Value> {
         match method {
             "SendMessage" => {
+                let waits = super::waits_for_turn(method, &params);
                 let p: a2a_protocol_types::params::MessageSendParams = Self::parse_params(params)?;
                 let req = apb::SendMessageRequest::try_from(p).map_err(convert_error)?;
+                let mut req = self.request(req, extra_headers, true)?;
+                // The deadline sent to the server is the send's, not the
+                // 30 s every other call has: a blocking send is answered when
+                // the turn ends (`DEFAULT_SEND_TIMEOUT`).
+                if waits {
+                    req.set_timeout(self.inner.config.send_timeout);
+                }
                 let resp = client
-                    .send_message(self.request(req, extra_headers, true)?)
+                    .send_message(req)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::responses::SendMessageResponse = resp

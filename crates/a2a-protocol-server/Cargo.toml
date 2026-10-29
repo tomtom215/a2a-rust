@@ -47,7 +47,13 @@ tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tok
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
+##
+## TLS to the database is always compiled in (rustls with `ring`, Mozilla's
+## roots plus any `sslrootcert` the URL names). Without it, `sslmode=require`
+## or `verify-full`, which hosted PostgreSQL documents, refused to start, and
+## the default `prefer` connected in plaintext with no warning (found live,
+## 2026-10-29).
+postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json", "sqlx/tls-rustls-ring-webpki"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`

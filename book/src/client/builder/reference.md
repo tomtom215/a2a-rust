@@ -27,7 +27,8 @@ Every `ClientBuilder` method, its default, and what it changes. The pages in thi
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
 | `with_extensions(uris)` | None | Extensions to ask the agent for, sent as `A2A-Extensions` on every request |
 | `with_max_response_size(usize)` | 32 MiB | Largest buffered (non-streaming) response body |
-| `without_tls()` | TLS on with the `tls-rustls` feature | Disable TLS (plain HTTP only) |
+| `without_tls()` | TLS on with the `tls-rustls` feature | Plain HTTP only; `build` refuses an `https://` endpoint |
+| `with_tls_config(rustls::ClientConfig)` | Mozilla roots plus `SSL_CERT_FILE` / `SSL_CERT_DIR` | The TLS the JSON-RPC and HTTP+JSON bindings use: a private CA, a pinned self-signed certificate, a client certificate (`tls::tls_config_from_pem`) |
 | `with_peer_honouring_idempotency(bool)` | false (true when the card advertises the extension) | Let a keyed send be retried after an ambiguous failure; see [Idempotent Sends](../idempotency.md) |
 | `with_grpc_bare_address_scheme(GrpcBareAddressScheme)` | `HttpsExceptLoopback` | How `build_grpc` dials a bare `host:port` |
 | `with_grpc_tls_config(ClientTlsConfig)` | None (bundled Mozilla roots) | TLS settings for `build_grpc` (`grpc-tls` feature) |

@@ -271,8 +271,7 @@ exporters.
 `Telemetry` and stay for existing callers. They export **metrics only**, over
 **gRPC only** (`OTEL_EXPORTER_OTLP_PROTOCOL` has no effect on them), must be
 called from inside a Tokio runtime — outside one they panic with `there is no
-reactor running`, which release builds' `panic = "abort"` turns into a process
-abort — and their `service_name` argument, an `Option<&str>`, names the service
+reactor running` — and their `service_name` argument, an `Option<&str>`, names the service
 only when `OTEL_SERVICE_NAME` (or `service.name` in
 `OTEL_RESOURCE_ATTRIBUTES`) does not, as the environment specification
 prescribes (before 0.15 it overwrote them; see the

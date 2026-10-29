@@ -30,7 +30,7 @@ docker compose -f deploy/observability/docker-compose.yml up -d
 
 starts a Collector, Prometheus, Tempo, Loki and Grafana with this repository's
 dashboards; then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` and
-open Grafana on `http://localhost:3000`
+open Grafana on `http://localhost:3001`
 ([`deploy/observability`](https://github.com/tomtom215/a2a-rust/tree/main/deploy/observability)).
 [Walkthrough: the local stack](./walkthrough.md) takes it step by step, to a
 dashboard, a trace and its logs.

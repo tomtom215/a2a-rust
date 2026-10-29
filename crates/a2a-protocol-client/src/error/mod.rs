@@ -383,7 +383,7 @@ impl From<ClientError> for A2aError {
 }
 
 /// An error's text followed by each cause the text does not already contain.
-fn chain(e: &dyn std::error::Error) -> String {
+pub(crate) fn chain(e: &dyn std::error::Error) -> String {
     let mut text = e.to_string();
     let mut cause = e.source();
     while let Some(c) = cause {

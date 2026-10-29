@@ -204,8 +204,12 @@ impl DispatchConfig {
 /// `application/a2a+json` (§14.1). A `POST`, `PUT` or `PATCH` that names
 /// anything else is `ContentTypeNotSupportedError`, which §5.4 maps to HTTP
 /// 400; answered as that A2A error, with its `ErrorInfo`, rather than as an
-/// anonymous 400. A request that names no type is let through to the body
-/// parser, as before.
+/// anonymous 400. A request with a body that names no type is refused the
+/// same way: a browser sends a cross-origin `fetch` with a byte-array body
+/// and no `Content-Type` without a CORS preflight, so letting it through
+/// let any web page drive an agent on `localhost` (audit SEC-01,
+/// 2026-10-29). A request with no body and no type (a bodiless cancel) is
+/// let through.
 pub(crate) fn check_request_content_type(
     method: &hyper::Method,
     headers: &hyper::HeaderMap,
@@ -220,7 +224,8 @@ pub(crate) fn check_request_content_type(
 }
 
 /// The refusal of a `Content-Type` that names neither of A2A's JSON media
-/// types, or `None` when `headers` name one of them or none at all.
+/// types, or of a body that names none, or `None` when `headers` name one
+/// of them, or name none for a request without a body.
 ///
 /// The value is read as RFC 9110 §8.3.1 reads a media type: the type and
 /// subtype before any `;` parameter, compared case-insensitively. Until
@@ -230,10 +235,14 @@ pub(crate) fn check_request_content_type(
 pub(crate) fn unsupported_content_type(
     headers: &hyper::HeaderMap,
 ) -> Option<a2a_protocol_types::error::A2aError> {
-    let ct = headers
-        .get(hyper::header::CONTENT_TYPE)?
-        .to_str()
-        .unwrap_or("");
+    let Some(ct) = headers.get(hyper::header::CONTENT_TYPE) else {
+        return has_body(headers).then(|| {
+            a2a_protocol_types::error::A2aError::content_type_not_supported(
+                "a request body needs Content-Type: application/json or application/a2a+json",
+            )
+        });
+    };
+    let ct = ct.to_str().unwrap_or("");
     let essence = rest::media_type::essence(ct);
     let json = essence.eq_ignore_ascii_case("application/json")
         || essence.eq_ignore_ascii_case(a2a_protocol_types::A2A_CONTENT_TYPE);
@@ -242,6 +251,16 @@ pub(crate) fn unsupported_content_type(
             "unsupported Content-Type: {ct}; expected application/json or application/a2a+json"
         ))
     })
+}
+
+/// Whether `headers` announce a body: a `Content-Length` other than `0`, or
+/// any `Transfer-Encoding` (RFC 9112 §6.3). An HTTP/2 request may carry a
+/// body with neither; a browser reaches a loopback agent over HTTP/1.1.
+fn has_body(headers: &hyper::HeaderMap) -> bool {
+    headers.contains_key(hyper::header::TRANSFER_ENCODING)
+        || headers
+            .get(hyper::header::CONTENT_LENGTH)
+            .is_some_and(|len| len.as_bytes() != b"0")
 }
 
 /// Adds the `WWW-Authenticate` challenge a `401` for `err` must carry

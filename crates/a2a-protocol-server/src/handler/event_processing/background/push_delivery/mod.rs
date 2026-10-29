@@ -60,7 +60,7 @@ pub fn timeout_outcome(sender: &dyn PushSender, limits: &HandlerLimits) -> &'sta
 /// macros compile to nothing without the (non-default) `tracing` feature. A
 /// webhook refusing every delivery for a day used to look exactly like one
 /// that was never configured.
-pub(super) async fn deliver_push_bg(
+pub async fn deliver_push_bg(
     task_id: &TaskId,
     event: &StreamResponse,
     push_config_store: &dyn PushConfigStore,

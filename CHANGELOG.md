@@ -25,6 +25,64 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **The client trusts a private CA, a pinned self-signed certificate, or
+  presents a client certificate, on the HTTP bindings** (client;
+  `ClientBuilder::with_tls_config`, `tls::tls_config_from_pem`,
+  `TlsConfig::Custom`). Until now the JSON-RPC and HTTP+JSON transports
+  trusted Mozilla's roots and nothing else whatever the builder was given, so
+  an agent behind an internal CA could not be called over either (audit
+  B-01, G-01; `tests/private_ca.rs`).
+- **The client reads `SSL_CERT_FILE` and `SSL_CERT_DIR`** (client), as curl,
+  OpenSSL and Go do: the certificates they name are trusted beside Mozilla's
+  roots on every HTTP call the client makes (both HTTP bindings, card
+  discovery, JWKS, the token provider). A container's CA bundle, or a
+  TLS-inspecting proxy's root, needs no code.
+- **The client goes through `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and
+  `NO_PROXY`** (client; upper or lower case, curl's `NO_PROXY` rules), on the
+  same paths: `CONNECT` for `https://`, a forward request with
+  `Proxy-Authorization` for `http://`. Only the OTLP exporter read them
+  before, so in a network whose only way out is a proxy, telemetry was
+  exported and every agent call failed (audit B-02;
+  `tests/proxy_and_cert_env.rs`). The gRPC and WebSocket transports do not
+  go through it yet.
+- **`TaskStore::health()`** (server; provided method): what readiness asks.
+  The SQL stores answer with one statement whose cost does not grow with the
+  table (`SELECT pg_is_in_recovery()`, `SELECT 1`), and a PostgreSQL standby
+  is not ready. The default asks `count()`, so a custom store still compiles.
+- **Tasks a dead replica left running are ended** (server, the PostgreSQL
+  and SQLite stores; `handler::claims::reaper`, `TurnClaimStore::abandoned`):
+  every handler with turn claims looks, once per claim time to live, for
+  tasks `submitted` or `working` with no live claim and no write for a time
+  to live, takes each one's claim, and ends it `failed` with failure class
+  `transient` and a message saying the replica running it stopped; its
+  webhooks are sent the event, and a subscriber on another replica sees it
+  at its next poll. Run live (three replicas behind HAProxy on PostgreSQL
+  17): 70 s after the replica running a task was killed with `SIGKILL`, the
+  task still answered `working`, and nothing would have ended it (audit
+  E-F1). Tested on all four SQL stores (`handler/claims/reaper_tests.rs`;
+  two mutants of it, each caught).
+- **`ClientConfig::send_timeout` and `ClientBuilder::with_send_timeout`**
+  (client; also `GrpcTransportConfig` and `WebSocketTransportConfig`, and
+  the CLI's `--send-timeout`): a blocking `SendMessage` waits up to ten
+  minutes for the agent's turn, where every other call keeps its 30 s
+  request timeout, and running out says what to do (stream, or
+  `return_immediately` and follow the task). Run live against an agent
+  calling a local model: a 60 s turn failed at 30 s with `request timed
+  out`, the CLI exited 1, the task went on running, and the caller never
+  learned its id (audit D-01; `tests/blocking_send_timeout.rs`).
+- **`TelemetryBuilder::with_span_level`** (server; default `INFO`, the level
+  of every span this SDK makes): see *Fixed*.
+- **`ServeConfig::with_drain_delay`, `RequestHandler::readiness`,
+  `begin_draining` and `is_draining`** (server): on its shutdown signal a
+  `Server` marks the handler draining, so `/ready` answers `503 draining` at
+  once, and goes on accepting for the delay (zero by default) while a
+  Kubernetes Service's endpoints and the proxies in front learn the pod is
+  leaving; then it stops as before. A server that stopped accepting at once
+  refused the requests still routed to it on every rollout (audit A5).
+  `finish_in_flight` begins draining too, for an axum server.
+- **`ServeConfig::with_allowed_hosts` and `without_host_check`** (server):
+  see the loopback `Host` check under *Behaviour Changes*.
+
 - **`PostgresTaskStore::pool_options()`** (server): the pool options `new`
   uses (a ping only for a connection idle a second or more), for a caller
   who builds the pool for `from_pool`. Its docs say which stores may share
@@ -151,7 +209,90 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `#anchor` and image, which nothing did (`docs.yml` built it only after
   merge). `benchmarks.yml` runs it before its bot push.
 
+### Breaking Changes
+
+- **`ServeReport` is `#[must_use]`** (server): a server that refused to start
+  returns at once with `refused` set, and a caller that dropped the report,
+  as `hello-agent` did, exited `0` as though it had served (audit G-03).
+- **`tls::HttpsClient` is a struct, not a type alias** (client), with the
+  `request` method the transports use; it routes through the proxy the
+  environment names. **`TlsConfig` is `#[non_exhaustive]`** and has a
+  `Custom` variant; `ClientConfig::with_tls`, `ClientBuilder::without_tls`
+  and `Server::with_config` are no longer `const fn`.
+
 ### Behaviour Changes
+
+- **`with_timeout` no longer bounds a blocking `SendMessage`** (client;
+  likewise `GrpcTransportConfig`'s `timeout` and
+  `WebSocketTransportConfig::with_request_timeout`): a send that waits for
+  the turn to end is bounded by `send_timeout` (ten minutes by default)
+  instead, so a client that set a short `with_timeout` to fail fast on a
+  stalled agent now waits up to ten minutes on such a send. Set
+  `ClientBuilder::with_send_timeout` for the old bound (`build_grpc` passes
+  it on); a `WebSocketTransport` given to `with_custom_transport` takes its
+  own, `WebSocketTransportConfig::with_send_timeout`.
+  `tests/scripted_peer_tests.rs` now sets both.
+- **A server listening on loopback refuses a request whose `Host` is
+  another DNS name** (server; `Server`, so `serve`, `serve_with_addr` and
+  `Server::bind`), with `403` and a body naming
+  `ServeConfig::with_allowed_hosts`. IP literals, names of one label
+  (`localhost`, a Compose service name) and names under `.localhost` are
+  answered. This is the DNS-rebinding defence: a web page re-points its own
+  name at `127.0.0.1` and the browser then lets it read the answers of an
+  agent on the user's machine. Found live against `hello-agent`, whose
+  `ListTasks` answered `Host: evil.example` (audit SEC-02;
+  `tests/browser_reachable_loopback.rs`). A listener on another address is
+  not checked. `ServeConfig::without_host_check()` turns it off.
+- **A request body with no `Content-Type` is refused** (server; JSON-RPC,
+  HTTP+JSON, the axum router) as `ContentTypeNotSupportedError`, like one in
+  a type A2A does not define. A browser sends a cross-origin `fetch` with a
+  byte-array body and no type without a CORS preflight, so any web page
+  could run `SendMessage`, `CancelTask` or a push-config call on an agent on
+  `localhost`; run live against `hello-agent` (audit SEC-01). A request with
+  no body (a bodiless cancel) needs no type.
+- **`build()` refuses push configs in memory beside a shared task store
+  when the card declares push notifications** (server): with a SQL task store
+  and no `with_push_config_store`, a config registered on one replica was
+  never seen by the replica running the task, and none survived a restart
+  (audit E-F4). The error names both remedies.
+- **An overloaded server's refusal carries a `RetryInfo` detail of one
+  second** (server; `ServerError::Overloaded`: the stream, connection,
+  per-tenant and idempotency caps), and HTTP+JSON's `503` a `Retry-After`.
+  Over JSON-RPC and WebSocket the answer is HTTP `200`, so without the
+  detail a client's retry policy read a full server as a permanent failure
+  (audit H1).
+- **An empty credential never authenticates** (server;
+  `ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`, keys added at
+  runtime). `ApiKeyAuthInterceptor::new([""])`, an unset variable read as
+  the empty string, accepted an empty `x-api-key:` from anyone (audit
+  SEC-05).
+- **SSE responses carry `X-Accel-Buffering: no` and
+  `Cache-Control: no-cache, no-transform`, and no `Transfer-Encoding`**
+  (server): the headers nginx and other proxies read to leave a stream
+  unbuffered and untransformed (audit B-06). Run live through nginx 1.29 with
+  its default proxy configuration, the stream was not held either way (first
+  event after 0.01 s, with the header and with nginx told to ignore it), so
+  this is for proxies configured to buffer or compress, not a fix of an
+  observed stall. `Transfer-Encoding` is hyper's to set, and illegal in
+  HTTP/2.
+- **`deploy/observability` publishes Grafana on host port 3001**, not 3000,
+  where `hello-agent` and a self-hosted Langfuse listen: with the stack up,
+  the quick start's agent exited at once with `AddrInUse` (audit A20, run
+  live).
+- **The repository's `.dockerignore` keeps `.env` files, keys, `.git` and the
+  built book out of the build context** (audit A12): `COPY . .` put them in
+  every build stage and its cache, and any commit invalidated the source
+  layers.
+- **This workspace's release builds unwind on a panic** (`[profile.release]`
+  no longer sets `panic = "abort"`): the handler catches an executor's panic
+  and marks the task `Failed`, which an abort skipped, killing the process and
+  every stream it served, in every binary built here, the `deploy-agent`
+  image included (audit A4). An application's own crate keeps its own
+  profile.
+- **The client's pooled connections are dropped after 50 s idle**, not 90 s
+  (client): below the 60 s of common load balancers and the 75 s of this
+  crate's server, so a connection the peer has closed is not reused for a
+  send (audit B-07).
 
 - **A PostgreSQL statement timeout or cancel (`57014`) and an idle-session
   timeout (`57P05`) are now temporary failures** (server): HTTP `503`, gRPC
@@ -194,6 +335,84 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `SIGABRT` (status 134) in the release profile.
 
 ### Fixed
+
+- **The PostgreSQL stores could not use TLS** (server, `postgres`): sqlx was
+  built with no TLS backend, so `sslmode=require` or `verify-full`, which
+  hosted PostgreSQL documents, refused to start ("SQLx was built without TLS
+  support enabled"), and the default `prefer` connected in plaintext. Run
+  live against a PostgreSQL 17 with `ssl=on`: `require`, `verify-ca`,
+  `verify-full` and `prefer` now connect over TLS 1.3, `disable` does not,
+  and a host the certificate does not name is refused
+  (`tests/postgres_tls.rs`, which needs no database).
+- **`Telemetry` exported every DEBUG and TRACE event of every crate as a
+  span event** (server): the span layer had no level filter, so h2's,
+  hyper's and sqlx's events inside an exported span went to the collector,
+  and `RUST_LOG`, which filters only what is printed, could not stop them.
+  Spans and their events are now exported at `INFO` and above
+  (`with_span_level`), and each exporting layer tells `tracing` its most
+  verbose level, so the callsites below it are disabled process-wide
+  (audit C-01; `tests/telemetry_export/span_level.rs`, which fails with the
+  filter removed).
+- **Each request wrote two or three `INFO` lines** (server and client:
+  "dispatching REST request", "handling get task", "sending JSON-RPC
+  request", …), and at `INFO` each was also an OTLP log record (audit C-11,
+  seen live). They are `DEBUG` now; startup and shutdown lines stay `INFO`.
+- **An application's own `INFO` lines were not printed by default**
+  (`Telemetry::install_subscriber`): with `RUST_LOG` unset only warnings and
+  the telemetry line showed, so `deploy-agent` started without saying where
+  it listened or which database it opened (seen live). The crate the default
+  service name names (`deploy-agent` as `deploy_agent`) is printed at `INFO`,
+  that crate only.
+- **`/ready` waited as long as the database's pool did** (server): with
+  PostgreSQL paused, the probe waited out sqlx's 30 s acquire timeout (run
+  live), so a balancer with a longer probe timeout kept routing to the
+  replica. It answers `503 timeout` after `handler::READINESS_TIMEOUT` (2 s).
+- **A failed SQLite migration left its exclusive transaction open** on the
+  pooled connection (server; `store::migration`), holding the file against
+  every other writer: every `?` after the raw `BEGIN EXCLUSIVE` returned
+  with it open. It is a `Transaction` now, rolled back on error and on drop
+  (audit D-14; a test with a migration that fails).
+- **`scripts/preflight.sh` refused to run** ("gate drift detected"): its
+  default tier named `cargo test --workspace --all-features`, which
+  `ci.yml` replaced with nextest and a doctest step. It names those now.
+- **`/ready` on the HTTP+JSON dispatcher, and so on `CombinedDispatcher`,
+  was a constant `200`** (server), the same answer as `/health`, though the
+  README and the book said it probes the task store; only the axum router's
+  did. A replica whose database was gone stayed in its load balancer's
+  rotation. It answers `RequestHandler::readiness()` now, with the axum
+  router's body (`tests/rest_readiness.rs`, which fails with the constant
+  restored).
+- **`deploy-agent`, "the smallest agent you can actually ship", served
+  through `axum::serve`** (example): no header-read or idle timeout, so a
+  client sending a byte a minute held a connection forever, an unbounded
+  drain, and a bind on IPv4 only (audit A6, A7, B-16). It runs on the SDK's
+  `Server` and `CombinedDispatcher` now (both HTTP bindings, `/health` and
+  `/ready`, `DRAIN_DELAY_SECONDS`, `[::]` with an IPv4 fallback), validates
+  `PORT` and `AGENT_URL`, logs through `tracing` which database it opens
+  (without the password), and fails with one line naming what could not
+  start. Its manifest gained a startup probe (the port opens only once the
+  database answers, and liveness killed a slow first start before its error
+  was logged: audit A3), `maxSurge: 1` / `maxUnavailable: 0`, a
+  PodDisruptionBudget, node and zone spreading, `seccompProfile:
+  RuntimeDefault` and no service-account token (audit A8, A9), the drain
+  delay, and a 60 s grace period. `/healthz` and `/readyz` are gone; the
+  probes use `/health` and `/ready`.
+- **Readiness scanned every task** (server, `/ready`, `task_store_health`):
+  it ran `SELECT COUNT(*)`, which slowed as the table grew until every
+  replica's probe timed out at once (audit A2, E-F5). It runs
+  `TaskStore::health()` now.
+- **A client's connect, DNS and TLS failures said only
+  `client error (Connect)`** (client): every HTTP call now reports the
+  error's whole cause chain (`invalid peer certificate: UnknownIssuer`,
+  `Connection refused`), seen live against a private-CA agent (audit B-05).
+- **Values `build()` and `Server` accepted, then panicked or hung on**
+  (server; audit G-02): `with_event_queue_capacity(0)` panicked on the first
+  event (`build()` refuses it; a per-tenant capacity is clamped to 1),
+  `with_max_connections(usize::MAX)` panicked in `Semaphore::new` (clamped),
+  and `with_max_connections(0)` served nothing, forever (refused, in
+  `ServeReport::refused`).
+- **`ClientBuilder::without_tls()` did nothing** (client; audit B-17): it
+  now refuses an `https://` endpoint when the client is built.
 
 - **A turn's claim fenced writes to any task, not only its own** (server;
   SQLite and PostgreSQL stores). A write carrying a turn's token passed the

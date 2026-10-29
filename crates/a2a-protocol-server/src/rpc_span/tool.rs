@@ -135,13 +135,26 @@ impl GenAiSpan {
     }
 
     /// Opens the span of one call to tool `name`, the model's call `call_id`.
+    ///
+    /// `known` is whether `name` is in the agent's catalogue. The model
+    /// chooses the name, so one it invented (or a prompt injected) would
+    /// otherwise be a new metric series and span name each time; it is
+    /// `_OTHER` there, the conventions' value for one outside a known set,
+    /// and stays as it was in the span's `gen_ai.tool.name` (audit C-02).
     #[cfg_attr(
         not(feature = "tracing"),
         allow(unused_variables, clippy::missing_const_for_fn)
     )]
-    pub fn tool(name: &str, call_id: &str, description: Option<&str>, meter: &GenAiMeter) -> Self {
+    pub fn tool(
+        name: &str,
+        known: bool,
+        call_id: &str,
+        description: Option<&str>,
+        meter: &GenAiMeter,
+    ) -> Self {
         #[cfg(feature = "tracing")]
         {
+            let bounded = if known { name } else { "_OTHER" };
             let span = if super::untraced() {
                 tracing::Span::none()
             } else {
@@ -159,14 +172,14 @@ impl GenAiSpan {
                 )
             };
             if !span.is_disabled() {
-                span.record("otel.name", format!("execute_tool {name}").as_str());
+                span.record("otel.name", format!("execute_tool {bounded}").as_str());
             }
             Self {
                 span,
                 ended: AtomicBool::new(false),
                 chat: false,
                 #[cfg(feature = "otel")]
-                measure: Measure::tool(meter, name),
+                measure: Measure::tool(meter, bounded),
             }
         }
         #[cfg(not(feature = "tracing"))]

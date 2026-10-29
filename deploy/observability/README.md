@@ -24,12 +24,12 @@ the dashboards, rules and data sources provisioned. Then run any agent with
 OTEL_SERVICE_NAME=my-agent OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 my-agent
 ```
 
-and open Grafana on <http://localhost:3000> (no login: the anonymous user is
+and open Grafana on <http://localhost:3001> (no login: the anonymous user is
 an admin, so keep it off any network you do not control). The dashboards are
 in the folder "A2A"; traces and logs are under Explore, and a span opens the
 log lines written inside it, a log line its trace. An agent in a container on
 the stack's network (`a2a-observability_default`) uses
-`http://otel-collector:4318`. Published ports: 3000 Grafana, 9090 Prometheus,
+`http://otel-collector:4318`. Published ports: 3001 Grafana, 9090 Prometheus,
 4317/4318 the Collector, 3200 Tempo, 3100 Loki.
 
 Metrics travel Collector → Prometheus's OTLP receiver, so `service.name` and
@@ -130,7 +130,7 @@ repository's `tck/sut` (`a2a-tck-sut`) and the `a2a` CLI at commit
   alert's expression was then broken in turn (a threshold, the outcome
   label, a range), and the tests failed every time (8 of 8 caught); a
   ninth case proves the unanswered-requests rule subtracts errors.
-- Direct OTLP: `check_dashboards.py --grafana http://127.0.0.1:3000
+- Direct OTLP: `check_dashboards.py --grafana http://127.0.0.1:3001
   --prometheus http://127.0.0.1:9090 grafana/dashboards --expect-empty
   "Persistence errors" "HTTP connections"`: ok. All 21 rules healthy, every
   recording rule with data, both dashboards provisioned in folder "A2A",

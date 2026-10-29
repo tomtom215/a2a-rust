@@ -3,9 +3,9 @@
 flowchart TB
     caller["Callers, at AGENT_URL"]
     svc["Service :80"]
-    kubelet["kubelet probes<br/>/healthz and /readyz"]
-    p1["Pod 1<br/>0.0.0.0:8080"]
-    p2["Pod 2<br/>0.0.0.0:8080"]
+    kubelet["kubelet probes<br/>/health and /ready"]
+    p1["Pod 1<br/>[::]:8080"]
+    p2["Pod 2<br/>[::]:8080"]
     pg[("PostgreSQL<br/>DATABASE_URL")]
     caller --> svc
     svc --> p1

@@ -12,6 +12,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "mutants",
  "opentelemetry",
  "serde",
  "serde_json",

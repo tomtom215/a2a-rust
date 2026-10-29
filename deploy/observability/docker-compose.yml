@@ -9,10 +9,10 @@
 #
 #   OTEL_SERVICE_NAME=my-agent OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 #
-# and open Grafana on http://localhost:3000 (folder "A2A"; Explore for Tempo
+# and open Grafana on http://localhost:3001 (folder "A2A"; Explore for Tempo
 # and Loki). Metrics, traces and logs all go to the Collector on 4317/4318,
 # which sends them to Prometheus, Tempo and Loki. Ports published on the host:
-# 3000 Grafana, 9090 Prometheus, 4317/4318 the Collector, 3200 Tempo, 3100
+# 3001 Grafana, 9090 Prometheus, 4317/4318 the Collector, 3200 Tempo, 3100
 # Loki.
 #
 # An agent in a container on the same Docker network uses
@@ -85,7 +85,9 @@ services:
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards/a2a:ro
     ports:
-      - "3000:3000"
+      # Host port 3001: 3000 is where hello-agent and a self-hosted Langfuse
+      # listen, and the quick start runs an agent beside this stack.
+      - "3001:3000"
     depends_on: [prometheus, tempo, loki]
     restart: unless-stopped
 

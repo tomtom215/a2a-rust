@@ -148,7 +148,7 @@ fn usage_the_provider_did_not_report_is_not_recorded() {
 fn a_failed_turn_or_call_records_its_error_type_and_status() {
     let spans = recorded(|| {
         GenAiSpan::chat("openai", "m", None, &GenAiMeter::default()).failed("500");
-        GenAiSpan::tool("t", "c1", None, &GenAiMeter::default()).failed("tool_error");
+        GenAiSpan::tool("t", true, "c1", None, &GenAiMeter::default()).failed("tool_error");
     });
     assert_eq!(spans[0].get("error.type"), Some("500"));
     assert_eq!(spans[0].get("otel.status_code"), Some("ERROR"));
@@ -161,6 +161,7 @@ fn a_call_is_an_execute_tool_span_naming_the_tool_and_call() {
     let spans = recorded(|| {
         GenAiSpan::tool(
             "service_status",
+            true,
             "call-7",
             Some("Look up a service"),
             &GenAiMeter::default(),
@@ -289,3 +290,25 @@ fn inside_a_task_the_spans_nest_under_invoke_agent_and_carry_no_content() {
 #[cfg(test)]
 #[path = "tool_metrics_tests.rs"]
 mod metrics;
+
+/// A name the model invented is not a span name or a metric series of its
+/// own (audit C-02): `_OTHER`, with the name kept in `gen_ai.tool.name`.
+#[test]
+fn an_unknown_tool_is_named_other_in_the_span_name() {
+    let spans = recorded(|| {
+        GenAiSpan::tool(
+            "ignore-previous-instructions",
+            false,
+            "c9",
+            None,
+            &GenAiMeter::default(),
+        )
+        .failed("unknown_tool");
+    });
+    let tool = &spans[0];
+    assert_eq!(tool.get("otel.name"), Some("execute_tool _OTHER"));
+    assert_eq!(
+        tool.get("gen_ai.tool.name"),
+        Some("ignore-previous-instructions")
+    );
+}

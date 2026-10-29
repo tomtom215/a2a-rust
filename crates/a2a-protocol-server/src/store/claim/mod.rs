@@ -166,6 +166,36 @@ pub trait TurnClaimStore: Send + Sync + 'static {
     ///
     /// The storage's.
     fn sweep(&self, older_than: Duration) -> Fut<'_, u64>;
+
+    /// Tasks a turn left running and nobody runs: `submitted` or `working`,
+    /// no live claim on them, and not written for `quiet`. At most `limit`,
+    /// as `(scope, task_id)`, the oldest first. What the handler's reaper
+    /// ends (`handler::claims::reaper`): a replica that died mid-turn, or
+    /// stopped its executor past the grace, left them so, and until
+    /// 2026-10-29 nothing finished them (audit E-F1, run live).
+    ///
+    /// The default finds none: a claim store that does not share a database
+    /// with its tasks cannot see them.
+    ///
+    /// # Errors
+    ///
+    /// The storage's.
+    fn abandoned(&self, quiet: Duration, limit: usize) -> Fut<'_, Vec<(String, String)>> {
+        let _ = (quiet, limit);
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+/// Which task table a claim store's [`abandoned`](TurnClaimStore::abandoned)
+/// reads: the plain stores' `tasks`, or the tenant-aware stores'
+/// `tenant_tasks`, whose partition is the claim's scope.
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClaimedTasks {
+    /// `tasks`, every claim scoped `''`.
+    Plain,
+    /// `tenant_tasks`, scoped by `tenant_id`.
+    Tenant,
 }
 
 /// The marker a [`ClaimLost`] error carries in its `data`.

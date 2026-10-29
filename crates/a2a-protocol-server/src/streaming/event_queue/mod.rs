@@ -16,6 +16,25 @@
 
 pub(crate) mod applied;
 mod content;
+
+/// `capacity` as a broadcast channel can take it: tokio panics on zero and
+/// on more than `usize::MAX / 2`. A per-tenant capacity reaches here with no
+/// `build()` to refuse it, so it is clamped rather than trusted (audit G-02:
+/// `with_event_queue_capacity(0)` panicked on the first event).
+const fn channel_capacity(capacity: usize) -> usize {
+    if capacity == 0 {
+        1
+    } else if capacity > MAX_CHANNEL_CAPACITY {
+        MAX_CHANNEL_CAPACITY
+    } else {
+        capacity
+    }
+}
+
+/// The deepest a stream buffer is made, whatever was asked: far past any
+/// memory budget, and far below tokio's limit.
+const MAX_CHANNEL_CAPACITY: usize = 1 << 24;
+
 #[cfg(test)]
 mod final_snapshot_tests;
 #[cfg(test)]
@@ -227,7 +246,7 @@ pub fn new_in_memory_queue_with_options(
     max_event_size: usize,
     write_timeout: std::time::Duration,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader) {
-    let (tx, rx) = broadcast::channel(capacity);
+    let (tx, rx) = broadcast::channel(channel_capacity(capacity));
     (
         InMemoryQueueWriter::new(tx, max_event_size, write_timeout),
         InMemoryQueueReader::new(rx),
@@ -274,7 +293,7 @@ pub fn new_in_memory_queue_with_persistence(
     InMemoryQueueReader,
     mpsc::Receiver<A2aResult<StreamEvent>>,
 ) {
-    let (tx, rx) = broadcast::channel(capacity);
+    let (tx, rx) = broadcast::channel(channel_capacity(capacity));
     // Use a large bounded mpsc channel for persistence — the background
     // processor is fast, and the capacity is sized so that it does not have
     // to be. "must never miss events" is what this comment used to say; see
@@ -306,7 +325,7 @@ pub(crate) fn new_in_memory_queue_with_shared_persistence(
     max_event_size: usize,
     write_timeout: std::time::Duration,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader, PersistenceRx) {
-    let (tx, rx) = broadcast::channel(capacity);
+    let (tx, rx) = broadcast::channel(channel_capacity(capacity));
     let (persistence_tx, persistence_rx) = mpsc::channel(capacity.saturating_mul(16).max(1024));
     (
         InMemoryQueueWriter::new_with_persistence(

@@ -336,7 +336,7 @@ verified by reading declarations; the correction is recorded there.
    736 LOC and nothing showed how to ship one. `examples/hello-agent` is now
    23 lines of code against the umbrella crate alone, and
    `examples/deploy-agent` carries the four things a container platform
-   requires — env configuration, `/healthz` and `/readyz`, `SIGTERM` drain, and
+   requires — env configuration, `/health` and `/ready`, `SIGTERM` drain, and
    a `0.0.0.0` bind — plus a two-stage `Dockerfile` and a Kubernetes manifest
    whose probes point at those endpoints. Its sharpest test asserts the agent
    card advertises the *public* URL and never leaks the bind address, which is

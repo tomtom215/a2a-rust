@@ -601,7 +601,10 @@ impl TaskStore for SqliteTaskStore {
 
     fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
         Some(std::sync::Arc::new(
-            crate::store::claim::SqliteTurnClaims::over(self.pool.clone()),
+            crate::store::claim::SqliteTurnClaims::over(
+                self.pool.clone(),
+                crate::store::claim::ClaimedTasks::Plain,
+            ),
         ))
     }
 
@@ -1352,6 +1355,16 @@ impl TaskStore for SqliteTaskStore {
                 .map_err(to_a2a_error)?;
             #[allow(clippy::cast_sign_loss)]
             Ok(row.0 as u64)
+        })
+    }
+
+    fn health<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            sqlx::query("SELECT 1")
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(())
         })
     }
 }

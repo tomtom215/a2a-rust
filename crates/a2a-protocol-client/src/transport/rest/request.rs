@@ -172,24 +172,30 @@ impl RestTransport {
         extra_headers: &HashMap<String, String>,
         query: &[(String, String)],
     ) -> ClientResult<serde_json::Value> {
-        trace_info!(method, base_url = %self.inner.base_url, "sending REST request");
+        trace_debug!(method, base_url = %self.inner.base_url, "sending REST request");
 
         let req = self.build_request(method, &params, extra_headers, false, query)?;
+        let waits = crate::transport::waits_for_turn(method, &params);
+        let budget = if waits {
+            self.inner.send_timeout
+        } else {
+            self.inner.request_timeout
+        };
 
         // Single deadline across header fetch AND body read (see the JSON-RPC
-        // transport for the rationale): `request_timeout` is a per-call budget,
-        // not applied twice.
-        let deadline = tokio::time::Instant::now() + self.inner.request_timeout;
+        // transport for the rationale): the timeout is a per-call budget, not
+        // applied twice.
+        let deadline = tokio::time::Instant::now() + budget;
 
         let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
             .await
             .map_err(|_| {
                 trace_error!(method, "request timed out");
-                ClientError::Timeout("request timed out".into())
+                crate::transport::timed_out(waits, budget)
             })?
             .map_err(|e| {
                 trace_error!(method, error = %e, "HTTP client error");
-                ClientError::HttpClient(e.to_string())
+                ClientError::HttpClient(crate::error::chain(&e))
             })?;
 
         let status = resp.status();

@@ -215,6 +215,10 @@ impl TaskStore for TracedTaskStore {
         self.run("count", self.inner.count())
     }
 
+    fn health(&self) -> Fut<'_, ()> {
+        self.run("health", self.inner.health())
+    }
+
     fn isolates_tenants(&self) -> bool {
         self.inner.isolates_tenants()
     }

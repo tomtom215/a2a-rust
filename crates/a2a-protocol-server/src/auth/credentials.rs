@@ -82,6 +82,15 @@ impl CredentialSet {
         candidate: &[u8],
         then: impl FnOnce(CredentialMatch<'_>) -> R,
     ) -> R {
+        // An empty credential is never one: `ApiKeyAuthInterceptor::new([""])`
+        // (an unset environment variable read as "") accepted an empty
+        // `x-api-key:` from anyone, while the handler reported authentication
+        // on and the production profile was satisfied (audit SEC-05,
+        // 2026-10-29). Whether the set holds an empty entry is not secret, so
+        // this early answer leaks nothing a timing could.
+        if candidate.is_empty() {
+            return then(CredentialMatch::NoMatch);
+        }
         then(labelled_constant_time_match(candidate, &self.read()))
     }
 
@@ -99,5 +108,24 @@ impl std::fmt::Debug for CredentialSet {
         f.debug_struct("CredentialSet")
             .field("len", &self.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod empty_credential_tests {
+    use super::*;
+
+    fn matches(set: &CredentialSet, candidate: &[u8]) -> bool {
+        set.matching(candidate, |m| !matches!(m, CredentialMatch::NoMatch))
+    }
+
+    /// An unset `A2A_API_KEY` read as `""` made every caller that sent an
+    /// empty header authenticated (audit SEC-05).
+    #[test]
+    fn an_empty_credential_never_matches_even_an_empty_entry() {
+        let set = CredentialSet::from_entries(vec![(Vec::new(), None), (b"k".to_vec(), None)]);
+        assert!(!matches(&set, b""));
+        assert!(matches(&set, b"k"));
+        assert!(!matches(&set, b"x"));
     }
 }

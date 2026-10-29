@@ -210,6 +210,28 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     crate::sql_error::sql_error(crate::sql_error::Db::Postgres, "postgres error", e)
 }
 
+#[allow(clippy::manual_async_fn)]
+/// The upsert `save` makes: the terminal guard (`crate::store::terminal`)
+/// and the claim's fence in its `WHERE`.
+const SAVE_SQL: &str = concat!(
+    crate::store::terminal::sql_write_allowed!(
+        "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
+                 SELECT $1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()), $7
+                 WHERE set_config('a2a.claims', 'on', true) = 'on'
+                 ON CONFLICT(tenant_id, id) DO UPDATE SET
+                     context_id = EXCLUDED.context_id,
+                     state = EXCLUDED.state,
+                     data = EXCLUDED.data,
+                     updated_at = EXCLUDED.updated_at,
+                     applied_seq = COALESCE(EXCLUDED.applied_seq, tenant_tasks.applied_seq)
+                 WHERE ",
+        "tenant_tasks.state",
+        "EXCLUDED.state",
+        " AND "
+    ),
+    crate::store::claim::fence_sql!(postgres "$8::text", "$2")
+);
+
 mod caller_keys;
 mod list;
 mod store_impl;

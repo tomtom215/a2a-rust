@@ -91,9 +91,16 @@ async fn main() -> std::io::Result<()> {
     // in-flight work has ended. `serve(..)` never returns, so a signal would
     // kill the process before `telemetry` flushed and the last spans and up to
     // a minute of metrics would be lost.
-    server
+    let report = server
         .serve_with_shutdown(JsonRpcDispatcher::new(handler), shutdown_signal())
         .await;
+    // A server that refused to start (a production configuration it cannot
+    // meet) returns at once; say so, and fail, rather than exit as if served.
+    if let Some(why) = report.refused {
+        return Err(std::io::Error::other(format!(
+            "the server refused to start: {why}"
+        )));
+    }
     Ok(())
 }
 

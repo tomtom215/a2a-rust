@@ -179,7 +179,7 @@ healthy, every recording rule has data and every dashboard query returns data:
 
 ```bash
 python3 deploy/observability/scripts/check_dashboards.py \
-  --grafana http://127.0.0.1:3000 --prometheus http://127.0.0.1:9090 \
+  --grafana http://127.0.0.1:3001 --prometheus http://127.0.0.1:9090 \
   deploy/observability/grafana/dashboards \
   --expect-empty "Persistence errors" "HTTP connections"
 ```

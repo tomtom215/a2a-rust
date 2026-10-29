@@ -41,11 +41,7 @@ use crate::transport::Transport;
 
 // ── Type aliases ──────────────────────────────────────────────────────────────
 
-#[cfg(not(feature = "tls-rustls"))]
-type HttpClient = Client<HttpConnector, Full<Bytes>>;
-
-#[cfg(feature = "tls-rustls")]
-type HttpClient = crate::tls::HttpsClient;
+use crate::transport::HttpClient;
 
 // ── JsonRpcTransport ──────────────────────────────────────────────────────────
 
@@ -63,6 +59,8 @@ struct Inner {
     client: HttpClient,
     endpoint: String,
     request_timeout: Duration,
+    /// How long a blocking `SendMessage` may wait for the turn.
+    send_timeout: Duration,
     stream_connect_timeout: Duration,
     max_response_size: usize,
 }
@@ -128,19 +126,7 @@ impl JsonRpcTransport {
         let endpoint = endpoint.into();
         validate_url(&endpoint)?;
 
-        #[cfg(not(feature = "tls-rustls"))]
-        let client = {
-            let connector = super::connector::http_connector(connection_timeout);
-            Client::builder(TokioExecutor::new())
-                .pool_idle_timeout(Duration::from_secs(90))
-                .build(connector)
-        };
-
-        #[cfg(feature = "tls-rustls")]
-        let client = crate::tls::build_https_client_with_connect_timeout(
-            crate::tls::default_tls_config(),
-            connection_timeout,
-        );
+        let client = crate::transport::default_http_client(connection_timeout);
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -149,8 +135,39 @@ impl JsonRpcTransport {
                 request_timeout,
                 stream_connect_timeout,
                 max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
+                send_timeout: super::DEFAULT_SEND_TIMEOUT,
             }),
         })
+    }
+
+    /// A transport to `endpoint` over `client`, as the builder makes one.
+    pub(crate) fn from_client(
+        endpoint: impl Into<String>,
+        client: HttpClient,
+        request_timeout: Duration,
+        stream_connect_timeout: Duration,
+    ) -> ClientResult<Self> {
+        let endpoint = endpoint.into();
+        validate_url(&endpoint)?;
+        Ok(Self {
+            inner: Arc::new(Inner {
+                client,
+                endpoint,
+                request_timeout,
+                stream_connect_timeout,
+                max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
+                send_timeout: super::DEFAULT_SEND_TIMEOUT,
+            }),
+        })
+    }
+
+    /// Sets how long a blocking `SendMessage` (one without
+    /// `return_immediately`) may wait for the agent's turn to end; see
+    /// [`DEFAULT_SEND_TIMEOUT`](super::DEFAULT_SEND_TIMEOUT).
+    #[must_use]
+    pub fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        Arc::make_mut(&mut self.inner).send_timeout = timeout;
+        self
     }
 
     /// Sets the maximum size in bytes of a buffered (non-streaming) response
@@ -233,25 +250,31 @@ impl JsonRpcTransport {
         extra_headers: &HashMap<String, String>,
         query: &[(String, String)],
     ) -> ClientResult<serde_json::Value> {
-        trace_info!(method, endpoint = %self.inner.endpoint, "sending JSON-RPC request");
+        trace_debug!(method, endpoint = %self.inner.endpoint, "sending JSON-RPC request");
 
+        let waits = super::waits_for_turn(method, &params);
+        let budget = if waits {
+            self.inner.send_timeout
+        } else {
+            self.inner.request_timeout
+        };
         let (request_id, req) = self.build_request(method, params, extra_headers, false, query)?;
 
-        // Single deadline across header fetch AND body read, so `request_timeout`
+        // Single deadline across header fetch AND body read, so the timeout
         // is a true per-call budget rather than being applied twice (headers,
         // then body) — which previously let a slow server hold the call for up
         // to 2× the configured timeout.
-        let deadline = tokio::time::Instant::now() + self.inner.request_timeout;
+        let deadline = tokio::time::Instant::now() + budget;
 
         let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
             .await
             .map_err(|_| {
                 trace_error!(method, "request timed out");
-                ClientError::Timeout("request timed out".into())
+                super::timed_out(waits, budget)
             })?
             .map_err(|e| {
                 trace_error!(method, error = %e, "HTTP client error");
-                ClientError::HttpClient(e.to_string())
+                ClientError::HttpClient(crate::error::chain(&e))
             })?;
 
         let status = resp.status();
@@ -318,7 +341,7 @@ impl JsonRpcTransport {
                         "JSON-RPC response id does not match request id".into(),
                     ));
                 }
-                trace_info!(method, "request succeeded");
+                trace_debug!(method, "request succeeded");
                 Ok(ok.result)
             }
             JsonRpcResponse::Error(err) => {
@@ -355,7 +378,7 @@ impl JsonRpcTransport {
         extra_headers: &HashMap<String, String>,
         query: &[(String, String)],
     ) -> ClientResult<EventStream> {
-        trace_info!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
+        trace_debug!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
 
         let (request_id, req) = self.build_request(method, params, extra_headers, true, query)?;
 
@@ -373,7 +396,7 @@ impl JsonRpcTransport {
             })?
             .map_err(|e| {
                 trace_error!(method, error = %e, "HTTP client error");
-                ClientError::HttpClient(e.to_string())
+                ClientError::HttpClient(crate::error::chain(&e))
             })?;
 
         let status = resp.status();
@@ -604,7 +627,7 @@ fn leading_stream_error(body: &[u8]) -> Option<ClientError> {
     }
 }
 
-fn validate_url(url: &str) -> ClientResult<()> {
+pub(super) fn validate_url(url: &str) -> ClientResult<()> {
     if url.is_empty() {
         return Err(ClientError::InvalidEndpoint("URL must not be empty".into()));
     }

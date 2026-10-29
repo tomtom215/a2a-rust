@@ -267,7 +267,7 @@ kubectl apply -f examples/deploy-agent/deployment.yaml
 ```
 
 `hello-agent` is the smallest agent that answers A2A; this is the smallest one
-you can ship. Environment configuration, `/healthz` and `/readyz`, `SIGTERM`
+you can ship. Environment configuration, `/health` and `/ready`, `SIGTERM`
 draining, a `0.0.0.0` bind, a two-stage container and a Kubernetes manifest
 whose probes point at those endpoints. Its sharpest test asserts the agent card
 advertises the **public** URL and never leaks the bind address — the deployment

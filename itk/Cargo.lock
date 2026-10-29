@@ -12,6 +12,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "mutants",
  "opentelemetry",
  "prost",
  "protoc-bin-vendored",

@@ -55,8 +55,9 @@ Accepted before or after the subcommand.
 | Flag | Meaning |
 |---|---|
 | `--binding jsonrpc\|rest\|grpc\|websocket` | Which binding to speak to `<URL>` with. **Default: none given — the agent card is fetched from `<URL>/.well-known/agent-card.json` and the binding is chosen the way `ClientBuilder::from_card` does: the first interface the card lists that this client supports (spec §8.3.2); the card's URL for that interface is used, not `<URL>`.** With the flag no card is fetched and `<URL>` is the endpoint of that binding: `http(s)://` for `jsonrpc` and `rest`, `ws(s)://` for `websocket`, `host:port` or `http(s)://` for `grpc`. |
-| `--timeout <SECS>` | Per-request timeout; also bounds establishing a stream. Default 30. The TCP connect timeout stays at the library's 10 s unless this is shorter. |
-| `--header K=V` | Extra header on every request; repeatable. Split at the first `=`, so `--header "Authorization=Bearer abc=="` keeps the padding. Over gRPC the headers become request metadata; over WebSocket they go on the upgrade request. |
+| `--timeout <SECS>` | Per-request timeout; also bounds establishing a stream. Default 30. The TCP connect timeout stays at the library's 10 s unless this is shorter. Does not bound `send` (next row). |
+| `--send-timeout <SECS>` | How long `send` waits for the agent to finish its turn. Default 600. A blocking send is answered only when the turn ends, which for an agent calling a model takes as long as the model does; until 2026-10-29 `send` gave up at `--timeout`'s 30 s while the task went on running. `stream` shows the turn as it happens instead. |
+| `--header K=V` | Extra header on every request; repeatable, one value per name (a repeated name keeps the last). Split at the first `=`, so `--header "Authorization=Bearer abc=="` keeps the padding. Over gRPC the headers become request metadata; over WebSocket they go on the upgrade request. |
 | `--tenant <ID>` | Tenant for multi-tenant agents. Overrides the tenant the card advertises for the chosen interface. |
 | `--grpc-plaintext` | Dial a bare `host:port` gRPC address without TLS. The default is the library's: TLS for every host except loopback. No effect on an address that carries a scheme. |
 | `--no-capability-check` | Run `stream` even when the agent card does not set `capabilities.streaming` to `true`. By default, as `ClientBuilder::from_card` does (spec §3.3.4), the stream is refused before anything is sent. For an agent that streams without declaring it. No effect with `--binding`, which fetches no card. |
@@ -81,7 +82,7 @@ standard error, but no startup line.
 |---|---|
 | `0` | Success. |
 | `1` | Protocol or transport error. One `error: …` line on stderr; when the agent answered with a structured error, a second stderr line carries it as JSON, `{"error":{"code":…,"message":…}}`, so a script can read the code. A network command prints nothing on stdout; an offline command still prints its report there. |
-| `2` | Usage error: unknown flag or command, missing argument, a value that does not parse (`--timeout 0`, `--header` without `=`). Reported by `clap`; no network is touched. |
+| `2` | Usage error: unknown flag or command, missing argument, a value that does not parse (`--timeout 0`, `--header` without `=`), reported by `clap`; or an `OTEL_*` setting the telemetry cannot use, reported in one `error:` line. No network is touched. |
 
 ## Transcript
 

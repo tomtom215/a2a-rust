@@ -1074,6 +1074,13 @@ impl RequestHandlerBuilder {
                 crate::handler::MIN_TURN_CLAIM_TTL.as_millis()
             )));
         }
+        if self.event_queue_capacity == Some(0) {
+            return Err(crate::error::ServerError::InvalidParams(
+                "the event queue capacity must be at least 1: a queue of 0 cannot hold \
+                 the event an executor writes"
+                    .to_owned(),
+            ));
+        }
         if self.halt_store.is_some() && self.halt_poll_interval.is_zero() {
             return Err(crate::error::ServerError::InvalidParams(
                 "the halt poll interval must be greater than zero".to_owned(),
@@ -1363,6 +1370,29 @@ impl RequestHandlerBuilder {
         // that configured tenant-aware tasks gets tenant-aware push configs
         // too, rather than having every tenant refused because of a store it
         // never chose.
+        // A task store shared by several processes (one that hands out turn
+        // claims: the SQL stores) with push configs kept in this process's
+        // memory: a config registered on one replica is never seen by the
+        // replica running the task, so its webhook is never called, and
+        // every config is lost on restart (audit E-F4, 2026-10-29). Refused
+        // when the card promises push notifications.
+        if self.push_config_store.is_none()
+            && task_store.turn_claims().is_some()
+            && agent_card
+                .as_ref()
+                .is_some_and(|c| c.capabilities.push_notifications == Some(true))
+        {
+            return Err(crate::error::ServerError::InvalidParams(
+                "the agent card declares pushNotifications and the task store is shared \
+                 between processes, but push configs would be kept in this process's memory: \
+                 a config registered through one replica is not seen by another, and none \
+                 survives a restart. Call with_push_config_store with the store matching the \
+                 task store (PostgresPushConfigStore, SqlitePushConfigStore, or their \
+                 TenantAware forms), or with_push_config_store(InMemoryPushConfigStore::new()) \
+                 to keep them in memory on purpose"
+                    .to_owned(),
+            ));
+        }
         let push_config_store: Arc<dyn PushConfigStore> =
             self.push_config_store.unwrap_or_else(|| {
                 if task_store.isolates_tenants() {
@@ -1528,6 +1558,7 @@ impl RequestHandlerBuilder {
             turn_claims,
             #[cfg(feature = "audit")]
             audit: self.audit,
+            draining: std::sync::atomic::AtomicBool::new(false),
         })
     }
 }

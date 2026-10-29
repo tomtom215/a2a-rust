@@ -55,6 +55,7 @@ use hyper::body::Incoming;
 
 mod connections;
 mod graceful;
+mod host_guard;
 mod signal;
 
 pub use signal::shutdown_signal;
@@ -183,10 +184,12 @@ pub async fn serve(
     dispatcher: impl Dispatcher,
 ) -> std::io::Result<()> {
     let server = Server::bind(addr).await?;
-    server
+    let report = server
         .serve_with_shutdown(dispatcher, std::future::pending())
         .await;
-    Ok(())
+    report
+        .refused
+        .map_or(Ok(()), |why| Err(std::io::Error::other(why)))
 }
 
 /// Marks a request whose connection this server's TLS terminated, for the
@@ -205,6 +208,7 @@ fn service<D: Dispatcher>(
     peer: SocketAddr,
     certificate: Option<crate::PeerCertificate>,
     tls: bool,
+    host_guard: Option<Arc<host_guard::HostGuard>>,
 ) -> impl hyper::service::Service<
     hyper::Request<Incoming>,
     Response = DispatchResponse,
@@ -212,6 +216,7 @@ fn service<D: Dispatcher>(
     Future = impl Future<Output = Result<DispatchResponse, Infallible>> + Send,
 > + Clone {
     hyper::service::service_fn(move |mut req: hyper::Request<Incoming>| {
+        let refused = host_guard.as_ref().and_then(|guard| guard.refusal(&req));
         req.extensions_mut().insert(crate::PeerAddr(peer));
         if tls {
             req.extensions_mut().insert(OverTls);
@@ -224,6 +229,9 @@ fn service<D: Dispatcher>(
         let serving = serving.begin();
         async move {
             let _serving = serving;
+            if let Some(refused) = refused {
+                return Ok(refused);
+            }
             Ok::<_, Infallible>(match requests {
                 Some(requests) => requests.dispatch(&*d, req).await,
                 None => d.dispatch(req).await,

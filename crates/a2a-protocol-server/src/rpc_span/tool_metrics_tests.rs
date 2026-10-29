@@ -182,7 +182,7 @@ fn a_failed_turn_or_call_records_its_error_type() {
     let (meter, reader, _provider) = recording_meter();
     let meter = GenAiMeter::new(meter);
     GenAiSpan::chat("openai", "m", None, &meter).failed("503");
-    GenAiSpan::tool("t", "c1", None, &meter).failed("tool_error");
+    GenAiSpan::tool("t", true, "c1", None, &meter).failed("tool_error");
     let rm = collect(&reader);
     assert_eq!(
         only(&rm, "gen_ai.client.inference.duration").get("error.type"),
@@ -195,6 +195,18 @@ fn a_failed_turn_or_call_records_its_error_type() {
     assert_eq!(tool.bounds, DURATION_BUCKETS);
 }
 
+/// A tool name the model invented is `_OTHER` on the metric, so a model (or
+/// an injected prompt) cannot mint a series per call (audit C-02).
+#[test]
+fn an_unknown_tool_is_one_series() {
+    let (meter, reader, _provider) = recording_meter();
+    let meter = GenAiMeter::new(meter);
+    GenAiSpan::tool("made-up-1", false, "c1", None, &meter).failed("unknown_tool");
+    let rm = collect(&reader);
+    let tool = only(&rm, "gen_ai.execute_tool.duration");
+    assert_eq!(tool.get("gen_ai.tool.name"), Some("_OTHER"));
+}
+
 /// A turn or call dropped before anything ended it — its token fired, or the
 /// future running it was dropped — is recorded, as `cancelled`, on its span
 /// and its metric; a turn also records the `error` finish reason the
@@ -205,7 +217,7 @@ fn an_abandoned_turn_or_call_is_recorded_as_cancelled() {
     let meter = GenAiMeter::new(meter);
     let spans = recorded(|| {
         drop(GenAiSpan::chat("openai", "m", None, &meter));
-        drop(GenAiSpan::tool("t", "c1", None, &meter));
+        drop(GenAiSpan::tool("t", true, "c1", None, &meter));
     });
     for span in &spans {
         assert_eq!(span.get("error.type"), Some("cancelled"), "{span:?}");
@@ -262,8 +274,11 @@ async fn a_run_records_its_duration_and_how_many_turns_and_calls_it_took() {
             .find(|p| p.get("gen_ai.tool.name") == Some(name))
     };
     assert_eq!(by_tool("service_status").unwrap().get("error.type"), None);
+    // The model's call to a tool the catalogue lacks: one bounded series,
+    // not one per invented name (audit C-02).
+    assert!(by_tool("nope").is_none(), "an invented name is not a label");
     assert_eq!(
-        by_tool("nope").unwrap().get("error.type"),
+        by_tool("_OTHER").unwrap().get("error.type"),
         Some("unknown_tool")
     );
 }

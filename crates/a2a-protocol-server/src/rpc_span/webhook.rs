@@ -178,6 +178,34 @@ const DURATION_BUCKETS: [f64; 14] = [
     0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
 ];
 
+/// The most webhook hosts `http.client.request.duration` names; the rest
+/// are `_OTHER`.
+#[cfg(feature = "otel")]
+const MAX_METRIC_HOSTS: usize = 64;
+
+/// `host` as the duration metric names it: itself for the first
+/// [`MAX_METRIC_HOSTS`] hosts this process has delivered to, `_OTHER` after.
+/// A push config's URL is the caller's choice, so a caller registering a
+/// webhook per task on hosts of its own made a series per host, without
+/// bound (audit C-03). The span keeps the host.
+#[cfg(feature = "otel")]
+fn bounded_host(host: &str) -> String {
+    static SEEN: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+        std::sync::Mutex::new(None);
+    let mut guard = SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let seen = guard.get_or_insert_with(std::collections::HashSet::new);
+    let named =
+        seen.contains(host) || (seen.len() < MAX_METRIC_HOSTS && seen.insert(host.to_owned()));
+    drop(guard);
+    if named {
+        host.to_owned()
+    } else {
+        "_OTHER".to_owned()
+    }
+}
+
 /// Records one attempt in `http.client.request.duration`.
 #[cfg(feature = "otel")]
 fn record_duration(
@@ -195,7 +223,7 @@ fn record_duration(
         .build();
     let mut attributes = vec![
         KeyValue::new("http.request.method", "POST"),
-        KeyValue::new("server.address", host.clone()),
+        KeyValue::new("server.address", bounded_host(host)),
         KeyValue::new("server.port", i64::from(*port)),
     ];
     if let Some(status) = status {
@@ -382,5 +410,26 @@ mod tests {
         assert!(context.is_sampled(), "{parent}");
         assert_ne!(context.trace_id(), "0".repeat(32));
         assert!(!recorded.contains_key("tracestate"), "{recorded:?}");
+    }
+}
+
+#[cfg(all(test, feature = "otel"))]
+mod bounded_host_tests {
+    use super::{MAX_METRIC_HOSTS, bounded_host};
+
+    /// However many hosts a caller's webhooks name, the metric names at most
+    /// `MAX_METRIC_HOSTS` of them (audit C-03). The set is per process, so
+    /// other tests may have filled some of it: the bound is what is checked.
+    #[test]
+    fn hosts_past_the_bound_are_one_series() {
+        let run = uuid::Uuid::new_v4();
+        let named = (0..MAX_METRIC_HOSTS * 2)
+            .filter(|i| bounded_host(&format!("h{i}.{run}.example")) != "_OTHER")
+            .count();
+        assert!(named <= MAX_METRIC_HOSTS, "{named} hosts named");
+        assert_eq!(
+            bounded_host(&format!("h{}.{run}.example", MAX_METRIC_HOSTS * 2)),
+            "_OTHER"
+        );
     }
 }

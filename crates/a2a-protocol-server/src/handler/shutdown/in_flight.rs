@@ -178,7 +178,11 @@ impl RequestHandler {
     ///
     /// Requests that arrive during the window, on connections still open,
     /// are admitted as usual and cancelled with the rest when it closes.
+    ///
+    /// It also [begins draining](Self::begin_draining), so `/ready` answers
+    /// not ready while the window runs.
     pub async fn finish_in_flight(&self, completion: Duration, grace: Duration) -> InFlightReport {
+        self.begin_draining();
         let running = self.in_flight.executors().len();
         trace_info!(
             executors = running,

@@ -25,7 +25,7 @@ This starts five containers on the network `a2a-observability_default`:
 | `prometheus` | `prom/prometheus:v3.15.1` | 9090 | OTLP receiver on, the rules loaded, 7 days' retention |
 | `tempo` | `grafana/tempo:2.9.0` | 3200 | Traces |
 | `loki` | `grafana/loki:3.7.9` | 3100 | Logs |
-| `grafana` | `grafana/grafana:13.2.4` | 3000 | Dashboards in folder "A2A"; Tempo and Loki under Explore |
+| `grafana` | `grafana/grafana:13.2.4` | 3001 (host), 3000 (container) | Dashboards in folder "A2A"; Tempo and Loki under Explore |
 
 Grafana has no login: the anonymous user is an admin, so keep it off any
 network you do not control (see [On a shared host](#on-a-shared-host)).
@@ -86,7 +86,7 @@ goes quiet.
 
 ## 4. Read a dashboard
 
-Open `http://localhost:3000`, then **Dashboards → A2A → A2A server**. Within a
+Open `http://localhost:3001`, then **Dashboards → A2A → A2A server**. Within a
 few minutes the *Calls* row shows calls per second on all four bindings, and
 *Failed calls* a steady share: the deliberate task-not-found over JSON-RPC,
 where every error code counts as a failure. Over HTTP+JSON and gRPC the same

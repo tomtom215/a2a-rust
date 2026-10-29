@@ -101,8 +101,10 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "mutants",
  "opentelemetry",
  "opentelemetry_sdk",
+ "pin-project-lite",
  "prost",
  "protoc-bin-vendored",
  "rcgen",
@@ -1159,9 +1161,9 @@ name = "deploy-agent"
 version = "0.0.0"
 dependencies = [
  "a2a-protocol-sdk",
- "axum",
  "tikv-jemallocator",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3972,6 +3974,7 @@ dependencies = [
  "log",
  "memchr",
  "percent-encoding",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3981,6 +3984,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "webpki-roots 1.0.11",
 ]
 
 [[package]]

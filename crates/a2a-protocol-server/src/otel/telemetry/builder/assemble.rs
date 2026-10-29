@@ -63,6 +63,13 @@ impl TelemetryBuilder {
             meter: None,
             logger: None,
             log_level: self.log_level,
+            span_level: self.span_level,
+            // `deploy-agent` is crate `deploy_agent`: the application's own
+            // lines are printed at INFO by default (`install_subscriber`).
+            app_target: self
+                .default_service_name
+                .as_deref()
+                .map(|name| name.replace('-', "_")),
             runtime: None,
             failures: Vec::new(),
             disabled: config::sdk_disabled(&*self.env),

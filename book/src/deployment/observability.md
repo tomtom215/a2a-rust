@@ -69,7 +69,7 @@ Then set the environment for where the agent runs:
 | Where | Set |
 |---|---|
 | Your machine, no collector | Nothing: nothing is exported, and the startup line says so. `OTEL_TRACES_EXPORTER=console` (and `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`) prints a signal on standard output |
-| The whole stack on your machine | `docker compose -f deploy/observability/docker-compose.yml up -d`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`; Grafana is on `http://localhost:3000` |
+| The whole stack on your machine | `docker compose -f deploy/observability/docker-compose.yml up -d`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`; Grafana is on `http://localhost:3001` |
 | A collector on your machine | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (OTLP/HTTP); for gRPC, port 4317 and `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` |
 | Docker | The collector's service name on a shared network (`http://otel-collector:4318`), or `http://host.docker.internal:4318` |
 | Kubernetes | The collector's Service, and a per-pod `service.instance.id` from the downward API |
