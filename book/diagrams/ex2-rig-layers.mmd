@@ -1,0 +1,11 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    C[A2A client] <-- "JSON-RPC: message in,<br/>task with artifacts out" --> S[A2A server]
+    S --> X["RigAgentExecutor&lt;M&gt;<br/>one A2A task"]
+    X --> A["RigAgent&lt;M&gt; loop<br/>at most MAX_TURNS = 6"]
+    A -- "request + catalogue,<br/>every turn" --> P[LLM provider]
+    P -- "tool calls<br/>or answer" --> A
+    A -- "call" --> T[tools::invoke]
+    T -- "result or<br/>error text" --> A
+    T --> I[(in-memory inventory)]

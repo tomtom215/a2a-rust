@@ -6,25 +6,11 @@ The Agent2Agent (A2A) protocol defines how AI agents discover each other, exchan
 
 An A2A interaction follows this flow:
 
-```text
-  Client Agent                Agent (Server)
-       │                           │
-       │  1. GET /.well-known/agent-card.json │
-       │ ─────────────────────────►│
-       │          AgentCard        │
-       │ ◄─────────────────────────│
-       │                           │
-       │  2. SendMessage           │
-       │ ─────────────────────────►│
-       │     Task or Message       │
-       │ ◄─────────────────────────│
-       │                           │
-       │  3. GetTask               │
-       │ ─────────────────────────►│
-       │          Task             │
-       │ ◄─────────────────────────│
-       │                           │
-```
+<figure class="diagram">
+<a href="../images/diagrams/con-overview-flow.light.svg"><img class="diagram-light" src="../images/diagrams/con-overview-flow.light.svg" alt="Sequence diagram: the client fetches the agent card from /.well-known/agent-card.json, sends SendMessage and gets a Task or a direct Message, then calls GetTask and gets the Task."></a>
+<a href="../images/diagrams/con-overview-flow.dark.svg"><img class="diagram-dark" src="../images/diagrams/con-overview-flow.dark.svg" alt=""></a>
+<figcaption>Discovery, then communication, then management.</figcaption>
+</figure>
 
 1. **Discovery** — The client fetches the agent's card from `/.well-known/agent-card.json`
 2. **Communication** — The client sends a message and receives results
@@ -36,38 +22,27 @@ An A2A interaction follows this flow:
 
 A **Task** is the central unit of work. When a client sends a message, the server creates a task that progresses through well-defined states:
 
-```text
-                      ┌───────────┐
-              ┌───────│ Submitted │──────────┐
-              │       └─────┬─────┘          │
-              │             │                │
-              ▼             ▼                ▼
-         ┌────────┐   ┌────────┐   ┌──────────┐  ┌──────────┐
-    ┌───►│Working │   │Failed *│   │Rejected *│  │Canceled *│
-    │    └───┬────┘   └────────┘   └──────────┘  └──────────┘
-    │        │                           ▲             ▲
-    │   ┌────┼───────────┬───────────┐   │             │
-    │   │    │           │           │   │             │
-    │   ▼    ▼           ▼           ▼   │             │
-    │ ┌───────────┐ ┌─────────┐ ┌──────────┐          │
-    │ │Completed *│ │ Input   │ │  Auth    │          │
-    │ └───────────┘ │Required │ │ Required │──────────┘
-    │               └────┬────┘ └────┬─────┘
-    │                    │           │
-    └────────────────────┴───────────┘
+<figure class="diagram">
+<a href="../images/diagrams/con-task-states.light.svg"><img class="diagram-light" src="../images/diagrams/con-task-states.light.svg" alt="State diagram: a new task starts in Submitted; from Submitted it may go to Working, to an interrupted state (InputRequired or AuthRequired) or straight to a terminal state; Working may repeat, go to an interrupted state or end; an interrupted task returns to Working on its next turn or ends; the terminal states Completed, Failed, Canceled and Rejected are final."></a>
+<a href="../images/diagrams/con-task-states.dark.svg"><img class="diagram-dark" src="../images/diagrams/con-task-states.dark.svg" alt=""></a>
+<figcaption>Task states. Any move is valid except out of a terminal state or into Submitted.</figcaption>
+</figure>
 
-    * = terminal state (no further transitions)
+`TaskState::can_transition_to` enforces two rules, and only these two:
 
-    The arrows show the usual paths, not the only valid ones.
-    Valid transitions (the only two rules enforced):
-    1. Terminal states (Completed, Failed, Canceled, Rejected) are final.
-    2. Nothing transitions into Submitted (or into the proto default,
-       Unspecified).
-    Everything else is allowed, e.g. Submitted → Completed,
-    Working → Working (repeated Working updates carry progress messages).
-```
+1. **Terminal states are final.** `Completed`, `Failed`, `Canceled` and
+   `Rejected` transition nowhere, not even to themselves.
+2. **`Submitted` is the entry state.** Nothing transitions into it, or into
+   the proto default `Unspecified`.
 
-Terminal states (Completed, Failed, Canceled, Rejected) are final — no further transitions are allowed.
+Everything else is allowed: `Submitted → Completed` for an agent that answers
+in one step, `Working → Working` for progress updates, `InputRequired →
+AuthRequired`, and so on. The diagram shows the usual paths; the interrupted
+states `InputRequired` and `AuthRequired` are where a blocking `SendMessage`
+returns early and the client is expected to send the next message. A status
+update or task snapshot that breaks a rule is not applied; see
+[Valid transitions](./tasks-and-messages.md#valid-transitions) for what the
+server does with it.
 
 ### Messages
 
@@ -104,17 +79,11 @@ A2A supports two communication styles:
 
 The client sends a message and blocks until the task reaches a terminal or interrupted (`InputRequired`, `AuthRequired`) state:
 
-```text
-  Client                        Server
-     │                             │
-     │  SendMessage                │
-     │ ───────────────────────────►│
-     │                    Executor runs,
-     │                    collects events
-     │            Task             │
-     │ ◄───────────────────────────│
-     │                             │
-```
+<figure class="diagram">
+<a href="../images/diagrams/con-blocking-send.light.svg"><img class="diagram-light" src="../images/diagrams/con-blocking-send.light.svg" alt="Sequence diagram: the client sends SendMessage, the server runs the executor, which writes status and artifact events that the server checks and stores until the task is terminal or interrupted, and the server then answers with the Task or a direct Message."></a>
+<a href="../images/diagrams/con-blocking-send.dark.svg"><img class="diagram-dark" src="../images/diagrams/con-blocking-send.dark.svg" alt=""></a>
+<figcaption>A blocking send: one request, one answer.</figcaption>
+</figure>
 
 The reply is the `Task`, or a direct `Message` when the agent answers without tracking a task.
 
@@ -122,23 +91,11 @@ The reply is the `Task`, or a direct `Message` when the agent answers without tr
 
 The client sends a message and receives events in real time (via SSE on the HTTP bindings):
 
-```text
-  Client                        Server
-     │                             │
-     │  SendStreamingMessage       │
-     │ ───────────────────────────►│
-     │    Task (snapshot)          │
-     │ ◄───────────────────────────│
-     │    StatusUpdate: Working    │
-     │ ◄───────────────────────────│
-     │    ArtifactUpdate           │
-     │ ◄───────────────────────────│
-     │    ArtifactUpdate           │
-     │ ◄───────────────────────────│
-     │    StatusUpdate: Completed  │
-     │ ◄───────────────────────────│
-     │                             │
-```
+<figure class="diagram">
+<a href="../images/diagrams/con-streaming.light.svg"><img class="diagram-light" src="../images/diagrams/con-streaming.light.svg" alt="Sequence diagram: the client sends SendStreamingMessage; when the executor writes its first status update the server sends a Task snapshot and then that update; artifact chunks follow as the executor writes them; the terminal Completed update is sent once the server has stored it, and the stream closes."></a>
+<a href="../images/diagrams/con-streaming.dark.svg"><img class="diagram-dark" src="../images/diagrams/con-streaming.dark.svg" alt=""></a>
+<figcaption>A streaming send: the events reach the client as the executor writes them.</figcaption>
+</figure>
 
 If the agent answers with a single `Message`, the stream is exactly that one `Message` and has no `Task` snapshot.
 
@@ -154,7 +111,7 @@ When a client sends a message with a `context_id`, the server groups that task w
 
 A2A supports **multi-tenancy** via an optional `tenant` field on all requests. This allows a single agent server to serve multiple isolated tenants, each with their own tasks and configurations. A client **must** send the tenant its selected `AgentInterface` declares on every request (spec §8.3.2 rule 4); `ClientBuilder::from_card` does this for all eleven methods.
 
-In the REST transport the client sends the tenant as the leading path segment, `/{tenant}/tasks/...`, and the server also accepts `?tenant=` on `GET`/`DELETE` and the body field on `POST`. See [Transport Layers](transport-layers.md#multi-tenant-paths).
+In the REST transport the client sends the tenant as the leading path segment, `/{tenant}/tasks/...`, and the server also accepts `?tenant=` on `GET`/`DELETE` and the body field on `POST`. See [Transport Layers](./transport-layers/rest.md#multi-tenant-paths).
 
 ## Next Steps
 

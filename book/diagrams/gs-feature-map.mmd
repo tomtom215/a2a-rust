@@ -1,0 +1,15 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    prom["otel-prometheus"] --> otlp
+    json["otlp-json"] --> otlp
+    subgraph def["SDK defaults"]
+        otlp["otlp"] --> otel["otel"] --> tracing["tracing"]
+        tls["tls-rustls"]
+        webhook["webhook"]
+    end
+    grpctls["grpc-tls"] --> grpc["grpc"] --> proto["types: proto"]
+    grpctls --> tls
+    audit["audit"] --> signing["types: signing"]
+    tracing ~~~ grpctls
+    proto ~~~ audit

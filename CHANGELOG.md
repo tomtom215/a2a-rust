@@ -127,6 +127,29 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`deploy-agent` takes `DATABASE_URL`**: tasks and push configs in
   PostgreSQL, which is what its Kubernetes manifest's two replicas need (see
   *Fixed*).
+- **The book, restructured** (78 pages to 210): every page over about 450
+  lines split into a landing page and focused sub-pages at the same paths,
+  so links and anchors from outside the book keep working (the longest
+  hand-written page was `upgrading.md` at 2,585 lines; now 436, apart from
+  the gate-checked API quick reference). New pages: a complete observability
+  chapter (metrics with every label value and bucket, spans, trace context,
+  logs, Prometheus ingest paths, every shipped alert and recording rule, a
+  local-stack walkthrough), the tool loop, the `a2a` command-line client,
+  conformance testing, containers, health checks, and the example harness, so
+  every example has a page. 38 diagrams, rendered from Mermaid sources in
+  `book/diagrams/` by `scripts/render_book_diagrams.sh` in a light and a dark
+  variant that follow the reader's theme. Contributor material (CI, mutation
+  and conformance histories, dogfooding) moved to a *Project & Quality* part.
+  Corrected on the way, each against the source: the task state machine
+  (it drew only some legal transitions), an invalid transition's error on a
+  blocking send (`InvalidParams`, not `InvalidStateTransition`), the
+  observability page's alerting section (it named three of eight shipped
+  alerts and claimed one on `store_retries` that does not exist), the
+  hello-agent and quick-start code, and the WebSocket authentication refusal.
+- **A book link gate** (`scripts/check_book_links.py`): pull requests now
+  build the book with the deployed mdBook and check every internal link,
+  `#anchor` and image, which nothing did (`docs.yml` built it only after
+  merge). `benchmarks.yml` runs it before its bot push.
 
 ### Behaviour Changes
 

@@ -1,0 +1,12 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+  participant C as Client
+  participant A as Agent server
+  participant W as Client webhook
+  C->>A: SendMessage + push config
+  A-->>C: Task (submitted)<br/>URL screened, no DNS yet
+  loop every event, every config
+    A->>W: POST event, host resolved<br/>and public · token, Authorization
+    W-->>A: 200 if WebhookReceiver<br/>checks pass, else 4xx
+  end

@@ -190,6 +190,25 @@ only: when something here is done, delete it rather than annotating it.
   findings.md` §1 says 87 passing and 5 failing "cannot be reconciled" with
   114, and an editor's arithmetic suggests it can (87 + 5 + 1 + 21), which
   nobody has resolved.
+- **Book restructure (2026-10-29):** split into landing pages and
+  sub-pages (78 to 210 pages; paths kept, so outside links hold), with 38
+  diagrams. Diagrams: edit `book/diagrams/<name>.mmd`, run
+  `scripts/render_book_diagrams.sh <name>` (Node and a Chromium; pinned
+  mermaid-cli 11.4.2), commit both SVGs; pages use the `figure.diagram`
+  markup documented in `book/theme/custom.css`. A new page needs a SUMMARY
+  entry, a `book-tests/src/lib.rs` registration and `scripts/gen_sitemap.py`;
+  moving a cited sentence needs `scripts/check_spec_ledger.py --fix-lines`.
+  `scripts/check_book_links.py` (CI) checks links, anchors and images in the
+  built book. Checked mechanically: doctests 302 passed, 0 failed, 5 ignored
+  (up from 281: new blocks, and `tool-loop` added to book-tests' features);
+  `upgrading_guide`, `book_defaults` and the observability catalogue test
+  pass; every book gate passes; 0 broken links over 215 built pages; every
+  diagram looked at in light and dark at 1280 and 390 px. Left open: no
+  shipped alert or panel reads `a2a_server_store_retries_total`
+  (observability/dashboards.md says so and suggests a query); READMEs outside
+  the book with stale claims (`tools/a2a-cli` exit codes and `--header` on
+  `card`, `tck/README.md` on BIND-EQUIV-004, `packaging/README.md` on the
+  signing key).
 - **Working branch:** `claude/intelligent-bohr-9qraxk`, from `main` at
   `568fc6c1`. `git log origin/main..` lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to

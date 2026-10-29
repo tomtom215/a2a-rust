@@ -1,0 +1,13 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+  B["build(): card's securitySchemes<br/>vs registered interceptors"]
+  B -->|disagree| X["build() refused"]
+  B -->|agree| R["Request, any binding<br/>→ CallContext"]
+  R --> A{{"Authenticating interceptor<br/>API key · bearer<br/>JWT · mTLS"}}
+  A -->|no usable credential| U["Unauthenticated<br/>HTTP 401<br/>WWW-Authenticate"]
+  A -->|accepted| I["caller_identity<br/>e.g. jwt:issuer:sub"]
+  I --> Z{{"Authorization<br/>scope · per-task check"}}
+  Z -->|not permitted| P["Permission denied<br/>HTTP 403"]
+  Z -->|permitted| H["Handler serves the call<br/>from the caller's tasks"]
+  H -.->|another caller's task| N["TaskNotFound"]

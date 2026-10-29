@@ -1,0 +1,10 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    A1["1. Auth: before"] --> L1["2. Logging: before"]
+    L1 --> R1["3. RateLimit: before"]
+    R1 --> H(["RequestHandler"])
+    H --> R2["4. RateLimit: after"]
+    R2 --> L2["5. Logging: after"]
+    L2 --> A2["6. Auth: after"]
+    A2 --> C["7. on_complete:<br/>RateLimit, Logging, Auth"]

@@ -1,0 +1,6 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    C[A2A client] -- "A2A JSON-RPC:<br/>message in, task out" --> A[mcp-a2a-agent]
+    A -- "chat completions<br/>with discovered tools" --> M[(model provider)]
+    A -- "MCP over stdio:<br/>tools/list once,<br/>tools/call per call" --> S[mcp-tool-server<br/>child process]

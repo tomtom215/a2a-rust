@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:10631 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:10654 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -4668,7 +4668,7 @@
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:38 Server::with_tls",
     "crates/a2a-protocol-server/src/serve/graceful/tls.rs:55 Server::with_tls_pem",
     "crates/a2a-protocol-server/src/serve/graceful/connection.rs:20 spawn_connection",
-    "book/src/deployment/production.md:85 \"The **server** terminates TLS itself\""
+    "book/src/deployment/production.md:117 \"The **server** terminates TLS itself\""
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/serve_tls.rs:28 the_agent_card_is_served_over_https_on_http1_and_http2",
@@ -7255,7 +7255,7 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/README.md:150 \"## Method inventory\"",
     "book/src/bindings/websocket.md:1 \"# WebSocket binding specification\"",
-    "book/src/building-agents/dispatchers.md:226 \"## WebSocketDispatcher\"",
+    "book/src/building-agents/dispatchers.md:31 \"## WebSocketDispatcher\"",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:141 WebSocketDispatcher",
     "spec/slimrpc_v1/slimrpc.md:1 \"# SLIMRPC Custom Protocol Binding for A2A\""
    ],
@@ -7301,7 +7301,7 @@
    "impl_evidence": [
     "bindings/a2a-protocol-slimrpc/src/server/methods/headers.rs:74 a2a_headers",
     "book/src/bindings/websocket.md:36 \"## 2. Service parameters\"",
-    "book/src/building-agents/dispatchers.md:278 \"### Authentication and tenancy\"",
+    "book/src/building-agents/dispatchers.md:83 \"### Authentication and tenancy\"",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:645 WebSocketDispatcher::read_loop",
     "spec/slimrpc_v1/slimrpc.md:56 \"Service Parameter Transmission\"",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:872 extract_upgrade_headers",
@@ -7437,7 +7437,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md:112 \"## 4. Streaming\"",
-    "book/src/building-agents/dispatchers.md:266 \"Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event\"",
+    "book/src/building-agents/dispatchers.md:71 \"Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event\"",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1032 process_ws_message",
     "spec/slimrpc_v1/slimrpc.md:237 \"## 7. Streaming\"",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:872 extract_upgrade_headers"
@@ -7483,7 +7483,7 @@
     "bindings/a2a-protocol-slimrpc/src/server/mod.rs:74 SlimRpcServerBuilder",
     "bindings/a2a-protocol-slimrpc/src/error.rs:135 server_error_to_rpc_error",
     "book/src/bindings/websocket.md:170 \"## 6. Authentication\"",
-    "book/src/building-agents/dispatchers.md:278 \"### Authentication and tenancy\"",
+    "book/src/building-agents/dispatchers.md:83 \"### Authentication and tenancy\"",
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:645 WebSocketDispatcher::read_loop",
     "crates/a2a-protocol-server/src/dispatch/websocket/stream.rs:22 stream_events",
     "crates/a2a-protocol-server/src/dispatch/websocket/stream.rs:34 forward",
@@ -9035,7 +9035,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/bindings/websocket.md:199 \"## 7. Security considerations\"",
-    "book/src/concepts/transport-layers.md:211 \"authentication and tenant resolution\"",
+    "book/src/concepts/transport-layers.md:36 \"authentication and tenant resolution\"",
     "bindings/a2a-protocol-slimrpc/README.md:570 \"## Security posture\"",
     "crates/a2a-protocol-types/src/lib.rs:91 WEBSOCKET_BINDING_URI"
    ],

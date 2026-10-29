@@ -66,56 +66,32 @@ appears at all, it is switch 2.
 
 ## No metrics anywhere, and no error either
 
-The `Metrics` trait has a **default no-op implementation for every method**. A
-handler records through OpenTelemetry's global meter provider, so with none
-installed (no `Telemetry`, no provider of your own) it records nothing and
-reports no problem, as it does with the `otel` feature off. A
-`.with_metrics(..)` of your own replaces that default; use
-`.with_additional_metrics(..)` to count beside it. None of that is an error,
-and on a dashboard each looks the same as a broken exporter.
-
-See [Observability](./observability.md) for the full catalogue and for how to
-tell "not installed" from "installed and exporting nowhere".
+A handler records through OpenTelemetry's global meter provider, so with no
+provider installed (no `Telemetry`, none of your own), or with the `otel`
+feature off, it records nothing and reports no problem. A `.with_metrics(..)`
+of your own replaces that default; `.with_additional_metrics(..)` counts
+beside it. On a dashboard each of these looks the same as a broken exporter.
+[Debugging telemetry](./observability/debugging.md#is-the-sdk-recording-at-all)
+says how to tell "not installed" from "installed and exporting nowhere".
 
 ## Telemetry is configured and nothing reaches the collector
 
-Start with what the process says on standard error. A process that calls
-`Telemetry::install_subscriber` (most binaries in this repository do;
-`echo-agent`, `agent-team` and `langfuse-agent` keep a subscriber of their own
-and print what theirs prints) logs one line at startup:
+Start with the line the process prints on standard error at startup when it
+calls `Telemetry::install_subscriber`: it names where each signal goes
+(`traces → otlp http/protobuf http://127.0.0.1:4318/v1/traces; metrics →
+off; logs → off`), or says `nothing is exported`. A signal that says `off`
+found no endpoint or was set to `none`. A signal that is on but reaches
+nothing logs a `WARN … OTLP export … failed`, with the transport's own error
+and, where the failure names the fix, a `Hint:` (an untrusted CA, a `401`, a
+wrong port or path). [Debugging telemetry](./observability/debugging.md)
+walks through each of these warnings and the startup refusals. Three things
+it does not cover:
 
-```text
-INFO a2a_protocol_server::otel::telemetry: telemetry: traces → otlp http/protobuf http://127.0.0.1:4318/v1/traces; metrics → off; logs → off
-```
-
-That line is where each signal is going, as the process understood its
-environment. A signal that says `off` is off because `OTEL_*_EXPORTER=none`, or
-because `with_export_where_configured()` found no endpoint for it. In place of
-that line the process may print `nothing is exported`, which means all three
-signals are off, whether no endpoint was found or each was set to `none`. Then:
-
-* **A `WARN … OTLP export of traces to … failed after the exporter's retries`**
-  means the process reached for the collector and could not get an answer, or
-  the collector refused the export. It ends with the transport's own words
-  (`cause: client error (Connect): tcp connect error: Connection refused`, or
-  the certificate error) and, only where the failure itself names the fix, a
-  `Hint:`: a certificate from a CA the exporter does not trust
-  (`OTEL_EXPORTER_OTLP_CERTIFICATE`; the exporter trusts Mozilla's roots, never
-  the operating system's), a `401` or `403` (`OTEL_EXPORTER_OTLP_HEADERS`), a
-  `404` over OTLP/HTTP (no receiver at the path; a base endpoint that already
-  ends in `/v1/traces` posts to `/v1/traces/v1/traces`, which startup warns
-  about), or HTTP to port 4317 or gRPC to port 4318. The Collector's receivers listen on 4317 for
-  gRPC and 4318 for HTTP; `http/protobuf` is the default, so a gRPC endpoint
-  needs `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`. Behind a proxy, check `HTTPS_PROXY`
-  and `NO_PROXY` (the line names the proxy an export goes through). It is
-  reported at most every 30 s.
-* **No warning and no data** with a plain `http://` collector: add
-  `OTEL_TRACES_EXPORTER=otlp,console` to see that spans are being made at all.
-  Spans appear when they end, so a request still running has none yet.
-* **The process refuses to start naming a variable**: it is a value the
-  exporter cannot act on, and it says which and why (`zstd` compression, an
-  OTLP/HTTP endpoint with no scheme, `prometheus` where the `otel-prometheus`
-  feature is not built).
+* **A `404` over OTLP/HTTP with a base endpoint that already ends in
+  `/v1/traces`**: the exporter appends the signal's path to a base endpoint,
+  so it posts to `/v1/traces/v1/traces`. Startup warns about it. Give the
+  base (`http://collector:4318`) or use the per-signal variable, which is
+  used as given.
 * **`BatchSpanProcessor.SpansDropped … max_queue_size=2048`**: the process
   made spans faster than the exporter sent them, and the queue between the
   two was full, so spans were lost (metrics and logs are not affected). Raise
@@ -126,8 +102,6 @@ signals are off, whether no endpoint was found or each was set to `none`. Then:
   `OTEL_BSP_MAX_QUEUE_SIZE=65536` (2026-10-28).
 * **Warnings from the SDK you did not ask for** are shown too; they were
   silent before. `RUST_LOG=error` quiets them.
-
-[Observability](./observability.md) has each of these in full.
 
 ## Push notifications never arrive
 
@@ -236,7 +210,7 @@ Check your `execute` loop observes `ctx.cancellation_token`.
 With several replicas, a cancel taken by one replica for a task another runs
 reaches that executor's token at the owner's next claim renewal, within about
 a second, when the store provides turn claims (the PostgreSQL and SQLite
-stores do; [Running More Than One Replica](./horizontal-scaling.md#cancelling-a-task-that-runs-elsewhere)).
+stores do; [Running More Than One Replica](./horizontal-scaling/turn-claims.md#cancelling-a-task-that-runs-elsewhere)).
 With a store that does not, or `without_turn_claims()`, it arrives only at the
 executor's next write, unless a halt store pushes it.
 

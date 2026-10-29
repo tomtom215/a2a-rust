@@ -1,0 +1,18 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    script["scripts/go_sdk_interop.sh"]
+    subgraph d1["Legs 1 and 1b"]
+        direction TB
+        goc["a2a-go client"]
+        echo["echo-agent<br/>server-only mode"]
+        goc -->|"3 bindings"| echo
+    end
+    subgraph d2["Leg 2"]
+        direction TB
+        rsc["go_sdk_interop<br/>this SDK's client"]
+        goa["a2a-go agent"]
+        rsc -->|"3 bindings"| goa
+    end
+    script --> d1
+    script --> d2

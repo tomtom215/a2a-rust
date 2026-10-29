@@ -1,0 +1,12 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    D["Dispatcher: decode,<br/>headers into a map"] --> H["Handler: resolve tenant,<br/>build CallContext"]
+    H --> B["Interceptors: before"]
+    B --> V["Commit the task,<br/>spawn the executor"]
+    V --> Q["Executor writes<br/>to the EventQueue"]
+    Q -->|"blocking<br/>SendMessage"| S["Collector:<br/>store, push"]
+    Q -->|"streaming or<br/>returnImmediately"| P["Background processor:<br/>store, push"]
+    S --> A["Interceptors: after,<br/>on_complete"]
+    P --> A
+    A --> R["Task, or<br/>event stream"]

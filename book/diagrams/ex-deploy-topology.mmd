@@ -1,0 +1,16 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    caller["Callers, at AGENT_URL"]
+    svc["Service :80"]
+    kubelet["kubelet probes<br/>/healthz and /readyz"]
+    p1["Pod 1<br/>0.0.0.0:8080"]
+    p2["Pod 2<br/>0.0.0.0:8080"]
+    pg[("PostgreSQL<br/>DATABASE_URL")]
+    caller --> svc
+    svc --> p1
+    svc --> p2
+    kubelet -.-> p1
+    kubelet -.-> p2
+    p1 --> pg
+    p2 --> pg

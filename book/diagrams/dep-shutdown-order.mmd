@@ -1,0 +1,14 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    sig["shutdown signal<br/>SIGTERM or Ctrl-C"]
+    a["Stop accepting connections"]
+    b["In-flight tasks may finish<br/>completion_grace: 5 s"]
+    c["Cancel the rest; executors act on it<br/>task_grace: 10 s"]
+    d["Drain connections<br/>drain_timeout: 15 s"]
+    e["handler.shutdown()<br/>claims released, on_shutdown: up to 10 s"]
+    f["Telemetry flush as main returns"]
+    x["Process exits"]
+    sig --> a --> b --> c --> d --> e --> f --> x
+    k["Kubernetes SIGKILL<br/>terminationGracePeriodSeconds"]
+    x -.->|"must come before"| k

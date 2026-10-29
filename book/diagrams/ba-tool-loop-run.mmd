@@ -1,0 +1,19 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    S(["Run starts:<br/>prompt, preamble, tools"]) --> G{"Cancelled, or<br/>budget spent?"}
+    G -->|yes| F1(["Run ends:<br/>Cancelled or Budget"])
+    G -->|no| T["Model turn<br/>(chat span)"]
+    T --> C{"Tool calls<br/>in the reply?"}
+    C -->|no| R{"Reply is one<br/>JSON tool call?"}
+    R -->|no| A(["Answer and<br/>trace"])
+    R -->|yes| K
+    C -->|yes| K["Each call: derive its<br/>idempotency key"]
+    K --> D{"Same key already<br/>succeeded, tool<br/>not read-only?"}
+    D -->|yes| E["Send back the<br/>earlier result"]
+    D -->|no| X["Run the tool<br/>(execute_tool span)"]
+    X --> Z["Result or error<br/>back to the model;<br/>line added to trace"]
+    E --> N
+    Z --> N{"Turns left?"}
+    N -->|yes| G
+    N -->|no| F2(["Run ends:<br/>TurnLimit"])

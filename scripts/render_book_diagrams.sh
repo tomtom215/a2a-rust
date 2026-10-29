@@ -38,7 +38,7 @@ cat > "$work/light.json" <<JSON
  "background":"transparent","primaryColor":"#fff7ed","primaryBorderColor":"#D97706",
  "primaryTextColor":"#1c1917","secondaryColor":"#f5f5f4","secondaryBorderColor":"#a8a29e",
  "tertiaryColor":"#faf7f1","tertiaryBorderColor":"#d6d3d1","lineColor":"#57534e",
- "textColor":"#1c1917","noteBkgColor":"#fef3c7","noteBorderColor":"#D97706",
+ "textColor":"#1c1917","noteBkgColor":"#fef3c7","noteBorderColor":"#D97706","noteTextColor":"#1c1917",
  "actorBkg":"#fff7ed","actorBorder":"#D97706","signalColor":"#44403c","signalTextColor":"#1c1917",
  "clusterBkg":"#faf7f1","clusterBorder":"#d6d3d1","edgeLabelBackground":"#faf7f1"},
  "flowchart":{"htmlLabels":false,"curve":"basis"},"sequence":{"mirrorActors":false}}
@@ -48,7 +48,7 @@ cat > "$work/dark.json" <<JSON
  "background":"transparent","primaryColor":"#1f2630","primaryBorderColor":"#F0A93B",
  "primaryTextColor":"#e6e1cf","secondaryColor":"#232a33","secondaryBorderColor":"#5c6773",
  "tertiaryColor":"#161b22","tertiaryBorderColor":"#3d4651","lineColor":"#aab2bc",
- "textColor":"#e6e1cf","noteBkgColor":"#2d2414","noteBorderColor":"#F0A93B",
+ "textColor":"#e6e1cf","noteBkgColor":"#2d2414","noteBorderColor":"#F0A93B","noteTextColor":"#e6e1cf",
  "actorBkg":"#1f2630","actorBorder":"#F0A93B","signalColor":"#c5ccd3","signalTextColor":"#e6e1cf",
  "clusterBkg":"#161b22","clusterBorder":"#3d4651","edgeLabelBackground":"#161b22"},
  "flowchart":{"htmlLabels":false,"curve":"basis"},"sequence":{"mirrorActors":false}}
@@ -65,6 +65,25 @@ for name in "${names[@]}"; do
     for theme in light dark; do
         npx -y "$MERMAID_CLI" --quiet -p "$work/puppeteer.json" -c "$work/$theme.json" \
             -b transparent -i "$SRC/$name.mmd" -o "$OUT/$name.$theme.svg"
+    done
+    # Two fixes Mermaid's output needs inside an <img>, applied to the file:
+    # its root <svg> is width="100%", which stretches every diagram to the
+    # column (a narrow one renders huge), so give it its natural width; and
+    # it draws edge-label backgrounds at half opacity, so an edge's line
+    # strikes through its own label.
+    for theme in light dark; do
+        python3 - "$OUT/$name.$theme.svg" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+m = re.search(r'max-width:\s*([0-9.]+)px', s)
+if m:
+    s = re.sub(r'(<svg\b[^>]*?)\swidth="100%"', rf'\1 width="{round(float(m.group(1)))}"', s, count=1)
+fix = "#my-svg .edgeLabel rect{opacity:1;}"
+if fix not in s:
+    s = s.replace("</style>", fix + "</style>", 1)
+open(p, "w", encoding="utf-8").write(s)
+PY
     done
     echo "rendered $name"
 done

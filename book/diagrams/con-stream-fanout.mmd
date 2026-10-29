@@ -1,0 +1,12 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    X["Executor"] -->|"queue.write(event)"| W["Queue writer<br/>numbers the event (SSE id)"]
+    W --> B["Broadcast channel<br/>256 events by default"]
+    W --> P["Persistence channel"]
+    P --> T["Task store<br/>task + event log"]
+    B --> L["Live subscribers<br/>one SSE stream each"]
+    B -. "reader fell behind" .-> G{"Can the log supply<br/>every missed event?"}
+    T -. "read in pages of<br/>subscribe_replay_limit" .-> G
+    G -- yes --> R["Catch up from the log,<br/>then back to live"]
+    G -- no --> Z["One event: error frame<br/>streamLagged, stream ends"]

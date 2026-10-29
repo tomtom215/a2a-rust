@@ -11,6 +11,25 @@
 
 If you're building AI agents that need to talk to each other, discover capabilities, delegate tasks, and stream results — this library gives you the full protocol stack — all eleven methods over four bindings — with no `unsafe` in its library code and hardening measured by the gates this book describes. It is `0.x`: [Stability](https://github.com/tomtom215/a2a-rust/blob/main/STABILITY.md) says what may still change, and [the readiness bar](https://github.com/tomtom215/a2a-rust/blob/main/docs/readiness-bar.md) says what "ready for production" would have to mean and how much of it is measured.
 
+## Who it is for
+
+- **You are building an agent** that other agents or applications call: you write an `AgentExecutor`, and the server crate handles the protocol, the bindings, task storage and streaming.
+- **You are calling agents**: the client crate discovers an agent from its card, sends messages, follows streams and manages tasks, with retries, timeouts and authentication.
+- **You are building an orchestrator** that does both: an agent whose executor delegates to other agents, and cancels, leases and budgets the work it hands out.
+- **You run agents in production**: the deployment chapters cover hardening, multi-tenancy, observability and the compliance records.
+
+## Where to start
+
+Read in this order; each step assumes the one before it.
+
+1. **[Quick Start](./getting-started/quick-start.md)** — run the smallest agent and the full-surface echo agent from a clone of the repository.
+2. **[Your First Agent](./getting-started/first-agent.md)** — build a calculator agent and a client for it in a new crate.
+3. **[Examples overview](./examples/overview.md)** — pick the example closest to what you are building: model integrations, multi-agent teams, delegation, durability.
+4. **[Building Agents](./building-agents/executor.md)** — the executor, the request handler, dispatchers, stores and authentication in depth. Its counterpart for callers is **[Client Usage](./client/builder.md)**.
+5. **[Production Hardening](./deployment/production.md)** — what to configure before an agent faces real traffic, then observability and multi-tenancy.
+
+[Installation](./getting-started/installation.md) lists the crates and their feature flags, and [Protocol Overview](./concepts/protocol-overview.md) explains the protocol model the rest of the book assumes.
+
 ## What is the A2A Protocol?
 
 The Agent2Agent protocol defines how AI agents discover, communicate with, and delegate work to each other. Think of it as HTTP for AI agents: a shared language that lets any agent talk to any other, regardless of implementation.
@@ -35,20 +54,15 @@ What Rust gives this library, stated as narrowly as it holds:
 
 ## Architecture at a Glance
 
-a2a-rust is organized around four published library crates in one Cargo workspace:
+a2a-rust is organized around four published library crates in one Cargo workspace. A fifth crate, the SLIMRPC binding, lives in the same repository but outside the workspace, with its own lockfile:
 
-```text
-┌─────────────────────────────────────────────┐
-│  a2a-protocol-sdk                           │
-│  umbrella re-exports + prelude              │
-├──────────────────────┬──────────────────────┤
-│  a2a-protocol-client │  a2a-protocol-server │
-│  HTTP client         │  agent framework     │
-├──────────────────────┴──────────────────────┤
-│  a2a-protocol-types                         │
-│  wire types, serde, no I/O                  │
-└─────────────────────────────────────────────┘
-```
+<figure class="diagram">
+<a href="images/diagrams/gs-crate-map.light.svg"><img class="diagram-light" src="images/diagrams/gs-crate-map.light.svg" alt="The SDK crate and the SLIMRPC binding each depend on the client and server crates, both of which depend on the types crate; each crate's default features are listed in its box."></a>
+<a href="images/diagrams/gs-crate-map.dark.svg"><img class="diagram-dark" src="images/diagrams/gs-crate-map.dark.svg" alt=""></a>
+<figcaption>The crates, what each depends on, and the features each turns on by default.</figcaption>
+</figure>
+
+The SDK and the SLIMRPC binding also depend on the types crate directly. The SDK takes the client and server with `default-features = false`, so the SDK's feature list is the only one in force when you depend on it. The SLIMRPC binding takes the client with `otel` only, the server at its defaults, and the types crate with `proto`. [Installation](./getting-started/installation.md#feature-flags) lists every feature and maps which ones turn on which.
 
 | Crate | Purpose |
 |-------|---------|
@@ -56,6 +70,7 @@ a2a-rust is organized around four published library crates in one Cargo workspac
 | **`a2a-protocol-client`** | HTTP client for calling remote A2A agents. Supports JSON-RPC and REST transports, plus WebSocket and gRPC behind feature flags. |
 | **`a2a-protocol-server`** | Server framework for *building* A2A agents. Pluggable stores, interceptors, and dispatchers. |
 | **`a2a-protocol-sdk`** | Umbrella crate that re-exports everything with a convenient `prelude` module. |
+| **`a2a-protocol-slimrpc`** | The [SLIMRPC binding](./bindings/slimrpc.md) over AGNTCY SLIM. Not part of the A2A specification, outside the workspace, and not yet published to crates.io. |
 
 ## Key Features
 
@@ -97,7 +112,9 @@ a2a-rust is organized around four published library crates in one Cargo workspac
 
 ## What's Next?
 
+Follow [Where to start](#where-to-start), or jump to the part you need:
+
 - **[Installation](./getting-started/installation.md)** — Add a2a-rust to your project
-- **[Quick Start](./getting-started/quick-start.md)** — See the protocol in action in 5 minutes
-- **[Your First Agent](./getting-started/first-agent.md)** — Build a calculator agent from scratch
 - **[Protocol Overview](./concepts/protocol-overview.md)** — Understand the A2A protocol model
+- **[Building a Client](./client/builder.md)** — Call an existing agent
+- **[Pitfalls & Lessons Learned](./reference/pitfalls.md)** — Mistakes others have already made

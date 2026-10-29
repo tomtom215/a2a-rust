@@ -4,225 +4,78 @@ a2a-rust is organized around four published library crates in one Cargo workspac
 
 ## Workspace Layout
 
-This tree lists the principal modules, not every file; `git ls-files crates/*/src` is the full list.
+The top of the repository, with the directories a reader of this book needs:
 
 ```text
 a2a-rust/
-├── Cargo.toml              # Workspace root
+├── Cargo.toml                  # Workspace root
 ├── crates/
-│   ├── a2a-protocol-types/   # Wire types (serde, no I/O)
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── task.rs         # Task, TaskState, TaskStatus, TaskId
-│   │       ├── message.rs      # Message, Part, PartContent, MessageRole
-│   │       ├── artifact.rs     # Artifact, ArtifactId
-│   │       ├── agent_card/     # AgentCard, AgentInterface, AgentSkill
-│   │       ├── events.rs       # StreamResponse, status/artifact events
-│   │       ├── params/         # MessageSendParams, TaskQueryParams, ...
-│   │       ├── responses.rs    # SendMessageResponse, TaskListResponse
-│   │       ├── jsonrpc.rs      # JSON-RPC 2.0 envelope types
-│   │       ├── push.rs         # Push notification config types
-│   │       ├── error.rs        # A2aError, ErrorCode, A2aResult
-│   │       ├── security.rs     # Security schemes and requirements
-│   │       ├── signing.rs      # Agent card signing (JWS: ES256, EdDSA)
-│   │       └── extensions.rs   # Extension types
-│   │
-│   ├── a2a-protocol-client/  # HTTP client
-│   │   └── src/
-│   │       ├── lib.rs          # Re-exports
-│   │       ├── client.rs       # A2aClient
-│   │       ├── builder/        # ClientBuilder (fluent config)
-│   │       │   ├── mod.rs            # Builder struct, configuration setters
-│   │       │   └── transport_factory.rs  # build() / build_grpc() assembly
-│   │       ├── transport/      # Transport trait + implementations
-│   │       │   ├── mod.rs          # Transport trait, truncate_body
-│   │       │   ├── rest/           # REST transport
-│   │       │   │   ├── mod.rs          # RestTransport struct, constructors
-│   │       │   │   ├── request.rs      # URI/request building, execution
-│   │       │   │   ├── streaming.rs    # SSE streaming, body reader
-│   │       │   │   ├── routing.rs      # Route definitions, method mapping
-│   │       │   │   └── query.rs        # Query string building, encoding
-│   │       │   ├── jsonrpc.rs      # JsonRpcTransport
-│   │       │   ├── websocket.rs   # WebSocketTransport (feature-gated)
-│   │       │   └── grpc.rs        # GrpcTransport (feature-gated)
-│   │       ├── streaming/      # SSE parser, EventStream
-│   │       │   ├── event_stream.rs # EventStream for consuming SSE
-│   │       │   └── sse_parser/     # SSE frame parser
-│   │       │       ├── mod.rs          # Re-exports
-│   │       │       ├── types.rs        # SseFrame, SseParseError
-│   │       │       └── parser.rs       # SseParser state machine
-│   │       ├── methods/        # A2A client methods
-│   │       │   ├── mod.rs          # Re-exports
-│   │       │   ├── send_message.rs # send_message, stream_message
-│   │       │   ├── tasks.rs        # get_task, list_tasks, cancel_task, subscribe_to_task
-│   │       │   ├── push_config.rs  # set/get/list/delete push configs
-│   │       │   └── extended_card.rs # get_extended_agent_card
-│   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
-│   │       ├── interceptor.rs  # CallInterceptor, InterceptorChain
-│   │       ├── retry.rs        # RetryPolicy, RetryTransport
-│   │       ├── testing/        # ScriptedPeer hostile test peer (feature-gated)
-│   │       ├── error/          # ClientError, ClientResult
-│   │       ├── config.rs       # ClientConfig
-│   │       ├── discovery.rs    # Agent card discovery
-│   │       └── tls.rs          # TLS configuration helpers
-│   │
-│   ├── a2a-protocol-server/  # Server framework
-│   │   └── src/
-│   │       ├── lib.rs          # Public re-exports
-│   │       ├── handler/        # RequestHandler (core orchestration)
-│   │       │   ├── mod.rs          # Struct definition, SendMessageResult
-│   │       │   ├── limits/         # HandlerLimits config
-│   │       │   ├── messaging/      # SendMessage / SendStreamingMessage
-│   │       │   ├── lifecycle/        # Task lifecycle handlers
-│   │       │   │   ├── mod.rs            # Re-exports
-│   │       │   │   ├── get_task.rs       # GetTask handler
-│   │       │   │   ├── list_tasks.rs     # ListTasks handler
-│   │       │   │   ├── cancel_task.rs    # CancelTask handler
-│   │       │   │   ├── subscribe.rs      # SubscribeToTask handler
-│   │       │   │   └── extended_card.rs  # GetExtendedAgentCard handler
-│   │       │   ├── push_config.rs  # Push notification config CRUD
-│   │       │   ├── event_processing/  # Event collection & push delivery
-│   │       │   │   ├── mod.rs          # Re-exports
-│   │       │   │   ├── sync_collector.rs   # Sync-mode event collection
-│   │       │   │   └── background/       # Background event processor
-│   │       │   │       ├── mod.rs            # Event loop orchestration
-│   │       │   │       ├── state_machine.rs  # Event dispatch, state transitions
-│   │       │   │       └── push_delivery/    # Push notification delivery
-│   │       │   ├── shutdown/       # Graceful shutdown
-│   │       │   └── helpers.rs      # Validation, context builders
-│   │       ├── auth/           # Server-side authentication interceptors
-│   │       ├── builder.rs      # RequestHandlerBuilder
-│   │       ├── executor.rs     # AgentExecutor trait
-│   │       ├── executor_helpers.rs # boxed_future, agent_executor!, EventEmitter
-│   │       ├── dispatch/       # Protocol dispatchers
-│   │       │   ├── mod.rs          # DispatchConfig, re-exports
-│   │       │   ├── rest/           # REST dispatcher
-│   │       │   │   ├── mod.rs          # RestDispatcher, route handlers
-│   │       │   │   ├── response.rs     # HTTP response helpers
-│   │       │   │   ├── error_response.rs # AIP-193 error bodies
-│   │       │   │   └── query.rs        # Query/URL parsing utilities
-│   │       │   ├── jsonrpc/        # JSON-RPC 2.0 dispatcher
-│   │       │   │   ├── mod.rs          # JsonRpcDispatcher, dispatch logic
-│   │       │   │   └── response.rs     # JSON-RPC response serialization
-│   │       │   ├── axum_adapter.rs  # A2aRouter (axum feature-gated)
-│   │       │   ├── websocket.rs    # WebSocketDispatcher (feature-gated)
-│   │       │   ├── cors.rs         # CorsConfig
-│   │       │   └── grpc/           # gRPC dispatcher (feature-gated)
-│   │       │       ├── mod.rs          # Proto includes, re-exports
-│   │       │       ├── config.rs       # GrpcConfig
-│   │       │       ├── dispatcher.rs   # GrpcDispatcher, server setup
-│   │       │       ├── native.rs       # lf.a2a.v1.A2AService implementation
-│   │       │       ├── shutdown.rs     # GrpcDispatcher::serve_with_shutdown
-│   │       │       └── helpers.rs      # Metadata extraction, error → gRPC status mapping
-│   │       ├── store/          # Task persistence
-│   │       │   ├── mod.rs          # Re-exports
-│   │       │   ├── task_store/     # TaskStore trait + in-memory impl
-│   │       │   │   ├── mod.rs          # TaskStore trait, TaskStoreConfig
-│   │       │   │   └── in_memory/      # InMemoryTaskStore
-│   │       │   │       ├── mod.rs          # Core CRUD, TaskStore impl
-│   │       │   │       └── eviction/       # TTL + capacity eviction
-│   │       │   ├── sqlite_store/       # SqliteTaskStore (feature-gated)
-│   │       │   ├── migration/          # Schema migration runner
-│   │       │   ├── tenant_sqlite_store.rs # TenantAwareSqliteTaskStore
-│   │       │   ├── postgres_store/     # PostgresTaskStore (feature-gated)
-│   │       │   ├── pg_migration.rs     # PostgreSQL migration runner
-│   │       │   ├── tenant_postgres_store/ # TenantAwarePostgresTaskStore
-│   │       │   └── tenant/         # Multi-tenant isolation
-│   │       │       ├── mod.rs          # Re-exports
-│   │       │       ├── context.rs      # TenantContext (task-local)
-│   │       │       └── store.rs        # TenantAwareInMemoryTaskStore
-│   │       ├── push/           # PushConfigStore, PushSender
-│   │       │   ├── mod.rs          # Re-exports
-│   │       │   ├── config_store.rs # InMemoryPushConfigStore
-│   │       │   ├── sender.rs       # PushSender trait, HttpPushSender
-│   │       │   ├── sqlite_config_store.rs      # SqlitePushConfigStore
-│   │       │   ├── tenant_config_store.rs      # TenantAwareInMemoryPushConfigStore
-│   │       │   ├── tenant_sqlite_config_store.rs # TenantAwareSqlitePushConfigStore
-│   │       │   ├── postgres_config_store.rs    # PostgresPushConfigStore
-│   │       │   └── tenant_postgres_config_store.rs # TenantAwarePostgresPushConfigStore
-│   │       ├── streaming/      # Event streaming
-│   │       │   ├── mod.rs          # Re-exports
-│   │       │   ├── sse.rs          # SSE response builder
-│   │       │   └── event_queue/    # Event queue system
-│   │       │       ├── mod.rs          # Traits, constants, constructors
-│   │       │       ├── in_memory.rs    # Broadcast-backed queue impl
-│   │       │       └── manager.rs      # EventQueueManager
-│   │       ├── agent_card/     # Static/Dynamic card handlers
-│   │       │   ├── mod.rs          # Re-exports
-│   │       │   ├── static_handler.rs  # StaticAgentCardHandler
-│   │       │   ├── dynamic_handler/   # DynamicAgentCardHandler, AgentCardProducer
-│   │       │   ├── hot_reload.rs   # HotReloadAgentCardHandler
-│   │       │   └── caching.rs      # ETag/Last-Modified caching
-│   │       ├── otel/           # OpenTelemetry (feature-gated)
-│   │       │   ├── mod.rs          # Re-exports, OtelMetrics
-│   │       │   ├── global.rs       # Metrics resolved against the global meter provider
-│   │       │   ├── pipeline.rs     # init_otlp_pipeline (the older, metrics-only setup)
-│   │       │   ├── builder.rs      # OtelMetrics builder
-│   │       │   └── telemetry/      # Telemetry: OTLP export of traces, metrics and logs (otlp feature)
-│   │       ├── call_context.rs # CallContext with HTTP headers
-│   │       ├── conformance/    # AgentExecutor conformance harness (feature-gated)
-│   │       ├── metrics/        # Metrics trait
-│   │       ├── rate_limit/     # RateLimitInterceptor, RateLimitConfig
-│   │       ├── serve/          # serve(), serve_with_addr(), Server, ServeConfig
-│   │       ├── request_context.rs  # RequestContext
-│   │       ├── interceptor/    # ServerInterceptor trait
-│   │       ├── error/          # ServerError, ServerResult
-│   │       ├── tenant_config/  # PerTenantConfig, TenantLimits
-│   │       └── tenant_resolver.rs # TenantResolver trait + impls
-│   │
-│   └── a2a-protocol-sdk/      # Umbrella crate
-│       └── src/
-│           └── lib.rs          # Re-exports + prelude
-│
-├── examples/
-│   ├── hello-agent/        # Smallest complete agent
-│   ├── deploy-agent/       # The hello agent made deployable (health, SIGTERM, container)
-│   ├── echo-agent/         # Every A2A method over all four bindings
-│   ├── incident-response/  # Three cooperating agents: input-required, delegation, cancel
-│   ├── agent-team/         # Five-agent dogfood suite plus a sixth swept over all four bindings (100 tests + 2 sweep results by default; 87 bare)
-│   ├── multi-lang-team/    # Multi-language team example
-│   ├── rig-agent/          # Integration with the Rig framework
-│   ├── genai-agent/        # Integration with the GenAI framework
-│   ├── mcp-agent/          # Tools discovered from an MCP server
-│   ├── mcp-bridge/         # A remote A2A agent exposed as an MCP server
-│   ├── tool-loop-agent/    # Tool calling from the SDK alone: ToolLoopExecutor over OpenAiChatModel
-│   ├── langfuse-agent/     # Two agents, one delegating to the other, traced into one Langfuse trace
-│   ├── swarm/              # Hierarchical agent swarm: fan-out, retry, cancel propagation
-│   ├── live-model/         # The SDK end to end with a real model
-│   ├── resilient-agent/    # Durability across a restart, failure injection, two replicas over a shared store
-│   └── harness/            # Shared coverage matrix and sweep for the examples
-│
+│   ├── a2a-protocol-types/     # Wire types (serde, no I/O)
+│   ├── a2a-protocol-client/    # Client: transports, streaming, discovery, retry, delegation
+│   ├── a2a-protocol-server/    # Server: handler, dispatchers, stores, push, telemetry
+│   └── a2a-protocol-sdk/       # Umbrella crate: re-exports + prelude
 ├── bindings/
-│   └── a2a-protocol-slimrpc/  # SLIMRPC binding (outside the workspace, own lockfile)
-│
-├── tools/
-│   ├── a2a-cli/            # The `a2a` command-line client
-│   └── a2a-codegen/        # Generates the public types from the proto
-│
-├── proto/                  # a2a.proto
-├── benches/                # Criterion benchmarks
-├── book/                   # This book
-├── book-tests/             # Compiles the book's Rust blocks as doctests
-├── itk/                    # Interoperability tests against the other SDKs
-│
-├── tck/                    # In-repo conformance runner (the official TCK is a2aproject/a2a-tck)
-│
-├── docs/
-│   └── adr/                # Architecture Decision Records
-│
-└── fuzz/                   # Fuzz testing targets
+│   └── a2a-protocol-slimrpc/   # SLIMRPC binding (outside the workspace, own lockfile)
+├── examples/                   # One directory per runnable example, plus their shared harness
+├── tools/                      # a2a-cli (the `a2a` command-line client), a2a-codegen
+├── proto/                      # a2a_v1/a2a.proto, the specification's proto
+├── book/                       # This book
+├── book-tests/                 # Compiles the book's Rust blocks as doctests
+├── benches/                    # Criterion benchmarks
+├── tck/                        # In-repo conformance runner (the official TCK is a2aproject/a2a-tck)
+├── itk/                        # Interoperability tests against the other SDKs
+├── fuzz/                       # Fuzz testing targets
+├── deploy/observability/       # A local OpenTelemetry, Prometheus and Grafana stack
+└── docs/                       # Architecture Decision Records (adr/), compliance records, reviews
 ```
+
+The [Examples](../examples/overview.md) chapter has a page for each directory
+under `examples/`. For every file, browse the
+[repository](https://github.com/tomtom215/a2a-rust) or run
+`git ls-files crates/*/src` in a clone.
+
+## Where Things Live
+
+The principal module for each part of the API. The wire types' definitions
+are generated by `tools/a2a-codegen` from `proto/a2a_v1/a2a.proto` into the
+types crate's `src/generated/`, and each is included by the module the table
+names, which adds the hand-written methods ([ADR 0016](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0016-types-generated-from-the-proto.md)):
+
+| Looking for | Crate | Module |
+|---|---|---|
+| `Task`, `TaskState`, `TaskStatus`, `TaskId` | types | `task.rs` |
+| `Message`, `Part`, `PartContent`, `MessageRole` | types | `message.rs` |
+| `AgentCard`, `AgentInterface`, `AgentSkill` | types | `agent_card/` |
+| `StreamResponse` and the status and artifact events | types | `events.rs` |
+| Request parameters, responses | types | `params/`, `responses.rs` |
+| `A2aError`, `ErrorCode`, `A2aResult` | types | `error.rs` |
+| Agent card signing (JWS) | types | `signing.rs`, `signing/` |
+| `A2aClient`, `ClientBuilder` | client | `client.rs`, `builder/` |
+| JSON-RPC, REST, WebSocket and gRPC transports | client | `transport/` |
+| `EventStream` and the SSE parser | client | `streaming/` |
+| `RetryPolicy` | client | `retry.rs` |
+| Card discovery | client | `discovery.rs` |
+| `Delegation` | client | `delegation/` |
+| `ClientError`, `ClientResult` | client | `error/` |
+| `RequestHandler` | server | `handler/` |
+| `RequestHandlerBuilder` | server | `builder.rs` |
+| `AgentExecutor`; `agent_executor!`, `EventEmitter`, `boxed_future` | server | `executor.rs`, `executor_helpers.rs` |
+| Dispatchers (JSON-RPC, REST, WebSocket, gRPC, Axum) | server | `dispatch/` |
+| `TaskStore` and its backends | server | `store/` |
+| `PushConfigStore`, `PushSender` | server | `push/` |
+| `serve`, `Server`, `ServeConfig` | server | `serve/` |
+| `OtelMetrics`, `Telemetry` | server | `otel/` |
+| The prelude | sdk | `lib.rs` |
 
 ## Crate Dependencies
 
-```text
-a2a-protocol-sdk
-├── a2a-protocol-client
-│   └── a2a-protocol-types
-├── a2a-protocol-server
-│   └── a2a-protocol-types
-└── a2a-protocol-types
-```
+<figure class="diagram">
+<a href="../images/diagrams/gs-crate-map.light.svg"><img class="diagram-light" src="../images/diagrams/gs-crate-map.light.svg" alt="The SDK crate and the SLIMRPC binding each depend on the client and server crates, both of which depend on the types crate; each crate's default features are listed in its box."></a>
+<a href="../images/diagrams/gs-crate-map.dark.svg"><img class="diagram-dark" src="../images/diagrams/gs-crate-map.dark.svg" alt=""></a>
+<figcaption>The crates and their default features.</figcaption>
+</figure>
+
+The SDK and the SLIMRPC binding also depend on the types crate directly. The SDK takes the client and server with `default-features = false` and forwards its own features to them.
 
 The dependency graph is intentionally shallow:
 
@@ -263,7 +116,7 @@ This gives you:
 - Macros and helpers: `agent_executor!`, `boxed_future`
 - Discovery and auth: `resolve_agent_card`, `ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`, `BearerAuthInterceptor`, `OAuth2ClientCredentials`, `StaticTokenProvider`, `TokenProvider`
 - Telemetry and webhooks (default features): `Telemetry`, `WebhookReceiver`, `WebhookOutcome`
-- Utilities: `serve`, `serve_with_addr`, `RateLimitInterceptor`, `RateLimitConfig`
+- Utilities: `serve`, `serve_with_addr`, `Server`, `shutdown_signal`, `RateLimitInterceptor`, `RateLimitConfig`
 
 ## External Dependencies
 

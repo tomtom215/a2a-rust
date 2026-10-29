@@ -19,5 +19,5 @@
 # no snippet fails the gate: the thing it excused was changed or removed, and
 # the entry is now a claim about nothing.
 
-book/src/reference/upgrading.md  0.7  # the "before" half of the 0.7 -> 0.8 pair showing the removal of grpc-legacy-json; the old version is the content
-book/src/reference/upgrading.md  0.8  # the "after" half of that same pair, pinned to the release that removed the feature
+book/src/reference/upgrading/0.7-to-0.8.md  0.7  # the "before" half of the 0.7 -> 0.8 pair showing the removal of grpc-legacy-json; the old version is the content
+book/src/reference/upgrading/0.7-to-0.8.md  0.8  # the "after" half of that same pair, pinned to the release that removed the feature

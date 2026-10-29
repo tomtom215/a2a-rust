@@ -61,7 +61,7 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
 > `push_delivery_timeout` must be non-zero. Zero values are rejected by
 > `RequestHandlerBuilder::build()`, which refuses more than that: see
-> [Build-Time Validation](../building-agents/handler.md#build-time-validation)
+> [Build-Time Validation](../building-agents/handler/configuration.md#build-time-validation)
 > for the full list.
 
 ### TaskStoreConfig

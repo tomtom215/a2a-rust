@@ -2,425 +2,43 @@
 
 A2A defines three transport bindings, **JSON-RPC 2.0**, **REST** (`HTTP+JSON`) and **gRPC** (`grpc` feature flag). a2a-rust adds a fourth, **WebSocket** (`websocket` feature flag), as a custom binding under spec §12; a fifth, [SLIMRPC](../bindings/slimrpc.md), is a separate crate. All four are first-class citizens in a2a-rust — the server can serve multiple transports simultaneously, and `ClientBuilder::from_card` selects an interface from the agent card (`build()` constructs JSON-RPC or REST; gRPC needs `build_grpc`, and WebSocket a transport passed to `with_custom_transport`).
 
-## JSON-RPC 2.0
-
-The JSON-RPC transport sends all requests to a single endpoint as POST requests with a JSON-RPC 2.0 envelope:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "SendMessage",
-  "id": "req-1",
-  "params": {
-    "message": {
-      "messageId": "msg-1",
-      "role": "ROLE_USER",
-      "parts": [{"text": "Hello, agent!"}]
-    }
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-1",
-  "result": {
-    "task": {
-      "id": "task-abc",
-      "contextId": "ctx-123",
-      "status": { "state": "TASK_STATE_COMPLETED" },
-      "artifacts": [...]
-    }
-  }
-}
-```
-
-### Method Names
-
-| A2A Operation | JSON-RPC Method |
-|---------------|-----------------|
-| Send message | `SendMessage` |
-| Stream message | `SendStreamingMessage` |
-| Get task | `GetTask` |
-| List tasks | `ListTasks` |
-| Cancel task | `CancelTask` |
-| Subscribe to task | `SubscribeToTask` |
-| Create push config | `CreateTaskPushNotificationConfig` |
-| Get push config | `GetTaskPushNotificationConfig` |
-| List push configs | `ListTaskPushNotificationConfigs` |
-| Delete push config | `DeleteTaskPushNotificationConfig` |
-| Extended card | `GetExtendedAgentCard` |
-
-### Batching
-
-JSON-RPC supports batch requests — multiple operations in a single HTTP request:
-
-```json
-[
-  {"jsonrpc": "2.0", "method": "GetTask", "id": "1", "params": {"id": "task-a"}},
-  {"jsonrpc": "2.0", "method": "GetTask", "id": "2", "params": {"id": "task-b"}}
-]
-```
-
-> **Note:** Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) cannot be used in batch requests and will return an error.
-
-A request with no `id` member is a notification (JSON-RPC 2.0 §4.1): the
-server runs it and sends no reply, alone (`204 No Content`) or in a batch
-(the array leaves it out; `204` when every member is one). A streaming
-method sent as a notification is not run. `"id": null` is a call and is
-answered.
-
-### ID Handling
-
-JSON-RPC request IDs can be strings, numbers (including 0 and floats), or `null`. The server preserves the exact ID type in the response.
-
-## REST
-
-The REST transport uses standard HTTP methods and URL paths:
-
-| Operation | Method | Path |
-|-----------|--------|------|
-| Send message | `POST` | `/message:send` |
-| Stream message | `POST` | `/message:stream` |
-| Get task | `GET` | `/tasks/{id}` |
-| List tasks | `GET` | `/tasks` |
-| Cancel task | `POST` | `/tasks/{id}:cancel` |
-| Subscribe | `GET\|POST` | `/tasks/{id}:subscribe` |
-| Create push config | `POST` | `/tasks/{id}/pushNotificationConfigs` |
-| Get push config | `GET` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
-| List push configs | `GET` | `/tasks/{id}/pushNotificationConfigs` |
-| Delete push config | `DELETE` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
-| Extended card | `GET` | `/extendedAgentCard` |
-| Agent card | `GET` | `/.well-known/agent-card.json` |
-
-### Multi-Tenant Paths
-
-The spec's proto binds every method twice: a primary pattern with no tenant in
-the path (`/tasks/{id}`) and an `additional_bindings` pattern with the tenant
-as the leading segment (`/{tenant}/tasks/{id}`). This SDK's client sends the
-prefix form — the same one the official Python SDK's REST client sends, and
-the only one the official Python server reads — with the segment
-percent-encoded, and keeps the field in POST bodies as well.
-
-The server accepts the tenant from every place the proto lets it arrive, in
-this order of precedence:
-
-1. the path prefix — `/{tenant}/…` (canonical) or this SDK's explicit
-   `/tenants/{tenant-id}/…` form, percent-decoded;
-2. the `?tenant=` query parameter on `GET` and `DELETE` (§11.5's transcoding
-   of the primary pattern);
-3. the `tenant` field of a `POST` body (`message:send`, `message:stream`,
-   `tasks/{id}:cancel`, `tasks/{id}:subscribe`, push-config create).
-
-A path tenant is injected into a POST body that omits it, so
-`POST /acme/message:send` with no `tenant` in the JSON lands in `acme`. When
-the path and the body disagree the path wins, as a path variable does under
-`google.api.http`.
-
-### Content Types
-
-The REST dispatcher accepts both `application/json` and `application/a2a+json`.
-A `POST` with any other `Content-Type` is refused with 400.
-
-JSON-RPC responses are `application/json`, as §9.1 requires. HTTP+JSON
-responses are negotiated, following §11.1's SHOULD of `application/a2a+json`
-without breaking clients that cannot read it:
-
-- an `Accept` header that names `application/a2a+json` with a `q` at least as
-  high as `application/json`'s gets `application/a2a+json`;
-- an `Accept` that prefers `application/json` gets `application/json`;
-- otherwise, a request body labelled `application/a2a+json` gets that type;
-- otherwise, a request whose `Accept` asks for `text/event-stream` gets
-  `application/json`;
-- anything else, including no `Accept` at all, gets `application/a2a+json`.
-
-Successes and errors are labelled alike. The agent card (a §8.2 well-known
-resource, not an HTTP+JSON operation) and `/health` and `/ready` keep their
-own `application/json`. The event-stream rule is for released a2a-go
-(v2.6.0): its streaming calls send `Accept: text/event-stream` and nothing
-else, and it decodes an error body only under `application/json`, so a
-refused Go stream would otherwise lose its error. Its unary calls send
-`Accept: application/json`.
-
-### Security
-
-The REST dispatcher includes built-in protections:
-
-- **Path traversal rejection** — a `.` or `..` path segment, raw or percent-encoded at any depth (`%2E%2E`, `%252E%252E`; a `\` counts as a separator), returns 400; an id that merely contains `..` (`v1..prod`) is served
-- **Query string limits** — Query strings over 4 KiB return 414
-- **Body size limits** — Request bodies over 4 MiB return 413
-
-## WebSocket
-
-The **WebSocket** transport (`websocket` feature flag) provides a persistent bidirectional channel over a single TCP connection. JSON-RPC 2.0 messages are exchanged as WebSocket text frames.
-
-```toml
-# Server
-a2a-protocol-server = { version = "0.15", features = ["websocket"] }
-
-# Client
-a2a-protocol-client = { version = "0.15", features = ["websocket"] }
-```
-
-### Server
-
-```rust,no_run
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::agent_executor;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# #[tokio::main]
-# async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let my_executor = MyAgent;
-use a2a_protocol_server::{WebSocketDispatcher, RequestHandlerBuilder};
-use std::sync::Arc;
-
-let handler = Arc::new(RequestHandlerBuilder::new(my_executor).with_agent_card(card()).build().unwrap());
-let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-
-// Start accepting WebSocket connections
-dispatcher.serve("0.0.0.0:3002").await?;
-# Ok(())
-# }
-```
-
-Declare the binding on the card you give the handler
-(`AgentInterface::new("ws://agent.example.com:3002",
-a2a_protocol_types::WEBSOCKET_BINDING_URI)`). The listener logs a warning at
-start-up, with the `tracing` feature, when its binding is missing from the
-card (spec §5.2). See
-[Naming a protocol binding](agent-cards.md#naming-a-protocol-binding).
-
-### Protocol
-
-- Client sends JSON-RPC 2.0 requests as text frames
-- Server responds with JSON-RPC 2.0 responses as text frames
-- The v1.0 method names the JSON-RPC HTTP binding routes; the v0.3 `method/verb` aliases are refused with `MethodNotFound` (see the [binding specification](../bindings/websocket.md))
-- For streaming methods (`SendStreamingMessage`, `SubscribeToTask`), the server sends multiple frames — one per event — followed by a `stream_complete` response
-- Ping/pong frames are handled automatically
-- Connection closes cleanly on WebSocket close frame
-- The upgrade request's HTTP headers reach the handler for every request on the connection, so authentication and tenant resolution work exactly as over HTTP; supply credentials at connect time (`WebSocketTransport::connect_with_config`)
-
-### Client
-
-```rust,no_run
-# use a2a_protocol_sdk::client::ClientBuilder;
-# #[tokio::main]
-# async fn main() -> Result<(), Box<dyn std::error::Error>> {
-use std::time::Duration;
-use a2a_protocol_client::{WebSocketTransport, WebSocketTransportConfig};
-
-// Defaults are fine for a trusted agent on a local network:
-let transport = WebSocketTransport::connect("ws://agent.example.com:3002").await?;
-
-// Or set the bounds explicitly — see the table below for what each one covers:
-let transport = WebSocketTransport::connect_with_config(
-    "wss://agent.example.com:3002",
-    WebSocketTransportConfig::default()
-        .with_connect_timeout(Duration::from_secs(5))   // TCP + TLS + upgrade
-        .with_request_timeout(Duration::from_secs(30))  // per-request response wait
-        .with_max_message_size(4 * 1024 * 1024),        // incoming frame ceiling
-)
-.await?;
-
-let client = ClientBuilder::new("wss://agent.example.com:3002")
-    .with_custom_transport(transport)
-    .build()?;
-# Ok(())
-# }
-```
-
-Because the transport is built before the client and handed to
-`with_custom_transport`, it never sees the `ClientConfig` — so `with_timeout`,
-`with_connection_timeout` and `with_max_response_size` on the builder do not
-reach it. Its equivalents are these:
-
-| Knob | Default | Bounds |
-|------|---------|--------|
-| `connect_timeout` | 10s | the whole handshake — a server that accepts TCP and never upgrades |
-| `request_timeout` | 30s | waiting for one response on an established connection |
-| `max_message_size` | 32 MiB | an incoming frame, at the protocol level |
-| `max_pending_requests` | 64 | requests awaiting a response on one connection; the next is refused with `ClientError::TooManyPendingRequests` (retryable) rather than queued |
-| `with_tls_config` | Mozilla's roots, verified with `ring` | the certificate a `wss://` endpoint must present; `tls::tls_config_with_extra_roots` adds a private CA. Needs the `tls-rustls` feature (on by default); until 0.15 no `wss://` endpoint could be reached |
-
-After the socket drops, the next call reconnects to the same endpoint with the
-same configuration (one reconnect shared by concurrent callers, bounded by
-`connect_timeout`). A stream keeps its connection open until you drop it, even
-if the client is dropped first. A stream you read more slowly than the agent
-writes ends with a `stream_lagged` error once 64 frames are waiting unread
-(`ClientError::is_stream_lagged`); resubscribe to continue.
-
-### When to Use WebSocket
-
-- **Long-lived connections** — Avoids TCP/TLS handshake overhead per request
-- **Bidirectional streaming** — Server can push events without SSE
-- **Low latency** — No HTTP framing overhead for small messages
-
-## gRPC
-
-The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via protocol buffers and HTTP/2. As of 0.7 it is **protobuf-native**: the transport speaks the canonical `lf.a2a.v1.A2AService` service with fully-typed messages generated from the A2A specification's protobuf schema, making it wire-compatible with the official Go, Python, and Java SDKs. (Through 0.6 it tunneled JSON inside a protobuf `bytes` field on a non-standard service. The tunnel **client** was removed in 0.7; the tunnel **service** and the `grpc-legacy-json` feature that served it alongside the canonical one were removed in 0.8. A 0.6 client must now upgrade rather than be tunneled for.)
-
-```toml
-# Server
-a2a-protocol-server = { version = "0.15", features = ["grpc"] }
-
-# Client
-a2a-protocol-client = { version = "0.15", features = ["grpc"] }
-```
-
-### Server
-
-```rust,no_run
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# #[tokio::main]
-# async fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let my_executor = MyAgent;
-use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
-use std::sync::Arc;
-
-let handler = Arc::new(RequestHandlerBuilder::new(my_executor).with_agent_card(card()).build().unwrap());
-let config = GrpcConfig::default()
-    .with_max_message_size(8 * 1024 * 1024);
-let dispatcher = GrpcDispatcher::new(handler, config);
-dispatcher.serve("0.0.0.0:50051").await?;
-# Ok(())
-# }
-```
-
-Declare the binding on the card you give the handler
-(`AgentInterface::grpc("agent.example.com:50051")`). The listener logs a
-warning when it builds its router, with the `tracing` feature, if the card
-declares no `GRPC` interface (spec §5.2).
-
-> **Tip:** Use `serve_with_listener()` when you need to know the server address before constructing the handler (e.g., for agent cards with correct URLs). Pre-bind a `TcpListener`, extract the address, build your handler, then pass the listener.
-
-### Client
-
-An Agent Card's gRPC interface advertises a gRPC **target** — `host:port`, as
-the A2A proto's `AgentInterface.url` comment has said since upstream commit
-`cfc9d34` (2026-07-21); the v1.0.1 copy this repository ships still says "a
-valid absolute HTTPS URL" — not a URL, because gRPC names carry no scheme.
-`GrpcTransport::connect` and `ClientBuilder::build_grpc` accept that form, and
-decide how to dial it with a `GrpcBareAddressScheme`:
-
-| Policy | Bare `host:port` is dialled… | When |
-|---|---|---|
-| `HttpsExceptLoopback` (default) | with TLS, except `localhost` / `127.0.0.0/8` / `::1` in plaintext | the spec requires TLS in production (§13); a loopback peer is this machine |
-| `Https` | always with TLS | a loopback TLS terminator, or to remove the exception |
-| `Http` | always in plaintext | a private network whose agents advertise `agent:50051` and terminate TLS in a mesh or sidecar |
-
-An address that already carries `http://` or `https://` is used as-is.
-`https://` — explicit or chosen by the policy — needs the `grpc-tls` feature;
-without it the connect fails with a message naming the feature rather than
-attempting a plaintext handshake against a TLS port.
-
-```rust,no_run
-# use a2a_protocol_sdk::prelude::AgentCard;
-# async fn f(card: AgentCard, ca_pem: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
-use a2a_protocol_client::{ClientBuilder, GrpcBareAddressScheme};
-
-// From a card whose gRPC interface says "grpc.example.com:443": TLS,
-// verified against the bundled Mozilla roots (needs `grpc-tls`).
-let client = ClientBuilder::from_card(&card)?.build_grpc().await?;
-
-// A Compose network where the card says "analyzer:50051" and the mesh
-// terminates TLS: plaintext, on purpose.
-let client = ClientBuilder::from_card(&card)?
-    .with_grpc_bare_address_scheme(GrpcBareAddressScheme::Http)
-    .build_grpc()
-    .await?;
-
-// A private CA, pinned (needs `grpc-tls`). The TLS types are re-exported
-// from `transport::grpc`, so no tonic dependency of your own.
-use a2a_protocol_client::transport::grpc::{Certificate, ClientTlsConfig};
-
-let tls = ClientTlsConfig::new()
-    .ca_certificate(Certificate::from_pem(ca_pem))
-    .domain_name("agent.internal");
-let client = ClientBuilder::from_card(&card)?
-    .with_grpc_tls_config(tls)
-    .build_grpc()
-    .await?;
-# Ok(())
-# }
-```
-
-#### Serving TLS
-
-The server's gRPC listener is plaintext with the `grpc` feature — the shape
-the official SDKs' gRPC servers expect, with TLS terminated in a proxy or
-mesh. With `grpc-tls` on `a2a-protocol-server` it can serve TLS itself:
-`GrpcDispatcher::with_tls` takes a `ServerTlsConfig` carrying the server
-certificate and key and, for mutual TLS, the CA that client certificates
-must chain to. The types are re-exported from `dispatch::grpc`, so no tonic
-dependency of your own. The listener then speaks TLS only; a plaintext
-client is refused at the handshake rather than served.
-
-```rust
-# use std::sync::Arc;
-# use a2a_protocol_server::RequestHandler;
-use a2a_protocol_server::dispatch::grpc::{
-    Certificate, GrpcConfig, GrpcDispatcher, Identity, ServerTlsConfig,
-};
-
-# async fn example(
-#     handler: Arc<RequestHandler>,
-#     cert_pem: &str,
-#     key_pem: &str,
-#     client_ca_pem: &str,
-# ) -> std::io::Result<()> {
-let tls = ServerTlsConfig::new()
-    .identity(Identity::from_pem(cert_pem, key_pem))
-    // Mutual TLS: clients must present a certificate this CA signed.
-    // Add `.client_auth_optional(true)` to admit clients that present none.
-    .client_ca_root(Certificate::from_pem(client_ca_pem));
-
-GrpcDispatcher::new(handler, GrpcConfig::default())
-    .with_tls(tls)
-    .serve("0.0.0.0:50051")
-    .await?;
-# Ok(())
-# }
-```
-
-A configuration tonic rejects — a key that does not match its certificate —
-comes back from the `serve*` call as an `std::io::Error`, not a panic. tonic
-builds its acceptor from the process-level rustls crypto provider; when none
-is installed and more than one is linked, the dispatcher installs `ring`
-rather than letting rustls panic, and never overrides a provider the
-application installed first.
-
-### Protocol
-
-- All 11 A2A methods are mapped to gRPC RPCs on the canonical `lf.a2a.v1.A2AService`
-- Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server streaming
-- Messages are the fully-typed `lf.a2a.v1` protobuf types, converted to/from the serde domain types via a bidirectional `TryFrom` layer (ProtoJSON semantics)
-- The canonical schema lives at `proto/a2a_v1/a2a.proto`, kept byte-identical to the specification copy
-
-### When to Use gRPC
-
-- **Service mesh integration** — gRPC is native to Kubernetes, Istio, Envoy
-- **Language interop** — gRPC has code generation for 10+ languages
-- **HTTP/2 multiplexing** — Multiple RPCs over a single connection
-- **Streaming** — Native server streaming without SSE
+Every binding carries the same eleven operations and the same data model; they
+differ in how a request is framed, how a stream is delivered, and where the
+per-request metadata (credentials, tenant, `A2A-Version`, `traceparent`)
+travels. This page compares them; each binding's wire details have a page of
+their own. Setting a binding up is covered elsewhere: the server side in
+[Dispatchers](../building-agents/dispatchers.md), the client side in
+[Building a Client](../client/builder.md).
+
+| You want | Read |
+|---|---|
+| The JSON-RPC envelope, method names, batches and notifications | [JSON-RPC 2.0](./transport-layers/jsonrpc.md) |
+| The REST route table, tenant paths and content negotiation | [HTTP+JSON (REST)](./transport-layers/rest.md) |
+| WebSocket framing, connection-level headers and the client transport's limits | [WebSocket](./transport-layers/websocket.md) |
+| gRPC targets, client TLS and serving TLS | [gRPC](./transport-layers/grpc.md) |
+| The SLIM fabric | [SLIMRPC](../bindings/slimrpc.md) |
+
+## Bindings at a glance
+
+| Binding | Streams | Per-request metadata | Resume a dropped stream |
+|---|---|---|---|
+| JSON-RPC 2.0 | SSE on the POST response | HTTP headers, per request | `Last-Event-ID` |
+| HTTP+JSON (REST) | SSE on `POST` or `GET` | HTTP headers, per request | `Last-Event-ID` |
+| gRPC | gRPC server streaming over HTTP/2 | gRPC metadata, per call | No event ids on the stream; resubscribe |
+| WebSocket | Text frames, then `stream_complete` | Upgrade headers, once per connection | None; resubscribe |
+| SLIMRPC | SLIMRPC response stream | Session metadata, per call | No event ids on the stream; resubscribe |
+
+The metadata column is the one that changes behaviour. JSON-RPC, REST, gRPC
+and SLIMRPC carry headers on every call, so a token can rotate between calls
+and each call's `traceparent` makes its server span a child of the caller's.
+A WebSocket frame has no header channel. The upgrade request's HTTP headers
+reach the handler for every request on the connection,
+so authentication and tenant resolution work exactly as over HTTP,
+but credentials are fixed at connect time, and a per-call header an interceptor adds is not sent. W3C trace
+context cannot be fixed at connect time, because every request needs its own
+parent id, so it is not propagated at all: each call's server span links to
+the trace of the upgrade request instead. If a call must be traced end to end,
+send it over another binding.
 
 ## Choosing a Transport
 
@@ -435,39 +53,13 @@ application installed first.
 
 JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. gRPC uses native server streaming over HTTP/2. The choice is mostly about ecosystem fit — JSON-RPC for agent-to-agent communication, REST for standard HTTP tooling, WebSocket for persistent low-latency connections, gRPC for service mesh and cross-language interop.
 
-## Running Several Transports
+## Running several transports
 
-The server can serve several transports at once, each dispatcher on its own port (or JSON-RPC and REST on one port with `CombinedDispatcher`):
-
-```rust
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::agent_executor;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn main() {
-# let my_executor = MyAgent;
-use a2a_protocol_sdk::server::{JsonRpcDispatcher, RestDispatcher, RequestHandlerBuilder};
-use std::sync::Arc;
-
-let handler = Arc::new(
-    RequestHandlerBuilder::new(my_executor).with_agent_card(card()).build().unwrap()
-);
-
-// JSON-RPC on port 3000
-let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
-
-// REST on port 3001
-let rest = Arc::new(RestDispatcher::new(handler));
-# }
-```
-
-All dispatchers share the same `RequestHandler`, which means they share the same task store, push config store, and executor.
+The server can serve several bindings at once: each dispatcher on its own
+port, or JSON-RPC and REST on one port with `CombinedDispatcher`. All
+dispatchers share the same `RequestHandler`, which means they share the same
+task store, push config store, and executor. The setup is in
+[Serving and combining](../building-agents/dispatchers/serving.md).
 
 ## Next Steps
 

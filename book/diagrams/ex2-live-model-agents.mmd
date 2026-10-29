@@ -1,0 +1,9 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    R[live-model checks<br/>A2A clients] -- "JSON-RPC, HTTP+JSON,<br/>gRPC, WebSocket" --> W
+    R -- "JSON-RPC" --> CO[coordinator]
+    R -- "JSON-RPC" --> AP[approver<br/>quorum of two]
+    CO -- "Delegation::start_budgeted<br/>JSON-RPC" --> W[worker<br/>ToolLoopExecutor<br/>signs its parts]
+    W -- "chat completions" --> M[(model server<br/>OpenAI-compatible)]
+    AP -- "one-line plan" --> M

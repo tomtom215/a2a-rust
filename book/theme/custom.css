@@ -160,8 +160,8 @@ code, kbd, pre, pre code {
    page carries both:
 
      <figure class="diagram">
-     <img class="diagram-light" src="../images/diagrams/NAME.light.svg" alt="…">
-     <img class="diagram-dark" src="../images/diagrams/NAME.dark.svg" alt="">
+     <a href="../images/diagrams/NAME.light.svg"><img class="diagram-light" src="../images/diagrams/NAME.light.svg" alt="…"></a>
+     <a href="../images/diagrams/NAME.dark.svg"><img class="diagram-dark" src="../images/diagrams/NAME.dark.svg" alt=""></a>
      <figcaption>…</figcaption>
      </figure>
 
@@ -188,3 +188,6 @@ figure.diagram figcaption {
 .diagram-dark { display: none; }
 .coal .diagram-light, .navy .diagram-light, .ayu .diagram-light { display: none; }
 .coal .diagram-dark, .navy .diagram-dark, .ayu .diagram-dark { display: inline; }
+/* Each diagram links to its own SVG, so on a phone a tap opens it full size. */
+figure.diagram a { display: inline; }
+figure.diagram a:hover img { outline: 1px solid var(--a2a-amber); outline-offset: 4px; }

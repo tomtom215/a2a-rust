@@ -1,0 +1,17 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as MCP client
+    participant B as bridge
+    participant A as A2A agent
+    B->>A: fetch agent card (startup)
+    C->>B: tools/list
+    B-->>C: one tool per skill
+    C->>B: tools/call, as a task
+    B->>A: SendMessage, return_immediately
+    A-->>B: task, SUBMITTED
+    Note over B,A: GetTask every 250 ms
+    C->>B: tasks/get, at its own interval
+    B-->>C: working + latest status message
+    Note over B,A: the A2A task settles
+    B-->>C: tool result (isError on failure)

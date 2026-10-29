@@ -1,0 +1,16 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as Client
+    participant B as Replica B
+    participant DB as Database
+    participant A as Replica A
+    C->>B: CancelTask
+    B->>DB: Canceled + mark claim
+    B-->>C: Canceled
+    A->>DB: renew claim (1 s)
+    DB-->>A: marked
+    A->>A: fire the token
+    A->>DB: next write
+    DB-->>A: refused
+    A->>A: adopt Canceled

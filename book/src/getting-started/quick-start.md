@@ -33,9 +33,10 @@ omit it with `VERSION_NOT_SUPPORTED`, rather than guessing which spec revision
 you meant.
 
 That is the agent, condensed from `examples/hello-agent/src/main.rs`. The file
-builds its card in a separate `card()` function, and its `main` first starts
+builds its card in a separate `card()` function; its `main` first starts
 OpenTelemetry from the `OTEL_*` environment (it exports nothing unless an OTLP
-endpoint is set). [Hello Agent](../examples/hello-agent.md) walks through it:
+endpoint is set), and serves through `Server::bind` and `serve_with_shutdown`
+rather than `serve`, so that SIGTERM or Ctrl-C lets the telemetry flush. [Hello Agent](../examples/hello-agent.md) walks through it:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::*;
@@ -58,9 +59,12 @@ agent_executor!(HelloAgent, |ctx, queue| async {
 async fn main() -> std::io::Result<()> {
     // What clients discover at /.well-known/agent-card.json. An A2A server
     // must publish one, so build() refuses a handler without it.
-    let card = AgentCard::new("hello", "1.0.0", AgentInterface::jsonrpc("http://127.0.0.1:3000"))
-        .with_description("An example agent")
-        .with_skill(AgentSkill::new("greet", "Greet", "Says hello").with_tags(["greeting"]));
+    let card = AgentCard::new("hello-agent", "0.0.0", AgentInterface::jsonrpc("http://127.0.0.1:3000"))
+        .with_description("Greets whoever sends it a message")
+        .with_skill(
+            AgentSkill::new("hello", "Hello", "Greets whoever sends it a message")
+                .with_tags(["greeting"]),
+        );
     let handler = std::sync::Arc::new(
         RequestHandlerBuilder::new(HelloAgent)
             .with_agent_card(card)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
-"""Every link inside the built book reaches a page, and every #fragment an
-element on it.
+"""Every link inside the built book reaches a page, every #fragment an
+element on it, and every image a file.
 
 mdbook 0.4 does not check links: a page split or a heading renamed leaves
 links to the old place silently dead. This reads the built HTML (run
@@ -40,6 +40,9 @@ class Page(HTMLParser):
                 self.ids.add(values[key])
         if tag == "a" and values.get("href"):
             self.links.append((values["href"], self.getpos()[0]))
+        # A diagram is an <img>; a wrong relative depth renders a blank box.
+        if tag == "img" and values.get("src"):
+            self.links.append((values["src"], self.getpos()[0]))
 
 
 def parse(path: Path) -> Page:
@@ -63,7 +66,7 @@ def main() -> int:
             continue
         for href, line in page.links:
             parts = urlsplit(href)
-            if parts.scheme or parts.netloc or href.startswith(("mailto:", "javascript:")):
+            if parts.scheme or parts.netloc or href.startswith(("mailto:", "javascript:", "data:")):
                 continue
             if not parts.path:
                 target = path

@@ -123,7 +123,7 @@ The map states these limits; plan around them.
   switch them on.
 - [Security](../deployment/security.md#data-at-rest): what encryption at rest
   protects and what it leaves readable.
-- [Task & Config Stores](../building-agents/stores.md#retention-erasure-and-audit):
+- [Task & Config Stores](../building-agents/stores/retention.md):
   the retention and erasure calls on each store.
 - The [GDPR section of the control map](https://github.com/tomtom215/a2a-rust/blob/main/docs/compliance/control-map.md)
   has all 22 rows, with the tests that prove them.

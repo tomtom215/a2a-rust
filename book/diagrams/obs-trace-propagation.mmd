@@ -1,0 +1,13 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+  participant U as Caller
+  participant O as Orchestrator
+  participant W as Worker
+  U->>O: SendMessage<br/>traceparent: T, C1
+  Note over O: S1, child of C1<br/>same trace T
+  O->>W: SendMessage<br/>traceparent: T, C2
+  Note over W: S2, child of C2
+  W-->>O: Task
+  O-->>U: Task
+  Note over U,W: each exports its spans: one trace T<br/>C1 → S1 → … → C2 → S2

@@ -1,0 +1,21 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as Client
+    participant E as Executor
+    participant M as Model
+    participant T as Tools
+    C->>E: stream message
+    E-->>C: WORKING
+    E->>M: prompt + tools
+    M-->>E: call service_status
+    E->>T: service_status(billing)
+    T-->>E: error: no billing
+    E->>M: error as result
+    M-->>E: call list_services
+    E->>T: list_services()
+    T-->>E: three names
+    E->>M: result
+    M-->>E: answer
+    E-->>C: answer, tool-trace
+    E-->>C: COMPLETED

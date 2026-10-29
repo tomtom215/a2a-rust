@@ -60,9 +60,32 @@ an executor writes:
 2. Nothing transitions into `Submitted` or `Unspecified`.
 
 Everything else is allowed, `Submitted → Completed` and `Working → Working`
-included. An event that breaks a rule fails a blocking send with
-`InvalidStateTransition`; on the streaming and `returnImmediately` path the
-task is marked `Failed`:
+included.
+
+<figure class="diagram">
+<a href="../images/diagrams/con-task-states.light.svg"><img class="diagram-light" src="../images/diagrams/con-task-states.light.svg" alt="State diagram: a new task starts in Submitted; from Submitted it may go to Working, to an interrupted state (InputRequired or AuthRequired) or straight to a terminal state; Working may repeat, go to an interrupted state or end; an interrupted task returns to Working on its next turn or ends; the terminal states Completed, Failed, Canceled and Rejected are final."></a>
+<a href="../images/diagrams/con-task-states.dark.svg"><img class="diagram-dark" src="../images/diagrams/con-task-states.dark.svg" alt=""></a>
+<figcaption>The usual paths. Any move is valid except out of a terminal state or into Submitted.</figcaption>
+</figure>
+
+The server checks the rule when it processes an event, against the task as it
+holds it. Which error the client sees depends on the path that processed the
+event:
+
+<figure class="diagram">
+<a href="../images/diagrams/con-transition-check.light.svg"><img class="diagram-light" src="../images/diagrams/con-transition-check.light.svg" alt="Flowchart: the executor writes a status update or task snapshot; if can_transition_to allows the move it is stored; if not, a blocking SendMessage fails with ServerError::InvalidStateTransition, which the client receives as InvalidParams, while on the streaming or returnImmediately path the task is marked Failed."></a>
+<a href="../images/diagrams/con-transition-check.dark.svg"><img class="diagram-dark" src="../images/diagrams/con-transition-check.dark.svg" alt=""></a>
+<figcaption>Where an invalid transition is caught.</figcaption>
+</figure>
+
+- **Blocking `SendMessage`** — the collector returns
+  `ServerError::InvalidStateTransition`, which reaches the client as an
+  `InvalidParams` error naming the task and both states.
+- **Streaming and `returnImmediately`** — the background processor has no
+  caller to fail, so it marks the task `Failed` and stores that.
+
+The same check applies to a task snapshot that changes the state. Checking
+transitions yourself:
 
 ```rust,no_run
 use a2a_protocol_sdk::prelude::TaskState;

@@ -1,0 +1,21 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+  E["Event for a task<br/>every config, concurrently"] --> G
+  subgraph S["bounded by push_delivery_timeout (30 s)"]
+    G["Host allowlist · https_only<br/>resolve DNS (≤ 5 s)<br/>refuse private addresses"]
+    G -->|public address| P["POST attempt (≤ 10 s)"]
+    P -->|"error, timeout,<br/>408, 429, 5xx"| B{{"attempts left?<br/>3 in all, 1 s then 2 s apart"}}
+    B -->|yes| P
+  end
+  subgraph O["outcome"]
+    direction LR
+    D["delivered"]
+    F["failed"]
+    T["timeout_truncated"]
+  end
+  P -->|2xx| D
+  P -->|other status| F
+  G -->|refused| F
+  B -->|no| F
+  S -->|time runs out| T

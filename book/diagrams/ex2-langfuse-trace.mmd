@@ -1,0 +1,8 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    U["main<br/>root span: user request"] -- "SendMessage<br/>+ traceparent" --> O["orchestrator<br/>invoke_agent"]
+    O -- "SendMessage, same contextId<br/>+ traceparent" --> W["worker<br/>invoke_agent"]
+    U -. "spans over OTLP,<br/>Langfuse preset" .-> L[(Langfuse<br/>one trace, one session)]
+    O -.-> L
+    W -.-> L
