@@ -265,6 +265,20 @@ pub struct HandlerLimits {
     /// position), so a write that applied before its answer was lost is not
     /// applied twice. A custom store must keep that true of its own writes.
     /// Zero writes each once.
+    ///
+    /// While one write is retried, the events behind it fill the queue, and
+    /// an executor that emits more than it holds waits for room. That wait
+    /// is this long too (at least five seconds), so the executor is slowed
+    /// to the store's pace rather than failed: until 2026-10-28 it gave up
+    /// after five seconds, the turn failed, and its `Failed` status, meeting
+    /// the same full queue, was dropped, leaving the task `Submitted` or
+    /// `Working` for good.
+    ///
+    /// The longest one write can take is this plus one attempt: the deadline
+    /// is checked before each wait, not inside an attempt, and an attempt
+    /// can itself wait as long as the store lets it (on PostgreSQL, the
+    /// pool's `acquire_timeout`, 30 s by default, when no connection can be
+    /// had; then the statement). With both defaults, about a minute.
     pub store_write_retry: Duration,
 }
 

@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:576 \"### Breaking Changes\""
+    "CHANGELOG.md:588 \"### Breaking Changes\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -893,7 +893,7 @@
    "status": "TESTED",
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:81 RequestHandler::subscribe_reattach_hook",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:272 HandlerLimits::default",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:286 HandlerLimits::default",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1333 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:114 TerminalTracking::cancel_with"
    ],
@@ -2160,7 +2160,7 @@
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:247 card_without_streaming_rejects_streaming",
     "crates/a2a-protocol-server/tests/streaming_contract.rs:99 streaming_methods_are_refused_when_the_card_does_not_declare_streaming",
-    "crates/a2a-protocol-server/src/builder.rs:1801 build_refuses_a_handler_without_an_agent_card"
+    "crates/a2a-protocol-server/src/builder.rs:1807 build_refuses_a_handler_without_an_agent_card"
    ],
    "notes": "Summary of 573-576 below, each TESTED. The checks are skipped only for a handler built with RequestHandlerBuilder::without_agent_card(), an explicit statement that it is not a public A2A server or that its card is published elsewhere; since 2026-10-12 build() refuses a handler with no card otherwise (spec §8.1). Before: every check was skipped whenever no card was configured, which was the default.",
    "auditor": "B",
@@ -2187,7 +2187,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1382 push_ops_rejected_when_card_lacks_capability",
     "crates/a2a-protocol-server/src/handler/push_config.rs:826 every_push_op_without_a_sender_returns_push_not_supported",
     "crates/a2a-protocol-server/src/handler/capability.rs:235 no_sender_rejects_push",
-    "crates/a2a-protocol-server/src/builder.rs:1814 build_refuses_a_card_declaring_push_without_a_sender"
+    "crates/a2a-protocol-server/src/builder.rs:1820 build_refuses_a_card_declaring_push_without_a_sender"
    ],
    "notes": "All four ops refuse when the card does not declare pushNotifications, and when no push sender is wired. build() refuses a card that declares pushNotifications with no sender, so a served card never advertises operations that refuse. Until 2026-10-13 only Create checked the sender and such a card was served.",
    "auditor": "B",
@@ -3461,7 +3461,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/push/sender.rs:161 DEFAULT_PUSH_REQUEST_TIMEOUT",
-    "crates/a2a-protocol-server/src/handler/limits/mod.rs:272 HandlerLimits::default",
+    "crates/a2a-protocol-server/src/handler/limits/mod.rs:286 HandlerLimits::default",
     "crates/a2a-protocol-server/src/handler/event_processing/background/push_delivery/mod.rs:186 deliver_once"
    ],
    "test_evidence": [
@@ -5275,8 +5275,8 @@
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs:253 agent_card_get_returns_card_when_configured",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:260 axum_agent_card_discovery",
-    "crates/a2a-protocol-server/src/builder.rs:1801 build_refuses_a_handler_without_an_agent_card",
-    "crates/a2a-protocol-server/src/builder.rs:1835 without_agent_card_builds_a_handler_with_no_card",
+    "crates/a2a-protocol-server/src/builder.rs:1807 build_refuses_a_handler_without_an_agent_card",
+    "crates/a2a-protocol-server/src/builder.rs:1841 without_agent_card_builds_a_handler_with_no_card",
     "crates/a2a-protocol-server/tests/agent_card_on_every_listener.rs:91 the_websocket_listener_serves_the_card_and_still_upgrades",
     "crates/a2a-protocol-server/tests/agent_card_on_every_listener.rs:127 the_grpc_listener_serves_the_card",
     "crates/a2a-protocol-server/tests/agent_card_on_every_listener.rs:117 the_websocket_listener_has_no_card_to_serve_without_one"
@@ -10490,7 +10490,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-server/src/agent_card/static_handler.rs:124 a_card_that_does_not_validate_is_refused",
@@ -10544,7 +10544,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
@@ -10615,7 +10615,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
@@ -10646,7 +10646,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
@@ -10677,7 +10677,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
@@ -10761,7 +10761,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
@@ -10937,7 +10937,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",
@@ -10968,7 +10968,7 @@
    "test_evidence": [
     "crates/a2a-protocol-types/tests/required_fields.rs:58 a_card_missing_a_required_field_does_not_parse",
     "crates/a2a-protocol-types/tests/required_fields.rs:89 an_empty_required_scheme_field_is_refused_by_validate_security_schemes",
-    "crates/a2a-protocol-server/src/builder.rs:1886 build_refuses_a_card_with_an_empty_required_scheme_field",
+    "crates/a2a-protocol-server/src/builder.rs:1892 build_refuses_a_card_with_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:561 reload_from_json_refuses_an_empty_required_scheme_field",
     "crates/a2a-protocol-server/tests/dynamic_card_validation.rs:46 a_produced_card_with_an_empty_required_scheme_field_is_not_served",
     "crates/a2a-protocol-types/src/proto/convert/required_tests.rs:178 a_card_with_an_absent_required_field_is_refused_on_both_formats",

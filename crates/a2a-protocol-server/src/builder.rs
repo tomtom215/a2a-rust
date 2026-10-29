@@ -1473,7 +1473,13 @@ impl RequestHandlerBuilder {
                         .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
                 );
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
-                mgr
+                // An executor that fills the queue while the consumer retries
+                // a write waits as long as that retry may last, rather than
+                // failing a turn the store was about to take again.
+                mgr.with_write_timeout(
+                    crate::streaming::event_queue::DEFAULT_WRITE_TIMEOUT
+                        .max(self.handler_limits.store_write_retry),
+                )
             },
             interceptors,
             agent_card,

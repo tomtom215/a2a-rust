@@ -158,6 +158,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A turn whose executor emitted more than its queue held during a store
+  outage failed, and its task was left unfinished** (server). While the
+  event consumer retried one write (`store_write_retry`, 30 s), the queue
+  filled, and the executor's next write gave up after a fixed five seconds;
+  the turn failed, and its `Failed` status, meeting the same full queue, was
+  dropped, so the task stayed `Submitted` with part of its output, for good.
+  Reproduced with an in-memory store unavailable for ten seconds and an
+  executor appending 1,100 parts to a queue of capacity 1: the task ended
+  `Submitted` with 1,025 parts. The queue's wait is now at least
+  `store_write_retry`; the same run completes with all 1,100. A blocking
+  send was not affected.
+
 - **A turn's event was lost when one write of it to the task store failed**
   (server): the event consumer logged the failure and went on, and the
   event was in neither the log nor the task. Under a 200 ms

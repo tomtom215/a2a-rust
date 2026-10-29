@@ -168,6 +168,8 @@ struct FlakyLog {
     inner: InMemoryTaskStore,
     fails: std::sync::Mutex<usize>,
     error: fn() -> A2aError,
+    /// Every append before this instant fails too.
+    down_until: Option<tokio::time::Instant>,
 }
 
 type Fut<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<T>> + Send + 'a>>;
@@ -204,7 +206,11 @@ impl TaskStore for FlakyLog {
             let mut left = self.fails.lock().expect("lock");
             let failing = *left > 0;
             *left = left.saturating_sub(1);
+            drop(left);
             failing
+                || self
+                    .down_until
+                    .is_some_and(|t| tokio::time::Instant::now() < t)
         };
         if failing {
             let e = (self.error)();
@@ -229,6 +235,7 @@ async fn logged_after(fails: usize, error: fn() -> A2aError, retry: Duration) ->
         inner: InMemoryTaskStore::new(),
         fails: std::sync::Mutex::new(fails),
         error,
+        down_until: None,
     };
     let task_id = TaskId::new("t-1");
     // The in-memory log keeps events only for a task it holds.
@@ -288,4 +295,137 @@ async fn an_append_the_store_could_not_take_for_a_moment_is_logged() {
         Vec::<u64>::new(),
         "a failure that is not \"not now\" is not retried"
     );
+}
+
+/// Parts the chatty executor appends: more than the persistence channel of a
+/// queue of capacity 1 holds (`max(1 * 16, 1024)`).
+const CHATTY_PARTS: usize = 1_100;
+
+/// Appends [`CHATTY_PARTS`] parts to one artifact as fast as it can, then
+/// completes.
+struct Chatty;
+crate::agent_executor!(Chatty, |ctx, queue| async {
+    let emit = crate::EventEmitter::new(ctx, queue);
+    for i in 0..CHATTY_PARTS {
+        emit.artifact(
+            "a",
+            vec![a2a_protocol_types::message::Part::text(i.to_string())],
+            Some(i > 0),
+            Some(false),
+        )
+        .await?;
+    }
+    emit.status(TaskState::Completed).await
+});
+
+/// While the store cannot take events for a while, a turn's executor that
+/// emits more than the queue holds is slowed to the store's pace, not failed:
+/// the queue's write waits as long as the consumer goes on retrying one write
+/// (`store_write_retry`). Until 2026-10-28 it waited a fixed five seconds, so
+/// an outage of more than that failed every turn that emitted more than the
+/// queue held, though the store came back well within the retry budget.
+#[tokio::test(start_paused = true)]
+async fn an_executor_waits_out_an_outage_the_store_retries_through() {
+    let store = FlakyLog {
+        inner: InMemoryTaskStore::new(),
+        fails: std::sync::Mutex::new(0),
+        error: unavailable,
+        down_until: Some(tokio::time::Instant::now() + Duration::from_secs(10)),
+    };
+    let handler = crate::builder::RequestHandlerBuilder::new(Chatty)
+        .without_agent_card()
+        .with_task_store(store)
+        .with_event_queue_capacity(1)
+        .build()
+        .expect("handler");
+    let message = a2a_protocol_types::message::Message::new(
+        a2a_protocol_types::message::MessageId::new("m-chatty"),
+        a2a_protocol_types::message::MessageRole::User,
+        vec![a2a_protocol_types::message::Part::text("go")],
+    );
+    let Ok(crate::SendMessageResult::Stream(mut reader)) = handler
+        .on_send_message(
+            a2a_protocol_types::params::MessageSendParams::new(message),
+            true,
+            None,
+        )
+        .await
+    else {
+        panic!("expected a stream");
+    };
+    let mut task_id = None;
+    let mut seen = Vec::new();
+    while let Some(event) = crate::streaming::EventQueueReader::read(&mut reader).await {
+        match event {
+            Ok(queued) => {
+                let id = match &queued.event {
+                    StreamResponse::Task(t) => Some(t.id.clone()),
+                    StreamResponse::StatusUpdate(u) => Some(u.task_id.clone()),
+                    StreamResponse::ArtifactUpdate(u) => Some(u.task_id.clone()),
+                    _ => None,
+                };
+                task_id = task_id.or(id);
+            }
+            Err(e) => seen.push(e.to_string()),
+        }
+    }
+    let task_id = task_id.unwrap_or_else(|| panic!("no event named the task; errors: {seen:?}"));
+    let mut task = None;
+    for _ in 0..600 {
+        task = handler.task_store.get(&task_id).await.expect("get");
+        if task.as_ref().is_some_and(|t| t.status.state.is_terminal()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let task = task.expect("the task is stored");
+    assert_eq!(task.status.state, TaskState::Completed, "{:?}", task.status);
+    let parts = task.artifacts.as_ref().map_or(0, |a| a[0].parts.len());
+    assert_eq!(parts, CHATTY_PARTS, "every part is stored");
+}
+
+/// The same outage under a blocking send. Its collector reads the queue
+/// itself, with no persistence channel to fill, so this held before the
+/// queue's wait was tied to the retry too; it is here so it goes on holding.
+#[tokio::test(start_paused = true)]
+async fn a_blocking_send_waits_out_an_outage_the_store_retries_through() {
+    let store = FlakyLog {
+        inner: InMemoryTaskStore::new(),
+        fails: std::sync::Mutex::new(0),
+        error: unavailable,
+        down_until: Some(tokio::time::Instant::now() + Duration::from_secs(10)),
+    };
+    let handler = crate::builder::RequestHandlerBuilder::new(Chatty)
+        .without_agent_card()
+        .with_task_store(store)
+        .with_event_queue_capacity(1)
+        .build()
+        .expect("handler");
+    let message = a2a_protocol_types::message::Message::new(
+        a2a_protocol_types::message::MessageId::new("m-chatty-blocking"),
+        a2a_protocol_types::message::MessageRole::User,
+        vec![a2a_protocol_types::message::Part::text("go")],
+    );
+    let Ok(crate::SendMessageResult::Response(
+        a2a_protocol_types::responses::SendMessageResponse::Task(task),
+    )) = handler
+        .on_send_message(
+            a2a_protocol_types::params::MessageSendParams::new(message),
+            false,
+            None,
+        )
+        .await
+    else {
+        panic!("expected a task");
+    };
+    assert_eq!(task.status.state, TaskState::Completed, "{:?}", task.status);
+    let stored = handler
+        .task_store
+        .get(&task.id)
+        .await
+        .expect("get")
+        .expect("stored");
+    assert_eq!(stored.status.state, TaskState::Completed);
+    let parts = stored.artifacts.as_ref().map_or(0, |a| a[0].parts.len());
+    assert_eq!(parts, CHATTY_PARTS, "every part is stored");
 }
