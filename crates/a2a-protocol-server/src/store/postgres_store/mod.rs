@@ -160,6 +160,10 @@ impl PostgresTaskStore {
                 // Supports the most-recently-updated-first ordering and composite
                 // (updated_at, id) cursor used by list().
                 "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
+                // Read by the fence in every task write (`crate::store::claim`);
+                // the other half of pg migration 8.
+                crate::store::claim::postgres::CREATE_TABLE_SQL,
+                crate::store::claim::postgres::CREATE_OWNER_INDEX_SQL,
             ],
         )
         .await?;

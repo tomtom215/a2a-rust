@@ -31,7 +31,7 @@ impl RequestHandler {
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Task> {
         let start = Instant::now();
-        trace_info!(method = "CancelTask", task_id = ?params.id, "handling cancel task");
+        trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         self.metrics.on_request("CancelTask");
 
         let tenant = self
@@ -166,6 +166,7 @@ impl RequestHandler {
                     }
                     if !runs_here {
                         self.publish_cancel(&task_id).await;
+                        self.request_remote_cancel(&task_id).await;
                     }
                     // Re-read to return the authoritative final state.
                     let final_task = self

@@ -189,6 +189,14 @@ impl TenantAwareSqliteTaskStore {
         .execute(&pool)
         .await?;
 
+        // Read by the fence in every task write (`crate::store::claim`).
+        sqlx::query(crate::store::claim::sqlite::CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await?;
+        sqlx::query(crate::store::claim::sqlite::CREATE_OWNER_INDEX_SQL)
+            .execute(&pool)
+            .await?;
+
         Ok(Self {
             pool,
             max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
@@ -253,6 +261,12 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
     fn database(&self) -> Option<crate::store::StoreDatabase> {
         Some(crate::store::StoreDatabase::sqlite())
+    }
+
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
+        Some(std::sync::Arc::new(
+            crate::store::claim::SqliteTurnClaims::over(self.pool.clone()),
+        ))
     }
 
     fn claim_idempotency_key<'a>(
@@ -346,7 +360,8 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             // `crate::store::terminal`). This store has no delta overrides, so
             // every write path — the trait's default deltas included — comes
             // through here.
-            let written = sqlx::query(crate::store::terminal::sql_write_allowed!(
+            let fence = crate::store::claim::current_fence();
+            let written = sqlx::query(concat!(crate::store::terminal::sql_write_allowed!(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
                  VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, strftime('%Y-%m-%d %H:%M:%f','now')), ?7)
                  ON CONFLICT(tenant_id, id) DO UPDATE SET
@@ -357,8 +372,9 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                      applied_seq = COALESCE(excluded.applied_seq, tenant_tasks.applied_seq)
                  WHERE ",
                 "tenant_tasks.state",
-                "excluded.state"
-            ))
+                "excluded.state",
+                " AND "
+            ), crate::store::claim::fence_sql!("?8")))
             .bind(&tenant)
             .bind(id)
             .bind(context_id)
@@ -366,12 +382,21 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             .bind(&data)
             .bind(&status_ts)
             .bind(crate::store::applied::current_for_sql())
+            .bind(&fence)
             .execute(&self.pool)
             .await
             .map_err(|e| to_a2a_error(&e))?
             .rows_affected();
 
             if written == 0 {
+                // The fence refused it: another process took the claim over.
+                if let Some(token) = &fence
+                    && !crate::store::claim::sqlite::holds(&self.pool, token)
+                        .await
+                        .map_err(|e| to_a2a_error(&e))?
+                {
+                    return Err(crate::store::ClaimLost::new(task.id.clone()).into_error());
+                }
                 // A terminal state is never left once reached, so reading it
                 // back after the refusal reports the state that refused it.
                 let stored: Option<(String,)> = sqlx::query_as(
@@ -632,16 +657,26 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             let payload = encode_text(event)?;
             // `rows_affected()` was discarded here until 0.13; see
             // `event_log_sql::report_no_op_append` for what it hid.
+            let fence = crate::store::claim::current_fence();
             let changed_nothing = sqlx::query(evlog::SQLITE_APPEND)
                 .bind(&tenant)
                 .bind(task_id.0.as_str())
                 .bind(position)
                 .bind(&payload)
+                .bind(&fence)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| to_a2a_error(&e))?
                 .rows_affected()
                 == 0;
+            if changed_nothing
+                && let Some(token) = &fence
+                && !crate::store::claim::sqlite::holds(&self.pool, token)
+                    .await
+                    .map_err(|e| to_a2a_error(&e))?
+            {
+                return Err(crate::store::ClaimLost::new(task_id.clone()).into_error());
+            }
             if changed_nothing {
                 let stored: Option<(String,)> = sqlx::query_as(evlog::SQLITE_SELECT_PAYLOAD)
                     .bind(&tenant)

@@ -140,8 +140,10 @@ async fn a_column_from_pool_already_added_does_not_fail_its_migration() {
         .await
         .expect("from_pool adds the column");
 
+    // v9's table `from_pool` also created, and its `IF NOT EXISTS` lets it
+    // apply over it, which is the same property for the turn claims table.
     let applied = MigrationRunner::new(pool.clone()).run_pending().await;
-    assert_eq!(applied.expect("v8 applies"), [8]);
+    assert_eq!(applied.expect("v8 and v9 apply"), [8, 9]);
     for table in ["tasks", "task_artifact_appends"] {
         let columns: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = 'applied_seq'",

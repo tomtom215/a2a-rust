@@ -23,18 +23,18 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::task::Task;
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::call_context::CallContext;
 use crate::error::ServerResult;
-use crate::streaming::InMemoryQueueReader;
 
 use super::helpers::build_call_context;
 use super::{RequestHandler, SendMessageResult};
 
 mod admission;
 mod basis;
+mod claimed;
+use claimed::{Claimed, Regated};
 mod commit_guard;
 mod continuation;
 mod create;
@@ -47,7 +47,7 @@ mod mode;
 mod quorum;
 mod respond;
 mod start;
-use start::{ExecutorStart, runtime_has_one_worker};
+use start::{Committed, ExecutorStart, Started, runtime_has_one_worker};
 pub(super) mod terminal;
 mod validation;
 pub use validation::FileUrls;
@@ -56,46 +56,6 @@ pub use validation::FileUrls;
 pub use decisions::MAX_TASK_HISTORY_MESSAGES;
 pub use decisions::TASK_HISTORY_LIMIT;
 use mode::SendMode;
-
-/// A task whose executor is running: what `commit_task` hands the response
-/// phase.
-struct Started {
-    /// The task as saved, `Submitted`.
-    task: Task,
-    /// The first reader on the task's event queue.
-    reader: InMemoryQueueReader,
-    /// The background processor's channel, present when one was requested.
-    persistence_rx: Option<crate::streaming::event_queue::PersistenceRx>,
-    /// The executor: spawned for a send answered in the background, deferred
-    /// for a blocking one, whose collecting task runs it.
-    executor: ExecutorStart,
-    /// The executor's cancellation token, so the background processor can
-    /// stop it when the store says another writer already finished the task.
-    cancel: tokio_util::sync::CancellationToken,
-    /// The queue's terminal gate, answered by the background processor.
-    gate: Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
-}
-
-/// What committing a send produced.
-enum Committed {
-    /// A task was created and its executor spawned.
-    ///
-    /// Boxed to match `Replay`: leaving this variant inline makes the enum as
-    /// large as `Started`, which is what carried the send future past
-    /// clippy's `large_futures` threshold in the first place.
-    Started(Box<Started>),
-    /// The send carried an idempotency key already held by this same message.
-    /// The task the original send created, to be returned without executing
-    /// anything.
-    ///
-    /// Boxed so this cold variant does not set the size of every send's
-    /// future: a `Task` inline here pushed all three dispatch futures past
-    /// clippy's `large_futures` threshold.
-    Replay(Box<Task>),
-    /// An approval recorded toward a quorum that is still short (`quorum`):
-    /// the task as saved, still waiting. Nothing runs.
-    Waiting(Box<Task>),
-}
 
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
@@ -309,7 +269,7 @@ impl RequestHandler {
         // A decision is checked against the request pending on the task it
         // continues, before anything is claimed; see `crate::approval`.
         let gated = self.gate_decision(stored_task.as_ref(), &params.message, call_ctx);
-        let approval = match Box::pin(gated).await? {
+        let mut approval = match Box::pin(gated).await? {
             quorum::Gated::Pass(approval) => approval,
             quorum::Gated::Waiting(task) => return Ok(Committed::Waiting(task)),
         };
@@ -330,6 +290,25 @@ impl RequestHandler {
             idempotency::SendKey::Claimed(key) => Some(key),
             idempotency::SendKey::Absent => None,
         };
+        // Across replicas sharing the store, one turn of a task at a time
+        // (`claims`): taken after a replay is answered, so a retried send
+        // whose first attempt still runs replays rather than waits.
+        let message = &params.message;
+        let claimed = self.claimed_view(
+            &task_id,
+            stored_task,
+            message,
+            call_ctx,
+            claimed_key.as_deref(),
+        );
+        let turn = match Box::pin(claimed).await? {
+            Claimed::Turn(turn) => turn,
+            Claimed::Waiting(task) => return Ok(Committed::Waiting(task)),
+        };
+        if let Regated::Yes(regated) = turn.regated {
+            approval = *regated;
+        }
+        let (claim, stored_task) = (turn.claim, turn.stored);
         // Released on drop until the commit returns (N26): see `commit_guard`.
         let mut guard = commit_guard::CommitGuard::new(
             task_id.clone(),
@@ -403,6 +382,10 @@ impl RequestHandler {
             let turn = self
                 .register_cancellation_token(&task_id, ctx.cancellation_token.clone())
                 .await;
+            let claim = claim.map(std::sync::Arc::new);
+            if let Some(claim) = &claim {
+                claim.attach(&ctx.cancellation_token);
+            }
             guard_ref.registered(&turn);
             // A halt that landed after the check above may have walked the
             // tokens before this one was inserted; it has set its flag by
@@ -460,9 +443,21 @@ impl RequestHandler {
             // benchmark, unary sends: one worker, 14.4k -> 19.6k rps for the
             // shared task; two workers, 11.9k (own task) vs 11.4k (shared).
             let executor = if use_background || !runtime_has_one_worker() {
-                ExecutorStart::Spawned(self.spawn_executor(ctx, writer, tenant_slot, turn))
+                ExecutorStart::Spawned(self.spawn_executor(
+                    ctx,
+                    writer,
+                    tenant_slot,
+                    turn,
+                    claim.clone(),
+                ))
             } else {
-                ExecutorStart::Deferred(self.defer_executor(ctx, writer, tenant_slot, turn))
+                ExecutorStart::Deferred(self.defer_executor(
+                    ctx,
+                    writer,
+                    tenant_slot,
+                    turn,
+                    claim.clone(),
+                ))
             };
             Ok(Started {
                 task,
@@ -471,6 +466,7 @@ impl RequestHandler {
                 executor,
                 cancel,
                 gate,
+                claim,
             })
         })
         .await;

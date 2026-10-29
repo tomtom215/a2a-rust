@@ -20,6 +20,7 @@
 //! | 5 | Add `task_events` — the per-task log of what the agent emitted |
 //! | 6 | Add `CHECK (seq > 0)` to `task_events` |
 //! | 7 | Add `applied_seq` to `tasks` — the log position each write stores |
+//! | 8 | Add `a2a_task_claims` — which replica runs each task's current turn |
 //!
 //! This table listed 1 and 2 while five existed. [`BUILTIN_PG_MIGRATIONS`] is
 //! the list; the test below fails if the two stop agreeing on how many there
@@ -128,6 +129,14 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         // order safe. A `NULL` reads as "no position"
         // (`TaskStore::get_with_position`, audit register R69).
         sql: "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS applied_seq BIGINT",
+    },
+    PgMigration {
+        version: 8,
+        description: "Add a2a_task_claims: which replica runs each task's current turn",
+        // Shared with `from_pool`'s inline DDL, as migrations 4 and 5 are:
+        // every task write's fence reads this table, so a store without it
+        // fails every write a turn makes (`crate::store::claim`).
+        sql: super::claim::postgres::MIGRATION_SQL,
     },
 ];
 

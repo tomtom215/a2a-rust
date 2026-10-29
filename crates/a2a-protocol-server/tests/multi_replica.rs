@@ -536,32 +536,22 @@ async fn admit_count(limiter: &RateLimitInterceptor, caller: &str) -> u64 {
 
 // ── What a shared store does not give you ───────────────────────────────────
 
-/// **The single-writer refusal does not cross replicas.**
+/// **The single-writer refusal crosses replicas** (since turn claims,
+/// `store::claim`).
 ///
-/// `reject_in_flight_send` reads `self.cancellation_tokens`, a map held by one
-/// handler, and the send path serialises on `keyed_lock`, a mutex held by one
-/// handler. Neither is in the shared store, so neither is shared. Two replicas
-/// behind a load balancer will both admit a continuation for the same task,
-/// both spawn an executor for it, and both write to the same row.
-///
-/// Within one replica this is the property `fan_in.rs` measures as obstacle 1
-/// and the reason a swarm has to shard by context: concurrent posters to one
-/// task are *turned away*, loudly, rather than racing. Across replicas they
-/// are not turned away at all.
-///
-/// What bounds the damage is the store: the first terminal state either
-/// executor reaches is final: the other's later writes are refused unless
-/// they carry that same state, and the first refusal cancels its executor
-/// (`tests/cross_replica_cancel/` pins that for a cancel;
-/// `horizontal-scaling.md` states both). Until then the two executors'
-/// writes interleave, last writer wins.
-///
-/// This test asserts the current behaviour rather than the desired one. It is
-/// here so the limit is measured instead of inferred, and so that anything
-/// which later makes admission shared fails this test and has to say so.
+/// `reject_in_flight_send` reads a map held by one handler, so before claims
+/// a continuation that reached the other replica was admitted while the
+/// first replica's executor ran, and both wrote to the same row. The
+/// PostgreSQL store now provides turn claims: B's continuation waits for A's
+/// claim, bounded by the drain timeout, and is admitted only once A's turn
+/// has stored its last event, when it reads the task again. Here A's turn
+/// completes within that bound, so B is refused for the reason A's finished
+/// task gives (CORE-SEND-002), never admitted beside it.
+/// `tests/turn_claims/` covers the other outcomes (refused at the bound, a
+/// parked task handed over, a cancel, a dead replica's claim, the fence).
 #[tokio::test]
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
-async fn the_single_writer_refusal_does_not_cross_replicas() {
+async fn the_single_writer_refusal_crosses_replicas() {
     let db = TestDb::create("cross_replica_admission").await;
     // Long enough that the first executor is still running when the second
     // send arrives, which is exactly the window the refusal exists to close.
@@ -620,11 +610,11 @@ async fn the_single_writer_refusal_does_not_cross_replicas() {
          below says nothing"
     );
     assert!(
-        b_first.is_ok(),
-        "measured limit: the other replica admits the same continuation, \
-         because admission state is per-handler and not in the shared store. \
-         If this now fails, admission became shared — good, but this test and \
-         the multi-replica guidance both need rewriting"
+        b_first
+            .as_ref()
+            .is_err_and(|e| format!("{e:?}").contains("terminal state")),
+        "the other replica must not admit a continuation beside A's turn: it \
+         waits for A's claim and then finds the task A completed; got {b_first:?}"
     );
 
     let _ = a.shutdown().await;

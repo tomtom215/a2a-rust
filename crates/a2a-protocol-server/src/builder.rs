@@ -192,10 +192,34 @@ pub struct RequestHandlerBuilder {
     halt_poll_interval: std::time::Duration,
     lease_store: Option<Arc<dyn crate::store::LeaseStore>>,
     max_lease_ttl: std::time::Duration,
+    turn_claims: TurnClaimsChoice,
+    turn_claim_ttl: std::time::Duration,
+    turn_claim_renewal: std::time::Duration,
+    replica_name: Option<String>,
     #[cfg(feature = "audit")]
     audit: Option<Arc<crate::audit::AuditLog>>,
     /// The profiles applied; `build()` checks what each needs.
     profiles: Vec<crate::profile::ProfileKind>,
+}
+
+impl std::fmt::Debug for TurnClaimsChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::FromStore => "FromStore",
+            Self::Given(_) => "Given",
+            Self::Off => "Off",
+        })
+    }
+}
+
+/// Where a handler's turn claims come from.
+enum TurnClaimsChoice {
+    /// The task store's own (`TaskStore::turn_claims`), if it has them.
+    FromStore,
+    /// Given with `with_turn_claims`.
+    Given(Arc<dyn crate::store::TurnClaimStore>),
+    /// None: `without_turn_claims`.
+    Off,
 }
 
 impl RequestHandlerBuilder {
@@ -243,6 +267,10 @@ impl RequestHandlerBuilder {
             halt_poll_interval: crate::handler::DEFAULT_HALT_POLL_INTERVAL,
             lease_store: None,
             max_lease_ttl: crate::handler::DEFAULT_MAX_LEASE_TTL,
+            turn_claims: TurnClaimsChoice::FromStore,
+            turn_claim_ttl: crate::handler::DEFAULT_TURN_CLAIM_TTL,
+            turn_claim_renewal: crate::handler::DEFAULT_TURN_CLAIM_RENEWAL,
+            replica_name: None,
             #[cfg(feature = "audit")]
             audit: None,
             profiles: Vec::new(),
@@ -451,6 +479,66 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {
         self.lease_store = Some(Arc::new(store));
+        self
+    }
+
+    /// Claims each task for the length of a turn in `claims`, in place of the
+    /// task store's own (`TaskStore::turn_claims`): one replica at a time
+    /// runs a task, however many share the store (`crate::store::claim`).
+    ///
+    /// Not needed with the bundled PostgreSQL and SQLite stores, which
+    /// provide their claims; for a custom store several replicas share,
+    /// whose writes must then also be fenced with
+    /// [`current_fence`](crate::store::claim::current_fence).
+    #[must_use]
+    pub fn with_turn_claims(mut self, claims: impl crate::store::TurnClaimStore) -> Self {
+        self.turn_claims = TurnClaimsChoice::Given(Arc::new(claims));
+        self
+    }
+
+    /// Takes no turn claims, even when the task store provides them.
+    ///
+    /// For a store only one replica uses: each send then saves the claim's
+    /// round trips (two statements per turn, and one renewal per second
+    /// while any turn runs). With several replicas sharing the store and no
+    /// claims, every turn of a task must be routed to one replica, or two can
+    /// run the same task at once and one can overwrite what the other wrote.
+    #[must_use]
+    pub fn without_turn_claims(mut self) -> Self {
+        self.turn_claims = TurnClaimsChoice::Off;
+        self
+    }
+
+    /// How long a turn claim lives without renewal, and how often the
+    /// handler renews the claims it holds; defaults
+    /// [`DEFAULT_TURN_CLAIM_TTL`](crate::handler::DEFAULT_TURN_CLAIM_TTL)
+    /// (15 s) and
+    /// [`DEFAULT_TURN_CLAIM_RENEWAL`](crate::handler::DEFAULT_TURN_CLAIM_RENEWAL)
+    /// (1 s).
+    ///
+    /// The time to live bounds how long a task waits after the replica
+    /// running it dies; the renewal interval, how long a cancel given on
+    /// another replica takes to reach the executor. `build` refuses a time to
+    /// live under [`MIN_TURN_CLAIM_TTL`](crate::handler::MIN_TURN_CLAIM_TTL)
+    /// or a renewal interval that is zero or more than a third of it.
+    #[must_use]
+    pub const fn with_turn_claim_timing(
+        mut self,
+        ttl: std::time::Duration,
+        renewal: std::time::Duration,
+    ) -> Self {
+        self.turn_claim_ttl = ttl;
+        self.turn_claim_renewal = renewal;
+        self
+    }
+
+    /// Names this replica in the claims it takes, for an operator reading
+    /// the claims table; default `HOSTNAME` (a Kubernetes pod's name), else
+    /// `replica`. The process id and a random suffix are appended, so two
+    /// processes never share an owner.
+    #[must_use]
+    pub fn with_replica_name(mut self, name: impl Into<String>) -> Self {
+        self.replica_name = Some(name.into());
         self
     }
 
@@ -973,6 +1061,17 @@ impl RequestHandlerBuilder {
                 crate::handler::MIN_LEASE_TTL.as_millis()
             )));
         }
+        if !matches!(self.turn_claims, TurnClaimsChoice::Off)
+            && (self.turn_claim_ttl < crate::handler::MIN_TURN_CLAIM_TTL
+                || self.turn_claim_renewal.is_zero()
+                || self.turn_claim_renewal * 3 > self.turn_claim_ttl)
+        {
+            return Err(crate::error::ServerError::InvalidParams(format!(
+                "a turn claim's time to live must be at least {} ms, and its renewal \
+                 interval more than zero and at most a third of it",
+                crate::handler::MIN_TURN_CLAIM_TTL.as_millis()
+            )));
+        }
         if self.halt_store.is_some() && self.halt_poll_interval.is_zero() {
             return Err(crate::error::ServerError::InvalidParams(
                 "the halt poll interval must be greater than zero".to_owned(),
@@ -1331,6 +1430,21 @@ impl RequestHandlerBuilder {
             ));
         }
 
+        // Read before `task_store` moves into the handler.
+        let turn_claims = match self.turn_claims {
+            TurnClaimsChoice::Off => None,
+            TurnClaimsChoice::Given(store) => Some(store),
+            TurnClaimsChoice::FromStore => task_store.turn_claims(),
+        }
+        .map(|store| {
+            Arc::new(crate::handler::claims::TurnClaims::new(
+                store,
+                self.replica_name,
+                self.turn_claim_ttl,
+                self.turn_claim_renewal,
+            ))
+        });
+
         Ok(RequestHandler {
             executor: self.executor,
             task_store,
@@ -1394,6 +1508,7 @@ impl RequestHandlerBuilder {
                 ))
             }),
             approval_gate: self.approval_gate,
+            turn_claims,
             #[cfg(feature = "audit")]
             audit: self.audit,
         })
@@ -1516,7 +1631,11 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("halt_store", &self.halt_store.is_some())
             .field("halt_poll_interval", &self.halt_poll_interval)
             .field("lease_store", &self.lease_store.is_some())
-            .field("max_lease_ttl", &self.max_lease_ttl);
+            .field("max_lease_ttl", &self.max_lease_ttl)
+            .field("turn_claims", &self.turn_claims)
+            .field("turn_claim_ttl", &self.turn_claim_ttl)
+            .field("turn_claim_renewal", &self.turn_claim_renewal)
+            .field("replica_name", &self.replica_name);
         d.field("profiles", &self.profiles);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some());

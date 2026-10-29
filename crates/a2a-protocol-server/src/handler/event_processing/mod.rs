@@ -26,6 +26,9 @@ pub struct ProcessorLinks {
     /// The queue's mark of how far its events are stored, which the
     /// processor advances.
     pub applied: Option<std::sync::Arc<crate::streaming::event_queue::applied::AppliedMark>>,
+    /// The turn's claim, held until the processor's last write
+    /// (`handler::claims`).
+    pub(crate) claim: Option<std::sync::Arc<crate::handler::claims::TurnClaim>>,
 }
 
 /// Returns `true` if appending `new_parts` more parts to an artifact that

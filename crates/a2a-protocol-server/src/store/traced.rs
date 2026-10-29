@@ -227,6 +227,10 @@ impl TaskStore for TracedTaskStore {
         self.inner.database()
     }
 
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
+        self.inner.turn_claims()
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,

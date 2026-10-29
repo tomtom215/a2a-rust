@@ -672,6 +672,32 @@ jobs:
           cargo test -p a2a-protocol-server --features postgres \
             --test multi_replica -- --ignored --test-threads=1
 
+      # Turn claims across replicas on PostgreSQL (the SQLite cases run in
+      # the matrix above): one turn of a task at a time, a continuation that
+      # keeps what the last turn stored, a cancel reaching the executor on the
+      # other replica, a dead replica's claim taken over, the fence; then the
+      # same over two replica processes, one killed mid-turn; and the two
+      # cross-replica suites that predate claims. Each test makes its own
+      # scratch database. The count is asserted, as below: a filter that
+      # selects nothing exits 0.
+      - name: Test (turn claims across replicas, live database)
+        run: |
+          log=$(mktemp)
+          if ! cargo test -p a2a-protocol-server --features postgres \
+            --test turn_claims --test replica_processes \
+            --test cross_replica_cancel --test stale_write_position \
+            -- --ignored >"$log" 2>&1; then
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"
+          ran=$(awk '/^test result:/ { n += $4 } END { print n + 0 }' "$log")
+          if [ "$ran" -lt 10 ]; then
+            echo "::error::the turn-claim suites ran $ran test(s) against PostgreSQL, fewer than the 10 they hold. A test was renamed or is no longer #[ignore]d."
+            exit 1
+          fi
+          echo "turn claims, live database: $ran test(s) ran"
+
       # EncryptedTaskStore over both PostgreSQL stores: no plaintext part in
       # what they hold, and every part read back. The other stores run in the
       # matrix above; this one needs the live database.

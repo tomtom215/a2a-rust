@@ -121,6 +121,10 @@ pub struct Stores {
     pub c: Arc<dyn TaskStore>,
 }
 
+/// Without turn claims (`store::claim`), which would refuse B's continuation
+/// while A's turn runs and so never reach the race: this pins what a
+/// deployment that opts out of them (`without_turn_claims`) still gets.
+/// `tests/turn_claims/` pins what the claims change.
 fn handler(
     executor: impl a2a_protocol_server::executor::AgentExecutor + 'static,
     store: Arc<dyn TaskStore>,
@@ -128,6 +132,7 @@ fn handler(
     RequestHandlerBuilder::new(executor)
         .without_agent_card()
         .with_task_store_arc(store)
+        .without_turn_claims()
         .build()
         .expect("handler builds")
 }

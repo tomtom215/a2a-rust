@@ -424,6 +424,10 @@ impl SyncCollector {
             Err(ServerError::Protocol(e)) => crate::store::TerminalStateConflict::from_error(e),
             _ => None,
         };
+        if matches!(&folded, Err(ServerError::Protocol(e)) if crate::store::ClaimLost::from_error(e).is_some())
+        {
+            return self.on_claim_lost(task_id, state).await;
+        }
         let Some(conflict) = conflict else {
             return folded;
         };
@@ -439,6 +443,26 @@ impl SyncCollector {
         match self.task_store.get(task_id).await {
             Ok(Some(stored)) if stored.status.state == conflict.stored => state.task = stored,
             _ => state.task.status = TaskStatus::new(conflict.stored),
+        }
+        state.saw_task_shaped_event = true;
+        Ok(())
+    }
+
+    /// Another replica took this turn's claim over (`crate::store::claim`):
+    /// the executor is cancelled, and the blocking caller is answered with the
+    /// task as it is stored, which the other replica now writes. Every later
+    /// write of this collection is refused the same way and ends here again.
+    async fn on_claim_lost(&self, task_id: &TaskId, state: &mut CollectState) -> ServerResult<()> {
+        trace_warn!(
+            task_id = %task_id,
+            "sync collector: another replica took this turn's claim over; \
+             cancelling the local executor and answering with the stored task"
+        );
+        if let Some(cancel) = &state.cancel {
+            cancel.cancel();
+        }
+        if let Ok(Some(stored)) = self.task_store.get(task_id).await {
+            state.task = stored;
         }
         state.saw_task_shaped_event = true;
         Ok(())

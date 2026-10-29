@@ -546,7 +546,8 @@ append, changes no logged event's effect, so it keeps the stored position.
 
 Two cases it does not cover. A write that read the task before another
 replica's write landed and saved over it keeps that write's position while
-losing its effect; that lost update predates the position. And a replica on
+losing its effect; that lost update predates the position, and turn claims
+(below) are what prevent it. And a replica on
 an earlier release does not write the position, so during a rolling upgrade a
 subscriber can receive events its snapshot already holds a second time.
 Duplicates, not losses, and they stop once every replica runs this release.
@@ -561,6 +562,43 @@ between the two reads.
 The SQL stores add the column themselves: migration 8 (`SQLite`) and 7
 (`PostgreSQL`) for `with_migrations`, and `from_pool` for a database an earlier
 version created.
+
+### Turn claims: one replica at a time per task
+
+Several replicas sharing a store must not run one task at once, and a
+replica that stalled must not write over the turn that another replica took
+over meanwhile ([Running More Than One Replica](../deployment/horizontal-scaling.md#one-turn-of-a-task-at-a-time-on-whichever-replica)).
+The handler handles the first with a claim per turn, taken from
+`TaskStore::turn_claims`, and needs the store for the second.
+
+The SQL stores provide both. A custom store that several replicas share
+should:
+
+1. **Override `turn_claims`** to return a `store::TurnClaimStore` over storage
+   every replica shares, and in the same database as its tasks, since the
+   second step reads it. `PostgresTurnClaims::from_pool` and
+   `SqliteTurnClaims::from_pool` are there to reuse when the store already
+   runs on one of those.
+2. **Fence every task write and event-log append.** Read
+   `store::claim::current_fence()` at the start of each write method, before
+   anything is spawned (it is a task-local, like the tenant). When it is
+   `Some(token)`, make the write conditional, in the same atomic step, on that
+   token still holding a claim (the SQL stores add `EXISTS (SELECT 1 FROM
+   a2a_task_claims WHERE token = $n)` to the statement), and when it refuses,
+   return `ClaimLost::new(task_id).into_error()`. A write with no fence (a
+   `CancelTask`, which must win wherever the task runs) is not checked.
+
+A store that takes the default, `None`, gets neither: the handler takes no
+claims and refuses a second send to a running task only within its own
+process. That is right for a store one process uses; with several replicas,
+route every turn of a task to one of them. `with_turn_claims` on the builder
+supplies claims for a store that does not provide them, but the fence is still
+the store's to apply. A wrapper that forwards to another store must forward
+`turn_claims` (`scripts/check_store_delta_forwarding.py` checks the ones in
+this repository).
+
+The SQL stores create the claims table themselves: migration 9 (`SQLite`) and
+8 (`PostgreSQL`) for `with_migrations`, and `from_pool` otherwise.
 
 ## Next Steps
 

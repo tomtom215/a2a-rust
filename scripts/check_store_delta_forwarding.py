@@ -16,6 +16,12 @@ for a gate where one is expressible; this is it.
 For each `impl ... TaskStore for ...` block in the repository's Rust sources,
 an override of `save_artifact_delta` requires one of
 `try_save_artifact_delta`, and likewise for `save_status_delta`.
+
+The same reasoning covers `turn_claims` (`store::claim`): its default, `None`,
+means no cross-replica admission and no fence, so a SQL store several
+replicas share, or a wrapper around one, that does not override it lets two
+replicas run one task at once. A block whose `database` names PostgreSQL or
+SQLite, or forwards an inner store's, must override `turn_claims` too.
 """
 
 import pathlib
@@ -27,6 +33,10 @@ PAIRS = [
     ("save_artifact_delta", "try_save_artifact_delta"),
     ("save_status_delta", "try_save_status_delta"),
 ]
+# A `database` that names a database replicas can share, or forwards one.
+SHARED_DATABASE = re.compile(
+    r"StoreDatabase::(?:postgres|sqlite)\(|\.inner\.database\(\)"
+)
 IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+(?:[\w:]+::)?TaskStore\s+for\s+([\w:<>]+)")
 
 
@@ -63,6 +73,10 @@ def main():
                 has_try = re.search(rf"\bfn\s+{try_write}\s*<", body)
                 if has_write and not has_try:
                     failures.append(f"{rel}:{line}: `{name}` overrides `{write}` but not `{try_write}`")
+            if SHARED_DATABASE.search(body) and not re.search(r"\bfn\s+turn_claims\s*\(", body):
+                failures.append(
+                    f"{rel}:{line}: `{name}` reports a shared database but does not override `turn_claims`"
+                )
     for f in failures:
         print(f"FAIL: {f}")
     print(f"check_store_delta_forwarding: {checked} TaskStore impl(s) checked, {len(failures)} missing")

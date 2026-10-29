@@ -85,7 +85,10 @@ impl RequestHandler {
                         cancel,
                         gate,
                         applied,
+                        claim,
                     } = links;
+                    // Held to this processor's last write (`handler::claims`).
+                    let _claim = claim;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.
                     let _gate_guard = gate.clone().map(CloseOnDrop);

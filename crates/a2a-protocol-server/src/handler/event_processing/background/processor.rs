@@ -108,6 +108,10 @@ impl<'a> Processor<'a> {
                 self.supersede(&conflict, None, false).await;
                 return;
             }
+            if crate::store::ClaimLost::from_error(&e).is_some() {
+                self.lose_claim(None, false).await;
+                return;
+            }
             trace_error!(
                 task_id = %self.task_id,
                 error = %e,
@@ -181,6 +185,7 @@ impl<'a> Processor<'a> {
 
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
+            Outcome::ClaimLost => self.lose_claim(seq, terminal.is_some()).await,
             Outcome::Persisted | Outcome::NotPersisted => {
                 if outcome == Outcome::Persisted && pushes_terminal {
                     self.pushed_terminal = true;
@@ -239,6 +244,35 @@ impl<'a> Processor<'a> {
             .await;
             self.pushed_terminal = true;
         }
+        self.superseded = Some(verdict);
+    }
+
+    /// Another replica took this turn's claim over (`crate::store::claim`):
+    /// it runs the task now. Like [`supersede`](Self::supersede), the
+    /// executor is cancelled and everything it still emits is dropped, and a
+    /// terminal ticket is answered with the task as it is stored; unlike it,
+    /// nothing is recorded or pushed, because the task is not finished and
+    /// what happens to it next is the other replica's to record and push.
+    async fn lose_claim(&mut self, seq: Option<u64>, terminal: bool) {
+        trace_warn!(
+            task_id = %self.task_id,
+            "background processor: another replica took this turn's claim over; \
+             cancelling the local executor and writing nothing more"
+        );
+        self.cancel.cancel();
+        if let Ok(Some(stored)) = self.deps.task_store.get(self.task_id).await {
+            self.last_task = stored;
+        }
+        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: self.task_id.clone(),
+            context_id: self.last_task.context_id.clone(),
+            status: self.last_task.status.clone(),
+            metadata: None,
+        });
+        if terminal {
+            self.answer(seq, verdict.clone());
+        }
+        self.pushed_terminal = true;
         self.superseded = Some(verdict);
     }
 

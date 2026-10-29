@@ -258,6 +258,29 @@ pub trait TaskStore: Send + Sync + 'static {
         None
     }
 
+    /// The turn claims of the database this store writes to, if it is one
+    /// several replicas can share (`crate::store::claim`).
+    ///
+    /// With `Some`, the handler claims each task for the length of a turn,
+    /// so a send to a task another replica is running waits for that turn,
+    /// or is refused, exactly as it would on the replica running it; and
+    /// every write the turn makes must be fenced by the store with
+    /// [`current_fence`](crate::store::claim::current_fence), in the same
+    /// atomic step as the write, refusing it with
+    /// [`ClaimLost`](crate::store::claim::ClaimLost) when the token no longer
+    /// holds a claim.
+    ///
+    /// Defaults to `None`: no claim is taken, and a store several replicas
+    /// share is safe only when every turn of a task is routed to one of them
+    /// (session affinity). The in-memory stores take the default, as nothing
+    /// outside their process can write to them. The bundled SQL stores answer
+    /// `Some`, over their own database.
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::claim::TurnClaimStore>> {
+        None
+    }
+
     /// Atomically claims `key` for `task_id` on behalf of `message_id`.
     ///
     /// Concurrent claims of one key must resolve to exactly one

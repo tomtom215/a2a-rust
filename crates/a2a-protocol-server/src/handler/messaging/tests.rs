@@ -18,7 +18,7 @@ use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use crate::agent_executor;
 use crate::builder::RequestHandlerBuilder;

@@ -21,6 +21,7 @@
 
 pub(crate) mod budget;
 mod capability;
+pub(crate) mod claims;
 mod concurrency;
 mod event_processing;
 pub(crate) mod halt;
@@ -41,6 +42,7 @@ mod tenant_resolution;
 mod undeclared_binding;
 mod unreadable;
 
+pub use claims::{DEFAULT_TURN_CLAIM_RENEWAL, DEFAULT_TURN_CLAIM_TTL, MIN_TURN_CLAIM_TTL};
 pub use halt::{DEFAULT_HALT_POLL_INTERVAL, HaltReport, HaltScope};
 pub use helpers::InboundTracePolicy;
 pub use lease::{DEFAULT_MAX_LEASE_TTL, MIN_LEASE_TTL};
@@ -182,6 +184,9 @@ pub struct RequestHandler {
     pub(crate) leases: Option<lease::Leases>,
     /// Checks approval decisions on continuations; see [`crate::approval`].
     pub(crate) approval_gate: Option<crate::approval::ApprovalGate>,
+    /// The turn claims of a store several replicas share, if any; see
+    /// [`claims`].
+    pub(crate) turn_claims: Option<Arc<claims::TurnClaims>>,
     /// The audit log, when the handler was built with one.
     #[cfg(feature = "audit")]
     pub(crate) audit: Option<Arc<crate::audit::AuditLog>>,

@@ -7,8 +7,11 @@ Two replicas behind a load balancer sharing a database is the first
 architecture most people reach for, and until recently this book said nothing
 about it. Most of what follows is measured by
 `crates/a2a-protocol-server/tests/multi_replica.rs`, which runs two handlers
-over one PostgreSQL instance; the cancel rows by `tests/cross_replica_cancel/`,
-the lost-save row by `tests/stale_write_position/`, the schema lock by
+over one PostgreSQL instance; turn claims by `tests/turn_claims/` (two
+handlers over one SQLite file or one PostgreSQL database) and
+`tests/replica_processes.rs` (separate OS processes, one of them killed
+mid-turn); the cancel rows by `tests/cross_replica_cancel/`, the lost-save row
+by `tests/stale_write_position/`, the schema lock by
 `tests/postgres_store_tests.rs`, and the load figures by
 `tests/soak_multi_replica.rs`. Where something does not work, there is a test
 pinning that too — so if a future release changes it, the test fails rather
@@ -24,26 +27,29 @@ than this page quietly becoming wrong.
 | A subscription terminates when the task finishes elsewhere | **Yes** | The reattach hook polls the store |
 | A subscriber sees intermediate events from another replica | **Yes, up to a poll late** | The reattach hook replays them from the store's event log |
 | Rate limiting enforces the configured limit | **Only with a shared counter** | Otherwise each replica counts alone |
-| A second send to a running task is refused | **No** — each replica admits one | Admission state is per-handler |
+| A second send to a running task is refused | **Yes** | The turn's claim, a row in the shared database (below) |
+| A continuation of a parked task starts from what the last turn stored | **Yes** | It waits for the claim, then reads the task again |
 | A task one replica finished stays finished | **Yes** | The store refuses to move a terminal task |
-| `CancelTask` stops an executor running on another replica | **At its next write; at once with a halt store** | The refused write; with `with_halt_store(PostgresHaltStore)` the cancel is also pushed to the replica running the task (ADR 0024) |
-| A continuation's save keeps what another replica's turn wrote meanwhile | **No** — the stored task loses it; a subscriber still receives the event | No compare-and-set write (`tests/stale_write_position`) |
+| `CancelTask` stops an executor running on another replica | **Within about a second** | The cancel marks the turn's claim; the owner's next renewal (every second) fires the executor's token. With `with_halt_store(PostgresHaltStore)` it is also pushed at once (ADR 0024) |
+| A continuation's save keeps what another replica's turn wrote meanwhile | **Yes** | The claim serialises the turns; without claims it loses it (`tests/stale_write_position`) |
+| A replica that dies mid-turn holds its tasks | **For one claim time to live (15 s)** | Then the next send takes the claim over and continues the task |
+| A replica that stalled past its claim writes over the task's next turn | **No** | Every write of a turn is fenced by its claim's token |
 | A halt (`halt` / `resume`) stops every replica | **Only with a halt store** | `with_halt_store(PostgresHaltStore)` writes and pushes it (ADR 0019, 0024); without one it holds in one process |
 | A delegated child stops when the agent that delegated it goes quiet | **Only with a lease store** | `with_lease_store(PostgresLeaseStore)` keeps the deadline where every replica reads it, so a renewal on any replica counts (ADR 0020) |
 
 The halt and lease rows are covered in [Human oversight](./oversight.md).
 
-Sharing a task store gets you most of the way. What it does not cover is rate
-limiting, who may write to a running task, and a save made on top of another
-replica's turn; only rate limiting has a complete fix. Streaming works across
-replicas through the shared event log, up to a poll late.
+Sharing a task store gets you most of the way, and with the bundled SQL
+stores it gets you all of it except rate limiting, which needs a shared
+counter, and streaming latency, which is up to a poll late across replicas.
 
-**What 0.15 supports.** One replica, or several sharing a store **with every
-turn of a task routed to one replica** (session affinity on the task or
-context ID, below). Without affinity, two replicas can run the same task at
-once and a write can be lost, as the second-send and continuation rows say;
-this release does not prevent it. Closing it needs compare-and-set task writes and single-writer
-admission across replicas, both planned and neither built.
+**What is supported.** One replica, or several sharing a PostgreSQL database
+(or several processes on one host sharing a SQLite file), with **no session
+affinity**: each turn of a task claims it in the database, so two replicas
+never run one task at once (below). Before turn claims (2026-10-28) the
+shared store did not do this, and the guidance was to route every turn of a task to one replica;
+affinity still saves a cross-replica stream its poll, but it is no longer what
+keeps tasks correct.
 
 ## Share the store
 
@@ -238,32 +244,68 @@ with it, in the order most deployments should consider them:
 
 ## Continuations and cancellation
 
-### Two replicas can both run the same task
+### One turn of a task at a time, on whichever replica
 
 Within one replica, a second `SendMessage` naming a task whose executor is
-still running is refused: the handler checks its own map of in-flight
-executors under its own lock. Neither is in the store, so **across replicas
-the refusal does not apply**. A continuation sent to replica B while the
-task's executor runs on replica A is admitted, B spawns a second executor, and
-both write to the same row. `the_single_writer_refusal_does_not_cross_replicas`
-in `tests/multi_replica.rs` pins this: the same continuation is refused by A
-and accepted by B.
+still running is refused, and a continuation of a task parked at
+`input-required` waits for the turn that parked it to store its last events.
+Both decisions read state the replica keeps in memory, so on their own they
+did not cross replicas: before turn claims a continuation that reached replica B
+while the task's turn ran on replica A was admitted, B started a second
+executor, and B's save replaced what A stored after B read the task.
 
-What the store guarantees in that situation is narrower than "no harm":
+**Turn claims** close it. The PostgreSQL and SQLite stores (plain and
+tenant-aware) keep a table, `a2a_task_claims`, in the same database as the
+tasks, and the handler takes a row in it for each turn:
 
-- **The first terminal state wins, and stays.** Every shipped store refuses a
-  write that would move a stored terminal task to a different state, and does
-  so atomically with the write — a condition on the `UPDATE` or upsert for
-  SQLite and PostgreSQL, the write lock for the in-memory stores. The other
-  executor's later writes are refused unless they carry that same state, and
-  the first refusal cancels it, as below.
-- **Everything before that is last-writer-wins.** Two executors emitting
-  artifacts, history or non-terminal statuses for one task interleave their
-  writes, and neither sees the other's.
+1. **A send claims its task** once it knows which task that is, after an
+   idempotent replay has been answered (so a retried send replays rather than
+   waits). The row names this replica (`HOSTNAME`, the process id and a random
+   suffix; `with_replica_name` overrides the first) and a random token for the
+   turn.
+2. **A claim another turn holds is waited for**, for up to
+   `executor_drain_timeout` (5 s by default), the same bound the in-process
+   wait for a parked turn has. If it is still held then, the send is refused
+   exactly as on the replica running the task: `UnsupportedOperation`, "task …
+   is already being processed".
+3. **A continuation reads the task again** once it holds the claim, and starts
+   from that read, so it keeps everything the last turn stored, wherever that
+   turn ran.
+4. **The claim is released when the turn's last write is done**: the
+   executor's future and its event consumer (the background processor, or a
+   blocking send's collector) both hold it, and it is deleted when the last of
+   them ends.
+5. **Every write a turn makes carries its token**, and the store refuses it,
+   in the same statement, unless the token still holds a claim. A replica that
+   stalled for longer than the claim's time to live (a long pause, a partition
+   from the database) and wakes up after another replica took the task over
+   is refused on its first write; its executor is then cancelled and it writes
+   nothing more (`ClaimLost`).
+6. **A replica renews the claims it holds** every second, in one statement,
+   while it holds any. A replica that dies stops renewing; after the time to
+   live (15 s by default) the next send for one of its tasks takes the claim
+   over and continues the task, which is still `Working` in the store. That
+   is the longest a task waits after its replica dies.
 
-If your clients can send to a running task — multi-turn agents do — route by
-task or context ID (session affinity, as for streaming) so every turn of one
-task lands on one replica.
+`with_turn_claim_timing(ttl, renewal)` changes the two durations; `build`
+refuses a time to live under 3 s, or a renewal interval that is not at most a
+third of it. `without_turn_claims()` turns them off, for a store only one
+replica uses: each turn then saves its two statements (the claim and its
+release) and the renewal. A custom store several replicas share provides
+claims by overriding `TaskStore::turn_claims` and fencing its writes with
+`store::claim::current_fence` ([Stores](../building-agents/stores.md)), or is
+given them with `with_turn_claims`.
+
+What a claim does not change: the first terminal state either way is final
+(every shipped store refuses to move a stored terminal task to another state,
+atomically with the write), and a stream on a replica not running the task is
+still fed by polling the event log (above).
+
+Measured: `tests/turn_claims/` runs each case on SQLite and PostgreSQL, and
+`tests/replica_processes.rs` runs two replica processes over each, killing one
+mid-turn with `SIGKILL`: the other took its task over 2.82 s after the kill,
+with a 3 s time to live and a 0.5 s renewal interval (2026-10-28, PostgreSQL
+17.11 and SQLite).
 
 ### Cancelling a task that runs elsewhere
 
@@ -273,14 +315,19 @@ executor runs on replica A:
 1. B finds no executor of its own to signal. It calls its own executor's
    `cancel` (so an override that releases in-process resources releases B's,
    not A's), writes `Canceled`, and answers the client `Canceled`.
-2. A's executor has not heard. The next time it emits anything, A's write is
-   refused by the store, because the task is terminal in another state.
-3. From that refusal A **cancels its executor's cancellation token**, adopts
-   the stored task, and stops writing, pushing and logging the executor's
-   events. A client streaming from A ends on `Canceled`, not on whatever A's
-   executor emitted; a blocking `SendMessage` waiting on A is answered with the
-   `Canceled` task; A delivers `Canceled` to the task's webhooks, which nothing
-   else would, because B has no processor for the task.
+2. B marks A's claim on the task. A's next renewal, within about a second,
+   reads the mark and fires the executor's cancellation token. With a halt
+   store (`with_halt_store(PostgresHaltStore)`) the cancel is also pushed to A
+   at once (ADR 0024).
+3. Whatever A's executor writes after B's `Canceled` is refused by the store,
+   because the task is terminal in another state. From that refusal A
+   **cancels its executor's token** (if the renewal has not already),
+   adopts the stored task, and stops writing, pushing and logging the
+   executor's events. A client streaming from A ends on `Canceled`, not on
+   whatever A's executor emitted; a blocking `SendMessage` waiting on A is
+   answered with the `Canceled` task; A delivers `Canceled` to the task's
+   webhooks, which nothing else would, because B has no processor for the
+   task.
 
 The client B answered is therefore never contradicted: before this was
 enforced, all three stores let A overwrite `Canceled` with `Completed`, and
@@ -288,13 +335,6 @@ enforced, all three stores let A overwrite `Canceled` with `Completed`, and
 
 What this does **not** give you:
 
-- **Prompt cancellation, without a halt store.** A's executor learns at its
-  next write. One that works silently for an hour runs for an hour. With a
-  `HaltStore` (`with_halt_store`; see [Human oversight](./oversight.md)) the
-  replica that took the cancel publishes it and A fires the executor's token at
-  once (ADR 0024). Streams open on A then end when the executor returns,
-  without the `Canceled` frame, and an executor that ignores its token still
-  runs on.
 - **A clean stream on A.** Non-terminal frames A's executor emitted between
   the cancel and its next write still reach a client streaming from A —
   though never the store. The terminal frame is held until the store has
@@ -302,9 +342,6 @@ What this does **not** give you:
 - **An executor that honours the token.** Cancellation is cooperative. An
   executor that ignores `RequestContext::cancellation_token` keeps running on A
   until it returns, with its writes refused.
-
-Session affinity makes all three moot: the cancel then reaches the replica
-running the executor, which signals it directly.
 
 ## Under sustained load
 
@@ -417,7 +454,11 @@ id.
 
 ## What is still unevidenced
 
-The replicas above are two handlers in one OS process, so nothing here can see
-a defect that needs real process isolation. Both runs are loopback on one
-machine: no real network, no failover, no partition. If you are running this at
-scale and have measurements, they would be welcome.
+`tests/replica_processes.rs` runs replicas as separate processes over one
+database, and kills one; everything else here runs two handlers in one
+process. All of it is loopback on one machine: no real network between the
+replicas and the database, no partition, no database failover, and no
+connection pooler. A pooler in transaction mode (PgBouncer) does not change
+the claims, which are single statements; it does stop the halt store's
+`LISTEN`, which then falls back to its poll. If you are running this at scale
+and have measurements, they would be welcome.

@@ -56,11 +56,17 @@ pub(super) enum Outcome {
     /// another state — another writer finished it. Nothing this executor
     /// emits from here on can change the task.
     Refused(TerminalStateConflict),
+    /// The store refused the write because this turn's claim on the task was
+    /// taken over: another replica runs the task now (`crate::store::claim`).
+    /// Nothing this executor emits from here on may reach the task.
+    ClaimLost,
 }
 
 /// The refusal inside `e`, if the store refused rather than failed.
 fn refusal(e: &a2a_protocol_types::error::A2aError) -> Option<Outcome> {
-    TerminalStateConflict::from_error(e).map(Outcome::Refused)
+    TerminalStateConflict::from_error(e)
+        .map(Outcome::Refused)
+        .or_else(|| crate::store::ClaimLost::from_error(e).map(|_| Outcome::ClaimLost))
 }
 
 /// An event moved the task where `can_transition_to` forbids: mark the task

@@ -40,6 +40,12 @@ impl TaskStore for PostgresTaskStore {
         Some(crate::store::StoreDatabase::postgres(&self.pool))
     }
 
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
+        Some(std::sync::Arc::new(
+            crate::store::claim::PostgresTurnClaims::over(self.pool.clone()),
+        ))
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,
@@ -130,8 +136,10 @@ impl TaskStore for PostgresTaskStore {
             // latest committed row version when another transaction has
             // updated the row concurrently, so a racing cancel cannot slip
             // between the check and the write.
-            let written = sqlx::query(sql_write_allowed!(
-                "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
+            let fence = crate::store::claim::current_fence();
+            let written = sqlx::query(concat!(
+                sql_write_allowed!(
+                    "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
                  VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()), $6)
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
@@ -140,8 +148,11 @@ impl TaskStore for PostgresTaskStore {
                      updated_at = EXCLUDED.updated_at,
                      applied_seq = COALESCE(EXCLUDED.applied_seq, tasks.applied_seq)
                  WHERE ",
-                "tasks.state",
-                "EXCLUDED.state"
+                    "tasks.state",
+                    "EXCLUDED.state",
+                    " AND "
+                ),
+                crate::store::claim::fence_sql!("$7::text")
             ))
             .bind(id)
             .bind(context_id)
@@ -149,12 +160,21 @@ impl TaskStore for PostgresTaskStore {
             .bind(&data)
             .bind(&status_ts)
             .bind(crate::store::applied::current_for_sql())
+            .bind(&fence)
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?
             .rows_affected();
 
             if written == 0 {
+                // The fence refused it: another replica took the claim over.
+                if let Some(token) = &fence
+                    && !crate::store::claim::postgres::holds(&self.pool, token)
+                        .await
+                        .map_err(to_a2a_error)?
+                {
+                    return Err(crate::store::ClaimLost::new(task.id.clone()).into_error());
+                }
                 // A separate statement, so a fresh snapshot: the refusing
                 // guard saw the latest row version, which the upsert's own
                 // snapshot may predate.
@@ -289,21 +309,26 @@ impl TaskStore for PostgresTaskStore {
             // Guarded on the state column (see `crate::store::terminal`). Zero
             // rows means absent *or* refused; `save` tells the two apart,
             // inserting the one and reporting the other.
-            let affected = sqlx::query(sql_write_allowed!(
-                "UPDATE tasks
+            let affected = sqlx::query(concat!(
+                sql_write_allowed!(
+                    "UPDATE tasks
                     SET data = jsonb_set(data, ARRAY['status'], $1),
                         state = $2,
                         updated_at = COALESCE(($3)::timestamptz, now()),
                         applied_seq = COALESCE($5, applied_seq)
                   WHERE id = $4 AND ",
-                "state",
-                "$2"
+                    "state",
+                    "$2",
+                    " AND "
+                ),
+                crate::store::claim::fence_sql!("$6::text")
             ))
             .bind(&status)
             .bind(&state)
             .bind(&status_ts)
             .bind(task.id.0.as_str())
             .bind(crate::store::applied::current_for_sql())
+            .bind(crate::store::claim::current_fence())
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?
@@ -539,15 +564,25 @@ impl TaskStore for PostgresTaskStore {
             // number the log from their own in-process queues.
             let position = seq_to_i64(seq)?;
             let payload = encode_json(event)?;
+            let fence = crate::store::claim::current_fence();
             let changed_nothing = sqlx::query(event_log::APPEND_SQL)
                 .bind(task_id.0.as_str())
                 .bind(position)
                 .bind(&payload)
+                .bind(&fence)
                 .execute(&self.pool)
                 .await
                 .map_err(to_a2a_error)?
                 .rows_affected()
                 == 0;
+            if changed_nothing
+                && let Some(token) = &fence
+                && !crate::store::claim::postgres::holds(&self.pool, token)
+                    .await
+                    .map_err(to_a2a_error)?
+            {
+                return Err(crate::store::ClaimLost::new(task_id.clone()).into_error());
+            }
             if changed_nothing {
                 // Only on the collision path. `Value` compares structurally,
                 // so `JSONB` normalization cannot fake a replay.

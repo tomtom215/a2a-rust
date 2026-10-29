@@ -28,6 +28,7 @@
 //! | 6 | Add `idempotency_keys` — the index client-supplied send keys are claimed in |
 //! | 7 | Add `task_events` — the per-task log of what the agent emitted |
 //! | 8 | Add `applied_seq` to `tasks` and `task_artifact_appends` — the log position each write stores |
+//! | 9 | Add `a2a_task_claims` — which process runs each task's current turn |
 //!
 //! This table listed 1 to 3 while seven existed — the failure mode of a list
 //! maintained by hand beside one maintained by the compiler. The test below
@@ -152,6 +153,14 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
         // (`TaskStore::get_with_position`, audit register R69).
         sql: "ALTER TABLE tasks ADD COLUMN applied_seq INTEGER;
 ALTER TABLE task_artifact_appends ADD COLUMN applied_seq INTEGER;",
+    },
+    Migration {
+        version: 9,
+        description: "Add a2a_task_claims: which process runs each task's current turn",
+        // Shared with `from_pool`'s inline DDL: every task write's fence reads
+        // this table, so a store without it fails every write a turn makes
+        // (`crate::store::claim`).
+        sql: super::claim::sqlite::MIGRATION_SQL,
     },
 ];
 
