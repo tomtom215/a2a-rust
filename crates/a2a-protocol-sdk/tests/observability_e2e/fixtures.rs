@@ -39,11 +39,16 @@ agent_executor!(Recorder, |ctx, queue| async {
 });
 
 /// An in-memory store that refuses to persist any non-initial state of a task
-/// in the context `persist-fail`, so the persistence-error path runs, and
+/// in the context `persist-fail`, so the persistence-error path runs; answers
+/// "not now" to the first such save in the context `persist-retry`, so the
+/// turn writes it again and `a2a.server.store_retries` records; and
 /// fails every read of the task [`STORE_DOWN`], so a call fails on the
 /// server's side. It names a database, as a SQL store does, so its
 /// operations are spanned and measured in `db.client.operation.duration`.
 pub struct FailingStore(pub InMemoryTaskStore);
+
+/// Set once the `persist-retry` save has been refused.
+static RETRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The task id whose every read fails.
 pub const STORE_DOWN: &str = "store-down";
@@ -54,6 +59,12 @@ impl TaskStore for FailingStore {
     fn save<'a>(&'a self, task: &'a Task) -> Fut<'a, ()> {
         if task.context_id.0 == "persist-fail" && task.status.state != TaskState::Submitted {
             return Box::pin(async { Err(A2aError::internal("injected persistence failure")) });
+        }
+        if task.context_id.0 == "persist-retry"
+            && task.status.state != TaskState::Submitted
+            && !RETRIED.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Box::pin(async { Err(A2aError::unavailable("injected lost connection")) });
         }
         self.0.save(task)
     }

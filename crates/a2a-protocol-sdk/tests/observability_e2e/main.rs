@@ -199,8 +199,9 @@ async fn one_server_three_bindings_what_an_operator_sees() {
             .await
             .unwrap_or_else(|e| panic!("{} send: {e}", call.binding));
     }
-    // An error, a stream that persists nothing, and a push delivery: the
-    // failure and delivery instruments record only when those happen.
+    // An error, a stream that persists nothing, one whose write the store
+    // refuses once for now, and a push delivery: the failure, retry and
+    // delivery instruments record only when those happen.
     let jsonrpc_client = &clients["JSONRPC"];
     let _ = jsonrpc_client
         .get_task(TaskQueryParams {
@@ -210,16 +211,18 @@ async fn one_server_three_bindings_what_an_operator_sees() {
         })
         .await
         .expect_err("an unknown task is an error");
-    let mut stream = jsonrpc_client
-        .stream_message(message("persist-fail", Some("persist-fail")))
-        .await
-        .expect("stream");
-    while tokio::time::timeout(Duration::from_secs(10), stream.next())
-        .await
-        .ok()
-        .flatten()
-        .is_some()
-    {}
+    for context in ["persist-fail", "persist-retry"] {
+        let mut stream = jsonrpc_client
+            .stream_message(message(context, Some(context)))
+            .await
+            .expect("stream");
+        while tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+        {}
+    }
     push::deliver(jsonrpc_client).await;
     executor_errors::run().await;
     grpc_status::run(&clients["GRPC"]).await;

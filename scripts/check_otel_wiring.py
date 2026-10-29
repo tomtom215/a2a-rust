@@ -87,6 +87,11 @@ MAIN_EXEMPT: dict[str, str] = {
     "benches/sdk-comparison/harness/loadgen/src/main.rs": (
         "a load generator; an exporter would add to what it measures"
     ),
+    "scripts/live/replica/src/main.rs": (
+        "the live scripts' measured replica, built against v0.15.0 too, which "
+        "predates this wiring; an exporter would add to the round trips and "
+        "latencies it measures"
+    ),
 }
 
 # A manifest whose `default-features = false` dependency does not ask for
