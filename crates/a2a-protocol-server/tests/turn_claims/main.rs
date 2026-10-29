@@ -346,10 +346,26 @@ pub async fn a_dead_replicas_claim_is_taken_over_once_it_expires(db: &impl Db) {
 /// stall past the time to live; simulated by deleting its claim and taking
 /// the task) writes nothing more, and its executor is cancelled, even an
 /// executor that ignores its token.
+///
+/// A renews every 30 s here, so within the test's few seconds no renewal can
+/// learn of the takeover: the refused write alone must stop the executor.
+/// At the default second's renewal the renewer did it too, and the
+/// processor's own handling of a refused write went untested (a mutant that
+/// made it do nothing survived, 2026-10-29).
 pub async fn a_replica_whose_claim_was_taken_over_writes_nothing_more(db: &impl Db) {
     let probe: Arc<Probe> = Arc::default();
     let store = db.store().await;
-    let a = replica(db.store().await, &probe, Duration::from_secs(5));
+    let a = RequestHandlerBuilder::new(Exec {
+        probe: Arc::clone(&probe),
+    })
+    .without_agent_card()
+    .with_task_store_arc(db.store().await)
+    .with_handler_limits(
+        HandlerLimits::default().with_executor_drain_timeout(Duration::from_secs(5)),
+    )
+    .with_turn_claim_timing(Duration::from_secs(90), Duration::from_secs(30))
+    .build()
+    .expect("handler builds");
 
     let task = send(&a, params("stream", None, true))
         .await
