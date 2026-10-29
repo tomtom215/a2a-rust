@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# osv-scanner reads this file for the Cargo.lock in this directory (`osv.yml`).
+# Each entry carries its evidence and a date on which it stops applying and
+# must be re-examined. The same entry is in the repository root's
+# osv-scanner.toml, which says more.
+
+# GHSA-qwgh-2vcv-g2f7 (block-buffer, "panic corrupts inline buffer
+# position"; OSV range: every version before 0.12.1). Locked here is 0.10.4,
+# through digest 0.10 and sha2 0.10, with no 0.10.x release carrying a fix.
+# The advisory's mechanism is absent from 0.10.4: the cursor the advisory
+# corrupts is stored inside the block in the 0.11 and 0.12 releases, but in
+# 0.10.4 it is a separate `pos: u8` field (src/lib.rs:62), written only after
+# the callback returns and never handed to it, and 0.10 has no `ReadBuffer`.
+# Checked 2026-10-29 under Miri (nightly 2026-10-28): the advisory's PoC
+# ported to 0.10.4 runs clean and the position stays 2; the same PoC on
+# 0.11.0 trips the crate's own invariant check in `get_pos`.
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+ignoreUntil = 2027-01-29
+reason = "block-buffer 0.10.4 (via digest/sha2 0.10, no fixed 0.10.x) keeps its cursor in a separate field, not in the block the advisory corrupts; the advisory's PoC runs clean under Miri on 0.10.4 (2026-10-29). Remove when the lock moves to digest 0.11 / block-buffer >= 0.12.1."

@@ -306,6 +306,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Internal
 
+- OSV GHSA-qwgh-2vcv-g2f7 (`block-buffer` < 0.12.1, a caught panic leaves
+  the cursor stored in the block invalid) is waived until 2027-01-29 in the
+  `osv-scanner.toml` beside the four lockfiles that lock 0.10.4 (root,
+  binding, `fuzz/`, `benches/sdk-comparison/harness/agent-a2a-rust/`). No
+  0.10.x release has a fix, and 0.10.4 keeps its cursor in a separate field
+  the callback never sees. The advisory's PoC ported to 0.10.4 runs clean
+  under Miri; on 0.11.0 it trips the crate's invariant check. osv-scanner
+  2.7.0 with `osv.yml`'s lockfile arguments: four findings before, "No
+  issues found" after.
 - `scripts/check_pg_retry.py`, a CI step: every statement on a PostgreSQL
   task store's pool runs inside `pg_retry::retry` or `checked`, since those
   pools no longer ping before each statement; a PostgreSQL module on a pool

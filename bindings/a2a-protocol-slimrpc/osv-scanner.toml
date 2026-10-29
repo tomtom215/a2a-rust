@@ -4,7 +4,8 @@
 # osv-scanner's view of this binding's Cargo.lock. Mirrors the ignores in
 # this directory's deny.toml, whose notes give the full dependency chains.
 #
-# No active waivers. Six entries were removed on 2026-10-15, with the
+# One active waiver, GHSA-qwgh-2vcv-g2f7 below (no deny.toml counterpart:
+# RustSec has no entry for it). Six entries were removed on 2026-10-15, with the
 # binding's move to agntcy-slim-rpc 3.4.1 (audit register R13); deny.toml's
 # `[advisories]` note records why each could go:
 #
@@ -16,3 +17,18 @@
 # Measured the same day with osv-scanner 2.6.0 and an empty config: the new
 # lock's 534 packages, "No issues found"; the previous lock, the same five
 # advisories these entries waived.
+
+# GHSA-qwgh-2vcv-g2f7 (block-buffer, "panic corrupts inline buffer
+# position"; OSV range: every version before 0.12.1). Locked here is 0.10.4,
+# through digest 0.10 and sha2 0.10, with no 0.10.x release carrying a fix.
+# The advisory's mechanism is absent from 0.10.4: the cursor the advisory
+# corrupts is stored inside the block in the 0.11 and 0.12 releases, but in
+# 0.10.4 it is a separate `pos: u8` field (src/lib.rs:62), written only after
+# the callback returns and never handed to it, and 0.10 has no `ReadBuffer`.
+# Checked 2026-10-29 under Miri (nightly 2026-10-28): the advisory's PoC
+# ported to 0.10.4 runs clean and the position stays 2; the same PoC on
+# 0.11.0 trips the crate's own invariant check in `get_pos`.
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+ignoreUntil = 2027-01-29
+reason = "block-buffer 0.10.4 (via digest/sha2 0.10, no fixed 0.10.x) keeps its cursor in a separate field, not in the block the advisory corrupts; the advisory's PoC runs clean under Miri on 0.10.4 (2026-10-29). Remove when the lock moves to digest 0.11 / block-buffer >= 0.12.1."

@@ -29,9 +29,10 @@ only: when something here is done, delete it rather than annotating it.
     every job passed except three, none a defect of the branch: "Sign-off and
     authorship" (the commits are the assistant's; the maintainer re-authors
     and signs off), "Rust lockfiles" (OSV GHSA-qwgh-2vcv-g2f7 on
-    `block-buffer` 0.10.4, red on `main` too, with no fixed release reachable
-    through `sha2` 0.10; a waiver is the maintainer's call, comment on the
-    PR), and "Mutation Testing (incremental)", which wants the
+    `block-buffer` 0.10.4, red on `main` too; now waived beside the four
+    lockfiles that carry it, because 0.10.4 does not have the advisory's
+    inline cursor, checked under Miri: `osv-scanner.toml`; remove the
+    waivers when the lock reaches `block-buffer` 0.12.1), and "Mutation Testing (incremental)", which wants the
     `mutation-test` label. Run `scripts/preflight.sh` (CONTRIBUTING) before
     each push; three CI failures in this round were gates it runs.
   - **The review's follow-ups (2026-10-29)**, each in `CHANGELOG.md` or a
