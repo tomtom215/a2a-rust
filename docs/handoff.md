@@ -624,7 +624,7 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   store write of the failure, are the candidates; neither is built. The
   live scripts behind these figures (round trips, outages, partitions, the
   upgrade, the soak matrix) are in `scripts/live/`, with a README saying what
-  each needs; `tests/transient_store_errors.rs` holds the CI-sized outage
+  each needs; `tests/transient_store_errors` holds the CI-sized outage
   cases.
   `.config/nextest.toml`'s default profile (the mutation gate's) kills at
   45 s, and four tests now take 30 to 31 s by design; its rationale still

@@ -200,7 +200,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   three artifact parts from the task and four positions from the log (3
   live runs of 3); now each write is made again while the store says "not
   now", for up to `store_write_retry`, and none is lost (3 of 3).
-  `tests/transient_store_errors.rs` holds the row the same way, and ends
+  `tests/transient_store_errors` holds the row the same way, and ends
   every backend mid-turn.
 - **A send made 45 round trips to PostgreSQL**, counting its read back, and
   on a slow link those dominated. A new task's send and read now make 8

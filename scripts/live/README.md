@@ -8,7 +8,7 @@ round trips per send, store outages mid-turn, network partitions between
 replicas, the rolling upgrade from 0.15 and the soak matrix. None runs in CI:
 each starts real replica processes against a real database and takes seconds
 to minutes. The CI-sized versions of the outage cases are
-`crates/a2a-protocol-server/tests/transient_store_errors.rs`.
+`crates/a2a-protocol-server/tests/transient_store_errors`.
 
 ## What they need
 
