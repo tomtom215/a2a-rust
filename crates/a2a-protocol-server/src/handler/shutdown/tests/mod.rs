@@ -343,3 +343,43 @@ async fn shutdown_with_timeout_force_destroys_on_timeout() {
         "all queues should be destroyed after shutdown timeout"
     );
 }
+
+/// A cleanup hook that takes a second.
+struct SlowCleanupExecutor;
+
+impl AgentExecutor for SlowCleanupExecutor {
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(tokio::time::sleep(Duration::from_secs(1)))
+    }
+}
+
+/// `shutdown()` gives the cleanup hook its fixed budget from now: a hook
+/// that takes a second, well inside it, finishes. An instant hook would
+/// finish even with no budget left (the timeout polls it once), so only a
+/// hook that waits shows the budget is really there.
+#[tokio::test(start_paused = true)]
+async fn shutdown_gives_a_slow_cleanup_its_budget() {
+    let handler = RequestHandlerBuilder::new(SlowCleanupExecutor)
+        .without_agent_card()
+        .build()
+        .expect("builder should succeed");
+    let start = tokio::time::Instant::now();
+    let report = handler.shutdown().await;
+    assert!(
+        report.executor_cleanup_completed,
+        "a 1 s cleanup fits the budget"
+    );
+    assert!(
+        start.elapsed() >= Duration::from_secs(1),
+        "{:?}",
+        start.elapsed()
+    );
+}
