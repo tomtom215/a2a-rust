@@ -106,15 +106,10 @@ fn millis(ttl: Duration) -> i64 {
 /// Says, at most once a minute, that a replica of an earlier release is
 /// running a task: the sign that a rolling upgrade is still under way.
 fn legacy_turn_seen(_task_id: &str) {
-    static LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
-    let mut last = LAST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if last.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60)) {
+    static LOGGED: crate::trace::Throttle = crate::trace::Throttle::every(60);
+    if !LOGGED.allow() {
         return;
     }
-    *last = Some(std::time::Instant::now());
-    drop(last);
     trace_info!(
         task_id = %_task_id,
         "a replica of an earlier release is running this task; this replica waits for its \
