@@ -156,6 +156,8 @@ impl<M: CompletionModel + Clone> RigAgent<M> {
                 .preamble(self.preamble.clone())
                 .messages(history.clone())
                 .tools(catalogue.clone())
+                .max_tokens(max_tokens())
+                .additional_params_opt(additional_params())
                 .send()
                 .await?;
 
@@ -225,4 +227,24 @@ fn text_of(choice: &[AssistantContent]) -> String {
             _ => None,
         })
         .collect()
+}
+
+/// Bounds every model turn. A reasoning model left to think without a limit
+/// on a CPU spends minutes on one turn, past any caller's timeout, and keeps
+/// the model busy after the caller has gone. `RIG_MAX_TOKENS` sets the
+/// cap (default 1024).
+fn max_tokens() -> u64 {
+    std::env::var("RIG_MAX_TOKENS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024)
+}
+
+/// Unless `RIG_THINKING=1`, asks the server not to reason before
+/// answering (`chat_template_kwargs`, which llama.cpp's `llama-server` and
+/// vLLM read; a hosted provider may refuse it, so set `RIG_THINKING=1`
+/// there).
+fn additional_params() -> Option<serde_json::Value> {
+    (std::env::var("RIG_THINKING").as_deref() != Ok("1"))
+        .then(|| serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}))
 }

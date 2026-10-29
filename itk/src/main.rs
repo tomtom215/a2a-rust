@@ -611,5 +611,6 @@ async fn main() {
         .expect("bind grpc port");
 
     println!("itk-current-agent: http={http_addr} grpc={grpc_addr}");
-    std::future::pending::<()>().await;
+    // Until SIGTERM or Ctrl+C, so `_telemetry` is dropped, and flushed.
+    a2a_protocol_server::shutdown_signal().await;
 }

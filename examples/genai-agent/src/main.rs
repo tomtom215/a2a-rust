@@ -143,7 +143,11 @@ impl AgentExecutor for GenaiAgentExecutor {
             }
 
             let owned;
-            let response_text = match self.client.exec_chat(&self.model, chat_req, None).await {
+            let response_text = match self
+                .client
+                .exec_chat(&self.model, chat_req, Some(&local_model::chat_options()))
+                .await
+            {
                 Ok(response) => match response.first_text() {
                     Some(t) => {
                         owned = t.to_owned();

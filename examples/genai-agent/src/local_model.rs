@@ -39,3 +39,22 @@ pub fn client() -> genai::Result<Client> {
         .with_service_target_resolver(resolver)
         .build()
 }
+
+/// Every model call's options: a cap on its output (`GENAI_MAX_TOKENS`,
+/// default 1024) and, unless `GENAI_THINKING=1`, a request that the server
+/// answer without reasoning first (`chat_template_kwargs`, which llama.cpp's
+/// `llama-server` and vLLM read; set `GENAI_THINKING=1` for a hosted
+/// provider that refuses it). A reasoning model left unbounded on a CPU
+/// spends minutes on one call, past any caller's timeout, and keeps the model
+/// busy after the caller has gone.
+pub fn chat_options() -> genai::chat::ChatOptions {
+    let max_tokens = std::env::var("GENAI_MAX_TOKENS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024);
+    let options = genai::chat::ChatOptions::default().with_max_tokens(max_tokens);
+    if std::env::var("GENAI_THINKING").as_deref() == Ok("1") {
+        return options;
+    }
+    options.with_extra_body(serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}))
+}
