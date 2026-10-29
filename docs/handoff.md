@@ -598,7 +598,9 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   (CHANGELOG *Fixed*): 8 and 11 statements, the ping sqlx makes as each
   connection returns to the pool, and a ping before a connection idle a
   second or more (`store::pg_retry`, whose module docs say why each kind of
-  statement may run twice). `scripts/check_pg_retry.py` (a CI step) fails
+  statement may run twice). `tests/statement_count.rs` (CI, through
+  `run_postgres_suites.py`) fails when the 8 or the 11 changes, counting
+  round trips that run a statement on the wire. `scripts/check_pg_retry.py` (a CI step) fails
   on a statement on those pools outside `pg_retry::retry` or `checked`, and
   checks every PostgreSQL module by default: one that runs on a pool of its
   own with sqlx's ping is listed in its `EXCLUDED` with the reason. It reads
