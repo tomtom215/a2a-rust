@@ -43,7 +43,7 @@ pub const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_events (
 /// Fenced by the turn's claim token, `?4` (`crate::store::claim`).
 pub(super) const APPEND_SQL: &str = concat!(
     "INSERT INTO task_events (task_id, seq, payload) SELECT ?1, ?2, ?3 WHERE ",
-    crate::store::claim::fence_sql!("?4"),
+    crate::store::claim::fence_sql!("?4", "?1"),
     " ON CONFLICT(task_id, seq) DO NOTHING"
 );
 

@@ -141,7 +141,8 @@ jobs:
     # cargo-mutants never reads that file (it looks for `.cargo/mutants.toml`),
     # so there is no cap and the per-mutant budget is the tool's default 5x
     # baseline. What actually bounds a shard is `.config/nextest.toml`, which
-    # nextest does read and which kills any single *test* at 45s. That is a
+    # nextest does read and which kills any single *test* at 60s (45s until
+    # 2026-10-29). That is a
     # tighter bound than `cap_timeout` ever described, and it names the test.
     #
     # Note what the table shows: runtime tracks *unviable* mutants more than
@@ -637,7 +638,8 @@ jobs:
           #
           # `--test-tool=nextest` means `.config/nextest.toml` applies, and it
           # is load-bearing here rather than incidental: it kills any single
-          # test that runs past 45s. Without that, a mutant that makes a test
+          # test that runs past 60s (45s until 2026-10-29). Without that, a
+          # mutant that makes a test
           # *hang* rather than fail wedges the whole run until cargo-mutants'
           # own timeout and is reported TIMEOUT, which this workflow's score
           # counts in neither the numerator nor the denominator. See that file

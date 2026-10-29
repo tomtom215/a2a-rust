@@ -85,8 +85,9 @@
 # before trusting a green run.
 #
 # The hazard `cap_timeout` was written for — a hung mutant burning the whole
-# job timeout — is now handled a layer down and better, by the 45s per-test
-# kill in `.config/nextest.toml`: it bounds the hang *and* names the test.
+# job timeout — is now handled a layer down and better, by the per-test kill
+# in `.config/nextest.toml` (60s; 45s until 2026-10-29): it bounds the hang
+# *and* names the test.
 
 # ── Timeout ──────────────────────────────────────────────────────────────────
 # Not in effect. See the banner above.

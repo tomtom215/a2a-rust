@@ -64,7 +64,7 @@ pub(super) const PG_CREATE_TABLE: &str = "CREATE TABLE IF NOT EXISTS tenant_task
 /// Fenced by the turn's claim token, `?5` (`crate::store::claim`).
 pub(super) const SQLITE_APPEND: &str = concat!(
     "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT ?1, ?2, ?3, ?4 WHERE ",
-    crate::store::claim::fence_sql!("?5"),
+    crate::store::claim::fence_sql!("?5", "?2"),
     " ON CONFLICT(tenant_id, task_id, seq) DO NOTHING"
 );
 
@@ -72,7 +72,7 @@ pub(super) const SQLITE_APPEND: &str = concat!(
 /// Fenced by the turn's claim token, `$5` (`crate::store::claim`).
 pub(super) const PG_APPEND: &str = concat!(
     "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT $1, $2, $3, $4 WHERE ",
-    crate::store::claim::fence_sql!(postgres "$5::text"),
+    crate::store::claim::fence_sql!(postgres "$5::text", "$2"),
     " ON CONFLICT (tenant_id, task_id, seq) DO NOTHING"
 );
 

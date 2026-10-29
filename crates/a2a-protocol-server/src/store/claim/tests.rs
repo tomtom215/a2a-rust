@@ -131,13 +131,96 @@ fn a_claim_lost_error_round_trips_and_is_not_a_terminal_conflict() {
 #[test]
 fn the_fence_condition_names_its_placeholder_twice() {
     assert_eq!(
-        fence_sql!("?4"),
-        "(?4 IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ?4))"
+        fence_sql!("?4", "?1"),
+        "(?4 IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ?4 \
+         AND c.task_id = ?1))"
     );
     #[cfg(feature = "postgres")]
     assert_eq!(
-        fence_sql!(postgres "$4::text"),
+        fence_sql!(postgres "$4::text", "$1"),
         "(set_config('a2a.claims', 'on', true) = 'on' AND ($4::text IS NULL OR \
-         EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = $4::text FOR KEY SHARE)))"
+         EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = $4::text \
+         AND c.task_id = $1 FOR KEY SHARE)))"
     );
+}
+
+/// Under the claim token of task A, a write to task A lands and a write to
+/// task B is refused as a lost claim: the fence is the claim on the task
+/// written, not any claim. Before 2026-10-29 a token holding a claim on any
+/// task let the write through.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+async fn a_token_fences_only_its_own_task(store: &dyn crate::store::TaskStore) {
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+
+    use crate::store::tenant::TenantContext;
+
+    let run = uuid::Uuid::new_v4().to_string();
+    let (a, b, token) = (
+        format!("fenced-a-{run}"),
+        format!("fenced-b-{run}"),
+        format!("tok-{run}"),
+    );
+    let task = |id: &str| Task {
+        id: TaskId::new(id),
+        context_id: ContextId::new("fenced"),
+        status: TaskStatus::new(TaskState::Working),
+        history: None,
+        artifacts: None,
+        metadata: None,
+    };
+    // B exists before the turn, so its append is refused by the fence and
+    // not by a missing row.
+    store.save(&task(&b)).await.expect("B, outside any turn");
+    let claims = store.turn_claims().expect("a SQL store has claims");
+    assert!(claims.claim("", &a, "me", &token, TTL).await.unwrap());
+
+    TenantContext::scope_request("", async {
+        assert!(TenantContext::set_fence(&token));
+        store
+            .save(&task(&a))
+            .await
+            .expect("the claimed task is written");
+        let err = store
+            .save(&task(&b))
+            .await
+            .expect_err("another task is not written under A's claim");
+        assert!(ClaimLost::from_error(&err).is_some(), "{err}");
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new(&b),
+            context_id: ContextId::new("fenced"),
+            status: TaskStatus::new(TaskState::Working),
+            metadata: None,
+        });
+        let _ = store.append_event(&TaskId::new(&b), 1, &event).await;
+        assert_eq!(
+            store
+                .read_events(&TaskId::new(&b), 0, 10)
+                .await
+                .unwrap()
+                .len(),
+            0,
+            "another task's log is not appended to under A's claim"
+        );
+    })
+    .await;
+    claims.release(&token).await.unwrap();
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_fences_a_token_to_its_own_task() {
+    let store = crate::store::SqliteTaskStore::new("sqlite::memory:")
+        .await
+        .unwrap();
+    a_token_fences_only_its_own_task(&store).await;
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore = "needs PostgreSQL at A2A_TEST_POSTGRES_URL"]
+async fn postgres_fences_a_token_to_its_own_task() {
+    let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+    let store = crate::store::PostgresTaskStore::new(&url).await.unwrap();
+    a_token_fences_only_its_own_task(&store).await;
 }

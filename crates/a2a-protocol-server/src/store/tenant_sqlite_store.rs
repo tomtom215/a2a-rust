@@ -374,7 +374,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 "tenant_tasks.state",
                 "excluded.state",
                 " AND "
-            ), crate::store::claim::fence_sql!("?8")))
+            ), crate::store::claim::fence_sql!("?8", "?2")))
             .bind(&tenant)
             .bind(id)
             .bind(context_id)
@@ -391,7 +391,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             if written == 0 {
                 // The fence refused it: another process took the claim over.
                 if let Some(token) = &fence
-                    && !crate::store::claim::sqlite::holds(&self.pool, token)
+                    && !crate::store::claim::sqlite::holds(&self.pool, token, task.id.0.as_str())
                         .await
                         .map_err(|e| to_a2a_error(&e))?
                 {
@@ -671,7 +671,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 == 0;
             if changed_nothing
                 && let Some(token) = &fence
-                && !crate::store::claim::sqlite::holds(&self.pool, token)
+                && !crate::store::claim::sqlite::holds(&self.pool, token, task_id.0.as_str())
                     .await
                     .map_err(|e| to_a2a_error(&e))?
             {

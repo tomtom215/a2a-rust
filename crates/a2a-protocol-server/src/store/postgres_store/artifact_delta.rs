@@ -112,7 +112,7 @@ impl PostgresTaskStore {
                     "$4",
                     " AND "
                 ),
-                crate::store::claim::fence_sql!(postgres "$8::text")
+                crate::store::claim::fence_sql!(postgres "$8::text", "$2")
             ))
             .bind(&payload)
             .bind(task.id.0.as_str())
@@ -167,7 +167,7 @@ impl PostgresTaskStore {
                     "$3",
                     " AND "
                 ),
-                crate::store::claim::fence_sql!(postgres "$6::text")
+                crate::store::claim::fence_sql!(postgres "$6::text", "$2")
             ))
             .bind(&payload)
             .bind(task.id.0.as_str())

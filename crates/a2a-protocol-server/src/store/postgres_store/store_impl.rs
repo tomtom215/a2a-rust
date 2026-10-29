@@ -160,7 +160,7 @@ impl TaskStore for PostgresTaskStore {
                         "EXCLUDED.state",
                         " AND "
                     ),
-                    crate::store::claim::fence_sql!(postgres "$7::text")
+                    crate::store::claim::fence_sql!(postgres "$7::text", "$1")
                 ))
                 .bind(id)
                 .bind(context_id)
@@ -178,7 +178,7 @@ impl TaskStore for PostgresTaskStore {
             if written == 0 {
                 // The fence refused it: another replica took the claim over.
                 if let Some(token) = &fence
-                    && !crate::store::claim::postgres::holds(&self.pool, token)
+                    && !crate::store::claim::postgres::holds(&self.pool, token, task.id.0.as_str())
                         .await
                         .map_err(to_a2a_error)?
                 {
@@ -333,7 +333,7 @@ impl TaskStore for PostgresTaskStore {
                         "$2",
                         " AND "
                     ),
-                    crate::store::claim::fence_sql!(postgres "$6::text")
+                    crate::store::claim::fence_sql!(postgres "$6::text", "$4")
                 ))
                 .bind(&status)
                 .bind(&state)
@@ -608,7 +608,7 @@ impl TaskStore for PostgresTaskStore {
                 == 0;
             if changed_nothing
                 && let Some(token) = &fence
-                && !crate::store::claim::postgres::holds(&self.pool, token)
+                && !crate::store::claim::postgres::holds(&self.pool, token, task_id.0.as_str())
                     .await
                     .map_err(to_a2a_error)?
             {

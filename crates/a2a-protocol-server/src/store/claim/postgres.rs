@@ -122,12 +122,13 @@ fn legacy_turn_seen(_task_id: &str) {
     );
 }
 
-/// Whether `token` still holds a claim: how a store tells a fenced write's
+/// Whether `token` still holds the claim on `task_id`: how a store tells a fenced write's
 /// refusal from the terminal-state one.
-pub async fn holds(pool: &PgPool, token: &str) -> Result<bool, sqlx::Error> {
+pub async fn holds(pool: &PgPool, token: &str, task_id: &str) -> Result<bool, sqlx::Error> {
     let row: Option<(i32,)> = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
-        sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = $1")
+        sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = $1 AND task_id = $2")
             .bind(token)
+            .bind(task_id)
             .fetch_optional(pool)
     })
     .await?;

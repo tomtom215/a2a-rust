@@ -39,7 +39,8 @@
 //! after another replica took its claim over, and write once more before its
 //! next renewal tells it so. So every task write and event-log append a turn
 //! makes carries its token ([`current_fence`]), and the SQL stores refuse it,
-//! in the same statement, unless that token still holds a claim. The refusal
+//! in the same statement, unless that token still holds the claim on the
+//! task written. The refusal
 //! is a [`ClaimLost`] error; the turn's processor then cancels its executor
 //! and stops writing, as it does when another writer finished the task.
 //!
@@ -342,11 +343,19 @@ impl TurnClaimStore for InMemoryTurnClaims {
 mod tests;
 
 /// The SQL condition a fenced write adds: true when the write carries no
-/// token, or its token still holds a claim. `$param` is the placeholder the
-/// token is bound to, typed where the dialect needs it (`"$7::text"` for
-/// PostgreSQL, `"?7"` for SQLite); it appears twice and is bound once.
+/// token, or its token still holds the claim on the task written. `$param`
+/// is the placeholder the token is bound to, typed where the dialect needs it
+/// (`"$7::text"` for PostgreSQL, `"?7"` for SQLite), and `$task` the one the
+/// statement binds the task's id to; the token appears twice and is bound
+/// once.
 ///
-/// The PostgreSQL form (`fence_sql!(postgres "$7::text")`) also locks the
+/// Scoped to the task since 2026-10-29: before, a token holding a claim on
+/// any task passed, so a write to another task made inside a turn would have
+/// been fenced by the wrong claim. No handler path makes one (every request
+/// opens its own fence scope, and a turn writes only its task); the scope
+/// makes that a property the database checks.
+///
+/// The PostgreSQL form (`fence_sql!(postgres "$7::text", "$1")`) also locks the
 /// claim `FOR KEY SHARE`. Under READ COMMITTED the subquery otherwise reads
 /// the statement's snapshot: a write that started before another replica's
 /// takeover committed, then waited on the task row that replica was
@@ -360,7 +369,7 @@ mod tests;
 /// the fence carries the mark.
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 macro_rules! fence_sql {
-    (postgres $param:literal) => {
+    (postgres $param:literal, $task:literal) => {
         concat!(
             "(",
             $crate::store::claim::upgrade::claims_writer!(),
@@ -368,15 +377,19 @@ macro_rules! fence_sql {
             $param,
             " IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ",
             $param,
+            " AND c.task_id = ",
+            $task,
             " FOR KEY SHARE)))"
         )
     };
-    ($param:literal) => {
+    ($param:literal, $task:literal) => {
         concat!(
             "(",
             $param,
             " IS NULL OR EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ",
             $param,
+            " AND c.task_id = ",
+            $task,
             "))"
         )
     };

@@ -626,21 +626,12 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   upgrade, the soak matrix) are in `scripts/live/`, with a README saying what
   each needs; `tests/transient_store_errors` holds the CI-sized outage
   cases.
-  `.config/nextest.toml`'s default profile (the mutation gate's) kills at
-  45 s, and four tests now take 30 to 31 s by design; its rationale still
-  says the slowest test takes 5 s. From the review, left as
-  they are: the fence checks that the token holds *a* claim, not the claim
-  on the task written, so a write to another task from inside a turn passes
-  (scoping it would refuse such a write if any legitimate path makes one,
-  and none was audited); a send to a task whose executor was cancelled but
+  From the review, left as
+  they are: a send to a task whose executor was cancelled but
   is still winding down is refused at once rather than waited for (the
   cancel paths store a terminal state, after which it is refused anyway; not
   tested); a continuation of a task parked in this process waits about one
-  20 ms retry for the claim's release, which runs on a spawned task. The
-  `swarm_scale` experiment `a_tail_can_recover_what_it_missed` failed 2 of 2
-  times run beside its 14 siblings and passed 3 of 3 alone or serially
-  (in-memory store, no claims; a 3 s tail window under contention is the
-  suspicion, not established).
+  20 ms retry for the claim's release, which runs on a spawned task.
 - **AES-GCM nonce budget is per process** (encryption verification,
   2026-10-21, medium, design). The 2^32-seal limit per key is counted per
   process and resets on restart, so R replicas can seal R × 2^32 under one

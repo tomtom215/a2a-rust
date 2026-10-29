@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:10618 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:10629 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -166,7 +166,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/handler/input_modes.rs:91 RequestHandler::ensure_input_modes_supported"
    ],
    "test_evidence": [
@@ -268,7 +268,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:122 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background"
    ],
    "test_evidence": [
@@ -329,7 +329,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:47 RequestHandler::validate_and_commit",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:32 RequestHandler::validate_and_commit",
     "crates/a2a-protocol-server/src/handler/capability.rs:39 RequestHandler::ensure_streaming_supported"
    ],
    "test_evidence": [
@@ -370,8 +370,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:47 RequestHandler::validate_and_commit",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params"
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:32 RequestHandler::validate_and_commit",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/input_modes.rs:192 an_undeclared_media_type_is_refused_as_content_type_not_supported",
@@ -670,7 +670,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1014 SqliteTaskStore::list"
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1020 SqliteTaskStore::list"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1739 list_empty_store_returns_empty (asserts next_page_token == \"\")",
@@ -714,7 +714,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
     "crates/a2a-protocol-server/src/store/cursor.rs:23 encode",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1014 SqliteTaskStore::list",
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1020 SqliteTaskStore::list",
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:403 PostgresTaskStore::list"
    ],
    "test_evidence": [
@@ -735,7 +735,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1192 InMemoryTaskStore::list",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1014 SqliteTaskStore::list",
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1020 SqliteTaskStore::list",
     "crates/a2a-protocol-server/src/store/postgres_store/store_impl.rs:403 PostgresTaskStore::list",
     "crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs:469 TenantAwareSqliteTaskStore::list"
    ],
@@ -779,7 +779,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:233 StoreData::insert",
     "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:684 SqliteTaskStore::save",
-    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1014 SqliteTaskStore::list"
+    "crates/a2a-protocol-server/src/store/sqlite_store/mod.rs:1020 SqliteTaskStore::list"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1904 list_orders_by_status_timestamp_not_write_order",
@@ -1672,7 +1672,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:41 validate_metadata_object",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
     "crates/a2a-protocol-server/src/dispatch/version.rs:105 validate_version_header"
    ],
@@ -1847,11 +1847,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:87 RequestHandler::check_file_urls",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:47 RequestHandler::validate_and_commit",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:42 RequestHandler::check_file_urls",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:32 RequestHandler::validate_and_commit",
     "crates/a2a-protocol-server/src/handler/helpers.rs:41 validate_metadata_object",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/validation_edge_tests.rs:164 reject_whitespace_only_context_id",
@@ -1875,8 +1875,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:87 RequestHandler::check_file_urls",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:173 RequestHandler::validate_send_ids"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:42 RequestHandler::check_file_urls",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:128 RequestHandler::validate_send_ids"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/actionable_errors.rs:63 each_refusal_names_the_parameter_and_what_is_accepted"
@@ -1895,7 +1895,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:41 validate_metadata_object",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:241 make_portable",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:196 make_portable",
     "crates/a2a-protocol-server/src/handler/helpers.rs:74 build_call_context",
     "crates/a2a-protocol-server/src/dispatch/version.rs:105 validate_version_header"
    ],
@@ -2204,7 +2204,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:39 RequestHandler::ensure_streaming_supported",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:47 RequestHandler::validate_and_commit",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:32 RequestHandler::validate_and_commit",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:543 RequestHandler::on_resubscribe"
    ],
    "test_evidence": [
@@ -2247,7 +2247,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:122 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:30 RequestHandler::on_get_extended_agent_card"
    ],
@@ -2357,7 +2357,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:71 RequestHandler::resolve_context_id"
    ],
    "test_evidence": [
@@ -2584,7 +2584,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:123 RequestHandler::resolve_task_id",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:196 RequestHandler::commit_task",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:201 RequestHandler::register_inline_push_config",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:148 RequestHandler::persist_initial_task"
    ],
@@ -2820,7 +2820,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:127 RequestHandler::respond_in_background",
     "crates/a2a-protocol-server/src/handler/messaging/basis.rs:96 based_on",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:201 RequestHandler::register_inline_push_config",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:196 RequestHandler::commit_task",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/handler/lifecycle/subscribe.rs:312 RequestHandler::replay_after",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1212 InMemoryQueueReader::report_unreplayed"
    ],
@@ -3590,7 +3590,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/capability.rs:88 RequestHandler::ensure_required_extensions",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:122 RequestHandler::send_message_inner",
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:174 RequestHandler::on_set_push_config",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
@@ -3663,10 +3663,10 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/helpers.rs:23 unset_if_empty",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:281 check_metadata_size",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:236 check_metadata_size",
     "crates/a2a-protocol-server/src/handler/push_config.rs:25 unset_proto3_defaults",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:27 RequestHandler::on_list_tasks",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:173 RequestHandler::validate_send_ids"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:128 RequestHandler::validate_send_ids"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:459 bind_equiv_002",
@@ -4282,7 +4282,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/task.rs:67 Task",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/streaming/sse.rs:271 violation_field"
    ],
    "test_evidence": [
@@ -4304,7 +4304,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/streaming/sse.rs:271 violation_field"
    ],
    "test_evidence": [
@@ -4457,7 +4457,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 validate_send_params"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 validate_send_params"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/a2a_json_security_considerations.rs:129 malformed_content_is_refused_before_the_executor_runs"
@@ -4521,7 +4521,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/url_guard.rs:41 check_public_url",
     "crates/a2a-protocol-server/src/url_guard.rs:56 resolve_public_url",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:87 RequestHandler::check_file_urls"
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:42 RequestHandler::check_file_urls"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/file_url_ssrf.rs:21 private_and_internal_targets_are_refused",
@@ -7609,7 +7609,7 @@
     "crates/a2a-protocol-server/src/handler/mod.rs:339 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:122 RequestHandler::send_message_inner"
+    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:121 RequestHandler::send_message_inner"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
@@ -9119,7 +9119,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/request_context.rs:202 RequestContext::accepted_output_modes",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:196 RequestHandler::commit_task"
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/accepted_output_modes.rs:41 the_executor_sees_the_accepted_output_modes",
@@ -9410,7 +9410,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/message.rs:89 Message",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-server/src/handler/ids.rs:60 validate_id",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:167 Message::try_from",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:53 parse_params",
@@ -9441,7 +9441,7 @@
     "crates/a2a-protocol-types/src/generated/message.rs:14 MessageRole",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:66 MessageRole::try_from",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:167 Message::try_from",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-types/src/required.rs:169 check_message"
    ],
    "test_evidence": [
@@ -9463,7 +9463,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-types/src/generated/message.rs:89 Message",
-    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:104 RequestHandler::validate_send_params",
+    "crates/a2a-protocol-server/src/handler/messaging/validation.rs:59 RequestHandler::validate_send_params",
     "crates/a2a-protocol-types/src/required.rs:169 check_message"
    ],
    "test_evidence": [
@@ -9659,7 +9659,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/executor_helpers.rs:223 EventEmitter::status",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:196 RequestHandler::commit_task",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:365 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"
@@ -9686,7 +9686,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/executor_helpers.rs:223 EventEmitter::status",
     "crates/a2a-protocol-server/src/executor_helpers.rs:330 EventEmitter::artifact",
-    "crates/a2a-protocol-server/src/handler/messaging/mod.rs:196 RequestHandler::commit_task",
+    "crates/a2a-protocol-server/src/handler/messaging/commit.rs:77 RequestHandler::commit_task",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:365 InMemoryQueueWriter::check_identity",
     "crates/a2a-protocol-types/src/generated/events.rs:34 TaskArtifactUpdateEvent",
     "crates/a2a-protocol-types/src/proto/convert/messaging.rs:355 TaskStatusUpdateEvent::try_from"

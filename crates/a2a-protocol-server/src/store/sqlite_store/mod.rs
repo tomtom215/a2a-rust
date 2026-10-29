@@ -489,7 +489,7 @@ const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(concat!(
         "?4",
         " AND "
     ),
-    crate::store::claim::fence_sql!("?6")
+    crate::store::claim::fence_sql!("?6", "?2")
 ));
 
 /// Append a whole artifact at the end of the array, if the array holds
@@ -508,7 +508,7 @@ const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(concat!(
         "?4",
         " AND "
     ),
-    crate::store::claim::fence_sql!("?6")
+    crate::store::claim::fence_sql!("?6", "?2")
 ));
 
 /// The terminal guard for the several-parts append, whose statement text is
@@ -517,7 +517,7 @@ const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(concat!(
 /// With the turn's fence (`crate::store::claim`), bound last as `?5`.
 const MULTI_PART_GUARD: &str = concat!(
     sql_write_allowed!(" AND ", "state", "?3", " AND "),
-    crate::store::claim::fence_sql!("?5")
+    crate::store::claim::fence_sql!("?5", "?2")
 );
 
 #[allow(clippy::manual_async_fn)]
@@ -587,7 +587,7 @@ const SAVE_SQL: &str = concat!(
         "excluded.state",
         " AND "
     ),
-    crate::store::claim::fence_sql!("?7")
+    crate::store::claim::fence_sql!("?7", "?1")
 );
 
 impl TaskStore for SqliteTaskStore {
@@ -729,7 +729,13 @@ impl TaskStore for SqliteTaskStore {
 
             if written == 0 {
                 // The fence refused it: another replica took the claim over.
-                if crate::store::claim::sqlite::lost_in(&mut tx, fence.as_deref()).await? {
+                if crate::store::claim::sqlite::lost_in(
+                    &mut tx,
+                    fence.as_deref(),
+                    task.id.0.as_str(),
+                )
+                .await?
+                {
                     tx.rollback().await.map_err(to_a2a_error)?;
                     return Err(crate::store::ClaimLost::new(task.id.clone()).into_error());
                 }
@@ -917,7 +923,7 @@ impl TaskStore for SqliteTaskStore {
                     "?2",
                     " AND "
                 ),
-                crate::store::claim::fence_sql!("?6")
+                crate::store::claim::fence_sql!("?6", "?4")
             ))
             .bind(&status)
             .bind(&state)
@@ -1236,7 +1242,7 @@ impl TaskStore for SqliteTaskStore {
                 == 0;
             if changed_nothing
                 && let Some(token) = &fence
-                && !crate::store::claim::sqlite::holds(&self.pool, token)
+                && !crate::store::claim::sqlite::holds(&self.pool, token, task_id.0.as_str())
                     .await
                     .map_err(to_a2a_error)?
             {

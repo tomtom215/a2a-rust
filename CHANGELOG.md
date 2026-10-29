@@ -172,6 +172,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A turn's claim fenced writes to any task, not only its own** (server;
+  SQLite and PostgreSQL stores). A write carrying a turn's token passed the
+  fence while that token held a claim on any task, so a write to another
+  task made inside a turn would have been fenced by the wrong claim. No
+  handler path makes one (every request opens its own fence scope); the
+  fence now names the task written (`c.task_id = …`), and a refused write is
+  told apart from a terminal-state refusal by the same test. A test writes
+  to two tasks under one claim on SQLite and PostgreSQL: the claimed task
+  lands, the other is refused as `ClaimLost`, and its log is not appended
+  to; with the fence unscoped, both stores let the second write through.
+
 - **A PostgreSQL database with a short `statement_timeout` stopped replicas
   starting** (server). Creating the schema, and each migration, ran under the
   database's timeout, so at 100 ms the first DDL statement failed (`57014`)

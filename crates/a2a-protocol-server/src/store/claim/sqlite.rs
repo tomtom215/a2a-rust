@@ -96,17 +96,20 @@ fn now_ms() -> i64 {
         .map_or(0, millis)
 }
 
-/// Whether `token` still holds a claim.
-pub async fn holds(pool: &SqlitePool, token: &str) -> Result<bool, sqlx::Error> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = ?1")
-        .bind(token)
-        .fetch_optional(pool)
-        .await?;
+/// Whether `token` still holds the claim on `task_id`.
+pub async fn holds(pool: &SqlitePool, token: &str, task_id: &str) -> Result<bool, sqlx::Error> {
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = ?1 AND task_id = ?2")
+            .bind(token)
+            .bind(task_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.is_some())
 }
 
-/// Whether a write fenced with `fence` was refused because the token no
-/// longer holds a claim, read inside `tx`; `false` without a fence.
+/// Whether a write to `task_id` fenced with `fence` was refused because the
+/// token no longer holds that task's claim, read inside `tx`; `false`
+/// without a fence.
 ///
 /// # Errors
 ///
@@ -114,15 +117,18 @@ pub async fn holds(pool: &SqlitePool, token: &str) -> Result<bool, sqlx::Error> 
 pub async fn lost_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     fence: Option<&str>,
+    task_id: &str,
 ) -> A2aResult<bool> {
     let Some(token) = fence else {
         return Ok(false);
     };
-    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = ?1")
-        .bind(token)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| failed("fence read", &e))?;
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT 1 FROM a2a_task_claims WHERE token = ?1 AND task_id = ?2")
+            .bind(token)
+            .bind(task_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| failed("fence read", &e))?;
     Ok(row.is_none())
 }
 
