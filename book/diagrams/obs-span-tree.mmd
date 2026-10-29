@@ -1,0 +1,24 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+  subgraph caller["Caller"]
+    c1["CLIENT<br/>SendMessage"]
+  end
+  subgraph orch["Orchestrator agent"]
+    s1["SERVER<br/>SendMessage"]
+    a1["INTERNAL<br/>invoke_agent orchestrator"]
+    m1["CLIENT<br/>chat model"]
+    t1["INTERNAL<br/>execute_tool name"]
+    c2["CLIENT<br/>SendMessage"]
+  end
+  subgraph worker["Worker agent"]
+    s2["SERVER<br/>SendMessage"]
+    a2["INTERNAL<br/>invoke_agent worker"]
+  end
+  c1 -->|traceparent| s1
+  s1 --> a1
+  a1 --> m1
+  a1 --> t1
+  a1 --> c2
+  c2 -->|traceparent| s2
+  s2 --> a2

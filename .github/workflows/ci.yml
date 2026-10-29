@@ -169,6 +169,25 @@ jobs:
       - name: Sitemap matches the book table of contents
         run: python3 scripts/gen_sitemap.py --check
 
+      # No pull request built the book: docs.yml runs `mdbook build` only on
+      # main and on release, so a SUMMARY entry naming a missing page
+      # (`create-missing = false`) failed after merge. And mdBook does not
+      # check links, so a page split or a renamed heading left links to the
+      # old place dead with nothing to say so. This builds the book with the
+      # version docs.yml deploys and checks every internal link and #anchor.
+      - name: Install mdBook
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Book builds and its links resolve
+        run: |
+          mdbook build book
+          cp -r book/static/. book/book/
+          python3 scripts/check_book_links.py book/book
+
       # The API Quick Reference is 299 hand-written lines listing every public
       # type, trait and function — and nothing generated or checked it, so it
       # could only get less true with every rename. Same decay class as the
@@ -388,6 +407,23 @@ jobs:
       - name: Timeouts fit inside the bounds that enclose them
         run: python3 scripts/check_timeout_nesting.py
 
+      # The PostgreSQL task stores' pools do not ping a connection before
+      # every statement (store/pg_retry.rs): each statement on them runs in
+      # `pg_retry::retry` (run again on a lost connection) or `checked`
+      # (pinged first). One left out works until the server ends its
+      # connection, then fails where sqlx's ping used to replace it. Without
+      # the retry, ending every backend mid-turn lost an event (3 live runs
+      # of 3). The rules are self-tested first.
+      - name: Statements on a PostgreSQL task store's pool are retried or checked
+        run: python3 scripts/check_pg_retry.py --self-test && python3 scripts/check_pg_retry.py
+
+      # The PostgreSQL job finds its suites (`run_postgres_suites.py`) except
+      # those a step names with flags of its own; the script lists those and
+      # where. This fails when a listed step no longer names its suite, so a
+      # suite cannot drop out of both.
+      - name: Every PostgreSQL suite is run by some CI step
+        run: python3 scripts/run_postgres_suites.py --check
+
       # The question an adopter of a protocol library actually has is whether a
       # malformed peer can take their process down. Until this gate existed the
       # answer was unquotable — a grep for `.unwrap()` counts matches in doc
@@ -589,39 +625,69 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # protoc is bundled via the `protoc-bin-vendored` crate (see above).
+      #
+      # Tests run under cargo-nextest: each test in its own process (a test
+      # that touches process-global state cannot disturb another), a hung test
+      # killed and named after two minutes instead of the job timing out
+      # silently (`.config/nextest.toml`, profile `ci`), and a failure's output
+      # printed at the end of the run. Nextest runs no doctests, so the
+      # doctests run in their own steps below, under the three feature sets
+      # that between them compile every example: default, all, and none. The
+      # version is the one the mutation gate pins, read from its install
+      # script so the two cannot drift. 2026-10-28: the whole workspace with
+      # every feature, 5,851 tests, passed under nextest as under `cargo test`.
+      - name: Install cargo-nextest
+        shell: bash
+        run: |
+          version=$(sed -n 's/^CARGO_NEXTEST_VERSION=//p' scripts/install_cargo_mutants.sh)
+          test -n "$version"
+          cargo install --locked cargo-nextest --version "$version"
       - name: Test (default features)
-        run: cargo test --workspace
+        run: cargo nextest run --profile ci --workspace
       - name: Test (signing feature)
-        run: cargo test --workspace --features signing
+        run: cargo nextest run --profile ci --workspace --features signing
       - name: Test (tracing feature)
-        run: cargo test --workspace --features tracing
+        run: cargo nextest run --profile ci --workspace --features tracing
       - name: Test (tls-rustls feature)
-        run: cargo test -p a2a-protocol-client --features tls-rustls
+        run: cargo nextest run --profile ci -p a2a-protocol-client --features tls-rustls
       - name: Test (tls-rustls feature, server — live-TLS push E2E)
-        run: cargo test -p a2a-protocol-server --features tls-rustls
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features tls-rustls
       - name: Test (sqlite feature)
-        run: cargo test -p a2a-protocol-server --features sqlite
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features sqlite
       - name: Test (postgres feature)
-        run: cargo test -p a2a-protocol-server --features postgres
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
-        run: cargo test -p a2a-protocol-server --features axum
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features axum
       - name: Test (tool-loop feature)
-        run: cargo test -p a2a-protocol-server --features tool-loop
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features tool-loop
       # Dedicated websocket/grpc legs: --all-features also compiles these,
       # but a feature-specific regression (missing gate, dep drift) only
       # surfaces when the feature is built in isolation.
       - name: Test (websocket feature)
-        run: cargo test --workspace --features websocket
+        run: cargo nextest run --profile ci --workspace --features websocket
       - name: Test (grpc feature)
-        run: cargo test --workspace --features grpc
+        run: cargo nextest run --profile ci --workspace --features grpc
       - name: Test (auth-jwt feature)
-        run: cargo test -p a2a-protocol-server --features auth-jwt
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features auth-jwt
       - name: Test (auth-jwt + tls-rustls — live-TLS JWKS E2E)
-        run: cargo test -p a2a-protocol-server --features auth-jwt,tls-rustls
+        run: cargo nextest run --profile ci -p a2a-protocol-server --features auth-jwt,tls-rustls
       - name: Test (all features)
-        run: cargo test --workspace --all-features
+        run: cargo nextest run --profile ci --workspace --all-features
       - name: Test (no default features)
-        run: cargo test --workspace --no-default-features
+        run: cargo nextest run --profile ci --workspace --no-default-features
+      - name: Doctests (default features)
+        run: cargo test --doc --workspace
+      - name: Doctests (all features)
+        run: cargo test --doc --workspace --all-features
+      - name: Doctests (no default features)
+        run: cargo test --doc --workspace --no-default-features
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.os }}-${{ matrix.rust }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   # ── PostgreSQL-backed store integration tests ───────────────────────────
   #
@@ -671,6 +737,43 @@ jobs:
         run: |
           cargo test -p a2a-protocol-server --features postgres \
             --test multi_replica -- --ignored --test-threads=1
+
+      # Turn claims across replicas on PostgreSQL (the SQLite cases run in
+      # the matrix above): one turn of a task at a time, a continuation that
+      # keeps what the last turn stored, a cancel reaching the executor on the
+      # other replica, a dead replica's claim taken over, the fence; then the
+      # same over two replica processes, one killed mid-turn; and the two
+      # cross-replica suites that predate claims. Each test makes its own
+      # scratch database. The count is asserted, as below: a filter that
+      # selects nothing exits 0.
+      - name: Test (turn claims across replicas, live database)
+        run: |
+          log=$(mktemp)
+          if ! cargo test -p a2a-protocol-server --features postgres \
+            --test turn_claims --test replica_processes \
+            --test cross_replica_cancel --test stale_write_position \
+            -- --ignored >"$log" 2>&1; then
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"
+          ran=$(awk '/^test result:/ { n += $4 } END { print n + 0 }' "$log")
+          # 18 since the rolling-upgrade cases (`tests/turn_claims/upgrade.rs`).
+          if [ "$ran" -lt 18 ]; then
+            echo "::error::the turn-claim suites ran $ran test(s) against PostgreSQL, fewer than the 18 they hold. A test was renamed or is no longer #[ignore]d."
+            exit 1
+          fi
+          echo "turn claims, live database: $ran test(s) ran"
+
+      # Every other suite with PostgreSQL cases, found rather than named: a
+      # test target or library module that reads A2A_TEST_POSTGRES_URL is
+      # run with --ignored, and each must run at least one test. The steps
+      # above name their suites by hand, and on 2026-10-28 nine test targets
+      # and four library modules were in no job: their cases were ignored on
+      # every run and the job was green. Suites a step above runs, and the
+      # one not run in CI, are listed in the script with where and why.
+      - name: Test (every other PostgreSQL suite, found, live database)
+        run: python3 scripts/run_postgres_suites.py
 
       # EncryptedTaskStore over both PostgreSQL stores: no plaintext part in
       # what they hold, and every part read back. The other stores run in the

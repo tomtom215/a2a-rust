@@ -197,7 +197,7 @@ impl SyncCollector {
         task_id: TaskId,
         executor: &mut crate::handler::messaging::WatchedExecutor,
     ) -> ServerResult<Collected> {
-        let mut state = self.collect_state(&task_id).await?;
+        let mut state = self.collect_state(&task_id, None).await?;
         let mut executor_done = false;
         self.run(
             &mut events,
@@ -223,14 +223,18 @@ impl SyncCollector {
     /// a blocking send answered: every event after the interrupted state
     /// failed with "no active receivers", and the stored task stayed at
     /// `AUTH_REQUIRED` for good.
+    ///
+    /// `stored` is the task as stored, when the caller holds it exactly (a
+    /// task the send created and saved whole); without it, it is read.
     pub(crate) async fn collect_then_follow(
         &self,
         mut events: CollectedEvents,
         task_id: TaskId,
+        stored: Option<Task>,
         executor: &mut crate::handler::messaging::WatchedExecutor,
         answer: tokio::sync::oneshot::Sender<ServerResult<Collected>>,
     ) {
-        let mut state = match self.collect_state(&task_id).await {
+        let mut state = match self.collect_state(&task_id, stored).await {
             Ok(state) => state,
             Err(e) => {
                 let _ = answer.send(Err(e));
@@ -278,14 +282,23 @@ impl SyncCollector {
         self.spawn_push_delivery(task_id, std::mem::take(&mut state.push_events));
     }
 
-    /// The task as stored, to fold events into.
-    async fn collect_state(&self, task_id: &TaskId) -> ServerResult<CollectState> {
-        Ok(CollectState {
-            task: self
+    /// The task as stored, to fold events into: `stored` when the caller
+    /// holds it exactly, which saves reading back the row it just wrote.
+    async fn collect_state(
+        &self,
+        task_id: &TaskId,
+        stored: Option<Task>,
+    ) -> ServerResult<CollectState> {
+        let task = match stored {
+            Some(task) => task,
+            None => self
                 .task_store
                 .get(task_id)
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?,
+        };
+        Ok(CollectState {
+            task,
             first_message: None,
             saw_task_shaped_event: false,
             push_events: Vec::new(),
@@ -424,6 +437,10 @@ impl SyncCollector {
             Err(ServerError::Protocol(e)) => crate::store::TerminalStateConflict::from_error(e),
             _ => None,
         };
+        if matches!(&folded, Err(ServerError::Protocol(e)) if crate::store::ClaimLost::from_error(e).is_some())
+        {
+            return self.on_claim_lost(task_id, state).await;
+        }
         let Some(conflict) = conflict else {
             return folded;
         };
@@ -439,6 +456,26 @@ impl SyncCollector {
         match self.task_store.get(task_id).await {
             Ok(Some(stored)) if stored.status.state == conflict.stored => state.task = stored,
             _ => state.task.status = TaskStatus::new(conflict.stored),
+        }
+        state.saw_task_shaped_event = true;
+        Ok(())
+    }
+
+    /// Another replica took this turn's claim over (`crate::store::claim`):
+    /// the executor is cancelled, and the blocking caller is answered with the
+    /// task as it is stored, which the other replica now writes. Every later
+    /// write of this collection is refused the same way and ends here again.
+    async fn on_claim_lost(&self, task_id: &TaskId, state: &mut CollectState) -> ServerResult<()> {
+        trace_warn!(
+            task_id = %task_id,
+            "sync collector: another replica took this turn's claim over; \
+             cancelling the local executor and answering with the stored task"
+        );
+        if let Some(cancel) = &state.cancel {
+            cancel.cancel();
+        }
+        if let Ok(Some(stored)) = self.task_store.get(task_id).await {
+            state.task = stored;
         }
         state.saw_task_shaped_event = true;
         Ok(())
@@ -460,7 +497,13 @@ impl SyncCollector {
             if !state.task.status.state.is_terminal() {
                 state.task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 state.saw_task_shaped_event = true;
-                self.task_store.save(&state.task).await?;
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::FAILED_STATE,
+                    || self.task_store.save(&state.task),
+                )
+                .await?;
             }
         }
         Ok(())
@@ -480,7 +523,14 @@ impl SyncCollector {
         // rather than in the background processor, and a log covering only
         // streaming sends would be a history whose completeness depended on
         // which method the caller happened to use.
-        super::background::record_event(&*self.task_store, task_id, &event, &*self.metrics).await;
+        super::background::record_event(
+            &*self.task_store,
+            task_id,
+            &event,
+            &*self.metrics,
+            self.limits.store_write_retry,
+        )
+        .await;
         if let Ok(crate::streaming::StreamEvent {
             folded_message: true,
             event: StreamResponse::StatusUpdate(ref update),
@@ -512,7 +562,13 @@ impl SyncCollector {
                     message: update.status.message.clone(),
                     timestamp: update.status.timestamp.clone(),
                 };
-                self.task_store.save_status_delta(last_task).await?;
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::STATUS_UPDATE,
+                    || self.task_store.save_status_delta(last_task),
+                )
+                .await?;
                 state.saw_task_shaped_event = true;
                 state.record_for_push(self.push_sender.is_some(), stream_resp);
             }
@@ -563,9 +619,21 @@ impl SyncCollector {
                         count: appended,
                     };
                     let written = if metadata_changed {
-                        self.task_store.save(last_task).await
+                        super::persisting(
+                            self.limits.store_write_retry,
+                            &*self.metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || self.task_store.save(last_task),
+                        )
+                        .await
                     } else {
-                        self.task_store.save_artifact_delta(last_task, delta).await
+                        super::persisting(
+                            self.limits.store_write_retry,
+                            &*self.metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || self.task_store.save_artifact_delta(last_task, delta),
+                        )
+                        .await
                     };
                     if let Err(e) = written {
                         revert_artifact_append(
@@ -588,7 +656,14 @@ impl SyncCollector {
                 {
                     let previous =
                         std::mem::replace(&mut artifacts[index], update.artifact.clone());
-                    if let Err(e) = self.task_store.save(last_task).await {
+                    if let Err(e) = super::persisting(
+                        self.limits.store_write_retry,
+                        &*self.metrics,
+                        crate::metrics::persistence_operation::ARTIFACT_PUSH,
+                        || self.task_store.save(last_task),
+                    )
+                    .await
+                    {
                         if let Some(slot) = last_task
                             .artifacts
                             .as_mut()
@@ -641,7 +716,13 @@ impl SyncCollector {
                     });
                 }
                 *last_task = task;
-                self.task_store.save(last_task).await?;
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                    || self.task_store.save(last_task),
+                )
+                .await?;
                 state.saw_task_shaped_event = true;
             }
             Ok(StreamResponse::Message(msg)) => {
@@ -656,14 +737,26 @@ impl SyncCollector {
                 history.push(msg);
                 // The same limit, by count and by bytes, as the send path.
                 crate::handler::messaging::TASK_HISTORY_LIMIT.trim(history);
-                self.task_store.save(last_task).await?;
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::HISTORY_APPEND,
+                    || self.task_store.save(last_task),
+                )
+                .await?;
             }
             Ok(_) => {
                 // Future stream response variants — continue.
             }
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                self.task_store.save_status_delta(last_task).await?;
+                super::persisting(
+                    self.limits.store_write_retry,
+                    &*self.metrics,
+                    crate::metrics::persistence_operation::FAILED_STATE,
+                    || self.task_store.save_status_delta(last_task),
+                )
+                .await?;
                 state.saw_task_shaped_event = true;
                 return Err(ServerError::Protocol(e));
             }
@@ -697,7 +790,13 @@ impl SyncCollector {
         let history = last_task.history.get_or_insert_with(Vec::new);
         history.push(message);
         crate::handler::messaging::TASK_HISTORY_LIMIT.trim(history);
-        self.task_store.save(last_task).await?;
+        super::persisting(
+            self.limits.store_write_retry,
+            &*self.metrics,
+            crate::metrics::persistence_operation::HISTORY_APPEND,
+            || self.task_store.save(last_task),
+        )
+        .await?;
         if open {
             state.record_for_push(
                 self.push_sender.is_some(),

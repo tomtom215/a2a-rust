@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The Collector of docker-compose.yml: all three signals in on OTLP (4317
+# gRPC, 4318 HTTP), each sent on to the backend that stores it. Metrics go to
+# Prometheus's OTLP receiver, so `service.name` and `service.instance.id`
+# become `job` and `instance` exactly as when an agent pushes to Prometheus
+# directly, and the dashboards and rules need no change. Traces go to Tempo,
+# logs to Loki. `config.yaml` beside this file is the Collector on its own
+# (metrics scraped on 8889, traces and logs to the debug exporter).
+# Hardening, as the Collector's own guidance has it: `memory_limiter` first in
+# every pipeline, so a burst is refused (the agent retries) rather than the
+# Collector killed for memory; its limits are a share of the container's
+# memory limit, so give the container one. `health_check` answers on 13133
+# for a liveness or readiness probe (`GET /` is 200 once the pipelines run).
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  batch: {}
+
+exporters:
+  otlphttp/prometheus:
+    endpoint: http://prometheus:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki]

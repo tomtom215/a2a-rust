@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The whole observability stack in one command, for a laptop or a test box:
+#
+#   docker compose -f deploy/observability/docker-compose.yml up -d
+#
+# then run any agent with
+#
+#   OTEL_SERVICE_NAME=my-agent OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+#
+# and open Grafana on http://localhost:3000 (folder "A2A"; Explore for Tempo
+# and Loki). Metrics, traces and logs all go to the Collector on 4317/4318,
+# which sends them to Prometheus, Tempo and Loki. Ports published on the host:
+# 3000 Grafana, 9090 Prometheus, 4317/4318 the Collector, 3200 Tempo, 3100
+# Loki.
+#
+# An agent in a container on the same Docker network uses
+# http://otel-collector:4318 instead. Not a production deployment: no
+# authentication (Grafana's anonymous user is an admin), local volumes only.
+# docker-compose.prod.yml, added with a second -f, closes it down for a shared
+# host.
+name: a2a-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.163.2
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector/config-compose.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on: [prometheus, tempo, loki]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-otlp-receiver
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    user: "0"
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.7.9
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      TEMPO_URL: http://tempo:3200
+      LOKI_URL: http://loki:3100
+      A2A_DASHBOARDS_DIR: /var/lib/grafana/dashboards/a2a
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./grafana/provisioning/traces-and-logs.yml:/etc/grafana/provisioning/datasources/traces-and-logs.yml:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards/a2a:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus, tempo, loki]
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  tempo-data:
+  loki-data:

@@ -1,0 +1,8 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    E["Executor writes a status<br/>update or task snapshot"] --> C{"can_transition_to?"}
+    C -- yes --> S["Stored"]
+    C -- no --> P{"Which path?"}
+    P -- "blocking<br/>SendMessage" --> B["InvalidStateTransition:<br/>client gets InvalidParams"]
+    P -- "streaming or<br/>returnImmediately" --> F["Task marked Failed"]

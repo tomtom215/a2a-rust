@@ -56,11 +56,12 @@ Reference of the configuration options across a2a-rust crates; the builder and e
 | `subscribe_replay_limit` | `usize` | 1,000 | Maximum logged events one read of the event log returns, for a lag's catch-up, a missed turn or a `Last-Event-ID` resumption. The offset is client-supplied, so the cap bounds each read; a longer replay is read a page at a time |
 | `final_task_snapshot` | `bool` | `false` | Whether a stream sends the finished task once more, as a final `Task`, after its terminal state (§11.7); sent only when the store shows the finished task within `subscribe_replay_catchup` |
 | `subscribe_replay_catchup` | `Duration` | 2s | How long a resuming stream waits for the event log to catch up with what was already broadcast. Zero disables the wait; on expiry the shortfall is logged and counted under `event_log_catchup` |
+| `store_write_retry` | `Duration` | 30s | How long a turn's event consumer goes on writing one event, to the log or the task, while the store answers it is unavailable for now (a lost connection, a restart, a lock or statement timeout): after 50 ms, then doubling up to 1 s. The events after it wait, in order. Zero writes each once; an outage longer than this still loses the event it was writing |
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
 > `push_delivery_timeout` must be non-zero. Zero values are rejected by
 > `RequestHandlerBuilder::build()`, which refuses more than that: see
-> [Build-Time Validation](../building-agents/handler.md#build-time-validation)
+> [Build-Time Validation](../building-agents/handler/configuration.md#build-time-validation)
 > for the full list.
 
 ### TaskStoreConfig

@@ -1,0 +1,12 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+  sdk["SDK spans, metrics<br/>and log events"] --> tel["Telemetry<br/>in your agent"]
+  tel -->|"OTLP :4318<br/>or gRPC :4317"| col["Collector"]
+  tel -.->|"instead"| alt["console: stdout<br/>/metrics :9464<br/>OTLP to Prometheus<br/>Langfuse: traces"]
+  col -->|metrics| prom["Prometheus"]
+  col -->|traces| tempo["Tempo"]
+  col -->|logs| loki["Loki"]
+  prom --> graf["Grafana"]
+  tempo --> graf
+  loki --> graf

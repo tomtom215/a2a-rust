@@ -1,0 +1,9 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    F["Fetch the card<br/>/.well-known/agent-card.json"] --> V["validate +<br/>validate_security_schemes"]
+    V -- invalid --> X["InvalidAgentResponse"]
+    V -- ok --> S["from_card: first interface<br/>the client supports"]
+    S --> B["build(): skip an interface<br/>it cannot construct"]
+    B --> K["Calls checked against<br/>the card's capabilities"]
+    K -. "authenticated" .-> E["GetExtendedAgentCard:<br/>its capabilities apply"]

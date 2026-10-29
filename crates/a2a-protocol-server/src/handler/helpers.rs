@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::ListTasksParams;
-use a2a_protocol_types::task::Task;
+use a2a_protocol_types::task::{Task, TaskId};
 use a2a_protocol_types::trace_context::{TRACEPARENT_HEADER, TRACESTATE_HEADER, TraceContext};
 
 use crate::call_context::CallContext;
@@ -290,6 +290,28 @@ impl RequestHandler {
     /// We fetch more than one so we can prefer non-terminal tasks over terminal
     /// ones when multiple tasks share the same `context_id`.
     const CONTEXT_LOOKUP_PAGE_SIZE: u32 = 10;
+
+    /// The task a send names, when it is in `context_id`; `None` otherwise.
+    ///
+    /// What `resolve_task_id` decides for a send
+    /// that names a task depends only on that task: missing, in another
+    /// context, terminal, or continued. The context's most recent task,
+    /// which [`find_task_by_context`](Self::find_task_by_context) returns,
+    /// only stood in for it, and on PostgreSQL that lookup was two statements
+    /// (a count and a page) where reading the named task is one. A task in
+    /// another context comes back as `None`, as the context lookup never
+    /// returned it, so the resolution reads it again and refuses it as before.
+    pub(crate) async fn find_named_task(
+        &self,
+        context_id: &str,
+        task_id: &TaskId,
+    ) -> ServerResult<Option<Task>> {
+        Ok(self
+            .task_store
+            .get(task_id)
+            .await?
+            .filter(|task| task.context_id.0 == context_id))
+    }
 
     pub(crate) async fn find_task_by_context(
         &self,

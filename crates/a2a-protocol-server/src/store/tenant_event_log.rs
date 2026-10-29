@@ -61,12 +61,20 @@ pub(super) const PG_CREATE_TABLE: &str = "CREATE TABLE IF NOT EXISTS tenant_task
     )";
 
 #[cfg(feature = "sqlite")]
-pub(super) const SQLITE_APPEND: &str = "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) \
-     VALUES (?1, ?2, ?3, ?4) ON CONFLICT(tenant_id, task_id, seq) DO NOTHING";
+/// Fenced by the turn's claim token, `?5` (`crate::store::claim`).
+pub(super) const SQLITE_APPEND: &str = concat!(
+    "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT ?1, ?2, ?3, ?4 WHERE ",
+    crate::store::claim::fence_sql!("?5", "?2"),
+    " ON CONFLICT(tenant_id, task_id, seq) DO NOTHING"
+);
 
 #[cfg(feature = "postgres")]
-pub(super) const PG_APPEND: &str = "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) \
-     VALUES ($1, $2, $3, $4) ON CONFLICT (tenant_id, task_id, seq) DO NOTHING";
+/// Fenced by the turn's claim token, `$5` (`crate::store::claim`).
+pub(super) const PG_APPEND: &str = concat!(
+    "INSERT INTO tenant_task_events (tenant_id, task_id, seq, payload) SELECT $1, $2, $3, $4 WHERE ",
+    crate::store::claim::fence_sql!(postgres "$5::text", "$2"),
+    " ON CONFLICT (tenant_id, task_id, seq) DO NOTHING"
+);
 
 #[cfg(feature = "sqlite")]
 pub(super) const SQLITE_SELECT_AFTER: &str = "SELECT seq, payload FROM tenant_task_events \

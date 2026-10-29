@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# Two stages: build against the full toolchain, ship without it. The runtime
+# Build against the full toolchain, ship without it. The runtime
 # image carries no compiler, no cargo registry and no source — a build image
 # shipped as a runtime is the most common way an agent's attack surface ends up
 # larger than its code.
@@ -9,14 +9,26 @@
 # Build from the repository root, not this directory:
 #   docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
 
-FROM rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS build
+# Three build stages, so a change to the source does not rebuild the
+# dependencies. cargo-chef's `prepare` reduces the workspace to a recipe of
+# its manifests and lock file; `cook` builds only the dependencies from that
+# recipe, in a layer Docker reuses until a manifest or Cargo.lock changes;
+# the last stage builds the workspace's own crates over it. The workspace is
+# copied whole because this example depends on the SDK crates by path.
+FROM rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS chef
+# An exact version from crates.io, built with its own lock file.
+RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /src
 
-# The whole workspace is copied because this example depends on the SDK crates
-# by path. A published-crates deployment would copy only its own manifest and
-# get dependency-layer caching; here correctness beats the cached layer.
+FROM chef AS planner
 COPY . .
-RUN cargo build --release -p deploy-agent
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --release --locked -p deploy-agent --recipe-path recipe.json
+COPY . .
+RUN cargo build --release --locked -p deploy-agent
 
 # Debian slim rather than distroless or scratch: the binary links glibc. The
 # SDK verifies TLS (push notifications, the client, the telemetry exporters)

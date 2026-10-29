@@ -46,28 +46,35 @@ pub type Client = hyper_util::client::legacy::Client<
     Full<Bytes>,
 >;
 
-/// How long a turn holds its event queue open, in milliseconds.
-///
-/// A knob because the reattach behaviour a tail depends on is a race against
-/// `HandlerLimits::subscribe_reattach_interval`, and a measurement that fixed
-/// this at zero would report that race's outcome as if it were the design.
-static TURN_DWELL_MS: AtomicU64 = AtomicU64::new(0);
+/// The shape of every turn one deployment's executor runs: one per
+/// [`Deployment`], because this binary's tests run at once. As two statics,
+/// one test's 1,024-event turns overran another's replay from position 0.
+#[derive(Debug)]
+pub struct TurnShape {
+    /// How long a turn holds its event queue open, in milliseconds.
+    ///
+    /// A knob because the reattach behaviour a tail depends on is a race
+    /// against `HandlerLimits::subscribe_reattach_interval`, and a
+    /// measurement that fixed this at zero would report that race's outcome
+    /// as if it were the design.
+    dwell_ms: AtomicU64,
+    /// Logged events one turn emits before it parks.
+    ///
+    /// One is the channel-post shape. A large value is the only way to put
+    /// more than [`QUEUE_CAPACITY`] events into a single turn, which is the
+    /// condition under which a broadcast receiver can fall behind far enough
+    /// to be dropped — so it is the only arm that tests fan-out loss rather
+    /// than reattach timing.
+    events: AtomicU64,
+}
 
-/// Logged events one turn emits before it parks.
-///
-/// One is the channel-post shape. A large value is the only way to put more
-/// than [`QUEUE_CAPACITY`] events into a single turn, which is the condition
-/// under which a broadcast receiver can fall behind far enough to be dropped
-/// — so it is the only arm that tests fan-out loss rather than reattach
-/// timing.
-static TURN_EVENTS: AtomicU64 = AtomicU64::new(1);
-
-/// Sets how long each turn dwells before parking, and how many events it
-/// emits. Applies to every subsequent post on every channel of the running
-/// deployment.
-pub fn set_turn_shape(dwell_ms: u64, events: u64) {
-    TURN_DWELL_MS.store(dwell_ms, Ordering::Relaxed);
-    TURN_EVENTS.store(events.max(1), Ordering::Relaxed);
+impl Default for TurnShape {
+    fn default() -> Self {
+        Self {
+            dwell_ms: AtomicU64::new(0),
+            events: AtomicU64::new(1),
+        }
+    }
 }
 
 /// A channel participant: appends the post to the task's log, then parks.
@@ -77,7 +84,10 @@ pub fn set_turn_shape(dwell_ms: u64, events: u64) {
 /// terminal task, and `resolve_task_id` refuses a message naming one, so a
 /// task that completes can neither be posted to again nor tailed — it would
 /// be a channel with exactly one post in it.
-pub struct ChannelExec;
+#[derive(Default)]
+pub struct ChannelExec {
+    shape: Arc<TurnShape>,
+}
 
 impl a2a_protocol_server::executor::AgentExecutor for ChannelExec {
     fn execute<'a>(
@@ -98,14 +108,14 @@ impl a2a_protocol_server::executor::AgentExecutor for ChannelExec {
             // during the dwell would have missed everything the turn
             // produced, and the arm would score reattach timing while
             // claiming to score fan-out.
-            let dwell = TURN_DWELL_MS.load(Ordering::Relaxed);
+            let dwell = self.shape.dwell_ms.load(Ordering::Relaxed);
             if dwell > 0 {
                 tokio::time::sleep(Duration::from_millis(dwell)).await;
             }
             // `Working` is non-terminal, so a burst of them keeps the turn
             // open; the single `InputRequired` at the end parks the channel
             // for the next post.
-            let burst = TURN_EVENTS.load(Ordering::Relaxed).saturating_sub(1);
+            let burst = self.shape.events.load(Ordering::Relaxed).saturating_sub(1);
             for _ in 0..burst {
                 emitter
                     .status(a2a_protocol_types::TaskState::Working)
@@ -125,6 +135,7 @@ pub struct Deployment {
     stop: tokio::sync::oneshot::Sender<()>,
     serving: tokio::task::JoinHandle<a2a_protocol_server::serve::ServeReport>,
     handler: Arc<a2a_protocol_server::RequestHandler>,
+    shape: Arc<TurnShape>,
 }
 
 impl Deployment {
@@ -146,25 +157,28 @@ impl Deployment {
     pub async fn start_with_store(
         store: impl a2a_protocol_server::store::TaskStore + 'static,
     ) -> Self {
+        let shape = Arc::new(TurnShape::default());
         let handler = Arc::new(
-            RequestHandlerBuilder::new(ChannelExec)
-                .with_task_store(store)
-                .with_event_queue_capacity(QUEUE_CAPACITY)
-                .with_handler_limits(HandlerLimits::default())
-                .with_agent_card(super::fixtures::swarm_card())
-                // The card advertising push notifications is not what enables
-                // them: without a store the handler answers
-                // PUSH_NOTIFICATION_NOT_SUPPORTED, which is what the CRUD arm
-                // first measured.
-                .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
-                // A store is not enough: the push-config handlers require a
-                // wired sender too, and answer PUSH_NOTIFICATION_NOT_SUPPORTED
-                // without one. Nothing is ever delivered here — the arm
-                // measures the CRUD path, not the callback — but the sender has
-                // to exist for the CRUD path to be reachable at all.
-                .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
-                .build()
-                .expect("handler builds"),
+            RequestHandlerBuilder::new(ChannelExec {
+                shape: Arc::clone(&shape),
+            })
+            .with_task_store(store)
+            .with_event_queue_capacity(QUEUE_CAPACITY)
+            .with_handler_limits(HandlerLimits::default())
+            .with_agent_card(super::fixtures::swarm_card())
+            // The card advertising push notifications is not what enables
+            // them: without a store the handler answers
+            // PUSH_NOTIFICATION_NOT_SUPPORTED, which is what the CRUD arm
+            // first measured.
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+            // A store is not enough: the push-config handlers require a
+            // wired sender too, and answer PUSH_NOTIFICATION_NOT_SUPPORTED
+            // without one. Nothing is ever delivered here — the arm
+            // measures the CRUD path, not the callback — but the sender has
+            // to exist for the CRUD path to be reachable at all.
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
+            .build()
+            .expect("handler builds"),
         );
         let server = Server::bind("127.0.0.1:0")
             .await
@@ -194,7 +208,16 @@ impl Deployment {
             stop,
             serving,
             handler,
+            shape,
         }
+    }
+
+    /// Sets how long each turn dwells before parking, and how many events it
+    /// emits. Applies to every subsequent post on every channel of this
+    /// deployment, and of no other.
+    pub fn set_turn_shape(&self, dwell_ms: u64, events: u64) {
+        self.shape.dwell_ms.store(dwell_ms, Ordering::Relaxed);
+        self.shape.events.store(events.max(1), Ordering::Relaxed);
     }
 
     /// The configuration line that has to accompany every table.

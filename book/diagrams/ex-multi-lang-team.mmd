@@ -1,0 +1,16 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    user["A2A caller<br/>(the self-driving run, or you)"]
+    co["Rust coordinator<br/>4 bindings, or JSON-RPC on A2A_BIND_ADDR"]
+    py["Python<br/>:9100"]
+    js["JavaScript<br/>:9101"]
+    go["Go<br/>:9102"]
+    ja["Java<br/>:9103"]
+    rs["Rust worker<br/>:9104"]
+    user --> co
+    co -->|"SendMessage, 10 s each"| py
+    co --> js
+    co --> go
+    co --> ja
+    co --> rs

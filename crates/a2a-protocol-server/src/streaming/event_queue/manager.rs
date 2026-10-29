@@ -149,6 +149,18 @@ impl EventQueueManager {
         self
     }
 
+    /// How long a write waits for room in a full persistence channel before
+    /// it fails. Default: [`DEFAULT_WRITE_TIMEOUT`]. The handler sets it to
+    /// at least [`HandlerLimits::store_write_retry`], the time its consumer
+    /// may spend on one write while the store is unavailable.
+    ///
+    /// [`HandlerLimits::store_write_retry`]: crate::handler::HandlerLimits::store_write_retry
+    #[must_use]
+    pub(crate) const fn with_write_timeout(mut self, write_timeout: std::time::Duration) -> Self {
+        self.write_timeout = write_timeout;
+        self
+    }
+
     /// Sets the metrics hook for reporting queue depth changes.
     #[must_use]
     pub fn with_metrics(mut self, metrics: Arc<dyn Metrics>) -> Self {

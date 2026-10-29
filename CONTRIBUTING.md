@@ -370,8 +370,15 @@ prevent.
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (`cargo test` runs the doctests too)
 cargo test --workspace
+
+# What CI's test matrix runs: each test in its own process, a hung test
+# killed and named at two minutes (.config/nextest.toml, profile `ci`), then
+# the doctests, which nextest does not run.
+cargo install --locked cargo-nextest --version "$(sed -n 's/^CARGO_NEXTEST_VERSION=//p' scripts/install_cargo_mutants.sh)"
+cargo nextest run --profile ci --workspace --all-features
+cargo test --doc --workspace --all-features
 
 # Run all tests including feature-gated code (sqlite, otel, axum, etc.)
 cargo test --workspace --features "a2a-protocol-server/axum"

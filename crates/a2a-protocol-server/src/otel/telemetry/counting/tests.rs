@@ -377,6 +377,33 @@ async fn a_proxy_the_export_goes_through_is_named() {
     );
 }
 
+/// A hint only a proxy can explain is given when the export went through
+/// one, and not for the same words without: `reporting` marks the route as
+/// proxied from `via`, which the route built from the URL alone is not.
+#[tokio::test]
+async fn a_proxy_hint_is_given_only_for_an_export_through_a_proxy() {
+    let tunnel = "client error (Connect): tunnel error: unsuccessful";
+    let proxied = report(
+        OtlpProtocol::HttpProtobuf,
+        "https://c:4318/v1/traces",
+        Some("http://proxy.example:3128"),
+        Some(tunnel),
+    )
+    .await;
+    assert!(
+        proxied.contains("the proxy refused to open a tunnel"),
+        "{proxied}"
+    );
+    let direct = report(
+        OtlpProtocol::HttpProtobuf,
+        "https://c:4318/v1/traces",
+        None,
+        Some(tunnel),
+    )
+    .await;
+    assert!(!direct.contains("proxy refused"), "{direct}");
+}
+
 #[tokio::test]
 async fn the_other_transports_port_is_named_when_the_export_fails() {
     let message = report(

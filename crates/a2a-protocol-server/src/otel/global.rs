@@ -103,6 +103,10 @@ impl Metrics for GlobalOtelMetrics {
         self.current().on_persistence_error(operation, error_kind);
     }
 
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        self.current().on_store_retry(operation, cause);
+    }
+
     fn on_push_delivery(&self, outcome: &str) {
         self.current().on_push_delivery(outcome);
     }
@@ -172,6 +176,7 @@ mod tests {
         metrics.on_latency("GetTask", std::time::Duration::from_millis(3));
         metrics.on_queue_depth_change(2);
         metrics.on_persistence_error("save", "internal");
+        metrics.on_store_retry("statement", "connection_lost");
         metrics.on_push_delivery("delivered");
         metrics.on_connection_pool_stats(&ConnectionPoolStats::default());
         let mut collected = ResourceMetrics::default();
@@ -189,6 +194,7 @@ mod tests {
             "a2a.server.request.duration",
             "a2a.server.queue_depth",
             "a2a.server.persistence_errors",
+            "a2a.server.store_retries",
             "a2a.server.push_deliveries",
             "a2a.server.pool.active",
         ] {

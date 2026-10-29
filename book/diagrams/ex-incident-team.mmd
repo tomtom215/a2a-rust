@@ -1,0 +1,13 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    op["Operator<br/>(the demo's A2A client)"]
+    tr["triage :9200<br/>asks, delegates, reports"]
+    lg["logs :9201<br/>deterministic"]
+    rb["runbook :9202<br/>summary or verbatim"]
+    llm[("Model server :11434<br/>optional")]
+    op -->|"SendStreamingMessage<br/>CancelTask"| tr
+    tr -->|"SendMessage"| lg
+    tr -->|"SendMessage"| rb
+    tr -.->|"report"| llm
+    rb -.->|"summary"| llm

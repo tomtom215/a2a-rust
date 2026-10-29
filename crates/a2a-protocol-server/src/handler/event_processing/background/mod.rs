@@ -85,7 +85,11 @@ impl RequestHandler {
                         cancel,
                         gate,
                         applied,
+                        claim,
+                        saved_whole,
                     } = links;
+                    // Held to this processor's last write (`handler::claims`).
+                    let _claim = claim;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.
                     let _gate_guard = gate.clone().map(CloseOnDrop);
@@ -109,34 +113,43 @@ impl RequestHandler {
                     // state transition and push notification for the task while
                     // its stream kept delivering — so fall back to the send path's
                     // snapshot and (for a confirmed miss) re-assert the row.
-                    let last_task = match task_store.get(&task_id).await {
-                        Ok(Some(task)) => task,
-                        Ok(None) => {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "background processor: task missing at start; \
-                                 re-asserting from the send-path snapshot"
-                            );
-                            if let Err(e) = task_store.save(&initial_task).await {
-                                trace_error!(
+                    // A task the send saved whole (`ProcessorLinks::saved_whole`)
+                    // is the row as stored, so it is not read back: that read
+                    // was a round trip to learn nothing. If the row is evicted
+                    // in the window, the first fold's write (an upsert) puts it
+                    // back from this same snapshot.
+                    let last_task = if saved_whole {
+                        initial_task
+                    } else {
+                        match task_store.get(&task_id).await {
+                            Ok(Some(task)) => task,
+                            Ok(None) => {
+                                trace_warn!(
                                     task_id = %task_id,
-                                    error = %e,
-                                    "background processor: failed to re-assert evicted task"
+                                    "background processor: task missing at start; \
+                                     re-asserting from the send-path snapshot"
                                 );
-                                metrics.on_persistence_error(
-                                    crate::metrics::persistence_operation::TASK_SNAPSHOT,
-                                    e.metric_label(),
-                                );
+                                if let Err(e) = task_store.save(&initial_task).await {
+                                    trace_error!(
+                                        task_id = %task_id,
+                                        error = %e,
+                                        "background processor: failed to re-assert evicted task"
+                                    );
+                                    metrics.on_persistence_error(
+                                        crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                                        e.metric_label(),
+                                    );
+                                }
+                                initial_task
                             }
-                            initial_task
-                        }
-                        Err(_e) => {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "background processor: store read failed at start; \
-                                 continuing from the send-path snapshot"
-                            );
-                            initial_task
+                            Err(_e) => {
+                                trace_warn!(
+                                    task_id = %task_id,
+                                    "background processor: store read failed at start; \
+                                     continuing from the send-path snapshot"
+                                );
+                                initial_task
+                            }
                         }
                     };
 
@@ -199,10 +212,15 @@ impl RequestHandler {
 /// event that was never recorded is exactly the situation issue #130 left no
 /// way to detect.
 ///
-/// A failed append is logged and counted, never fatal. The log is a record of
-/// the run, not a precondition for it: refusing to continue would turn a
-/// storage hiccup into a failed task, which is worse than a gap in the
-/// history — and the gap is visible, because the sequence skips a position.
+/// An append the store answers is unavailable for now runs again, for up to
+/// `retry` ([`HandlerLimits::store_write_retry`]), and the events after it
+/// wait. One that still fails is logged and counted, never fatal. The log
+/// is a record of the run, not a precondition for it: refusing to continue
+/// would turn a storage outage into a failed task, which is worse than a gap
+/// in the history — and the gap is visible, because the sequence skips a
+/// position.
+///
+/// [`HandlerLimits::store_write_retry`]: crate::handler::HandlerLimits::store_write_retry
 ///
 /// The position is not chosen here. It was assigned by
 /// [`InMemoryQueueWriter::write`](crate::streaming::InMemoryQueueWriter) and
@@ -215,6 +233,7 @@ pub(in crate::handler::event_processing) async fn record_event(
     task_id: &a2a_protocol_types::task::TaskId,
     event: &a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
     metrics: &dyn crate::metrics::Metrics,
+    retry: std::time::Duration,
 ) {
     if !task_store.supports_event_log() {
         return;
@@ -230,7 +249,13 @@ pub(in crate::handler::event_processing) async fn record_event(
         // the agent emitted, so neither belongs in the record of what it did.
         return;
     };
-    if let Err(e) = task_store.append_event(task_id, seq, &event.event).await {
+    let appended = super::persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::EVENT_APPEND,
+        || task_store.append_event(task_id, seq, &event.event),
+    );
+    if let Err(e) = appended.await {
         trace_warn!(
             task_id = %task_id,
             seq = seq,

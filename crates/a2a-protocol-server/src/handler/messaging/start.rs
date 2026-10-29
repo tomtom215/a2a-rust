@@ -6,7 +6,10 @@
 //! How a committed send's executor starts: on a task of its own, or run by
 //! the task that collects its events.
 
+use a2a_protocol_types::task::Task;
 use tokio::task::JoinHandle;
+
+use crate::streaming::InMemoryQueueReader;
 
 /// Whether the current tokio runtime has a single worker thread: a
 /// current-thread runtime, or a multi-thread one sized to one CPU (as
@@ -39,4 +42,52 @@ impl ExecutorStart {
             Self::Deferred(deferred) => deferred.watch(),
         }
     }
+}
+
+/// A task whose executor is running: what `commit_task` hands the response
+/// phase.
+pub(super) struct Started {
+    /// The task as saved, `Submitted`.
+    pub(super) task: Task,
+    /// The first reader on the task's event queue.
+    pub(super) reader: InMemoryQueueReader,
+    /// The background processor's channel, present when one was requested.
+    pub(super) persistence_rx: Option<crate::streaming::event_queue::PersistenceRx>,
+    /// The executor: spawned for a send answered in the background, deferred
+    /// for a blocking one, whose collecting task runs it.
+    pub(super) executor: ExecutorStart,
+    /// The executor's cancellation token, so the background processor can
+    /// stop it when the store says another writer already finished the task.
+    pub(super) cancel: tokio_util::sync::CancellationToken,
+    /// The queue's terminal gate, answered by the background processor.
+    pub(super) gate:
+        Option<std::sync::Arc<crate::streaming::event_queue::terminal_gate::TerminalGate>>,
+    /// The turn's claim, which the event consumer holds to its last write
+    /// (`handler::claims`).
+    pub(super) claim: Option<std::sync::Arc<super::super::claims::TurnClaim>>,
+    /// `task` is the row exactly as saved (`basis::based_on`): a new task, or
+    /// a continuation built from the read under its claim. Otherwise the save
+    /// appended to a history `task` does not carry, so the row is read back.
+    pub(super) saved_whole: bool,
+}
+
+/// What committing a send produced.
+pub(super) enum Committed {
+    /// A task was created and its executor spawned.
+    ///
+    /// Boxed to match `Replay`: leaving this variant inline makes the enum as
+    /// large as `Started`, which is what carried the send future past
+    /// clippy's `large_futures` threshold in the first place.
+    Started(Box<Started>),
+    /// The send carried an idempotency key already held by this same message.
+    /// The task the original send created, to be returned without executing
+    /// anything.
+    ///
+    /// Boxed so this cold variant does not set the size of every send's
+    /// future: a `Task` inline here pushed all three dispatch futures past
+    /// clippy's `large_futures` threshold.
+    Replay(Box<Task>),
+    /// An approval recorded toward a quorum that is still short (`quorum`):
+    /// the task as saved, still waiting. Nothing runs.
+    Waiting(Box<Task>),
 }

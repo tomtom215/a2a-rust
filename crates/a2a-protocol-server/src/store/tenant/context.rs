@@ -16,6 +16,10 @@ tokio::task_local! {
     /// (clippy `large_futures`, 29-34 KB), which this crate measures as a
     /// throughput cost.
     static CURRENT_CALLER: std::cell::OnceCell<String>;
+    /// Filled at most once per send, when the turn has claimed its task
+    /// (`crate::store::claim`): the token a SQL store fences the turn's
+    /// writes with. A slot for the same reason as the caller's.
+    static CURRENT_FENCE: std::cell::OnceCell<String>;
 }
 
 /// Separates the tenant from the caller in a [`TenantContext::partition`]
@@ -90,9 +94,30 @@ impl TenantContext {
         CURRENT_TENANT
             .scope(
                 tenant.into(),
-                CURRENT_CALLER.scope(std::cell::OnceCell::new(), f),
+                CURRENT_CALLER.scope(
+                    std::cell::OnceCell::new(),
+                    CURRENT_FENCE.scope(std::cell::OnceCell::new(), f),
+                ),
             )
             .await
+    }
+
+    /// The turn claim token this request's writes are fenced with, if it
+    /// has claimed its task (`crate::store::claim::current_fence`).
+    #[must_use]
+    pub(crate) fn fence() -> Option<String> {
+        CURRENT_FENCE
+            .try_with(|cell| cell.get().cloned())
+            .ok()
+            .flatten()
+    }
+
+    /// Fences the rest of this request's task writes with `token`. `false`
+    /// when there is no request scope, or it holds another token.
+    pub(crate) fn set_fence(token: &str) -> bool {
+        CURRENT_FENCE
+            .try_with(|cell| cell.get_or_init(|| token.to_owned()) == token)
+            .unwrap_or(false)
     }
 
     /// Isolates the rest of this request to `caller`.
@@ -115,6 +140,7 @@ impl TenantContext {
         CapturedTenant {
             tenant: Self::current(),
             caller: Self::caller(),
+            fence: Self::fence(),
         }
     }
 }
@@ -124,6 +150,7 @@ impl TenantContext {
 pub struct CapturedTenant {
     tenant: String,
     caller: Option<String>,
+    fence: Option<String>,
 }
 
 impl CapturedTenant {
@@ -133,8 +160,26 @@ impl CapturedTenant {
         &self.tenant
     }
 
-    /// Runs `f` with the captured tenant and caller in force.
+    /// Runs `f` with the captured tenant and caller in force, and the
+    /// captured turn's fence when there was one.
     pub async fn scope<F, R>(self, f: F) -> R
+    where
+        F: Future<Output = R>,
+    {
+        match self.fence {
+            Some(fence) => {
+                Self {
+                    fence: None,
+                    ..self
+                }
+                .scope_tenant(CURRENT_FENCE.scope(std::cell::OnceCell::from(fence), f))
+                .await
+            }
+            None => self.scope_tenant(f).await,
+        }
+    }
+
+    async fn scope_tenant<F, R>(self, f: F) -> R
     where
         F: Future<Output = R>,
     {

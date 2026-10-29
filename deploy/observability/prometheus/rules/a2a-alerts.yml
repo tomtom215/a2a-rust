@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# Alerts for a2a-rust agents, built on a2a-recording.yml. The signals are the
-# ones the book's observability chapter says are worth paging on
-# (book/src/deployment/observability.md, "The four signals worth alerting
-# on"). Thresholds are starting points: tune `for:` and the ratios to your
-# traffic. Each alert has a promtool unit test in ../tests/.
+# Alerts for a2a-rust agents, built on a2a-recording.yml. The book lists each
+# one, what it means and what to check first
+# (book/src/deployment/observability/dashboards.md). Thresholds are starting
+# points: tune `for:` and the ratios to your traffic. Each alert has a
+# promtool unit test in ../tests/.
 
 groups:
   - name: a2a-alerts

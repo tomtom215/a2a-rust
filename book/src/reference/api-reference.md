@@ -8,6 +8,18 @@ exhaustive, always-current listing — every item, every signature, generated
 from the code (docs.rs builds it for each release; the deploy builds it from
 `main` under `/dev/api/`) — see the [generated API documentation](/api/).
 
+Jump to the crate you are using, or straight to the
+[constructors cheatsheet](#constructors-cheatsheet): one compiled block that
+builds the values you need most, from task states, parts, artifacts and ids to
+capabilities, an agent card and a push config.
+
+| Crate | What you find there |
+|---|---|
+| [`a2a-protocol-types`](#wire-types-a2a-protocol-types) | Wire types: tasks, messages, artifacts, agent cards, security schemes, errors, JSON-RPC envelopes |
+| [`a2a-protocol-client`](#client-a2a-protocol-client) | The client, discovery, interceptors, authentication helpers, transports |
+| [`a2a-protocol-server`](#server-a2a-protocol-server) | The handler and its builder, executors, dispatchers, stores, configuration |
+| [`a2a-protocol-sdk`](#sdk-a2a-protocol-sdk) | The umbrella crate: re-exports, telemetry, the prelude |
+
 Every name below is checked against the crates by
 `scripts/check_api_reference.py` in CI, so a type that gets renamed cannot leave
 a stale entry here. The same script checks the other direction at the crate

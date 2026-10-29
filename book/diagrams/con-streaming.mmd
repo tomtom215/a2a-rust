@@ -1,0 +1,16 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as Client
+    participant H as Server
+    participant E as Executor
+    C->>H: SendStreamingMessage
+    H->>E: execute
+    E->>H: StatusUpdate Working
+    H-->>C: Task snapshot
+    H-->>C: StatusUpdate Working
+    E->>H: ArtifactUpdate (chunks)
+    H-->>C: ArtifactUpdate (chunks)
+    E->>H: StatusUpdate Completed
+    H->>H: store the terminal state
+    H-->>C: StatusUpdate Completed

@@ -1,0 +1,13 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    grant["parent: budget.grant()<br/>reserves the meters"] --> start["Delegation::start_budgeted<br/>sends budget + lease"]
+    start --> id["first event names<br/>the child's task id"]
+    id --> run(["child running"])
+    run -->|"every ttl / 3"| renew["renew_lease"]
+    renew --> run
+    run --> settled{"child<br/>settles?"}
+    settled -->|"yes"| charge["parent charged<br/>the reported spend"]
+    settled -->|"no"| stop{"parent cancels,<br/>stream lost, or<br/>handle dropped?"}
+    stop -->|"yes"| cancel["CancelTask;<br/>reservation kept"]
+    stop -->|"no: parent gone"| lapse["lease lapses;<br/>agent stops child"]

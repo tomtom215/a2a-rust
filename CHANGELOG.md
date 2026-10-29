@@ -10,7 +10,342 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+Several replicas can now share one PostgreSQL database (or several processes
+one SQLite file) with no session affinity: each turn of a task claims it in
+the database, so two replicas never run one task at once, a continuation
+starts from everything the last turn stored wherever it ran, a cancel reaches
+the executor on another replica within about a second, a replica that dies
+mid-turn hands its tasks over after the claim's time to live, and a replica
+that stalled past it writes nothing more. Found missing, with the other
+entries here, by running the repository's own binaries as replicas behind a
+load balancer, against a real model (llama.cpp `llama-server` b11913 with
+Qwen3.5-2B and Gemma 4 E2B) and a real observability stack (OpenTelemetry
+Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
+13.2.4), 2026-10-28.
+
+### Added
+
+- **`PostgresTaskStore::pool_options()`** (server): the pool options `new`
+  uses (a ping only for a connection idle a second or more), for a caller
+  who builds the pool for `from_pool`. Its docs say which stores may share
+  such a pool: the PostgreSQL task stores, not the push-config, rate-limit
+  or audit stores.
+- **The `TaskStore` trait states what a write retried by the handler must
+  keep** ("Writes the handler makes again"): `save`, `save_status_delta`,
+  `save_artifact_delta` and `append_event` leave the store as one call would
+  when called twice, and "not now" is only for a failure a later call may
+  get past. It was documented only on `HandlerLimits::store_write_retry`,
+  where a custom store's author would not look. `tests/retried_statements.rs`
+  now runs those writes twice on all six stores in this crate, the in-memory
+  and SQLite ones in every test run.
+
+- **`Metrics::on_store_retry(operation, cause)`** and the OpenTelemetry
+  counter `a2a.server.store_retries` (server): every store write a turn makes
+  again because the store said "not now" (`cause = "unavailable"`, under
+  `store_write_retry`), and every PostgreSQL statement run again on a new
+  connection because its first lost one (`operation = "statement"`,
+  `cause = "connection_lost"`), reported through the store's `with_metrics`.
+  Their log lines are now throttled to one per ten seconds per kind: a
+  failover met every statement in flight and logged a warning for each. The
+  trait method has a default body, so existing implementations still compile;
+  the turn claims a PostgreSQL store hands out report through its metrics too.
+
+- **`HandlerLimits::store_write_retry`** (server; default 30 s): how long a
+  turn's event consumer goes on writing one event while the task store
+  answers that it is unavailable for now (*Fixed*).
+- **Turn claims: one replica at a time per task** (server; `store::claim`).
+  The PostgreSQL and SQLite stores, plain and tenant-aware, keep a table,
+  `a2a_task_claims`, beside their tasks, and the handler takes a row in it
+  for each turn: a send claims its task once it knows it (after an idempotent
+  replay is answered), waits for a claim another turn holds for up to
+  `executor_drain_timeout` and is then refused as a send to a running task is
+  on its own replica, reads a continued task again under the claim, and
+  releases it when the turn's executor and its event consumer have both
+  ended. Every task write and event-log append a turn makes is fenced by the
+  claim's token in the same statement (on PostgreSQL locking the claim row
+  `FOR KEY SHARE`, so a write that waited through a takeover is refused too),
+  so a replica whose claim was taken over is refused (`ClaimLost`) and its
+  executor cancelled. The owner renews the claims it holds, by token, every
+  second; a `CancelTask` on another replica marks the claim and the owner's
+  next renewal fires the executor's token, with or without a halt store; a
+  dead replica's claims expire after 15 s and the next send takes the task
+  over; a replica that shuts down releases its claims at once. A send that
+  waits for another replica's turn gives up its idempotency key while it
+  waits, and an approval toward a quorum is counted under the claim, so
+  approvals on two replicas at once are both counted. `build` refuses
+  `with_turn_claims` over a store with claims of its own. New: `store::claim` (`TurnClaimStore`, `HeldClaim`, `ClaimLost`,
+  `CLAIM_LOST_MARKER`, `current_fence`, `InMemoryTurnClaims`,
+  `PostgresTurnClaims`, `SqliteTurnClaims`), the provided method
+  `TaskStore::turn_claims` (default `None`: no claims, as before), and the
+  builder's `with_turn_claims`, `without_turn_claims`,
+  `with_turn_claim_timing` and `with_replica_name`, with
+  `DEFAULT_TURN_CLAIM_TTL`, `DEFAULT_TURN_CLAIM_RENEWAL` and
+  `MIN_TURN_CLAIM_TTL`. PostgreSQL migration 8 and SQLite migration 9 create
+  the table; `from_pool` does too. Tests: `tests/turn_claims/` (each case on
+  SQLite and PostgreSQL), `tests/replica_processes.rs` (replicas as separate
+  processes, one killed mid-turn: taken over 2.82 s after the kill with a 3 s
+  time to live), `tests/multi_replica.rs`
+  `the_single_writer_refusal_crosses_replicas`, and
+  `tests/soak_multi_replica.rs`, which now checks that every claim is
+  released by the end of a run. An independent review of the first version
+  found six defects (a renewal racing a new claim cancelled it; renewal by
+  owner kept a forgotten claim alive; the PostgreSQL fence read a stale
+  snapshot; the quorum count, and a waiting send's key, were outside the
+  claim; foreign claims over a fenced store refused every write); each is
+  fixed here with a test that fails without the fix.
+- **`deploy/observability/docker-compose.yml`**: the whole stack in one
+  command, a Collector receiving all three signals and sending metrics to
+  Prometheus (through its OTLP receiver, so the dashboards and rules work
+  unchanged), traces to Tempo and logs to Loki, and Grafana provisioned with
+  the three dashboards and Tempo and Loki data sources linked both ways (a
+  span to its logs, a log line to its trace). Before, the Collector
+  configuration sent traces and logs only to its `debug` exporter, and the
+  README's addresses named services nothing defined.
+- **Rolling upgrades from 0.15 need no affinity and no ordering**
+  (PostgreSQL; `store::claim::upgrade`). Every write this release makes marks
+  itself with a transaction-local setting; triggers on `tasks`, `task_events`,
+  `tenant_tasks` and `tenant_task_events` refuse an unmarked write (an
+  earlier release's) to a task a newer replica holds a claim on, except a
+  cancel, which wins and stops the newer replica's executor; an unmarked
+  write that leaves a task `submitted` or `working` claims it until 5 minutes
+  after its last write (`a2a.legacy_claim_ttl`), so newer replicas wait for
+  that turn, and one that parks or ends the task releases it. Both sides take
+  a per-task advisory lock before they look. Installed by every PostgreSQL
+  store at startup and by PostgreSQL migration 9. Tested against a real
+  0.15.0 replica process (4 of 4 cases; 1 of 4 with the triggers disabled)
+  and in `tests/turn_claims/upgrade.rs`, which replays 0.15.0's statements
+  and checks that every write this release makes is marked (each of five
+  mutants of the guard fails at least one case). Its cost to a fleet that has
+  finished upgrading was not distinguishable from noise (334 ± 31 pairs/s
+  with the triggers, 344 ± 41 without, three runs each). SQLite gets none of this:
+  processes sharing one file are on one host and are replaced together.
+- **`deploy/observability/docker-compose.prod.yml`**: the stack closed down
+  for a shared host (a Grafana login from `GRAFANA_ADMIN_PASSWORD`, only
+  Grafana and the Collector's OTLP ports published, a memory limit on the
+  Collector). Both Collector configurations now run `memory_limiter` first in
+  every pipeline and answer health checks on 13133.
+- **`deploy-agent` takes `DATABASE_URL`**: tasks and push configs in
+  PostgreSQL, which is what its Kubernetes manifest's two replicas need (see
+  *Fixed*).
+- **The book, restructured** (78 pages to 210): every page over about 450
+  lines split into a landing page and focused sub-pages at the same paths,
+  so links and anchors from outside the book keep working (the longest
+  hand-written page was `upgrading.md` at 2,585 lines; now 436, apart from
+  the gate-checked API quick reference). New pages: a complete observability
+  chapter (metrics with every label value and bucket, spans, trace context,
+  logs, Prometheus ingest paths, every shipped alert and recording rule, a
+  local-stack walkthrough), the tool loop, the `a2a` command-line client,
+  conformance testing, containers, health checks, and the example harness, so
+  every example has a page. 38 diagrams, rendered from Mermaid sources in
+  `book/diagrams/` by `scripts/render_book_diagrams.sh` in a light and a dark
+  variant that follow the reader's theme. Contributor material (CI, mutation
+  and conformance histories, dogfooding) moved to a *Project & Quality* part.
+  Corrected on the way, each against the source: the task state machine
+  (it drew only some legal transitions), an invalid transition's error on a
+  blocking send (`InvalidParams`, not `InvalidStateTransition`), the
+  observability page's alerting section (it named three of eight shipped
+  alerts and claimed one on `store_retries` that does not exist), the
+  hello-agent and quick-start code, and the WebSocket authentication refusal.
+- **A book link gate** (`scripts/check_book_links.py`): pull requests now
+  build the book with the deployed mdBook and check every internal link,
+  `#anchor` and image, which nothing did (`docs.yml` built it only after
+  merge). `benchmarks.yml` runs it before its bot push.
+
+### Behaviour Changes
+
+- **A PostgreSQL statement timeout or cancel (`57014`) and an idle-session
+  timeout (`57P05`) are now temporary failures** (server): HTTP `503`, gRPC
+  `UNAVAILABLE`, where they were internal errors (`500`, `INTERNAL`). Both
+  end the statement without applying it, so the same request may succeed
+  again.
+- **The PostgreSQL task stores' own pools no longer ping a connection before
+  every statement** (server; `PostgresTaskStore::new`/`with_migrations`,
+  `TenantAwarePostgresTaskStore::new`). They ping one idle for a second or
+  more; a statement that finds its connection gone (`57P01`, `57P02`,
+  `57P05`, class `08`, or the socket) runs once more on a connection pinged
+  first, if a second run leaves the database as one would, and every other
+  statement is pinged first as before. A pool passed to `from_pool` keeps its
+  own settings. `a2a_claim_turn` answers `'claimed'` to a call whose own
+  claim already carries its token, which is what such a second run is.
+- **A send to a task another replica is running now waits, then is refused**
+  (server, with the PostgreSQL or SQLite stores). It used to be admitted, and
+  both replicas ran the task. Each turn now costs two more statements against
+  the store (the claim and its release), and a handler holding claims renews
+  them once a second; `without_turn_claims()` opts out for a store one replica
+  uses. Measured with `tests/soak_multi_replica.rs` (two replicas, PostgreSQL
+  17 on the same 4-vCPU host, release build, three 30 s runs each way,
+  through a proxy adding latency): the claim costs one or two round
+  trips, 12% fewer send-and-read pairs per second at a 1.0 ms
+  round trip (390 ± 13 against 443 ± 13), 8% at 2.8 ms, 8% at 11.2 ms
+  (book: Running More Than One Replica, *What it costs*, with partitions and
+  a database restart mid-turn).
+- **On PostgreSQL, a 0.15 replica's write to a task a newer replica is
+  running is refused** (SQLSTATE `A2A01`), and a newer replica waits for a
+  task a 0.15 replica is running, so a fleet can be replaced one replica at a
+  time with no session affinity (*Added*, the upgrade guard). Its client gets
+  an internal error for that send, where before the two replicas both ran
+  the task. SQL of your own that writes the task tables is treated as an old
+  replica's unless it runs `SET LOCAL a2a.claims = 'on'` first.
+- **Log lines on standard error are coloured only on a terminal**, and never
+  with `NO_COLOR` set (`Telemetry::install_subscriber`). Every line in a file,
+  a pipe, or a Docker or Kubernetes log carried ANSI escape codes.
+- **Every binary in this repository refuses an `OTEL_*` value it cannot use
+  with one line and exit status 2**, instead of a panic with a backtrace and
+  `SIGABRT` (status 134) in the release profile.
+
+### Fixed
+
+- **A turn's claim fenced writes to any task, not only its own** (server;
+  SQLite and PostgreSQL stores). A write carrying a turn's token passed the
+  fence while that token held a claim on any task, so a write to another
+  task made inside a turn would have been fenced by the wrong claim. No
+  handler path makes one (every request opens its own fence scope); the
+  fence now names the task written (`c.task_id = …`), and a refused write is
+  told apart from a terminal-state refusal by the same test. A test writes
+  to two tasks under one claim on SQLite and PostgreSQL: the claimed task
+  lands, the other is refused as `ClaimLost`, and its log is not appended
+  to; with the fence unscoped, both stores let the second write through.
+
+- **A PostgreSQL database with a short `statement_timeout` stopped replicas
+  starting** (server). Creating the schema, and each migration, ran under the
+  database's timeout, so at 100 ms the first DDL statement failed (`57014`)
+  and the store could not be built; a replica panicked at startup in a live
+  run. The schema transaction now lifts the timeout for itself
+  (`SET LOCAL statement_timeout = 0`, `store::pg_schema::lock`). A test
+  starts the store, and runs every migration, while another session holds
+  the schema lock for longer than a 100 ms timeout, as a second replica
+  starting at the same moment does; it fails with `57014` without the fix.
+  `lock_timeout` is untouched.
+
+- **A turn whose executor emitted more than its queue held during a store
+  outage failed, and its task was left unfinished** (server). While the
+  event consumer retried one write (`store_write_retry`, 30 s), the queue
+  filled, and the executor's next write gave up after a fixed five seconds;
+  the turn failed, and its `Failed` status, meeting the same full queue, was
+  dropped, so the task stayed `Submitted` with part of its output, for good.
+  Reproduced with an in-memory store unavailable for ten seconds and an
+  executor appending 1,100 parts to a queue of capacity 1: the task ended
+  `Submitted` with 1,025 parts. The queue's wait is now at least
+  `store_write_retry`; the same run completes with all 1,100. A blocking
+  send was not affected.
+
+- **A turn's event was lost when one write of it to the task store failed**
+  (server): the event consumer logged the failure and went on, and the
+  event was in neither the log nor the task. Under a 200 ms
+  `statement_timeout`, another session holding the task row for 2 s lost
+  three artifact parts from the task and four positions from the log (3
+  live runs of 3); now each write is made again while the store says "not
+  now", for up to `store_write_retry`, and none is lost (3 of 3).
+  `tests/transient_store_errors` holds the row the same way, and ends
+  every backend mid-turn.
+- **A send made 45 round trips to PostgreSQL**, counting its read back, and
+  on a slow link those dominated. A new task's send and read now make 8
+  statements, a continuation's 11, each followed by the ping sqlx makes as
+  the connection returns to the pool and none preceded by one unless the
+  connection sat idle a second (*Behaviour Changes*): a context the send
+  minted is not looked up; a send naming a task reads that task, not the
+  context's newest (a count and a page); a new task's event numbering starts
+  at 0 without reading the log; the turn reuses the row it read under its
+  claim; and a new task, or a continuation read under its claim, is saved
+  whole, so neither the save nor the event consumer reads the row back.
+  Without a claim a continuation still appends its message to the stored
+  history, which another replica's turn may have written since. Measured
+  with `tests/soak_multi_replica.rs` (as above, claims on): 334 ± 31 to
+  532 ± 11 send-and-read pairs per second direct, 67 ± 1 to 166 ± 1 at a
+  2.6–2.8 ms round trip, 21 ± 1 to 54 ± 0 at 11.1–11.2 ms.
+- **`examples/deploy-agent/deployment.yaml` ran two replicas on in-memory
+  stores**: through a round-robin balancer, every second `GetTask` answered
+  `TaskNotFound` (measured with two processes behind HAProxy). The manifest
+  now takes `DATABASE_URL` from a Secret, not optional, and the process warns
+  at startup when it runs without one. The README's claim that two replicas
+  were safe because the agent is stateless was wrong and is gone.
+- **Four model-backed examples could not finish against a current reasoning
+  model**: `genai-agent`, `rig-agent`, `mcp-agent` and `incident-response`
+  sent no output cap and left the model's reasoning on, and Qwen3.5-2B on four
+  CPU cores generated over 5,000 tokens for one answer, past every client's
+  timeout, while llama-server went on generating for callers that had gone.
+  Each now caps output at 1,024 tokens and asks a local server not to reason
+  (`<PREFIX>_MAX_TOKENS`, `<PREFIX>_THINKING=1`), as `tool-loop-agent` and
+  `live-model` already did.
+- **`task_id` and `method` were logged with their `Debug` form**, quoted, in
+  `GetTask`, `CancelTask`, `SubscribeToTask`, the JSON-RPC dispatcher and the
+  client's delegation: in Loki the attribute read `"\"…\""`, so a query for
+  the id matched nothing.
+- **A readiness probe was a trace of its own** (server,
+  `RequestHandler::task_store_health`): its store read opened a database span
+  with no request around it, so a probe every 5 s per replica (the shipped
+  manifest's) filled the trace backend with `count <database>` traces. It now
+  records no span; the store's duration metric is still recorded.
+- **Dashboards** (`deploy/observability`): the ratio panels drew a
+  0–10,000% axis while every call succeeded, and a flat duration drew seven
+  identical ticks; ratios now start at 0 with a 10% soft maximum and
+  durations at 0. A call with no method (an unknown route, a request that is
+  not JSON-RPC) showed as a series named `Value` in the per-method panels and
+  is now `(unrouted)`. Found by looking at the panels after
+  `check_dashboards.py` had passed them.
+- **Export warnings named the wrong fix, or none, for most TLS and proxy
+  failures** (`Telemetry`). Measured against a real Collector with TLS and a
+  real Squid: the hints for a certificate issued for another host and an
+  expired certificate never fired (they matched rustls's error names, which
+  its messages do not contain); a self-signed certificate marked CA, a
+  collector that wants a client certificate, one that does not trust the one
+  given, an `https://` endpoint on a plaintext receiver (and the reverse), a
+  proxy that refuses a tunnel and a proxy that wants a login all had no hint;
+  and a 403 from a proxy was blamed on the collector's credentials. Each now
+  says what it was and what to change, tested on the failures' own text.
+- **`NO_PROXY=[::1]` exempted nothing**: a bracketed IPv6 address, the form a
+  URL writes it in, is now read as the bare one (`::1` and ranges such as
+  `fd00::/8` already worked).
+- **`PgMigrationRunner` cut every migration at each `;`**, including one
+  inside a string literal or a function body, which then failed. A
+  migration is now sent whole, in the simple protocol, inside its
+  transaction.
+- **`echo-agent`'s server mode, `tck/sut`, the ITK agent and `mcp-bridge` did
+  not flush telemetry on `SIGTERM`**: each ran until killed. They now return
+  on `shutdown_signal()`, which drops their `Telemetry`.
+
+### Internal
+
+- OSV GHSA-qwgh-2vcv-g2f7 (`block-buffer` < 0.12.1, a caught panic leaves
+  the cursor stored in the block invalid) is waived until 2027-01-29 in the
+  `osv-scanner.toml` beside the four lockfiles that lock 0.10.4 (root,
+  binding, `fuzz/`, `benches/sdk-comparison/harness/agent-a2a-rust/`). No
+  0.10.x release has a fix, and 0.10.4 keeps its cursor in a separate field
+  the callback never sees. The advisory's PoC ported to 0.10.4 runs clean
+  under Miri; on 0.11.0 it trips the crate's invariant check. osv-scanner
+  2.7.0 with `osv.yml`'s lockfile arguments: four findings before, "No
+  issues found" after.
+- `scripts/check_pg_retry.py`, a CI step: every statement on a PostgreSQL
+  task store's pool runs inside `pg_retry::retry` or `checked`, since those
+  pools no longer ping before each statement; a PostgreSQL module on a pool
+  of its own is listed with the reason. It found the migration runner's
+  version read and `BEGIN` outside both, now inside `retry`.
+- `otel_pipeline_default_endpoint` asserted that the final flush failed
+  against the default endpoint, so it failed wherever a collector listened on
+  `localhost:4317`; it now runs in a child whose `OTEL_EXPORTER_OTLP_ENDPOINT`
+  names a stand-in collector, and asserts the export arrives there.
+  `swarm_scale` kept its turn shape in two statics shared by tests running at
+  once, so one test's 1,024-event turns overran another's replay; the shape
+  now belongs to each deployment.
+- **CI runs the test matrix under cargo-nextest** (`--profile ci`: each test
+  in its own process, a hung test killed and named at two minutes, no
+  retries, a JUnit report uploaded), with the doctests, which nextest does not
+  run, in their own steps under default, all and no default features. The
+  nextest version is read from the mutation gate's install script. The whole
+  workspace with every feature passed under it locally: 5,851 tests.
+- **The `deploy-agent` image caches its dependencies** (cargo-chef 0.1.78):
+  after a change to the source only, the dependency layer was reused and the
+  build took 221 s instead of 428 s (measured in a sandbox build; the rest is
+  the workspace's own crates under fat LTO).
+- **The multi-replica soak's rate-limit check holds at any request rate.**
+  The sweep runs every 1,000th count, so through a slow link (11 ms per round
+  trip) more windows passed between sweeps than the fixed 32-row ceiling
+  allowed, and every such run failed though the sweep ran. Below the rate the
+  ceiling assumes, the run must now show a sweep and stay within what one
+  sweep interval allows at the measured rate; with the sweep removed, it still
+  fails.
+- **A turn-claim test raced the previous turn's claim release** and failed
+  when the release had not run yet; it retries as a replica does.
 
 ## [0.15.1] - 2026-10-26
 

@@ -66,14 +66,15 @@ impl TenantAwarePostgresTaskStore {
             // sqlx 0.9 asks each runtime-built statement to be vouched for: the
             // text is the static clauses above and integer placeholder positions;
             // every caller-supplied value is a bind.
-            let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
-            for val in &bind_values {
-                count = count.bind(val);
-            }
-            let n = count
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+            let n = crate::store::pg_retry::retry(&*self.metrics, || {
+                let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql.clone()));
+                for val in &bind_values {
+                    count = count.bind(val);
+                }
+                count.fetch_one(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
             u32::try_from(n).unwrap_or(u32::MAX)
         };
         // Composite (updated_at, id) row-value cursor: status-timestamp
@@ -110,13 +111,16 @@ impl TenantAwarePostgresTaskStore {
         // sqlx 0.9 asks each runtime-built statement to be vouched for: the
         // text is the static clauses above and integer placeholder positions;
         // every caller-supplied value is a bind.
-        let mut query = sqlx::query_as::<_, (String, serde_json::Value)>(sqlx::AssertSqlSafe(sql));
-        for val in &bind_values {
-            query = query.bind(val);
-        }
-
-        let rows: Vec<(String, serde_json::Value)> = query
-            .fetch_all(&self.pool)
+        let rows: Vec<(String, serde_json::Value)> =
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                let mut query = sqlx::query_as::<_, (String, serde_json::Value)>(
+                    sqlx::AssertSqlSafe(sql.clone()),
+                );
+                for val in &bind_values {
+                    query = query.bind(val);
+                }
+                query.fetch_all(&self.pool)
+            })
             .await
             .map_err(|e| to_a2a_error(&e))?;
 

@@ -467,3 +467,15 @@ fn the_encrypted_task_store_overrides_every_task_store_method() {
         "EncryptedTaskStore does not forward {missing:?}"
     );
 }
+
+/// The wrapper hands on the wrapped store's turn claims; a `None` here
+/// would leave replicas running one task's turns at once.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn the_wrapper_hands_on_turn_claims() {
+    let inner = crate::store::SqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("store");
+    let store = EncryptedTaskStore::from_arc(Arc::new(inner), cipher("k", 1).into_arc());
+    assert!(store.turn_claims().is_some());
+}

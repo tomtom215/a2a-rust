@@ -50,7 +50,7 @@ client certificates gives mutual TLS on the HTTP bindings as it does on gRPC
 (`GrpcDispatcher::with_tls`, which needs `grpc-tls`). The WebSocket listener
 does the same with `WebSocketDispatcher::with_tls` and `with_tls_pem`. The
 client certificate reaches the interceptors on every binding, and
-`MutualTlsAuthInterceptor` names the caller from it ([Authentication](../building-agents/authentication.md#mutual-tls-the-client-certificate-names-the-caller));
+`MutualTlsAuthInterceptor` names the caller from it ([Authentication](../building-agents/authentication/mtls.md#the-client-certificate-names-the-caller));
 until 2026-10-18 the HTTP dispatchers did not see it. See
 [Production](./production.md) for the setup. A reverse proxy in front remains
 a fine choice when it already manages your certificates.
@@ -300,7 +300,7 @@ Stated because a security page that lists only strengths is not one.
   `with_tenant_config` ([Multi-Tenancy](./multi-tenancy.md#the-one-that-can-be-set-and-do-nothing)).
   Failed credentials are throttled only with `AuthFailureThrottle` registered
   before the authenticator (see
-  [Authentication](../building-agents/authentication.md#throttling-guessed-credentials)).
+  [Authentication](../building-agents/authentication/throttling.md)).
 * **The SLIMRPC binding is out of scope for the published crates' audit
   surface.** It pulls 387 transitive dependencies (normal edges, measured on 2026-10-25 at
   the locked `agntcy-slim-rpc` 3.4.6) including a native C crypto build, which is why it

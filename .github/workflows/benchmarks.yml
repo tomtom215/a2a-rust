@@ -142,6 +142,22 @@ jobs:
       - name: Generated page agrees with itself
         run: ./scripts/check_benchmark_prose.sh
 
+      # Same reason: ci.yml checks the built book's links, but not on the
+      # commit this job pushes, and both generated files are part of the book
+      # (the results page links its sibling pages by name).
+      - name: Install mdBook
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Generated pages keep the book's links whole
+        run: |
+          mdbook build book
+          cp -r book/static/. book/book/
+          python3 scripts/check_book_links.py book/book
+
       - name: Commit benchmark results to book
         id: commit
         run: |

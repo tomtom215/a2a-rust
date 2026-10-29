@@ -11,16 +11,68 @@ built from this repository, not derived from the code, except the executor's
 (`a2a_server_executor_duration_seconds` and its labels), which was added later
 and follows the book's translation rule.
 
+## The whole stack in one command
+
+```sh
+docker compose -f deploy/observability/docker-compose.yml up -d
+```
+
+starts a Collector, Prometheus, Tempo (traces), Loki (logs) and Grafana, with
+the dashboards, rules and data sources provisioned. Then run any agent with
+
+```sh
+OTEL_SERVICE_NAME=my-agent OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 my-agent
+```
+
+and open Grafana on <http://localhost:3000> (no login: the anonymous user is
+an admin, so keep it off any network you do not control). The dashboards are
+in the folder "A2A"; traces and logs are under Explore, and a span opens the
+log lines written inside it, a log line its trace. An agent in a container on
+the stack's network (`a2a-observability_default`) uses
+`http://otel-collector:4318`. Published ports: 3000 Grafana, 9090 Prometheus,
+4317/4318 the Collector, 3200 Tempo, 3100 Loki.
+
+Metrics travel Collector → Prometheus's OTLP receiver, so `service.name` and
+`service.instance.id` become `job` and `instance` exactly as when an agent
+pushes to Prometheus itself, and nothing below changes. Run it for a laptop or
+a test box; it keeps everything in local volumes and has no authentication.
+
+### On a shared host
+
+```sh
+GRAFANA_ADMIN_PASSWORD=... docker compose \
+  -f deploy/observability/docker-compose.yml \
+  -f deploy/observability/docker-compose.prod.yml up -d
+```
+
+adds a Grafana login (no anonymous user; Compose refuses to start without
+the password), publishes only Grafana and the Collector's OTLP ports, so
+Prometheus, Tempo and Loki are reachable on the Compose network only, and
+gives the Collector a 1 GiB memory limit. TLS on the OTLP receivers and on
+Grafana, authentication on the receivers for agents outside your network, and
+backups are still yours to add; the file says how far it goes.
+
+Both Collector configurations put `memory_limiter` first in every pipeline
+(a burst is refused and the agent retries, rather than the Collector being
+killed for memory; its limits are 80% and 20% of the container's memory
+limit) and answer health checks on 13133 (`GET /` is 200 once the pipelines
+run), for a Kubernetes liveness or readiness probe.
+
 | Path | What it is |
 |---|---|
 | `prometheus/prometheus.yml` | Prometheus with its OTLP receiver: agents push metrics straight to it |
 | `prometheus/prometheus-collector.yml` | Prometheus scraping an OpenTelemetry Collector instead (`honor_labels: true`, see the comment) |
-| `otel-collector/config.yaml` | The Collector: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889 |
+| `docker-compose.yml` | The stack above: Collector, Prometheus, Tempo, Loki, Grafana |
+| `otel-collector/config-compose.yaml` | The Collector of the compose stack: metrics to Prometheus over OTLP, traces to Tempo, logs to Loki |
+| `tempo/tempo.yaml`, `loki/loki.yaml` | Tempo and Loki, single binary, local storage, OTLP in |
+| `grafana/provisioning/traces-and-logs.yml` | Tempo and Loki data sources, linked both ways; set `TEMPO_URL` and `LOKI_URL` (the compose stack mounts it) |
+| `docker-compose.prod.yml` | The stack closed down for a shared host: Grafana login, only Grafana and OTLP published, a memory limit on the Collector |
+| `otel-collector/config.yaml` | The Collector on its own: OTLP in on 4317 (gRPC) and 4318 (HTTP), a Prometheus exporter on 8889; traces and logs go to its `debug` exporter, so add exporters for your trace and log backends |
 | `prometheus/rules/a2a-recording.yml` | Recording rules: call rate, error ratio and latency quantiles per binding and method, unanswered requests, push-delivery outcomes, client-side calls |
 | `prometheus/rules/a2a-alerts.yml` | Eight alerts: error ratio, persistence errors, unanswered requests, event queues growing, push deliveries truncated or failing, non-streaming p99, an agent gone silent (`A2AAgentSilent`, `critical`, also fires for an instance a rollout retired: from ten minutes after its last export until an hour has passed) |
 | `prometheus/tests/a2a-alerts.test.yml` | `promtool` unit tests: each alert fires on the input it is for and not on a control |
 | `grafana/dashboards/a2a-server.json`, `a2a-client.json`, `a2a-genai.json` | Three dashboards (server, client, and the tool loop's GenAI metrics), folder "A2A", data source uid `a2a-prometheus`; screenshots in `book/src/images/dashboards/` |
-| `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` |
+| `grafana/provisioning/` | Data source and dashboard provisioning; set `PROMETHEUS_URL` and `A2A_DASHBOARDS_DIR` (both are required: unset, Grafana substitutes an empty string and the data source or the dashboards are missing) |
 | `scripts/drive.sh`, `scripts/webhook_sink.py` | Traffic for a live check: every binding, errors, streams, push deliveries to a webhook that answers and one that does not |
 | `scripts/check_dashboards.py` | The live check: rules healthy and recording rules populated; every dashboard query returns data through Grafana's query API (or Prometheus's) |
 
@@ -138,3 +190,24 @@ here: the unanswered-requests rule first subtracted only responses, which
 counts every error as unanswered (an error is not counted as a response);
 and the Collector comment named port 4317 for an exporter that defaults to
 HTTP/protobuf on 4318.
+
+### TLS, proxies and the hardened stack (2026-10-28)
+
+otelcol-contrib 0.163.2 with its OTLP receivers on TLS (a private CA; mutual
+TLS with `client_ca_file`; a self-signed certificate marked CA and one marked
+`CA:FALSE`; an expired certificate), and Squid 6.13 in front of it (open,
+denying everything, and requiring a login), fed by `tck/sut` over OTLP/HTTP
+and OTLP/gRPC. Every configuration that should work delivered traces,
+metrics and logs; every one that should not ended with a warning naming the
+cause and what to change. The texts behind those warnings are the inputs of the
+hint tests (`crates/a2a-protocol-server/src/otel/telemetry/hints/tests.rs`): three of its four TLS hints had matched
+error names rustls never prints, and never fired.
+
+Then the compose stack with the hardened Collector configuration (the
+memory limiter configured itself from the container, the health check
+answered 200) and the production override: Prometheus, Tempo and Loki
+refused connections from the host, Grafana answered 401 without a login and
+with a wrong password and served the dashboards to `admin`, and an agent's
+metrics were read back through Grafana's data source proxy. Not run: the
+production override behind TLS, and either stack in Kubernetes.
+

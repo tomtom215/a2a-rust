@@ -151,3 +151,64 @@ async fn a_quorum_is_met_across_two_handlers_sharing_a_sqlite_store() {
     drop((a, b));
     cleanup();
 }
+
+/// Two approvals arriving together at two replicas sharing a store are both
+/// counted: each is counted under the task's turn claim, so the second reads
+/// the first's record rather than saving over it. Counted before the claim,
+/// both read an empty count and one approval was lost: this test then
+/// failed at its first round in each of three runs.
+#[cfg(feature = "sqlite")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn approvals_racing_on_two_replicas_are_both_counted() {
+    use crate::store::{SqliteTaskStore, TaskStore};
+
+    let path = std::env::temp_dir().join(format!(
+        "a2a-quorum-race-{}-{}.db",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let url = format!("sqlite://{}", path.display());
+    let store = || async {
+        Arc::new(SqliteTaskStore::new(&url).await.expect("store")) as Arc<dyn TaskStore>
+    };
+    let resumed = Arc::new(AtomicUsize::new(0));
+    let gate = || ApprovalGate::new().with_quorum(2);
+    let a = builder(gate(), &resumed)
+        .with_task_store_arc(store().await)
+        .build()
+        .expect("replica A");
+    let b = builder(gate(), &resumed)
+        .with_task_store_arc(store().await)
+        .build()
+        .expect("replica B");
+
+    for round in 0..8 {
+        let (task, req) = asked(&a).await;
+        let approve = ApprovalDecision::approve(&req);
+        let (bob, carol) = tokio::join!(
+            send(&a, "t-bob", answer(&approve, &task, &format!("a-{round}"))),
+            send(
+                &b,
+                "t-carol",
+                answer(&approve, &task, &format!("b-{round}"))
+            ),
+        );
+        let states = [
+            bob.expect("bob").status.state,
+            carol.expect("carol").status.state,
+        ];
+        assert!(
+            states.contains(&TaskState::Completed) && states.contains(&TaskState::InputRequired),
+            "round {round}: one approval waits and the other meets the quorum: {states:?}"
+        );
+        assert_eq!(
+            resumed.load(Ordering::SeqCst),
+            round + 1,
+            "round {round}: the executor resumed once"
+        );
+    }
+    drop((a, b));
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+    }
+}

@@ -47,15 +47,18 @@
 //! What the record survives: on one handler, sends on one context are
 //! serialized from the read the gate counts from to the save that records
 //! the approval, so two approvals arriving together are both counted.
-//! Replicas sharing a store do not share that lock, and no shipped store
-//! writes a task conditionally on what it read, so two approvals arriving at
-//! two replicas at once can each save over the other: one approval is lost
-//! and its approver has to send it again. A lost record can only leave the
-//! count short; it never adds an approval nobody sent, since every name in
-//! it was written by the gate after that approver's check. The last two
-//! approvals arriving at two replicas at once can both meet the quorum and
-//! resume the executor twice, which is the concurrent-turns gap one approver
-//! answering on two replicas already has (`tests/multi_replica.rs`).
+//! Replicas sharing a store do not share that lock; with turn claims (the
+//! bundled PostgreSQL and SQLite stores take them by default) the count is
+//! made under the task's claim instead, so approvals arriving at two
+//! replicas at once are counted one after the other, and the executor
+//! resumes once. Without claims
+//! ([`without_turn_claims`](crate::RequestHandlerBuilder::without_turn_claims),
+//! or a shared store that provides none) two such approvals can each save
+//! over the other: one is lost and its approver has to send it again, and
+//! the last two can both meet the quorum and resume the executor twice. A
+//! lost record can only leave the count short; it never adds an approval
+//! nobody sent, since every name in it was written by the gate after that
+//! approver's check.
 //!
 //! [`EventEmitter::request_approval`]: crate::EventEmitter::request_approval
 //! [`RequestHandlerBuilder::with_approval_gate`]: crate::RequestHandlerBuilder::with_approval_gate

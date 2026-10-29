@@ -1,0 +1,23 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+stateDiagram-v2
+    direction TB
+    [*] --> Submitted : new task
+    Submitted --> Interrupted
+    Submitted --> Working
+    Submitted --> Terminal
+    Working --> Working : progress
+    Working --> Interrupted
+    Interrupted --> Working
+    Working --> Terminal
+    Interrupted --> Terminal
+    state "Interrupted (blocking send returns)" as Interrupted {
+        InputRequired
+        AuthRequired
+    }
+    state "Terminal (final)" as Terminal {
+        Completed
+        Failed
+        Canceled
+        Rejected
+    }

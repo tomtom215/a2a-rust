@@ -432,7 +432,7 @@ impl Drop for Delegation {
         }
         let Ok(rt) = tokio::runtime::Handle::try_current() else {
             trace_warn!(
-                task_id = ?self.task_id,
+                task_id = self.task_id.as_deref().unwrap_or_default(),
                 "delegation dropped outside a Tokio runtime; its child was not cancelled"
             );
             return;
@@ -454,7 +454,7 @@ impl Drop for Delegation {
         rt.spawn(origin.carry(async move {
             let done = rest.cancel().await;
             trace_debug!(
-                task_id = ?done.task_id,
+                task_id = done.task_id.as_deref().unwrap_or_default(),
                 outcome = ?done.outcome,
                 "delegation dropped before its child settled"
             );

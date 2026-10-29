@@ -1,0 +1,13 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    A[SendMessage arrives] --> B{text part?}
+    B -- no --> F1[FAILED<br/>invalid params]
+    B -- yes --> W[status WORKING]
+    W --> L[genai exec_chat<br/>system prompt + user text]
+    L -- answer --> R[artifact llm-response]
+    R --> D[COMPLETED]
+    L -- provider error --> Q{fallback on?}
+    Q -- no --> F2[FAILED]
+    Q -- yes --> M[labelled mechanical<br/>answer as llm-response]
+    M --> D

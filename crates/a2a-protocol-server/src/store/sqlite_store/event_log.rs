@@ -40,8 +40,12 @@ pub const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_events (
     ) WITHOUT ROWID";
 
 /// Appends one event at a position. Idempotent by that position.
-pub(super) const APPEND_SQL: &str = "INSERT INTO task_events (task_id, seq, payload) VALUES (?1, ?2, ?3) \
-     ON CONFLICT(task_id, seq) DO NOTHING";
+/// Fenced by the turn's claim token, `?4` (`crate::store::claim`).
+pub(super) const APPEND_SQL: &str = concat!(
+    "INSERT INTO task_events (task_id, seq, payload) SELECT ?1, ?2, ?3 WHERE ",
+    crate::store::claim::fence_sql!("?4", "?1"),
+    " ON CONFLICT(task_id, seq) DO NOTHING"
+);
 
 /// Reads a task's events after a position, in order.
 ///

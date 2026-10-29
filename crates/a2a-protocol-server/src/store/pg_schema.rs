@@ -39,10 +39,19 @@ pub const SCHEMA_LOCK_KEY: i64 = i64::from_be_bytes(*b"a2a_schm");
 
 /// Takes the schema lock inside `tx`, waiting for any other holder.
 ///
+/// It first lifts `statement_timeout` for the rest of `tx` (`SET LOCAL`,
+/// which ends with it): waiting for the lock and creating the schema can take
+/// longer than a timeout set for the application's own statements, and a
+/// database set to 100 ms stopped every replica from starting (`57014`).
+/// `lock_timeout` is left as the operator set it.
+///
 /// # Errors
 ///
 /// Returns the database error if the lock cannot be taken.
 pub async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
+    sqlx::query("SET LOCAL statement_timeout = 0")
+        .execute(&mut **tx)
+        .await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(SCHEMA_LOCK_KEY)
         .execute(&mut **tx)
@@ -75,7 +84,7 @@ pub const ADD_APPLIED_SEQ_TO_TENANT_TASKS: &str = "DO $$ BEGIN \
 /// Returns the first database error; the transaction is rolled back and
 /// nothing it created is kept.
 pub async fn apply(pool: &PgPool, statements: &[&'static str]) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = super::pg_retry::retry(&crate::metrics::NoopMetrics, || pool.begin()).await?;
     lock(&mut tx).await?;
     for statement in statements {
         sqlx::query(*statement).execute(&mut *tx).await?;

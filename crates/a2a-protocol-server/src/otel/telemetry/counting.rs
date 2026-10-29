@@ -90,7 +90,7 @@ impl Notice {
         };
         let error = error.to_string();
         let cause = self.cause.take();
-        let hint = hints::hint(&self.route, &error, cause.as_deref());
+        let hint = hints::hint(self.route, &error, cause.as_deref());
         let via = self
             .via
             .as_ref()
@@ -138,8 +138,11 @@ impl<E> Counting<E> {
         self.notice = Some(Notice {
             signal,
             destination: destination.to_owned(),
+            route: Route {
+                proxied: via.is_some(),
+                ..route
+            },
             via,
-            route,
             cause,
             last: Mutex::new(None),
             held_back: AtomicU64::new(0),

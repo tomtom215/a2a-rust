@@ -137,6 +137,8 @@ impl RequestHandler {
             executor,
             cancel,
             gate,
+            claim,
+            saved_whole,
         } = started;
         // §3.5.2: a streaming reader holds the log before the processor that
         // appends to it starts. Taken after it, with `hydrate_response_history`
@@ -158,6 +160,8 @@ impl RequestHandler {
                 cancel,
                 gate,
                 applied: self.event_queue_manager.applied_mark(&task.id).await,
+                claim,
+                saved_whole,
             },
         );
 
@@ -200,6 +204,8 @@ impl RequestHandler {
             reader,
             persistence_rx,
             executor,
+            claim,
+            saved_whole,
             ..
         } = started;
         // The collector reads the persistence channel, which makes a slow
@@ -235,10 +241,18 @@ impl RequestHandler {
         self.in_flight
             .executors()
             .spawn(crate::rpc_span::in_current_span(tenant.scope(async move {
+                // Held to the collection's last write (`handler::claims`).
+                let _claim = claim;
                 // Answers at a terminal or interrupted state, and after an
                 // interrupted one goes on storing the executor's events.
                 collector
-                    .collect_then_follow(events, task.id, &mut executor, answer)
+                    .collect_then_follow(
+                        events,
+                        task.id.clone(),
+                        saved_whole.then_some(task),
+                        &mut executor,
+                        answer,
+                    )
                     .await;
                 executor.finish().await;
             })));

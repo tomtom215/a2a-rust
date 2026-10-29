@@ -18,6 +18,7 @@
 //! | Graceful shutdown | `SIGTERM`/`SIGINT` drain the in-flight work | Examples are killed with Ctrl-C and nobody minds the truncated stream |
 //! | Bind address | `0.0.0.0`, not loopback | A loopback bind is invisible locally and unreachable in a container |
 //! | Allocator | jemalloc, not glibc's | A short run never fills the task store; a long-running server's bounded store does, and glibc is slow in that heap |
+//! | Replicas | `DATABASE_URL` puts tasks and push configs in PostgreSQL | One process's memory is not another's: behind a load balancer, a task created on one replica is not found on the next |
 //!
 //! The agent itself is deliberately trivial. Everything interesting here is the
 //! wrapper, because the wrapper is the part that is missing when someone tries
@@ -83,11 +84,20 @@ struct Config {
     /// Publishing the bind address on the card is a deployment bug that only
     /// shows up as clients failing to call back.
     public_url: String,
+    /// PostgreSQL holding the tasks and push configs, which is what lets
+    /// several replicas serve one agent: every replica reads what any of them
+    /// wrote, and the store's turn claims let one replica at a time run a
+    /// task (`store::claim`), so no session affinity is needed. Unset, the
+    /// stores are in memory and the agent must run as one replica.
+    database_url: Option<String>,
 }
 
 impl Config {
     fn from_env() -> Result<Self, String> {
-        Self::from_vars(std::env::var("PORT").ok(), std::env::var("AGENT_URL").ok())
+        let mut config =
+            Self::from_vars(std::env::var("PORT").ok(), std::env::var("AGENT_URL").ok())?;
+        config.database_url = std::env::var("DATABASE_URL").ok().filter(|u| !u.is_empty());
+        Ok(config)
     }
 
     /// The parsing behind [`from_env`](Self::from_env), with the two
@@ -102,7 +112,11 @@ impl Config {
             None => 8080,
         };
         let public_url = agent_url.unwrap_or_else(|| format!("http://localhost:{port}"));
-        Ok(Self { port, public_url })
+        Ok(Self {
+            port,
+            public_url,
+            database_url: None,
+        })
     }
 }
 
@@ -113,7 +127,7 @@ impl Config {
 /// Returned rather than served so the tests below can drive the same router the
 /// container runs. A test that exercises a separately-assembled router proves
 /// something about the test.
-fn app(config: &Config) -> Result<(Router, Arc<RequestHandler>), Box<dyn std::error::Error>> {
+async fn app(config: &Config) -> Result<(Router, Arc<RequestHandler>), Box<dyn std::error::Error>> {
     // The card advertises `public_url`, never the bind address — see the field
     // docs on `Config::public_url`, and the test that enforces it.
     let card = AgentCard {
@@ -156,11 +170,17 @@ fn app(config: &Config) -> Result<(Router, Arc<RequestHandler>), Box<dyn std::er
         signatures: None,
     };
 
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(DeployAgent)
-            .with_agent_card(card)
-            .build()?,
-    );
+    let mut builder = RequestHandlerBuilder::new(DeployAgent).with_agent_card(card);
+    if let Some(url) = &config.database_url {
+        // Both stores, not just the tasks: a push config registered through
+        // one replica must be found by the replica running the task.
+        builder = builder
+            .with_task_store(a2a_protocol_sdk::server::store::PostgresTaskStore::new(url).await?)
+            .with_push_config_store(
+                a2a_protocol_sdk::server::push::PostgresPushConfigStore::new(url).await?,
+            );
+    }
+    let handler = Arc::new(builder.build()?);
 
     // `A2aRouter` already serves `/health` (liveness — a constant) and
     // `/ready` (readiness — probes the task store). The `*z` aliases below
@@ -235,7 +255,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _telemetry = telemetry();
     let config = Config::from_env()?;
-    let (router, handler) = app(&config)?;
+    let (router, handler) = app(&config).await?;
 
     // 0.0.0.0, not 127.0.0.1: a loopback bind works on a laptop and is
     // unreachable from outside the container, which is the single most common
@@ -245,6 +265,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "deploy-agent listening on 0.0.0.0:{} (advertising {})",
         config.port, config.public_url
     );
+    if config.database_url.is_none() {
+        eprintln!(
+            "warning: DATABASE_URL is unset: tasks are kept in this process's memory, \
+             so run one replica, or set DATABASE_URL to a PostgreSQL database every replica shares"
+        );
+    }
 
     // In-flight agent work lives in the handler, not in axum, and it has to
     // end *before* axum drains: an open SSE stream is a connection that stays
@@ -296,7 +322,14 @@ fn telemetry() -> a2a_protocol_sdk::server::otel::Telemetry {
         .with_default_service_name(env!("CARGO_BIN_NAME"))
         .with_export_where_configured()
         .build()
-        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+        // A configuration it cannot use stops the process before it serves,
+        // with the variable and the reason, rather than a panic's backtrace.
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "error: the OTEL_* environment names a configuration Telemetry cannot use: {e}"
+            );
+            std::process::exit(2)
+        });
     telemetry.install_subscriber();
     telemetry
 }
@@ -312,8 +345,9 @@ mod tests {
         let config = Config {
             port: 0,
             public_url: "http://agent.example.com".to_string(),
+            database_url: None,
         };
-        let (router, _handler) = app(&config).expect("build router");
+        let (router, _handler) = app(&config).await.expect("build router");
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind");

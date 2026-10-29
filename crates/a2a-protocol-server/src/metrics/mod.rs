@@ -108,6 +108,21 @@ pub trait Metrics: Send + Sync + 'static {
     /// inflate metric cardinality through them.
     fn on_persistence_error(&self, _operation: &str, _error_kind: &str) {}
 
+    /// Called each time a store operation is run again because it could not
+    /// be done the first time for a reason that passes: the store answered
+    /// "not now" (`cause = "unavailable"`, a turn's event write, retried for
+    /// up to [`HandlerLimits::store_write_retry`]), or a PostgreSQL statement
+    /// lost its connection and ran once more on a fresh one
+    /// (`operation = "statement"`, `cause = "connection_lost"`).
+    ///
+    /// A retry that succeeded loses nothing, which is why this is not
+    /// [`on_persistence_error`](Self::on_persistence_error); a rising rate is
+    /// the store degrading before it starts losing data. `operation` is one
+    /// of [`persistence_operation`]; both labels are bounded.
+    ///
+    /// [`HandlerLimits::store_write_retry`]: crate::handler::HandlerLimits::store_write_retry
+    fn on_store_retry(&self, _operation: &str, _cause: &str) {}
+
     /// Called after each attempt to deliver a push notification.
     ///
     /// `outcome` is one of `delivered`, `failed`, or `timeout`.
@@ -233,6 +248,10 @@ pub mod persistence_operation {
     /// subscribers, but the task's stored state stops advancing, and until
     /// 0.12 a default build said nothing about it.
     pub const QUEUE_HANDOFF: &str = "queue_handoff";
+    /// One PostgreSQL statement, run again after its connection was lost
+    /// (`store::pg_retry`); reported only through
+    /// [`Metrics::on_store_retry`](super::Metrics::on_store_retry).
+    pub const STATEMENT: &str = "statement";
     /// Writing a record to the audit log (the `audit` feature).
     ///
     /// A call or event whose record failed was served or processed unrecorded; the
@@ -375,61 +394,6 @@ pub(crate) fn default_metrics() -> Arc<dyn Metrics> {
     }
 }
 
-/// A shareable [`Metrics`] a store can hold, and discard into by default.
-///
-/// The task stores all `#[derive(Debug)]` and `dyn Metrics` does not implement
-/// it, so this wrapper carries the `Debug` rather than six hand-written impls
-/// each of which is a chance to forget a field.
-///
-/// [`Default`] is [`NoopMetrics`], so a store built the way every existing
-/// caller builds one keeps working. `with_metrics`, which every task store in
-/// this crate has, is how an operator opts in.
-#[derive(Clone)]
-pub struct MetricsHandle(Arc<dyn Metrics>);
-
-impl MetricsHandle {
-    /// Wraps a metrics implementation.
-    #[must_use]
-    pub fn new<M: Metrics>(metrics: M) -> Self {
-        Self(Arc::new(metrics))
-    }
-
-    /// Wraps an already-shared metrics implementation, so a process with one
-    /// exporter hands the same one to every store.
-    #[must_use]
-    pub fn from_arc(metrics: Arc<dyn Metrics>) -> Self {
-        Self(metrics)
-    }
-}
-
-impl Default for MetricsHandle {
-    fn default() -> Self {
-        Self(Arc::new(NoopMetrics))
-    }
-}
-
-impl std::fmt::Debug for MetricsHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // No `Debug` on the callee, and nothing useful to print if there were:
-        // the value is behaviour, not state.
-        f.write_str("MetricsHandle(..)")
-    }
-}
-
-impl std::ops::Deref for MetricsHandle {
-    type Target = dyn Metrics;
-
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl<M: Metrics> From<Arc<M>> for MetricsHandle {
-    fn from(metrics: Arc<M>) -> Self {
-        Self(metrics)
-    }
-}
-
 /// Blanket implementation: `Arc<T>` implements [`Metrics`] if `T` does.
 ///
 /// This eliminates the need for wrapper types like `MetricsForward` when
@@ -469,6 +433,10 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
         (**self).on_persistence_error(operation, error_kind);
     }
 
+    fn on_store_retry(&self, operation: &str, cause: &str) {
+        (**self).on_store_retry(operation, cause);
+    }
+
     fn on_push_delivery(&self, outcome: &str) {
         (**self).on_push_delivery(outcome);
     }
@@ -482,7 +450,10 @@ impl<T: Metrics + ?Sized> Metrics for Arc<T> {
     }
 }
 
+mod handle;
 mod tee;
+
+pub use handle::MetricsHandle;
 pub(crate) use tee::Tee;
 
 #[cfg(test)]

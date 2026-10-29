@@ -243,7 +243,7 @@ recording `tracing-opentelemetry` layer are present (unless it is built with
 `with_trace_propagation(false)`), or when it carries
 `TracePropagationInterceptor`; neither sends it over WebSocket. The server
 keeps the caller's trace id under the default `InboundTracePolicy::Continue`
-(see [Trace context](./observability.md#trace-context)). With both agents
+(see [Trace context](./observability/trace-context.md)). With both agents
 audited that way, the records for one user request are the records with one
 `trace.traceId` across the two agents' chains — the interaction Article 72(2)
 asks a provider to be able to analyse.

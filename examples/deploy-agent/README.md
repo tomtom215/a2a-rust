@@ -46,6 +46,8 @@ Configuration:
 |---|---|---|
 | `PORT` | `8080` | Rejected at startup if unparseable — a process that ignores its configuration is worse than one that refuses to start |
 | `AGENT_URL` | `http://localhost:$PORT` | The **externally reachable** URL. Goes on the agent card |
+| `DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica (the process says so at startup) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | A collector's OTLP/HTTP URL, e.g. `http://localhost:4318` for [`deploy/observability`](../../deploy/observability)'s stack; traces, metrics and logs all go there |
 
 ## Container
 
@@ -53,6 +55,24 @@ Configuration:
 # From the repository root — the build needs the workspace.
 docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
 docker run --rm -p 8080:8080 -e AGENT_URL=http://localhost:8080 deploy-agent
+```
+
+The dependencies are built in a layer of their own (cargo-chef), which Docker
+reuses until a manifest or `Cargo.lock` changes: after a change to the source
+only, a rebuild took 221 s against 428 s from nothing, most of it compiling the
+workspace's own crates with link-time optimisation.
+
+With telemetry, to the stack in [`deploy/observability`](../../deploy/observability)
+(`docker compose -f deploy/observability/docker-compose.yml up -d` first): on
+its network the Collector is `otel-collector`, not `localhost`, which inside a
+container is the container itself.
+
+```sh
+docker run --rm -p 8080:8080 --network a2a-observability_default \
+  -e AGENT_URL=http://localhost:8080 \
+  -e OTEL_SERVICE_NAME=deploy-agent \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+  deploy-agent
 ```
 
 Two stages: build with the toolchain, ship without it. Runs as uid 10001 with
@@ -66,7 +86,7 @@ and graceful shutdown silently stops working.
 kubectl apply -f examples/deploy-agent/deployment.yaml
 ```
 
-Two edits first:
+Three edits first:
 
 - **The image.** The manifest names `deploy-agent:latest` and sets no
   `imagePullPolicy`, and Kubernetes pulls a `:latest` image by default, so a
@@ -75,6 +95,20 @@ Two edits first:
   and set `imagePullPolicy: IfNotPresent`.
 - **`AGENT_URL`.** The manifest sets the in-cluster Service URL. Set it to the
   URL callers will use (see the trap below).
+- **The database.** The manifest runs two replicas and takes `DATABASE_URL`
+  from the Secret `deploy-agent-db`, which you create:
+  `kubectl create secret generic deploy-agent-db --from-literal=url='postgres://USER:PASSWORD@HOST:5432/DB'`.
+  A pod without it does not start (`CreateContainerConfigError`), on purpose:
+  two replicas on in-memory stores answer `TaskNotFound` for every task the
+  other one created. For one replica and no database, delete the entry and
+  set `replicas: 1`.
+
+Two replicas on one database need no session affinity: each turn of a task
+takes a claim in the database, so a continuation that reaches the other pod
+waits for the running turn rather than starting a second one, a cancel taken
+by either pod stops the executor wherever it runs, and a pod that dies
+mid-turn holds its tasks for 15 s, after which the other takes them over
+([Running More Than One Replica](https://a2a-rust.com/deployment/horizontal-scaling.html)).
 
 `deployment.yaml` wires the probes to the endpoints above and sets
 `terminationGracePeriodSeconds: 45`. That number must exceed the shutdown
@@ -137,11 +171,13 @@ these reads as an endorsement:
 - **Authentication.** No interceptor is installed, so every request is
   anonymous. See [Authentication](https://a2a-rust.com/building-agents/authentication.html)
   and the `harden` act of [`incident-response`](../incident-response).
-- **Persistence.** The default in-memory store: tasks do not survive a restart,
-  and two replicas do not share them. `replicas: 2` is safe here only because
-  the agent is stateless per request — a real deployment wants the SQLite or
-  Postgres store.
-- **Observability beyond `Telemetry`.** With `OTEL_EXPORTER_OTLP_ENDPOINT` set
-  (or a per-signal endpoint) the binary sends traces, metrics and logs to that
-  collector; with none set nothing is built. There are no dashboards, alerts or
-  collector here, and wiring those is deployment-specific.
+- **The database itself.** `DATABASE_URL` names a PostgreSQL you run; its
+  backups, upgrades and connection limits are yours. Without it the store is
+  in memory: tasks do not survive a restart, and the agent must run as one
+  replica.
+- **The observability stack in Kubernetes.** With `OTEL_EXPORTER_OTLP_ENDPOINT`
+  set (or a per-signal endpoint) the binary sends traces, metrics and logs to
+  that collector; with none set nothing is built. `deploy/observability` has a
+  Docker Compose stack (Collector, Prometheus, Tempo, Loki, Grafana with the
+  dashboards) for a laptop or a test box; a cluster's collector and backends
+  are deployment-specific.

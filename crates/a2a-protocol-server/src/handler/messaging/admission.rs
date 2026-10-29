@@ -146,10 +146,17 @@ impl RequestHandler {
     ///   (it was stuck in `Submitted`) while racing the original executor on
     ///   store writes. Rejecting is the alternative to corrupting state.
     /// * [`ServerError::Overloaded`] at the concurrent-stream cap.
+    ///
+    /// `fresh` is a task whose id this send minted: its log is empty and it
+    /// has no row, so its numbering starts at 0 without reading either.
+    /// `known` is the task as read under the turn's claim, with its position,
+    /// which the lease uses instead of reading the row again.
     pub(super) async fn lease_event_queue(
         &self,
         task_id: &TaskId,
         use_background: bool,
+        fresh: bool,
+        known: Option<LeaseRead>,
     ) -> ServerResult<LeasedQueue> {
         let capacity = self
             .tenant_limits()
@@ -190,7 +197,7 @@ impl RequestHandler {
                     // prevent, and invisible, because the sequence has no gap
                     // to show for it. A refused send is recoverable by retrying;
                     // a turn whose events were never recorded is not.
-                    match self.resume_after(task_id).await {
+                    match self.resume_after(task_id, fresh, known).await {
                         Ok((seq, lease_read)) => {
                             read = lease_read;
                             writer.seed_seq(seq);
@@ -249,13 +256,23 @@ impl RequestHandler {
     async fn resume_after(
         &self,
         task_id: &TaskId,
+        fresh: bool,
+        known: Option<LeaseRead>,
     ) -> a2a_protocol_types::error::A2aResult<(u64, Option<LeaseRead>)> {
+        if fresh {
+            // What the reads below would answer for an id minted in this
+            // send, without their two round trips.
+            return Ok((0, None));
+        }
         let end = self.task_store.last_event_seq(task_id).await?;
-        let read = self
-            .task_store
-            .get_with_position(task_id)
-            .await?
-            .and_then(|(task, position)| Some(LeaseRead::new(task, position?)));
+        let read = match known {
+            Some(read) => Some(read),
+            None => self
+                .task_store
+                .get_with_position(task_id)
+                .await?
+                .and_then(|(task, position)| Some(LeaseRead::new(task, position?))),
+        };
         let seq = read.as_ref().map_or(end, |read| end.max(read.position()));
         Ok((seq, read))
     }
@@ -354,7 +371,7 @@ mod tests {
 
         let task_id = TaskId("t-1".to_owned());
         let err = handler
-            .lease_event_queue(&task_id, true)
+            .lease_event_queue(&task_id, true, false, None)
             .await
             .expect_err("an unreadable log position must refuse the lease");
 

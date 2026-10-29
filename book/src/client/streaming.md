@@ -2,7 +2,9 @@
 
 For long-running tasks or when you want real-time progress, use `stream_message` to receive SSE events as the agent works.
 
-## Basic Streaming
+This page is the client's side: the calls, the loop that reads a stream, and how to resume and bound one. What each event means, how an agent writes them and how SSE carries them is in [Streaming with SSE](../concepts/streaming.md).
+
+## Basic streaming
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -45,7 +47,7 @@ while let Some(event) = stream.next().await {
 # }
 ```
 
-## Event Ordering
+## Event ordering
 
 A typical stream delivers events in this order:
 
@@ -62,9 +64,9 @@ A typical stream delivers events in this order:
 > with a `Task` snapshot, which lets a reconnecting client recover the current
 > state. Write the consumer to accept a `Message` first.
 
-## Chunked Artifacts
+## Chunked artifacts
 
-Artifacts can be delivered in multiple chunks:
+Artifacts can be delivered in multiple chunks. [Streaming with SSE](../concepts/streaming.md) gives the server's rules for `append` and `last_chunk`; a client that rebuilds the artifact follows them:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -156,7 +158,7 @@ task is unaffected; resubscribe (`subscribe_to_task_from` with
 `stream.last_event_id()` over SSE, or `subscribe_to_task` over WebSocket) to
 continue.
 
-## Stream Timeouts
+## Stream timeouts
 
 A stream has three bounds, one per phase:
 
@@ -185,7 +187,7 @@ After the first frame, the **idle timeout** (`with_stream_idle_timeout`, default
 
 The default is five minutes because a healthy peer is never that quiet on the wire: this repository's server heartbeats every 30 seconds; a2a-go v2.5.0 sends no keep-alives unless the server opts in, but its own client gives a whole request 3 minutes; and common proxies close a connection that is silent for about 60 seconds. gRPC and WebSocket streams carry no heartbeat the stream can see, so on those bindings the bound is on the gap between *events* — raise it for agents that think silently for longer.
 
-## Safety Limits
+## Safety limits
 
 The SSE parser protects against resource exhaustion:
 

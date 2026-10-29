@@ -22,6 +22,15 @@ A child *settles* when it reaches a terminal state, or `input-required` or
 `auth-required`. In those two it is waiting for the parent, so it is handed
 back rather than cancelled.
 
+The whole life of a child that was given a [budget](#a-parents-budget-deadlines-and-meters)
+and a [lease](#a-crashed-parent-leases), the two sections below:
+
+<figure class="diagram">
+<a href="../images/diagrams/cl-delegation.light.svg"><img class="diagram-light" src="../images/diagrams/cl-delegation.light.svg" alt="Flowchart: the parent's budget grant reserves the meters; start_budgeted sends the child the budget and a lease; the first event names the child's task id; while the child runs, renew_lease renews the lease every third of its time to live; if the child settles, the parent is charged the spend it reported; if not and the parent cancels, the stream is lost or the handle is dropped, CancelTask is sent and the reservation is kept; if the parent is gone, the lease lapses and the child's agent stops the child."></a>
+<a href="../images/diagrams/cl-delegation.dark.svg"><img class="diagram-dark" src="../images/diagrams/cl-delegation.dark.svg" alt=""></a>
+<figcaption>A delegation with a budget and a lease (<code>start_budgeted</code> with <code>Some(ttl)</code>). <code>start</code> alone has no grant and no renewals.</figcaption>
+</figure>
+
 ```rust,no_run
 use std::sync::Arc;
 use a2a_protocol_client::ClientBuilder;

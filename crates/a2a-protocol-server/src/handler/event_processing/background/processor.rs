@@ -103,9 +103,20 @@ impl<'a> Processor<'a> {
             return;
         }
         self.last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-        if let Err(e) = self.deps.task_store.save(&self.last_task).await {
+        let task = &self.last_task;
+        let saved = super::super::persisting(
+            self.deps.limits.store_write_retry,
+            self.deps.metrics,
+            crate::metrics::persistence_operation::FAILED_STATE,
+            || self.deps.task_store.save(task),
+        );
+        if let Err(e) = saved.await {
             if let Some(conflict) = TerminalStateConflict::from_error(&e) {
                 self.supersede(&conflict, None, false).await;
+                return;
+            }
+            if crate::store::ClaimLost::from_error(&e).is_some() {
+                self.lose_claim(None, false).await;
                 return;
             }
             trace_error!(
@@ -143,13 +154,7 @@ impl<'a> Processor<'a> {
         // log holds the verdict; everything else is recorded first, as it
         // always was (see `record_event`).
         if terminal.is_none() {
-            record_event(
-                self.deps.task_store,
-                self.task_id,
-                &event,
-                self.deps.metrics,
-            )
-            .await;
+            self.log(&event).await;
         }
         let pushes_terminal = matches!(&terminal, Some(StreamResponse::StatusUpdate(_)));
 
@@ -181,6 +186,7 @@ impl<'a> Processor<'a> {
 
         match outcome {
             Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
+            Outcome::ClaimLost => self.lose_claim(seq, terminal.is_some()).await,
             Outcome::Persisted | Outcome::NotPersisted => {
                 if outcome == Outcome::Persisted && pushes_terminal {
                     self.pushed_terminal = true;
@@ -242,6 +248,35 @@ impl<'a> Processor<'a> {
         self.superseded = Some(verdict);
     }
 
+    /// Another replica took this turn's claim over (`crate::store::claim`):
+    /// it runs the task now. Like [`supersede`](Self::supersede), the
+    /// executor is cancelled and everything it still emits is dropped, and a
+    /// terminal ticket is answered with the task as it is stored; unlike it,
+    /// nothing is recorded or pushed, because the task is not finished and
+    /// what happens to it next is the other replica's to record and push.
+    async fn lose_claim(&mut self, seq: Option<u64>, terminal: bool) {
+        trace_warn!(
+            task_id = %self.task_id,
+            "background processor: another replica took this turn's claim over; \
+             cancelling the local executor and writing nothing more"
+        );
+        self.cancel.cancel();
+        if let Ok(Some(stored)) = self.deps.task_store.get(self.task_id).await {
+            self.last_task = stored;
+        }
+        let verdict = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: self.task_id.clone(),
+            context_id: self.last_task.context_id.clone(),
+            status: self.last_task.status.clone(),
+            metadata: None,
+        });
+        if terminal {
+            self.answer(seq, verdict.clone());
+        }
+        self.pushed_terminal = true;
+        self.superseded = Some(verdict);
+    }
+
     /// Answers the terminal ticket at `seq`, if one is armed.
     fn answer(&self, seq: Option<u64>, verdict: StreamResponse) {
         if let (Some(gate), Some(seq)) = (self.gate, seq) {
@@ -252,14 +287,20 @@ impl<'a> Processor<'a> {
     /// Records `event` in the log at `seq`.
     async fn record(&self, seq: Option<u64>, event: StreamResponse) {
         if let Some(seq) = seq {
-            record_event(
-                self.deps.task_store,
-                self.task_id,
-                &Ok(StreamEvent::at(seq, event)),
-                self.deps.metrics,
-            )
-            .await;
+            self.log(&Ok(StreamEvent::at(seq, event))).await;
         }
+    }
+
+    /// Records `event` in the log at the position it carries, if any.
+    async fn log(&self, event: &A2aResult<StreamEvent>) {
+        record_event(
+            self.deps.task_store,
+            self.task_id,
+            event,
+            self.deps.metrics,
+            self.deps.limits.store_write_retry,
+        )
+        .await;
     }
 }
 

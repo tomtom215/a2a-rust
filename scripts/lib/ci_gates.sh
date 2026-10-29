@@ -50,7 +50,10 @@ GATE_JOBS='^(static-checks|clippy|features|test|test-postgres|doc|package|dogfoo
 # exemption whose step has gone is a failure like any other stale one.
 NON_GATE_JOBS='^(nightly|deny|semver)$'
 
-SKIP_STEPS='^(Install SPIRE|Install cargo-hack)$'
+# `Install mdBook` downloads the pinned mdBook into the runner's PATH; it
+# renders no verdict, and a contributor running the book gate locally has
+# their own mdBook (the gate step after it is what is run and proven).
+SKIP_STEPS='^(Install SPIRE|Install cargo-hack|Install cargo-nextest|Install mdBook)$'
 
 # Actions that prepare a runner and render no verdict about this repository:
 # checking out, installing a toolchain, restoring a cache, installing Python

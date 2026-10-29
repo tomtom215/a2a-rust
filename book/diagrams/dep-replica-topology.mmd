@@ -1,0 +1,17 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    cl["Clients"]
+    lb["Load balancer<br/>no affinity needed"]
+    subgraph A["Replica A"]
+        qa["Event queues<br/>not shared"]
+    end
+    subgraph B["Replica B"]
+        qb["Event queues<br/>not shared"]
+    end
+    pg[("PostgreSQL, shared<br/>tasks, event log<br/>turn claims<br/>rate-limit counter<br/>halt, lease stores")]
+    cl --> lb
+    lb --> A
+    lb --> B
+    A <--> pg
+    B <--> pg

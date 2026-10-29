@@ -1,10 +1,42 @@
 # Production Hardening
 
-A checklist and guide for deploying a2a-rust agents in production.
+What changes between an agent that runs on your laptop and one that serves
+traffic. The checklist is the whole job in one list, and each line links to
+the page that explains it. This page also covers the two settings everything
+else assumes: the production profile and TLS.
+
+| You want to | Read |
+|---|---|
+| Bound how long work runs, and how much one caller can take | [Timeouts and limits](./production/limits.md) |
+| Stop or roll a replica without cutting its streams | [Graceful shutdown](./production/graceful-shutdown.md) |
+| Give a load balancer or Kubernetes something to probe | [Health checks](./health-checks.md) |
+| Serve browsers, or deliver push notifications safely | [Browsers and webhooks](./production/browsers-and-webhooks.md) |
+| Get more requests out of each core | [Performance tuning](./production/performance.md) |
+| Build an image and run it on Kubernetes | [Docker and Kubernetes](./containers.md) |
+| Run more than one replica | [Running More Than One Replica](./horizontal-scaling.md) |
+| Know what the SDK guarantees, and what it does not | [Security](./security.md) |
+
+## Deployment checklist
+
+- [ ] `Profile::Production` and `ServeConfig::production()` applied, or each refusal they make accounted for ([below](#the-production-profile))
+- [ ] HTTPS termination configured ([below](#https))
+- [ ] CORS origins restricted to known clients ([CORS](./production/browsers-and-webhooks.md#cors))
+- [ ] Executor timeout set ([Timeouts and limits](./production/limits.md#executor-timeout))
+- [ ] Max concurrent streams limited ([Timeouts and limits](./production/limits.md#concurrent-stream-limits))
+- [ ] `ServeConfig::with_max_connections` set (connections are unbounded by default); header-read (30 s) and idle (75 s) timeouts left on ([Connections](./production/limits.md#connections))
+- [ ] Task store TTL and capacity configured ([Timeouts and limits](./production/limits.md#task-store-limits))
+- [ ] Rate limiting enabled for public-facing agents ([Rate limiting](./production/limits.md#rate-limiting))
+- [ ] A2A clients built once and reused (not per-request) ([Performance tuning](./production/performance.md#client-retry--reuse))
+- [ ] Structured logging enabled ([below](#logs-metrics-and-traces))
+- [ ] Health check endpoint available ([Health checks](./health-checks.md))
+- [ ] Push notification URLs restricted to HTTPS (`HttpPushSender::https_only`) ([Push notification security](./production/browsers-and-webhooks.md#push-notification-security))
+- [ ] Body/query size limits verified ([Input handling](./security.md#input-handling))
+- [ ] Graceful shutdown implemented ([Graceful shutdown](./production/graceful-shutdown.md))
+- [ ] Server runs on jemalloc or mimalloc, not glibc's default allocator ([Allocator](./production/performance.md#allocator))
 
 ## Security
 
-### The Production Profile
+### The production profile
 
 Two presets turn the startup warnings and the safety settings a delegated
 deployment needs into refusals (ADR 0025). Neither changes a default.
@@ -124,315 +156,11 @@ the process:
 Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
 ```
 
-### CORS
+Authentication, outbound-request (SSRF) checks, data at rest, input limits
+and the known gaps are on [Security](./security.md), which states what holds
+by construction; this chapter is the configuration that turns it on.
 
-Configure CORS for browser-based clients. It is off until configured: without
-`with_cors`, no response carries CORS headers (an `OPTIONS` preflight
-included), so a browser refuses the cross-origin call. Name the origin you
-expect rather than using `CorsConfig::permissive()`:
-
-```rust,no_run
-use std::sync::Arc;
-use a2a_protocol_sdk::server::{CorsConfig, JsonRpcDispatcher, RequestHandler};
-
-fn dispatcher(handler: Arc<RequestHandler>) -> JsonRpcDispatcher {
-    JsonRpcDispatcher::new(handler).with_cors(CorsConfig::new("https://app.example.com"))
-}
-```
-
-`RestDispatcher` and `CombinedDispatcher` have the same `with_cors`. The
-WebSocket listener has its own origin check,
-`WebSocketDispatcher::with_allowed_origins`.
-
-### Push Notification Security
-
-The built-in `HttpPushSender` includes:
-
-- **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth), including IPv4-in-IPv6 smuggling, and pins the validated IP against DNS rebinding
-- **Header injection prevention** — Validates credentials for `\r`/`\n` characters
-- **Timeouts** — Each push delivery HTTP request is capped at 10 seconds, and a whole delivery, retries included, at 30 (`HandlerLimits::push_delivery_timeout`), inside the 10-30 seconds spec §4.3.3 recommends
-- **HTTPS only, if you ask** — `HttpPushSender::new().https_only()`, handed to `with_push_sender`, refuses an `http://` webhook when the config is created and again at delivery. `with_allowed_hosts([...])` limits delivery to the hosts you name
-
-> **Transport note:** with the `tls-rustls` feature (enabled by default when
-> using `a2a-protocol-sdk`) the bundled `HttpPushSender` delivers to both
-> `http://` and `https://` webhooks. Without the feature it is plaintext-only
-> and rejects an `https://` webhook with a clear error; supply a TLS-capable
-> `PushSender` implementation via `with_push_sender` in that configuration —
-> `PushSender` is a public, pluggable trait and the SSRF validation is public
-> in `a2a_protocol_server::url_guard`.
-
-### Path Traversal Protection
-
-The REST dispatcher automatically rejects:
-- `..` in path segments
-- Percent-encoded `%2E%2E` and `%2e%2e`
-- Paths that escape the expected route hierarchy
-
-### Body Size Limits
-
-| Limit | Value | Transport |
-|-------|-------|-----------|
-| Request body | 4 MiB | JSON-RPC and REST |
-| Query string | 4 KiB | REST |
-| Event size | 16 MiB (configurable) | All SSE transports |
-
-## Reliability
-
-### Executor Timeout
-
-Prevent hung tasks from consuming resources forever. The default ceiling is
-one hour (`DEFAULT_EXECUTOR_TIMEOUT`): an executor that never returns would
-otherwise pin its task, queue and cancellation token for the life of the
-process. Set one matched to your workload, or call `without_executor_timeout()`
-if your executors are genuinely unbounded:
-
-```rust
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
-use std::time::Duration;
-
-RequestHandlerBuilder::new(executor)
-    .with_agent_card(card())
-    .with_executor_timeout(Duration::from_secs(300))
-    .build()
-# }
-```
-
-### Concurrent Stream Limits
-
-Concurrent streaming requests are capped at 1024 by default (each stream
-allocates channels and spawns background tasks). Tune the ceiling to your
-deployment; pass `usize::MAX` to effectively disable it:
-
-```rust
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
-RequestHandlerBuilder::new(executor)
-    .with_agent_card(card())
-    .with_max_concurrent_streams(1000)
-    .build()
-# }
-```
-
-### Task Store Limits
-
-Prevent unbounded memory growth:
-
-```rust
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
-# use std::time::Duration;
-use a2a_protocol_sdk::server::TaskStoreConfig;
-
-RequestHandlerBuilder::new(executor)
-    .with_agent_card(card())
-    .with_task_store_config(
-        TaskStoreConfig::default()
-            .with_max_capacity(Some(100_000))
-            .with_task_ttl(Some(Duration::from_secs(3600)))
-            .with_eviction_interval(64)
-            .with_max_page_size(1000),
-    )
-    .build()
-# }
-```
-
-Use `TaskStore::count()` for monitoring capacity utilization.
-
-### Graceful Shutdown
-
-A graceful shutdown has to end in-flight work before it waits for sockets.
-An open SSE stream is a connection that does not close until its task ends,
-so a drain that runs first just waits out its timeout on tasks nobody has
-cancelled — and whatever an executor delegated to other agents is still
-running when the process exits. `Server::serve_with_shutdown` does it in the
-order that works:
-
-1. stop accepting;
-2. let in-flight tasks finish on their own for up to `completion_grace`
-   (default 5 s), then cancel the rest and wait up to `task_grace` (default
-   10 s) for the executors to act on it — cancel what they delegated,
-   return. An executor that returns without a terminal state has its `cancel`
-   hook called (or, if that writes none, the handler writes `Canceled`), so
-   its open streams end with a terminal event; one still running when the
-   grace ends is counted in `still_running` and cut off when the process
-   exits;
-3. drain connections, for up to `drain_timeout` (default 15 s).
-
-```rust,no_run
-use std::sync::Arc;
-use std::time::Duration;
-use a2a_protocol_server::dispatch::JsonRpcDispatcher;
-use a2a_protocol_server::serve::{ServeConfig, Server, shutdown_signal};
-use a2a_protocol_server::RequestHandler;
-
-async fn run(handler: Arc<RequestHandler>) -> std::io::Result<()> {
-    let server = Server::bind("0.0.0.0:3000").await?.with_config(
-        ServeConfig::new()
-            .with_completion_grace(Duration::from_secs(5))
-            .with_task_grace(Duration::from_secs(10))
-            .with_drain_timeout(Duration::from_secs(15)),
-    );
-    let report = server
-        .serve_with_shutdown(JsonRpcDispatcher::new(Arc::clone(&handler)), shutdown_signal())
-        .await;
-    // Last, the executor's cleanup hook.
-    let handler_report = handler.shutdown().await;
-
-    if let Some(tasks) = report.tasks.filter(|t| !t.finished) {
-        eprintln!("{} task(s) ignored cancellation", tasks.still_running);
-    }
-    if !report.drained || !handler_report.is_graceful() {
-        eprintln!("unclean shutdown: {report:?} {handler_report:?}");
-    }
-    Ok(())
-}
-```
-
-Your executor has to take part: `execute` must watch
-`ctx.cancellation_token` and, when it fires, cancel whatever it started
-elsewhere and return. One that never looks at its token cannot be stopped
-early; `ServeReport::tasks` counts it in `still_running`.
-
-To serve on a socket bound elsewhere — inherited from systemd socket
-activation, handed over for a restart without downtime, or built with options
-such as `SO_REUSEPORT` — use `Server::from_listener(listener)` in place of
-`Server::bind`. A `std::net::TcpListener` needs `set_nonblocking(true)` before
-`tokio::net::TcpListener::from_std`.
-
-With Axum (or anything else that owns the sockets), call
-`handler.finish_in_flight(completion, grace)` at the end of the future you pass to
-`with_graceful_shutdown`, so it runs before Axum starts draining —
-`examples/deploy-agent` does exactly that — and `handler.shutdown()` after
-`serve` returns. The gRPC and WebSocket dispatchers have their own
-`serve_with_shutdown(listener, signal)`, which runs the same three steps and
-returns the same `ServeReport`; set the three durations with
-`with_completion_grace`, `with_task_grace` and `with_drain_timeout` on the
-dispatcher. Two differences follow from the transports. gRPC connections are
-sent `GOAWAY` when accepting stops, so they take no new calls during the
-completion window, where HTTP and WebSocket connections still do. And a
-WebSocket carries many requests on one connection, so once the tasks have
-ended each connection finishes the requests it has already read and is closed
-with a Close frame. `finish_in_flight` first lets tasks finish on
-their own for up to `completion` — so a short call in flight during a rolling
-deploy is answered rather than `Canceled` — and then does what
-`cancel_in_flight(grace)` does alone: cancels the rest and waits for them.
-
-Implement `on_shutdown` in your executor for cleanup:
-
-```rust
-# use std::future::Future;
-# use std::pin::Pin;
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent { db_pool: sqlx::PgPool, cancel_token: a2a_protocol_sdk::server::CancellationToken }
-# impl AgentExecutor for MyAgent {
-# fn execute<'a>(&'a self, _: &'a RequestContext, _: &'a dyn EventQueueWriter)
-#     -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> { Box::pin(async { Ok(()) }) }
-fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-    Box::pin(async move {
-        self.db_pool.close().await;
-        self.cancel_token.cancel();
-    })
-}
-# }
-```
-
-### Rate Limiting
-
-Protect public-facing agents from abuse:
-
-```rust
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
-use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
-
-RequestHandlerBuilder::new(executor)
-    .with_agent_card(card())
-    .with_interceptor(
-        RateLimitInterceptor::new(
-            RateLimitConfig::default()
-                .with_requests_per_window(100)
-                .with_window_secs(60)
-                // Set to the number of trusted reverse proxies so the client
-                // IP is taken from X-Forwarded-For; 0 (default) ignores it.
-                .with_trusted_proxy_hops(1),
-        )
-        .expect("valid rate limit config"),
-    )
-    .build()
-# }
-```
-
-The window is fixed, so a caller can spend up to twice `requests_per_window`
-across a window boundary. Register the limiter after the authentication
-interceptor; registered first, it cannot key on the caller's identity and falls
-back to the client address. It cannot slow credential guessing; use
-`AuthFailureThrottle` for that
-([Authentication](../building-agents/authentication.md#throttling-guessed-credentials)).
-
-For a limit shared across replicas, use `with_shared_counter` with
-`PostgresRateLimitCounter` or your own `RateLimitCounter` — see
-[Running More Than One Replica](./horizontal-scaling.md#rate-limiting-needs-a-shared-counter).
-For sliding windows, use a reverse proxy or implement a custom
-`ServerInterceptor`.
-
-### Client Retry & Reuse
-
-When calling remote agents, build clients once and reuse them. Connection reuse is critical for performance — creating a new client per request bypasses HTTP keep-alive and connection pooling, adding about 130-180 µs of overhead per call on loopback (more over TLS, where the handshake dominates):
-
-```rust,no_run
-# use a2a_protocol_sdk::prelude::*;
-# async fn f(params: MessageSendParams) {
-// Build once at startup
-let client = ClientBuilder::new("http://agent.example.com")
-    .with_retry_policy(RetryPolicy::default())
-    .build()
-    .unwrap();
-
-// Reuse across all requests — client holds a connection pool
-let result = client.send_message(params).await;
-# }
-```
-
-## Observability
-
-### Structured Logging
+## Logs, metrics and traces
 
 The client, the server and the SDK log through `tracing` by default (the
 `tracing` feature). Install a subscriber to see the output:
@@ -456,159 +184,14 @@ tracing_subscriber::fmt()
     .init();
 ```
 
-Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_protocol_server=debug` for server-specific logs.
+`RUST_LOG=debug` gives verbose output, `RUST_LOG=a2a_protocol_server=debug`
+the server's alone. Metrics are recorded by default and traces are spans of
+the same subscriber; `Telemetry` exports all three over OTLP from the
+standard `OTEL_*` variables. [Observability](./observability.md) has the
+setup for a laptop and for Kubernetes, the metric catalogue, and the
+dashboards and alerts that ship.
 
-### Metrics and Traces
-
-Metrics are recorded by default and traces are spans of the same `tracing`
-subscriber; `Telemetry` exports both, and the logs, over OTLP, configured from
-the standard `OTEL_*` variables. [Observability](./observability.md) has the
-quick start for a laptop, Kubernetes, HTTPS with a private CA and a proxy, the
-metric catalogue, and the dashboards and alerts that ship. Stop the process
-with `shutdown_signal()`, as the snippets in this chapter do, so that a pod
-stopped by SIGTERM flushes what it has not yet exported.
-
-### Health Checks
-
-`A2aRouter` answers `GET /health` (liveness, a constant) and `GET /ready`,
-which reaches the task store and answers `503` with a `not_ready` body when it
-cannot. `RestDispatcher` (and `CombinedDispatcher`, through its REST half)
-answers both paths with a constant `{"status":"ok"}`, so its `/ready` says
-nothing about the store; call `RequestHandler::task_store_health()` from a
-route of your own if a probe needs that (`examples/deploy-agent` does). The
-JSON-RPC dispatcher answers neither; route the path yourself in front of it,
-answering with the dispatcher's own body type:
-
-```rust
-use std::convert::Infallible;
-use std::sync::Arc;
-
-use a2a_protocol_sdk::server::JsonRpcDispatcher;
-use http_body_util::{BodyExt, Full, combinators::BoxBody};
-use hyper::body::{Bytes, Incoming};
-
-async fn route(
-    dispatcher: Arc<JsonRpcDispatcher>,
-    req: hyper::Request<Incoming>,
-) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    if req.uri().path() == "/health" {
-        hyper::Response::new(Full::new(Bytes::from("ok")).boxed())
-    } else {
-        dispatcher.dispatch(req).await
-    }
-}
-```
-
-## Performance
-
-### Connection Handling
-
-Both dispatchers use hyper's HTTP/1.1 and HTTP/2 support via `hyper_util::server::conn::auto::Builder`. This automatically negotiates the best protocol version.
-
-`TCP_NODELAY` is enabled on the sockets of `serve::Server` (so `serve` and `serve_with_addr`), of the WebSocket listener, of the push sender and of the client's HTTP transports. The gRPC listener does not set it, and a listener you own (Axum) is yours to configure. This disables Nagle's algorithm, eliminating the ~40ms delayed-ACK latency that would otherwise penalize small SSE frames and JSON-RPC responses on loopback and low-latency networks.
-
-### Task Store Performance
-
-The `InMemoryTaskStore` uses a pre-allocated `HashMap` with secondary indexes for efficient queries:
-
-- **O(1) amortized get** — a `HashMap` lookup regardless of store size; save and delete also maintain the ordered indexes, O(log n)
-- **No resize-induced latency spikes** — pre-allocation to the configured `max_capacity` eliminates the periodic full-rehash events that cause unpredictable 5-7× latency cliffs when the table outgrows its capacity
-- **O(log n + page\_size) list queries** — a `BTreeMap<(i64, u64), TaskId>` index keyed by (status timestamp, write sequence) gives the spec's status-timestamp-descending order and O(log n) cursor positioning, and a `HashMap<String, BTreeMap<(i64, u64), TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
-
-### No Web Framework Overhead
-
-a2a-rust works directly with hyper — no middleware framework overhead. Cross-cutting concerns (rate limiting, request logging, auth) are handled via the interceptor chain rather than a framework.
-
-### Event Queue Sizing
-
-Tune the event queue for your workload:
-
-```rust
-# fn card() -> a2a_protocol_types::agent_card::AgentCard {
-#     use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-#     AgentCard::new("my-agent", "1.0.0", AgentInterface::jsonrpc("http://localhost:3000"))
-#         .with_description("An example agent")
-#         .with_skill(AgentSkill::new("echo", "Echo", "Echoes text").with_tags(["echo"]))
-#         .with_capabilities(AgentCapabilities::none().with_streaming(true))
-# }
-# use a2a_protocol_sdk::prelude::*;
-# struct MyAgent;
-# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
-# fn f(executor: MyAgent) -> ServerResult<RequestHandler> {
-# let builder = RequestHandlerBuilder::new(executor).with_agent_card(card());
-// High-throughput: larger queues for tasks producing >250 events/task
-let builder = builder.with_event_queue_capacity(512);
-
-// Memory-constrained: smaller queues
-let builder = builder.with_event_queue_capacity(64);
-# builder.build()
-# }
-```
-
-> **Benchmark data:** Per-event cost rises once a task writes more events than
-> the queue holds and a reader falls behind: the reader then catches up from the
-> task's event log (see [Streaming](../concepts/streaming.md#queue-limits)),
-> which is more work than reading the live channel. Set capacity to at least
-> your expected peak event count per task. The `serde_helpers::SerBuffer`
-> module can further reduce per-event serialization overhead via thread-local
-> buffer reuse.
-
-### Allocator
-
-Run the server on jemalloc (or mimalloc), not glibc's default allocator.
-A server with a bounded task store sits at a steady heap size full of freed
-holes, and glibc's allocator is slow in exactly that state; jemalloc is not.
-Measured on the echo benchmark (`benches/sdk-comparison`, two server cores,
-16 connections, unary `SendMessage`, 4 interleaved runs, 2026-10-03):
-
-| Allocator | Requests/s | CPU µs per request | Resident memory |
-|---|---|---|---|
-| glibc 2.39 (default) | 7,189 | 217.7 | 79 MB |
-| jemalloc 5 | 11,862 | 137.5 | 74 MB |
-| mimalloc 2.1 | 10,457 | 155.9 | 74 MB |
-
-Streaming sends gain in the same proportion (6,721 → 10,969 requests/s on
-jemalloc). glibc's tunables do not close the gap: a larger thread cache
-(`glibc.malloc.tcache_count=64`) measured the same as the default.
-
-Two ways to switch, with the same effect:
-
-- **In the binary**, with the `tikv-jemallocator` or `mimalloc` crate and a
-  `#[global_allocator]` static in your `main.rs`. Both build their C sources
-  with your Rust build; `tikv-jemallocator` also needs `make`.
-- **At run time**, with no code change: install the system library and
-  preload it.
-
-```sh
-# Debian/Ubuntu images
-apt-get install -y libjemalloc2
-LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 ./my-agent
-```
-
-The SDK does not choose an allocator for you; a library that set
-`#[global_allocator]` would override the one your application chose.
-`examples/deploy-agent` sets jemalloc in its `main.rs` and is the pattern
-to copy.
-
-## Deployment Checklist
-
-- [ ] `Profile::Production` and `ServeConfig::production()` applied, or each refusal they make accounted for
-- [ ] HTTPS termination configured
-- [ ] CORS origins restricted to known clients
-- [ ] Executor timeout set
-- [ ] Max concurrent streams limited
-- [ ] `ServeConfig::with_max_connections` set (connections are unbounded by default); header-read (30 s) and idle (75 s) timeouts left on
-- [ ] Task store TTL and capacity configured
-- [ ] Rate limiting enabled for public-facing agents
-- [ ] A2A clients built once and reused (not per-request)
-- [ ] Structured logging enabled
-- [ ] Health check endpoint available
-- [ ] Push notification URLs restricted to HTTPS (`HttpPushSender::https_only`)
-- [ ] Body/query size limits verified
-- [ ] Graceful shutdown implemented
-- [ ] Server runs on jemalloc or mimalloc, not glibc's default allocator
-
-## Next Steps
+## Next steps
 
 - **[GitHub Pages & CI/CD](./cicd.md)** — Continuous deployment
 - **[Configuration Reference](../reference/configuration.md)** — All configuration options

@@ -52,7 +52,14 @@ fn telemetry() -> a2a_protocol_server::otel::Telemetry {
         .with_default_service_name(env!("CARGO_BIN_NAME"))
         .with_export_where_configured()
         .build()
-        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+        // A configuration it cannot use stops the process before it serves,
+        // with the variable and the reason, rather than a panic's backtrace.
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "error: the OTEL_* environment names a configuration Telemetry cannot use: {e}"
+            );
+            std::process::exit(2)
+        });
     telemetry.install_subscriber();
     telemetry
 }
@@ -211,11 +218,33 @@ async fn try_llm(client: &genai::Client, model: &str, prompt: &str) -> Option<St
         ),
         genai::chat::ChatMessage::user(prompt),
     ]);
-    let resp = tokio::time::timeout(Duration::from_secs(60), client.exec_chat(model, req, None))
-        .await
-        .ok()?
-        .ok()?;
+    let resp = tokio::time::timeout(
+        Duration::from_secs(60),
+        client.exec_chat(model, req, Some(&chat_options())),
+    )
+    .await
+    .ok()?
+    .ok()?;
     resp.first_text().map(str::to_string)
+}
+
+/// Every model call's options: a cap on its output (`INCIDENT_MAX_TOKENS`,
+/// default 1024) and, unless `INCIDENT_THINKING=1`, a request that the server
+/// answer without reasoning first (`chat_template_kwargs`, which llama.cpp's
+/// `llama-server` and vLLM read; set `INCIDENT_THINKING=1` for a hosted
+/// provider that refuses it). A reasoning model left unbounded on a CPU
+/// spends minutes on one call, past any caller's timeout, and keeps the model
+/// busy after the caller has gone.
+fn chat_options() -> genai::chat::ChatOptions {
+    let max_tokens = std::env::var("INCIDENT_MAX_TOKENS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024);
+    let options = genai::chat::ChatOptions::default().with_max_tokens(max_tokens);
+    if std::env::var("INCIDENT_THINKING").as_deref() == Ok("1") {
+        return options;
+    }
+    options.with_extra_body(serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}))
 }
 
 fn incident_model() -> String {

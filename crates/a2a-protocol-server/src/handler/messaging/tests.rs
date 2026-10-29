@@ -18,7 +18,7 @@ use a2a_protocol_types::events::TaskStatusUpdateEvent;
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use crate::agent_executor;
 use crate::builder::RequestHandlerBuilder;
@@ -2971,8 +2971,10 @@ async fn a_send_into_a_working_task_is_refused_without_waiting() {
 // only an `Err` used to release: the queue lease, the cancellation token and
 // the idempotency key. A drop there released none of them.
 
-/// A store whose `save_appending_history` — the write that persists a new
-/// turn — can be held open, so a test can drop the send while it waits.
+/// A store whose write that persists a new turn can be held open, so a test
+/// can drop the send while it waits: `save` for a new task, which is saved
+/// whole, and `save_appending_history` for a continuation whose row the send
+/// did not read with a position.
 struct GatedStore {
     inner: crate::store::InMemoryTaskStore,
     armed: std::sync::atomic::AtomicBool,
@@ -2986,7 +2988,13 @@ impl crate::store::TaskStore for GatedStore {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
     > {
-        self.inner.save(task)
+        Box::pin(async move {
+            if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+                self.entered.notify_one();
+                std::future::pending::<()>().await;
+            }
+            self.inner.save(task).await
+        })
     }
     fn get<'a>(
         &'a self,

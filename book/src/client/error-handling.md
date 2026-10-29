@@ -24,7 +24,7 @@ let e = A2aError::task_not_found("task-abc");
 assert_eq!(e.code, ErrorCode::TaskNotFound);
 ```
 
-### Handling Protocol Errors
+### Handling protocol errors
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -41,7 +41,7 @@ match client.get_task(params).await {
 # }
 ```
 
-## Client Errors
+## Client errors
 
 The client wraps transport and protocol errors:
 
@@ -79,30 +79,32 @@ match client.send_message(params).await {
 | `ContentNotVerified` | Received content failed its provenance check (feature `signing`) | no |
 | `AuthRequired { task_id }` | The agent requires authentication for a task. No bundled transport returns it: a 401 or 403 arrives as `UnexpectedStatus` | no |
 
-### Timeout Errors
+### Timeouts
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
 # async fn f(url: &str, params: MessageSendParams) -> Result<(), ClientError> {
 # use std::time::Duration;
-// Per-request timeout
 let client = ClientBuilder::new(url)
-    .with_timeout(Duration::from_secs(5))
+    .with_timeout(Duration::from_secs(5))            // the whole request
+    .with_connection_timeout(Duration::from_secs(2)) // the TCP connect
     .build()?;
 
-// This will error if the agent takes longer than 5 seconds
 match client.send_message(params).await {
-    Ok(response) => { /* success */ }
-    Err(e) => {
-        // Could be a timeout error
-        eprintln!("Failed (possibly timeout): {e}");
-    }
+    Ok(_response) => { /* success */ }
+    Err(ClientError::Timeout(detail)) => eprintln!("timed out: {detail}"),
+    Err(e) => eprintln!("failed: {e}"),
 }
 # Ok(())
 # }
 ```
 
-### A Stream That Ends Early
+A request that outlasts `with_timeout` fails with `ClientError::Timeout`, as do
+a stream's connect, first-event and idle bounds and a gRPC `DeadlineExceeded`.
+A connect that outlasts `with_connection_timeout` fails as a connection error
+(`HttpClient`). Both are retryable.
+
+### A stream that ends early
 
 A stream finishes cleanly on a `Message`, or on a task or status update in a
 terminal (`completed`, `failed`, `canceled`, `rejected`) or interrupted
@@ -130,7 +132,7 @@ match stream.next().await {
 # }
 ```
 
-### Errors on an HTTP+JSON Stream
+### Errors on an HTTP+JSON stream
 
 A streaming request over HTTP+JSON reports errors as `ClientError::Protocol`
 with the exact A2A code, as unary calls do: an AIP-193 error body on a non-2xx
@@ -143,22 +145,7 @@ in the shapes seen in practice: a2a-go's AIP-193 object as a data frame
 `is_stream_lagged()` still works — and, from releases up to 0.13.0, an
 `event: error` frame carrying a bare `A2aError`. The stream ends after it.
 
-### Connection Errors
-
-```rust
-# use a2a_protocol_sdk::prelude::*;
-# use std::time::Duration;
-# fn main() -> Result<(), ClientError> {
-# let url = "http://agent.example.com";
-// Connection timeout
-let client = ClientBuilder::new(url)
-    .with_connection_timeout(Duration::from_secs(2))
-    .build()?;
-# Ok(())
-# }
-```
-
-### Automatic Retries
+### Automatic retries
 
 Use `RetryPolicy` to automatically retry transient errors:
 
@@ -193,22 +180,21 @@ Retryable errors include: `Http`, `HttpClient`, `Timeout`, `IncompleteStream`, `
 
 Each computed backoff is randomized to between 0.5x and 1.0x of its value, to prevent thundering-herd storms when multiple clients experience the same failure simultaneously. A server-directed delay is used as given (capped at `max_backoff`).
 
-## Server Errors
+## Server errors
 
-When building an agent, the `ServerError` type covers handler-level failures:
+When you build an agent, `ServerError` is what `RequestHandlerBuilder::build()`
+and the handler's and stores' operations return (`ServerResult<T>` is
+`Result<T, ServerError>`). The handler turns it into the A2A error the caller
+receives with `ServerError::to_a2a_error`: `TaskNotFound` on the server arrives
+as `ClientError::Protocol` with `ErrorCode::TaskNotFound` on the client, and a
+variant with no A2A counterpart arrives as `InternalError`. An executor returns
+`A2aError` (`A2aResult`) instead, as below.
 
-```rust,no_run
-use a2a_protocol_sdk::server::ServerError;
+## Best practices
 
-// Server errors are returned by RequestHandlerBuilder::build()
-// and by store/executor operations
-```
+### Don't panic
 
-## Best Practices
-
-### Don't Panic
-
-a2a-rust reports failures as `Result`, not panics: every fallible operation returns one, and a CI gate freezes the `unwrap`, `expect`, `panic!`, `unreachable!` and `todo!` sites in library code. The 13 `expect` calls it allows each assert an internal invariant, such as propagating lock poisoning, that callers cannot trigger. The gate does not see arithmetic overflow or slice indexing, so treat "never panics" as the aim it is rather than a proven property. Follow the same pattern in your executors:
+a2a-rust reports failures as `Result` rather than panicking; [the introduction](../introduction.md#why-rust) says how far a CI gate holds it to that. Follow the same pattern in your executors:
 
 ```rust,no_run
 # use a2a_protocol_sdk::prelude::*;
@@ -223,7 +209,7 @@ panic!("processing failed");
 # }
 ```
 
-### Executor Error Handling
+### Executor error handling
 
 In your `AgentExecutor`, catch errors and report them as status updates:
 
@@ -254,7 +240,7 @@ agent_executor!(Summarizer, |ctx, queue| async {
 });
 ```
 
-### Delegating to Another Agent with `?`
+### Delegating to another agent with `?`
 
 An executor that calls another agent can use `?` on client calls:
 `ClientError` converts into `A2aError`, and the server turns the returned
@@ -293,7 +279,7 @@ client's retry policy and the caller's agree. For every client error other than
 followed by the client error and its causes; a `Protocol` error keeps the
 downstream agent's own message.
 
-### Stream Error Recovery
+### Stream error recovery
 
 For streaming, handle errors per-event:
 
@@ -318,13 +304,9 @@ while let Some(event) = stream.next().await {
 # }
 ```
 
-A reader that falls too far behind is cut off — over SSE when it lags the
-server's broadcast queue further than the task's event log can make up, over
-WebSocket once 64 frames are waiting unread —
-with an error that answers `is_stream_lagged()`. Resubscribe
-(`subscribe_to_task_from` with the stream's `last_event_id()` over SSE, or
-`subscribe_to_task`) to continue; see
-[Streaming Responses](./streaming.md#how-a-stream-ends).
+An error that answers `is_stream_lagged()` means this reader fell behind and
+was cut off; resubscribe to continue, as
+[Streaming Responses](./streaming.md#how-a-stream-ends) shows.
 
 ## Next Steps
 

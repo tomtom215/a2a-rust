@@ -49,6 +49,13 @@
 // here rather than the prose being bent to satisfy a renderer nobody uses.
 #![allow(clippy::doc_lazy_continuation)]
 
+// A chapter's sub-pages (a directory under a part, e.g.
+// `deployment/observability/`) share one module: rustdoc joins the
+// attributes with newlines and every page is a complete document, so each
+// block compiles as on its own, as `production` and `horizontal-scaling`
+// below already did. One line per page keeps this registry under the file
+// length limit.
+
 // The repository README's Quick Start: the first code a new user copies,
 // and the page this crate exists because of (see the module docs above).
 #[doc = include_str!("../../README.md")]
@@ -284,3 +291,197 @@ pub mod page_reference_regression_gate {}
 
 #[doc = include_str!("../../book/src/reference/upgrading.md")]
 pub mod page_reference_upgrading {}
+
+#[doc = include_str!("../../book/src/building-agents/authentication/api-keys.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/jwt.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/mtls.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/throttling.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/authorization.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/client-tokens.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/oauth-client-credentials.md")]
+#[doc = include_str!("../../book/src/building-agents/authentication/token-exchange.md")]
+pub mod pages_building_agents_authentication {}
+
+#[doc = include_str!("../../book/src/client/builder/options.md")]
+#[doc = include_str!("../../book/src/client/builder/interceptors.md")]
+#[doc = include_str!("../../book/src/client/builder/reference.md")]
+#[doc = include_str!("../../book/src/client/builder/grpc.md")]
+#[doc = include_str!("../../book/src/client/builder/reuse.md")]
+pub mod pages_client_builder {}
+
+#[doc = include_str!("../../book/src/building-agents/stores/in-memory.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/sqlite.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/postgres.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/tenants.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/push-config-stores.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/custom.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/retention.md")]
+#[doc = include_str!("../../book/src/building-agents/stores/replicas.md")]
+pub mod pages_building_agents_stores {}
+
+#[doc = include_str!("../../book/src/deployment/dogfooding-bugs/passes-1-6.md")]
+#[doc = include_str!("../../book/src/deployment/dogfooding-bugs/passes-12-16.md")]
+#[doc = include_str!("../../book/src/deployment/dogfooding-bugs/passes-7-10.md")]
+pub mod pages_deployment_dogfooding_bugs {}
+
+#[doc = include_str!("../../book/src/reference/changelog/older.md")]
+pub mod pages_reference_changelog {}
+
+#[doc = include_str!("../../book/src/reference/conformance-history/acts-and-in-repo.md")]
+#[doc = include_str!("../../book/src/reference/conformance-history/official-tck.md")]
+#[doc = include_str!("../../book/src/reference/conformance-history/suppressions.md")]
+#[doc = include_str!("../../book/src/reference/conformance-history/verification-log.md")]
+pub mod pages_reference_conformance_history {}
+
+#[doc = include_str!("../../book/src/reference/mutation-history/gate-defects.md")]
+#[doc = include_str!("../../book/src/reference/mutation-history/per-file.md")]
+#[doc = include_str!("../../book/src/reference/mutation-history/sweeps.md")]
+pub mod pages_reference_mutation_history {}
+
+#[doc = include_str!("../../book/src/reference/pitfalls/async-and-lifecycle.md")]
+#[doc = include_str!("../../book/src/reference/pitfalls/contributing.md")]
+#[doc = include_str!("../../book/src/reference/pitfalls/fixed.md")]
+#[doc = include_str!("../../book/src/reference/pitfalls/http-and-transports.md")]
+#[doc = include_str!("../../book/src/reference/pitfalls/security-and-resources.md")]
+#[doc = include_str!("../../book/src/reference/pitfalls/serialization-and-validation.md")]
+pub mod pages_reference_pitfalls {}
+
+#[doc = include_str!("../../book/src/reference/upgrading/0.10-to-0.11.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.11-to-0.12.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.12-to-0.13.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.13-to-0.14.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.6-to-0.7.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.7-to-0.8.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.8-to-0.9.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.9-to-0.10.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/older.md")]
+pub mod pages_reference_upgrading {}
+
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/agent-cards.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/authentication.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/client.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/errors-and-rust-api.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/not-breaking.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/push.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/stores-and-tenants.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/streams-and-executors.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/telemetry.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/toolchain.md")]
+#[doc = include_str!("../../book/src/reference/upgrading/0.14-to-0.15/wire-and-bindings.md")]
+pub mod pages_reference_upgrading_0_14_to_0_15 {}
+
+#[doc = include_str!("../../book/src/concepts/transport-layers/jsonrpc.md")]
+#[doc = include_str!("../../book/src/concepts/transport-layers/rest.md")]
+#[doc = include_str!("../../book/src/concepts/transport-layers/websocket.md")]
+#[doc = include_str!("../../book/src/concepts/transport-layers/grpc.md")]
+pub mod pages_concepts_transport_layers {}
+
+#[doc = include_str!("../../book/src/concepts/agent-cards/fields.md")]
+#[doc = include_str!("../../book/src/concepts/agent-cards/extended.md")]
+#[doc = include_str!("../../book/src/concepts/agent-cards/serving.md")]
+#[doc = include_str!("../../book/src/concepts/agent-cards/caching.md")]
+#[doc = include_str!("../../book/src/concepts/agent-cards/security.md")]
+pub mod pages_concepts_agent_cards {}
+
+#[doc = include_str!("../../book/src/concepts/streaming/events.md")]
+#[doc = include_str!("../../book/src/concepts/streaming/server.md")]
+#[doc = include_str!("../../book/src/concepts/streaming/client.md")]
+#[doc = include_str!("../../book/src/concepts/streaming/resubscribe.md")]
+pub mod pages_concepts_streaming {}
+
+#[doc = include_str!("../../book/src/building-agents/push-notifications/setup.md")]
+#[doc = include_str!("../../book/src/building-agents/push-notifications/delivery.md")]
+#[doc = include_str!("../../book/src/building-agents/push-notifications/receiving.md")]
+#[doc = include_str!("../../book/src/building-agents/push-notifications/custom-sender.md")]
+#[doc = include_str!("../../book/src/building-agents/push-notifications/storage.md")]
+pub mod pages_building_agents_push_notifications {}
+
+#[doc = include_str!("../../book/src/deployment/testing/conformance.md")]
+#[doc = include_str!("../../book/src/deployment/testing/unit-and-integration.md")]
+#[doc = include_str!("../../book/src/deployment/testing/wire-and-fuzz.md")]
+#[doc = include_str!("../../book/src/deployment/testing/contributors.md")]
+pub mod pages_deployment_testing {}
+
+#[doc = include_str!("../../book/src/deployment/production/limits.md")]
+#[doc = include_str!("../../book/src/deployment/production/graceful-shutdown.md")]
+#[doc = include_str!("../../book/src/deployment/production/browsers-and-webhooks.md")]
+#[doc = include_str!("../../book/src/deployment/production/performance.md")]
+pub mod pages_deployment_production {}
+
+#[doc = include_str!("../../book/src/deployment/health-checks.md")]
+pub mod page_deployment_health_checks {}
+
+#[doc = include_str!("../../book/src/deployment/containers.md")]
+pub mod page_deployment_containers {}
+
+#[doc = include_str!("../../book/src/deployment/horizontal-scaling/shared-stores.md")]
+#[doc = include_str!("../../book/src/deployment/horizontal-scaling/rate-limiting.md")]
+#[doc = include_str!("../../book/src/deployment/horizontal-scaling/streaming.md")]
+#[doc = include_str!("../../book/src/deployment/horizontal-scaling/turn-claims.md")]
+#[doc = include_str!("../../book/src/deployment/horizontal-scaling/sustained-load.md")]
+pub mod pages_deployment_horizontal_scaling {}
+
+#[doc = include_str!("../../book/src/building-agents/executor/helpers.md")]
+#[doc = include_str!("../../book/src/building-agents/executor/request-context.md")]
+#[doc = include_str!("../../book/src/building-agents/executor/event-queue.md")]
+#[doc = include_str!("../../book/src/building-agents/executor/patterns.md")]
+#[doc = include_str!("../../book/src/building-agents/executor/interrupted.md")]
+pub mod pages_building_agents_executor {}
+
+#[doc = include_str!("../../book/src/building-agents/tool-loop.md")]
+pub mod page_building_agents_tool_loop {}
+
+#[doc = include_str!("../../book/src/building-agents/tool-loop/tools.md")]
+#[doc = include_str!("../../book/src/building-agents/tool-loop/models.md")]
+#[doc = include_str!("../../book/src/building-agents/tool-loop/running.md")]
+#[doc = include_str!("../../book/src/building-agents/tool-loop/telemetry.md")]
+pub mod pages_building_agents_tool_loop {}
+
+#[doc = include_str!("../../book/src/building-agents/handler/configuration.md")]
+#[doc = include_str!("../../book/src/building-agents/handler/direct-calls.md")]
+pub mod pages_building_agents_handler {}
+
+#[doc = include_str!("../../book/src/building-agents/dispatchers/jsonrpc.md")]
+#[doc = include_str!("../../book/src/building-agents/dispatchers/rest.md")]
+#[doc = include_str!("../../book/src/building-agents/dispatchers/serving.md")]
+#[doc = include_str!("../../book/src/building-agents/dispatchers/websocket.md")]
+#[doc = include_str!("../../book/src/building-agents/dispatchers/grpc.md")]
+#[doc = include_str!("../../book/src/building-agents/dispatchers/axum.md")]
+#[doc = include_str!("../../book/src/building-agents/dispatchers/cors.md")]
+pub mod pages_building_agents_dispatchers {}
+
+#[doc = include_str!("../../book/src/building-agents/interceptors/server.md")]
+#[doc = include_str!("../../book/src/building-agents/interceptors/client.md")]
+#[doc = include_str!("../../book/src/building-agents/interceptors/patterns.md")]
+pub mod pages_building_agents_interceptors {}
+
+#[doc = include_str!("../../book/src/examples/harness.md")]
+pub mod page_examples_harness {}
+
+#[doc = include_str!("../../book/src/examples/incident-response/hardening.md")]
+pub mod pages_examples_incident_response {}
+
+#[doc = include_str!("../../book/src/examples/resilient-agent/acts.md")]
+pub mod pages_examples_resilient_agent {}
+
+#[doc = include_str!("../../book/src/reference/cli.md")]
+pub mod page_reference_cli {}
+
+#[doc = include_str!("../../book/src/reference/conformance-testing.md")]
+pub mod page_reference_conformance_testing {}
+
+#[doc = include_str!("../../book/src/deployment/observability/quick-start.md")]
+#[doc = include_str!("../../book/src/deployment/observability/walkthrough.md")]
+#[doc = include_str!("../../book/src/deployment/observability/telemetry.md")]
+#[doc = include_str!("../../book/src/deployment/observability/environment.md")]
+#[doc = include_str!("../../book/src/deployment/observability/resource.md")]
+#[doc = include_str!("../../book/src/deployment/observability/tls-proxies.md")]
+#[doc = include_str!("../../book/src/deployment/observability/prometheus.md")]
+#[doc = include_str!("../../book/src/deployment/observability/metrics.md")]
+#[doc = include_str!("../../book/src/deployment/observability/spans.md")]
+#[doc = include_str!("../../book/src/deployment/observability/trace-context.md")]
+#[doc = include_str!("../../book/src/deployment/observability/logs.md")]
+#[doc = include_str!("../../book/src/deployment/observability/dashboards.md")]
+#[doc = include_str!("../../book/src/deployment/observability/debugging.md")]
+pub mod pages_deployment_observability {}

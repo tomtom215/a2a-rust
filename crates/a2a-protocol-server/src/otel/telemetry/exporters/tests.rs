@@ -104,3 +104,35 @@ fn a_base_endpoint_gains_the_signal_path_on_http_only() {
         "http://c:4317"
     );
 }
+
+/// An IPv6 literal endpoint keeps its brackets and port through every step
+/// that does not dial: the signal path, the reported route and the gRPC
+/// channel. Dialling one was not tested: the host these were measured on
+/// has no IPv6 in its kernel.
+#[tokio::test]
+async fn an_ipv6_endpoint_is_built_as_written() {
+    assert_eq!(
+        Target::endpoint_from_base(
+            "http://[::1]:4318/",
+            Signal::Traces,
+            OtlpProtocol::HttpProtobuf
+        ),
+        "http://[::1]:4318/v1/traces"
+    );
+    let general =
+        |k: &str| (k == "OTEL_EXPORTER_OTLP_ENDPOINT").then(|| "https://[fd00::5]:4318".to_owned());
+    assert_eq!(
+        Target::destination_for(&general, Signal::Logs, OtlpProtocol::HttpProtobuf, None),
+        "https://[fd00::5]:4318/v1/logs"
+    );
+    let route = super::super::hints::Route::of(OtlpProtocol::Grpc, "https://[::1]:4417");
+    assert!(route.https);
+    assert_eq!(route.port, Some(4417));
+    let target = target_with(&[]);
+    for endpoint in ["http://[::1]:4317", "https://[::1]:4417"] {
+        assert!(
+            target.grpc_channel(endpoint).is_ok(),
+            "{endpoint}: the channel is built (it connects on first use)"
+        );
+    }
+}

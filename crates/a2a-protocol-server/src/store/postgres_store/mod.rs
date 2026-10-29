@@ -25,7 +25,6 @@ pub(crate) mod pool;
 mod store_impl;
 
 use a2a_protocol_types::error::A2aResult;
-use pool::pg_pool;
 pub(in crate::store) use pool::to_a2a_error;
 use sqlx::postgres::PgPool;
 
@@ -97,7 +96,7 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or the schema migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pg_pool(url).await?;
+        let pool = pool::task_store_pool(url).await?;
         Self::from_pool(pool).await
     }
 
@@ -111,7 +110,7 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or any migration fails.
     pub async fn with_migrations(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pg_pool(url).await?;
+        let pool = pool::task_store_pool(url).await?;
 
         let runner = super::pg_migration::PgMigrationRunner::new(pool.clone());
         runner.run_pending().await?;
@@ -123,7 +122,41 @@ impl PostgresTaskStore {
         })
     }
 
+    /// The options [`new`](Self::new) opens its pool with, to build a pool
+    /// for [`from_pool`](Self::from_pool) that behaves the same: sqlx pings a
+    /// connection before handing it out only when it has been idle a second
+    /// or more, and a statement that lost its connection runs once more on a
+    /// new one where that is safe. That saves a round trip per statement over
+    /// sqlx's default, which pings every time.
+    ///
+    /// Share such a pool only with the PostgreSQL task stores, plain and
+    /// tenant-aware, which write every statement for it. The push-config,
+    /// rate-limit and audit stores do not: give them a pool with sqlx's
+    /// defaults, or a statement of theirs can meet a connection the server
+    /// closed while it sat idle.
+    ///
+    /// ```rust,no_run
+    /// # async fn f() -> Result<(), sqlx::Error> {
+    /// use a2a_protocol_server::store::PostgresTaskStore;
+    ///
+    /// let pool = PostgresTaskStore::pool_options()
+    ///     .max_connections(20)
+    ///     .connect("postgres://localhost/a2a")
+    ///     .await?;
+    /// let store = PostgresTaskStore::from_pool(pool).await?;
+    /// # Ok(()) }
+    /// ```
+    #[must_use]
+    pub fn pool_options() -> sqlx::postgres::PgPoolOptions {
+        crate::store::pg_retry::pool_options()
+    }
+
     /// Creates a store from an existing connection pool.
+    ///
+    /// The pool keeps its own settings; with sqlx's defaults it pings each
+    /// connection before every statement. See
+    /// [`pool_options`](Self::pool_options) for the settings
+    /// [`new`](Self::new) uses.
     ///
     /// # Errors
     ///
@@ -160,6 +193,19 @@ impl PostgresTaskStore {
                 // Supports the most-recently-updated-first ordering and composite
                 // (updated_at, id) cursor used by list().
                 "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
+                // Read by the fence in every task write (`crate::store::claim`);
+                // the other half of pg migration 8.
+                crate::store::claim::postgres::CREATE_TABLE_SQL,
+                crate::store::claim::postgres::CREATE_OWNER_INDEX_SQL,
+                // What keeps a replica of an earlier release off a task a
+                // replica of this one runs, during a rolling upgrade
+                // (`crate::store::claim::upgrade`); the other half of pg
+                // migration 9.
+                crate::store::claim::upgrade::CHECK_FUNCTION_SQL,
+                crate::store::claim::upgrade::RECORD_FUNCTION_SQL,
+                crate::store::claim::upgrade::CLAIM_FUNCTION_SQL,
+                crate::store::claim::upgrade::INSTALL_ON_TASKS_SQL,
+                crate::store::claim::upgrade::INSTALL_ON_TASK_EVENTS_SQL,
             ],
         )
         .await?;
@@ -207,6 +253,14 @@ impl PostgresTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The public options are the stores' own: sqlx's default pings every
+    /// connection before handing it out, the round trip they save.
+    #[test]
+    fn the_public_pool_options_skip_sqlx_s_ping_on_every_acquire() {
+        assert!(sqlx::postgres::PgPoolOptions::new().get_test_before_acquire());
+        assert!(!PostgresTaskStore::pool_options().get_test_before_acquire());
+    }
 
     /// The store names PostgreSQL and where its pool connects, for its spans
     /// and `db.client.operation.duration`. Built over a lazy pool, which

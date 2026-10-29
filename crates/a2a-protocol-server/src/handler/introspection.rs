@@ -77,7 +77,13 @@ impl RequestHandler {
     /// should surface
     /// [`metric_label`](a2a_protocol_types::error::A2aError::metric_label)
     /// rather than the message, which may name a host or a connection string.
+    ///
+    /// Records no span: a probe is not a call, and every one would otherwise
+    /// be a trace of its own (a readiness probe every 5 s per replica, seen
+    /// in Tempo, 2026-10-28). The store's duration metric is still recorded.
     pub async fn task_store_health(&self) -> a2a_protocol_types::error::A2aResult<()> {
-        self.task_store.count().await.map(|_| ())
+        crate::rpc_span::quietly(self.task_store.count())
+            .await
+            .map(|_| ())
     }
 }

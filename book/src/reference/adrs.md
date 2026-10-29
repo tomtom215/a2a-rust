@@ -1,6 +1,50 @@
 # Architecture Decision Records
 
-Key design decisions for a2a-rust, documented as ADRs. Each record captures the context, decision, and rationale.
+The design decisions behind a2a-rust, each recorded as an ADR: the context, the
+decision, and why. Read the one behind a part of the SDK before changing how
+that part works, or to learn why it is not done the obvious way.
+
+## All records
+
+The full documents are in
+[`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr); each
+number links to its file.
+
+| ADR | Decision | Status |
+|-----|----------|--------|
+| [0001](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0001-workspace-crate-structure.md) | Four-crate workspace (types, client, server, sdk) | Accepted |
+| [0002](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0002-dependency-philosophy.md) | Minimal mandatory dependencies, optional framework integration | Accepted |
+| [0003](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0003-async-runtime-strategy.md) | Tokio as mandatory runtime | Accepted |
+| [0004](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0004-transport-abstraction.md) | Three-layer architecture (dispatcher → handler → executor) | Accepted; superseded in part by 0009 |
+| [0005](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0005-sse-streaming-design.md) | In-tree SSE parser/emitter, zero additional deps | Accepted |
+| [0006](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0006-mutation-testing.md) | `cargo-mutants` as a test-effectiveness gate: weekly full sweep, per-PR diff gate | Accepted |
+| [0007](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0007-axum-integration-and-tck.md) | Axum integration + TCK wire format conformance tests | Accepted |
+| [0008](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0008-agent-executor-trait-shape.md) | `AgentExecutor` kept object-safe so `RequestHandler` stays non-generic | Accepted |
+| [0009](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0009-protobuf-native-grpc.md) | Protobuf-native gRPC on the canonical `lf.a2a.v1.A2AService`, wire-compatible with the official SDKs; the pre-0.7 JSON tunnel was deprecated behind `grpc-legacy-json` in 0.7 and removed in 0.8 | Accepted |
+| [0010](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0010-auth-integration.md) | First-party auth helpers (client OAuth2 client-credentials + token providers; server API-key/bearer/JWT interceptors) built on `ring`/`hyper`, not the OAuth-ecosystem crates; its "rejections map to `InvalidRequest`" consequence is superseded by ADR 0014 | Accepted; one consequence superseded by 0014 |
+| [0011](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0011-task-retention.md) | Task retention is explicit, and the store does not schedule it | Accepted |
+| [0012](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0012-event-log-and-resumption.md) | An append-only event log, with the snapshot kept as the record | Accepted |
+| [0013](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0013-observability.md) | Spans, metrics and one telemetry entry point, implemented as `otel::Telemetry` (its open question on making `tracing` a default feature records the maintainer's decision of 2026-09-23: yes) | Accepted |
+| [0014](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0014-auth-rejection-status.md) | A refused credential answers each binding's own status: HTTP `401`/`403`, gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED` (supersedes ADR 0010's `InvalidRequest` mapping) | Accepted |
+| [0015](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0015-audit-trail.md) | A tamper-evident audit trail: calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, content by digest, signed checkpoints and anchors, a six-month retention floor and legal holds | Accepted |
+| [0016](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0016-types-generated-from-the-proto.md) | The public types are generated from `a2a.proto` by `tools/a2a-codegen`, the output is checked in, and CI fails on drift | Accepted |
+| [0017](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0017-context-lookup-and-stored-task.md) | The send's context lookup lists without history and reads only the chosen task whole; `RequestContext::stored_task` stays the whole stored task | Accepted |
+| [0018](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0018-mutual-tls-caller-identity.md) | A mutual-TLS client certificate reaches the interceptors on every binding, and `MutualTlsAuthInterceptor` names the caller by its SHA-256 fingerprint or a deployment's mapping; no X.509 parser in the mutual-TLS path (the `signing` feature parses `x5c` certificates for key validity) | Accepted |
+| [0019](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0019-shared-halt-store.md) | Halts are written through to a `HaltStore` that every replica reads before its first send and polls; a halt the store refuses holds where it was given and is retried | Accepted |
+| [0020](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0020-delegation-lease.md) | A delegated child carries a lease, renewed by a `GetTask` that activates the lease extension; the deadline lives in a store every replica shares, and a child whose lease lapses is stopped | Accepted |
+| [0021](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0021-originating-principal.md) | The originating principal travels as an RFC 8693 delegated token: the server reads its `act` chain into `CallContext::actors` and the audit record, and the client exchanges tokens at the identity provider | Accepted |
+| [0022](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0022-tool-calling-loop.md) | A tool-calling loop in the SDK: `ToolModel`, `Tool`, `ToolSet` and `ToolLoop` behind the off-by-default `tool-loop` feature, with an OpenAI-compatible model client | Accepted |
+| [0023](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0023-delegation-budget.md) | A budget travels down the delegation chain: a relative deadline and named meters on the message, held by the receiving server, reserved from the parent at grant time and reported on each status update | Accepted |
+| [0024](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0024-pushed-halts-and-cancels.md) | Halts and cancels are pushed to every replica: the PostgreSQL halt store notifies with each write and a listener per replica forwards it, a cancel reaches the replica running the task, and the poll stays behind the push | Accepted |
+| [0025](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0025-production-profile.md) | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store (and, since ADR 0027, a content signer), and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged | Accepted |
+| [0026](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0026-tool-call-idempotency.md) | Tool calls carry idempotency keys, HMAC-SHA256 under the loop's secret of the task and message, the tool and its canonical arguments; a repeated call to a tool not declared read-only is answered from the first; `Delegation` keys its sends to agents that honour keys | Accepted |
+| [0027](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0027-served-content-provenance.md) | Content is signed when served and verified when received: `with_content_signer` signs every artifact, status message and direct reply a server sends (not a task's history), over exactly what is sent; `with_content_keys` on the server and the client refuses altered content and marks unsigned content unverified; the production profile requires a signer | Accepted |
+| [0028](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0028-webassembly-and-cloudflare-workers.md) | WebAssembly and Cloudflare Workers: the real `RequestHandler` was run inside `workerd` behind a runtime seam (`crate::rt`) and a `Send` timer; the server builds for `wasm32-unknown-unknown` with that patch, the client does not; proposes pursuing the seam in four phases and qualifying ADR 0003 for wasm32; nothing landed | Proposed |
+
+## The first eight in brief
+
+ADRs 0001 to 0008 set the shape of the workspace; each has a summary here.
+Later records are in the table above only.
 
 ## ADR 0001: Workspace Crate Structure
 
@@ -110,44 +154,6 @@ on the changed lines, and the required check fails until the label is present.
 **Decision:** Keep `AgentExecutor` as a manual `Pin<Box<dyn Future + Send + 'a>>` trait (object-safe), and ship two ergonomic helpers (`boxed_future` and the `agent_executor!` macro) to compensate for the call-site noise. `RequestHandler` stores the executor as `Arc<dyn AgentExecutor>`, which keeps `RequestHandler`, every dispatcher, the Axum integration, and the builder API **non-generic**.
 
 **Rationale:** Async-fn-in-trait is stable since Rust 1.75 but produces per-impl anonymous future types that are **not object-safe on stable**. Using `async fn execute` would force `RequestHandler<E>` to become generic, and that generic parameter would then leak through every dispatcher, the Axum layer, `A2aRouter`, and the builder API. The `async-trait` crate produces exactly the same `Pin<Box<dyn Future>>` shape we have now but hides the heap allocation and forces a proc-macro dep on every downstream user — a non-starter given ADR 0002. The manual shape is honest about the cost (one `Box::pin` allocation per call, deep in the noise relative to network RTT) and keeps the public API free of trait-erasure machinery. The `agent_executor!` macro gives trivial executors the same ergonomics as `async fn` without introducing a second trait. See [ADR 0008 full document](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0008-agent-executor-trait-shape.md) for the full alternatives analysis and the revisit trigger.
-
-## Summary
-
-| ADR | Key Decision |
-|-----|-------------|
-| 0001 | Four-crate workspace (types, client, server, sdk) |
-| 0002 | Minimal mandatory dependencies, optional framework integration |
-| 0003 | Tokio as mandatory runtime |
-| 0004 | Three-layer architecture (dispatcher → handler → executor) |
-| 0005 | In-tree SSE parser/emitter, zero additional deps |
-| 0006 | `cargo-mutants` as a test-effectiveness gate: weekly full sweep, per-PR diff gate |
-| 0007 | Axum integration + TCK wire format conformance tests |
-| 0008 | `AgentExecutor` kept object-safe so `RequestHandler` stays non-generic |
-| 0009 | Protobuf-native gRPC on the canonical `lf.a2a.v1.A2AService`, wire-compatible with the official SDKs; the pre-0.7 JSON tunnel was deprecated behind `grpc-legacy-json` in 0.7 and removed in 0.8 |
-| 0010 | First-party auth helpers (client OAuth2 client-credentials + token providers; server API-key/bearer/JWT interceptors) built on `ring`/`hyper`, not the OAuth-ecosystem crates; its "rejections map to `InvalidRequest`" consequence is superseded by ADR 0014 |
-| 0011 | Task retention is explicit, and the store does not schedule it (Accepted) |
-| 0012 | An append-only event log, with the snapshot kept as the record (Accepted) |
-| 0013 | Spans, metrics and one telemetry entry point, implemented as `otel::Telemetry` (Accepted; its open question on making `tracing` a default feature records the maintainer's decision of 2026-09-23: yes) |
-| 0014 | A refused credential answers each binding's own status: HTTP `401`/`403`, gRPC `UNAUTHENTICATED`/`PERMISSION_DENIED` (Accepted; supersedes ADR 0010's `InvalidRequest` mapping) |
-| 0015 | A tamper-evident audit trail: calls, runs, task events and cancel requests in a SHA-256 hash chain per tenant, content by digest, signed checkpoints and anchors, a six-month retention floor and legal holds (Accepted) |
-| 0016 | The public types are generated from `a2a.proto` by `tools/a2a-codegen`, the output is checked in, and CI fails on drift (Accepted) |
-| 0017 | The send's context lookup lists without history and reads only the chosen task whole; `RequestContext::stored_task` stays the whole stored task (Accepted) |
-| 0018 | A mutual-TLS client certificate reaches the interceptors on every binding, and `MutualTlsAuthInterceptor` names the caller by its SHA-256 fingerprint or a deployment's mapping; no X.509 parser in the mutual-TLS path (the `signing` feature parses `x5c` certificates for key validity) (Accepted) |
-| 0019 | Halts are written through to a `HaltStore` that every replica reads before its first send and polls; a halt the store refuses holds where it was given and is retried (Accepted) |
-| 0020 | A delegated child carries a lease, renewed by a `GetTask` that activates the lease extension; the deadline lives in a store every replica shares, and a child whose lease lapses is stopped (Accepted) |
-| 0021 | The originating principal travels as an RFC 8693 delegated token: the server reads its `act` chain into `CallContext::actors` and the audit record, and the client exchanges tokens at the identity provider (Accepted) |
-| 0022 | A tool-calling loop in the SDK: `ToolModel`, `Tool`, `ToolSet` and `ToolLoop` behind the off-by-default `tool-loop` feature, with an OpenAI-compatible model client (Accepted) |
-| 0023 | A budget travels down the delegation chain: a relative deadline and named meters on the message, held by the receiving server, reserved from the parent at grant time and reported on each status update (Accepted) |
-| 0024 | Halts and cancels are pushed to every replica: the PostgreSQL halt store notifies with each write and a listener per replica forwards it, a cancel reaches the replica running the task, and the poll stays behind the push (Accepted) |
-| 0025 | A production profile that refuses to start: `Profile::Production` requires an authenticating interceptor, a halt store and a lease store (and, since ADR 0027, a content signer), and `ServeConfig::production()` refuses plaintext beyond loopback and an undeclared binding; the defaults are unchanged (Accepted) |
-| 0026 | Tool calls carry idempotency keys, HMAC-SHA256 under the loop's secret of the task and message, the tool and its canonical arguments; a repeated call to a tool not declared read-only is answered from the first; `Delegation` keys its sends to agents that honour keys (Accepted) |
-| 0027 | Content is signed when served and verified when received: `with_content_signer` signs every artifact, status message and direct reply a server sends (not a task's history), over exactly what is sent; `with_content_keys` on the server and the client refuses altered content and marks unsigned content unverified; the production profile requires a signer (Accepted) |
-| 0028 | WebAssembly and Cloudflare Workers: the real `RequestHandler` was run inside `workerd` behind a runtime seam (`crate::rt`) and a `Send` timer; the server builds for `wasm32-unknown-unknown` with that patch, the client does not; proposes pursuing the seam in four phases and qualifying ADR 0003 for wasm32; nothing landed (Proposed) |
-
-Only ADRs 0001–0008 have a section above; the table is the summary for all
-twenty-eight.
-
-The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 
 ## Next Steps
 

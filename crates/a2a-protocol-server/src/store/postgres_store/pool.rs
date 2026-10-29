@@ -12,20 +12,23 @@
 
 use a2a_protocol_types::error::A2aError;
 use sqlx::PgPool;
-use sqlx::postgres::PgPoolOptions;
 
-/// Creates a `PgPool` with production-ready defaults.
+/// Creates a `PgPool` with sqlx's defaults, which ping each connection
+/// before handing it out: for statements not written for `pg_retry`, the
+/// audit store's.
+#[cfg(feature = "audit")]
 pub async fn pg_pool(url: &str) -> Result<PgPool, sqlx::Error> {
-    pg_pool_with_size(url, 10).await
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(10)
+        .connect(url)
+        .await
 }
 
-/// Creates a `PgPool` with a specific max connection count.
-pub(super) async fn pg_pool_with_size(
-    url: &str,
-    max_connections: u32,
-) -> Result<PgPool, sqlx::Error> {
-    PgPoolOptions::new()
-        .max_connections(max_connections)
+/// The pool a task store opens for itself: pings only connections idle a
+/// while, every statement on it going through `pg_retry` (see there).
+pub(super) async fn task_store_pool(url: &str) -> Result<PgPool, sqlx::Error> {
+    crate::store::pg_retry::pool_options()
+        .max_connections(10)
         .connect(url)
         .await
 }

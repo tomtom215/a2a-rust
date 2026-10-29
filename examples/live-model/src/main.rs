@@ -122,7 +122,14 @@ async fn main() -> ExitCode {
         .with_default_service_name(env!("CARGO_BIN_NAME"))
         .with_export_where_configured()
         .build()
-        .expect("the OTEL_* environment names a configuration Telemetry cannot use");
+        // A configuration it cannot use stops the process before it serves,
+        // with the variable and the reason, rather than a panic's backtrace.
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "error: the OTEL_* environment names a configuration Telemetry cannot use: {e}"
+            );
+            std::process::exit(2)
+        });
     telemetry.install_subscriber();
     let done = match run().await {
         Ok(done) => done,

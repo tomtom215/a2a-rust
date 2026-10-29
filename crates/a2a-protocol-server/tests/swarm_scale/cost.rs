@@ -39,9 +39,7 @@
 
 use std::time::Instant;
 
-use super::harness::{
-    Client, Deployment, Outcome, client, open_channel, percentile, post, set_turn_shape, settle,
-};
+use super::harness::{Client, Deployment, Outcome, client, open_channel, percentile, post, settle};
 
 /// Posts made in the ageing probe. Past 1024 the history cap is in force, so
 /// the curve should turn over inside this range if history is the cost.
@@ -213,7 +211,7 @@ async fn a_turn_that_emits_many_events_on_an_aged_channel() {
     );
 
     for history in [1_usize, 200, 600] {
-        set_turn_shape(0, 1);
+        deployment.set_turn_shape(0, 1);
         let (task, context) = open_channel(&c, addr).await;
         settle(&c, addr, &task, &context).await;
         for n in 0..history {
@@ -222,7 +220,7 @@ async fn a_turn_that_emits_many_events_on_an_aged_channel() {
         }
 
         let events = 512_u64;
-        set_turn_shape(0, events);
+        deployment.set_turn_shape(0, events);
         let mut runs = Vec::new();
         for n in 0..5_u64 {
             let started = Instant::now();
@@ -239,7 +237,6 @@ async fn a_turn_that_emits_many_events_on_an_aged_channel() {
         println!("{history:>10}  {events:>10}  {p50:>11}  {per_event:>12.1}");
     }
 
-    set_turn_shape(0, 1);
     deployment.stop().await;
 }
 

@@ -132,8 +132,15 @@ fn arc_delegates_on_persistence_error_and_on_push_delivery() {
     struct Seen {
         persistence: std::sync::Mutex<Vec<(String, String)>>,
         push: std::sync::Mutex<Vec<String>>,
+        retries: std::sync::Mutex<Vec<(String, String)>>,
     }
     impl Metrics for Seen {
+        fn on_store_retry(&self, operation: &str, cause: &str) {
+            self.retries
+                .lock()
+                .unwrap()
+                .push((operation.to_owned(), cause.to_owned()));
+        }
         fn on_persistence_error(&self, operation: &str, error_kind: &str) {
             self.persistence
                 .lock()
@@ -160,6 +167,12 @@ fn arc_delegates_on_persistence_error_and_on_push_delivery() {
     assert_eq!(
         *seen.push.lock().unwrap(),
         vec![push_outcome::SKIPPED.to_owned()]
+    );
+    Metrics::on_store_retry(&via_arc, "statement", "connection_lost");
+    assert_eq!(
+        *seen.retries.lock().unwrap(),
+        vec![("statement".to_owned(), "connection_lost".to_owned())],
+        "an Arc must forward store retries"
     );
 }
 
@@ -201,6 +214,9 @@ impl Metrics for Logged {
     fn on_persistence_error(&self, _: &str, _: &str) {
         self.note("persistence_error");
     }
+    fn on_store_retry(&self, _: &str, _: &str) {
+        self.note("store_retry");
+    }
     fn on_push_delivery(&self, _: &str) {
         self.note("push_delivery");
     }
@@ -212,7 +228,7 @@ impl Metrics for Logged {
     }
 }
 
-/// Every one of the trait's ten callbacks reaches both sides, the first
+/// Every one of the trait's eleven callbacks reaches both sides, the first
 /// side first. A callback `Tee` forgot would default to nothing on both.
 #[test]
 fn a_tee_forwards_every_callback_to_both_in_order() {
@@ -234,6 +250,7 @@ fn a_tee_forwards_every_callback_to_both_in_order() {
     tee.on_queue_depth_change(1);
     tee.on_connection_pool_stats(&ConnectionPoolStats::default());
     tee.on_persistence_error("op", "kind");
+    tee.on_store_retry("statement", "connection_lost");
     tee.on_push_delivery("delivered");
     tee.on_rpc_call(&RpcCall {
         system: "jsonrpc",
@@ -251,6 +268,7 @@ fn a_tee_forwards_every_callback_to_both_in_order() {
         "queue_depth",
         "pool_stats",
         "persistence_error",
+        "store_retry",
         "push_delivery",
         "rpc_call",
         "executor_run",

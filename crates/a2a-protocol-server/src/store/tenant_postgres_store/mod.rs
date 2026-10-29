@@ -30,7 +30,7 @@
 //! row-value cursor carrying a UTC-normalized microsecond timestamp.
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::postgres::PgPool;
 
 #[allow(unused_imports)] // both referenced by intra-doc links only
 use super::task_store::TaskStore;
@@ -88,7 +88,7 @@ impl TenantAwarePostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = PgPoolOptions::new()
+        let pool = crate::store::pg_retry::pool_options()
             .max_connections(10)
             .connect(url)
             .await?;
@@ -96,6 +96,11 @@ impl TenantAwarePostgresTaskStore {
     }
 
     /// Creates a store from an existing connection pool.
+    ///
+    /// The pool keeps its own settings; for the ones [`new`](Self::new)
+    /// uses, build it from
+    /// [`PostgresTaskStore::pool_options`](super::PostgresTaskStore::pool_options),
+    /// which says what else may share it.
     ///
     /// # Errors
     ///
@@ -141,6 +146,17 @@ impl TenantAwarePostgresTaskStore {
                 // Supports per-tenant most-recently-updated-first ordering and
                 // the composite (updated_at, id) cursor used by list().
                 "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_updated_at ON tenant_tasks(tenant_id, updated_at DESC, id DESC)",
+                // Read by the fence in every task write (`crate::store::claim`).
+                crate::store::claim::postgres::CREATE_TABLE_SQL,
+                crate::store::claim::postgres::CREATE_OWNER_INDEX_SQL,
+                // What keeps a replica of an earlier release off a task a
+                // replica of this one runs, during a rolling upgrade
+                // (`crate::store::claim::upgrade`).
+                crate::store::claim::upgrade::CHECK_FUNCTION_SQL,
+                crate::store::claim::upgrade::RECORD_FUNCTION_SQL,
+                crate::store::claim::upgrade::CLAIM_FUNCTION_SQL,
+                crate::store::claim::upgrade::INSTALL_ON_TENANT_TASKS_SQL,
+                crate::store::claim::upgrade::INSTALL_ON_TENANT_TASK_EVENTS_SQL,
             ],
         )
         .await?;

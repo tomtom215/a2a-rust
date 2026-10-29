@@ -1,0 +1,15 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as Client
+    participant H as Server
+    participant S as Task store
+    H-->>C: id: 6, id: 7
+    C->>C: IncompleteStream, last id 7
+    C->>H: SubscribeToTask<br/>Last-Event-ID: 7
+    H-->>C: Task snapshot (no id:)
+    H->>S: read log after 7
+    S-->>H: one page (subscribe_replay_limit)
+    H-->>C: id: 8, id: 9 ...
+    H->>S: next pages, until caught up
+    H-->>C: live frames

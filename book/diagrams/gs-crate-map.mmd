@@ -1,0 +1,14 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    sdk["a2a-protocol-sdk<br/>re-exports + prelude<br/>default: tls-rustls, tracing,<br/>otel, otlp, webhook"]
+    slim["a2a-protocol-slimrpc<br/>SLIMRPC binding,<br/>outside the workspace"]
+    client["a2a-protocol-client<br/>calls agents<br/>default: tls-rustls, tracing,<br/>otel, webhook"]
+    server["a2a-protocol-server<br/>builds agents<br/>default: tracing, otel"]
+    types["a2a-protocol-types<br/>wire types, no I/O<br/>default: none"]
+    sdk --> client
+    sdk --> server
+    slim --> client
+    slim --> server
+    client --> types
+    server --> types

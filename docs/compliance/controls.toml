@@ -514,13 +514,14 @@ id = "AIA-15-4"
 source = "ai-act"
 provision = "Art. 15(4)"
 requirement = "High-risk AI systems shall be as resilient as possible regarding errors, faults or inconsistencies within the system or its environment, in particular due to their interaction with natural persons or other systems; robustness may be achieved through technical redundancy, including backup or fail-safe plans."
-sdk = "Faults in an agent or a peer end in a defined state rather than a hang: an executor that errors or exceeds its timeout fails its task; graceful shutdown cancels in-flight work within a bound and reports what ignored cancellation; push delivery retries server errors and rate limits within per-request and per-delivery timeouts and stops on a client error; a malformed event from an executor is refused at the queue. A PostgreSQL task store shared by two replicas lets either serve a task (that test needs a live database; CI provides one)."
+sdk = "Faults in an agent or a peer end in a defined state rather than a hang: an executor that errors or exceeds its timeout fails its task; graceful shutdown cancels in-flight work within a bound and reports what ignored cancellation; push delivery retries server errors and rate limits within per-request and per-delivery timeouts and stops on a client error; a malformed event from an executor is refused at the queue. A PostgreSQL or SQLite task store shared by several replicas lets any of them serve a task, one turn of a task at a time: a claim in the shared database admits one replica per turn, fences that turn's writes, carries a cancel to the replica running the task, and hands a dead replica's tasks to another after the claim expires (the SQLite cases run in CI; the PostgreSQL ones need a live database, which CI provides)."
 status = "partial"
 code = [
   "crates/a2a-protocol-server/src/builder.rs::RequestHandlerBuilder::with_executor_timeout",
   "crates/a2a-protocol-server/src/handler/shutdown/mod.rs::RequestHandler::shutdown_with_timeout",
   "crates/a2a-protocol-server/src/push/sender.rs::HttpPushSender",
   "crates/a2a-protocol-server/src/streaming/event_queue/content.rs::check_required_fields",
+  "crates/a2a-protocol-server/src/handler/claims/mod.rs::RequestHandler::claim_turn",
 ]
 tests = [
   "crates/a2a-protocol-server/tests/audit_tests/public_api.rs::executor_timeout_causes_failure",
@@ -530,9 +531,12 @@ tests = [
   "crates/a2a-protocol-server/tests/push_sender_tests.rs::non_retryable_client_error_fails_without_retry",
   "crates/a2a-protocol-server/tests/executor_event_fields.rs::an_executor_event_missing_a_required_field_is_refused",
   "crates/a2a-protocol-server/tests/multi_replica.rs::a_task_created_on_one_replica_is_readable_on_the_other",
-  "crates/a2a-protocol-server/tests/multi_replica.rs::the_single_writer_refusal_does_not_cross_replicas",
+  "crates/a2a-protocol-server/tests/multi_replica.rs::the_single_writer_refusal_crosses_replicas",
+  "crates/a2a-protocol-server/tests/turn_claims/backends.rs::sqlite_a_send_to_a_task_another_replica_runs_is_refused",
+  "crates/a2a-protocol-server/tests/turn_claims/backends.rs::sqlite_a_replica_whose_claim_was_taken_over_writes_nothing_more",
+  "crates/a2a-protocol-server/tests/replica_processes.rs::sqlite_replica_processes_share_one_task_at_a_time",
 ]
-gap = "Resilience of the model itself (errors in outputs, feedback loops in a system that keeps learning) and the redundancy plan of a deployment are the provider's. An in-memory store keeps no state across a restart, and a halt is per process unless a halt store is configured (ADR 0019). Admission is per replica: two replicas behind one store both admit a continuation of the same task and both run it, their writes interleaving until the first terminal state, which is final (a test pins this; it needs a live database)."
+gap = "Resilience of the model itself (errors in outputs, feedback loops in a system that keeps learning) and the redundancy plan of a deployment are the provider's. An in-memory store keeps no state across a restart, and a halt is per process unless a halt store is configured (ADR 0019). A replica that dies mid-turn holds its tasks for the claim's time to live (15 s by default); a store that provides no turn claims (a custom one, or `without_turn_claims`) admits per replica only, so its replicas need every turn of a task routed to one of them."
 
 [[control]]
 id = "AIA-15-5"

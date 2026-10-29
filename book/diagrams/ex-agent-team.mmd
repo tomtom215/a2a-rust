@@ -1,0 +1,19 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    main["main(): 100 E2E tests,<br/>then the 44-cell sweep"]
+    sa["Surface agent<br/>all four bindings"]
+    ga["GrpcAnalyzer<br/>gRPC"]
+    co["Coordinator<br/>REST"]
+    subgraph sp["Specialists"]
+        direction TB
+        ca["CodeAnalyzer, JSON-RPC"]
+        bm["BuildMonitor, REST"]
+        hm["HealthMonitor, JSON-RPC"]
+        ca ~~~ bm ~~~ hm
+    end
+    main --> sa
+    main --> ga
+    main --> co
+    main --> sp
+    co -.->|"delegates"| sp

@@ -153,3 +153,41 @@ code, kbd, pre, pre code {
 }
 
 .content main blockquote p { margin: 0; }
+
+/* ── Diagrams ─────────────────────────────────────────────────────────────── */
+
+/* Each diagram is rendered twice by scripts/render_book_diagrams.sh, and a
+   page carries both:
+
+     <figure class="diagram">
+     <a href="../images/diagrams/NAME.light.svg"><img class="diagram-light" src="../images/diagrams/NAME.light.svg" alt="…"></a>
+     <a href="../images/diagrams/NAME.dark.svg"><img class="diagram-dark" src="../images/diagrams/NAME.dark.svg" alt=""></a>
+     <figcaption>…</figcaption>
+     </figure>
+
+   The one that does not match the reader's mdBook theme is hidden: an SVG in
+   an <img> cannot read the page's colours, and mdBook's theme is a class on
+   <html>, not the OS preference a <picture> could follow. */
+figure.diagram {
+    margin: 2rem 0;
+    padding: 1.6rem;
+    border: 1px solid var(--a2a-border);
+    border-radius: 6px;
+    background: var(--a2a-soft);
+    text-align: center;
+}
+figure.diagram img {
+    max-width: 100%;
+    height: auto;
+}
+figure.diagram figcaption {
+    margin-top: 1rem;
+    font-size: 0.9em;
+    opacity: 0.85;
+}
+.diagram-dark { display: none; }
+.coal .diagram-light, .navy .diagram-light, .ayu .diagram-light { display: none; }
+.coal .diagram-dark, .navy .diagram-dark, .ayu .diagram-dark { display: inline; }
+/* Each diagram links to its own SVG, so on a phone a tap opens it full size. */
+figure.diagram a { display: inline; }
+figure.diagram a:hover img { outline: 1px solid var(--a2a-amber); outline-offset: 4px; }

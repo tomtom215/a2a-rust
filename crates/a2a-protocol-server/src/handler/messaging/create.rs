@@ -149,14 +149,19 @@ impl RequestHandler {
         &self,
         task: &Task,
         read_at: Option<u64>,
+        whole: bool,
     ) -> ServerResult<()> {
-        // `task.history` holds only this turn's message (see
-        // `build_initial_task`), and that is what gets appended. The store
-        // keeps the conversation; the send path never holds it.
+        // `whole`: `task` is the row to store (`basis::based_on`), saved as
+        // it is. Otherwise `task.history` holds only this turn's message (see
+        // `build_initial_task`), and that is what gets appended; the store
+        // keeps the conversation.
         let appended = task.history.clone().unwrap_or_default();
-        let save = self
-            .task_store
-            .save_appending_history(task, &appended, TASK_HISTORY_LIMIT);
+        let save = if whole {
+            self.task_store.save(task)
+        } else {
+            self.task_store
+                .save_appending_history(task, &appended, TASK_HISTORY_LIMIT)
+        };
         if let Err(e) = crate::store::applied::scope_if(read_at, save).await {
             self.release_admission(&task.id).await;
             return Err(e.into());
@@ -261,6 +266,7 @@ impl RequestHandler {
         read_at: Option<u64>,
         configuration: Option<&SendMessageConfiguration>,
         continues: bool,
+        whole: bool,
     ) -> ServerResult<()> {
         let registered = if continues {
             self.register_inline_push_config(configuration, &task.id, false)
@@ -268,7 +274,7 @@ impl RequestHandler {
         } else {
             None
         };
-        if let Err(e) = self.persist_initial_task(task, read_at).await {
+        if let Err(e) = self.persist_initial_task(task, read_at, whole).await {
             self.withdraw_inline_push_config(registered).await;
             return Err(e);
         }

@@ -45,6 +45,25 @@ pub use records::{ArtifactDelta, IdempotencyClaim, RecordedEvent};
 ///
 /// Do not add `async fn` methods; use the explicit `Pin<Box<...>>` form.
 ///
+/// # Writes the handler makes again
+///
+/// When one of [`save`](Self::save), [`save_status_delta`](Self::save_status_delta),
+/// [`save_artifact_delta`](Self::save_artifact_delta) or
+/// [`append_event`](Self::append_event) fails with an error that says "not
+/// now" ([`A2aError::is_unavailable`]), a turn's event consumer makes the same
+/// call again, for up to
+/// [`HandlerLimits::store_write_retry`](crate::handler::HandlerLimits::store_write_retry).
+/// The first call may have applied before its answer was lost, so each of
+/// these must leave the store as one call would when called twice with the
+/// same arguments: a save writes the same row, a delta that already applied
+/// changes nothing or refuses as its compare-and-set would, and an append at
+/// a position the log already holds does nothing. Answer "not now" only for a
+/// failure a later call may get past (a lost connection, a timeout, a lock);
+/// anything else is returned to the turn at once. The stores in this crate
+/// keep this; `tests/retried_statements.rs` runs each of them twice.
+///
+/// [`A2aError::is_unavailable`]: a2a_protocol_types::error::A2aError::is_unavailable
+///
 /// # Example
 ///
 /// ```rust
@@ -255,6 +274,29 @@ pub trait TaskStore: Send + Sync + 'static {
     ///
     /// A wrapper that forwards to another store must forward this too.
     fn database(&self) -> Option<crate::store::StoreDatabase> {
+        None
+    }
+
+    /// The turn claims of the database this store writes to, if it is one
+    /// several replicas can share (`crate::store::claim`).
+    ///
+    /// With `Some`, the handler claims each task for the length of a turn,
+    /// so a send to a task another replica is running waits for that turn,
+    /// or is refused, exactly as it would on the replica running it; and
+    /// every write the turn makes must be fenced by the store with
+    /// [`current_fence`](crate::store::claim::current_fence), in the same
+    /// atomic step as the write, refusing it with
+    /// [`ClaimLost`](crate::store::claim::ClaimLost) when the token no longer
+    /// holds a claim.
+    ///
+    /// Defaults to `None`: no claim is taken, and a store several replicas
+    /// share is safe only when every turn of a task is routed to one of them
+    /// (session affinity). The in-memory stores take the default, as nothing
+    /// outside their process can write to them. The bundled SQL stores answer
+    /// `Some`, over their own database.
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::claim::TurnClaimStore>> {
         None
     }
 

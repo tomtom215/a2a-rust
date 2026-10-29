@@ -3,5 +3,6 @@
 # An example crate under examples/ that needs no page in the book. One entry per
 # line: `<directory name>  # <reason>`. The reason is required, and an entry
 # whose example has gained a page, or no longer exists, fails the gate.
-
-harness  # a library the examples share for their coverage matrix (a2a-example-harness), not something a reader runs
+#
+# Empty since 2026-10-29, when `harness` gained book/src/examples/harness.md:
+# every example crate has a page.

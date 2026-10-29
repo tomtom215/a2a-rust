@@ -1,0 +1,9 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    sig["SIGTERM"]
+    a["Tasks get 5 s to finish,<br/>then 10 s after cancellation"]
+    c["axum drains connections,<br/>then cleanup hook: 5 s"]
+    e["Telemetry flush: up to 15 s"]
+    x["Process exits,<br/>before SIGKILL at 45 s"]
+    sig --> a --> c --> e --> x

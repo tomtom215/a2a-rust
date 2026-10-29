@@ -180,6 +180,15 @@ impl SqliteTaskStore {
         add_applied_seq(&pool, "tasks").await?;
         add_applied_seq(&pool, "task_artifact_appends").await?;
 
+        // Read by the fence in every task write (`crate::store::claim`); the
+        // other half of migration 9.
+        sqlx::query(crate::store::claim::sqlite::CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await?;
+        sqlx::query(crate::store::claim::sqlite::CREATE_OWNER_INDEX_SQL)
+            .execute(&pool)
+            .await?;
+
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_context_id ON tasks(context_id)")
             .execute(&pool)
             .await?;
@@ -270,6 +279,13 @@ impl SqliteTaskStore {
         query_builder.push(" || '].artifactId') = ");
         query_builder.push_bind(artifact_id);
         query_builder.push(")");
+        // The turn's fence (`crate::store::claim`): refused, the caller's
+        // `save` reports the lost claim.
+        if let Some(token) = crate::store::claim::current_fence() {
+            query_builder.push(" AND EXISTS (SELECT 1 FROM a2a_task_claims c WHERE c.token = ");
+            query_builder.push_bind(token);
+            query_builder.push(")");
+        }
         // Replay of an already-journalled append is a no-op rather than a
         // duplicate-key failure, because `seq` is the part's position: the same
         // append twice names the same slot with the same bytes.
@@ -464,12 +480,16 @@ struct DeltaStatement {
 /// delta from a writer that still believes the task is running is refused on
 /// a task stored terminal, and the zero rows send it to `save`, which reports
 /// the refusal.
-const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
-    "UPDATE tasks SET data = json_set(data, '$.artifacts[' || ?3 || '].parts[#]', \
+const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(concat!(
+    sql_write_allowed!(
+        "UPDATE tasks SET data = json_set(data, '$.artifacts[' || ?3 || '].parts[#]', \
      json_extract(?1, '$[0]')), applied_seq = COALESCE(?5, applied_seq) \
      WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' AND ",
-    "state",
-    "?4"
+        "state",
+        "?4",
+        " AND "
+    ),
+    crate::store::claim::fence_sql!("?6", "?2")
 ));
 
 /// Append a whole artifact at the end of the array, if the array holds
@@ -479,17 +499,26 @@ const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
 /// another replica's push appended after an artifact it had not seen, so the
 /// stored array held artifacts neither writer's snapshot did. Zero rows sends
 /// the caller to `save`, a lost update at worst.
-const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(sql_write_allowed!(
-    "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')), \
+const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(concat!(
+    sql_write_allowed!(
+        "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')), \
      applied_seq = COALESCE(?5, applied_seq) WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array' \
      AND json_array_length(data, '$.artifacts') = ?3 AND ",
-    "state",
-    "?4"
+        "state",
+        "?4",
+        " AND "
+    ),
+    crate::store::claim::fence_sql!("?6", "?2")
 ));
 
 /// The terminal guard for the several-parts append, whose statement text is
 /// assembled at run time and takes no index parameter.
-const MULTI_PART_GUARD: &str = sql_write_allowed!(" AND ", "state", "?3");
+///
+/// With the turn's fence (`crate::store::claim`), bound last as `?5`.
+const MULTI_PART_GUARD: &str = concat!(
+    sql_write_allowed!(" AND ", "state", "?3", " AND "),
+    crate::store::claim::fence_sql!("?5", "?2")
+);
 
 #[allow(clippy::manual_async_fn)]
 /// Adds the `applied_seq` column to `table` unless it has it.
@@ -536,6 +565,31 @@ async fn alter_add_applied_seq(pool: &SqlitePool, table: &'static str) -> Result
     }
 }
 
+/// `save`'s upsert. Its `WHERE` is the terminal guard (see
+/// `crate::store::terminal`) and the turn's fence (`crate::store::claim`,
+/// `?7`): a stored terminal row in another state, or a write whose claim was
+/// taken over, is left alone and the statement changes nothing.
+const SAVE_SQL: &str = concat!(
+    sql_write_allowed!(
+        "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
+                 VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')), ?6)
+                 ON CONFLICT(id) DO UPDATE SET
+                     context_id = excluded.context_id,
+                     state = excluded.state,
+                     data = excluded.data,
+                     updated_at = excluded.updated_at,
+                     applied_seq = COALESCE(excluded.applied_seq, NULLIF(MAX(
+                         COALESCE(tasks.applied_seq, -1),
+                         COALESCE((SELECT MAX(j.applied_seq) FROM task_artifact_appends j
+                                    WHERE j.task_id = tasks.id), -1)), -1))
+                 WHERE ",
+        "tasks.state",
+        "excluded.state",
+        " AND "
+    ),
+    crate::store::claim::fence_sql!("?7", "?1")
+);
+
 impl TaskStore for SqliteTaskStore {
     fn supports_idempotency(&self) -> bool {
         true
@@ -543,6 +597,12 @@ impl TaskStore for SqliteTaskStore {
 
     fn database(&self) -> Option<crate::store::StoreDatabase> {
         Some(crate::store::StoreDatabase::sqlite())
+    }
+
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
+        Some(std::sync::Arc::new(
+            crate::store::claim::SqliteTurnClaims::over(self.pool.clone()),
+        ))
     }
 
     fn claim_idempotency_key<'a>(
@@ -652,37 +712,33 @@ impl TaskStore for SqliteTaskStore {
             // not relying on it.
             let mut tx = self.pool.begin().await.map_err(to_a2a_error)?;
 
-            // The upsert's `WHERE` is the terminal guard (see
-            // `crate::store::terminal`): a stored terminal row in another state
-            // is left alone and the statement changes nothing.
-            let written = sqlx::query(sql_write_allowed!(
-                "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
-                 VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')), ?6)
-                 ON CONFLICT(id) DO UPDATE SET
-                     context_id = excluded.context_id,
-                     state = excluded.state,
-                     data = excluded.data,
-                     updated_at = excluded.updated_at,
-                     applied_seq = COALESCE(excluded.applied_seq, NULLIF(MAX(
-                         COALESCE(tasks.applied_seq, -1),
-                         COALESCE((SELECT MAX(j.applied_seq) FROM task_artifact_appends j
-                                    WHERE j.task_id = tasks.id), -1)), -1))
-                 WHERE ",
-                "tasks.state",
-                "excluded.state"
-            ))
-            .bind(id)
-            .bind(context_id)
-            .bind(&state)
-            .bind(&data)
-            .bind(&status_ts)
-            .bind(crate::store::applied::current_for_sql())
-            .execute(&mut *tx)
-            .await
-            .map_err(to_a2a_error)?
-            .rows_affected();
+            // `SAVE_SQL` refuses a terminal row's change and a fenced-out turn.
+            let fence = crate::store::claim::current_fence();
+            let written = sqlx::query(SAVE_SQL)
+                .bind(id)
+                .bind(context_id)
+                .bind(&state)
+                .bind(&data)
+                .bind(&status_ts)
+                .bind(crate::store::applied::current_for_sql())
+                .bind(&fence)
+                .execute(&mut *tx)
+                .await
+                .map_err(to_a2a_error)?
+                .rows_affected();
 
             if written == 0 {
+                // The fence refused it: another replica took the claim over.
+                if crate::store::claim::sqlite::lost_in(
+                    &mut tx,
+                    fence.as_deref(),
+                    task.id.0.as_str(),
+                )
+                .await?
+                {
+                    tx.rollback().await.map_err(to_a2a_error)?;
+                    return Err(crate::store::ClaimLost::new(task.id.clone()).into_error());
+                }
                 // Read inside the transaction that was refused, so the state
                 // reported is the one that refused it. Rolled back so the
                 // journal rows of the stored task are not deleted below.
@@ -786,11 +842,12 @@ impl TaskStore for SqliteTaskStore {
             if let Some(index) = stmt.index {
                 query = query.bind(i64::try_from(index).unwrap_or(i64::MAX));
             }
-            // The terminal guard's operand, then the position the write
-            // stores, always the last two parameters.
+            // The terminal guard's operand, the position the write stores,
+            // then the turn's fence, always the last three parameters.
             query = query
                 .bind(task.status.state.to_string())
-                .bind(crate::store::applied::current_for_sql());
+                .bind(crate::store::applied::current_for_sql())
+                .bind(crate::store::claim::current_fence());
 
             let affected = query
                 .execute(&self.pool)
@@ -854,21 +911,26 @@ impl TaskStore for SqliteTaskStore {
             // Guarded on the state column (see `crate::store::terminal`). Zero
             // rows means absent *or* refused; `save` tells the two apart,
             // inserting the one and reporting the other.
-            let affected = sqlx::query(sql_write_allowed!(
-                "UPDATE tasks
+            let affected = sqlx::query(concat!(
+                sql_write_allowed!(
+                    "UPDATE tasks
                     SET data = json_set(data, '$.status', json(?1)),
                         state = ?2,
                         updated_at = COALESCE(?3, strftime('%Y-%m-%d %H:%M:%f','now')),
                         applied_seq = COALESCE(?5, applied_seq)
                   WHERE id = ?4 AND ",
-                "state",
-                "?2"
+                    "state",
+                    "?2",
+                    " AND "
+                ),
+                crate::store::claim::fence_sql!("?6", "?4")
             ))
             .bind(&status)
             .bind(&state)
             .bind(&status_ts)
             .bind(task.id.0.as_str())
             .bind(crate::store::applied::current_for_sql())
+            .bind(crate::store::claim::current_fence())
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?
@@ -1167,15 +1229,25 @@ impl TaskStore for SqliteTaskStore {
             // right — the position is the idempotency key — but "nothing
             // happened" and "another writer owns this position" are the same
             // answer, and only one of them is safe to ignore.
+            let fence = crate::store::claim::current_fence();
             let changed_nothing = sqlx::query(event_log::APPEND_SQL)
                 .bind(task_id.0.as_str())
                 .bind(position)
                 .bind(&payload)
+                .bind(&fence)
                 .execute(&self.pool)
                 .await
                 .map_err(to_a2a_error)?
                 .rows_affected()
                 == 0;
+            if changed_nothing
+                && let Some(token) = &fence
+                && !crate::store::claim::sqlite::holds(&self.pool, token, task_id.0.as_str())
+                    .await
+                    .map_err(to_a2a_error)?
+            {
+                return Err(crate::store::ClaimLost::new(task_id.clone()).into_error());
+            }
             if changed_nothing {
                 // Only on the collision path, so the append itself keeps its
                 // single round trip.

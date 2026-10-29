@@ -82,7 +82,9 @@ This policy covers **every crate published from this repository**:
   workspace" therefore did not reach it, which is why this section now names
   it. Two things a reporter should know about it: it has **never been
   published to crates.io** (see `RELEASING.md`), so no released artifact is
-  affected today; and it carries **no advisory waiver** since 2026-10-15.
+  affected today; and its one advisory waiver, GHSA-qwgh-2vcv-g2f7 (`block-buffer`
+  0.10.4, 2026-10-29), is shared with the workspace and explained in
+  `osv-scanner.toml`; before it, none since 2026-10-15.
   Its move to `agntcy-slim-rpc` 3.4.1 took `rustls` to 0.23.46 (the
   `aws-lc-rs` pin under `slim-auth` that held it at 0.23.43 is `=1.18.1`
   in `mls-rs-crypto-awslc` 0.25.1) and removed `unsafe-libyaml`, so the

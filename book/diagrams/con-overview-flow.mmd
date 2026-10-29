@@ -1,0 +1,12 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as Client
+    participant A as Agent
+    C->>A: GET /.well-known/agent-card.json
+    A-->>C: AgentCard
+    C->>C: pick an interface
+    C->>A: SendMessage
+    A-->>C: Task (or a direct Message)
+    C->>A: GetTask
+    A-->>C: Task

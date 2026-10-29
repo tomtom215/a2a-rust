@@ -96,6 +96,10 @@ GATE_INPUTS: list[tuple[str, list[str]]] = [
     (r"^\./target/release/a2a-tck(-sut)?\b", ["tck/**", "crates/**"]),
     # mdBook parses the summary and the markdown; other files are copied as-is.
     (r"^mdbook build", ["book/book.toml", "book/src/**/*.md"]),
+    # Reads the built book: every page's links and ids, so the markdown, the
+    # summary that places it, and the static files copied in beside it.
+    (r"check_book_links\.py", ["book/book.toml", "book/src/**",
+                                "book/static/**"]),
     # Run-time output only: criterion's target/criterion, the TCK's report.
     (r"check_streaming_linearity\.py", []),
     (r"check_regression\.py", []),

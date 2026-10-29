@@ -1,42 +1,77 @@
 # Examples Overview
 
-The `examples/` directory contains standalone binary crates that demonstrate real-world usage of the a2a-rust SDK. Each example builds and runs independently.
+The `examples/` directory holds sixteen crates: fifteen runnable examples
+that show the a2a-rust SDK doing real work, and `harness`, the library several
+of them share to score their coverage. Each is a workspace member that
+depends on the SDK by path, so run it from the repository root. Use this page
+to pick one: the table says what each shows and what it needs, and the
+learning path below it says what order to read them in.
 
-The directory also holds `harness`, a library the examples share for their coverage matrix, which has no page; [`examples/README.md`](https://github.com/tomtom215/a2a-rust/blob/main/examples/README.md) describes every example. Every example binary that runs A2A code starts the SDK's `Telemetry` from the `OTEL_*` environment: with `OTEL_EXPORTER_OTLP_ENDPOINT` set it exports traces, metrics and logs over OTLP, and without it nothing is built.
+## Choose an example
 
-## At a Glance
+"Nothing" means a plain `cargo run` needs no model, key, service or other
+language. The package name is not always the directory name; each page gives
+the exact command.
 
-| Example | Description | External deps | Difficulty |
-|---------|-------------|--------------|------------|
-| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — one screen of code above its tests, the SDK plus `tokio`, no SDK feature flags | None | Beginner |
-| [Deploy Agent](./deploy-agent.md) | The hello agent made shippable — env config, `/healthz` and `/readyz`, `SIGTERM` draining, a container and a Kubernetes manifest | None | Beginner |
-| [Incident-Response Team](./incident-response.md) | Multi-turn input-required, delegation, streaming, cancellation | None (optional local model) | Intermediate |
-| [Echo Agent](./echo-agent.md) | Every A2A method over all four bindings, with a coverage matrix that fails the run on a gap | None | Beginner |
-| [Agent Team](./agent-team.md) | Five agents over JSON-RPC, REST and gRPC plus a sixth serving all four bindings: 100 end-to-end tests and a 2-result method × binding sweep, 102 on the default feature set (the dogfood CI job runs them) | None | Advanced |
-| [Resilient Agent](./resilient-agent.md) | What survives a restart, a failure and a second replica, each asserted, with what the SDK does *not* do asserted too | None (PostgreSQL for two of its eight checks) | Advanced |
-| [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | A local model server, or an API key | Intermediate |
-| [Rig Agent](./rig-agent.md) | Real rig-core agent behind A2A — hosted or fully local, no mock | None (local server works keyless) | Intermediate |
-| [Tool-Loop Agent](./tool-loop-agent.md) | Tool calling from the SDK alone: `ToolLoopExecutor` over `OpenAiChatModel`, no loop written | A model server | Intermediate |
-| [Live Model](./live-model.md) | The SDK end to end against a real model: ten checks across four bindings, provenance, idempotency, a budget, a halt and a two-approver quorum | A model server | Advanced |
-| [MCP Agent](./mcp-agent.md) | An agent whose tools come from an MCP server it discovers at startup | None (optional tool-capable local model) | Intermediate |
-| [A2A → MCP Bridge](./mcp-bridge.md) | Exposes a remote A2A agent as an MCP server | None | Intermediate |
-| [Langfuse Agent](./langfuse-agent.md) | Two agents in one Langfuse trace, exported by the SDK's own `Telemetry` | A Langfuse, self-hosted or Cloud | Intermediate |
-| [Multi-Language Team](./multi-lang-team.md) | Rust coordinator delegating to Python, JS, Go, Java and Rust A2A agents | Worker agents | Advanced |
-| [Swarm](./swarm.md) | A coordinator, supervisors and workers, every hop a real A2A call: fan-out, retry by failure class, cancel through two hops | None (a model for one optional scenario) | Advanced |
+| Example | What it shows | Needs | Level |
+|---------|---------------|-------|-------|
+| [Hello Agent](./hello-agent.md) | The smallest complete agent: an executor, a card and a JSON-RPC listener in one file, using only the SDK's prelude | Nothing | Beginner |
+| [Echo Agent](./echo-agent.md) | Every A2A method over all four bindings from one handler, with a coverage matrix that fails the run on a gap, and counter-tests for the calls that must be refused | Nothing | Beginner |
+| [Deploy Agent](./deploy-agent.md) | The hello agent made shippable: environment configuration, `/healthz` and `/readyz`, `SIGTERM` draining, a container and a Kubernetes manifest | Nothing locally; Docker or Kubernetes to deploy; PostgreSQL for more than one replica | Beginner |
+| [Incident-Response Team](./incident-response.md) | Three agents handling an incident: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, cancellation; then the coverage matrix and sixteen production-hardening checks | Nothing; a local model or an API key, optionally; PostgreSQL for one check | Intermediate |
+| [Agent Team](./agent-team.md) | The SDK's dogfood suite: five agents over JSON-RPC, REST and gRPC plus a sixth serving all four bindings, 100 end-to-end tests and a 2-result method × binding sweep, 102 on the default feature set | Nothing | Advanced |
+| [Resilient Agent](./resilient-agent.md) | What survives a restart, a failure and a second replica, each asserted, with what the SDK does *not* do asserted too | Nothing; PostgreSQL for two of its eight checks | Advanced |
+| [Genai Agent](./genai-agent.md) | An LLM-backed agent through genai (OpenAI, Anthropic, Gemini, local servers and others), on all four bindings with the coverage matrix | Nothing for the self-check, which labels its answers as fallbacks; a local model server or an API key for real answers | Intermediate |
+| [Rig Agent](./rig-agent.md) | A rig-core agent with a bounded tool loop behind A2A, showing where tool calling sits relative to the protocol | Nothing for the conformance run; a tool-capable model, local or hosted, to see a tool call | Intermediate |
+| [Tool-Loop Agent](./tool-loop-agent.md) | Tool calling from the SDK alone: `ToolLoopExecutor` over `OpenAiChatModel`, no loop written | An OpenAI-compatible model server (`cargo test` needs none) | Intermediate |
+| [Live Model](./live-model.md) | The SDK end to end against a real model: ten checks across four bindings, provenance, idempotency, a budget, a halt and a two-approver quorum | An OpenAI-compatible model server | Advanced |
+| [MCP Agent](./mcp-agent.md) | An agent whose tools come from an MCP server it discovers at startup | Nothing; a tool-capable model to exercise the MCP leg | Intermediate |
+| [A2A → MCP Bridge](./mcp-bridge.md) | A remote A2A agent exposed as an MCP server, callable as a tool | Nothing | Intermediate |
+| [Langfuse Agent](./langfuse-agent.md) | Two agents in one Langfuse trace, exported by the SDK's own `Telemetry` with no tracing code in either agent | A Langfuse: self-hosted with Docker Compose, or a Langfuse Cloud project's keys | Intermediate |
+| [Multi-Language Team](./multi-lang-team.md) | A Rust coordinator fanning out to Python, JavaScript, Go, Java and Rust workers | Nothing with the Rust worker; Python, Node.js, Go or Java for the others, optionally | Advanced |
+| [Swarm](./swarm.md) | A coordinator, supervisors and workers, every hop a real A2A call: fan-out, retry by failure class, cancellation through two hops | Nothing; a model for one optional scenario | Advanced |
+| [Example Harness and Go Interop](./harness.md) | The library that scores the coverage matrix for six of the examples, and a check of this SDK against the official Go SDK in both directions | Nothing for its tests; Go for `scripts/go_sdk_interop.sh` | Reference |
 
-## Where to Start
+## A learning path
 
-- **New to A2A?** Start with the [Hello Agent](./hello-agent.md) — the entire agent fits on one screen. Then read the [Echo Agent](./echo-agent.md) for the complete request lifecycle across four bindings.
+1. **[Hello Agent](./hello-agent.md).** The whole agent fits on one screen:
+   the executor, the card, the listener.
+2. **[Echo Agent](./echo-agent.md).** The same idea over all four bindings
+   and every method, and how this project checks a claim of coverage.
+3. **[Incident-Response Team](./incident-response.md).** The recommended
+   first multi-agent example: a task that pauses for input, delegates, streams
+   and can be cancelled.
+4. Then branch by what you are building:
+   - **Shipping one agent:** [Deploy Agent](./deploy-agent.md), then
+     [Resilient Agent](./resilient-agent.md) for what a restart and a second
+     replica do to a task.
+   - **Putting a model behind it:** [Genai Agent](./genai-agent.md) for one
+     model call; [Tool-Loop Agent](./tool-loop-agent.md) or
+     [Rig Agent](./rig-agent.md) for tool calling;
+     [Live Model](./live-model.md) for the whole SDK against a real model.
+   - **Using MCP:** [MCP Agent](./mcp-agent.md) for tools from an MCP server,
+     [A2A → MCP Bridge](./mcp-bridge.md) for an agent as an MCP tool.
+   - **Operating many agents:** [Swarm](./swarm.md) for fan-out and
+     cancellation through two hops, [Langfuse Agent](./langfuse-agent.md) for
+     two agents in one trace.
+   - **Talking to other SDKs:** [Multi-Language Team](./multi-lang-team.md)
+     for the delegation shape, [Example Harness and Go Interop](./harness.md)
+     for the measured check.
+   - **Evaluating the SDK as a whole:** [Agent Team](./agent-team.md), which
+     runs 100 end-to-end tests and the method × binding sweep and prints a
+     pass/fail report.
 
-- **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it runs 100 automated end-to-end tests across the SDK's features, then sweeps every method over every binding (102 results in all), and prints a pass/fail report.
+## Telemetry in every example
 
-- **Integrating an LLM?** See the [Genai Agent](./genai-agent.md) or [Rig Agent](./rig-agent.md) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait, or the [Tool-Loop Agent](./tool-loop-agent.md) for tool calling with no framework at all.
+Every example binary that runs A2A code starts the SDK's `Telemetry` from the
+`OTEL_*` environment: with `OTEL_EXPORTER_OTLP_ENDPOINT` set it exports
+traces, metrics and logs over OTLP, and without it nothing is built, so a
+plain `cargo run` needs no collector. `OTEL_TRACES_EXPORTER=console` (and the
+metrics and logs equivalents) prints the signal instead.
+[`examples/README.md`](https://github.com/tomtom215/a2a-rust/blob/main/examples/README.md)
+describes every example from the repository's side.
 
-- **Operating an agent?** The [Resilient Agent](./resilient-agent.md) shows what a restart, a failure and a second replica do to a task, and the [Swarm](./swarm.md) what fan-out and cancellation cost through two A2A hops. The [Langfuse Agent](./langfuse-agent.md) shows two agents in one trace.
-
-- **Cross-language interop?** See the [Multi-Language Team](./multi-lang-team.md) for a Rust coordinator that talks to agents in 4 other languages.
-
-## Common Pattern
+## Common pattern
 
 Every example that serves A2A follows the same three-step integration pattern:
 

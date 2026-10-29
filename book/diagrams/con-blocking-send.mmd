@@ -1,0 +1,13 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+sequenceDiagram
+    participant C as Client
+    participant H as Server
+    participant E as Executor
+    C->>H: SendMessage
+    H->>E: execute
+    loop until terminal or interrupted
+        E->>H: status / artifact events
+        H->>H: check and store
+    end
+    H-->>C: Task (or a direct Message)

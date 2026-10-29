@@ -227,7 +227,7 @@ that accepts its cookie or ticket and forwards a header.
 - **Limits.** Incoming messages are capped at 4 MiB (a larger one ends the
   connection), 64 requests per connection, a handshake timeout, and optional
   caps on connections and idle time; see the
-  [dispatcher guide](../building-agents/dispatchers.md#built-in-limits).
+  [dispatcher guide](../building-agents/dispatchers/websocket.md#built-in-limits).
 
 ## 8. Differences from the JSON-RPC HTTP binding
 

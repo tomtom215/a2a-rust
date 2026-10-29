@@ -56,11 +56,17 @@ pub(super) enum Outcome {
     /// another state — another writer finished it. Nothing this executor
     /// emits from here on can change the task.
     Refused(TerminalStateConflict),
+    /// The store refused the write because this turn's claim on the task was
+    /// taken over: another replica runs the task now (`crate::store::claim`).
+    /// Nothing this executor emits from here on may reach the task.
+    ClaimLost,
 }
 
 /// The refusal inside `e`, if the store refused rather than failed.
 fn refusal(e: &a2a_protocol_types::error::A2aError) -> Option<Outcome> {
-    TerminalStateConflict::from_error(e).map(Outcome::Refused)
+    TerminalStateConflict::from_error(e)
+        .map(Outcome::Refused)
+        .or_else(|| crate::store::ClaimLost::from_error(e).map(|_| Outcome::ClaimLost))
 }
 
 /// An event moved the task where `can_transition_to` forbids: mark the task
@@ -74,6 +80,7 @@ async fn fail_invalid_transition(
     last_task: &mut Task,
     current: TaskState,
     next: TaskState,
+    retry: std::time::Duration,
 ) -> Outcome {
     // Read only by the trace lines, which a build without `tracing` drops.
     #[cfg(not(feature = "tracing"))]
@@ -85,7 +92,14 @@ async fn fail_invalid_transition(
         "invalid state transition rejected (background); marking task as failed"
     );
     last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-    if let Err(e) = task_store.save_status_delta(last_task).await {
+    if let Err(e) = crate::handler::event_processing::persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::FAILED_STATE,
+        || task_store.save_status_delta(last_task),
+    )
+    .await
+    {
         if let Some(refused) = refusal(&e) {
             return refused;
         }
@@ -143,6 +157,7 @@ pub(super) async fn process_event_with(
         limits,
         metrics,
     } = deps;
+    let retry = limits.store_write_retry;
     match event {
         Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
             let current = last_task.status.state;
@@ -163,7 +178,7 @@ pub(super) async fn process_event_with(
             }
             if !current.can_transition_to(next) {
                 return fail_invalid_transition(
-                    task_store, metrics, task_id, last_task, current, next,
+                    task_store, metrics, task_id, last_task, current, next, retry,
                 )
                 .await;
             }
@@ -174,7 +189,14 @@ pub(super) async fn process_event_with(
                 message: update.status.message.clone(),
                 timestamp: update.status.timestamp.clone(),
             };
-            if let Err(e) = task_store.save_status_delta(last_task).await {
+            if let Err(e) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                crate::metrics::persistence_operation::STATUS_UPDATE,
+                || task_store.save_status_delta(last_task),
+            )
+            .await
+            {
                 if let Some(refused) = refusal(&e) {
                     return refused;
                 }
@@ -247,17 +269,29 @@ pub(super) async fn process_event_with(
                 // the metadata is written whole (`merge_append`).
                 let written =
                     if crate::handler::event_processing::merge_append(existing, &update.artifact) {
-                        task_store.save(last_task).await
+                        crate::handler::event_processing::persisting(
+                            retry,
+                            metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || task_store.save(last_task),
+                        )
+                        .await
                     } else {
-                        task_store
-                            .save_artifact_delta(
-                                last_task,
-                                ArtifactDelta::AppendedParts {
-                                    index,
-                                    count: appended,
-                                },
-                            )
-                            .await
+                        crate::handler::event_processing::persisting(
+                            retry,
+                            metrics,
+                            crate::metrics::persistence_operation::ARTIFACT_APPEND,
+                            || {
+                                task_store.save_artifact_delta(
+                                    last_task,
+                                    ArtifactDelta::AppendedParts {
+                                        index,
+                                        count: appended,
+                                    },
+                                )
+                            },
+                        )
+                        .await
                     };
                 if let Err(e) = written {
                     if let Some(refused) = refusal(&e) {
@@ -304,7 +338,14 @@ pub(super) async fn process_event_with(
                 && let Some(index) = artifacts.iter().position(|a| a.id == update.artifact.id)
             {
                 let previous = std::mem::replace(&mut artifacts[index], update.artifact.clone());
-                if let Err(e) = task_store.save(last_task).await {
+                if let Err(e) = crate::handler::event_processing::persisting(
+                    retry,
+                    metrics,
+                    crate::metrics::persistence_operation::ARTIFACT_PUSH,
+                    || task_store.save(last_task),
+                )
+                .await
+                {
                     if let Some(refused) = refusal(&e) {
                         return refused;
                     }
@@ -402,14 +443,21 @@ pub(super) async fn process_event_with(
                 }
                 if !current.can_transition_to(next) {
                     return fail_invalid_transition(
-                        task_store, metrics, task_id, last_task, current, next,
+                        task_store, metrics, task_id, last_task, current, next, retry,
                     )
                     .await;
                 }
             }
             let prev = last_task.clone();
             *last_task = task;
-            if let Err(e) = task_store.save(last_task).await {
+            if let Err(e) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                || task_store.save(last_task),
+            )
+            .await
+            {
                 if let Some(refused) = refusal(&e) {
                     return refused;
                 }
@@ -430,13 +478,20 @@ pub(super) async fn process_event_with(
         }
         Ok(StreamResponse::Message(msg)) => {
             // Agent messages are part of the conversation record.
-            append_message(msg, task_id, last_task, task_store, metrics).await
+            append_message(msg, task_id, last_task, task_store, metrics, retry).await
         }
         Ok(_) => Outcome::NotPersisted,
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-            if let Err(save_err) = task_store.save_status_delta(last_task).await {
+            if let Err(save_err) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                crate::metrics::persistence_operation::FAILED_STATE,
+                || task_store.save_status_delta(last_task),
+            )
+            .await
+            {
                 if let Some(refused) = refusal(&save_err) {
                     return refused;
                 }
@@ -468,6 +523,7 @@ async fn append_message(
     last_task: &mut Task,
     task_store: &dyn TaskStore,
     metrics: &dyn crate::metrics::Metrics,
+    retry: std::time::Duration,
 ) -> Outcome {
     let had_history = last_task.history.is_some();
     let history = last_task.history.get_or_insert_with(Vec::new);
@@ -475,7 +531,14 @@ async fn append_message(
     // The same limit, by count and by bytes, as the send path. What
     // it dropped is kept so a failed save can undo exactly the append.
     let dropped = crate::handler::messaging::TASK_HISTORY_LIMIT.trim_returning(history);
-    if let Err(e) = task_store.save(last_task).await {
+    if let Err(e) = crate::handler::event_processing::persisting(
+        retry,
+        metrics,
+        crate::metrics::persistence_operation::HISTORY_APPEND,
+        || task_store.save(last_task),
+    )
+    .await
+    {
         if let Some(refused) = refusal(&e) {
             return refused;
         }
@@ -575,7 +638,15 @@ async fn process_folded_message(
             .timestamp
             .clone_from(&update.status.timestamp);
     }
-    let outcome = append_message(message, task_id, last_task, deps.task_store, deps.metrics).await;
+    let outcome = append_message(
+        message,
+        task_id,
+        last_task,
+        deps.task_store,
+        deps.metrics,
+        deps.limits.store_write_retry,
+    )
+    .await;
     if outcome == Outcome::NotPersisted {
         last_task.status = prev_status;
     }

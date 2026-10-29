@@ -95,8 +95,10 @@ impl PostgresTaskStore {
         // The last condition is the terminal guard (see
         // `crate::store::terminal`), on the writer's state: zero rows sends
         // the caller to `save`, which reports a refusal.
-        let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
-            "UPDATE tasks SET data = jsonb_set(\
+        let rows = crate::store::pg_retry::retry(&*self.metrics, || {
+            sqlx::query(concat!(
+                crate::store::terminal::sql_write_allowed!(
+                    "UPDATE tasks SET data = jsonb_set(\
                  data, ARRAY['artifacts', $3::text, 'parts'], \
                  (data->'artifacts'->($3::int)->'parts') || $1::jsonb), \
                  applied_seq = COALESCE($5, applied_seq) \
@@ -106,17 +108,22 @@ impl PostgresTaskStore {
                AND jsonb_array_length(data->'artifacts'->($3::int)->'parts') = $6 \
                AND data->'artifacts'->($3::int)->>'artifactId' = $7 \
                AND ",
-            "state",
-            "$4"
-        ))
-        .bind(&payload)
-        .bind(task.id.0.as_str())
-        .bind(idx)
-        .bind(task.status.state.to_string())
-        .bind(crate::store::applied::current_for_sql())
-        .bind(prior)
-        .bind(artifact.id.0.as_str())
-        .execute(&self.pool)
+                    "state",
+                    "$4",
+                    " AND "
+                ),
+                crate::store::claim::fence_sql!(postgres "$8::text", "$2")
+            ))
+            .bind(&payload)
+            .bind(task.id.0.as_str())
+            .bind(idx)
+            .bind(task.status.state.to_string())
+            .bind(crate::store::applied::current_for_sql())
+            .bind(prior)
+            .bind(artifact.id.0.as_str())
+            .bind(crate::store::claim::current_fence())
+            .execute(&self.pool)
+        })
         .await
         .map_err(to_a2a_error)?
         .rows_affected();
@@ -148,21 +155,28 @@ impl PostgresTaskStore {
             return Ok(None);
         };
 
-        let rows = sqlx::query(crate::store::terminal::sql_write_allowed!(
-            "UPDATE tasks SET data = jsonb_set(\
+        let rows = crate::store::pg_retry::retry(&*self.metrics, || {
+            sqlx::query(concat!(
+                crate::store::terminal::sql_write_allowed!(
+                    "UPDATE tasks SET data = jsonb_set(\
                  data, ARRAY['artifacts'], (data->'artifacts') || $1::jsonb), \
                  applied_seq = COALESCE($4, applied_seq) \
              WHERE id = $2 AND jsonb_typeof(data->'artifacts') = 'array' \
                AND jsonb_array_length(data->'artifacts') = $5 AND ",
-            "state",
-            "$3"
-        ))
-        .bind(&payload)
-        .bind(task.id.0.as_str())
-        .bind(task.status.state.to_string())
-        .bind(crate::store::applied::current_for_sql())
-        .bind(prior)
-        .execute(&self.pool)
+                    "state",
+                    "$3",
+                    " AND "
+                ),
+                crate::store::claim::fence_sql!(postgres "$6::text", "$2")
+            ))
+            .bind(&payload)
+            .bind(task.id.0.as_str())
+            .bind(task.status.state.to_string())
+            .bind(crate::store::applied::current_for_sql())
+            .bind(prior)
+            .bind(crate::store::claim::current_fence())
+            .execute(&self.pool)
+        })
         .await
         .map_err(to_a2a_error)?
         .rows_affected();

@@ -40,6 +40,12 @@ impl TaskStore for PostgresTaskStore {
         Some(crate::store::StoreDatabase::postgres(&self.pool))
     }
 
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
+        Some(std::sync::Arc::new(
+            crate::store::claim::PostgresTurnClaims::over(self.pool.clone(), self.metrics.clone()),
+        ))
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,
@@ -52,7 +58,9 @@ impl TaskStore for PostgresTaskStore {
             // between them would leave a losing claim seeing no holder — and a
             // claim that neither inserted nor found a holder must never be
             // mistaken for a successful one.
-            let mut tx = self.pool.begin().await.map_err(to_a2a_error)?;
+            let mut tx = crate::store::pg_retry::retry(&*self.metrics, || self.pool.begin())
+                .await
+                .map_err(to_a2a_error)?;
 
             let inserted = sqlx::query(idempotency::CLAIM_SQL)
                 .bind(key)
@@ -100,11 +108,15 @@ impl TaskStore for PostgresTaskStore {
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            sqlx::query(idempotency::RELEASE_SQL)
-                .bind(key)
-                .execute(&self.pool)
-                .await
-                .map_err(to_a2a_error)?;
+            // Checked, not retried: a second run would delete a claim another send
+            // made on the same key since.
+            crate::store::pg_retry::checked(
+                sqlx::query(idempotency::RELEASE_SQL)
+                    .bind(key)
+                    .execute(&self.pool),
+            )
+            .await
+            .map_err(to_a2a_error)?;
             Ok(())
         })
     }
@@ -130,9 +142,13 @@ impl TaskStore for PostgresTaskStore {
             // latest committed row version when another transaction has
             // updated the row concurrently, so a racing cancel cannot slip
             // between the check and the write.
-            let written = sqlx::query(sql_write_allowed!(
-                "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
-                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()), $6)
+            let fence = crate::store::claim::current_fence();
+            let written = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(concat!(
+                    sql_write_allowed!(
+                        "INSERT INTO tasks (id, context_id, state, data, updated_at, applied_seq)
+                 SELECT $1, $2, $3, $4, COALESCE(($5)::timestamptz, now()), $6
+                 WHERE set_config('a2a.claims', 'on', true) = 'on'
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
@@ -140,30 +156,45 @@ impl TaskStore for PostgresTaskStore {
                      updated_at = EXCLUDED.updated_at,
                      applied_seq = COALESCE(EXCLUDED.applied_seq, tasks.applied_seq)
                  WHERE ",
-                "tasks.state",
-                "EXCLUDED.state"
-            ))
-            .bind(id)
-            .bind(context_id)
-            .bind(&state)
-            .bind(&data)
-            .bind(&status_ts)
-            .bind(crate::store::applied::current_for_sql())
-            .execute(&self.pool)
+                        "tasks.state",
+                        "EXCLUDED.state",
+                        " AND "
+                    ),
+                    crate::store::claim::fence_sql!(postgres "$7::text", "$1")
+                ))
+                .bind(id)
+                .bind(context_id)
+                .bind(&state)
+                .bind(&data)
+                .bind(&status_ts)
+                .bind(crate::store::applied::current_for_sql())
+                .bind(&fence)
+                .execute(&self.pool)
+            })
             .await
             .map_err(to_a2a_error)?
             .rows_affected();
 
             if written == 0 {
+                // The fence refused it: another replica took the claim over.
+                if let Some(token) = &fence
+                    && !crate::store::claim::postgres::holds(&self.pool, token, task.id.0.as_str())
+                        .await
+                        .map_err(to_a2a_error)?
+                {
+                    return Err(crate::store::ClaimLost::new(task.id.clone()).into_error());
+                }
                 // A separate statement, so a fresh snapshot: the refusing
                 // guard saw the latest row version, which the upsert's own
                 // snapshot may predate.
                 let stored: Option<(String,)> =
-                    sqlx::query_as("SELECT state FROM tasks WHERE id = $1")
-                        .bind(id)
-                        .fetch_optional(&self.pool)
-                        .await
-                        .map_err(to_a2a_error)?;
+                    crate::store::pg_retry::retry(&*self.metrics, || {
+                        sqlx::query_as("SELECT state FROM tasks WHERE id = $1")
+                            .bind(id)
+                            .fetch_optional(&self.pool)
+                    })
+                    .await
+                    .map_err(to_a2a_error)?;
                 return Err(refusal(task, stored.map(|(s,)| s).as_deref()));
             }
 
@@ -289,22 +320,29 @@ impl TaskStore for PostgresTaskStore {
             // Guarded on the state column (see `crate::store::terminal`). Zero
             // rows means absent *or* refused; `save` tells the two apart,
             // inserting the one and reporting the other.
-            let affected = sqlx::query(sql_write_allowed!(
-                "UPDATE tasks
+            let affected = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(concat!(
+                    sql_write_allowed!(
+                        "UPDATE tasks
                     SET data = jsonb_set(data, ARRAY['status'], $1),
                         state = $2,
                         updated_at = COALESCE(($3)::timestamptz, now()),
                         applied_seq = COALESCE($5, applied_seq)
                   WHERE id = $4 AND ",
-                "state",
-                "$2"
-            ))
-            .bind(&status)
-            .bind(&state)
-            .bind(&status_ts)
-            .bind(task.id.0.as_str())
-            .bind(crate::store::applied::current_for_sql())
-            .execute(&self.pool)
+                        "state",
+                        "$2",
+                        " AND "
+                    ),
+                    crate::store::claim::fence_sql!(postgres "$6::text", "$4")
+                ))
+                .bind(&status)
+                .bind(&state)
+                .bind(&status_ts)
+                .bind(task.id.0.as_str())
+                .bind(crate::store::applied::current_for_sql())
+                .bind(crate::store::claim::current_fence())
+                .execute(&self.pool)
+            })
             .await
             .map_err(to_a2a_error)?
             .rows_affected();
@@ -319,11 +357,13 @@ impl TaskStore for PostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
         Box::pin(async move {
             let row: Option<(serde_json::Value,)> =
-                sqlx::query_as("SELECT data FROM tasks WHERE id = $1")
-                    .bind(id.0.as_str())
-                    .fetch_optional(&self.pool)
-                    .await
-                    .map_err(to_a2a_error)?;
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    sqlx::query_as("SELECT data FROM tasks WHERE id = $1")
+                        .bind(id.0.as_str())
+                        .fetch_optional(&self.pool)
+                })
+                .await
+                .map_err(to_a2a_error)?;
 
             match row {
                 Some((data,)) => {
@@ -343,11 +383,13 @@ impl TaskStore for PostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
         Box::pin(async move {
             let row: Option<(serde_json::Value, Option<i64>)> =
-                sqlx::query_as("SELECT data, applied_seq FROM tasks WHERE id = $1")
-                    .bind(id.0.as_str())
-                    .fetch_optional(&self.pool)
-                    .await
-                    .map_err(to_a2a_error)?;
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    sqlx::query_as("SELECT data, applied_seq FROM tasks WHERE id = $1")
+                        .bind(id.0.as_str())
+                        .fetch_optional(&self.pool)
+                })
+                .await
+                .map_err(to_a2a_error)?;
             row.map(|(data, applied)| {
                 let task: Task = serde_json::from_value(data)
                     .map_err(|e| A2aError::internal(format!("failed to deserialize task: {e}")))?;
@@ -405,11 +447,15 @@ impl TaskStore for PostgresTaskStore {
                 // sqlx 0.9 asks each runtime-built statement to be vouched for: the
                 // text is the static clauses above and integer placeholder positions;
                 // every caller-supplied value is a bind.
-                let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
-                for val in &bind_values {
-                    count = count.bind(val);
-                }
-                let n = count.fetch_one(&self.pool).await.map_err(to_a2a_error)?;
+                let n = crate::store::pg_retry::retry(&*self.metrics, || {
+                    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql.clone()));
+                    for val in &bind_values {
+                        count = count.bind(val);
+                    }
+                    count.fetch_one(&self.pool)
+                })
+                .await
+                .map_err(to_a2a_error)?;
                 u32::try_from(n).unwrap_or(u32::MAX)
             };
             // Composite (updated_at, id) row-value cursor for status-
@@ -454,14 +500,18 @@ impl TaskStore for PostgresTaskStore {
             // sqlx 0.9 asks each runtime-built statement to be vouched for: the
             // text is the static clauses above and integer placeholder positions;
             // every caller-supplied value is a bind.
-            let mut query =
-                sqlx::query_as::<_, (String, serde_json::Value)>(sqlx::AssertSqlSafe(sql));
-            for val in &bind_values {
-                query = query.bind(val);
-            }
-
             let rows: Vec<(String, serde_json::Value)> =
-                query.fetch_all(&self.pool).await.map_err(to_a2a_error)?;
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    let mut query = sqlx::query_as::<_, (String, serde_json::Value)>(
+                        sqlx::AssertSqlSafe(sql.clone()),
+                    );
+                    for val in &bind_values {
+                        query = query.bind(val);
+                    }
+                    query.fetch_all(&self.pool)
+                })
+                .await
+                .map_err(to_a2a_error)?;
 
             let mut rows: Vec<(String, Task)> = rows
                 .into_iter()
@@ -504,17 +554,21 @@ impl TaskStore for PostgresTaskStore {
 
             let status_ts =
                 crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
-            let result = sqlx::query(
+            let result = // A second run would answer `false` for the row the first inserted:
+            // pinged first instead (`pg_retry`).
+            crate::store::pg_retry::checked(sqlx::query(concat!(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()))
-                 ON CONFLICT(id) DO NOTHING",
-            )
+                 SELECT $1, $2, $3, $4, COALESCE(($5)::timestamptz, now())
+                 WHERE ",
+                crate::store::claim::upgrade::claims_writer!(),
+                " ON CONFLICT(id) DO NOTHING"
+            ))
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
             .bind(&status_ts)
-            .execute(&self.pool)
+            .execute(&self.pool))
             .await
             .map_err(to_a2a_error)?;
 
@@ -539,25 +593,39 @@ impl TaskStore for PostgresTaskStore {
             // number the log from their own in-process queues.
             let position = seq_to_i64(seq)?;
             let payload = encode_json(event)?;
-            let changed_nothing = sqlx::query(event_log::APPEND_SQL)
-                .bind(task_id.0.as_str())
-                .bind(position)
-                .bind(&payload)
-                .execute(&self.pool)
-                .await
-                .map_err(to_a2a_error)?
-                .rows_affected()
+            let fence = crate::store::claim::current_fence();
+            let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(event_log::APPEND_SQL)
+                    .bind(task_id.0.as_str())
+                    .bind(position)
+                    .bind(&payload)
+                    .bind(&fence)
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?
+            .rows_affected()
                 == 0;
+            if changed_nothing
+                && let Some(token) = &fence
+                && !crate::store::claim::postgres::holds(&self.pool, token, task_id.0.as_str())
+                    .await
+                    .map_err(to_a2a_error)?
+            {
+                return Err(crate::store::ClaimLost::new(task_id.clone()).into_error());
+            }
             if changed_nothing {
                 // Only on the collision path. `Value` compares structurally,
                 // so `JSONB` normalization cannot fake a replay.
                 let stored: Option<(serde_json::Value,)> =
-                    sqlx::query_as(event_log::SELECT_PAYLOAD_SQL)
-                        .bind(task_id.0.as_str())
-                        .bind(position)
-                        .fetch_optional(&self.pool)
-                        .await
-                        .unwrap_or(None);
+                    crate::store::pg_retry::retry(&*self.metrics, || {
+                        sqlx::query_as(event_log::SELECT_PAYLOAD_SQL)
+                            .bind(task_id.0.as_str())
+                            .bind(position)
+                            .fetch_optional(&self.pool)
+                    })
+                    .await
+                    .unwrap_or(None);
                 let same = stored.is_some_and(|(h,)| h == payload);
                 report_no_op_append(&*self.metrics, task_id, seq, same);
             }
@@ -570,11 +638,13 @@ impl TaskStore for PostgresTaskStore {
         task_id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
-            let (max,): (i64,) = sqlx::query_as(event_log::LAST_SEQ_SQL)
-                .bind(task_id.0.as_str())
-                .fetch_one(&self.pool)
-                .await
-                .map_err(to_a2a_error)?;
+            let (max,): (i64,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as(event_log::LAST_SEQ_SQL)
+                    .bind(task_id.0.as_str())
+                    .fetch_one(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
             seq_from_i64(max)
         })
     }
@@ -584,11 +654,13 @@ impl TaskStore for PostgresTaskStore {
         task_id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
         Box::pin(async move {
-            let (min,): (Option<i64>,) = sqlx::query_as(event_log::EARLIEST_SEQ_SQL)
-                .bind(task_id.0.as_str())
-                .fetch_one(&self.pool)
-                .await
-                .map_err(to_a2a_error)?;
+            let (min,): (Option<i64>,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as(event_log::EARLIEST_SEQ_SQL)
+                    .bind(task_id.0.as_str())
+                    .fetch_one(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
             min.map(seq_from_i64).transpose()
         })
     }
@@ -600,11 +672,15 @@ impl TaskStore for PostgresTaskStore {
         limit: usize,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
         Box::pin(async move {
-            let rows: Vec<(i64, serde_json::Value)> = sqlx::query_as(event_log::SELECT_AFTER_SQL)
-                .bind(task_id.0.as_str())
-                .bind(seq_to_i64(after_seq)?)
-                .bind(limit_to_i64(limit))
-                .fetch_all(&self.pool)
+            let after = seq_to_i64(after_seq)?;
+            let rows: Vec<(i64, serde_json::Value)> =
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    sqlx::query_as(event_log::SELECT_AFTER_SQL)
+                        .bind(task_id.0.as_str())
+                        .bind(after)
+                        .bind(limit_to_i64(limit))
+                        .fetch_all(&self.pool)
+                })
                 .await
                 .map_err(to_a2a_error)?;
             rows.into_iter().map(decode_json_row).collect()
@@ -619,27 +695,32 @@ impl TaskStore for PostgresTaskStore {
             // Explicit as well as cascaded: a pool handed to `from_pool` is
             // not guaranteed to have the constraint enforced, and orphaned
             // events would be replayed onto a task that reused the id.
-            sqlx::query(event_log::DELETE_FOR_TASK_SQL)
-                .bind(id.0.as_str())
-                .execute(&self.pool)
-                .await
-                .map_err(to_a2a_error)?;
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(event_log::DELETE_FOR_TASK_SQL)
+                    .bind(id.0.as_str())
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
 
-            sqlx::query("DELETE FROM tasks WHERE id = $1")
-                .bind(id.0.as_str())
-                .execute(&self.pool)
-                .await
-                .map_err(to_a2a_error)?;
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query("DELETE FROM tasks WHERE id = $1")
+                    .bind(id.0.as_str())
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
             Ok(())
         })
     }
 
     fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
-            let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM tasks")
-                .fetch_one(&self.pool)
-                .await
-                .map_err(to_a2a_error)?;
+            let row: (i64,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as("SELECT COUNT(*) FROM tasks").fetch_one(&self.pool)
+            })
+            .await
+            .map_err(to_a2a_error)?;
             #[allow(clippy::cast_sign_loss)]
             Ok(row.0 as u64)
         })

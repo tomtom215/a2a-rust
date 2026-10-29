@@ -301,6 +301,8 @@ SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
 MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
 RATE_LIMIT_SHARED=crates/a2a-protocol-server/src/rate_limit/shared.rs
 ENCRYPTED_STORE=crates/a2a-protocol-server/tests/encrypted_store.rs
+APPLIED_POSITION=crates/a2a-protocol-server/tests/applied_position.rs
+TURN_CLAIMS=crates/a2a-protocol-server/tests/turn_claims/main.rs
 
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
@@ -308,6 +310,11 @@ ENCRYPTED_STORE=crates/a2a-protocol-server/tests/encrypted_store.rs
 # plain `--features postgres` entry.
 injection_for() {
     local cmd="$1" prefix="${2-}"
+    # The test matrix runs under nextest; its rows are the `cargo test` rows
+    # they replaced, run by another harness, so they take the same injections.
+    case "$cmd" in
+        "cargo nextest run --profile ci "*) cmd="cargo test ${cmd#cargo nextest run --profile ci }" ;;
+    esac
     # Routed on the working directory first, because several of the binding's
     # commands are within a word of a workspace one: its clippy gate is `cargo
     # clippy --all-targets -- -D warnings` and the workspace one is the same
@@ -392,6 +399,8 @@ injection_for() {
             echo "doc_versions" ;;
         *"check_book_examples.py"*)
             echo "book_examples" ;;
+        *"check_book_links.py"*)
+            echo "book_links" ;;
         *"check_feature_tables.py"*)
             echo "feature_tables" ;;
         *"check_sql_driver_isolation.sh"*)
@@ -416,6 +425,19 @@ injection_for() {
             echo "crypto_interop" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
+        *"--test turn_claims"*)
+            echo "ignored_suite:$TURN_CLAIMS:the turn-claim suites" ;;
+        # Doctests run in their own step since the matrix moved to nextest,
+        # which does not run them.
+        "cargo test --doc"*)
+            echo "doctest:$TYPES_LIB" ;;
+        # `--check` before the run: both commands name the same script.
+        *"run_postgres_suites.py --check"*)
+            echo "postgres_suites_named" ;;
+        *"run_postgres_suites.py"*)
+            echo "ignored_suite:$APPLIED_POSITION:the discovered PostgreSQL suites" ;;
+        *"check_pg_retry.py"*)
+            echo "pg_retry_unwrapped" ;;
         *"--test multi_replica"*)
             echo "ignored_suite:$MULTI_REPLICA:the multi-replica suite" ;;
         *"--test encrypted_store"*)
@@ -532,6 +554,7 @@ expected_marker() {
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
         sitemap)          echo "out of sync with SUMMARY.md" ;;
+        book_links)       echo "gate-probe-missing.html" ;;
         # Since 2026-09-10 the gate runs both directions, and the rename
         # below is both defects at once: `TaskRevision` is a name no crate
         # defines (stale), and `TaskVersion` is a root export the page no
@@ -578,6 +601,9 @@ expected_marker() {
         # claim than the one this injection makes.
         mutants_config)   echo ".cargo/mutants.toml is in effect and carries key(s) cargo-mutants rejects" ;;
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
+        pg_retry_unwrapped) echo "outside pg_retry::retry or checked" ;;
+        doctest)          echo "gate probe: injected doctest failure" ;;
+        postgres_suites_named) echo "test:soak_multi_replica: listed as run by" ;;
         inert_bounds)     echo "max_probe_rows" ;;
         advisory_floors)  echo "RUSTSEC-2026-0285" ;;
         lockfiles)        echo "STALE  itk/Cargo.lock" ;;
@@ -858,6 +884,12 @@ PY
             printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
                 >>book/src/concepts/streaming.md
             ;;
+        book_links)
+            # A link to a page that does not exist — what a page split or a
+            # rename leaves behind, and what mdBook builds without a word.
+            note_touched "book/src/introduction.md"
+            printf '\n[Gate probe](./gate-probe-missing.md)\n' >>book/src/introduction.md
+            ;;
         sitemap)
             # Add a page to the table of contents without regenerating the
             # sitemap — the exact drift this gate exists to catch. The sitemap
@@ -1021,6 +1053,45 @@ if s.count(ANCHOR) != 1:
     )
 CI.write_text(s.replace(ANCHOR, PROBE + ANCHOR), encoding="utf-8")
 PY
+            ;;
+        doctest)
+            note_touched "$rest"
+            {
+                printf '\n/// ```\n/// panic!("gate probe: injected doctest failure");\n/// ```\n'
+                printf 'pub fn gate_probe_doctest() {}\n'
+            } >>"$rest"
+            ;;
+        pg_retry_unwrapped)
+            # The claim release, run on the pool outside `pg_retry`: what a
+            # statement added without the wrapper looks like.
+            local cp=crates/a2a-protocol-server/src/store/claim/postgres.rs
+            note_touched "$cp"
+            python3 - "$cp" <<'PY' || return 1
+import sys, pathlib
+p = pathlib.Path(sys.argv[1]); s = p.read_text(encoding="utf-8")
+old = """            crate::store::pg_retry::retry(|| {
+                sqlx::query("DELETE FROM a2a_task_claims WHERE token = $1")
+                    .bind(token)
+                    .execute(&self.pool)
+            })
+            .await"""
+new = """            sqlx::query("DELETE FROM a2a_task_claims WHERE token = $1")
+                .bind(token)
+                .execute(&self.pool)
+                .await"""
+if s.count(old) != 1:
+    sys.exit("pg_retry_unwrapped: anchor not found in " + sys.argv[1])
+p.write_text(s.replace(old, new), encoding="utf-8")
+PY
+            ;;
+        postgres_suites_named)
+            # The soak workflow stops naming the suite the runner's list
+            # says it runs.
+            local soak=.github/workflows/soak.yml
+            note_touched "$soak"
+            grep -q -- '--test soak_multi_replica' "$soak" \
+                || { echo "postgres_suites_named: anchor not found in $soak" >&2; return 1; }
+            sed -i 's/--test soak_multi_replica/--test soak_multi_replica_gate_probe/' "$soak"
             ;;
         timeout_nesting)
             # Reintroduce the push_delivery_timeout / HttpPushSender

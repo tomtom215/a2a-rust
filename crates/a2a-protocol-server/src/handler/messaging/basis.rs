@@ -53,6 +53,19 @@ impl LeaseRead {
         Self { task, position }
     }
 
+    /// The read taken under the claim, at `position`, for a continuation:
+    /// the lease uses it rather than reading the row again (`claimed`).
+    pub(super) fn under_claim(
+        position: Option<u64>,
+        stored: Option<&Task>,
+        continues: bool,
+    ) -> Option<Self> {
+        position
+            .filter(|_| continues)
+            .zip(stored.cloned())
+            .map(|(position, task)| Self::new(task, position))
+    }
+
     pub(super) const fn position(&self) -> u64 {
         self.position
     }
@@ -65,18 +78,44 @@ impl LeaseRead {
 /// The artifacts and metadata are the fields the save replaces from `task`;
 /// its status is the turn's own and its history is appended to the stored
 /// one, so those are kept.
+///
+/// The `bool` says the task returned is the whole row to store, so the save
+/// need not read the row to append to its history, and the turn's event
+/// consumer need not read it back: a new task, which is saved as it is; or a
+/// continuation built from `read` while the turn holds its claim (`claimed`),
+/// whose history is `read`'s with this turn's message appended and trimmed.
+/// That is exactly what `TaskStore::save_appending_history` would store,
+/// because under the claim no other turn writes the row between the read and
+/// the save. Each read so saved was one round trip to the database on
+/// PostgreSQL.
+///
+/// Without a claim, nothing stops another replica's turn from writing the
+/// row after `read` (`tests/stale_write_position`), and a whole row would
+/// overwrite what it wrote to the history, which the append keeps: the
+/// history is left to the append.
 pub(super) fn based_on(
     mut task: Task,
     read: Option<LeaseRead>,
     continues: bool,
-) -> (Task, Option<u64>) {
+    claimed: bool,
+) -> (Task, Option<u64>, bool) {
+    if !continues {
+        return (task, None, true);
+    }
     match read {
-        Some(read) if continues && read.task.id == task.id => {
+        Some(read) if read.task.id == task.id => {
             task.artifacts = read.task.artifacts;
             task.metadata = read.task.metadata;
-            (task, Some(read.position))
+            if !claimed {
+                return (task, Some(read.position), false);
+            }
+            let mut history = read.task.history.unwrap_or_default();
+            history.extend(task.history.take().unwrap_or_default());
+            super::decisions::TASK_HISTORY_LIMIT.trim(&mut history);
+            task.history = Some(history);
+            (task, Some(read.position), true)
         }
-        _ => (task, None),
+        _ => (task, None, false),
     }
 }
 
@@ -103,20 +142,85 @@ mod tests {
     fn a_continuation_is_saved_as_the_lease_read_it_at_that_position() {
         let mut read_task = task("t", "read");
         read_task.status = TaskStatus::new(TaskState::Working);
-        let (based, at) = based_on(task("t", "sent"), Some(LeaseRead::new(read_task, 7)), true);
+        let read = || Some(LeaseRead::new(read_task.clone(), 7));
+        let (based, at, whole) = based_on(task("t", "sent"), read(), true, true);
         assert_eq!(at, Some(7));
+        assert!(
+            whole,
+            "built from the read under the claim, it is the row to store"
+        );
         assert_eq!(based.artifacts, task("t", "read").artifacts);
         assert_eq!(based.metadata, task("t", "read").metadata);
         assert_eq!(based.status.state, TaskState::Submitted, "the turn's own");
+
+        let mut sent = task("t", "sent");
+        sent.history = Some(Vec::new());
+        let (unclaimed, at, whole) = based_on(sent, read(), true, false);
+        assert_eq!(at, Some(7));
+        assert!(!whole, "with no claim another turn may write the history");
+        assert_eq!(unclaimed.artifacts, task("t", "read").artifacts);
+        assert_eq!(unclaimed.history, Some(Vec::new()), "left to the append");
     }
 
     #[test]
     fn a_new_task_or_no_position_is_saved_as_it_is_outside_a_scope() {
         let sent = task("t", "sent");
         let read = || Some(LeaseRead::new(task("t", "read"), 7));
-        assert_eq!(based_on(sent.clone(), read(), false), (sent.clone(), None));
-        assert_eq!(based_on(sent.clone(), None, true), (sent.clone(), None));
+        assert_eq!(
+            based_on(sent.clone(), read(), false, false),
+            (sent.clone(), None, true),
+            "a new task is the whole row"
+        );
+        assert_eq!(
+            based_on(sent.clone(), None, true, true),
+            (sent.clone(), None, false),
+            "a continuation with no read appends to what is stored"
+        );
         let other = Some(LeaseRead::new(task("other", "read"), 7));
-        assert_eq!(based_on(sent.clone(), other, true), (sent, None));
+        assert_eq!(
+            based_on(sent.clone(), other, true, true),
+            (sent, None, false)
+        );
+    }
+
+    /// A continuation saved whole holds the history `save_appending_history`
+    /// would have stored from the same row: the read's, then this turn's
+    /// message, trimmed to the same limit.
+    #[tokio::test]
+    async fn a_whole_continuation_holds_what_the_append_would_have_stored() {
+        use a2a_protocol_types::message::{Message, MessageId, MessageRole};
+
+        use crate::store::{InMemoryTaskStore, TaskStore};
+
+        let message = |text: &str| {
+            Message::new(
+                MessageId::new(text),
+                MessageRole::User,
+                vec![Part::text(text)],
+            )
+        };
+        let mut stored = task("t", "read");
+        stored.history = Some(
+            (0..super::super::decisions::MAX_TASK_HISTORY_MESSAGES + 3)
+                .map(|i| message(&format!("old-{i}")))
+                .collect(),
+        );
+        let mut sent = task("t", "sent");
+        sent.history = Some(vec![message("new")]);
+
+        let appended = InMemoryTaskStore::new();
+        appended.save(&stored).await.unwrap();
+        appended
+            .save_appending_history(
+                &based_on(sent.clone(), None, true, true).0,
+                &[message("new")],
+                super::super::decisions::TASK_HISTORY_LIMIT,
+            )
+            .await
+            .unwrap();
+        let (whole, _, is_whole) = based_on(sent, Some(LeaseRead::new(stored, 1)), true, true);
+        assert!(is_whole);
+        let via_append = appended.get(&TaskId::new("t")).await.unwrap().unwrap();
+        assert_eq!(whole.history, via_append.history);
     }
 }

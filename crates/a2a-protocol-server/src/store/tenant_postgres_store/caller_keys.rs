@@ -25,7 +25,7 @@ impl TenantAwarePostgresTaskStore {
         &self,
         map: impl Fn(&str) -> Option<String>,
     ) -> Result<CallerKeyMigration, sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = crate::store::pg_retry::retry(&*self.metrics, || self.pool.begin()).await?;
         let partitions: Vec<(String,)> = sqlx::query_as(
             "SELECT tenant_id FROM tenant_tasks UNION SELECT tenant_id FROM tenant_idempotency_keys",
         )
@@ -42,20 +42,22 @@ impl TenantAwarePostgresTaskStore {
             let tasks = sqlx::query(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, created_at, applied_seq)
                  SELECT $1, id, context_id, state, data, updated_at, created_at, applied_seq
-                 FROM tenant_tasks WHERE tenant_id = $2",
+                 FROM tenant_tasks WHERE tenant_id = $2 AND set_config('a2a.claims', 'on', true) = 'on'",
             )
             .bind(&new)
             .bind(&old)
             .execute(&mut *tx)
             .await?
             .rows_affected();
-            let events =
-                sqlx::query("UPDATE tenant_task_events SET tenant_id = $1 WHERE tenant_id = $2")
-                    .bind(&new)
-                    .bind(&old)
-                    .execute(&mut *tx)
-                    .await?
-                    .rows_affected();
+            let events = sqlx::query(
+                "UPDATE tenant_task_events SET tenant_id = $1 \
+                     WHERE tenant_id = $2 AND set_config('a2a.claims', 'on', true) = 'on'",
+            )
+            .bind(&new)
+            .bind(&old)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
             sqlx::query("DELETE FROM tenant_tasks WHERE tenant_id = $1")
                 .bind(&old)
                 .execute(&mut *tx)
@@ -85,7 +87,7 @@ impl TenantAwarePostgresTaskStore {
     ///
     /// A database error; nothing is removed then.
     pub async fn erase_caller(&self, caller: &str) -> Result<CallerErasure, sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = crate::store::pg_retry::retry(&*self.metrics, || self.pool.begin()).await?;
         let partitions: Vec<(String,)> = sqlx::query_as(
             "SELECT tenant_id FROM tenant_tasks UNION SELECT tenant_id FROM tenant_idempotency_keys
              UNION SELECT tenant_id FROM tenant_task_events",

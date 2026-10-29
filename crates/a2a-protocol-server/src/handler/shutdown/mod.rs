@@ -74,7 +74,10 @@ impl RequestHandler {
     /// This method:
     /// 1. Cancels all in-flight tasks by signalling their cancellation tokens.
     /// 2. Destroys all event queues, causing readers to see EOF.
-    /// 3. Runs the executor's `on_shutdown` hook, bounded to 10 seconds.
+    /// 3. Releases the turn claims it holds, so other replicas sharing the
+    ///    store can continue those tasks at once.
+    /// 4. Runs the executor's `on_shutdown` hook. Steps 3 and 4 share one
+    ///    10-second bound.
     ///
     /// It does not wait for executors. Called on its own while tasks are
     /// running, it cuts their streams off without a terminal event and leaves
@@ -117,13 +120,22 @@ impl RequestHandler {
             tokens.clear();
         }
 
+        // One deadline for the claims and the cleanup hook together, so the
+        // call takes at most the budget, not one budget per phase.
+        let deadline = tokio::time::Instant::now() + UNTIMED_CLEANUP_BUDGET;
+
+        // Free this replica's turn claims for the others now, not after
+        // their time to live (`claims`).
+        self.release_turn_claims(deadline.saturating_duration_since(tokio::time::Instant::now()))
+            .await;
+
         // Give executor a chance to clean up resources (bounded to avoid
         // hanging). This variant takes no timeout, so the bound is this
         // constant rather than anything the caller chose — the warning below
         // used to say "the shutdown timeout", which named a parameter this
         // method does not have.
         let executor_cleanup_completed =
-            tokio::time::timeout(UNTIMED_CLEANUP_BUDGET, self.executor.on_shutdown())
+            tokio::time::timeout_at(deadline, self.executor.on_shutdown())
                 .await
                 .is_ok();
         if !executor_cleanup_completed {
@@ -216,6 +228,11 @@ impl RequestHandler {
             let mut tokens = self.cancellation_tokens.write().await;
             tokens.clear();
         }
+
+        // Free this replica's turn claims for the others, from what is left
+        // of the budget.
+        self.release_turn_claims(deadline.saturating_duration_since(tokio::time::Instant::now()))
+            .await;
 
         // Give the executor whatever is left of the budget. Not a fresh
         // `timeout`: that is what made this method take 2x what it was asked

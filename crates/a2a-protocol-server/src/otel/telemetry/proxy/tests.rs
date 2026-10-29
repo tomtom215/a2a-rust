@@ -419,3 +419,29 @@ async fn a_connection_to_a_forward_proxy_carries_a_request_and_its_reply() {
         .await
         .expect("the request and its reply crossed within 10 s");
 }
+
+/// IPv6 destinations, which this host could not dial (no IPv6 in its
+/// kernel), so their matching is tested here and not on the wire.
+#[test]
+fn no_proxy_exempts_ipv6_addresses_bare_bracketed_or_as_ranges() {
+    let proxied = |no: &str, dst: &str| {
+        via(
+            &[("HTTP_PROXY", "http://proxy:3128"), ("NO_PROXY", no)],
+            &ProxySetting::Environment,
+            dst,
+        )
+        .is_some()
+    };
+    for (no, dst) in [
+        ("::1", "http://[::1]:4318"),
+        ("[::1]", "http://[::1]:4318"),
+        ("localhost, [::1]", "http://[::1]:4318"),
+        ("::1/128", "http://[::1]:4318"),
+        ("fd00::/8", "http://[fd00::5]:4318"),
+        ("[fd00::]/8", "http://[fd00::5]:4318"),
+    ] {
+        assert!(!proxied(no, dst), "NO_PROXY={no:?} must exempt {dst}");
+    }
+    assert!(proxied("other", "http://[::1]:4318"));
+    assert!(proxied("fd00::/8", "http://[fe80::1]:4318"));
+}

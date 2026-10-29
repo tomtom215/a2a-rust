@@ -61,14 +61,18 @@ impl LeaseStore for PostgresLeaseStore {
         deadline_ms: i64,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            sqlx::query(GRANT_SQL)
-                .bind(tenant)
-                .bind(task)
-                .bind(ttl_ms)
-                .bind(deadline_ms)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| failed("grant", &e))?;
+            // Checked, not retried: a second run after a renewal landed would set
+            // the deadline back over it.
+            crate::store::pg_retry::checked(
+                sqlx::query(GRANT_SQL)
+                    .bind(tenant)
+                    .bind(task)
+                    .bind(ttl_ms)
+                    .bind(deadline_ms)
+                    .execute(&self.pool),
+            )
+            .await
+            .map_err(|e| failed("grant", &e))?;
             Ok(())
         })
     }
@@ -80,14 +84,16 @@ impl LeaseStore for PostgresLeaseStore {
         now_ms: i64,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
-            let done = sqlx::query(
-                "UPDATE a2a_leases SET deadline_ms = $3 + ttl_ms
+            let done = crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                sqlx::query(
+                    "UPDATE a2a_leases SET deadline_ms = $3 + ttl_ms
                  WHERE tenant = $1 AND task_id = $2",
-            )
-            .bind(tenant)
-            .bind(task)
-            .bind(now_ms)
-            .execute(&self.pool)
+                )
+                .bind(tenant)
+                .bind(task)
+                .bind(now_ms)
+                .execute(&self.pool)
+            })
             .await
             .map_err(|e| failed("renew", &e))?;
             Ok(done.rows_affected() > 0)
@@ -100,14 +106,17 @@ impl LeaseStore for PostgresLeaseStore {
         task: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<i64>>> + Send + 'a>> {
         Box::pin(async move {
-            let row: Option<(i64,)> = sqlx::query_as(
-                "SELECT deadline_ms FROM a2a_leases WHERE tenant = $1 AND task_id = $2",
-            )
-            .bind(tenant)
-            .bind(task)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| failed("read", &e))?;
+            let row: Option<(i64,)> =
+                crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                    sqlx::query_as(
+                        "SELECT deadline_ms FROM a2a_leases WHERE tenant = $1 AND task_id = $2",
+                    )
+                    .bind(tenant)
+                    .bind(task)
+                    .fetch_optional(&self.pool)
+                })
+                .await
+                .map_err(|e| failed("read", &e))?;
             Ok(row.map(|(deadline,)| deadline))
         })
     }
@@ -118,12 +127,16 @@ impl LeaseStore for PostgresLeaseStore {
         task: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            sqlx::query("DELETE FROM a2a_leases WHERE tenant = $1 AND task_id = $2")
-                .bind(tenant)
-                .bind(task)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| failed("release", &e))?;
+            // Checked, not retried: a second run would delete a lease granted
+            // since, by the task's next turn.
+            crate::store::pg_retry::checked(
+                sqlx::query("DELETE FROM a2a_leases WHERE tenant = $1 AND task_id = $2")
+                    .bind(tenant)
+                    .bind(task)
+                    .execute(&self.pool),
+            )
+            .await
+            .map_err(|e| failed("release", &e))?;
             Ok(())
         })
     }

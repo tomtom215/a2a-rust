@@ -34,6 +34,7 @@ use super::terminal::TerminalTracking;
 mod run_timer;
 use run_timer::{RunTimer, run_outcome};
 
+use super::super::claims::TurnClaim;
 use super::super::{CancellationEntry, ExecutorTurn, RequestHandler};
 
 /// The handler's cancellation-token map, as the spawned task holds it.
@@ -197,10 +198,15 @@ impl RequestHandler {
         writer: Arc<InMemoryQueueWriter>,
         tenant_slot: Option<OwnedSemaphorePermit>,
         turn: Arc<ExecutorTurn>,
+        claim: Option<Arc<TurnClaim>>,
     ) -> JoinHandle<()> {
-        self.in_flight
-            .executors()
-            .spawn(self.executor_future(ctx, writer, tenant_slot, turn))
+        self.in_flight.executors().spawn(self.executor_future(
+            ctx,
+            writer,
+            tenant_slot,
+            turn,
+            claim,
+        ))
     }
 
     /// Builds the executor for a task whose queue, token and row all exist,
@@ -211,6 +217,7 @@ impl RequestHandler {
         writer: Arc<InMemoryQueueWriter>,
         tenant_slot: Option<OwnedSemaphorePermit>,
         turn: Arc<ExecutorTurn>,
+        claim: Option<Arc<TurnClaim>>,
     ) -> DeferredExecutor {
         DeferredExecutor {
             run: Some(Box::pin(self.executor_future(
@@ -218,6 +225,7 @@ impl RequestHandler {
                 writer,
                 tenant_slot,
                 turn,
+                claim,
             ))),
             tracker: self.in_flight.executors().clone(),
         }
@@ -235,6 +243,7 @@ impl RequestHandler {
         writer: Arc<InMemoryQueueWriter>,
         tenant_slot: Option<OwnedSemaphorePermit>,
         turn: Arc<ExecutorTurn>,
+        claim: Option<Arc<TurnClaim>>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let executor = Arc::clone(&self.executor);
         let metrics = Arc::clone(&self.metrics);
@@ -280,6 +289,10 @@ impl RequestHandler {
             // Owned by this future, so the slot is returned when the executor
             // finishes, fails, panics, or is aborted.
             let _tenant_slot = tenant_slot;
+            // The turn's claim (`handler::claims`), held here and by the
+            // turn's event consumer: released when the last of the two ends,
+            // so no write of this turn comes after another replica's next.
+            let _claim = claim;
             trace_debug!(task_id = %ctx.task_id, "executor started");
 
             // Armed before the executor runs; see the type's docs for when it

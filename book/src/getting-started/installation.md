@@ -54,6 +54,17 @@ in `a2a-protocol-sdk` only.**
 takes the client and server without theirs: an SDK built that way has no rustls,
 no logging, no OpenTelemetry and no webhook receiver.
 
+Some features turn on others. The arrows below are the `[features]` tables of
+the four crates' `Cargo.toml`, as the SDK forwards them. `websocket`, `sqlite`,
+`postgres`, `axum`, `tool-loop`, `auth-jwt` and `encryption` turn on no other
+feature, and are left out:
+
+<figure class="diagram">
+<a href="../images/diagrams/gs-feature-map.light.svg"><img class="diagram-light" src="../images/diagrams/gs-feature-map.light.svg" alt="Feature implications: otel-prometheus and otlp-json each turn on otlp, otlp turns on otel, otel turns on tracing; grpc-tls turns on grpc and tls-rustls, grpc turns on the types crate's proto; audit turns on the types crate's signing. The SDK's defaults, boxed, are otlp, otel, tracing, tls-rustls and webhook."></a>
+<a href="../images/diagrams/gs-feature-map.dark.svg"><img class="diagram-dark" src="../images/diagrams/gs-feature-map.dark.svg" alt=""></a>
+<figcaption>Which feature turns on which. The box holds the SDK's default set.</figcaption>
+</figure>
+
 ### `a2a-protocol-types`
 
 | Feature | Description |

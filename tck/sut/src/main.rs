@@ -638,5 +638,9 @@ async fn main() {
         }
     }
 
-    serve::serve(addr, handler).await;
+    // Until SIGTERM or Ctrl+C, so `_telemetry` is dropped, and flushed.
+    tokio::select! {
+        () = serve::serve(addr, handler) => {}
+        () = a2a_protocol_server::shutdown_signal() => {}
+    }
 }

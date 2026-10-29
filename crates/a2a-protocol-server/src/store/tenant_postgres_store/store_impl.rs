@@ -33,6 +33,27 @@ use crate::store::tenant_event_log as evlog;
 use crate::store::tenant_idempotency as idem;
 
 #[allow(clippy::manual_async_fn)]
+/// The upsert `save` makes: the terminal guard (`crate::store::terminal`)
+/// and the claim's fence in its `WHERE`.
+const SAVE_SQL: &str = concat!(
+    crate::store::terminal::sql_write_allowed!(
+        "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
+                 SELECT $1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()), $7
+                 WHERE set_config('a2a.claims', 'on', true) = 'on'
+                 ON CONFLICT(tenant_id, id) DO UPDATE SET
+                     context_id = EXCLUDED.context_id,
+                     state = EXCLUDED.state,
+                     data = EXCLUDED.data,
+                     updated_at = EXCLUDED.updated_at,
+                     applied_seq = COALESCE(EXCLUDED.applied_seq, tenant_tasks.applied_seq)
+                 WHERE ",
+        "tenant_tasks.state",
+        "EXCLUDED.state",
+        " AND "
+    ),
+    crate::store::claim::fence_sql!(postgres "$8::text", "$2")
+);
+
 impl TaskStore for TenantAwarePostgresTaskStore {
     fn isolates_tenants(&self) -> bool {
         true
@@ -44,6 +65,12 @@ impl TaskStore for TenantAwarePostgresTaskStore {
 
     fn database(&self) -> Option<crate::store::StoreDatabase> {
         Some(crate::store::StoreDatabase::postgres(&self.pool))
+    }
+
+    fn turn_claims(&self) -> Option<std::sync::Arc<dyn crate::store::TurnClaimStore>> {
+        Some(std::sync::Arc::new(
+            crate::store::claim::PostgresTurnClaims::over(self.pool.clone(), self.metrics.clone()),
+        ))
     }
 
     fn claim_idempotency_key<'a>(
@@ -63,7 +90,9 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             // release landing between the losing insert and the read would
             // leave the claim seeing no holder, and a claim that neither
             // inserted nor found a holder must never pass for a successful one.
-            let mut tx = self.pool.begin().await.map_err(|e| to_a2a_error(&e))?;
+            let mut tx = crate::store::pg_retry::retry(&*self.metrics, || self.pool.begin())
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
 
             let inserted = sqlx::query(idem::PG_CLAIM)
                 .bind(&tenant)
@@ -108,12 +137,16 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            sqlx::query(idem::PG_RELEASE)
-                .bind(&tenant)
-                .bind(key)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+            // Checked, not retried: a second run would delete a claim another send
+            // made on the same key since.
+            crate::store::pg_retry::checked(
+                sqlx::query(idem::PG_RELEASE)
+                    .bind(&tenant)
+                    .bind(key)
+                    .execute(&self.pool),
+            )
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
             Ok(())
         })
     }
@@ -141,43 +174,46 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             // updated the row concurrently, so a racing cancel cannot slip
             // between the check and the write. This store has no delta
             // overrides, so every write path comes through here.
-            let written = sqlx::query(crate::store::terminal::sql_write_allowed!(
-                "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at, applied_seq)
-                 VALUES ($1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()), $7)
-                 ON CONFLICT(tenant_id, id) DO UPDATE SET
-                     context_id = EXCLUDED.context_id,
-                     state = EXCLUDED.state,
-                     data = EXCLUDED.data,
-                     updated_at = EXCLUDED.updated_at,
-                     applied_seq = COALESCE(EXCLUDED.applied_seq, tenant_tasks.applied_seq)
-                 WHERE ",
-                "tenant_tasks.state",
-                "EXCLUDED.state"
-            ))
-            .bind(&tenant)
-            .bind(id)
-            .bind(context_id)
-            .bind(&state)
-            .bind(&data)
-            .bind(&status_ts)
-            .bind(crate::store::applied::current_for_sql())
-            .execute(&self.pool)
+            let fence = crate::store::claim::current_fence();
+            let written = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(SAVE_SQL)
+                    .bind(&tenant)
+                    .bind(id)
+                    .bind(context_id)
+                    .bind(&state)
+                    .bind(&data)
+                    .bind(&status_ts)
+                    .bind(crate::store::applied::current_for_sql())
+                    .bind(&fence)
+                    .execute(&self.pool)
+            })
             .await
             .map_err(|e| to_a2a_error(&e))?
             .rows_affected();
 
             if written == 0 {
+                // The fence refused it: another replica took the claim over.
+                if let Some(token) = &fence
+                    && !crate::store::claim::postgres::holds(&self.pool, token, task.id.0.as_str())
+                        .await
+                        .map_err(|e| to_a2a_error(&e))?
+                {
+                    return Err(crate::store::ClaimLost::new(task.id.clone()).into_error());
+                }
                 // A separate statement, so a fresh snapshot: the refusing
                 // guard saw the latest row version, which the upsert's own
                 // snapshot may predate.
-                let stored: Option<(String,)> = sqlx::query_as(
-                    "SELECT state FROM tenant_tasks WHERE tenant_id = $1 AND id = $2",
-                )
-                .bind(&tenant)
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+                let stored: Option<(String,)> =
+                    crate::store::pg_retry::retry(&*self.metrics, || {
+                        sqlx::query_as(
+                            "SELECT state FROM tenant_tasks WHERE tenant_id = $1 AND id = $2",
+                        )
+                        .bind(&tenant)
+                        .bind(id)
+                        .fetch_optional(&self.pool)
+                    })
+                    .await
+                    .map_err(|e| to_a2a_error(&e))?;
                 return Err(crate::store::terminal::refusal(
                     task,
                     stored.map(|(s,)| s).as_deref(),
@@ -195,12 +231,14 @@ impl TaskStore for TenantAwarePostgresTaskStore {
         Box::pin(async move {
             let tenant = TenantContext::partition();
             let row: Option<(serde_json::Value,)> =
-                sqlx::query_as("SELECT data FROM tenant_tasks WHERE tenant_id = $1 AND id = $2")
-                    .bind(&tenant)
-                    .bind(id.0.as_str())
-                    .fetch_optional(&self.pool)
-                    .await
-                    .map_err(|e| to_a2a_error(&e))?;
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    sqlx::query_as("SELECT data FROM tenant_tasks WHERE tenant_id = $1 AND id = $2")
+                        .bind(&tenant)
+                        .bind(id.0.as_str())
+                        .fetch_optional(&self.pool)
+                })
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
 
             match row {
                 Some((data,)) => {
@@ -219,14 +257,17 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<(Task, Option<u64>)>>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let row: Option<(serde_json::Value, Option<i64>)> = sqlx::query_as(
+            let row: Option<(serde_json::Value, Option<i64>)> =
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    sqlx::query_as(
                 "SELECT data, applied_seq FROM tenant_tasks WHERE tenant_id = $1 AND id = $2",
             )
             .bind(&tenant)
             .bind(id.0.as_str())
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| to_a2a_error(&e))?;
+                })
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
             row.map(|(data, applied)| {
                 let task: Task = serde_json::from_value(data)
                     .map_err(|e| A2aError::internal(format!("deserialize: {e}")))?;
@@ -258,18 +299,22 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let status_ts =
                 crate::store::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
-            let result = sqlx::query(
+            let result = // A second run would answer `false` for the row the first inserted:
+            // pinged first instead (`pg_retry`).
+            crate::store::pg_retry::checked(sqlx::query(concat!(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()))
-                 ON CONFLICT(tenant_id, id) DO NOTHING",
-            )
+                 SELECT $1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now())
+                 WHERE ",
+                crate::store::claim::upgrade::claims_writer!(),
+                " ON CONFLICT(tenant_id, id) DO NOTHING"
+            ))
             .bind(&tenant)
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
             .bind(&status_ts)
-            .execute(&self.pool)
+            .execute(&self.pool))
             .await
             .map_err(|e| to_a2a_error(&e))?;
 
@@ -286,19 +331,23 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             // Explicit as well as cascaded, matching the SQLite store so the
             // two backends delete the same rows in the same order rather than
             // one of them relying on a constraint the other cannot.
-            sqlx::query(evlog::PG_DELETE_FOR_TASK)
-                .bind(&tenant)
-                .bind(id.0.as_str())
-                .execute(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(evlog::PG_DELETE_FOR_TASK)
+                    .bind(&tenant)
+                    .bind(id.0.as_str())
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
 
-            sqlx::query("DELETE FROM tenant_tasks WHERE tenant_id = $1 AND id = $2")
-                .bind(&tenant)
-                .bind(id.0.as_str())
-                .execute(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+            crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query("DELETE FROM tenant_tasks WHERE tenant_id = $1 AND id = $2")
+                    .bind(&tenant)
+                    .bind(id.0.as_str())
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
             Ok(())
         })
     }
@@ -319,22 +368,37 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let payload = encode_json(event)?;
             // `rows_affected()` was discarded here until 0.13; see
             // `event_log_sql::report_no_op_append` for what it hid.
-            let changed_nothing = sqlx::query(evlog::PG_APPEND)
-                .bind(&tenant)
-                .bind(task_id.0.as_str())
-                .bind(position)
-                .bind(&payload)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?
-                .rows_affected()
-                == 0;
-            if changed_nothing {
-                let stored: Option<(serde_json::Value,)> = sqlx::query_as(evlog::PG_SELECT_PAYLOAD)
+            let fence = crate::store::claim::current_fence();
+            let changed_nothing = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query(evlog::PG_APPEND)
                     .bind(&tenant)
                     .bind(task_id.0.as_str())
                     .bind(position)
-                    .fetch_optional(&self.pool)
+                    .bind(&payload)
+                    .bind(&fence)
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?
+            .rows_affected()
+                == 0;
+            if changed_nothing
+                && let Some(token) = &fence
+                && !crate::store::claim::postgres::holds(&self.pool, token, task_id.0.as_str())
+                    .await
+                    .map_err(|e| to_a2a_error(&e))?
+            {
+                return Err(crate::store::ClaimLost::new(task_id.clone()).into_error());
+            }
+            if changed_nothing {
+                let stored: Option<(serde_json::Value,)> =
+                    crate::store::pg_retry::retry(&*self.metrics, || {
+                        sqlx::query_as(evlog::PG_SELECT_PAYLOAD)
+                            .bind(&tenant)
+                            .bind(task_id.0.as_str())
+                            .bind(position)
+                            .fetch_optional(&self.pool)
+                    })
                     .await
                     .unwrap_or(None);
                 let same = stored.is_some_and(|(held,)| held == payload);
@@ -350,12 +414,14 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let (max,): (i64,) = sqlx::query_as(evlog::PG_LAST_SEQ)
-                .bind(&tenant)
-                .bind(task_id.0.as_str())
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+            let (max,): (i64,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as(evlog::PG_LAST_SEQ)
+                    .bind(&tenant)
+                    .bind(task_id.0.as_str())
+                    .fetch_one(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
             seq_from_i64(max)
         })
     }
@@ -366,12 +432,14 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<u64>>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let (min,): (Option<i64>,) = sqlx::query_as(evlog::PG_EARLIEST_SEQ)
-                .bind(&tenant)
-                .bind(task_id.0.as_str())
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| to_a2a_error(&e))?;
+            let (min,): (Option<i64>,) = crate::store::pg_retry::retry(&*self.metrics, || {
+                sqlx::query_as(evlog::PG_EARLIEST_SEQ)
+                    .bind(&tenant)
+                    .bind(task_id.0.as_str())
+                    .fetch_one(&self.pool)
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
             min.map(seq_from_i64).transpose()
         })
     }
@@ -384,12 +452,16 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<RecordedEvent>>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let rows: Vec<(i64, serde_json::Value)> = sqlx::query_as(evlog::PG_SELECT_AFTER)
-                .bind(&tenant)
-                .bind(task_id.0.as_str())
-                .bind(seq_to_i64(after_seq)?)
-                .bind(limit_to_i64(limit))
-                .fetch_all(&self.pool)
+            let after = seq_to_i64(after_seq)?;
+            let rows: Vec<(i64, serde_json::Value)> =
+                crate::store::pg_retry::retry(&*self.metrics, || {
+                    sqlx::query_as(evlog::PG_SELECT_AFTER)
+                        .bind(&tenant)
+                        .bind(task_id.0.as_str())
+                        .bind(after)
+                        .bind(limit_to_i64(limit))
+                        .fetch_all(&self.pool)
+                })
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
             rows.into_iter().map(decode_json_row).collect()
@@ -399,12 +471,13 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            let row: (i64,) =
+            let row: (i64,) = crate::store::pg_retry::retry(&*self.metrics, || {
                 sqlx::query_as("SELECT COUNT(*) FROM tenant_tasks WHERE tenant_id = $1")
                     .bind(&tenant)
                     .fetch_one(&self.pool)
-                    .await
-                    .map_err(|e| to_a2a_error(&e))?;
+            })
+            .await
+            .map_err(|e| to_a2a_error(&e))?;
             #[allow(clippy::cast_sign_loss)]
             Ok(row.0 as u64)
         })

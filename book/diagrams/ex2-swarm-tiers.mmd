@@ -1,0 +1,7 @@
+%% SPDX-License-Identifier: Apache-2.0
+%% Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+flowchart TB
+    C["coordinator<br/>(the swarm process)"] -- "SendMessage<br/>batch: [jobs]" --> S0[supervisor 0]
+    C -- "SendMessage<br/>batch: [jobs]" --> S1[supervisor S-1]
+    S0 -- "Delegation<br/>SendStreamingMessage" --> P0[worker pool 0<br/>W/S workers]
+    S1 -- "Delegation<br/>SendStreamingMessage" --> P1[worker pool S-1<br/>W/S workers]

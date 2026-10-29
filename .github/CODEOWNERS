@@ -48,7 +48,9 @@
 
 # Conformance and mutation ledgers, and the baselines a gate reads.
 /book/src/reference/conformance-history.md   @tomtom215
+/book/src/reference/conformance-history/     @tomtom215
 /book/src/reference/mutation-history.md      @tomtom215
+/book/src/reference/mutation-history/        @tomtom215
 /tck/conformance-baseline.json               @tomtom215
 /.file-length-baseline                       @tomtom215
 /mutants.toml                                @tomtom215
