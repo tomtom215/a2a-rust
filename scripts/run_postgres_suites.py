@@ -125,7 +125,8 @@ def run_cargo(args: list[str]) -> tuple[int, str]:
     # One stream: cargo names each binary on stderr and libtest reports on
     # stdout, and the counts are read by which result follows which name.
     done = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    out = done.stdout
+    # CI sets CARGO_TERM_COLOR=always; the counts are read from plain text.
+    out = re.sub(r"\x1b\[[0-9;]*m", "", done.stdout)
     print(out[-20000:], flush=True)
     return done.returncode, out
 
