@@ -132,8 +132,15 @@ fn arc_delegates_on_persistence_error_and_on_push_delivery() {
     struct Seen {
         persistence: std::sync::Mutex<Vec<(String, String)>>,
         push: std::sync::Mutex<Vec<String>>,
+        retries: std::sync::Mutex<Vec<(String, String)>>,
     }
     impl Metrics for Seen {
+        fn on_store_retry(&self, operation: &str, cause: &str) {
+            self.retries
+                .lock()
+                .unwrap()
+                .push((operation.to_owned(), cause.to_owned()));
+        }
         fn on_persistence_error(&self, operation: &str, error_kind: &str) {
             self.persistence
                 .lock()
@@ -160,6 +167,12 @@ fn arc_delegates_on_persistence_error_and_on_push_delivery() {
     assert_eq!(
         *seen.push.lock().unwrap(),
         vec![push_outcome::SKIPPED.to_owned()]
+    );
+    Metrics::on_store_retry(&via_arc, "statement", "connection_lost");
+    assert_eq!(
+        *seen.retries.lock().unwrap(),
+        vec![("statement".to_owned(), "connection_lost".to_owned())],
+        "an Arc must forward store retries"
     );
 }
 

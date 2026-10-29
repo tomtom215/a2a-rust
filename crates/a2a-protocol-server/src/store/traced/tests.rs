@@ -191,3 +191,19 @@ async fn a_quiet_scope_opens_no_store_span() {
         "inside `quietly` the store's span is disabled"
     );
 }
+
+/// The wrapper hands on the wrapped store's turn claims; a `None` here
+/// would leave replicas running one task's turns at once.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn the_wrapper_hands_on_turn_claims() {
+    let inner = crate::store::SqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("store");
+    let traced = TracedTaskStore {
+        inner: Arc::new(inner),
+        db: StoreDatabase::new("sqlite"),
+        target: String::new(),
+    };
+    assert!(traced.turn_claims().is_some());
+}
