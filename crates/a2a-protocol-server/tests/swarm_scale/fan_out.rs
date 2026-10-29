@@ -53,9 +53,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use super::harness::{
-    Client, Deployment, Outcome, client, max_agents, open_channel, post, set_turn_shape, settle,
-};
+use super::harness::{Client, Deployment, Outcome, client, max_agents, open_channel, post, settle};
 
 /// The reattach poll a tail between turns is racing, from
 /// `HandlerLimits::default()`. Named here so the arms can be read against it.
@@ -187,14 +185,15 @@ async fn post_serially(addr: SocketAddr, task: &str, context: &str, count: u64) 
 
 /// One (dwell, subscribers) cell: attach the tails, post, score.
 async fn cell(
-    addr: SocketAddr,
+    deployment: &Deployment,
     opener: &Client,
     subscribers: usize,
     dwell_ms: u64,
     posts: u64,
     events: u64,
 ) {
-    set_turn_shape(dwell_ms, events);
+    deployment.set_turn_shape(dwell_ms, events);
+    let addr = deployment.addr;
     let (task, context) = open_channel(opener, addr).await;
     settle(opener, addr, &task, &context).await;
 
@@ -240,7 +239,6 @@ async fn cell(
 #[ignore = "load experiment; run explicitly with --ignored (see the module docs)"]
 async fn every_tail_sees_every_post() {
     let deployment = Deployment::start().await;
-    let addr = deployment.addr;
     let opener = client();
     let ceiling = max_agents();
 
@@ -261,7 +259,7 @@ async fn every_tail_sees_every_post() {
         );
         let mut subscribers = 1;
         loop {
-            cell(addr, &opener, subscribers, dwell, posts, 1).await;
+            cell(&deployment, &opener, subscribers, dwell, posts, 1).await;
             if subscribers >= ceiling {
                 break;
             }
@@ -269,7 +267,6 @@ async fn every_tail_sees_every_post() {
         }
     }
 
-    set_turn_shape(0, 1);
     deployment.stop().await;
 }
 
@@ -368,7 +365,7 @@ async fn a_long_turn_delivers_contiguously() {
     let ceiling = max_agents().min(64);
     let mut subscribers = 1;
     loop {
-        set_turn_shape(0, 1);
+        deployment.set_turn_shape(0, 1);
         let (task, context) = open_channel(&opener, addr).await;
         settle(&opener, addr, &task, &context).await;
 
@@ -385,7 +382,7 @@ async fn a_long_turn_delivers_contiguously() {
 
         // Dwell past the reattach poll so every tail is attached before
         // the burst starts; the burst itself is what is being scored.
-        set_turn_shape(REATTACH_INTERVAL_MS * 4, BURST);
+        deployment.set_turn_shape(REATTACH_INTERVAL_MS * 4, BURST);
         let landed = post_serially(addr, &task, &context, 1).await;
 
         let mut seen = Vec::with_capacity(tails.len());
@@ -414,6 +411,5 @@ async fn a_long_turn_delivers_contiguously() {
         subscribers = (subscribers * 4).min(ceiling);
     }
 
-    set_turn_shape(0, 1);
     deployment.stop().await;
 }

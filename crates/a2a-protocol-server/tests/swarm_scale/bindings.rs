@@ -84,7 +84,7 @@ mod websocket {
     #[ignore = "load experiment; run explicitly with --ignored (see the module docs)"]
     async fn the_uncontended_send_over_websocket() {
         let handler = Arc::new(
-            RequestHandlerBuilder::new(crate::harness::ChannelExec)
+            RequestHandlerBuilder::new(crate::harness::ChannelExec::default())
                 .with_agent_card(swarm_card())
                 // The card declares push notifications, and the builder
                 // refuses a card whose push-config operations could only
