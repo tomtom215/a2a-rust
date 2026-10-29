@@ -302,6 +302,7 @@ MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
 RATE_LIMIT_SHARED=crates/a2a-protocol-server/src/rate_limit/shared.rs
 ENCRYPTED_STORE=crates/a2a-protocol-server/tests/encrypted_store.rs
 APPLIED_POSITION=crates/a2a-protocol-server/tests/applied_position.rs
+TURN_CLAIMS=crates/a2a-protocol-server/tests/turn_claims/main.rs
 
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
@@ -309,6 +310,11 @@ APPLIED_POSITION=crates/a2a-protocol-server/tests/applied_position.rs
 # plain `--features postgres` entry.
 injection_for() {
     local cmd="$1" prefix="${2-}"
+    # The test matrix runs under nextest; its rows are the `cargo test` rows
+    # they replaced, run by another harness, so they take the same injections.
+    case "$cmd" in
+        "cargo nextest run --profile ci "*) cmd="cargo test ${cmd#cargo nextest run --profile ci }" ;;
+    esac
     # Routed on the working directory first, because several of the binding's
     # commands are within a word of a workspace one: its clippy gate is `cargo
     # clippy --all-targets -- -D warnings` and the workspace one is the same
@@ -417,6 +423,12 @@ injection_for() {
             echo "crypto_interop" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
+        *"--test turn_claims"*)
+            echo "ignored_suite:$TURN_CLAIMS:the turn-claim suites" ;;
+        # Doctests run in their own step since the matrix moved to nextest,
+        # which does not run them.
+        "cargo test --doc"*)
+            echo "doctest:$TYPES_LIB" ;;
         # `--check` before the run: both commands name the same script.
         *"run_postgres_suites.py --check"*)
             echo "postgres_suites_named" ;;
@@ -587,6 +599,7 @@ expected_marker() {
         mutants_config)   echo ".cargo/mutants.toml is in effect and carries key(s) cargo-mutants rejects" ;;
         timeout_nesting)  echo "push_delivery_timeout / HttpPushSender" ;;
         pg_retry_unwrapped) echo "outside pg_retry::retry or checked" ;;
+        doctest)          echo "gate probe: injected doctest failure" ;;
         postgres_suites_named) echo "test:soak_multi_replica: listed as run by" ;;
         inert_bounds)     echo "max_probe_rows" ;;
         advisory_floors)  echo "RUSTSEC-2026-0285" ;;
@@ -1031,6 +1044,13 @@ if s.count(ANCHOR) != 1:
     )
 CI.write_text(s.replace(ANCHOR, PROBE + ANCHOR), encoding="utf-8")
 PY
+            ;;
+        doctest)
+            note_touched "$rest"
+            {
+                printf '\n/// ```\n/// panic!("gate probe: injected doctest failure");\n/// ```\n'
+                printf 'pub fn gate_probe_doctest() {}\n'
+            } >>"$rest"
             ;;
         pg_retry_unwrapped)
             # The claim release, run on the pool outside `pg_retry`: what a
