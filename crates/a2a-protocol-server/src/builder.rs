@@ -2057,6 +2057,19 @@ mod tests {
             RequestHandlerBuilder::new(TestExecutor).with_agent_card(unsigned_card())
         );
         assert!(card.contains(r#"agent_card: "card""#), "{card}");
+        // Where turn claims come from, by name: the store's, given, or off.
+        assert!(unset.contains("turn_claims: FromStore"), "{unset}");
+        let off = format!(
+            "{:?}",
+            RequestHandlerBuilder::new(TestExecutor).without_turn_claims()
+        );
+        assert!(off.contains("turn_claims: Off"), "{off}");
+        let given = format!(
+            "{:?}",
+            RequestHandlerBuilder::new(TestExecutor)
+                .with_turn_claims(crate::store::InMemoryTurnClaims::new())
+        );
+        assert!(given.contains("turn_claims: Given"), "{given}");
     }
 
     #[test]
