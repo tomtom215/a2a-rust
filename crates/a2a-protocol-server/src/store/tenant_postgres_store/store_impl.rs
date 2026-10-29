@@ -137,12 +137,14 @@ impl TaskStore for TenantAwarePostgresTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::partition();
-            crate::store::pg_retry::retry(|| {
+            // Checked, not retried: a second run would delete a claim another send
+            // made on the same key since.
+            crate::store::pg_retry::checked(
                 sqlx::query(idem::PG_RELEASE)
                     .bind(&tenant)
                     .bind(key)
-                    .execute(&self.pool)
-            })
+                    .execute(&self.pool),
+            )
             .await
             .map_err(|e| to_a2a_error(&e))?;
             Ok(())

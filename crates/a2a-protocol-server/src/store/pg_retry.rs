@@ -27,11 +27,15 @@
 //!   the connection was lost ([`connection_lost`]), and the second run pings
 //!   the connection it is handed, so a dead one is closed and a new one
 //!   opened. It is for statements that leave the database as one run would
-//!   when run twice, and say so: a read; an upsert or a delete; an append
-//!   that does nothing at a position already held; a compare-and-set whose
-//!   condition fails once it has applied, sending the caller to the whole
-//!   write it falls back to anyway; `BEGIN`. [`checked`] pings first, as every
-//!   statement used to, and is for the rest.
+//!   when run twice, and say so: a read; a write keyed by something only
+//!   this caller holds (a claim's token, a task id it minted), or that
+//!   writes what is already there; an append that does nothing at a
+//!   position already held; a compare-and-set whose condition fails once it
+//!   has applied, sending the caller to the whole write it falls back to
+//!   anyway; `BEGIN`. [`checked`] pings first, as every statement used to,
+//!   and is for the rest, among them a delete keyed by something another
+//!   caller can take in between (an idempotency key, a task's lease): run
+//!   again, it would delete theirs.
 //!
 //! Why not retry everything: a lost connection does not prove the statement
 //! did not run. The server can end a backend after it committed a statement

@@ -108,11 +108,13 @@ impl TaskStore for PostgresTaskStore {
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            crate::store::pg_retry::retry(|| {
+            // Checked, not retried: a second run would delete a claim another send
+            // made on the same key since.
+            crate::store::pg_retry::checked(
                 sqlx::query(idempotency::RELEASE_SQL)
                     .bind(key)
-                    .execute(&self.pool)
-            })
+                    .execute(&self.pool),
+            )
             .await
             .map_err(to_a2a_error)?;
             Ok(())

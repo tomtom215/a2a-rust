@@ -61,14 +61,16 @@ impl LeaseStore for PostgresLeaseStore {
         deadline_ms: i64,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            crate::store::pg_retry::retry(|| {
+            // Checked, not retried: a second run after a renewal landed would set
+            // the deadline back over it.
+            crate::store::pg_retry::checked(
                 sqlx::query(GRANT_SQL)
                     .bind(tenant)
                     .bind(task)
                     .bind(ttl_ms)
                     .bind(deadline_ms)
-                    .execute(&self.pool)
-            })
+                    .execute(&self.pool),
+            )
             .await
             .map_err(|e| failed("grant", &e))?;
             Ok(())
@@ -124,12 +126,14 @@ impl LeaseStore for PostgresLeaseStore {
         task: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            crate::store::pg_retry::retry(|| {
+            // Checked, not retried: a second run would delete a lease granted
+            // since, by the task's next turn.
+            crate::store::pg_retry::checked(
                 sqlx::query("DELETE FROM a2a_leases WHERE tenant = $1 AND task_id = $2")
                     .bind(tenant)
                     .bind(task)
-                    .execute(&self.pool)
-            })
+                    .execute(&self.pool),
+            )
             .await
             .map_err(|e| failed("release", &e))?;
             Ok(())
