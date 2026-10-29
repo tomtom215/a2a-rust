@@ -320,7 +320,9 @@ fn hold(claims: &Arc<TurnClaims>, task_id: &TaskId, token: String) -> TurnClaim 
     if !TenantContext::set_fence(&token) {
         // A send is always made inside a request scope, which has an empty
         // fence slot: unreachable unless a request takes two claims, which
-        // would be a bug in the send path.
+        // would be a bug in the send path. A debug build stops here, so a
+        // test that reaches it fails rather than logging past it.
+        debug_assert!(false, "turn claim taken outside a fresh request scope");
         trace_error!(task_id = %task_id, "turn claim taken outside a fresh request scope");
     }
     TurnClaim {
