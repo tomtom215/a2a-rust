@@ -345,3 +345,13 @@ fn an_earlier_releases_turn_is_logged_once_a_minute() {
         .count();
     assert_eq!(said, 1, "{:?}", lines.lock().unwrap());
 }
+
+/// A claim holds until the instant it expires and not at it, where a real
+/// clock can almost never land; constructed instants pin the boundary.
+#[test]
+fn a_claim_is_free_at_the_instant_it_expires() {
+    let t = std::time::Instant::now();
+    assert!(super::live(t + Duration::from_millis(1), t));
+    assert!(!super::live(t, t), "free to take at the instant it expires");
+    assert!(!super::live(t, t + Duration::from_millis(1)));
+}

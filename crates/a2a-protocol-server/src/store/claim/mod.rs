@@ -277,7 +277,7 @@ impl TurnClaimStore for InMemoryTurnClaims {
             };
             let key = (scope.to_owned(), task_id.to_owned());
             let mut claims = self.lock();
-            if claims.get(&key).is_some_and(|e| e.expires > now) {
+            if claims.get(&key).is_some_and(|e| live(e.expires, now)) {
                 return Ok(false);
             }
             claims.insert(key, entry);
@@ -322,7 +322,7 @@ impl TurnClaimStore for InMemoryTurnClaims {
             Ok(self
                 .lock()
                 .get_mut(&(scope.to_owned(), task_id.to_owned()))
-                .filter(|e| e.expires > now)
+                .filter(|e| live(e.expires, now))
                 .map(|e| e.cancel_requested = true)
                 .is_some())
         })
@@ -337,6 +337,12 @@ impl TurnClaimStore for InMemoryTurnClaims {
             Ok((before - claims.len()) as u64)
         })
     }
+}
+
+/// Whether a claim expiring at `expires` still holds at `now`: until the
+/// instant it expires, and not at it, which is when another turn may take it.
+fn live(expires: Instant, now: Instant) -> bool {
+    expires > now
 }
 
 #[cfg(test)]
