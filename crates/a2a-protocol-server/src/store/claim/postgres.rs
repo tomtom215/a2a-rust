@@ -112,7 +112,7 @@ pub(super) fn read_claim_outcome(outcome: &str) -> (bool, bool) {
 
 /// Says, at most once a minute, that a replica of an earlier release is
 /// running a task: the sign that a rolling upgrade is still under way.
-fn legacy_turn_seen(_task_id: &str) {
+pub(super) fn legacy_turn_seen(_task_id: &str) {
     static LOGGED: crate::trace::Throttle = crate::trace::Throttle::every(60);
     if LOGGED.allow() {
         trace_info!(

@@ -304,3 +304,44 @@ async fn tenant_aware_sqlite_fences_a_token_to_its_own_task() {
     a_token_fences_only_its_own_task(&store).await;
     a_cancel_marks_only_a_held_claim(&store).await;
 }
+
+/// A replica waiting on an earlier release's turn says so, once a minute
+/// rather than at every poll. The subscriber is this thread's only, so other
+/// tests running beside this one cannot add to or take from what it counts.
+#[cfg(all(feature = "postgres", feature = "tracing"))]
+#[test]
+fn an_earlier_releases_turn_is_logged_once_a_minute() {
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+
+    struct Lines(Arc<Mutex<Vec<String>>>);
+    impl<S: tracing::Subscriber> Layer<S> for Lines {
+        fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+            struct Message(String);
+            impl tracing::field::Visit for Message {
+                fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
+                    if f.name() == "message" {
+                        self.0 = format!("{v:?}");
+                    }
+                }
+            }
+            let mut m = Message(String::new());
+            event.record(&mut m);
+            self.0.lock().unwrap().push(m.0);
+        }
+    }
+
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(Lines(Arc::clone(&lines)));
+    tracing::subscriber::with_default(subscriber, || {
+        super::postgres::legacy_turn_seen("t-1");
+        super::postgres::legacy_turn_seen("t-2");
+    });
+    let said = lines
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l.contains("a replica of an earlier release is running this task"))
+        .count();
+    assert_eq!(said, 1, "{:?}", lines.lock().unwrap());
+}
