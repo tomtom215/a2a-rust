@@ -114,9 +114,12 @@ impl TurnClaims {
 /// The host's name where the environment says it (`HOSTNAME`, which
 /// Kubernetes sets to the pod's name), else `replica`.
 fn default_replica_name() -> String {
-    std::env::var("HOSTNAME")
-        .ok()
-        .filter(|h| !h.is_empty())
+    replica_name(std::env::var("HOSTNAME").ok())
+}
+
+/// `host` when it names something, else `replica`.
+fn replica_name(host: Option<String>) -> String {
+    host.filter(|h| !h.is_empty())
         .unwrap_or_else(|| "replica".to_owned())
 }
 

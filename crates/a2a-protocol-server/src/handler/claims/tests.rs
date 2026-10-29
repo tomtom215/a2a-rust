@@ -189,6 +189,15 @@ fn an_unnamed_replica_owns_its_claims_as_its_host() {
     );
 }
 
+/// An empty `HOSTNAME` names nothing, so it is `replica` as an unset one is.
+/// Tested apart from the environment, which a test runner may not export.
+#[test]
+fn an_empty_host_name_is_no_name() {
+    assert_eq!(replica_name(Some("pod-1".to_owned())), "pod-1");
+    assert_eq!(replica_name(Some(String::new())), "replica");
+    assert_eq!(replica_name(None), "replica");
+}
+
 /// Counts claim attempts on a store that never grants one, and refuses to
 /// count past a cap: a wait that stopped growing would poll without end.
 struct NeverGranted(Arc<std::sync::atomic::AtomicUsize>);
