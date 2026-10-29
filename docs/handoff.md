@@ -19,46 +19,55 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-- **0.15.1 is prepared on branch `claude/kind-curie-jskrn8` (2026-10-26); it is
-  not tagged and no pull request is open.** Versions, the eight dependency
-  pins, the four lockfiles, `CHANGELOG.md` (`[0.15.1] - 2026-10-26`, an empty
-  `[Unreleased]`), `CITATION.cff`, `ROADMAP.md`, the book's changelog page and
-  `docs/provenance-manifest.md` (last) are done. Content: OTLP export for
-  proxies, gzip, a console exporter, `otel-prometheus`, a stderr layer with a
-  startup line and lost-export warnings (with the transport's cause and a hint
-  where the failure names the fix), resource detection, `OTEL_PROPAGATORS`,
-  percent-decoded `OTEL_RESOURCE_ATTRIBUTES`, `shutdown_signal()`, a quick start
-  per deployment in `observability.md`, and the corrections two read-only audits
-  found (each verified before it was applied; the reports were leads).
-  **For the maintainer, before opening the pull request:**
-  1. *Sign-off.* The commits are authored as the container's identity with no
-     `Signed-off-by`; `scripts/check_dco.sh` will refuse them. Re-author and
-     sign off.
-  2. *Patch or minor.* The release adds public API (`shutdown_signal`,
-     `OtlpCompression`, five `TelemetryBuilder` and three `Telemetry` methods),
-     an off-by-default feature and two behaviour changes (a later `.init()`
-     after `install_subscriber` panics; `HTTP_PROXY` now applies to the export).
-     `check_release_tree.py` accepts it as a patch (no `### Breaking Changes`),
-     but the book's changelog page defines a patch as bug fixes, and 0.14.1 was
-     one advisory with no API change. 0.16.0 is the other reading; the choice is
-     yours, and `CHANGELOG.md`, the manifests and `CITATION.cff` follow it.
-  3. *Not run, and so not claimed:* a real OpenTelemetry Collector (building one
-     was refused in the session, so every collector was a stand-in), Kubernetes
-     (the manifest was parsed as YAML; `$(POD_NAME)` expansion is Kubernetes's),
-     IPv6, a public-CA endpoint, a production proxy, `cargo-semver-checks`
-     (installing it was refused; the claim that nothing public was removed comes
-     from a diff of `pub` lines against `v0.15.0`, and CI runs the real tool on
-     the pull request), `cargo deny` and `promtool`.
-  4. *Toolchain.* CI's stable was rustc 1.99.1 on 2026-10-26. A session's
-     clippy 1.97 passed code that 1.99.1 rejects (`assert_is_empty`,
-     `unused_async_trait_impl`) and flagged files this branch did not touch that
-     1.99.1 does not, so lint with `rustup toolchain install 1.99.1` before
-     pushing. `cargo +nightly doc` with `--cfg docsrs` is the third doc build.
-  Also **ADR 0028 (Proposed)** and `docs/adr/0028-wasm-spike/`: the real
-  `RequestHandler` was run inside `workerd` (11 of 11 checks, native lib suite
-  unchanged at 1,545). Nothing from it is in the crates. The next session
-  should start by running `docs/adr/0028-wasm-spike/reproduce.sh`; if the base
-  commit has moved, the patch needs a rebase and `results.txt` regenerating.
+- **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
+  `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
+  The maintainer judged 0.15.0 not ready in practice and asked for everything
+  to be run live before another release. Done here, each item verified by the
+  run named in `CHANGELOG.md` `[Unreleased]`, where every change is listed:
+  - **Replicas work without session affinity**: turn claims
+    (`store::claim`, `handler::claims`), tested on SQLite and PostgreSQL in
+    process (`tests/turn_claims/`) and as separate OS processes, one killed
+    mid-turn (`tests/replica_processes.rs`), and live as two `deploy-agent`
+    processes behind HAProxy on PostgreSQL 17 (6 of 6 `GetTask`s through the
+    balancer answered, against every second one `TaskNotFound` before).
+    Mutation-checked: claims off, all 10 claim tests fail; fence condition
+    replaced by `TRUE`, exactly the 2 fence tests fail; the claim released
+    at the old point, the terminal-event test fails 5 of 6 runs.
+  - **Every example run against llama.cpp `llama-server` b11913**
+    (`ghcr.io/ggml-org/llama.cpp:server`, commit `7aca0d2ea`) with Qwen3.5-2B
+    Q4_K_M (SHA-256 `aaf42c8b…9223`): all exit 0, after fixing four that sent
+    no token cap (a reasoning model ran past every timeout). `live-model` 10
+    of 10 with Qwen3.5-2B and with Gemma 4 E2B Q4_0 (`8e30dff3…6a52`).
+  - **Observability out of the box**: `deploy/observability/docker-compose.yml`
+    (Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
+    13.2.4); `check_dashboards.py` ok through it (21 rules, 45 panel queries,
+    only "Persistence errors" empty, as no store failed); the three
+    dashboards, a Tempo trace and a Loki line's link to it looked at as
+    screenshots, which found three panel defects the query check had passed
+    (fixed). Export run live four ways: through the Collector over OTLP/HTTP
+    and OTLP/gRPC, straight to Prometheus's OTLP receiver, and to the console.
+  - **Docker**: `examples/deploy-agent/Dockerfile` built (140 MB) and run as
+    two containers on the compose network, sharing a PostgreSQL on the host
+    through `--add-host=host.docker.internal:host-gateway`; `docker stop`
+    drained and exited 0. Built from the pinned digests pulled through
+    `mirror.gcr.io` (Docker Hub answered 429) and with this sandbox's proxy CA
+    added in a scratch copy of the Dockerfile (*Environment*); the repository's
+    Dockerfile is unchanged.
+  **Not run, and so not claimed:** Kubernetes (kind could not start a pod
+  sandbox here: nested `runc` fails, "can't get final child's PID from
+  pipe"; Kubernetes 1.35's kubelet also refuses this host's cgroup v1), IPv6,
+  a public-CA collector, a production proxy, PgBouncer, a network between
+  replicas and database, `cargo-semver-checks`, `cargo deny`, `promtool` (the
+  rules were exercised live by Prometheus, not unit-tested), the official
+  TCK. **For the maintainer:** (1) the release number, now 0.16.0 by the
+  book's own definition (public API added, which sends are refused changed;
+  `CHANGELOG.md` `[Unreleased]` holds it, and the `[0.15.1]` section above it
+  was never tagged); (2) sign-off: the commits are authored as the session's
+  identity and signed off by it alone, so `scripts/check_dco.sh` will want
+  them re-authored and signed off by you, as with the 0.15.1 branch; (3) the
+  quorum gate's unfenced `Waiting` save (*Waiting on the maintainer*).
+  ADR 0028 (Proposed) and `docs/adr/0028-wasm-spike/` are unchanged from the
+  previous session; its `reproduce.sh` was not re-run.
 - **Released:** 0.15.0 (tag `v0.15.0` on merge commit `e4fc3bc1`, 2026-10-25) is
   the newest release; 0.14.1 (2026-09-30) is the one before. It is the first
   signed tag: SSH-signed by the key in `.github/release-signers/`, and
@@ -99,9 +108,8 @@ only: when something here is done, delete it rather than annotating it.
   findings.md` §1 says 87 passing and 5 failing "cannot be reconciled" with
   114, and an editor's arithmetic suggests it can (87 + 5 + 1 + 21), which
   nobody has resolved.
-- **Working branch:** `claude/sleepy-knuth-3lnx7k`, restarted 2026-10-25 from
-  `main` after pull request #180 merged (merge commit `e4fc3bc1`, the 0.15.0
-  tag). `git log origin/main..` lists what it holds that `main` lacks.
+- **Working branch:** `claude/intelligent-bohr-9qraxk`, from `main` at
+  `568fc6c1`. `git log origin/main..` lists what it holds that `main` lacks.
 - **Merged in #179** (branch `claude/zealous-fermat-f4kg9z`, 2026-10-23 to
   2026-10-24; merged 2026-10-24 13:23 UTC as `2781bb69`). The PR head
   `6707f4d` had 104 check runs, 98 success and 6 skipped by their own
@@ -425,21 +433,21 @@ only: when something here is done, delete it rather than annotating it.
   upstream action, so it waits for the maintainer. The entry is drafted in
   `docs/upstream/rustsec-ghsa-hr9h-6jvf-wvg6.md` (file, front matter, the
   three decisions it leaves to you, and what was and was not checked).
-- **Compare-and-set for task writes (cross-replica).** *Decided 2026-10-24:
-  not for 0.15.0; 0.16 (see Decisions).* The 2026-10-20 fix
-  makes a stale continuation save record the position of its read, so a
-  subscriber replays the event it overwrote, but only until the continuing
-  turn's first fold stores a position past it again; the stored task keeps
-  the lost update. Closing both needs a conditional write: provided methods
-  `get_versioned` and `save_appending_history_if(.., expected)` (defaults
-  unchecked), a `version BIGINT` column on Postgres and SQLite (two
-  migrations; on SQLite compare `(row version, MAX(journal seq))` so the
-  journal keeps its O(1) appends), a counter under the in-memory write
-  lock, forwarding in the encrypted, audit and tenant wrappers, and a
-  bounded re-read and retry on a refused continuation. It changes the store
-  contract custom stores implement, so it is the maintainer's call. It
-  does not make concurrent turns on two replicas safe; that needs
-  cross-replica single-writer admission (a lease row per task).
+- **Turn claims, built 2026-10-28 instead of compare-and-set writes.** The
+  maintainer asked (2026-10-28) for replicas to work, superseding the
+  2026-10-24 decision below. Built: a claim row per turn in the store's own
+  database (`store::claim`, `handler::claims`), fencing every write of a turn
+  by its token, cross-replica cancel through the claim, crash takeover after
+  the time to live. It closes the lost update the compare-and-set design was
+  for (the continuation waits for the claim and reads the task again) and the
+  concurrent turns that design did not, without a `version` column or a
+  change to any existing `TaskStore` method; the one addition is the provided
+  `turn_claims` (default `None`). Two decisions for the maintainer: the
+  release number (it adds public API and changes which sends are refused,
+  so the book's definition of a patch does not fit it), and whether the
+  quorum gate's `Waiting` save, which runs before the claim is taken and so
+  unfenced, should take one (an edge found by the design review, not
+  reproduced).
 - **A `v*` tag ruleset** is unset (a repository setting; `ROADMAP.md` tracks
   it). Without it, a tag on an unreviewed commit whose workflow has been
   edited is what `release.yml`'s validation cannot stop, because the workflow
@@ -516,15 +524,13 @@ only: when something here is done, delete it rather than annotating it.
 
 None of this is in `ROADMAP.md`. Each line names where its evidence is.
 
-- **Cross-replica:** single-writer admission (pinned by a test in
-  `tests/multi_replica.rs` that is ignored by default). A continuation's
-  save on one replica still overwrites an artifact another replica's
-  running turn folded after the save's read: a lost update only a
-  compare-and-set write would refuse. Since 2026-10-20 the save records
-  the position of its read, so a subscriber replays that event rather than
-  losing it, until the continuing turn's first fold stores a position past
-  it again (`store/applied.rs`, `handler/messaging/basis.rs`,
-  `tests/stale_write_position`).
+- **Cross-replica, after turn claims (2026-10-28):** streaming on a replica
+  not running the task is still fed by polling the event log every
+  `subscribe_reattach_interval` (250 ms); `LISTEN`/`NOTIFY` could push it,
+  unbuilt. A cancel reaches another replica's executor at the owner's next
+  renewal (1 s), not at once, unless a halt store pushes it. Not measured: the
+  per-send cost of the claim's two statements against PostgreSQL, a real
+  network between replicas and database, a partition, PgBouncer.
 - **AES-GCM nonce budget is per process** (encryption verification,
   2026-10-21, medium, design). The 2^32-seal limit per key is counted per
   process and resets on restart, so R replicas can seal R × 2^32 under one
@@ -638,11 +644,14 @@ read `cargo deny check advisories` after the update, not before.
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
 
-- **2026-10-24:** multi-replica high availability is not a requirement for
-  0.15.0. It ships as a documented limitation (CHANGELOG "Known
-  Limitations", the book's horizontal-scaling page): the supported topology
-  is one replica, or several with session affinity per task. Compare-and-set
-  writes and cross-replica single-writer admission move to 0.16.
+- **2026-10-28:** replicas must work without session affinity, and the
+  release is not ready until they do and the observability stack works out of
+  the box; every check is to be run live (llama.cpp with current small Qwen
+  and Gemma models, a real Collector, Prometheus, Grafana, trace and log
+  backends). Supersedes the next entry.
+- **2026-10-24 (superseded 2026-10-28):** multi-replica high availability is
+  not a requirement for 0.15.0. It shipped as a documented limitation
+  (CHANGELOG "Known Limitations", the book's horizontal-scaling page).
 - **2026-10-08:** commits are authored as Tom F. with sign-off; release tags
   are signed with the maintainer's own SSH or GPG key and CI verifies them;
   new distribution channels (the CLI, Homebrew, winget) are drafted in-repo
@@ -759,6 +768,31 @@ blame` stops at the shallow boundary. Never write this branch's own head SHA
 into this file: the commit that records it changes it.
 
 ## Environment
+
+- **The live stack of 2026-10-28, rebuilt in minutes.** `dockerd &` starts a
+  Docker daemon (the binary is installed; nothing starts it). Then:
+  `docker compose -f deploy/observability/docker-compose.yml up -d`;
+  PostgreSQL 17 with `docker run -d --name pg --network host -e
+  POSTGRES_PASSWORD=a2a -e POSTGRES_USER=a2a -e POSTGRES_DB=a2a postgres:17`;
+  llama.cpp with `docker run -d --name llama --network host -v
+  /opt/models:/models:ro ghcr.io/ggml-org/llama.cpp:server -m
+  /models/<gguf> --port 11434 --host 127.0.0.1 --jinja -c 16384 -np 2 -t 4`
+  (its image healthcheck probes 8080 and reports unhealthy; `curl
+  localhost:11434/health` is the real one). GGUFs from Hugging Face by
+  `curl -L https://huggingface.co/<repo>/resolve/main/<file>` and checked
+  against the API's `lfs.oid` (`unsloth/Qwen3.5-2B-GGUF`,
+  `ggml-org/gemma-4-E2B-it-GGUF`). Docker Hub answers 429 when busy:
+  pull the same digest from `mirror.gcr.io/library/...`. A `docker build`
+  that fetches crates needs this sandbox's proxy: `--network host`,
+  `--build-arg HTTPS_PROXY=$HTTPS_PROXY`, and the CA from `/root/.ccr`
+  through `--build-context` (a scratch Dockerfile; never the repository's).
+  GitHub release downloads are refused; `go install` through the module
+  proxy works (kind was installed that way). Kubernetes does not run here
+  (kind: nested `runc` cannot start a pod sandbox).
+- **A model's thinking costs minutes on four CPUs**: Qwen3.5 reasons by
+  default, and an uncapped call generated over 5,000 tokens at about 6.5
+  tokens/s. Every model-backed example now caps output and turns thinking
+  off unless told otherwise; anything new must too.
 
 - **Disk** is a fixed allowance: `CARGO_INCREMENTAL=0`, and delete
   `target/semver-checks` and the incremental directories when space runs

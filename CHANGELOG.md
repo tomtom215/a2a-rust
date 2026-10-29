@@ -10,7 +10,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+Several replicas can now share one PostgreSQL database (or several processes
+one SQLite file) with no session affinity: each turn of a task claims it in
+the database, so two replicas never run one task at once, a continuation
+starts from everything the last turn stored wherever it ran, a cancel reaches
+the executor on another replica within about a second, a replica that dies
+mid-turn hands its tasks over after the claim's time to live, and a replica
+that stalled past it writes nothing more. Found missing, with the other
+entries here, by running the repository's own binaries as replicas behind a
+load balancer, against a real model (llama.cpp `llama-server` b11913 with
+Qwen3.5-2B and Gemma 4 E2B) and a real observability stack (OpenTelemetry
+Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
+13.2.4), 2026-10-28.
+
+### Added
+
+- **Turn claims: one replica at a time per task** (server; `store::claim`).
+  The PostgreSQL and SQLite stores, plain and tenant-aware, keep a table,
+  `a2a_task_claims`, beside their tasks, and the handler takes a row in it
+  for each turn: a send claims its task once it knows it (after an idempotent
+  replay is answered), waits for a claim another turn holds for up to
+  `executor_drain_timeout` and is then refused as a send to a running task is
+  on its own replica, reads a continued task again under the claim, and
+  releases it when the turn's executor and its event consumer have both
+  ended. Every task write and event-log append a turn makes is fenced by the
+  claim's token in the same statement, so a replica whose claim was taken over
+  is refused (`ClaimLost`) and its executor cancelled. The owner renews its
+  claims every second; a `CancelTask` on another replica marks the claim and
+  the owner's next renewal fires the executor's token, with or without a halt
+  store; a dead replica's claims expire after 15 s and the next send takes the
+  task over. New: `store::claim` (`TurnClaimStore`, `HeldClaim`, `ClaimLost`,
+  `CLAIM_LOST_MARKER`, `current_fence`, `InMemoryTurnClaims`,
+  `PostgresTurnClaims`, `SqliteTurnClaims`), the provided method
+  `TaskStore::turn_claims` (default `None`: no claims, as before), and the
+  builder's `with_turn_claims`, `without_turn_claims`,
+  `with_turn_claim_timing` and `with_replica_name`, with
+  `DEFAULT_TURN_CLAIM_TTL`, `DEFAULT_TURN_CLAIM_RENEWAL` and
+  `MIN_TURN_CLAIM_TTL`. PostgreSQL migration 8 and SQLite migration 9 create
+  the table; `from_pool` does too. Tests: `tests/turn_claims/` (each case on
+  SQLite and PostgreSQL), `tests/replica_processes.rs` (replicas as separate
+  processes, one killed mid-turn: taken over 2.82 s after the kill with a 3 s
+  time to live), `tests/multi_replica.rs`
+  `the_single_writer_refusal_crosses_replicas`.
+- **`deploy/observability/docker-compose.yml`**: the whole stack in one
+  command, a Collector receiving all three signals and sending metrics to
+  Prometheus (through its OTLP receiver, so the dashboards and rules work
+  unchanged), traces to Tempo and logs to Loki, and Grafana provisioned with
+  the three dashboards and Tempo and Loki data sources linked both ways (a
+  span to its logs, a log line to its trace). Before, the Collector
+  configuration sent traces and logs only to its `debug` exporter, and the
+  README's addresses named services nothing defined.
+- **`deploy-agent` takes `DATABASE_URL`**: tasks and push configs in
+  PostgreSQL, which is what its Kubernetes manifest's two replicas need (see
+  *Fixed*).
+
+### Behaviour Changes
+
+- **A send to a task another replica is running now waits, then is refused**
+  (server, with the PostgreSQL or SQLite stores). It used to be admitted, and
+  both replicas ran the task. Each turn now costs two more statements against
+  the store (the claim and its release), and a handler holding claims renews
+  them once a second; `without_turn_claims()` opts out for a store one replica
+  uses.
+- **Log lines on standard error are coloured only on a terminal**, and never
+  with `NO_COLOR` set (`Telemetry::install_subscriber`). Every line in a file,
+  a pipe, or a Docker or Kubernetes log carried ANSI escape codes.
+- **Every binary in this repository refuses an `OTEL_*` value it cannot use
+  with one line and exit status 2**, instead of a panic with a backtrace and
+  `SIGABRT` (status 134) in the release profile.
+
+### Fixed
+
+- **`examples/deploy-agent/deployment.yaml` ran two replicas on in-memory
+  stores**: through a round-robin balancer, every second `GetTask` answered
+  `TaskNotFound` (measured with two processes behind HAProxy). The manifest
+  now takes `DATABASE_URL` from a Secret, not optional, and the process warns
+  at startup when it runs without one. The README's claim that two replicas
+  were safe because the agent is stateless was wrong and is gone.
+- **Four model-backed examples could not finish against a current reasoning
+  model**: `genai-agent`, `rig-agent`, `mcp-agent` and `incident-response`
+  sent no output cap and left the model's reasoning on, and Qwen3.5-2B on four
+  CPU cores generated over 5,000 tokens for one answer, past every client's
+  timeout, while llama-server went on generating for callers that had gone.
+  Each now caps output at 1,024 tokens and asks a local server not to reason
+  (`<PREFIX>_MAX_TOKENS`, `<PREFIX>_THINKING=1`), as `tool-loop-agent` and
+  `live-model` already did.
+- **`task_id` and `method` were logged with their `Debug` form**, quoted, in
+  `GetTask`, `CancelTask`, `SubscribeToTask`, the JSON-RPC dispatcher and the
+  client's delegation: in Loki the attribute read `"\"…\""`, so a query for
+  the id matched nothing.
+- **A readiness probe was a trace of its own** (server,
+  `RequestHandler::task_store_health`): its store read opened a database span
+  with no request around it, so a probe every 5 s per replica (the shipped
+  manifest's) filled the trace backend with `count <database>` traces. It now
+  records no span; the store's duration metric is still recorded.
+- **Dashboards** (`deploy/observability`): the ratio panels drew a
+  0–10,000% axis while every call succeeded, and a flat duration drew seven
+  identical ticks; ratios now start at 0 with a 10% soft maximum and
+  durations at 0. A call with no method (an unknown route, a request that is
+  not JSON-RPC) showed as a series named `Value` in the per-method panels and
+  is now `(unrouted)`. Found by looking at the panels after
+  `check_dashboards.py` had passed them.
+- **`echo-agent`'s server mode, `tck/sut`, the ITK agent and `mcp-bridge` did
+  not flush telemetry on `SIGTERM`**: each ran until killed. They now return
+  on `shutdown_signal()`, which drops their `Telemetry`.
 
 ## [0.15.1] - 2026-10-26
 
