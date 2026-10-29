@@ -209,12 +209,15 @@ that accepts its cookie or ticket and forwards a header.
   connects to `wss://` with the roots its HTTPS transports use (feature
   `tls-rustls`, on by default), or a configuration given to
   `WebSocketTransportConfig::with_tls_config`.
-- **Origin.** By default the server accepts an upgrade from any `Origin`.
-  Where credentials are ambient (a cookie a gateway turns into a header), a
-  page on another site could open an authenticated connection (cross-site
-  WebSocket hijacking). `WebSocketDispatcher::with_allowed_origins` names the
-  origins a browser may connect from; any other is refused with `403` and
-  the error body of §1 (`PERMISSION_DENIED`) at the handshake. Origins are
+- **Origin.** By default the server refuses an upgrade from any browser:
+  every upgrade that carries an `Origin` is refused with `403` and the error
+  body of §1 (`PERMISSION_DENIED`) at the handshake. WebSocket is outside
+  CORS, so a listener that accepted any origin let any page a user visited
+  open a connection with the user's ambient credentials (a cookie a gateway
+  turns into a header) and read every answer (cross-site WebSocket
+  hijacking); that was the default until this release.
+  `WebSocketDispatcher::with_allowed_origins` names the origins a browser may
+  connect from, and `allow_any_origin` restores the old behaviour. Origins are
   compared whole, ignoring ASCII case. An upgrade with no `Origin` (every
   non-browser client, this SDK's included) is still accepted unless
   `require_origin` is set. The check stops browsers only: any other client

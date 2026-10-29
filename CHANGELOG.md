@@ -216,6 +216,16 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Breaking Changes
 
+- **The WebSocket listener refuses every browser by default** (server;
+  `WebSocketDispatcher`; audit SEC-03). An upgrade that carries an `Origin`
+  header is refused with `403` unless `with_allowed_origins` lists that
+  origin; one without an `Origin`, as a client that is not a browser sends
+  (this SDK's included), is accepted as before. WebSocket is outside CORS,
+  so the old default let any page a user visited open a connection with the
+  user's ambient credentials and read every answer. `allow_any_origin()`
+  restores the old behaviour. `tests/websocket_tls_origin.rs`
+  (`by_default_a_browser_origin_is_refused`, shown failing with the old
+  default) and `dispatch/websocket/origin.rs`.
 - **`ServeReport` is `#[must_use]`** (server): a server that refused to start
   returns at once with `refused` set, and a caller that dropped the report,
   as `hello-agent` did, exited `0` as though it had served (audit G-03).

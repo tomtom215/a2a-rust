@@ -137,10 +137,40 @@ async fn require_origin_refuses_an_upgrade_without_one() {
     }
 }
 
-/// The default is unchanged: any origin connects.
+/// By default every browser origin is refused and a client with no
+/// `Origin` connects (audit SEC-03): a page could otherwise open a
+/// connection with the visitor's cookies and read every answer, since
+/// WebSocket is outside CORS.
 #[tokio::test]
-async fn by_default_any_origin_may_upgrade() {
+async fn by_default_a_browser_origin_is_refused() {
     let addr = Arc::new(dispatcher())
+        .serve_with_addr("127.0.0.1:0")
+        .await
+        .expect("serve");
+    let url = format!("ws://{addr}/");
+    for origin in ["https://evil.example", &format!("http://{addr}"), "null"] {
+        match tokio_tungstenite::connect_async(request(&url, Some(origin))).await {
+            Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+                assert_eq!(resp.status(), 403, "{origin}");
+            }
+            other => panic!(
+                "{origin}: expected a 403 refusal, got {:?}",
+                other.map(|_| ())
+            ),
+        }
+    }
+    let (mut ws, _) = tokio_tungstenite::connect_async(request(&url, None))
+        .await
+        .expect("no Origin: not a browser, accepted");
+    ws.send(get_task()).await.expect("send");
+    assert_eq!(next_json(&mut ws).await["id"], 7);
+}
+
+/// `allow_any_origin` restores the old behaviour, for a listener that
+/// chooses it.
+#[tokio::test]
+async fn allow_any_origin_accepts_every_origin() {
+    let addr = Arc::new(dispatcher().allow_any_origin())
         .serve_with_addr("127.0.0.1:0")
         .await
         .expect("serve");
@@ -149,7 +179,7 @@ async fn by_default_any_origin_may_upgrade() {
         Some("https://evil.example"),
     ))
     .await
-    .expect("no allowlist: accepted");
+    .expect("allow_any_origin: accepted");
 }
 
 // ── TLS ──────────────────────────────────────────────────────────────────

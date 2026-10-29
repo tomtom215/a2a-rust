@@ -187,7 +187,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 |---|---|---|---|---|
 | SEC-01 | High | CSRF against loopback agents (no Content-Type, version in query) | fixed | confirmed live (SendMessage ran from a no-Content-Type POST); tests/browser_reachable_loopback.rs fails under the mutant |
 | SEC-02 | High | No Host-header validation, so DNS rebinding reaches localhost agents | fixed | confirmed live (ListTasks answered Host: evil.example); loopback listeners check Host; single-label names allowed |
-| SEC-03 | High; KNOWN | WebSocket accepts any `Origin` (cross-site WebSocket hijacking) | open | |
+| SEC-03 | High; KNOWN | WebSocket accepts any `Origin` (cross-site WebSocket hijacking) | fixed | Default refuses every upgrade that carries an `Origin` unless listed (`with_allowed_origins`); no `Origin` (non-browser clients) accepted; `allow_any_origin()` opts out. Not "same host as `Host`", which DNS rebinding satisfies. Test fails with the old default; live in Chromium (2026-10-29): a page on another origin could not open the socket by default, could and read a GetTask answer when listed; a raw upgrade with no `Origin` got `101` |
 | SEC-04 | Medium | Forced JWKS refetch with a forged `kid`, no cooldown | open | |
 | SEC-05 | Medium | An empty API key fails open | fixed | CredentialSet::matching refuses an empty credential; unit test |
 | SEC-06 | Medium; partly KNOWN | JWT defaults: no `iss`/`aud`, `from_oidc_issuer` does not bind the issuer, plaintext JWKS | open | |

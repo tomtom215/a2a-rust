@@ -13,9 +13,11 @@ how many connections it holds and for how long.
 The listener is `ws://` by default. With the `tls-rustls` feature,
 `with_tls(rustls::ServerConfig)` or `with_tls_pem(cert_chain, key)` makes it
 `wss://` only, with the agent card served over the same TLS session.
-`with_allowed_origins([...])` refuses, with 403 at the handshake, a browser
-whose page is not on the list (cross-site WebSocket hijacking); an upgrade
-with no `Origin` is still accepted unless `require_origin()` is set. See the
+By default every browser is refused, with 403 at the handshake (cross-site
+WebSocket hijacking); `with_allowed_origins([...])` lets the pages on the
+list in, and `allow_any_origin()` lets every page in. An upgrade with no
+`Origin`, as a client that is not a browser sends, is accepted unless
+`require_origin()` is set. See the
 [binding's security considerations](../../bindings/websocket.md#7-security-considerations-134).
 
 ```rust,no_run
