@@ -108,7 +108,7 @@ async fn a_zero_budget_writes_once() {
 /// `error` before it takes the event.
 struct FlakyLog {
     inner: InMemoryTaskStore,
-    fails: AtomicUsize,
+    fails: std::sync::Mutex<usize>,
     error: fn() -> A2aError,
 }
 
@@ -142,10 +142,13 @@ impl TaskStore for FlakyLog {
         seq: u64,
         event: &'a StreamResponse,
     ) -> Fut<'a, ()> {
-        let left = self
-            .fails
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
-        if left.is_ok() {
+        let failing = {
+            let mut left = self.fails.lock().expect("lock");
+            let failing = *left > 0;
+            *left = left.saturating_sub(1);
+            failing
+        };
+        if failing {
             let e = (self.error)();
             return Box::pin(async move { Err(e) });
         }
@@ -166,7 +169,7 @@ impl TaskStore for FlakyLog {
 async fn logged_after(fails: usize, error: fn() -> A2aError, retry: Duration) -> Vec<u64> {
     let store = FlakyLog {
         inner: InMemoryTaskStore::new(),
-        fails: AtomicUsize::new(fails),
+        fails: std::sync::Mutex::new(fails),
         error,
     };
     let task_id = TaskId::new("t-1");

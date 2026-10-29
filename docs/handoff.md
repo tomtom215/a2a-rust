@@ -118,8 +118,8 @@ only: when something here is done, delete it rather than annotating it.
   replays 0.15.0's own SQL; five mutants of the guard are each caught. All
   database-gated tests pass on PostgreSQL 16.15 and 17.11 (2,478 each).
 - **Replicas over a network** (toxiproxy 2.12.0 between each replica and the
-  database): the claim costs two or three round trips a turn, 10% to 15% of
-  throughput at round trips from 0.97 to 11.4 ms; a 5 s cut, a 20 s
+  database): the claim costs one or two round trips a turn, 8% to 12% of
+  throughput at round trips from 1.0 to 11.2 ms; a 5 s cut, a 20 s
   cut (taken over at 16.1 s, the cut-off writer fenced and stopped 2.5 s after
   its link returned) and a database restart mid-turn all behaved as the book
   says (*What it costs*, *When the network fails*).

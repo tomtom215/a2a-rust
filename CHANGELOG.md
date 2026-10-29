@@ -126,9 +126,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   them once a second; `without_turn_claims()` opts out for a store one replica
   uses. Measured with `tests/soak_multi_replica.rs` (two replicas, PostgreSQL
   17 on the same 4-vCPU host, release build, three 30 s runs each way,
-  through a proxy adding latency): the claim costs a near-constant two or
-  three round trips, 15% fewer send-and-read pairs per second at a 0.97 ms
-  round trip (319 ± 12 against 376 ± 12), 10% at 2.75 ms, 11% at 11.4 ms
+  through a proxy adding latency): the claim costs one or two round
+  trips, 12% fewer send-and-read pairs per second at a 1.0 ms
+  round trip (390 ± 13 against 443 ± 13), 8% at 2.8 ms, 8% at 11.2 ms
   (book: Running More Than One Replica, *What it costs*, with partitions and
   a database restart mid-turn).
 - **On PostgreSQL, a 0.15 replica's write to a task a newer replica is
@@ -157,18 +157,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `tests/transient_store_errors.rs` holds the row the same way, and ends
   every backend mid-turn.
 - **A send made 45 round trips to PostgreSQL**, counting its read back, and
-  on a slow link those dominated. A new task's send and read now make 24 (8
-  statements), a continuation's 33 (11): a context the send minted is not
-  looked up; a send naming a task reads that task, not the context's newest
-  (a count and a page); a new task's event numbering starts at 0 without
-  reading the log; the turn reuses the row it read under its claim; and a new
-  task, or a continuation read under its claim, is saved whole, so neither
-  the save nor the event consumer reads the row back. Without a claim a
-  continuation still appends its message to the stored history, which
-  another replica's turn may have written since. Measured with
-  `tests/soak_multi_replica.rs` (as above, claims on): 334 ± 31 to 466 ± 25
-  send-and-read pairs per second direct, 67 ± 1 to 105 ± 1 at a 2.6–2.75 ms
-  round trip, 21 ± 1 to 33 ± 0 at 11.1–11.4 ms.
+  on a slow link those dominated. A new task's send and read now make 8
+  statements, a continuation's 11, each followed by the ping sqlx makes as
+  the connection returns to the pool and none preceded by one unless the
+  connection sat idle a second (*Behaviour Changes*): a context the send
+  minted is not looked up; a send naming a task reads that task, not the
+  context's newest (a count and a page); a new task's event numbering starts
+  at 0 without reading the log; the turn reuses the row it read under its
+  claim; and a new task, or a continuation read under its claim, is saved
+  whole, so neither the save nor the event consumer reads the row back.
+  Without a claim a continuation still appends its message to the stored
+  history, which another replica's turn may have written since. Measured
+  with `tests/soak_multi_replica.rs` (as above, claims on): 334 ± 31 to
+  532 ± 11 send-and-read pairs per second direct, 67 ± 1 to 166 ± 1 at a
+  2.6–2.8 ms round trip, 21 ± 1 to 54 ± 0 at 11.1–11.2 ms.
 - **`examples/deploy-agent/deployment.yaml` ran two replicas on in-memory
   stores**: through a round-robin balancer, every second `GetTask` answered
   `TaskNotFound` (measured with two processes behind HAProxy). The manifest

@@ -325,34 +325,42 @@ and reading it from the other, release build, one 4-vCPU Linux container,
 2026-10-28. The database was reached directly, then through toxiproxy 2.12.0
 adding latency each way; the round trip is what was measured on the link
 (the smallest of 20 PostgreSQL SSL-request exchanges), not what was set.
-Three 30 s runs per row, alternating:
+Three 30 s runs per row, alternating (the first run of the 1 ms row with
+claims overlapped a compile and was run again):
 
 | Round trip to the database | With claims | Without | Median per pair, with / without |
 |---|---|---|---|
-| direct | 466 ± 25 pairs/s | — | 16.3 ms |
-| 0.97 ms (proxy alone) | 319 ± 12 | 376 ± 12 | 24.5 / 21.4 ms |
-| 2.75 ms | 105 ± 1 | 117 ± 1 | 77.5 / 69.4 ms |
-| 11.4 ms | 33 ± 0 | 37 ± 0 | 241 / 216 ms |
+| direct | 532 ± 11 pairs/s | — | 14.6 ms |
+| 1.0 ms (proxy alone) | 390 ± 13 | 443 ± 13 | 19.8 / 17.4 ms |
+| 2.8 ms | 166 ± 1 | 181 ± 8 | 48.5 / 43.7 ms |
+| 11.2 ms | 54 ± 0 | 59 ± 0 | 148 / 134 ms |
 
-The claim adds a near-constant two or three round trips to a turn (3.0 ms at
-0.97 ms, 8.1 ms at 2.75 ms, 25.5 ms at 11.4 ms): 10% to 15% fewer pairs.
-What dominates on a real network is the rest of the send path, so put the
-database close to the replicas. Counted at the wire (a proxy logging each
-time the client waited on the server), a send that starts a task and a read
-of it make 8 statements; with the ping sqlx sends before handing out a
-connection and the one after taking it back, 24 round trips, 16 of them on
-the request's path. A send that continues a task and a read make 11
-statements, 33 round trips. Both were 45 before 2026-10-28, when the same
-soak measured 334 ± 31 pairs/s direct, 238 ± 3 at 1.2 ms, 67 ± 1 at 2.6 ms
-and 21 ± 1 at 11.1 ms, with claims. Every claim was released by the end of
+The claim adds one to two round trips to a turn (2.4 ms at 1.0 ms, 4.8 ms at
+2.8 ms, 13.4 ms at 11.2 ms): 8% to 12% fewer pairs. What dominates on a real
+network is the rest of the send path, so put the database close to the
+replicas. Counted at the wire (a proxy logging each time the client waited
+on the server), a send that starts a task and a read of it make 8
+statements, a send that continues one and a read 11; each is followed by
+the ping sqlx makes as the connection returns to the pool, off the request's
+path, and a connection idle for a second or more is pinged before it is
+used. Both made 45 round trips before 2026-10-28, when the same soak
+measured 334 ± 31 pairs/s direct, 238 ± 3 at 1.2 ms, 67 ± 1 at 2.6 ms and
+21 ± 1 at 11.1 ms, with claims. Every claim was released by the end of
 every run, and no run had a failed request or a task one replica could not
 read from the other.
 
-The ping before each statement stays. Skipping it for a connection used in
-the last second saved another 8 round trips a send, and lost an event: with
-every backend terminated mid-turn (`pg_terminate_backend`, no outage), the
-next write went to a dead connection and its event was in neither the log
-nor the task, in 3 runs of 3; with the ping, none was lost in 3 of 3.
+A statement whose connection the server ended (a restart, a failover,
+`pg_terminate_backend`, an idle-session timeout) runs once more on a fresh
+connection when a second run is harmless, and every other statement is
+pinged first (`store::pg_retry`); with every backend ended mid-turn nothing
+was lost (3 runs of 3). A write of a turn's event that the store refuses for
+now (a lock or statement timeout, a deadlock) is made again, from 50 ms
+doubling to 1 s, for up to `HandlerLimits::store_write_retry` (30 s); under
+a 200 ms `statement_timeout` with the task row locked for 2 s, it lost three
+parts and four log positions before, and none after. During an outage sqlx
+itself waits up to its acquire timeout (30 s) for a connection before a
+statement fails, so set `store_write_retry` past the longest failover you
+expect beyond that.
 
 **When the network fails** (2026-10-28, two replicas as separate processes,
 each reaching PostgreSQL through its own toxiproxy link, default timing):
