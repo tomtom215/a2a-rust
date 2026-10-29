@@ -233,6 +233,23 @@ async fn appends_are_fenced_to_their_own_task(
     );
 }
 
+/// A cancel for a task nobody holds marks nothing and says so: the caller
+/// reads `false` as "no turn to stop here", so a `true` would send it waiting
+/// for a cancel nothing will act on.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+async fn a_cancel_marks_only_a_held_claim(store: &dyn crate::store::TaskStore) {
+    let run = uuid::Uuid::new_v4().to_string();
+    let (task, token) = (format!("cancel-{run}"), format!("tok-{run}"));
+    let claims = store.turn_claims().expect("a SQL store has claims");
+    assert!(
+        !claims.request_cancel("", &task).await.unwrap(),
+        "nothing to mark"
+    );
+    assert!(claims.claim("", &task, "me", &token, TTL).await.unwrap());
+    assert!(claims.request_cancel("", &task).await.unwrap());
+    claims.release(&token).await.unwrap();
+}
+
 #[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn sqlite_fences_a_token_to_its_own_task() {
@@ -240,6 +257,7 @@ async fn sqlite_fences_a_token_to_its_own_task() {
         .await
         .unwrap();
     a_token_fences_only_its_own_task(&store).await;
+    a_cancel_marks_only_a_held_claim(&store).await;
 }
 
 #[cfg(feature = "postgres")]
@@ -249,4 +267,5 @@ async fn postgres_fences_a_token_to_its_own_task() {
     let url = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
     let store = crate::store::PostgresTaskStore::new(&url).await.unwrap();
     a_token_fences_only_its_own_task(&store).await;
+    a_cancel_marks_only_a_held_claim(&store).await;
 }
