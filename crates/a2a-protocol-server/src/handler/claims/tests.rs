@@ -151,3 +151,25 @@ async fn a_dropped_claim_is_released() {
     assert!(!store.holds("tok"), "Drop releases the claim");
     assert!(claims.held().is_empty());
 }
+
+/// A handler given no replica name owns its claims as the host it runs on,
+/// which Kubernetes sets to the pod's name, else `replica`, then the process
+/// and a fresh id. Read here rather
+/// than set, since the environment is the process's.
+#[test]
+fn an_unnamed_replica_owns_its_claims_as_its_host() {
+    let claims = TurnClaims::new(
+        Arc::new(InMemoryTurnClaims::new()),
+        None,
+        DEFAULT_TURN_CLAIM_TTL,
+        DEFAULT_TURN_CLAIM_RENEWAL,
+    );
+    let host = std::env::var("HOSTNAME").unwrap_or_default();
+    let expected = if host.is_empty() { "replica" } else { &host };
+    let prefix = format!("{expected}/{}/", std::process::id());
+    assert!(
+        claims.owner.starts_with(&prefix),
+        "{} for {prefix}",
+        claims.owner
+    );
+}

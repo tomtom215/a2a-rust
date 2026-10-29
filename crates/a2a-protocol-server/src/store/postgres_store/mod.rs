@@ -254,6 +254,14 @@ impl PostgresTaskStore {
 mod tests {
     use super::*;
 
+    /// The public options are the stores' own: sqlx's default pings every
+    /// connection before handing it out, the round trip they save.
+    #[test]
+    fn the_public_pool_options_skip_sqlx_s_ping_on_every_acquire() {
+        assert!(sqlx::postgres::PgPoolOptions::new().get_test_before_acquire());
+        assert!(!PostgresTaskStore::pool_options().get_test_before_acquire());
+    }
+
     /// The store names PostgreSQL and where its pool connects, for its spans
     /// and `db.client.operation.duration`. Built over a lazy pool, which
     /// connects to nothing until a query runs.
