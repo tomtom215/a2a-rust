@@ -317,15 +317,15 @@ fn an_earlier_releases_turn_is_logged_once_a_minute() {
     struct Lines(Arc<Mutex<Vec<String>>>);
     impl<S: tracing::Subscriber> Layer<S> for Lines {
         fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
-            struct Message(String);
-            impl tracing::field::Visit for Message {
+            struct Text(String);
+            impl tracing::field::Visit for Text {
                 fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
                     if f.name() == "message" {
                         self.0 = format!("{v:?}");
                     }
                 }
             }
-            let mut m = Message(String::new());
+            let mut m = Text(String::new());
             event.record(&mut m);
             self.0.lock().unwrap().push(m.0);
         }
