@@ -142,7 +142,12 @@ async fn an_earlier_release_cannot_write_a_task_a_new_replica_runs() {
     let task = send(&new, params("hold", None, true))
         .await
         .expect("the new replica opens it");
-    let mut overwrite = get(&*store, &task.id).await;
+    // The send returns before its turn records `working`; the refusals below
+    // must leave the task as that write left it.
+    let mut overwrite = until(&*store, &task.id, "working", |t| {
+        t.status.state == TaskState::Working
+    })
+    .await;
     overwrite.artifacts = Some(Vec::new());
     assert!(
         refused(&old.save(&overwrite).await),

@@ -48,6 +48,10 @@ pub(super) struct ClaimedTurn {
     /// The approval gate's verdict again, when the read under the claim
     /// changed the task.
     pub(super) regated: Regated,
+    /// The log position `stored` reflects, when it was read under the claim
+    /// and the store reports one: the queue lease starts from that read
+    /// rather than reading the row again.
+    pub(super) read_at: Option<u64>,
 }
 
 /// Whether the approval gate ran again under the claim.
@@ -59,10 +63,20 @@ pub(super) enum Regated {
 }
 
 fn turn(claim: Option<TurnClaim>, stored: Option<Task>, regated: Regated) -> Claimed {
+    turn_read_at(claim, stored, regated, None)
+}
+
+fn turn_read_at(
+    claim: Option<TurnClaim>,
+    stored: Option<Task>,
+    regated: Regated,
+    read_at: Option<u64>,
+) -> Claimed {
     Claimed::Turn(Box::new(ClaimedTurn {
         claim,
         stored,
         regated,
+        read_at,
     }))
 }
 
@@ -159,9 +173,9 @@ impl RequestHandler {
         let Some(before) = stored.as_ref().filter(|t| t.id == *task_id) else {
             return Ok(turn(Some(claim), stored, Regated::No));
         };
-        let fresh = self
+        let (fresh, read_at) = self
             .task_store
-            .get(task_id)
+            .get_with_position(task_id)
             .await?
             .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
         if fresh.status.state.is_terminal() {
@@ -177,15 +191,16 @@ impl RequestHandler {
             .as_ref()
             .is_some_and(crate::approval::ApprovalGate::has_quorum);
         if same_view(before, &fresh) && !quorum {
-            return Ok(turn(Some(claim), Some(fresh), Regated::No));
+            return Ok(turn_read_at(Some(claim), Some(fresh), Regated::No, read_at));
         }
         // The approval request the gate checks a decision against may have
         // been stored only now.
         match Box::pin(self.gate_decision(Some(&fresh), message, call_ctx, true)).await? {
-            Gated::Pass(approval) => Ok(turn(
+            Gated::Pass(approval) => Ok(turn_read_at(
                 Some(claim),
                 Some(fresh),
                 Regated::Yes(Box::new(approval)),
+                read_at,
             )),
             Gated::Waiting(task) => Ok(Claimed::Waiting(task)),
         }

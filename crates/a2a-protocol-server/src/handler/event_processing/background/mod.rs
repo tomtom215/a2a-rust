@@ -86,6 +86,7 @@ impl RequestHandler {
                         gate,
                         applied,
                         claim,
+                        saved_whole,
                     } = links;
                     // Held to this processor's last write (`handler::claims`).
                     let _claim = claim;
@@ -112,34 +113,43 @@ impl RequestHandler {
                     // state transition and push notification for the task while
                     // its stream kept delivering — so fall back to the send path's
                     // snapshot and (for a confirmed miss) re-assert the row.
-                    let last_task = match task_store.get(&task_id).await {
-                        Ok(Some(task)) => task,
-                        Ok(None) => {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "background processor: task missing at start; \
-                                 re-asserting from the send-path snapshot"
-                            );
-                            if let Err(e) = task_store.save(&initial_task).await {
-                                trace_error!(
+                    // A task the send saved whole (`ProcessorLinks::saved_whole`)
+                    // is the row as stored, so it is not read back: that read
+                    // was a round trip to learn nothing. If the row is evicted
+                    // in the window, the first fold's write (an upsert) puts it
+                    // back from this same snapshot.
+                    let last_task = if saved_whole {
+                        initial_task
+                    } else {
+                        match task_store.get(&task_id).await {
+                            Ok(Some(task)) => task,
+                            Ok(None) => {
+                                trace_warn!(
                                     task_id = %task_id,
-                                    error = %e,
-                                    "background processor: failed to re-assert evicted task"
+                                    "background processor: task missing at start; \
+                                     re-asserting from the send-path snapshot"
                                 );
-                                metrics.on_persistence_error(
-                                    crate::metrics::persistence_operation::TASK_SNAPSHOT,
-                                    e.metric_label(),
-                                );
+                                if let Err(e) = task_store.save(&initial_task).await {
+                                    trace_error!(
+                                        task_id = %task_id,
+                                        error = %e,
+                                        "background processor: failed to re-assert evicted task"
+                                    );
+                                    metrics.on_persistence_error(
+                                        crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                                        e.metric_label(),
+                                    );
+                                }
+                                initial_task
                             }
-                            initial_task
-                        }
-                        Err(_e) => {
-                            trace_warn!(
-                                task_id = %task_id,
-                                "background processor: store read failed at start; \
-                                 continuing from the send-path snapshot"
-                            );
-                            initial_task
+                            Err(_e) => {
+                                trace_warn!(
+                                    task_id = %task_id,
+                                    "background processor: store read failed at start; \
+                                     continuing from the send-path snapshot"
+                                );
+                                initial_task
+                            }
                         }
                     };
 

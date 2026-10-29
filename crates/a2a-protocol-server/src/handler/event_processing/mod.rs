@@ -29,6 +29,9 @@ pub struct ProcessorLinks {
     /// The turn's claim, held until the processor's last write
     /// (`handler::claims`).
     pub(crate) claim: Option<std::sync::Arc<crate::handler::claims::TurnClaim>>,
+    /// The task handed to the processor is the stored row exactly, so the
+    /// processor starts from it without reading the row back.
+    pub(crate) saved_whole: bool,
 }
 
 /// Returns `true` if appending `new_parts` more parts to an artifact that

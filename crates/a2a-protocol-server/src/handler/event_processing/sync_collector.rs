@@ -197,7 +197,7 @@ impl SyncCollector {
         task_id: TaskId,
         executor: &mut crate::handler::messaging::WatchedExecutor,
     ) -> ServerResult<Collected> {
-        let mut state = self.collect_state(&task_id).await?;
+        let mut state = self.collect_state(&task_id, None).await?;
         let mut executor_done = false;
         self.run(
             &mut events,
@@ -223,14 +223,18 @@ impl SyncCollector {
     /// a blocking send answered: every event after the interrupted state
     /// failed with "no active receivers", and the stored task stayed at
     /// `AUTH_REQUIRED` for good.
+    ///
+    /// `stored` is the task as stored, when the caller holds it exactly (a
+    /// task the send created and saved whole); without it, it is read.
     pub(crate) async fn collect_then_follow(
         &self,
         mut events: CollectedEvents,
         task_id: TaskId,
+        stored: Option<Task>,
         executor: &mut crate::handler::messaging::WatchedExecutor,
         answer: tokio::sync::oneshot::Sender<ServerResult<Collected>>,
     ) {
-        let mut state = match self.collect_state(&task_id).await {
+        let mut state = match self.collect_state(&task_id, stored).await {
             Ok(state) => state,
             Err(e) => {
                 let _ = answer.send(Err(e));
@@ -278,14 +282,23 @@ impl SyncCollector {
         self.spawn_push_delivery(task_id, std::mem::take(&mut state.push_events));
     }
 
-    /// The task as stored, to fold events into.
-    async fn collect_state(&self, task_id: &TaskId) -> ServerResult<CollectState> {
-        Ok(CollectState {
-            task: self
+    /// The task as stored, to fold events into: `stored` when the caller
+    /// holds it exactly, which saves reading back the row it just wrote.
+    async fn collect_state(
+        &self,
+        task_id: &TaskId,
+        stored: Option<Task>,
+    ) -> ServerResult<CollectState> {
+        let task = match stored {
+            Some(task) => task,
+            None => self
                 .task_store
                 .get(task_id)
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?,
+        };
+        Ok(CollectState {
+            task,
             first_message: None,
             saw_task_shaped_event: false,
             push_events: Vec::new(),

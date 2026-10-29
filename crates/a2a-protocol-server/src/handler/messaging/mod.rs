@@ -244,7 +244,7 @@ impl RequestHandler {
         call_ctx: &CallContext,
         content_check: crate::request_context::ContentCheck,
     ) -> ServerResult<Committed> {
-        let context_id = self.resolve_context_id(&params.message).await?;
+        let (context_id, minted) = self.resolve_context_id(&params.message).await?;
 
         // The per-context lock serializes the find + save sequence for one
         // context_id, so two concurrent sends cannot both create a new task
@@ -254,7 +254,16 @@ impl RequestHandler {
         // is done (see `commit_guard`).
         let context_guard = context_lock.lock_owned().await;
 
-        let stored_task = self.find_task_by_context(&context_id).await?;
+        // A context minted for this send holds no task, so it is not looked
+        // up: on PostgreSQL that lookup was two statements, each a round trip
+        // to the database, on every send that started a conversation.
+        let stored_task = if minted {
+            None
+        } else if let Some(named) = &params.message.task_id {
+            self.find_named_task(&context_id, named).await?
+        } else {
+            self.find_task_by_context(&context_id).await?
+        };
         let resolution = self
             .resolve_task_id(&params.message, stored_task.as_ref())
             .await?;
@@ -311,7 +320,7 @@ impl RequestHandler {
         if let Regated::Yes(regated) = turn.regated {
             approval = *regated;
         }
-        let (claim, stored_task) = (turn.claim, turn.stored);
+        let (claim, stored_task, claim_read_at) = (turn.claim, turn.stored, turn.read_at);
         // Released on drop until the commit returns (N26): see `commit_guard`.
         let mut guard = commit_guard::CommitGuard::new(
             task_id.clone(),
@@ -353,6 +362,12 @@ impl RequestHandler {
             );
             // The same decision `build_initial_task` makes.
             let continues = create::continues(&task_id, stored_task.as_ref());
+            // The read taken under the claim, which the lease would otherwise
+            // take again (`claimed`).
+            let known = claim_read_at
+                .filter(|_| continues)
+                .zip(stored_task.clone())
+                .map(|(position, task)| basis::LeaseRead::new(task, position));
             let mut ctx = create::build_request_context(
                 params.message,
                 task_id.clone(),
@@ -375,8 +390,9 @@ impl RequestHandler {
 
             // From here on there is something to release on failure: the queue
             // first, then the token, then the row.
-            let (writer, reader, persistence_rx, lease_read) =
-                self.lease_event_queue(&task_id, use_background).await?;
+            let (writer, reader, persistence_rx, lease_read) = self
+                .lease_event_queue(&task_id, use_background, !continues, known)
+                .await?;
             writer.bind_identity(
                 task_id.clone(),
                 a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
@@ -409,10 +425,11 @@ impl RequestHandler {
             // A continuation's inline push config is registered here, before
             // its turn is saved; a new task's below (see `save_turn`).
             // Saved as the lease read it, at that read's position (`basis`).
-            let (task, read_at) = basis::based_on(task, lease_read, continues);
+            let (task, read_at, whole) =
+                basis::based_on(task, lease_read, continues, claim.is_some());
             writer.bind_state(task.status.state, continues);
             let config = params.configuration.as_ref();
-            Box::pin(self.save_turn(&task, read_at, config, continues)).await?;
+            Box::pin(self.save_turn(&task, read_at, config, continues, whole)).await?;
             if !continues {
                 guard_ref.created_row();
             }
@@ -470,6 +487,7 @@ impl RequestHandler {
                 cancel,
                 gate,
                 claim,
+                saved_whole: whole,
             })
         })
         .await;

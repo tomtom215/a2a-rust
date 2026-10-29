@@ -60,23 +60,27 @@ impl RequestHandler {
     /// SPEC §3.4.3: "Agents MUST infer contextId from the task if only taskId
     /// is provided" — so a taskId-only continuation looks up the referenced
     /// task's context instead of being rejected. A message with neither id
-    /// starts a fresh context.
+    /// starts a fresh context, and the `bool` says so: no task can be in a
+    /// context minted here, so the caller need not look for one.
     ///
     /// # Errors
     ///
     /// [`ServerError::TaskNotFound`] when only a `taskId` was supplied and no
     /// such task exists (SPEC §3.4.2: a client-supplied taskId MUST reference
     /// an existing task).
-    pub(super) async fn resolve_context_id(&self, message: &Message) -> ServerResult<String> {
+    pub(super) async fn resolve_context_id(
+        &self,
+        message: &Message,
+    ) -> ServerResult<(String, bool)> {
         if let Some(ref ctx) = message.context_id {
-            Ok(ctx.0.clone())
+            Ok((ctx.0.clone(), false))
         } else if let Some(ref msg_task_id) = message.task_id {
             match self.task_store.get(msg_task_id).await? {
-                Some(task) => Ok(task.context_id.0),
+                Some(task) => Ok((task.context_id.0, false)),
                 None => Err(ServerError::TaskNotFound(msg_task_id.clone())),
             }
         } else {
-            Ok(uuid::Uuid::new_v4().to_string())
+            Ok((uuid::Uuid::new_v4().to_string(), true))
         }
     }
 
