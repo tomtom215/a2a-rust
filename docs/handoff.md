@@ -37,7 +37,11 @@ only: when something here is done, delete it rather than annotating it.
     (`ghcr.io/ggml-org/llama.cpp:server`, commit `7aca0d2ea`) with Qwen3.5-2B
     Q4_K_M (SHA-256 `aaf42c8b…9223`): all exit 0, after fixing four that sent
     no token cap (a reasoning model ran past every timeout). `live-model` 10
-    of 10 with Qwen3.5-2B and with Gemma 4 E2B Q4_0 (`8e30dff3…6a52`).
+    of 10 with Qwen3.5-2B and with Gemma 4 E2B Q4_0 (`8e30dff3…6a52`);
+    `tool-loop-agent`, `genai-agent`, `rig-agent`, `mcp-agent` and
+    `incident-response` also on Gemma 4 E2B, each exit 0 with its model leg
+    exercised. The examples print the model name they ask for, not the one
+    llama-server serves (it serves its one model whatever the name).
   - **Observability out of the box**: `deploy/observability/docker-compose.yml`
     (Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
     13.2.4); `check_dashboards.py` ok through it (21 rules, 45 panel queries,
