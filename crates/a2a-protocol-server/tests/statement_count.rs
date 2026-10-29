@@ -68,6 +68,12 @@ struct Counter {
 
 /// Forwards client bytes to the server, counting the round trips that run a
 /// statement once the startup exchange is over.
+///
+/// Each chunk is counted before it is forwarded, so the database never runs
+/// a statement the count has not seen. Counted after, a window could close
+/// first: the test saw the claim released and read the count while the
+/// release was still uncounted, (8, 10) in one round of a mutation job, and
+/// a 5 ms pause between forwarding and counting gave 5 to 14 for either.
 async fn client_to_server(
     mut client: tokio::net::tcp::OwnedReadHalf,
     mut server: tokio::net::tcp::OwnedWriteHalf,
@@ -82,9 +88,6 @@ async fn client_to_server(
             Ok(0) | Err(_) => return,
             Ok(n) => n,
         };
-        if server.write_all(&chunk[..n]).await.is_err() {
-            return;
-        }
         buf.extend_from_slice(&chunk[..n]);
         loop {
             // Startup and SSLRequest have no type byte: a length, then a code.
@@ -122,6 +125,9 @@ async fn client_to_server(
                 started = code != 80_877_103;
             }
             buf.drain(..at + len);
+        }
+        if server.write_all(&chunk[..n]).await.is_err() {
+            return;
         }
     }
 }
