@@ -158,4 +158,37 @@ mod tests {
             assert!(!connection_lost(&e), "{e}");
         }
     }
+
+    #[derive(Default)]
+    struct Retries(std::sync::atomic::AtomicUsize);
+    impl crate::metrics::Metrics for Retries {
+        fn on_store_retry(&self, _operation: &str, _cause: &str) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// Runs `retry` over a statement that fails once with `first`, then
+    /// succeeds: how many times it ran, and how many retries were reported.
+    async fn runs_after(first: sqlx::Error) -> (usize, usize) {
+        let metrics = Retries::default();
+        let mut first = Some(first);
+        let mut runs = 0;
+        let _ = retry(&metrics, || {
+            runs += 1;
+            let outcome = first.take().map_or(Ok(()), Err);
+            async move { outcome }
+        })
+        .await;
+        (runs, metrics.0.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// Only a lost connection runs the statement again: a statement that
+    /// failed on a live one would fail again, or worse, have taken effect.
+    #[tokio::test]
+    async fn only_a_lost_connection_runs_the_statement_again() {
+        let lost = sqlx::Error::Io(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        assert_eq!(runs_after(lost).await, (2, 1));
+        assert_eq!(runs_after(sqlx::Error::RowNotFound).await, (1, 0));
+        assert_eq!(runs_after(sqlx::Error::PoolTimedOut).await, (1, 0));
+    }
 }
