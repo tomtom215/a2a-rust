@@ -104,6 +104,10 @@ pub trait TurnClaimStore: Send + Sync + 'static {
     /// Claims the task for one turn: inserts the claim, or takes over one
     /// whose time to live has passed. `true` when this call holds it now,
     /// `false` when a live claim is held by any turn, this owner's included.
+    /// A store that may run the claim a second time for one call, as the
+    /// PostgreSQL store does when the first run lost its connection, answers
+    /// `true` when the claim already carries `token`: that claim is this
+    /// call's, taken by the run whose answer was lost.
     ///
     /// # Errors
     ///

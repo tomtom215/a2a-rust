@@ -103,7 +103,11 @@ impl<'a> Processor<'a> {
             return;
         }
         self.last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-        if let Err(e) = self.deps.task_store.save(&self.last_task).await {
+        let task = &self.last_task;
+        let saved = super::super::persisting(self.deps.limits.store_write_retry, || {
+            self.deps.task_store.save(task)
+        });
+        if let Err(e) = saved.await {
             if let Some(conflict) = TerminalStateConflict::from_error(&e) {
                 self.supersede(&conflict, None, false).await;
                 return;
@@ -147,13 +151,7 @@ impl<'a> Processor<'a> {
         // log holds the verdict; everything else is recorded first, as it
         // always was (see `record_event`).
         if terminal.is_none() {
-            record_event(
-                self.deps.task_store,
-                self.task_id,
-                &event,
-                self.deps.metrics,
-            )
-            .await;
+            self.log(&event).await;
         }
         let pushes_terminal = matches!(&terminal, Some(StreamResponse::StatusUpdate(_)));
 
@@ -286,14 +284,20 @@ impl<'a> Processor<'a> {
     /// Records `event` in the log at `seq`.
     async fn record(&self, seq: Option<u64>, event: StreamResponse) {
         if let Some(seq) = seq {
-            record_event(
-                self.deps.task_store,
-                self.task_id,
-                &Ok(StreamEvent::at(seq, event)),
-                self.deps.metrics,
-            )
-            .await;
+            self.log(&Ok(StreamEvent::at(seq, event))).await;
         }
+    }
+
+    /// Records `event` in the log at the position it carries, if any.
+    async fn log(&self, event: &A2aResult<StreamEvent>) {
+        record_event(
+            self.deps.task_store,
+            self.task_id,
+            event,
+            self.deps.metrics,
+            self.deps.limits.store_write_retry,
+        )
+        .await;
     }
 }
 

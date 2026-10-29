@@ -59,8 +59,10 @@ fn is_transient(db: Db, e: &sqlx::Error) -> bool {
 ///   be retried; a lock not available in time (`55P03`); insufficient
 ///   resources (`53000`), out of memory (`53200`) and too many connections
 ///   (`53300`); a server shutting down (`57P01`, `57P02`) or starting up
-///   (`57P03`). A full disk (`53100`) and a configured limit (`53400`) wait
-///   for an operator, so they stay internal.
+///   (`57P03`); a session ended for idling (`57P05`); a statement cancelled,
+///   by `statement_timeout` or a cancel request (`57014`), which rolls it
+///   back. A full disk (`53100`) and a configured limit (`53400`) wait for an
+///   operator, so they stay internal.
 fn transient_code(db: Db, code: &str) -> bool {
     match db {
         #[cfg(feature = "sqlite")]
@@ -81,6 +83,8 @@ fn transient_code(db: Db, code: &str) -> bool {
                         | "57P01"
                         | "57P02"
                         | "57P03"
+                        | "57P05"
+                        | "57014"
                 )
         }
     }
@@ -120,9 +124,9 @@ mod tests {
     const SQLITE_NOT_NOW: [&str; 7] = ["5", "261", "517", "773", "6", "262", "518"];
 
     #[cfg(feature = "postgres")]
-    const POSTGRES_NOT_NOW: [&str; 13] = [
+    const POSTGRES_NOT_NOW: [&str; 15] = [
         "08000", "08003", "08006", "08P01", "40001", "40P01", "55P03", "53000", "53200", "53300",
-        "57P01", "57P02", "57P03",
+        "57P01", "57P02", "57P03", "57P05", "57014",
     ];
 
     /// With both databases, each list is read as the other's codes too:

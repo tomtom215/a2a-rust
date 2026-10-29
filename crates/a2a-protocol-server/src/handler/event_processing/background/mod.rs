@@ -212,10 +212,15 @@ impl RequestHandler {
 /// event that was never recorded is exactly the situation issue #130 left no
 /// way to detect.
 ///
-/// A failed append is logged and counted, never fatal. The log is a record of
-/// the run, not a precondition for it: refusing to continue would turn a
-/// storage hiccup into a failed task, which is worse than a gap in the
-/// history — and the gap is visible, because the sequence skips a position.
+/// An append the store answers is unavailable for now runs again, for up to
+/// `retry` ([`HandlerLimits::store_write_retry`]), and the events after it
+/// wait. One that still fails is logged and counted, never fatal. The log
+/// is a record of the run, not a precondition for it: refusing to continue
+/// would turn a storage outage into a failed task, which is worse than a gap
+/// in the history — and the gap is visible, because the sequence skips a
+/// position.
+///
+/// [`HandlerLimits::store_write_retry`]: crate::handler::HandlerLimits::store_write_retry
 ///
 /// The position is not chosen here. It was assigned by
 /// [`InMemoryQueueWriter::write`](crate::streaming::InMemoryQueueWriter) and
@@ -228,6 +233,7 @@ pub(in crate::handler::event_processing) async fn record_event(
     task_id: &a2a_protocol_types::task::TaskId,
     event: &a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
     metrics: &dyn crate::metrics::Metrics,
+    retry: std::time::Duration,
 ) {
     if !task_store.supports_event_log() {
         return;
@@ -243,7 +249,10 @@ pub(in crate::handler::event_processing) async fn record_event(
         // the agent emitted, so neither belongs in the record of what it did.
         return;
     };
-    if let Err(e) = task_store.append_event(task_id, seq, &event.event).await {
+    let appended = super::persisting(retry, || {
+        task_store.append_event(task_id, seq, &event.event)
+    });
+    if let Err(e) = appended.await {
         trace_warn!(
             task_id = %task_id,
             seq = seq,

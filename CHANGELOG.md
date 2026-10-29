@@ -25,6 +25,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`HandlerLimits::store_write_retry`** (server; default 30 s): how long a
+  turn's event consumer goes on writing one event while the task store
+  answers that it is unavailable for now (*Fixed*).
 - **Turn claims: one replica at a time per task** (server; `store::claim`).
   The PostgreSQL and SQLite stores, plain and tenant-aware, keep a table,
   `a2a_task_claims`, beside their tasks, and the handler takes a row in it
@@ -102,6 +105,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A PostgreSQL statement timeout or cancel (`57014`) and an idle-session
+  timeout (`57P05`) are now temporary failures** (server): HTTP `503`, gRPC
+  `UNAVAILABLE`, where they were internal errors (`500`, `INTERNAL`). Both
+  end the statement without applying it, so the same request may succeed
+  again.
+- **The PostgreSQL task stores' own pools no longer ping a connection before
+  every statement** (server; `PostgresTaskStore::new`/`with_migrations`,
+  `TenantAwarePostgresTaskStore::new`). They ping one idle for a second or
+  more; a statement that finds its connection gone (`57P01`, `57P02`,
+  `57P05`, class `08`, or the socket) runs once more on a connection pinged
+  first, if a second run leaves the database as one would, and every other
+  statement is pinged first as before. A pool passed to `from_pool` keeps its
+  own settings. `a2a_claim_turn` answers `'claimed'` to a call whose own
+  claim already carries its token, which is what such a second run is.
 - **A send to a task another replica is running now waits, then is refused**
   (server, with the PostgreSQL or SQLite stores). It used to be admitted, and
   both replicas ran the task. Each turn now costs two more statements against
@@ -130,6 +147,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A turn's event was lost when one write of it to the task store failed**
+  (server): the event consumer logged the failure and went on, and the
+  event was in neither the log nor the task. Under a 200 ms
+  `statement_timeout`, another session holding the task row for 2 s lost
+  three artifact parts from the task and four positions from the log (3
+  live runs of 3); now each write is made again while the store says "not
+  now", for up to `store_write_retry`, and none is lost (3 of 3).
+  `tests/transient_store_errors.rs` holds the row the same way, and ends
+  every backend mid-turn.
 - **A send made 45 round trips to PostgreSQL**, counting its read back, and
   on a slow link those dominated. A new task's send and read now make 24 (8
   statements), a continuation's 33 (11): a context the send minted is not
@@ -196,6 +222,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Internal
 
+- `otel_pipeline_default_endpoint` asserted that the final flush failed
+  against the default endpoint, so it failed wherever a collector listened on
+  `localhost:4317`; it now runs in a child whose `OTEL_EXPORTER_OTLP_ENDPOINT`
+  names a stand-in collector, and asserts the export arrives there.
+  `swarm_scale` kept its turn shape in two statics shared by tests running at
+  once, so one test's 1,024-event turns overran another's replay; the shape
+  now belongs to each deployment.
 - **CI runs the test matrix under cargo-nextest** (`--profile ci`: each test
   in its own process, a hung test killed and named at two minutes, no
   retries, a JUnit report uploaded), with the doctests, which nextest does not

@@ -34,6 +34,40 @@ pub struct ProcessorLinks {
     pub(crate) saved_whole: bool,
 }
 
+/// Runs `write`, one of a turn's store writes, again while it fails with an
+/// error that says "not now" ([`A2aError::is_unavailable`]): after 50 ms,
+/// then twice as long each time up to 1 s, while `retry` has not passed. Any
+/// other outcome is returned at once. See
+/// [`HandlerLimits::store_write_retry`](crate::handler::HandlerLimits::store_write_retry),
+/// which also says why a write run twice is safe here.
+///
+/// [`A2aError::is_unavailable`]: a2a_protocol_types::error::A2aError::is_unavailable
+pub async fn persisting<T, F, Fut>(
+    retry: std::time::Duration,
+    mut write: F,
+) -> a2a_protocol_types::error::A2aResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = a2a_protocol_types::error::A2aResult<T>>,
+{
+    let deadline = tokio::time::Instant::now() + retry;
+    let mut wait = std::time::Duration::from_millis(50);
+    loop {
+        match write().await {
+            Err(e) if e.is_unavailable() && tokio::time::Instant::now() + wait <= deadline => {
+                trace_warn!(
+                    error = %e,
+                    retry_in_ms = wait.as_millis(),
+                    "task store unavailable; writing the event again"
+                );
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(std::time::Duration::from_secs(1));
+            }
+            done => return done,
+        }
+    }
+}
+
 /// Returns `true` if appending `new_parts` more parts to an artifact that
 /// already holds `existing_parts` would push it past `max` — the per-artifact
 /// parts cap.
@@ -122,6 +156,9 @@ mod merge_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod persisting_tests;
 
 #[cfg(test)]
 mod cap_tests {

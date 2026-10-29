@@ -144,6 +144,10 @@ LANGUAGE plpgsql AS $fn$
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtextextended('a2a.turn:' || p_task, 0));
     IF EXISTS (SELECT 1 FROM a2a_task_claims
+               WHERE scope = p_scope AND task_id = p_task AND token = p_token) THEN
+        RETURN 'claimed';
+    END IF;
+    IF EXISTS (SELECT 1 FROM a2a_task_claims
                WHERE scope = 'a2a.legacy' AND task_id = p_task AND expires_at >= now()) THEN
         RETURN 'legacy';
     END IF;
@@ -166,6 +170,11 @@ $fn$"
 /// release's write holds the task; otherwise inserts, or takes over a claim
 /// whose time to live has passed. `'claimed'`, `'held'` (by a replica of this
 /// release) or `'legacy'`.
+///
+/// `'claimed'` too when the claim already carries `p_token`: the caller's own
+/// claim, taken by a run of this call whose answer was lost with its
+/// connection. A second run is how `pg_retry` recovers from that, and
+/// answered `'held'` it would leave the turn waiting on itself.
 pub const CLAIM_FUNCTION_SQL: &str = claim_function!();
 
 /// The two triggers on `$table`, whose task id is in `$id`; `$kind` is

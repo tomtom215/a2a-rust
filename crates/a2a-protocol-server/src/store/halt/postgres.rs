@@ -86,7 +86,9 @@ impl PostgresHaltStore {
         query: sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments>,
         what: &str,
     ) -> A2aResult<u64> {
-        let mut tx = self.pool.begin().await.map_err(|e| failed(what, &e))?;
+        let mut tx = crate::store::pg_retry::retry(|| self.pool.begin())
+            .await
+            .map_err(|e| failed(what, &e))?;
         let done = query
             .execute(&mut *tx)
             .await
@@ -165,11 +167,12 @@ fn failed(what: &str, e: &sqlx::Error) -> A2aError {
 impl HaltStore for PostgresHaltStore {
     fn load(&self) -> Pin<Box<dyn Future<Output = A2aResult<Vec<StoredHalt>>> + Send + '_>> {
         Box::pin(async move {
-            let rows: Vec<(String, String, String, i64)> =
+            let rows: Vec<(String, String, String, i64)> = crate::store::pg_retry::retry(|| {
                 sqlx::query_as("SELECT scope, reason, halted_by, halted_at FROM a2a_halts")
                     .fetch_all(&self.pool)
-                    .await
-                    .map_err(|e| failed("load", &e))?;
+            })
+            .await
+            .map_err(|e| failed("load", &e))?;
             rows.into_iter()
                 .map(|(key, reason, by, at)| from_row(&key, reason, by, at))
                 .collect()
@@ -213,12 +216,14 @@ impl HaltStore for PostgresHaltStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let payload = serde_json::json!({ "tenant": tenant, "task": task }).to_string();
-            sqlx::query("SELECT pg_notify($1, $2)")
-                .bind(CANCELS_CHANNEL)
-                .bind(payload)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| failed("publish cancel", &e))?;
+            crate::store::pg_retry::retry(|| {
+                sqlx::query("SELECT pg_notify($1, $2)")
+                    .bind(CANCELS_CHANNEL)
+                    .bind(&payload)
+                    .execute(&self.pool)
+            })
+            .await
+            .map_err(|e| failed("publish cancel", &e))?;
             Ok(())
         })
     }

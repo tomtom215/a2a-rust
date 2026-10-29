@@ -247,6 +247,25 @@ pub struct HandlerLimits {
     /// sent rather than an older one. A send stream's snapshot carries the
     /// history its request asked for, as the stream's first `Task` does.
     pub final_task_snapshot: bool,
+    /// How long a turn's event consumer goes on writing one event to the
+    /// task store while the store answers that it is unavailable for now
+    /// (`A2aError::is_unavailable`: a lost connection, a database restarting,
+    /// a lock or statement timeout). Default: 30 seconds.
+    ///
+    /// Each write, to the event log or the task, runs again after 50 ms, then
+    /// twice as long each time up to 1 s, until it succeeds, fails any other
+    /// way, or this has passed; the events after it wait meanwhile, so the
+    /// log keeps their order. Until 2026-10-28 one failed write lost its
+    /// event: logged and counted, absent from the log and the task. An
+    /// outage longer than this still loses the event it was writing, so set
+    /// it past the longest failover the database is expected to take.
+    ///
+    /// Every write the consumer makes leaves the store as one would when
+    /// made again (an upsert, a compare-and-set, an append keyed by
+    /// position), so a write that applied before its answer was lost is not
+    /// applied twice. A custom store must keep that true of its own writes.
+    /// Zero writes each once.
+    pub store_write_retry: Duration,
 }
 
 impl Default for HandlerLimits {
@@ -269,6 +288,7 @@ impl Default for HandlerLimits {
             subscribe_replay_limit: 1_000,
             subscribe_replay_catchup: Duration::from_secs(2),
             final_task_snapshot: false,
+            store_write_retry: Duration::from_secs(30),
         }
     }
 }
@@ -359,6 +379,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_final_task_snapshot(mut self, on: bool) -> Self {
         self.final_task_snapshot = on;
+        self
+    }
+
+    /// Sets how long one event's store write is retried while the store is
+    /// unavailable; see [`store_write_retry`](Self::store_write_retry).
+    #[must_use]
+    pub const fn with_store_write_retry(mut self, retry: Duration) -> Self {
+        self.store_write_retry = retry;
         self
     }
 

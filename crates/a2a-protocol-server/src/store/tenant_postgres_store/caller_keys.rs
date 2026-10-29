@@ -25,7 +25,7 @@ impl TenantAwarePostgresTaskStore {
         &self,
         map: impl Fn(&str) -> Option<String>,
     ) -> Result<CallerKeyMigration, sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = crate::store::pg_retry::retry(|| self.pool.begin()).await?;
         let partitions: Vec<(String,)> = sqlx::query_as(
             "SELECT tenant_id FROM tenant_tasks UNION SELECT tenant_id FROM tenant_idempotency_keys",
         )
@@ -87,7 +87,7 @@ impl TenantAwarePostgresTaskStore {
     ///
     /// A database error; nothing is removed then.
     pub async fn erase_caller(&self, caller: &str) -> Result<CallerErasure, sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = crate::store::pg_retry::retry(|| self.pool.begin()).await?;
         let partitions: Vec<(String,)> = sqlx::query_as(
             "SELECT tenant_id FROM tenant_tasks UNION SELECT tenant_id FROM tenant_idempotency_keys
              UNION SELECT tenant_id FROM tenant_task_events",

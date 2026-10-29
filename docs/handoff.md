@@ -594,23 +594,21 @@ None of this is in `ROADMAP.md`. Each line names where its evidence is.
   guard should still hold, since its mark (`set_config(…, true)`) and its
   advisory locks last one transaction, which such a pooler keeps on one
   server connection; that is reasoned, not run. A send and a read
-  now make 24 round trips (new task) or 33 (continuation), down from 45
-  (CHANGELOG *Fixed*); of the rest, 16 and 22 are sqlx's pings, one before
-  and one after each statement. Do not drop the ping before (sqlx's
-  `test_before_acquire`) to save them: tried 2026-10-28, a backend terminated
-  mid-turn (`pg_terminate_backend`) then lost one event, from log and task,
-  in 3 runs of 3. That exposed an older weakness, severity medium: a
-  processor whose event append fails on a store error drops that event and
-  goes on, so any failed write (a dead connection, a statement timeout) loses
-  it silently; the ping hides the commonest cause, not all. A retry of the
-  append, or of writes that provably never ran (SQLSTATE `57P01`, `57P05`),
-  would cover it and let the ping go; neither is built. The script was
-  `scratchpad/py/terminate_live.py`, not committed. Also unrelated and
-  measured flaky before this branch's last change as after: the ignored
-  `swarm_scale` experiment `fan_out::a_tail_can_recover_what_it_missed`
-  (replay of 0 positions in 1 of 2 runs of its binary on 18e2b80c), and
-  `otel_pipeline_default_endpoint` fails whenever a collector listens on
-  `localhost:4317`, as one did here.
+  now make 19 round trips (new task) or 25 (continuation), down from 45
+  (CHANGELOG *Fixed*): 8 and 11 statements, the ping sqlx makes as each
+  connection returns to the pool, and a ping before a connection idle a
+  second or more (`store::pg_retry`, whose module docs say why each kind of
+  statement may run twice). Nothing but review keeps a new statement on the
+  task stores' pools inside `pg_retry::retry` or `checked`: one left out
+  works until its connection dies, then fails where it used to be pinged
+  first. A mechanical check would have to tell a statement's closure from
+  the statements around it; none is written. A turn's event writes are
+  retried while the store is unavailable, up to `store_write_retry`; during
+  an outage sqlx itself waits in `acquire` (30 s by default) before any
+  statement fails, so that retry is what covers statement-level failures (a
+  timeout, a lock, a deadlock) and outages past the acquire timeout. The
+  live scripts were `scratchpad/py/{terminate,lock,restart}_live.py`, not
+  committed; `tests/transient_store_errors.rs` holds two of them.
   `.config/nextest.toml`'s default profile (the mutation gate's) kills at
   45 s, and four tests now take 30 to 31 s by design; its rationale still
   says the slowest test takes 5 s. From the review, left as

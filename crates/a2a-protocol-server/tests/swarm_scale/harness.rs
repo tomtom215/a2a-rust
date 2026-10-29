@@ -46,14 +46,9 @@ pub type Client = hyper_util::client::legacy::Client<
     Full<Bytes>,
 >;
 
-/// The shape of every turn one deployment's executor runs.
-///
-/// One per [`Deployment`], not process-wide: the tests of this binary run
-/// at once, and when this was a pair of statics one test's burst shape
-/// (1,024 events a turn) reached `fan_out::a_tail_can_recover_what_it_missed`,
-/// whose 40 posts then overran the in-memory log's 512 events, so its replay
-/// from position 0 was answered with the snapshot alone (correctly) and the
-/// test failed in 4 runs of the binary out of 4.
+/// The shape of every turn one deployment's executor runs: one per
+/// [`Deployment`], because this binary's tests run at once. As two statics,
+/// one test's 1,024-event turns overran another's replay from position 0.
 #[derive(Debug)]
 pub struct TurnShape {
     /// How long a turn holds its event queue open, in milliseconds.

@@ -63,13 +63,15 @@ pub async fn purge(
             break;
         }
         // `table` is `&'static str`; the cut-off and batch are binds.
-        let deleted = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(&labels)
-            .bind(&interval)
-            .bind(batch)
-            .execute(pool)
-            .await?
-            .rows_affected();
+        let deleted = crate::store::pg_retry::retry(|| {
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .bind(&labels)
+                .bind(&interval)
+                .bind(batch)
+                .execute(pool)
+        })
+        .await?
+        .rows_affected();
         if deleted == 0 {
             report.complete = true;
             break;
@@ -85,12 +87,14 @@ pub async fn purge(
                 report.complete = false;
                 return Ok(report);
             }
-            let deleted = sqlx::query(key_sweep)
-                .bind(&key_interval)
-                .bind(batch)
-                .execute(pool)
-                .await?
-                .rows_affected();
+            let deleted = crate::store::pg_retry::retry(|| {
+                sqlx::query(key_sweep)
+                    .bind(&key_interval)
+                    .bind(batch)
+                    .execute(pool)
+            })
+            .await?
+            .rows_affected();
             if deleted == 0 {
                 break;
             }

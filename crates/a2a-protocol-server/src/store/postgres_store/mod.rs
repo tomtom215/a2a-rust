@@ -25,7 +25,6 @@ pub(crate) mod pool;
 mod store_impl;
 
 use a2a_protocol_types::error::A2aResult;
-use pool::pg_pool;
 pub(in crate::store) use pool::to_a2a_error;
 use sqlx::postgres::PgPool;
 
@@ -97,7 +96,7 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or the schema migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pg_pool(url).await?;
+        let pool = pool::task_store_pool(url).await?;
         Self::from_pool(pool).await
     }
 
@@ -111,7 +110,7 @@ impl PostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or any migration fails.
     pub async fn with_migrations(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = pg_pool(url).await?;
+        let pool = pool::task_store_pool(url).await?;
 
         let runner = super::pg_migration::PgMigrationRunner::new(pool.clone());
         runner.run_pending().await?;

@@ -30,7 +30,7 @@
 //! row-value cursor carrying a UTC-normalized microsecond timestamp.
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::postgres::PgPool;
 
 #[allow(unused_imports)] // both referenced by intra-doc links only
 use super::task_store::TaskStore;
@@ -88,7 +88,7 @@ impl TenantAwarePostgresTaskStore {
     ///
     /// Returns an error if the database cannot be opened or migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = PgPoolOptions::new()
+        let pool = crate::store::pg_retry::pool_options()
             .max_connections(10)
             .connect(url)
             .await?;

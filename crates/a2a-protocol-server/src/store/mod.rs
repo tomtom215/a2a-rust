@@ -38,6 +38,8 @@ pub mod tenant_sqlite_store;
 #[cfg(feature = "postgres")]
 pub mod pg_migration;
 #[cfg(feature = "postgres")]
+pub(crate) mod pg_retry;
+#[cfg(feature = "postgres")]
 pub(crate) mod pg_schema;
 #[cfg(feature = "postgres")]
 pub mod postgres_store;
