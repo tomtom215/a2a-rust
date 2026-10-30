@@ -645,18 +645,49 @@ async fn open(endpoint: &str, config: &WebSocketTransportConfig) -> ClientResult
         // pending with no OS timeout to rescue it.
         // The connector is used only for a `wss://` request; `ws://` stays
         // plain whatever it is.
+        //
+        // Through the proxy `HTTPS_PROXY` / `HTTP_PROXY` names for this URL,
+        // as the HTTP bindings go: a `CONNECT` tunnel, the TLS and the
+        // upgrade inside it (`crate::proxy::tunnelled_tcp`).
         #[cfg(feature = "tls-rustls")]
-        let connect = tokio_tungstenite::connect_async_tls_with_config(
-            ws_request,
-            Some(ws_config),
-            true,
-            Some(tokio_tungstenite::Connector::Rustls(
-                config.tls.as_ref().map_or_else(
-                    || Arc::new(crate::tls::default_tls_config()),
-                    |tls| Arc::clone(&tls.0),
-                ),
-            )),
-        );
+        let connect = async {
+            let connector = tokio_tungstenite::Connector::Rustls(config.tls.as_ref().map_or_else(
+                || Arc::new(crate::tls::default_tls_config()),
+                |tls| Arc::clone(&tls.0),
+            ));
+            let dst: hyper::Uri = endpoint.parse().map_err(|e| {
+                tokio_tungstenite::tungstenite::Error::Url(
+                    tokio_tungstenite::tungstenite::error::UrlError::UnableToConnect(format!(
+                        "{e}"
+                    )),
+                )
+            })?;
+            match crate::proxy::tunnelled_tcp(&dst).await {
+                Some(Ok(stream)) => {
+                    // As the direct path's `disable_nagle: true`.
+                    let _ = stream.set_nodelay(true);
+                    tokio_tungstenite::client_async_tls_with_config(
+                        ws_request,
+                        stream,
+                        Some(ws_config),
+                        Some(connector),
+                    )
+                    .await
+                }
+                Some(Err(e)) => Err(tokio_tungstenite::tungstenite::Error::Io(
+                    std::io::Error::other(format!("through the proxy: {e}")),
+                )),
+                None => {
+                    tokio_tungstenite::connect_async_tls_with_config(
+                        ws_request,
+                        Some(ws_config),
+                        true,
+                        Some(connector),
+                    )
+                    .await
+                }
+            }
+        };
         #[cfg(not(feature = "tls-rustls"))]
         let connect =
             tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true);

@@ -544,6 +544,10 @@ jobs:
             short: a2a-sdk
             name: a2a-sdk
             shard: "0/1"
+          - crate: a2a-protocol-discovery
+            short: a2a-discovery
+            name: a2a-discovery
+            shard: "0/1"
     env:
       A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
@@ -1307,6 +1311,7 @@ jobs:
           - { crate: a2a-protocol-client, shard: 0, of: 2 }
           - { crate: a2a-protocol-client, shard: 1, of: 2 }
           - { crate: a2a-protocol-sdk, shard: 0, of: 1 }
+          - { crate: a2a-protocol-discovery, shard: 0, of: 1 }
           - { crate: a2a-protocol-server, shard: 0, of: 20 }
           - { crate: a2a-protocol-server, shard: 1, of: 20 }
           - { crate: a2a-protocol-server, shard: 2, of: 20 }

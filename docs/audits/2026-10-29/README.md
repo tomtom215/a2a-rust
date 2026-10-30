@@ -62,7 +62,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | ID | Severity | Finding | Status | Note |
 |---|---|---|---|---|
 | B-01 | critical | The default client bindings (JSON-RPC, HTTP+JSON) cannot trust a private CA or the system store, or present a client certificate | fixed | ClientBuilder::with_tls_config, tls_config_from_pem, SSL_CERT_FILE/SSL_CERT_DIR; tests/private_ca.rs |
-| B-02 | critical | Only OTLP export honours `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`; every other outbound path ignores them | fixed | confirmed live (main: client error (Connect) through a proxy-only path); HTTP bindings, discovery, JWKS, token provider; gRPC and WebSocket not yet |
+| B-02 | critical | Only OTLP export honours `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`; every other outbound path ignores them | fixed | confirmed live (main: client error (Connect) through a proxy-only path); HTTP bindings, discovery, JWKS, token provider; WebSocket (`ws`/`wss`) and gRPC through a CONNECT tunnel since 2026-10-30, tested through an in-process proxy and live through Squid 6 with the CLI |
 | B-03 | high | The card resolver, client JWKS fetch and token provider have no TLS option at all, so private-CA users of WebSocket and gRPC still cannot bootstrap | open | |
 | B-04 | medium | Server-side OIDC discovery cannot use a private CA, and JWKS over `http://` is accepted from any host | open | |
 | B-05 | high | Connection, DNS and TLS failures surface only as `client error (Connect)`, losing the cause | fixed | confirmed live; error chain reported; tests/private_ca.rs asserts UnknownIssuer |

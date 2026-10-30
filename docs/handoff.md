@@ -47,9 +47,7 @@ only: when something here is done, delete it rather than annotating it.
   - **Not yet run live:** Qwen3.5-4B and Gemma 4 E2B (downloaded, not
     exercised; only Qwen3.5-2B was); the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export);
-    `deploy-agent` as a container; PgBouncer since these changes; the proxy
-    support on the WebSocket and gRPC transports, which the new
-    `HTTPS_PROXY` handling does not cover.
+    `deploy-agent` as a container; PgBouncer since these changes.
   - **First, next session:** read the task list's `open` rows in the order
     above, confirm or refute each by running it, and keep the `Status`
     column true.

@@ -310,18 +310,20 @@ impl GrpcTransport {
             .tcp_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL))
             .tcp_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
         let endpoint = Self::apply_tls(endpoint, &endpoint_str, &config)?;
-        let channel = endpoint.connect().await.map_err(|e| {
-            if tls_by_policy {
-                ClientError::Transport(format!(
-                    "gRPC connect failed: {e} (`{raw}` was dialled with TLS by \
+        let channel = Self::dial(&endpoint, &endpoint_str, &config)
+            .await
+            .map_err(|e| {
+                if tls_by_policy {
+                    ClientError::Transport(format!(
+                        "gRPC connect failed: {e} (`{raw}` was dialled with TLS by \
                          {:?}; if this peer speaks plaintext, set \
                          GrpcBareAddressScheme::Http)",
-                    config.bare_address_scheme
-                ))
-            } else {
-                ClientError::Transport(format!("gRPC connect failed: {e}"))
-            }
-        })?;
+                        config.bare_address_scheme
+                    ))
+                } else {
+                    ClientError::Transport(format!("gRPC connect failed: {e}"))
+                }
+            })?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -510,6 +512,32 @@ impl GrpcTransport {
                     retry_after: Some(delay.min(std::time::Duration::from_secs(3600))),
                 },
             )
+    }
+
+    /// Connects `endpoint`: straight, or through the proxy `HTTPS_PROXY` /
+    /// `HTTP_PROXY` names for it, as a `CONNECT` tunnel with tonic's TLS and
+    /// HTTP/2 inside (`crate::proxy::grpc_tunnel`). The connection to the
+    /// proxy gets the socket options tonic's own connector would have set.
+    async fn dial(
+        endpoint: &tonic::transport::Endpoint,
+        endpoint_str: &str,
+        config: &GrpcTransportConfig,
+    ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
+        #[cfg(feature = "tls-rustls")]
+        if let Ok(dst) = endpoint_str.parse::<hyper::Uri>() {
+            let mut tcp = hyper_util::client::legacy::connect::HttpConnector::new();
+            tcp.set_nodelay(true);
+            tcp.set_connect_timeout(Some(config.connect_timeout));
+            tcp.set_keepalive(Some(super::connector::TCP_KEEPALIVE_TIME));
+            tcp.set_keepalive_interval(Some(super::connector::TCP_KEEPALIVE_INTERVAL));
+            tcp.set_keepalive_retries(Some(super::connector::TCP_KEEPALIVE_RETRIES));
+            if let Some(tunnel) = crate::proxy::grpc_tunnel(&dst, tcp) {
+                return endpoint.connect_with_connector(tunnel).await;
+            }
+        }
+        #[cfg(not(feature = "tls-rustls"))]
+        let _ = (endpoint_str, config);
+        endpoint.connect().await
     }
 
     fn status_to_error(status: &tonic::Status) -> ClientError {

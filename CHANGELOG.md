@@ -59,8 +59,14 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `Proxy-Authorization` for `http://`. Only the OTLP exporter read them
   before, so in a network whose only way out is a proxy, telemetry was
   exported and every agent call failed (audit B-02;
-  `tests/proxy_and_cert_env.rs`). The gRPC and WebSocket transports do not
-  go through it yet.
+  `tests/proxy_and_cert_env.rs`). The WebSocket and gRPC transports go
+  through the same proxy as a `CONNECT` tunnel, their TLS and handshake
+  inside it, a `ws://`/`wss://` URL matched as its `http://`/`https://`
+  equivalent (`tests/websocket_through_proxy.rs`, `ws://` and `wss://`;
+  the SDK's `tests/grpc_through_proxy.rs`; each shown failing with its part
+  reverted). Run live through Squid 6 with the CLI on both bindings
+  (`TCP_TUNNEL/200` in its access log). Without `tls-rustls` they connect
+  directly.
 - **`TaskStore::health()`** (server; provided method): what readiness asks.
   The SQL stores answer with one statement whose cost does not grow with the
   table (`SELECT pg_is_in_recovery()`, `SELECT 1`), and a PostgreSQL standby

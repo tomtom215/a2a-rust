@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:10949 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:10955 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -2953,7 +2953,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:484 rest_response_has_a2a_version_header",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1270 add_metadata_injects_a2a_version"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1298 add_metadata_injects_a2a_version"
    ],
    "notes": "A2A_VERSION = \"1.0\" used for headers and card builder; some test fixtures use \"1.0.0\" but no production path does.",
    "auditor": "B",
@@ -2991,14 +2991,14 @@
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/jsonrpc.rs:188 JsonRpcTransport::build_request",
     "crates/a2a-protocol-client/src/transport/rest/request.rs:100 RestTransport::build_request",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:458 GrpcTransport::add_metadata",
     "crates/a2a-protocol-client/src/transport/websocket.rs:590 open",
     "crates/a2a-protocol-client/src/discovery.rs:542 fetch_card_with_metadata",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:47 metadata_from",
     "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs:188 SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1270 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1298 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:239 rest_send_message_returns_completed_task",
     "crates/a2a-protocol-client/src/discovery.rs:1735 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:168 every_call_declares_the_protocol_version",
@@ -3696,7 +3696,7 @@
     "crates/a2a-protocol-server/src/error/mod.rs:229 ServerError::retry_after",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:964 with_detail_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:992 with_detail_data"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:646 bind_equiv_003",
@@ -3704,8 +3704,8 @@
     "crates/a2a-protocol-server/tests/http_query_validation.rs:77 a_malformed_query_value_is_refused_naming_its_parameter",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1454 status_to_error_keeps_a_struct_detail_as_data",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1539 status_to_error_keeps_field_violations_as_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1482 status_to_error_keeps_a_struct_detail_as_data",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1567 status_to_error_keeps_field_violations_as_data"
    ],
    "notes": "Single ErrorCode table drives HTTP status, gRPC code and JSON-RPC code. A malformed query value on HTTP+JSON is InvalidParams as on JSON-RPC and gRPC (2026-10-13); it was read as absent. A gRPC error carries its data as the JSON bindings do (2026-10-13): a BadRequest as google.rpc.BadRequest, any other data as a google.protobuf.Struct detail, and a stream's error as a unary call's. gRPC dropped data, and a stream's error was INTERNAL \"event queue error\", so a lagged stream could not be told from an executor failure; the gRPC client decodes the details back into data.",
    "auditor": "C",
@@ -4581,7 +4581,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:458 GrpcTransport::add_metadata"
    ],
    "test_evidence": [
     "crates/a2a-protocol-sdk/tests/binding_equivalence/version.rs:39 ver_client_001_every_call_on_every_binding_carries_a2a_version"
@@ -4918,7 +4918,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:351 GrpcTransport::apply_tls"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:353 GrpcTransport::apply_tls"
    ],
    "test_evidence": [
     "crates/a2a-protocol-client/tests/grpc_tls_apply_tests.rs:192 a_server_certificate_from_an_untrusted_ca_is_refused",
@@ -6532,13 +6532,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:37 validated_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:515 GrpcTransport::status_to_error"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:458 GrpcTransport::add_metadata",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:543 GrpcTransport::status_to_error"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:258 extract_metadata_ascii_keys",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1270 add_metadata_injects_a2a_version",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1285 add_metadata_injects_extra_headers",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1298 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1313 add_metadata_injects_extra_headers",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
    "notes": "Client puts a2a-version plus all interceptor headers into tonic metadata. The server copies ASCII metadata into the header map that the handler reads.",
@@ -6554,12 +6554,12 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:515 GrpcTransport::status_to_error",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:458 GrpcTransport::add_metadata",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:543 GrpcTransport::status_to_error",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1295 add_metadata_fails_closed_on_invalid_header",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1323 add_metadata_fails_closed_on_invalid_header",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:258 extract_metadata_ascii_keys",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
@@ -6576,7 +6576,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:456 GrpcTransport::add_metadata",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:458 GrpcTransport::add_metadata",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata",
     "crates/a2a-protocol-server/src/handler/helpers.rs:241 parse_extensions_header",
     "crates/a2a-protocol-client/src/extensions.rs:35 header_value"
@@ -6651,7 +6651,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:158 a2a_error_status_carries_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1558 status_to_error_prefers_error_info_reason",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1586 status_to_error_prefers_error_info_reason",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:422 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
