@@ -103,3 +103,19 @@ fn a_stream_cut_short_is_refused_and_a_bad_chunk_too() {
     .expect("a chunk");
     assert_eq!(turn.finish().expect("whole").text, "ok");
 }
+
+/// Content sent as an array of parts, as some servers do, is their text
+/// joined, piece by piece.
+#[test]
+fn content_in_parts_is_their_text() {
+    let (sink, mut rx) = sink();
+    let mut turn = Turn::default();
+    for payload in [
+        r#"{"choices":[{"index":0,"delta":{"content":[{"type":"text","text":"Check"},{"type":"text","text":"out"}]}}]}"#,
+        r#"{"choices":[{"index":0,"delta":{"content":[{"type":"text","text":" is up."}]},"finish_reason":"stop"}]}"#,
+    ] {
+        turn.data(payload, &sink).expect("a chunk");
+    }
+    assert_eq!(pieces(&mut rx), ["Checkout", " is up."]);
+    assert_eq!(turn.finish().expect("a turn").text, "Checkout is up.");
+}

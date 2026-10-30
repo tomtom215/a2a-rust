@@ -209,3 +209,18 @@ async fn a_calls_internal_error_is_withheld_from_the_caller_not_the_chain() {
     assert_eq!(recorded.len(), 1);
     assert!(recorded[0].contains("hunter2"), "{recorded:?}");
 }
+
+/// A reference is 12 lower-case hex digits, fresh each time: enough to find
+/// one line in a log, and never another error's.
+#[test]
+fn a_reference_is_twelve_fresh_hex_digits() {
+    let first = super::reference();
+    assert_eq!(first.len(), 12, "{first}");
+    assert!(
+        first
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "{first}"
+    );
+    assert_ne!(first, super::reference());
+}
