@@ -114,6 +114,34 @@ async fn a_streamed_completion_is_handed_on_as_it_arrives() {
     assert_eq!(body["stream_options"]["include_usage"], true);
 }
 
+/// A streamed answer past the response cap is refused as too large, as an
+/// unstreamed one is: the cap bounds what a turn may take, however it
+/// arrives.
+#[tokio::test]
+async fn a_streamed_answer_past_the_cap_is_refused() {
+    let (release, released) = tokio::sync::oneshot::channel();
+    release.send(()).unwrap();
+    let (base, _seen) = streaming_provider(
+        piece(&"x".repeat(400)),
+        "data: [DONE]\n\n".to_owned(),
+        released,
+    )
+    .await;
+    let model = OpenAiChatModel::new(&base, "m")
+        .unwrap()
+        .with_max_response_bytes(100);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let sink = TextSink::new(1, tx);
+    let messages = [ChatMessage::User("hi".to_owned())];
+    let turn = model
+        .complete_streaming(ChatRequest::new("", &messages, &[]), &sink)
+        .await;
+    assert!(
+        matches!(turn, Err(ModelError::ResponseTooLarge(100))),
+        "{turn:?}"
+    );
+}
+
 /// A server that ignores `"stream"` and answers whole is read whole, its
 /// text handed on in one piece.
 #[tokio::test]

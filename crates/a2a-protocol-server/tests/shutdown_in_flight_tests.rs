@@ -25,7 +25,7 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::{MessageSendParams, TaskQueryParams};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
 const GUARD: Duration = Duration::from_secs(10);
 
@@ -43,9 +43,19 @@ enum OnCancel {
 struct Agent {
     on_cancel: OnCancel,
     hook_calls: Arc<AtomicUsize>,
-    /// Whether the `cancel` hook writes `Canceled`, as the default does, or
-    /// only releases what it holds and writes nothing.
-    hook_writes: bool,
+    /// What the `cancel` hook writes.
+    hook_writes: HookWrites,
+}
+
+/// What the `cancel` hook writes when it runs.
+#[derive(Clone, Copy)]
+enum HookWrites {
+    /// Nothing: it only releases what it holds.
+    Nothing,
+    /// A `Canceled` status update, as the default hook does.
+    Status,
+    /// A whole task in state `Canceled`.
+    Snapshot,
 }
 
 fn status(ctx: &RequestContext, state: TaskState) -> StreamResponse {
@@ -84,9 +94,17 @@ impl AgentExecutor for Agent {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             self.hook_calls.fetch_add(1, Ordering::SeqCst);
-            // What the default hook does.
-            if self.hook_writes {
-                let _ = queue.write(status(ctx, TaskState::Canceled)).await;
+            let event = match self.hook_writes {
+                HookWrites::Nothing => None,
+                HookWrites::Status => Some(status(ctx, TaskState::Canceled)),
+                HookWrites::Snapshot => Some(StreamResponse::Task(Task::new(
+                    ctx.task_id.clone(),
+                    ctx.context_id.clone(),
+                    TaskStatus::with_timestamp(TaskState::Canceled),
+                ))),
+            };
+            if let Some(event) = event {
+                let _ = queue.write(event).await;
             }
             Ok(())
         })
@@ -94,10 +112,13 @@ impl AgentExecutor for Agent {
 }
 
 fn handler(on_cancel: OnCancel) -> (Arc<RequestHandler>, Arc<AtomicUsize>) {
-    handler_with(on_cancel, true)
+    handler_with(on_cancel, HookWrites::Status)
 }
 
-fn handler_with(on_cancel: OnCancel, hook_writes: bool) -> (Arc<RequestHandler>, Arc<AtomicUsize>) {
+fn handler_with(
+    on_cancel: OnCancel,
+    hook_writes: HookWrites,
+) -> (Arc<RequestHandler>, Arc<AtomicUsize>) {
     let hook_calls = Arc::new(AtomicUsize::new(0));
     let handler = RequestHandlerBuilder::new(Agent {
         on_cancel,
@@ -224,13 +245,26 @@ async fn an_executor_shutdown_stopped_runs_its_hook_and_ends_failed_transient() 
 /// after it.
 #[tokio::test]
 async fn a_hook_that_writes_nothing_still_ends_the_task_failed_transient() {
-    let (handler, hook_calls) = handler_with(OnCancel::Return, false);
+    let (handler, hook_calls) = handler_with(OnCancel::Return, HookWrites::Nothing);
     let (id, reader) = start(&handler).await;
 
     assert!(handler.cancel_in_flight(GUARD).await.finished);
 
     assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
     assert_eq!(rest_of(reader).await, [TaskState::Failed]);
+    assert_ended_by_shutdown(&handler, &id).await;
+}
+
+/// A hook that writes the whole task as `Canceled`, not a status update,
+/// has it written as the same failure.
+#[tokio::test]
+async fn a_hook_that_writes_a_canceled_snapshot_still_ends_the_task_failed_transient() {
+    let (handler, hook_calls) = handler_with(OnCancel::Return, HookWrites::Snapshot);
+    let (id, _reader) = start(&handler).await;
+
+    assert!(handler.cancel_in_flight(GUARD).await.finished);
+
+    assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
     assert_ended_by_shutdown(&handler, &id).await;
 }
 
