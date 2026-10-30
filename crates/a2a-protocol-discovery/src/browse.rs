@@ -105,3 +105,25 @@ pub async fn discover(window: Duration) -> Result<Vec<DiscoveredAgent>, Discover
     }
     Ok(seen.into_values().collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A dropped browser stops its daemon; its `Debug` says what it is.
+    #[test]
+    fn a_dropped_browser_stops_its_daemon() {
+        let browser = Browser::start().expect("browse");
+        assert!(format!("{browser:?}").starts_with("Browser"));
+        let daemon = browser.daemon.clone();
+        assert!(
+            !crate::announce::tests::stopped(&daemon),
+            "running while browsing"
+        );
+        drop(browser);
+        assert!(
+            crate::announce::tests::stopped(&daemon),
+            "stopped once dropped"
+        );
+    }
+}

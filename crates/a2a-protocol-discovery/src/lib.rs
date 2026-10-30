@@ -107,3 +107,20 @@ impl From<mdns_sd::Error> for DiscoveryError {
         Self::Mdns(e.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_discovery_error_says_which_kind_it_is() {
+        assert_eq!(
+            DiscoveryError::Mdns("no interface".into()).to_string(),
+            "mDNS: no interface"
+        );
+        assert_eq!(
+            DiscoveryError::Invalid("port 0".into()).to_string(),
+            "invalid advertisement: port 0"
+        );
+    }
+}

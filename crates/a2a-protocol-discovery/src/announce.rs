@@ -247,7 +247,7 @@ impl Drop for Announcer {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -307,5 +307,32 @@ mod tests {
         }
         assert_eq!(Scheme::parse("HTTPS"), Some(Scheme::Https));
         assert_eq!(Scheme::parse("ftp"), None);
+    }
+
+    #[test]
+    fn an_advertisement_names_its_instance() {
+        assert_eq!(Advertisement::new("echo", 8080).instance(), "echo");
+    }
+
+    /// Whether `daemon` has stopped: it answers `Shutdown`, or nothing.
+    pub(crate) fn stopped(daemon: &ServiceDaemon) -> bool {
+        let status = daemon
+            .status()
+            .ok()
+            .and_then(|r| r.recv_timeout(std::time::Duration::from_secs(2)).ok());
+        !matches!(status, Some(mdns_sd::DaemonStatus::Running))
+    }
+
+    /// Dropped without [`Announcer::shutdown`], an announcer still withdraws
+    /// and stops its daemon; its `Debug` names what it announces.
+    #[test]
+    fn a_dropped_announcer_stops_its_daemon() {
+        let name = format!("drop-{}", std::process::id());
+        let announcer = Announcer::announce(&Advertisement::new(&name, 8080)).expect("announce");
+        assert!(format!("{announcer:?}").contains(announcer.fullname()));
+        let daemon = announcer.daemon.clone();
+        assert!(!stopped(&daemon), "running while announced");
+        drop(announcer);
+        assert!(stopped(&daemon), "stopped once dropped");
     }
 }

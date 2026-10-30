@@ -135,3 +135,70 @@ async fn the_txt_record_reaches_the_browser() {
         "{urls:?}"
     );
 }
+
+/// The child half of [`shutdown_withdraws_before_the_process_exits`]: run
+/// only when that test starts this binary with `A2A_SHUTDOWN_CHILD` naming
+/// the instance. It announces, says so, waits for a line, shuts the
+/// announcer down and exits at once, as a process that stops does.
+#[test]
+fn shutdown_child() {
+    let Ok(name) = std::env::var("A2A_SHUTDOWN_CHILD") else {
+        return;
+    };
+    let announcer = Announcer::announce(&Advertisement::new(&name, 4441)).expect("announce");
+    println!("announced {}", announcer.fullname());
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).expect("a line");
+    announcer.shutdown();
+    std::process::exit(0);
+}
+
+/// `shutdown` waits for the goodbye to be sent, so a process that exits
+/// straight after it is still seen to leave. Without the wait, the exit
+/// can end the daemon's thread before it sends anything, and browsers keep
+/// the agent until its record's time to live runs out.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_withdraws_before_the_process_exits() {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+
+    let name = unique("exit");
+    let mut browser = Browser::start().expect("browse");
+    let mut child = Command::new(std::env::current_exe().expect("this binary"))
+        .args(["--exact", "shutdown_child", "--nocapture"])
+        .env("A2A_SHUTDOWN_CHILD", &name)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("the child");
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut fullname = None;
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, browser.next()).await {
+        if let DiscoveryEvent::Found(a) = &event
+            && a.instance == name
+        {
+            fullname = Some(a.fullname.clone());
+            break;
+        }
+    }
+    let fullname = fullname.unwrap_or_else(|| panic!("{name} was never found"));
+
+    child
+        .stdin
+        .take()
+        .expect("its stdin")
+        .write_all(b"go\n")
+        .expect("written");
+    assert!(child.wait().expect("it exits").success());
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    let mut lost = false;
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, browser.next()).await {
+        if event == DiscoveryEvent::Lost(fullname.clone()) {
+            lost = true;
+            break;
+        }
+    }
+    assert!(lost, "{fullname} exited without a goodbye");
+}

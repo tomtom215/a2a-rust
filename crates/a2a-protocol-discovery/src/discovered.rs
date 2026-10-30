@@ -198,4 +198,26 @@ mod tests {
             .expect_err("nothing to fetch from");
         assert!(matches!(err, ClientError::InvalidEndpoint(_)), "{err}");
     }
+
+    fn resolved(path: &str) -> mdns_sd::ResolvedService {
+        mdns_sd::ServiceInfo::new(
+            crate::SERVICE_TYPE,
+            "echo",
+            "echo-a2a.local.",
+            "192.0.2.7",
+            8080,
+            &[(txt::PATH, path)][..],
+        )
+        .expect("a service")
+        .as_resolved_service()
+    }
+
+    /// Either flaw alone refuses a card path: not absolute, or holding
+    /// whitespace. The control shows the same record is taken otherwise.
+    #[test]
+    fn a_card_path_that_is_relative_or_holds_whitespace_is_refused() {
+        assert!(DiscoveredAgent::from_resolved(&resolved("/card.json")).is_some());
+        assert!(DiscoveredAgent::from_resolved(&resolved("card.json")).is_none());
+        assert!(DiscoveredAgent::from_resolved(&resolved("/a b")).is_none());
+    }
 }
