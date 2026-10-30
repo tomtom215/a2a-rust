@@ -291,6 +291,10 @@ HAProxy 3.2, the observability stack), not by any of the eight readings.
 | L12 | info | 321 executor panics across three replicas in 200 s of traffic: every replica kept serving, each task `failed` | verified live | the probe agent is built outside the workspace with Cargo's default (unwinding) profile, so this shows the recovery A4 restores, not the workspace profile itself |
 
 
+| L13 | info | `live-model` against Qwen3.5-4B (Q4_K_M, llama.cpp b11977, 2026-10-30): 10 of 10 checks, the tool loop on all four bindings; every answer matched the tool output (degraded, 4.2.1, 1,814,400 s) | verified live | the model maps "billing" to `payments-api` on every binding, which Qwen3.5-2B did not always |
+| L14 | info | `live-model` against Gemma 4 E2B (Q4_0, same server): 10 of 10 checks; on 3 of 4 bindings it asked for a service named "billing service", was told the inventory, and answered that none exists | not a defect | model quality; the SDK carried every turn, error and retry as it should |
+| L15 | medium | The tool loop failed every task `internal` while the model provider answered `503` (`llama-server` loading Gemma for 3 min 40 s), so a client was told not to retry a failure that would pass | fixed | `LoopError::is_transient`: 429/502/503/504, timeout and transport end `transient`; tests fail with it disabled; live, an unreachable provider now ends `transient` |
+
 ## M. Found re-reading this branch's own fixes
 
 | ID | Severity | Finding | Status | Note |

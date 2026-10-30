@@ -121,7 +121,12 @@ impl AgentExecutor for ToolLoopExecutor {
                     // The whole error is the operator's; the caller gets
                     // `caller_message`, without the provider's body or URL.
                     trace_warn!(error = %e, "the run failed");
-                    emit.fail(FailureClass::Internal, e.caller_message()).await
+                    let class = if e.is_transient() {
+                        FailureClass::Transient
+                    } else {
+                        FailureClass::Internal
+                    };
+                    emit.fail(class, e.caller_message()).await
                 }
             }
         })

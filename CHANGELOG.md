@@ -268,6 +268,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **A tool-loop run whose model provider is briefly away ends failure class
+  `transient`, not `internal`** (server; `tool-loop`): HTTP 429, 502, 503
+  or 504 from the provider, no answer within the timeout, or no connection.
+  Seen live: `llama-server` answers `503` for minutes while it loads a
+  model, and every task ended `internal`, which tells a caller not to
+  retry. Any other failure stays `internal` (`tests/tool_loop/executor.rs`,
+  `tool_loop/loop_error.rs`).
 - **Shutdown no longer ends running tasks `canceled`, and no longer admits
   sends it will stop** (server; audit E-F2). Once `finish_in_flight`,
   `cancel_in_flight` or a `shutdown` method begins (so from the end of

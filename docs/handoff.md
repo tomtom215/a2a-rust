@@ -27,9 +27,9 @@ only: when something here is done, delete it rather than annotating it.
     read-only reviews (reports A to H beside it) plus findings from live runs
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
-    count it rather than trusting a figure here. At this commit, 220 rows:
-    164 `open`, 4 `confirmed (read)`, 43 `fixed`, 3 `fixed (part)`, 4
-    `verified live`, 1 refuted, 1 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
+    count it rather than trusting a figure here. At this commit, 223 rows:
+    164 `open`, 4 `confirmed (read)`, 44 `fixed`, 3 `fixed (part)`, 5
+    `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
     E-F3 (a claim held through webhook delivery), D-02 (inline push stalls
@@ -44,8 +44,9 @@ only: when something here is done, delete it rather than annotating it.
     lists); then `a2a discover` can join the CLI. Its round-trip tests need
     multicast looped back on the CI runner; they passed in this container
     and have not run in CI yet.
-  - **Not yet run live:** Qwen3.5-4B and Gemma 4 E2B (downloaded, not
-    exercised; only Qwen3.5-2B was); the client dashboard with a
+  - **Run live 2026-10-30:** `live-model` 10 of 10 against Qwen3.5-4B and
+    against Gemma 4 E2B (task list L13 to L15).
+  - **Not yet run live:** the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export);
     `deploy-agent` as a container; PgBouncer since these changes.
   - **First, next session:** read the task list's `open` rows in the order

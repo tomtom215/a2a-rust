@@ -171,8 +171,28 @@ async fn a_transport_failure_does_not_tell_the_caller_where_the_provider_is() {
     )
     .await;
     assert_eq!(task.status.state, TaskState::Failed);
+    assert_eq!(task.failure_class(), Some(FailureClass::Transient));
     let reason = reason(&task);
     assert_eq!(reason, "could not reach the model provider");
+}
+
+/// A provider that may come back (here `503`, which `llama-server` answers
+/// for minutes while it loads a model, seen live 2026-10-30) fails the task
+/// `transient`, which tells the caller a retry may succeed; `internal` told
+/// it not to.
+#[tokio::test]
+async fn an_unavailable_provider_fails_the_task_as_transient() {
+    let task = blocking(
+        &handler(scripted(vec![Err(ModelError::Status {
+            status: 503,
+            body: r#"{"error":{"message":"Loading model"}}"#.to_owned(),
+        })])),
+        "go",
+    )
+    .await;
+    assert_eq!(task.status.state, TaskState::Failed);
+    assert_eq!(task.failure_class(), Some(FailureClass::Transient));
+    assert_eq!(reason(&task), "the model provider answered HTTP 503");
 }
 
 #[tokio::test]
