@@ -101,6 +101,28 @@ async fn build_grpc_zero_stream_timeout_errors() {
     );
 }
 
+/// Either timeout at zero alone is refused by `build_grpc`, before any
+/// dial: the endpoint has nothing listening, so a check that let one
+/// through would fail on the connect instead, as a transport error.
+#[cfg(feature = "grpc")]
+#[tokio::test]
+async fn build_grpc_refuses_either_zero_timeout_alone() {
+    for (request, send) in [
+        (Duration::ZERO, Duration::from_secs(5)),
+        (Duration::from_secs(5), Duration::ZERO),
+    ] {
+        let result = ClientBuilder::new("http://127.0.0.1:1")
+            .with_timeout(request)
+            .with_send_timeout(send)
+            .build_grpc()
+            .await;
+        assert!(
+            matches!(result, Err(ClientError::Config(_))),
+            "request {request:?}, send {send:?}: {result:?}"
+        );
+    }
+}
+
 #[test]
 fn builder_zero_connection_timeout_errors() {
     let result = ClientBuilder::new("http://localhost:8080")

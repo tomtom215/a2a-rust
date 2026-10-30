@@ -48,7 +48,13 @@ pub(crate) type HttpClient = hyper_util::client::legacy::Client<
 >;
 
 /// A plain-HTTP client with `connection_timeout` on its connector.
+// No test can kill cargo-mutants' `Default::default()` here (ADR 0006): the
+// gate builds with every feature, where this function is compiled out, and
+// in a build without `tls-rustls`, the only one that has it, hyper-util's
+// `Client` has no `Default` (E0277, checked 2026-10-30), so the mutant does
+// not compile.
 #[cfg(not(feature = "tls-rustls"))]
+#[mutants::skip]
 pub(crate) fn plain_http_client(connection_timeout: std::time::Duration) -> HttpClient {
     hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
         .pool_idle_timeout(std::time::Duration::from_secs(50))

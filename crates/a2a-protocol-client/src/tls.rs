@@ -334,4 +334,33 @@ mod tests {
         let config = default_tls_config();
         let _client = build_https_client_with_config(config);
     }
+
+    /// A file named by `SSL_CERT_FILE` that holds a certificate adds it;
+    /// one that holds none adds nothing and is logged as such, once.
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn a_cert_file_without_a_certificate_is_logged() {
+        let dir = std::env::temp_dir().join(format!("a2a-env-roots-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let empty = dir.join("empty.pem");
+        std::fs::write(&empty, "not a certificate\n").unwrap();
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let full = dir.join("full.pem");
+        std::fs::write(&full, cert.pem()).unwrap();
+
+        let mut found = Vec::new();
+        let for_empty = crate::test_tracing::debugs_in(|| {
+            found = read_env_roots(Some(empty.as_os_str()), None);
+        });
+        assert_eq!((found.len(), for_empty), (0, 1));
+        let for_full = crate::test_tracing::debugs_in(|| {
+            found = read_env_roots(Some(full.as_os_str()), None);
+        });
+        assert_eq!((found.len(), for_full), (1, 0));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

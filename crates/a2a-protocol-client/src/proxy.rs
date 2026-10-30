@@ -345,6 +345,10 @@ impl std::fmt::Debug for ProxyConnector {
 }
 
 #[cfg(test)]
+#[path = "proxy_conn_tests.rs"]
+mod conn_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
