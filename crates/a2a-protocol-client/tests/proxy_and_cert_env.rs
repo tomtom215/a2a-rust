@@ -109,9 +109,8 @@ fn the_client_follows_ssl_cert_file_and_the_proxy_variables() {
     // the environment while it sets these: the runtime's workers are idle,
     // waiting on sockets that have not been used yet.
     unsafe {
-        std::env::set_var("SSL_CERT_FILE", &ca_file);
-        std::env::set_var("HTTPS_PROXY", &proxy_url);
-        std::env::set_var("HTTP_PROXY", &proxy_url);
+        // Cleared before setting: Windows names are case-insensitive, so
+        // removing `http_proxy` after setting `HTTP_PROXY` removed it.
         for name in [
             "NO_PROXY",
             "no_proxy",
@@ -122,6 +121,9 @@ fn the_client_follows_ssl_cert_file_and_the_proxy_variables() {
         ] {
             std::env::remove_var(name);
         }
+        std::env::set_var("SSL_CERT_FILE", &ca_file);
+        std::env::set_var("HTTPS_PROXY", &proxy_url);
+        std::env::set_var("HTTP_PROXY", &proxy_url);
     }
 
     runtime.block_on(async {

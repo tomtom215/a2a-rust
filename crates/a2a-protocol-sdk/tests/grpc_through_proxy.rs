@@ -81,8 +81,8 @@ fn grpc_goes_through_the_proxy_the_environment_names() {
     // test, and no runtime, worker or blocking thread exists yet: the
     // runtime is built below.
     unsafe {
-        std::env::set_var("HTTP_PROXY", &proxy_url);
-        std::env::set_var("HTTPS_PROXY", &proxy_url);
+        // Cleared before setting: Windows names are case-insensitive, so
+        // removing `http_proxy` after setting `HTTP_PROXY` removed it.
         for name in [
             "NO_PROXY",
             "no_proxy",
@@ -93,6 +93,8 @@ fn grpc_goes_through_the_proxy_the_environment_names() {
         ] {
             std::env::remove_var(name);
         }
+        std::env::set_var("HTTP_PROXY", &proxy_url);
+        std::env::set_var("HTTPS_PROXY", &proxy_url);
     }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
