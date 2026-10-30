@@ -87,7 +87,7 @@ pub async fn apply(pool: &PgPool, statements: &[&'static str]) -> Result<(), sql
     let mut tx = super::pg_retry::retry(&crate::metrics::NoopMetrics, || pool.begin()).await?;
     lock(&mut tx).await?;
     for statement in statements {
-        match index_if_missing(statement) {
+        match guarded(statement) {
             Some(guarded) => {
                 sqlx::query(sqlx::AssertSqlSafe(guarded))
                     .execute(&mut *tx)
@@ -97,6 +97,85 @@ pub async fn apply(pool: &PgPool, statements: &[&'static str]) -> Result<(), sql
         };
     }
     tx.commit().await
+}
+
+/// `statement` run only when it would change something, or `None` to run it
+/// as it is.
+///
+/// A replica's start runs every statement its stores need, against a schema
+/// that is almost always there already. Run as written, an existing table's
+/// `CREATE TABLE IF NOT EXISTS` and every `CREATE OR REPLACE FUNCTION` need
+/// the privileges of the schema's owner (measured on PostgreSQL 17.11: a role
+/// with only `USAGE` and data privileges was refused "permission denied for
+/// schema public"), so the role an agent runs as had to own its schema (audit
+/// A10); and the last replica to start installed its own function bodies for
+/// every replica, an older release's over a newer one's (E-F10). Guarded,
+/// each runs only when its object is missing, or, for a function, when the
+/// body installed is from an earlier release than this one.
+fn guarded(statement: &str) -> Option<String> {
+    index_if_missing(statement)
+        .or_else(|| table_if_missing(statement))
+        .or_else(|| function_if_older(statement))
+}
+
+/// The bare identifier after `prefix`, ended by whitespace or `(`.
+fn name_after<'a>(statement: &'a str, prefix: &str) -> Option<&'a str> {
+    let rest = statement.trim_start().strip_prefix(prefix)?;
+    let name = rest.split(|c: char| c.is_whitespace() || c == '(').next()?;
+    (!name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        .then_some(name)
+}
+
+/// `CREATE TABLE IF NOT EXISTS name ...`, one statement, run only when no
+/// relation is named `name`.
+fn table_if_missing(statement: &str) -> Option<String> {
+    let name = name_after(statement, "CREATE TABLE IF NOT EXISTS ")?;
+    if statement.contains(';') || statement.contains("$a2a_ddl$") {
+        return None;
+    }
+    Some(format!(
+        "DO $a2a_ddl$ BEGIN IF to_regclass('{name}') IS NULL THEN {statement}; END IF; END $a2a_ddl$"
+    ))
+}
+
+/// This crate's version as a PostgreSQL `int[]` literal's elements:
+/// `0,16,0` for `0.16.0-rc.1`.
+fn version_elements() -> String {
+    env!("CARGO_PKG_VERSION")
+        .split(['-', '+'])
+        .next()
+        .unwrap_or("0")
+        .split('.')
+        .map(|part| part.parse::<u32>().unwrap_or(0).to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// `CREATE OR REPLACE FUNCTION name(...) ...`, run only when no function is
+/// named `name` or the one there carries an earlier release's version in its
+/// comment (`a2a 0.16.0`), which it then records. A body changes only with
+/// a release, so a newer replica's body is never replaced by an older one's.
+fn function_if_older(statement: &str) -> Option<String> {
+    let name = name_after(statement, "CREATE OR REPLACE FUNCTION ")?;
+    if statement.contains("$a2a_ddl$") {
+        return None;
+    }
+    let version = version_elements();
+    let label = version.replace(',', ".");
+    Some(format!(
+        "DO $a2a_ddl$ DECLARE fn regprocedure; have int[]; BEGIN \
+         SELECT p.oid::regprocedure, \
+                string_to_array(substring(obj_description(p.oid, 'pg_proc') \
+                    FROM '^a2a ([0-9]+(?:\\.[0-9]+)*)$'), '.')::int[] \
+           INTO fn, have FROM pg_proc p \
+          WHERE p.proname = '{name}' AND p.pronamespace = current_schema()::regnamespace; \
+         IF fn IS NULL OR have IS NULL OR have < ARRAY[{version}] THEN \
+             {statement}; \
+             SELECT p.oid::regprocedure INTO fn FROM pg_proc p \
+              WHERE p.proname = '{name}' AND p.pronamespace = current_schema()::regnamespace; \
+             EXECUTE format('COMMENT ON FUNCTION %s IS %L', fn, 'a2a {label}'); \
+         END IF; END $a2a_ddl$"
+    ))
 }
 
 /// `CREATE INDEX IF NOT EXISTS name ON ...` run only when no relation is
@@ -123,102 +202,5 @@ fn index_if_missing(statement: &str) -> Option<String> {
     ))
 }
 
-/// A replica's start takes no lock its writes wait on.
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    #[test]
-    fn an_index_statement_is_guarded_and_nothing_else_is() {
-        assert_eq!(
-            index_if_missing("CREATE INDEX IF NOT EXISTS idx_t_c ON t(c)").as_deref(),
-            Some(
-                "DO $$ BEGIN IF to_regclass('idx_t_c') IS NULL THEN \
-                 CREATE INDEX IF NOT EXISTS idx_t_c ON t(c); END IF; END $$"
-            )
-        );
-        for other in [
-            "CREATE TABLE IF NOT EXISTS t (c TEXT)",
-            "CREATE INDEX i ON t(c)",
-            "CREATE INDEX IF NOT EXISTS \"odd name\" ON t(c)",
-        ] {
-            assert_eq!(index_if_missing(other), None, "{other}");
-        }
-    }
-
-    /// A second replica starts while a write on `tasks` is open, and a third
-    /// session's write goes through meanwhile: the start's schema statements
-    /// wait on no lock the write holds, and queue none in front of the third.
-    /// Until 2026-10-30 its `CREATE INDEX IF NOT EXISTS` waited for the open
-    /// write, and every write after it waited behind that (audit A11).
-    #[tokio::test]
-    #[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
-    async fn a_replica_start_does_not_stall_writes_behind_an_open_one() {
-        use crate::store::PostgresTaskStore;
-        use sqlx::Connection as _;
-
-        let admin = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
-        let name = format!("a2a_a11_{}", std::process::id());
-        let mut conn = sqlx::PgConnection::connect(&admin).await.expect("admin");
-        sqlx::query(sqlx::AssertSqlSafe(format!(
-            "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
-        )))
-        .execute(&mut conn)
-        .await
-        .expect("drop");
-        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
-            .execute(&mut conn)
-            .await
-            .expect("create");
-        let url = match admin.rsplit_once('/') {
-            Some((base, _)) => format!("{base}/{name}"),
-            None => panic!("a URL with a database"),
-        };
-
-        let first = PostgresTaskStore::new(&url)
-            .await
-            .expect("the first replica");
-        let mut open = sqlx::PgConnection::connect(&url).await.expect("open");
-        sqlx::query("BEGIN")
-            .execute(&mut open)
-            .await
-            .expect("begin");
-        sqlx::query(
-            "INSERT INTO tasks (id, context_id, state, data) VALUES ('held', 'c', 'working', '{}')",
-        )
-        .execute(&mut open)
-        .await
-        .expect("an open write");
-
-        let started =
-            tokio::time::timeout(Duration::from_secs(5), PostgresTaskStore::new(&url)).await;
-        let mut third = sqlx::PgConnection::connect(&url).await.expect("third");
-        sqlx::query("SET lock_timeout = '2s'")
-            .execute(&mut third)
-            .await
-            .expect("set");
-        let wrote = sqlx::query(
-            "INSERT INTO tasks (id, context_id, state, data) VALUES ('third', 'c', 'working', '{}')",
-        )
-        .execute(&mut third)
-        .await;
-        sqlx::query("ROLLBACK")
-            .execute(&mut open)
-            .await
-            .expect("rollback");
-        drop((first, open, third));
-
-        let started = started.expect("a replica starts while a write is open");
-        started.expect("and its schema statements succeed");
-        wrote.expect("a write is not queued behind a replica's start");
-
-        sqlx::query(sqlx::AssertSqlSafe(format!(
-            "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
-        )))
-        .execute(&mut conn)
-        .await
-        .expect("drop");
-    }
-}
+mod tests;

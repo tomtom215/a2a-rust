@@ -291,6 +291,20 @@ pub enum TaskCommand {
 
     /// List tasks (`ListTasks`), one page at a time.
     List(ListArgs),
+
+    /// Follow a task's events (`SubscribeToTask`): one JSON line per event,
+    /// until the task ends or parks (input-required, auth-required).
+    Subscribe {
+        /// Agent URL (see --binding for what it must point at).
+        url: String,
+        /// The task id.
+        task_id: String,
+        /// Replay the events after this SSE event id first, then follow: what
+        /// a cut stream's error names to resume it. JSON-RPC and HTTP+JSON
+        /// only; gRPC and WebSocket frames carry no ids.
+        #[arg(long, value_name = "EVENT_ID")]
+        from: Option<String>,
+    },
 }
 
 /// Arguments for `task list`.

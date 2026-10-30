@@ -72,6 +72,13 @@ fn card_for(addr: SocketAddr) -> AgentCard {
 
 /// Starts the agent on an ephemeral loopback port and returns its base URL.
 async fn start_agent() -> String {
+    start_recording_agent().await.0
+}
+
+/// [`start_agent`], also returning every `Last-Event-ID` the agent was sent.
+async fn start_recording_agent() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    let resumed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = Arc::clone(&resumed);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -94,10 +101,16 @@ async fn start_agent() -> String {
             let io = hyper_util::rt::TokioIo::new(stream);
             let jsonrpc = Arc::clone(&jsonrpc);
             let rest = Arc::clone(&rest);
+            let seen = Arc::clone(&seen);
             tokio::spawn(async move {
                 let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
                     let jsonrpc = Arc::clone(&jsonrpc);
                     let rest = Arc::clone(&rest);
+                    if let Some(id) = req.headers().get("last-event-id") {
+                        seen.lock()
+                            .unwrap()
+                            .push(id.to_str().unwrap_or_default().to_owned());
+                    }
                     async move {
                         // POST to the root is JSON-RPC; `/v1/...` and the
                         // well-known card path are REST.
@@ -120,7 +133,7 @@ async fn start_agent() -> String {
         }
     });
 
-    format!("http://{addr}")
+    (format!("http://{addr}"), resumed)
 }
 
 /// Runs the binary. Off the runtime's worker threads, so the in-process
@@ -263,6 +276,8 @@ async fn task_cancel_stops_a_running_task() {
     assert_eq!(code(&out), 0, "stderr: {}", stderr(&out));
     assert_eq!(json(&out)["status"]["state"], "TASK_STATE_CANCELED");
 }
+
+mod subscribe;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn task_list_shows_tasks_this_agent_has_seen() {

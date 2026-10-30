@@ -30,6 +30,7 @@ reinterpreted, so what you read is what the agent sent.
 | `a2a task get <URL> <TASK-ID>` | `GetTask` | the task, pretty JSON |
 | `a2a task cancel <URL> <TASK-ID>` | `CancelTask` | the task after cancellation, pretty JSON |
 | `a2a task list <URL> [--context-id ID] [--page-size N] [--page-token T]` | `ListTasks` | one page: `tasks`, `nextPageToken`, `pageSize`, `totalSize` |
+| `a2a task subscribe <URL> <TASK-ID> [--from EVENT-ID]` | `SubscribeToTask` | one JSON event per line, until the task ends or parks; `--from` replays the events after that id first (a cut stream's error names it) |
 
 Offline commands need no agent. Each prints JSON and exits 1 when what it
 checks does not hold, so a script can gate on it:
@@ -334,7 +335,7 @@ For more information, try '--help'.
 ## Tests
 
 `cargo test -p a2a-cli` runs unit tests for the grammar, the header parser,
-the binding choice and the terminal-event rule, and `tests/e2e.rs`, which
+the binding choice and the terminal-event rule, and `tests/e2e/`, which
 starts the SDK's own server in-process — a `RequestHandler` behind the
 JSON-RPC and HTTP+JSON dispatchers on one ephemeral loopback port, the
 routing `examples/echo-agent` uses in server-only mode — and runs the built

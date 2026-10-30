@@ -71,6 +71,32 @@ theirs can meet a connection the server closed while it sat idle. A pool you
 build without `pool_options` keeps its own settings; with sqlx's defaults it
 pings before every statement.
 
+## Running as a role that does not own the schema
+
+Each store's constructor brings its schema up to date as it starts: it
+creates a table, an index or a function only when it is missing, and
+replaces a function only when the one there was installed by an earlier
+release (each records the release that installed it in its comment,
+`a2a 0.16.0`), all under one advisory lock. Against a schema that is up to
+date, that needs no privilege beyond using the tables, so an agent can run
+as a role with only these, once the schema's owner has started each store
+it uses, or run the migrations, once:
+
+```sql
+GRANT USAGE ON SCHEMA public TO a2a_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO a2a_app;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO a2a_app;
+```
+
+Run the owner's start again after an upgrade that adds a table or changes
+a function, before the app role's replicas start; until then they start as
+the earlier release's schema allows, and a write that needs what is missing
+fails. Until 2026-10-30 every start ran each statement as written, which
+on PostgreSQL 17 a role without the owner's privileges was refused
+("permission denied for schema public", audit A10), and an earlier
+release's replica, starting during a rollout or a rollback, put its
+function bodies back over the newer ones for every replica (audit E-F10).
+
 ## When the connection is lost or the database is busy
 
 **A lost connection.** When a statement fails because its connection is gone

@@ -28,12 +28,24 @@ only: when something here is done, delete it rather than annotating it.
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
     count it rather than trusting a figure here. At this commit, 226 rows:
-    153 `open`, 4 `confirmed (read)`, 55 `fixed`, 4 `fixed (part)`, 7
+    150 `open`, 4 `confirmed (read)`, 58 `fixed`, 4 `fixed (part)`, 7
     `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
-    A10/E-F10 (DDL at every start; A11's lock is fixed),
-    L5 (no token streaming in the tool loop), and L6 (no `a2a task subscribe`).
+    L5 (no token streaming in the tool loop), which needs the maintainer's
+    decision before it is built: the loop learns whether a turn is the
+    answer or asks for tools only when the turn ends, so what a caller sees
+    while text arrives is a choice of wire shape. (1) Appends to the
+    `answer` artifact: closest to A2A's artifact streaming, but a turn that
+    then calls tools has already put its text in the answer. (2) A draft
+    artifact per turn, the `answer` artifact sent at the end as now:
+    existing clients see nothing change, and chunks must be coalesced to
+    stay under `max_parts_per_artifact`. (3) `working` status messages:
+    each is folded into history, hundreds for one answer. Each needs
+    `ToolModel` to stream (a provided method, so existing models compile)
+    and `OpenAiChatModel` to parse streamed tool calls. Recommended: (2).
+    The other release-relevant rows are fixed; 150 rows stay open, most
+    lower severity, so this is still not a release.
   - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
     (ADR 0029, proposed) is `publish = false`. Publishing it needs its
     crates.io name set up for trusted publishing and a place in

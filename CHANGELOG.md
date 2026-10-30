@@ -25,6 +25,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`a2a task subscribe <url> <task-id> [--from <event-id>]`** (CLI; audit
+  L6): follows a task's events (`SubscribeToTask`), one JSON line each, to
+  its end or until it parks; `--from` resumes after an event id, and a
+  stream cut short now fails with a hint naming the id to pass. Tested end
+  to end against a live agent (`tools/a2a-cli/tests/e2e/subscribe.rs`: followed to
+  completion, resumed with the agent seeing `Last-Event-ID: 1`, an ended
+  task refused); two mutants each fail them.
 - **A pool size on the PostgreSQL stores' URL constructors** (server,
   postgres; audits E-F6, D-17): `new_with_pool_size(url, size)` on
   `PostgresTaskStore`, `TenantAwarePostgresTaskStore`,
@@ -453,6 +460,19 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A PostgreSQL store's start needed the schema owner's privileges, and an
+  earlier release's start reinstalled its function bodies** (server,
+  postgres; audits A10, E-F10). Every start ran `CREATE TABLE IF NOT EXISTS`
+  and `CREATE OR REPLACE FUNCTION` as written: on PostgreSQL 17.11 a role
+  with only data privileges was refused ("permission denied for schema
+  public"), and the last replica to start set the function bodies for all,
+  an older release's over a newer one's. `pg_schema::apply` now creates a
+  table only when `to_regclass` finds none, and replaces a function only
+  when its comment names an earlier release than this crate's, then
+  records this one (`a2a 0.16.0`). Tests against PostgreSQL 17: a data-only
+  role starts a task store its owner made, and writes and reads; a later
+  release's body is kept and an earlier one's replaced. Three mutants of
+  the guards each fail them. The book's PostgreSQL page gives the grants.
 - **A replica's start stalled every write behind any open one** (server,
   postgres; audit A11, measured). `CREATE INDEX IF NOT EXISTS` asks for a
   `SHARE` lock on its table before it finds the index there and skips: on

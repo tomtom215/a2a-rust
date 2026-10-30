@@ -131,6 +131,10 @@ impl PostgresTaskStore {
 
         let runner = super::pg_migration::PgMigrationRunner::new(pool.clone());
         runner.run_pending().await?;
+        // Migration 9 installs the functions once; this brings them to this
+        // release's bodies, as `from_pool` does, and never back to an
+        // earlier one's (audit E-F10: the two constructors diverged).
+        super::pg_schema::apply(&pool, &crate::store::claim::upgrade::FUNCTIONS).await?;
 
         Ok(Self {
             pool,

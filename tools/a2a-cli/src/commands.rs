@@ -116,6 +116,43 @@ pub async fn stream(opts: &GlobalOpts, args: &SendArgs) -> Result<(), CliError> 
     Ok(())
 }
 
+/// Whether a subscription has nothing more to wait for: a terminal state, or
+/// an interrupted one, where the task sends nothing until a client answers.
+fn ends_subscription(event: &StreamResponse) -> bool {
+    let interrupted = match event {
+        StreamResponse::StatusUpdate(ev) => ev.status.state.is_interrupted(),
+        StreamResponse::Task(task) => task.status.state.is_interrupted(),
+        _ => false,
+    };
+    interrupted || is_terminal(event)
+}
+
+/// `a2a task subscribe <url> <task-id> [--from <event-id>]`
+///
+/// Prints every event as one JSON line, as `stream` does, and stops at a
+/// terminal or interrupted state. A stream cut before then fails with the
+/// last event id, which `--from` resumes after.
+pub async fn task_subscribe(
+    opts: &GlobalOpts,
+    url: &str,
+    task_id: &str,
+    from: Option<&str>,
+) -> Result<(), CliError> {
+    let client = connect(url, opts).await?;
+    let mut events = match from {
+        Some(after) => client.subscribe_to_task_from(task_id, after).await?,
+        None => client.subscribe_to_task(task_id).await?,
+    };
+    while let Some(event) = events.next().await {
+        let event = event?;
+        print_line(&event)?;
+        if ends_subscription(&event) {
+            break;
+        }
+    }
+    Ok(())
+}
+
 /// `a2a task get <url> <task-id>`
 pub async fn task_get(opts: &GlobalOpts, url: &str, task_id: &str) -> Result<(), CliError> {
     let client = connect(url, opts).await?;
@@ -202,6 +239,15 @@ mod tests {
         assert!(is_terminal(&status_event(TaskState::Canceled)));
         assert!(!is_terminal(&status_event(TaskState::Working)));
         assert!(!is_terminal(&status_event(TaskState::InputRequired)));
+    }
+
+    #[test]
+    fn a_subscription_ends_where_the_task_ends_or_parks() {
+        assert!(ends_subscription(&status_event(TaskState::Completed)));
+        assert!(ends_subscription(&status_event(TaskState::InputRequired)));
+        assert!(ends_subscription(&status_event(TaskState::AuthRequired)));
+        assert!(!ends_subscription(&status_event(TaskState::Working)));
+        assert!(!ends_subscription(&status_event(TaskState::Submitted)));
     }
 
     #[test]

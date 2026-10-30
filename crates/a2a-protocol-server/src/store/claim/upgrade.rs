@@ -96,8 +96,10 @@ END
 $fn$"
     };
 }
-/// The check before each unmarked write. Replaced on every start, as are the
-/// other functions, so a fix here reaches a database without a migration.
+/// The check before each unmarked write. Installed at a start when it is
+/// missing or the one there is from an earlier release (`pg_schema`), as
+/// are the other functions, so a fix here reaches a database without a
+/// migration, and an earlier release's start never puts its body back.
 pub const CHECK_FUNCTION_SQL: &str = check_function!();
 
 macro_rules! record_function {
