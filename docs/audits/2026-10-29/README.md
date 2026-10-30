@@ -298,6 +298,8 @@ HAProxy 3.2, the observability stack), not by any of the eight readings.
 | L16 | high | Behind PgBouncer in transaction mode, `PostgresHaltStore::from_pool`'s `LISTEN` stays on a lent server connection, and a halt write failed with `unexpected message: NotificationResponse` (2026-10-30) | fixed | `from_pool_listening_at` (listener on a direct URL) and `from_pool_without_listener` (poll only); both pass through PgBouncer, `from_pool` still fails there and is documented as direct-only. Whether other stores' statements on the same pooler fail the same way: not shown (a psql probe printed nothing) |
 | L17 | info | Every PostgreSQL test in the server crate through PgBouncer 1.26.1 (2026-10-30): 147 of 151 | verified live | the 4: L16's two `from_pool` tests, and two `transient_store_errors` cases whose backend kills the pooler hides (no statement lost, none to retry) |
 
+| L18 | info | `deploy-agent` as a container (2026-10-30): the Dockerfile's runtime stage (pinned `debian:bookworm-slim`, user 10001) with a host-built release binary (needs `GLIBC_2.34`, the image has 2.36), run as two replicas on PostgreSQL with `--read-only --cap-drop ALL --security-opt no-new-privileges`: healthy and ready at once; a task made on one read on the other; `docker stop` gave `/ready` 503 within 0.5 s, a send answered inside the 2 s drain delay, exit 0 at 2.7 s, the other replica serving throughout | verified live | not run: the Dockerfile's build stages, whose `cargo install` cannot reach crates.io through this sandbox's egress proxy without its CA in the image |
+
 ## M. Found re-reading this branch's own fixes
 
 | ID | Severity | Finding | Status | Note |

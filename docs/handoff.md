@@ -27,8 +27,8 @@ only: when something here is done, delete it rather than annotating it.
     read-only reviews (reports A to H beside it) plus findings from live runs
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
-    count it rather than trusting a figure here. At this commit, 225 rows:
-    164 `open`, 4 `confirmed (read)`, 45 `fixed`, 3 `fixed (part)`, 6
+    count it rather than trusting a figure here. At this commit, 226 rows:
+    164 `open`, 4 `confirmed (read)`, 45 `fixed`, 3 `fixed (part)`, 7
     `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
@@ -48,9 +48,10 @@ only: when something here is done, delete it rather than annotating it.
     against Gemma 4 E2B (task list L13 to L15); every server PostgreSQL test
     through PgBouncer 1.26.1, 147 of 151, which found the halt store's
     `LISTEN` broken behind it (L16, fixed; L17).
+    `deploy-agent` as two hardened containers on PostgreSQL (L18).
   - **Not yet run live:** the client dashboard with a
-    long-lived client (L11: short-lived CLI processes never export);
-    `deploy-agent` as a container.
+    long-lived client (L11: short-lived CLI processes never export); the
+    `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
   - **First, next session:** read the task list's `open` rows in the order
     above, confirm or refute each by running it, and keep the `Status`
     column true.
