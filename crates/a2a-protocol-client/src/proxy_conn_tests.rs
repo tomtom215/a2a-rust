@@ -8,13 +8,8 @@ use std::future::poll_fn;
 use std::task::{Context, Poll, Waker};
 
 use tokio::io::AsyncReadExt as _;
-use tower_service::Service as _;
 
 use super::*;
-
-fn uri(s: &str) -> http::Uri {
-    s.parse().unwrap()
-}
 
 /// A connection shut down is closed to its peer, which reads its end, while
 /// the connection itself is still held.
@@ -129,6 +124,8 @@ async fn a_flush_sends_what_tls_still_holds() {
 #[cfg(feature = "tracing")]
 #[test]
 fn an_unsupported_proxy_is_warned_about_once() {
+    use tower_service::Service as _;
+    let uri = |s: &str| -> http::Uri { s.parse().unwrap() };
     let rules = Arc::new(matcher_from(&|name: &str| {
         (name == "HTTPS_PROXY").then(|| "socks5://proxy:1080".to_owned())
     }));

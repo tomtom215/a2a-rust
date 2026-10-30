@@ -75,7 +75,9 @@ pub fn warnings_in(f: impl FnOnce()) -> usize {
     WARNINGS.with(|c| c.replace(None)).expect("armed above")
 }
 
-/// The DEBUG events this thread emits while `f` runs.
+/// The DEBUG events this thread emits while `f` runs; its one caller is
+/// `tls`'s, so it exists where that module does.
+#[cfg(feature = "tls-rustls")]
 pub fn debugs_in(f: impl FnOnce()) -> usize {
     install();
     DEBUGS.with(|c| c.set(Some(0)));
