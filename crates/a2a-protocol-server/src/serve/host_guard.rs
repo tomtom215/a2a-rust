@@ -103,6 +103,16 @@ fn host_name(host: &str) -> &str {
 mod tests {
     use super::*;
 
+    /// A port is cut off; what follows the last `:` when it is not a port
+    /// stays part of the name, as does an IPv6 literal's address.
+    #[test]
+    fn the_host_name_is_the_value_without_its_port() {
+        assert_eq!(host_name("agent.example.com:8443"), "agent.example.com");
+        assert_eq!(host_name("agent.example.com"), "agent.example.com");
+        assert_eq!(host_name("agent.example.com:abc"), "agent.example.com:abc");
+        assert_eq!(host_name("[::1]:8080"), "::1");
+    }
+
     fn guard(allowed: &[&str]) -> HostGuard {
         HostGuard {
             allowed: allowed.iter().map(|s| (*s).to_owned()).collect(),

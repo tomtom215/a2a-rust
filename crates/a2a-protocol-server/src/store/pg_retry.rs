@@ -86,8 +86,11 @@ pub fn read_only(e: &sqlx::Error) -> bool {
 /// Records that a statement met a read-only server, when `e` says so.
 pub fn note_read_only(e: &sqlx::Error) {
     if read_only(e) {
-        let at = u64::try_from(EPOCH.elapsed().as_millis()).unwrap_or(u64::MAX - 1);
-        READ_ONLY_SEEN.store(at + 1, Ordering::Relaxed);
+        // The millisecond plus one, so zero stays "never"; past what a u64
+        // of milliseconds holds (585 million years), the most it can.
+        let seen =
+            u64::try_from(EPOCH.elapsed().as_millis()).map_or(u64::MAX, |at| at.saturating_add(1));
+        READ_ONLY_SEEN.store(seen, Ordering::Relaxed);
     }
 }
 
