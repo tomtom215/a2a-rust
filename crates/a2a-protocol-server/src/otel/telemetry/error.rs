@@ -3,7 +3,7 @@
 
 //! [`TelemetryError`]. Split out of `mod.rs` at the 500-line ratchet.
 
-/// Why [`Telemetry`] could not be built, or lost telemetry.
+/// Why [`Telemetry`](super::Telemetry) could not be built, or lost telemetry.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum TelemetryError {
