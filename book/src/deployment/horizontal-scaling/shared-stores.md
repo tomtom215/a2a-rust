@@ -51,6 +51,30 @@ which have taken it since they were added. The key is the bytes of `"a2a_schm"` 
 a big-endian `i64`; an application taking advisory locks of its own on the
 same database should avoid it.
 
+## How many connections
+
+Each store opened from a URL opens a pool of its own, of 10 connections
+(`DEFAULT_POOL_SIZE`) unless given another size with `new_with_pool_size(url,
+size)`; a halt store's listener holds one more, and the audit and shared
+rate-limit stores have pools of their own too. Every replica opens all of
+them, so what a replica can use is the sum of its pools, and what the
+database must allow is that sum times the replicas, plus one more replica's
+worth while a rolling update surges a pod. PostgreSQL's default
+`max_connections` is 100, with 3 reserved for superusers: at 10 for tasks
+and 10 for push configs, five replicas already ask for 100 (audit E-F6,
+D-17), and the sixth connection a new pod asks for is refused (`53300`),
+which the stores answer as unavailable and retry until their bound.
+
+So size the pools to what the work needs rather than to the default. A
+send makes a handful of statements on the task store's pool, and the push
+config store reads a task's configs once per delivery: `examples/deploy-agent`
+opens `DATABASE_POOL_SIZE` (10 by default) for tasks and 2 for push configs,
+and logs the sum at startup. A pool built by hand and passed to `from_pool`
+can be shared by the plain and tenant-aware task stores
+(`PostgresTaskStore::pool_options()`), and the push-config, audit and
+rate-limit stores can share one built with sqlx's defaults. Behind
+PgBouncer the arithmetic is the pooler's, not the database's (below).
+
 ## When a connection drops
 
 A statement whose connection the server ended (a restart, a failover,

@@ -14,6 +14,7 @@ fn config(port: u16) -> Config {
         Some("http://agent.example.com".to_owned()),
         None,
         None,
+        None,
     )
     .expect("config")
 }
@@ -182,6 +183,7 @@ fn invalid_configuration_is_rejected() {
             url.map(str::to_owned),
             None,
             drain.map(str::to_owned),
+            None,
         )
         .err()
         .expect("refused")
@@ -190,10 +192,22 @@ fn invalid_configuration_is_rejected() {
     assert!(err(Some("0"), None, None).contains("not a valid port"));
     assert!(err(None, Some("agent.example.com"), None).contains("AGENT_URL"));
     assert!(err(None, None, Some("5s")).contains("DRAIN_DELAY_SECONDS"));
-    let ok = Config::from_vars(None, None, None, Some("5".into())).expect("defaults");
+    let ok = Config::from_vars(None, None, None, Some("5".into()), None).expect("defaults");
     assert_eq!(ok.port, 8080);
     assert_eq!(ok.public_url, "http://localhost:8080");
     assert_eq!(ok.drain_delay, Duration::from_secs(5));
+    assert_eq!(ok.pool_size, 10);
+    let pool = |raw: &str| Config::from_vars(None, None, None, None, Some(raw.into()));
+    assert_eq!(pool("4").expect("a size").pool_size, 4);
+    for bad in ["0", "-1", "ten"] {
+        assert!(
+            pool(bad)
+                .err()
+                .expect("refused")
+                .contains("DATABASE_POOL_SIZE"),
+            "{bad}"
+        );
+    }
 }
 
 /// The database URL is logged without its password.

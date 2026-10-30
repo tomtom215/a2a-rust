@@ -53,6 +53,12 @@ pub enum ServerError {
     PushNotSupported,
     /// An internal server error.
     Internal(String),
+    /// The handler cannot be built as configured: what
+    /// `RequestHandlerBuilder::build` refuses, saying what to change. A
+    /// mistake in the deploying code, never in a request, so no caller is
+    /// ever answered with it. Until 2026-10-30 these were `InvalidParams`,
+    /// which is also the `-32602` a request is refused with (audit G-11).
+    Config(String),
     /// The requested JSON-RPC method was not found.
     MethodNotFound(String),
     /// An A2A protocol error propagated from the executor.
@@ -98,6 +104,7 @@ impl fmt::Display for ServerError {
             Self::PushNotSupported => f.write_str("push notifications not supported"),
             Self::UnsupportedOperation(msg) => write!(f, "unsupported operation: {msg}"),
             Self::Internal(msg) => write!(f, "internal error: {msg}"),
+            Self::Config(msg) => write!(f, "configuration error: {msg}"),
             Self::MethodNotFound(m) => write!(f, "method not found: {m}"),
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
             Self::PayloadTooLarge(msg) => write!(f, "payload too large: {msg}"),
@@ -145,6 +152,7 @@ impl ServerError {
             Self::Transport(_) => "transport",
             Self::PushNotSupported => "push_not_supported",
             Self::Internal(_) => "internal",
+            Self::Config(_) => "config",
             Self::MethodNotFound(_) => "method_not_found",
             // The A2A error the binding answers with, named by what it says:
             // a refused credential by its kind (spec §3.3.2 tells the two
@@ -325,9 +333,10 @@ impl ServerError {
             }
             Self::Protocol(e) => e.clone(),
             Self::Http(e) => A2aError::internal(e.to_string()),
-            Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg) => {
-                A2aError::internal(msg.clone())
-            }
+            Self::HttpClient(msg)
+            | Self::Transport(msg)
+            | Self::Internal(msg)
+            | Self::Config(msg) => A2aError::internal(msg.clone()),
             Self::PayloadTooLarge(msg) => A2aError::new(ErrorCode::InvalidRequest, msg.clone()),
             Self::InvalidStateTransition { task_id, from, to } => A2aError::invalid_params(
                 format!("invalid state transition for task {task_id}: {from} → {to}"),

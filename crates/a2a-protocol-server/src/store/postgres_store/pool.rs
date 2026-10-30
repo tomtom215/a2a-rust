@@ -26,9 +26,11 @@ pub async fn pg_pool(url: &str) -> Result<PgPool, sqlx::Error> {
 
 /// The pool a task store opens for itself: pings only connections idle a
 /// while, every statement on it going through `pg_retry` (see there).
-pub(super) async fn task_store_pool(url: &str) -> Result<PgPool, sqlx::Error> {
+pub(super) async fn task_store_pool(url: &str, size: u32) -> Result<PgPool, sqlx::Error> {
+    let size = size.max(1);
+    trace_info!(pool_size = size, "PostgreSQL task store: opening its pool");
     crate::store::pg_retry::pool_options()
-        .max_connections(10)
+        .max_connections(size)
         .connect(url)
         .await
 }

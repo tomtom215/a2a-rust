@@ -50,6 +50,7 @@ Configuration:
 | `AGENT_URL` | `http://localhost:$PORT` | The **externally reachable** URL, `http://` or `https://`. Goes on the agent card |
 | `DRAIN_DELAY_SECONDS` | `0` | After `SIGTERM`, how long to answer `/ready` with 503 and go on serving before stopping, while load balancers learn the pod is leaving. `deployment.yaml` sets 5 |
 | `DATABASE_URL` | unset: tasks in memory | A PostgreSQL URL. Tasks and push configs go there, which is what lets several replicas serve the agent; unset, run one replica (the process says so at startup). TLS to the database: `?sslmode=verify-full&sslrootcert=/path/ca.pem` (or `require`), as hosted PostgreSQL documents |
+| `DATABASE_POOL_SIZE` | `10` | Connections in the task store's pool; the push-config store's is 2, so a replica uses this plus 2, logged at startup. Replicas × that, with a surge pod during a rollout, must stay under PostgreSQL's `max_connections` (97 usable by default). Refused at startup unless a whole number from 1 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | A collector's OTLP/HTTP URL, e.g. `http://localhost:4318` for [`deploy/observability`](../../deploy/observability)'s stack; traces, metrics and logs all go there |
 
 ## Container

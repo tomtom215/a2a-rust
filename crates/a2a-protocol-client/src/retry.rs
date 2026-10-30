@@ -174,6 +174,7 @@ impl ClientError {
             // auth, and a call the card does not declare the capability for
             Self::Serialization(_)
             | Self::Transport(_)
+            | Self::Config(_)
             | Self::InvalidEndpoint(_)
             | Self::AuthRequired { .. }
             | Self::CapabilityNotDeclared { .. }

@@ -321,7 +321,7 @@ fn a_zero_poll_interval_is_refused() {
         .with_halt_store(InMemoryHaltStore::new())
         .with_halt_poll_interval(Duration::ZERO)
         .build();
-    assert!(matches!(built, Err(ServerError::InvalidParams(_))));
+    assert!(matches!(built, Err(ServerError::Config(_))));
 }
 
 /// One poll stops what a halt found there covers, and only that: the poll

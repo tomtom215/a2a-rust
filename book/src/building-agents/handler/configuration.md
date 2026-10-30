@@ -153,7 +153,7 @@ after that refuses the continuation with `UnsupportedOperation`; see
 
 ## Build-time validation
 
-`build()` refuses, with `ServerError::InvalidParams` naming the change to make:
+`build()` refuses, with `ServerError::Config` naming the change to make (`InvalidParams` before 2026-10-30, the variant a request is refused with):
 - No agent card, unless you call `without_agent_card()` (spec §8.1)
 - A card, or an extended card, that fails `AgentCard::validate` or `validate_security_schemes`: a non-empty `name`, `description` and `version`; at least one interface, default input mode, default output mode and skill; each skill with an `id`, `name`, `description` and a tag; and every other string `a2a.proto` marks REQUIRED (spec §5.7)
 - A card with a credential in a URL

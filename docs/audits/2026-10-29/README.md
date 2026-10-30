@@ -140,7 +140,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | D-14 | Medium | The SQLite migration runner leaves an exclusive transaction open on error or cancel | fixed | Transaction rolls back on error/drop; test |
 | D-15 | Medium | A PostgreSQL failover is classed as permanent, and poisoned connections stay pooled | fixed | `25006` transient; connections opened before a sighting retired at acquire (`pg_retry`); `a_write_refused_as_read_only_runs_again_on_a_new_connection` against PostgreSQL 17, fails before. Not run: a real Patroni or managed failover. `57P04` (database dropped) left internal |
 | D-16 | Low | A store outage during a continuation is reported as `Internal`, not `Unavailable` | open | |
-| D-17 | Low | A fixed per-store PostgreSQL pool of 10 exhausts `max_connections` at modest scale | open | |
+| D-17 | Low | A fixed per-store PostgreSQL pool of 10 exhausts `max_connections` at modest scale | fixed | `new_with_pool_size` on the four PostgreSQL stores, each logging its size; the budget documented (*Shared stores*) |
 | D-18 | Low | In-memory capacity eviction can evict live or parked tasks | open | |
 | D-19 | Low | Audit per-tenant locks are never evicted | open | |
 | D-20 | Low | gRPC and WebSocket listeners have no liveness bound by default | open | |
@@ -159,7 +159,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | E-F3 | Medium-High | the owner holds the turn claim until its webhook deliveries finish, so continuations on other replicas are refused while the same send on the owner succeeds | fixed | push queued, not awaited, by the processor; `a_hung_webhook_does_not_hold_the_turn_against_another_replica` (SQLite, PostgreSQL) fails before with "already being processed" |
 | E-F4 | Medium (High for anyone using push) | the default push-config store stays in-memory when the task store is SQL; build() is silent and the book snippet omits it | fixed | build() refuses when the card declares push over a shared task store; book shared-stores page fixed |
 | E-F5 | Medium-High | readiness runs a full COUNT(*), so all replicas go NotReady together, and a read-only database still reports ready | fixed | as A2; a standby is now not ready |
-| E-F6 | Medium | pool size × replicas runs out of PostgreSQL's default `max_connections` | open | |
+| E-F6 | Medium | pool size × replicas runs out of PostgreSQL's default `max_connections` | fixed | as D-17, and `deploy-agent`'s `DATABASE_POOL_SIZE` with a 2-connection push pool (live: pool 3, 60 sends on 4 connections). Not done: the stores do not share one pool by default |
 | E-F7 | Medium | claim renewal competes with all other traffic for a 10-connection pool, can wait 30 s for a connection against a 15 s TTL, and an executor cut off from the database keeps running unfenced | open | |
 | E-F8 | Medium (conjecture) | after a takeover, an event position is reused, so subscribers that saw the old turn's live events silently miss the new turn's events | open | |
 | E-F9 | Medium (conjecture) | a cross-replica cancel of an executor that exits quietly on its token never pushes CANCELED | open | |
@@ -218,7 +218,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | G-08 | M | `agent_executor!` bodies cannot reference `self` | open | |
 | G-09 | M | Too many ways to serve, with inconsistent shapes | open | |
 | G-10 | M | Wire types are exhaustive structs with all-public fields | open | |
-| G-11 | M | Configuration errors masquerade as protocol or transport errors | open | |
+| G-11 | M | Configuration errors masquerade as protocol or transport errors | fixed | `ServerError::Config` for every `build()` refusal; `ClientError::Config` for the client builder's (zero timeouts, unknown binding, gRPC through `build()`); the client's required-extension preflight keeps its A2A code. Not changed: `StaticAgentCardHandler::new` and the hot-reload path still refuse an unpublishable card with `InvalidParams` |
 | G-12 | M | `EventStream` is not a `futures::Stream` | open | |
 | G-13 | M | Every message constructor requires a caller-chosen id | open | |
 | G-14 | M | `Telemetry` ergonomics | open | |

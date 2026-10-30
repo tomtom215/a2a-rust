@@ -25,6 +25,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **A pool size on the PostgreSQL stores' URL constructors** (server,
+  postgres; audits E-F6, D-17): `new_with_pool_size(url, size)` on
+  `PostgresTaskStore`, `TenantAwarePostgresTaskStore`,
+  `PostgresPushConfigStore` and `TenantAwarePostgresPushConfigStore`, with
+  `DEFAULT_POOL_SIZE` (10) what `new` opens; each logs its size at INFO.
+  Every URL constructor opened 10, and five replicas of a two-pool agent
+  asked for all of PostgreSQL's default 100 connections. `deploy-agent`
+  reads `DATABASE_POOL_SIZE` for its task pool, opens 2 for push configs,
+  and logs the total per replica; run live with `DATABASE_POOL_SIZE=3`, 60
+  concurrent sends completed on 4 server connections. The book's *Shared
+  stores* page gives the arithmetic.
 - **`a2a-protocol-discovery`, a new crate: agents announced and found on
   the local network with mDNS / DNS-SD** (audit B-24; ADR 0029, proposed).
   `Announcer::announce(&Advertisement::new(name, port))` announces
@@ -233,6 +244,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Breaking Changes
 
+- **Configuration errors have a variant of their own** (server, client;
+  audit G-11). Every `RequestHandlerBuilder::build()` refusal was
+  `ServerError::InvalidParams`, the variant a request is refused with
+  (`-32602`), and printed "invalid params: …"; it is now
+  `ServerError::Config` ("configuration error: …", metric label `config`).
+  `ClientBuilder` reported a zero timeout, an unknown binding and gRPC
+  through `build()` as `ClientError::Transport`; they are now
+  `ClientError::Config`, not retryable. Code matching the old variant on a
+  build result must match the new one. The client's required-extension
+  check keeps answering `Protocol(ExtensionSupportRequired)`, the A2A code
+  a caller may match on.
 - **An internal error's text is withheld from callers** (server; audit
   SEC-07). An `A2aError` with the internal code that an executor, a store,
   an interceptor or the database returns is answered `internal error

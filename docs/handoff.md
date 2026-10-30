@@ -28,12 +28,11 @@ only: when something here is done, delete it rather than annotating it.
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
     count it rather than trusting a figure here. At this commit, 226 rows:
-    156 `open`, 4 `confirmed (read)`, 52 `fixed`, 4 `fixed (part)`, 7
+    153 `open`, 4 `confirmed (read)`, 55 `fixed`, 4 `fixed (part)`, 7
     `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
-    A10/E-F10 (DDL at every start; A11's lock is fixed), E-F6/D-17
-    (pool sizing), G-11 (configuration errors reported as `InvalidParams`),
+    A10/E-F10 (DDL at every start; A11's lock is fixed),
     L5 (no token streaming in the tool loop), and L6 (no `a2a task subscribe`).
   - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
     (ADR 0029, proposed) is `publish = false`. Publishing it needs its

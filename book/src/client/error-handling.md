@@ -73,7 +73,8 @@ match client.send_message(params).await {
 | `Protocol(A2aError)` | An A2A error from the agent. Also what `build()` returns for `ExtensionSupportRequired`, and `InvalidParams` for a message the client refuses before sending | only when it names a retry delay |
 | `Serialization` | A request could not be encoded, or the agent's JSON does not parse | no |
 | `InvalidAgentResponse(String)` | The agent sent an object `a2a.proto` does not allow: a REQUIRED field missing or empty (spec §5.7), or a card that fails `AgentCard::validate`. The message names the call and the field | no |
-| `Transport`, `InvalidEndpoint`, `ProtocolBindingMismatch` | A transport configuration or connection error, an unusable URL (or a card with no interface this client speaks), or a client and agent on different bindings | no |
+| `Config` | Not sent: `build()` refused the client as configured (a zero timeout, a binding it cannot build); the message says what to change | no |
+| `Transport`, `InvalidEndpoint`, `ProtocolBindingMismatch` | A transport or connection error, an unusable URL (or a card with no interface this client speaks), or a client and agent on different bindings | no |
 | `CapabilityNotDeclared { method, capability }` | Not sent: the card the client was built from does not declare the capability the call needs (spec §3.3.4) | no |
 | `InvalidAuthScheme`, `InsecureTransport`, `InsecureWebhook` | Not sent: an API key the client cannot place (a name that is not an HTTP token, or a query-string key over gRPC or WebSocket) or credentials that fail `CredentialPreflight::Refuse`; a credential bound for a plain `http://` or `ws://` host (`require_https_credentials`); a plain `http://` webhook URL (`require_https_webhooks`) | no |
 | `ContentNotVerified` | Received content failed its provenance check (feature `signing`) | no |

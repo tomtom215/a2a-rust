@@ -33,6 +33,12 @@ pub enum ClientError {
     /// A transport configuration or connection error.
     Transport(String),
 
+    /// The client cannot be built as configured: what `ClientBuilder`
+    /// refuses (a zero timeout, a binding it cannot build), saying what to
+    /// change. Nothing was sent. Until 2026-10-30 these were `Transport`
+    /// (audit G-11).
+    Config(String),
+
     /// The agent endpoint URL is invalid or could not be resolved.
     InvalidEndpoint(String),
 
@@ -172,6 +178,7 @@ impl fmt::Display for ClientError {
             Self::Serialization(e) => write!(f, "serialization error: {e}"),
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
             Self::Transport(msg) => write!(f, "transport error: {msg}"),
+            Self::Config(msg) => write!(f, "configuration error: {msg}"),
             Self::InvalidEndpoint(msg) => write!(f, "invalid endpoint: {msg}"),
             Self::UnexpectedStatus { status, body, .. } => {
                 write!(f, "unexpected HTTP status {status}: {body}")

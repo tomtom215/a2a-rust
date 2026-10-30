@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:11045 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:11067 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1647,7 +1647,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-types/src/error.rs:32 ErrorCode",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:45 error_response_bytes",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:135 server_error_to_response",
@@ -1696,7 +1696,7 @@
     "crates/a2a-protocol-server/src/auth/mod.rs:404 BearerTokenAuthInterceptor::before",
     "crates/a2a-protocol-server/src/auth/mod.rs:272 ApiKeyAuthInterceptor::before",
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/handler/unreadable.rs:54 RequestHandler::admit_unreadable"
    ],
    "test_evidence": [
@@ -1781,7 +1781,7 @@
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
     "crates/a2a-protocol-server/src/auth/jwt.rs:371 JwtValidator::require_scope",
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
    "test_evidence": [
@@ -1959,10 +1959,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status",
     "crates/a2a-protocol-server/src/sql_error.rs:29 sql_error",
-    "crates/a2a-protocol-server/src/error/mod.rs:253 ServerError::not_retry_safe"
+    "crates/a2a-protocol-server/src/error/mod.rs:261 ServerError::not_retry_safe"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:330 server_error_overloaded_maps_to_503",
@@ -2084,7 +2084,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/error.rs:697 A2aError::error_info_data",
     "crates/a2a-protocol-types/src/error.rs:99 ErrorCode::a2a_reason",
-    "crates/a2a-protocol-server/src/error/mod.rs:305 ServerError::to_a2a_error"
+    "crates/a2a-protocol-server/src/error/mod.rs:313 ServerError::to_a2a_error"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/jsonrpc_error_details.rs:73 jsonrpc_invalid_params_name_the_field",
@@ -3692,8 +3692,8 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
-    "crates/a2a-protocol-server/src/error/mod.rs:229 ServerError::retry_after",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:237 ServerError::retry_after",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail",
     "crates/a2a-protocol-client/src/transport/grpc.rs:992 with_detail_data"
@@ -3818,7 +3818,7 @@
     "crates/a2a-protocol-types/src/error.rs:32 ErrorCode",
     "crates/a2a-protocol-types/src/error.rs:198 ErrorCode::http_status",
     "crates/a2a-protocol-types/src/error.rs:217 ErrorCode::grpc_status",
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status",
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:141 error_response"
    ],
@@ -4973,7 +4973,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/mod.rs:82 BEARER_CHALLENGE",
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:142 grpc_code"
    ],
    "test_evidence": [
@@ -8912,7 +8912,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/rest/error_response.rs:135 server_error_to_response",
     "crates/a2a-protocol-server/src/rate_limit/window.rs:36 RateLimitInterceptor::refusal",
-    "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status"
+    "crates/a2a-protocol-server/src/error/mod.rs:197 ServerError::http_status"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/rate_limit_wire.rs:84 a_throttled_rest_call_is_429_with_retry_after",

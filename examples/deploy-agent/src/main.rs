@@ -93,7 +93,16 @@ struct Config {
     /// How long to go on accepting after `SIGTERM`, not ready, while load
     /// balancers learn the pod is leaving (`ServeConfig::drain_delay`).
     drain_delay: Duration,
+    /// Connections in the task store's pool (`DATABASE_POOL_SIZE`). Each
+    /// replica opens it and a push-config pool of [`PUSH_POOL_SIZE`], so
+    /// replicas × (this + 2), with a surge pod during a rollout, must stay
+    /// under PostgreSQL's `max_connections` (97 usable by default).
+    pool_size: u32,
 }
+
+/// The push-config store's pool: it reads a task's configs once per
+/// delivery and writes only when a client registers one.
+const PUSH_POOL_SIZE: u32 = 2;
 
 impl Config {
     fn from_env() -> Result<Self, String> {
@@ -103,6 +112,7 @@ impl Config {
             var("AGENT_URL"),
             var("DATABASE_URL"),
             var("DRAIN_DELAY_SECONDS"),
+            var("DATABASE_POOL_SIZE"),
         )
     }
 
@@ -115,6 +125,7 @@ impl Config {
         agent_url: Option<String>,
         database_url: Option<String>,
         drain_delay: Option<String>,
+        pool_size: Option<String>,
     ) -> Result<Self, String> {
         let port = match port {
             Some(raw) => match raw.parse::<u16>() {
@@ -137,11 +148,23 @@ impl Config {
             })?),
             None => Duration::ZERO,
         };
+        let pool_size = match pool_size {
+            Some(raw) => match raw.parse::<u32>() {
+                Ok(0) | Err(_) => {
+                    return Err(format!(
+                        "DATABASE_POOL_SIZE is not a whole number of connections from 1: {raw:?}"
+                    ));
+                }
+                Ok(size) => size,
+            },
+            None => a2a_protocol_sdk::server::store::DEFAULT_POOL_SIZE,
+        };
         Ok(Self {
             port,
             public_url,
             database_url,
             drain_delay,
+            pool_size,
         })
     }
 }
@@ -185,17 +208,30 @@ async fn handler(config: &Config) -> Result<Arc<RequestHandler>, Box<dyn std::er
             tracing::info!(database = %redacted(url), "connecting to PostgreSQL");
             // Both stores, not just the tasks: a push config registered through
             // one replica must be found by the replica running the task.
-            let tasks = a2a_protocol_sdk::server::store::PostgresTaskStore::new(url)
-                .await
-                .map_err(|e| format!("cannot open the task store at {}: {e}", redacted(url)))?;
-            let push = a2a_protocol_sdk::server::push::PostgresPushConfigStore::new(url)
-                .await
-                .map_err(|e| {
-                    format!(
-                        "cannot open the push-config store at {}: {e}",
-                        redacted(url)
-                    )
-                })?;
+            tracing::info!(
+                task_pool = config.pool_size,
+                push_pool = PUSH_POOL_SIZE,
+                "PostgreSQL pools: {} connections per replica; PostgreSQL's max_connections \
+                 must exceed that times the replicas, a surge pod included",
+                config.pool_size + PUSH_POOL_SIZE
+            );
+            let tasks = a2a_protocol_sdk::server::store::PostgresTaskStore::new_with_pool_size(
+                url,
+                config.pool_size,
+            )
+            .await
+            .map_err(|e| format!("cannot open the task store at {}: {e}", redacted(url)))?;
+            let push = a2a_protocol_sdk::server::push::PostgresPushConfigStore::new_with_pool_size(
+                url,
+                PUSH_POOL_SIZE,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "cannot open the push-config store at {}: {e}",
+                    redacted(url)
+                )
+            })?;
             tracing::info!("tasks and push configs in PostgreSQL; replicas may share it");
             builder = builder.with_task_store(tasks).with_push_config_store(push);
         }
