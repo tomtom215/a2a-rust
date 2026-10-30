@@ -382,6 +382,7 @@ pub mod pages_concepts_transport_layers {}
 #[doc = include_str!("../../book/src/concepts/agent-cards/serving.md")]
 #[doc = include_str!("../../book/src/concepts/agent-cards/caching.md")]
 #[doc = include_str!("../../book/src/concepts/agent-cards/security.md")]
+#[doc = include_str!("../../book/src/concepts/agent-cards/local-discovery.md")]
 pub mod pages_concepts_agent_cards {}
 
 #[doc = include_str!("../../book/src/concepts/streaming/events.md")]

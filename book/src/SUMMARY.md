@@ -23,6 +23,7 @@
     - [Serving a card](./concepts/agent-cards/serving.md)
     - [HTTP caching and client checks](./concepts/agent-cards/caching.md)
     - [Security schemes](./concepts/agent-cards/security.md)
+    - [Finding agents on the local network](./concepts/agent-cards/local-discovery.md)
 - [Tasks & Messages](./concepts/tasks-and-messages.md)
 - [Streaming with SSE](./concepts/streaming.md)
     - [Events on the wire](./concepts/streaming/events.md)

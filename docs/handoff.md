@@ -28,7 +28,7 @@ only: when something here is done, delete it rather than annotating it.
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
     count it rather than trusting a figure here. At this commit, 220 rows:
-    165 `open`, 4 `confirmed (read)`, 43 `fixed`, 2 `fixed (part)`, 4
+    164 `open`, 4 `confirmed (read)`, 43 `fixed`, 3 `fixed (part)`, 4
     `verified live`, 1 refuted, 1 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
@@ -36,8 +36,14 @@ only: when something here is done, delete it rather than annotating it.
     persistence), D-15 (failover error 25006 treated as permanent), SEC-04 (JWKS refetch without cooldown), SEC-07 (error text returned to callers), C-04
     (alerts fire on every restart), A10/A11/E-F10 (DDL at every start), E-F6/D-17
     (pool sizing), G-11 (configuration errors reported as `InvalidParams`),
-    L5 (no token streaming in the tool loop), L6 (no `a2a task subscribe`),
-    and mDNS discovery, which does not exist (B-24).
+    L5 (no token streaming in the tool loop), and L6 (no `a2a task subscribe`).
+  - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
+    (ADR 0029, proposed) is `publish = false`. Publishing it needs its
+    crates.io name set up for trusted publishing and a place in
+    `.github/workflows/release.yml` (packaging steps, SBOM and attestation
+    lists); then `a2a discover` can join the CLI. Its round-trip tests need
+    multicast looped back on the CI runner; they passed in this container
+    and have not run in CI yet.
   - **Not yet run live:** Qwen3.5-4B and Gemma 4 E2B (downloaded, not
     exercised; only Qwen3.5-2B was); the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export);

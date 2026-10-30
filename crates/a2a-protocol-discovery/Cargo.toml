@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-protocol-discovery"
+version     = "0.15.1"
+description = "Agent2Agent (A2A) agents announced and found on the local network with mDNS / DNS-SD"
+readme      = "README.md"
+# Not published yet: a new crate needs its crates.io name registered for
+# trusted publishing and a place in .github/workflows/release.yml, which is
+# the maintainer's to do (docs/handoff.md, "Waiting on the maintainer").
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+documentation          = "https://docs.rs/a2a-protocol-discovery"
+keywords               = ["a2a", "agent2agent", "mdns", "dns-sd", "discovery"]
+categories             = ["network-programming"]
+
+[dependencies]
+a2a-protocol-client = { version = "0.15.1", path = "../a2a-protocol-client", default-features = false }
+a2a-protocol-types  = { version = "0.15.1", path = "../a2a-protocol-types" }
+# Pinned: the mDNS wire handling is this crate's whole trust surface.
+mdns-sd             = { version = "=0.21.6", default-features = false, features = ["async"] }
+tokio               = { workspace = true }
+
+[dev-dependencies]
+a2a-protocol-server = { version = "0.15.1", path = "../a2a-protocol-server" }
+tokio               = { workspace = true, features = ["rt-multi-thread"] }
+
+[features]
+default = ["tls-rustls"]
+## Fetch cards over `https://` (an agent that announces `scheme=https`).
+tls-rustls = ["a2a-protocol-client/tls-rustls"]

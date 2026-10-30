@@ -25,6 +25,17 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **`a2a-protocol-discovery`, a new crate: agents announced and found on
+  the local network with mDNS / DNS-SD** (audit B-24; ADR 0029, proposed).
+  `Announcer::announce(&Advertisement::new(name, port))` announces
+  `_a2a._tcp.local.` with TXT `path=` and `scheme=`; `discover(window)` and
+  `Browser` find agents, and `DiscoveredAgent::fetch_card` fetches the card
+  through the client's card discovery, which can require signatures.
+  Announcements are unauthenticated and card URLs leave out loopback and
+  IPv6 link-local addresses. One link only; not a registry. Not published
+  yet (`publish = false`). Tested over real multicast
+  (`tests/mdns_round_trip.rs`) and live with two agent processes; a book page
+  under Agent Cards & Discovery.
 - **`A2aError::with_retry_after`** (types) and
   **`RequestHandler::admits_sends`** (server): a temporary failure that
   names a retry delay, which says the request was refused before any work

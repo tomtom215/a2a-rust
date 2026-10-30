@@ -84,7 +84,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | B-21 | low | The SSE response sets `transfer-encoding: chunked` explicitly, which is illegal in HTTP/2 | fixed | as B-06 |
 | B-22 | low | The SSRF classifier misses some special ranges | open | |
 | B-23 | low | OTLP proxy handling differs from curl and Go in a few places, and some `NO_PROXY` forms are ignored | open | |
-| B-24 | low | No service discovery (mDNS, DNS-SD or registry) | open | |
+| B-24 | low | No service discovery (mDNS, DNS-SD or registry) | fixed (part) | mDNS/DNS-SD: new crate `a2a-protocol-discovery` (ADR 0029), round trip over real multicast in its tests and live between two processes (2026-10-30); not published yet. DNS SRV, Kubernetes and a registry are not built: registries stay out of scope by decision |
 | B-25 | low | The WebSocket binding cannot share the HTTP port or router | open | |
 | B-26 | low | mTLS behind a TLS-terminating proxy has no forwarded-client-certificate support | open | |
 | B-27 | low | IPv6 edge cases | open | |
