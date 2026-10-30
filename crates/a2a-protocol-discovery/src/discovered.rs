@@ -74,16 +74,23 @@ impl DiscoveredAgent {
 
     /// One card URL per announced address, in [`addresses`](Self::addresses)
     /// order. Left out: an IPv6 link-local address, since a URL cannot name
-    /// the interface it belongs to portably, and a loopback address, which
-    /// names the browsing host itself, so another agent's card could answer
-    /// for this one there (seen live: an announcement carried `127.0.0.1`
-    /// beside the host's own address). An agent on the browsing host is
-    /// still reached at its interface address.
+    /// the interface it belongs to portably, and a loopback address when
+    /// there is another: loopback names the browsing host itself, so beside
+    /// the host's own address (seen live) it adds nothing. When loopback is
+    /// all there is, it is used: each interface announces its own address,
+    /// so loopback is heard only over loopback, from an agent on this host
+    /// (seen on a CI macOS runner, where the browse heard nothing else).
     #[must_use]
     pub fn card_urls(&self) -> Vec<String> {
-        self.addresses
+        let usable: Vec<&IpAddr> = self
+            .addresses
             .iter()
-            .filter(|a| !is_ipv6_link_local(a) && !a.is_loopback())
+            .filter(|a| !is_ipv6_link_local(a))
+            .collect();
+        let remote = usable.iter().any(|a| !a.is_loopback());
+        usable
+            .into_iter()
+            .filter(|a| !(remote && a.is_loopback()))
             .map(|a| {
                 let host = match a {
                     IpAddr::V4(v4) => v4.to_string(),
@@ -165,6 +172,20 @@ mod tests {
                 "https://192.0.2.7:8080/.well-known/agent-card.json",
                 "https://[2001:db8::7]:8080/.well-known/agent-card.json",
             ]
+        );
+    }
+
+    /// Announced over loopback only, the agent is on this host, and
+    /// loopback is where its card is.
+    #[test]
+    fn card_urls_fall_back_to_loopback_when_it_is_all_there_is() {
+        let a = agent(
+            vec!["127.0.0.1".parse().unwrap(), "fe80::1".parse().unwrap()],
+            Scheme::Http,
+        );
+        assert_eq!(
+            a.card_urls(),
+            ["http://127.0.0.1:8080/.well-known/agent-card.json"]
         );
     }
 

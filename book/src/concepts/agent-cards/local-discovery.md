@@ -58,8 +58,10 @@ mDNS has no authentication: anything on the link can announce any name, or
 withdraw one. An announcement says where a card claims to be. When what you
 find decides what an agent may do, require its card to be signed by a key you
 trust: `CardFetchOptions::with_signature_keys` (feature `signing`), passed to
-`fetch_card`. Card URLs leave out loopback addresses, which would name the
-browsing host itself, and IPv6 link-local ones.
+`fetch_card`. Card URLs leave out IPv6 link-local addresses, and loopback
+ones unless loopback is all an agent was heard at: loopback names the browsing
+host itself, so it is used only for an agent heard over loopback, on this
+host.
 
 ## Limits
 

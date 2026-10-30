@@ -69,8 +69,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `_a2a._tcp.local.` with TXT `path=` and `scheme=`; `discover(window)` and
   `Browser` find agents, and `DiscoveredAgent::fetch_card` fetches the card
   through the client's card discovery, which can require signatures.
-  Announcements are unauthenticated and card URLs leave out loopback and
-  IPv6 link-local addresses. One link only; not a registry. Not published
+  Announcements are unauthenticated. Card URLs leave out IPv6 link-local
+  addresses, and loopback ones unless loopback is all an agent was heard
+  at (a CI macOS runner heard its own agent only there). One link only; not a registry. Not published
   yet (`publish = false`). Tested over real multicast
   (`tests/mdns_round_trip.rs`) and live with two agent processes; a book page
   under Agent Cards & Discovery.
@@ -328,7 +329,9 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   `request` method the transports use; it routes through the proxy the
   environment names. **`TlsConfig` is `#[non_exhaustive]`** and has a
   `Custom` variant; `ClientConfig::with_tls`, `ClientBuilder::without_tls`
-  and `Server::with_config` are no longer `const fn`.
+  and `Server::with_config` are no longer `const fn`, and `TlsConfig` and
+  `ClientConfig` are no longer `UnwindSafe` or `RefUnwindSafe` (the variant
+  holds an `Arc<rustls::ClientConfig>`), as `cargo-semver-checks` reports.
 
 ### Behaviour Changes
 
