@@ -76,17 +76,13 @@ where
     use tracing_subscriber::filter::LevelFilter;
     let app = app.filter(|a| !a.is_empty());
     let has_app = app.is_some();
-    let app_info = filter_fn(move |meta| {
-        *meta.level() <= tracing::Level::INFO
-            && app
-                .as_deref()
-                .is_some_and(|app| is_app_target(app, meta.target()))
-    })
-    .with_max_level_hint(if has_app {
-        LevelFilter::INFO
-    } else {
-        LevelFilter::OFF
-    });
+    let app_info =
+        filter_fn(move |meta| shows_app_info(app.as_deref(), *meta.level(), meta.target()))
+            .with_max_level_hint(if has_app {
+                LevelFilter::INFO
+            } else {
+                LevelFilter::OFF
+            });
     let shown = filter_fn(move |meta| {
         !is_sdk_export_error(meta.name()) && (!logs_on_console || is_self_target(meta.target()))
     });
@@ -100,6 +96,12 @@ where
 }
 
 /// Whether `target` is crate `app` or one of its modules.
+/// Whether an event of `level` on `target` is the application's own `info`
+/// or louder, which the console shows beside the SDK's warnings.
+fn shows_app_info(app: Option<&str>, level: tracing::Level, target: &str) -> bool {
+    level <= tracing::Level::INFO && app.is_some_and(|app| is_app_target(app, target))
+}
+
 fn is_app_target(app: &str, target: &str) -> bool {
     target
         .strip_prefix(app)
@@ -197,6 +199,25 @@ mod tests {
         assert!(is_app_target("deploy_agent", "deploy_agent::config"));
         assert!(!is_app_target("a2a", "a2a_protocol_client::discovery"));
         assert!(!is_app_target("deploy_agent", "deploy_agent_v2"));
+    }
+
+    #[test]
+    fn the_applications_info_and_louder_is_shown_and_its_debug_is_not() {
+        let app = Some("deploy_agent");
+        for level in [Level::ERROR, Level::WARN, Level::INFO] {
+            assert!(
+                shows_app_info(app, level, "deploy_agent::config"),
+                "{level}"
+            );
+        }
+        for level in [Level::DEBUG, Level::TRACE] {
+            assert!(
+                !shows_app_info(app, level, "deploy_agent::config"),
+                "{level}"
+            );
+        }
+        assert!(!shows_app_info(app, Level::INFO, "a2a_protocol_client"));
+        assert!(!shows_app_info(None, Level::INFO, "deploy_agent"));
     }
 
     #[test]

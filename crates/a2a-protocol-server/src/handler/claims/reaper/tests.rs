@@ -277,3 +277,72 @@ async fn tenant_aware_postgres_the_reaper_ends_only_what_nobody_runs() {
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     the_reaper_ends_only_what_nobody_runs(store, "acme", pg_age(pool, "tenant_tasks")).await;
 }
+
+#[cfg(feature = "sqlite")]
+struct Idle;
+#[cfg(feature = "sqlite")]
+crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });
+
+/// A handler starts its reaper from its first request: a task a dead
+/// replica left running is ended by the handler's own reaper, with nothing
+/// calling `look` by hand.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn a_request_starts_the_handlers_reaper() {
+    let (url, path) = sqlite_url();
+    let store = Arc::new(crate::store::SqliteTaskStore::new(&url).await.unwrap());
+    let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
+    let orphan = format!("orphan-{}", uuid::Uuid::new_v4());
+    store
+        .save(&task(&orphan, TaskState::Working))
+        .await
+        .unwrap();
+    sqlite_age(pool, "tasks")(orphan.clone()).await;
+    assert!(
+        store
+            .turn_claims()
+            .expect("SQL stores claim turns")
+            .claim("", &orphan, "dead", "t", Duration::from_millis(1))
+            .await
+            .unwrap()
+    );
+
+    let ttl = crate::handler::MIN_TURN_CLAIM_TTL;
+    let handler = crate::builder::RequestHandlerBuilder::new(Idle)
+        .with_task_store_arc(Arc::clone(&store) as Arc<dyn TaskStore>)
+        .with_turn_claim_timing(ttl, ttl / 3)
+        .without_agent_card()
+        .build()
+        .unwrap();
+    let _ = handler
+        .on_get_task(
+            a2a_protocol_types::params::TaskQueryParams {
+                tenant: None,
+                id: "anything".into(),
+                history_length: None,
+            },
+            None,
+        )
+        .await;
+
+    let deadline = tokio::time::Instant::now() + ttl * 3;
+    loop {
+        let state = store
+            .get(&TaskId::new(&*orphan))
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+            .state;
+        if state == TaskState::Failed {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the orphan is still {state:?}: no reaper ran"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    drop(handler);
+    let _ = std::fs::remove_file(&path);
+}

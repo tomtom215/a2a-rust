@@ -40,13 +40,9 @@ async fn a_connection_shut_down_is_closed_to_its_peer() {
     drop(conn);
 }
 
-/// What rustls has taken but not yet sent is sent by a flush: a TLS write
-/// that met a full socket returns with records still buffered, and only
-/// `poll_flush` writes them. The writes run with a waker that never wakes,
-/// until the socket is full and nothing more is taken; then the peer reads,
-/// and must receive every byte that was taken.
-#[tokio::test]
-async fn a_flush_sends_what_tls_still_holds() {
+/// A server for `localhost` with a self-signed certificate, and a client
+/// that trusts it.
+fn tls_pair() -> (rustls::ServerConfig, rustls::ClientConfig) {
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
         .unwrap()
@@ -62,6 +58,7 @@ async fn a_flush_sends_what_tls_still_holds() {
             rustls_pki_types::PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
         )
         .unwrap();
+
     let mut roots = rustls::RootCertStore::empty();
     roots.add(cert.der().clone()).unwrap();
     let client = rustls::ClientConfig::builder_with_provider(provider)
@@ -69,7 +66,17 @@ async fn a_flush_sends_what_tls_still_holds() {
         .unwrap()
         .with_root_certificates(roots)
         .with_no_client_auth();
+    (server, client)
+}
 
+/// What rustls has taken but not yet sent is sent by a flush: a TLS write
+/// that met a full socket returns with records still buffered, and only
+/// `poll_flush` writes them. The writes run with a waker that never wakes,
+/// until the socket is full and nothing more is taken; then the peer reads,
+/// and must receive every byte that was taken.
+#[tokio::test]
+async fn a_flush_sends_what_tls_still_holds() {
+    let (server, client) = tls_pair();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (start, started) = tokio::sync::oneshot::channel::<usize>();

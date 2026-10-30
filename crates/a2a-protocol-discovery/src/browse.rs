@@ -110,20 +110,23 @@ pub async fn discover(window: Duration) -> Result<Vec<DiscoveredAgent>, Discover
 mod tests {
     use super::*;
 
+    /// Whether `daemon` has stopped: it answers `Shutdown`, or nothing.
+    fn stopped(daemon: &ServiceDaemon) -> bool {
+        let status = daemon
+            .status()
+            .ok()
+            .and_then(|r| r.recv_timeout(std::time::Duration::from_secs(2)).ok());
+        !matches!(status, Some(mdns_sd::DaemonStatus::Running))
+    }
+
     /// A dropped browser stops its daemon; its `Debug` says what it is.
     #[test]
     fn a_dropped_browser_stops_its_daemon() {
         let browser = Browser::start().expect("browse");
         assert!(format!("{browser:?}").starts_with("Browser"));
         let daemon = browser.daemon.clone();
-        assert!(
-            !crate::announce::tests::stopped(&daemon),
-            "running while browsing"
-        );
+        assert!(!stopped(&daemon), "running while browsing");
         drop(browser);
-        assert!(
-            crate::announce::tests::stopped(&daemon),
-            "stopped once dropped"
-        );
+        assert!(stopped(&daemon), "stopped once dropped");
     }
 }

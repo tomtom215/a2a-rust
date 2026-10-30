@@ -247,7 +247,7 @@ impl Drop for Announcer {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
 
     #[test]
@@ -315,7 +315,7 @@ pub(crate) mod tests {
     }
 
     /// Whether `daemon` has stopped: it answers `Shutdown`, or nothing.
-    pub(crate) fn stopped(daemon: &ServiceDaemon) -> bool {
+    fn stopped(daemon: &ServiceDaemon) -> bool {
         let status = daemon
             .status()
             .ok()

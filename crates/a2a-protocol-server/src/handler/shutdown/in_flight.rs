@@ -234,3 +234,20 @@ impl RequestHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Closing admission refuses sends from then on and stops nothing that
+    /// is running: shutdown's completion window lets in-flight tasks finish.
+    #[test]
+    fn closing_admission_refuses_sends_and_stops_nothing() {
+        let in_flight = InFlight::default();
+        let running = in_flight.task_token();
+        assert!(in_flight.admits());
+        in_flight.close_admission();
+        assert!(!in_flight.admits());
+        assert!(!running.is_cancelled());
+    }
+}

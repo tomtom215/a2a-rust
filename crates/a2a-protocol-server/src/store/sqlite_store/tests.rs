@@ -285,6 +285,15 @@ async fn list_honours_this_stores_own_page_size_cap() {
     );
 }
 
+/// `health` asks the database: a store whose pool is closed is unhealthy.
+#[tokio::test]
+async fn health_fails_once_the_database_is_unreachable() {
+    let store = make_store().await;
+    assert!(store.health().await.is_ok());
+    store.pool.close().await;
+    assert!(store.health().await.is_err());
+}
+
 #[tokio::test]
 async fn save_and_get_round_trip() {
     let store = make_store().await;

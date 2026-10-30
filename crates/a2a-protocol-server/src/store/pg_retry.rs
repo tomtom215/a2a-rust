@@ -94,14 +94,16 @@ pub fn note_read_only(e: &sqlx::Error) {
 /// Whether a connection opened `age` ago predates the last read-only
 /// sighting, so may be open to the server that refused.
 pub fn opened_before_read_only(age: Duration) -> bool {
-    match READ_ONLY_SEEN.load(Ordering::Relaxed) {
+    predates(age, EPOCH.elapsed(), READ_ONLY_SEEN.load(Ordering::Relaxed))
+}
+
+/// Whether a connection `age` old, `now` after [`EPOCH`], was opened before
+/// the sighting `seen` records ([`READ_ONLY_SEEN`]: its millisecond plus
+/// one, zero for none).
+fn predates(age: Duration, now: Duration, seen: u64) -> bool {
+    match seen {
         0 => false,
-        seen => {
-            let since = EPOCH
-                .elapsed()
-                .saturating_sub(Duration::from_millis(seen - 1));
-            age > since
-        }
+        seen => age > now.saturating_sub(Duration::from_millis(seen - 1)),
     }
 }
 
@@ -211,6 +213,24 @@ pub async fn checked<F: Future>(statement: F) -> F::Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A sighting 100 ms after the epoch, read 150 ms after it: a connection
+    /// older than 50 ms was opened before it, and one younger after.
+    #[test]
+    fn a_connection_predates_a_sighting_by_its_age() {
+        let now = Duration::from_millis(150);
+        assert!(predates(Duration::from_millis(51), now, 101));
+        assert!(!predates(Duration::from_millis(50), now, 101));
+        assert!(!predates(Duration::from_millis(49), now, 101));
+        assert!(!predates(Duration::from_secs(60), now, 0), "no sighting");
+    }
+
+    /// The hook is added to the options given, which are kept.
+    #[test]
+    fn recycling_keeps_the_options_it_is_given() {
+        let options = recycling_after_failover(PgPoolOptions::new().max_connections(7));
+        assert_eq!(options.get_max_connections(), 7);
+    }
 
     #[test]
     fn a_lost_connection_is_told_from_a_failed_statement() {

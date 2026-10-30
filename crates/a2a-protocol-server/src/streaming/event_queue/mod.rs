@@ -21,14 +21,8 @@ mod content;
 /// on more than `usize::MAX / 2`. A per-tenant capacity reaches here with no
 /// `build()` to refuse it, so it is clamped rather than trusted (audit G-02:
 /// `with_event_queue_capacity(0)` panicked on the first event).
-const fn channel_capacity(capacity: usize) -> usize {
-    if capacity == 0 {
-        1
-    } else if capacity > MAX_CHANNEL_CAPACITY {
-        MAX_CHANNEL_CAPACITY
-    } else {
-        capacity
-    }
+fn channel_capacity(capacity: usize) -> usize {
+    capacity.clamp(1, MAX_CHANNEL_CAPACITY)
 }
 
 /// The deepest a stream buffer is made, whatever was asked: far past any
@@ -342,6 +336,21 @@ pub(crate) fn new_in_memory_queue_with_shared_persistence(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A capacity of zero is raised to one, one past the cap is lowered to
+    /// it, and any other is kept (audit G-02).
+    #[test]
+    fn a_channel_capacity_is_clamped_to_what_tokio_takes() {
+        assert_eq!(channel_capacity(0), 1);
+        assert_eq!(channel_capacity(1), 1);
+        assert_eq!(channel_capacity(64), 64);
+        assert_eq!(channel_capacity(MAX_CHANNEL_CAPACITY), MAX_CHANNEL_CAPACITY);
+        assert_eq!(
+            channel_capacity(MAX_CHANNEL_CAPACITY + 1),
+            MAX_CHANNEL_CAPACITY
+        );
+        assert_eq!(channel_capacity(usize::MAX), MAX_CHANNEL_CAPACITY);
+    }
 
     // ── new_in_memory_queue constructors ─────────────────────────────────
 

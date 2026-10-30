@@ -142,6 +142,28 @@ async fn a_streamed_answer_past_the_cap_is_refused() {
     );
 }
 
+/// A streamed answer of exactly the cap is read: the cap is the most a turn
+/// may take, not one byte past it.
+#[tokio::test]
+async fn a_streamed_answer_of_exactly_the_cap_is_read() {
+    let (release, released) = tokio::sync::oneshot::channel();
+    release.send(()).unwrap();
+    let body = format!("{}data: [DONE]\n\n", piece("ok"));
+    let cap = body.len();
+    let (base, _seen) = streaming_provider(body, String::new(), released).await;
+    let model = OpenAiChatModel::new(&base, "m")
+        .unwrap()
+        .with_max_response_bytes(cap);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let sink = TextSink::new(1, tx);
+    let messages = [ChatMessage::User("hi".to_owned())];
+    let turn = model
+        .complete_streaming(ChatRequest::new("", &messages, &[]), &sink)
+        .await
+        .expect("exactly the cap is within it");
+    assert_eq!(turn.text, "ok");
+}
+
 /// A server that ignores `"stream"` and answers whole is read whole, its
 /// text handed on in one piece.
 #[tokio::test]

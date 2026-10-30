@@ -676,7 +676,7 @@
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1739 list_empty_store_returns_empty (asserts next_page_token == \"\")",
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1810 list_pagination_is_stable_across_pages",
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:2120 list_pagination_page_size",
-    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:512 list_pagination"
+    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:521 list_pagination"
    ],
    "notes": "",
    "auditor": "A",
@@ -719,7 +719,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1810 list_pagination_is_stable_across_pages",
-    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:716 list_pagination_visits_every_task_once"
+    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:725 list_pagination_visits_every_task_once"
    ],
    "notes": "",
    "auditor": "A",
@@ -741,7 +741,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1748 list_returns_all_tasks_most_recently_updated_first",
-    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:566 list_orders_most_recently_updated_first",
+    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:575 list_orders_most_recently_updated_first",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:456 task_list_orders_most_recently_updated_first (ignored without PG)"
    ],
    "notes": "",
@@ -783,7 +783,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs:1904 list_orders_by_status_timestamp_not_write_order",
-    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:597 list_orders_by_status_timestamp_not_write_order",
+    "crates/a2a-protocol-server/src/store/sqlite_store/tests.rs:606 list_orders_by_status_timestamp_not_write_order",
     "crates/a2a-protocol-server/tests/postgres_store_tests.rs:525 task_list_status_timestamp_ordering_and_filter (ignored without PG)"
    ],
    "notes": "Tasks without a parseable status timestamp fall back to write order.",
@@ -1329,7 +1329,7 @@
     "crates/a2a-protocol-client/src/auth.rs:276 AuthInterceptor::api_key",
     "crates/a2a-protocol-server/src/handler/lifecycle/extended_card.rs:72 RequestHandler::extended_card_for_this_call",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:226 ServerInterceptorChain::run_before",
-    "crates/a2a-protocol-client/src/transport/mod.rs:403 with_query",
+    "crates/a2a-protocol-client/src/transport/mod.rs:409 with_query",
     "crates/a2a-protocol-client/src/credential_preflight.rs:252 Preflight::check",
     "crates/a2a-protocol-client/src/credential_preflight.rs:76 ClientBuilder::with_credential_preflight",
     "crates/a2a-protocol-client/src/interceptor.rs:354 InterceptorChain::run_before"
@@ -7487,7 +7487,7 @@
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:659 WebSocketDispatcher::read_loop",
     "crates/a2a-protocol-server/src/dispatch/websocket/stream.rs:22 stream_events",
     "crates/a2a-protocol-server/src/dispatch/websocket/stream.rs:34 forward",
-    "crates/a2a-protocol-client/src/transport/mod.rs:186 jsonrpc_client_error"
+    "crates/a2a-protocol-client/src/transport/mod.rs:192 jsonrpc_client_error"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:2634 ws_upgrade_headers_drive_tenant_resolution",

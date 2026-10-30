@@ -301,3 +301,18 @@ fn what_ends_a_turn() {
     }
     assert!(!ends_turn(&chunk("t", "a")));
 }
+
+/// A whole task ends a turn as a status update does, by its state; the
+/// lanes' `Debug` says whether delivery is on.
+#[test]
+fn a_task_snapshot_ends_a_turn_by_its_state() {
+    use a2a_protocol_types::task::Task;
+    let snapshot = |state| StreamResponse::Task(Task::new("t1", "c1", TaskStatus::new(state)));
+    assert!(ends_turn(&snapshot(TaskState::Completed)));
+    assert!(ends_turn(&snapshot(TaskState::InputRequired)));
+    assert!(!ends_turn(&snapshot(TaskState::Working)));
+    assert_eq!(
+        format!("{:?}", PushLanes::default()),
+        "PushLanes { enabled: false, .. }"
+    );
+}
