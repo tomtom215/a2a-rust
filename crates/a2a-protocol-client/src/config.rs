@@ -456,6 +456,9 @@ impl ClientConfig {
     }
 
     /// Sets the TLS configuration.
+    // Const only without `tls-rustls`: with it `TlsConfig` holds an `Arc`,
+    // whose destructor a const fn cannot run.
+    #[cfg_attr(not(feature = "tls-rustls"), allow(clippy::missing_const_for_fn))]
     #[must_use]
     pub fn with_tls(mut self, tls: TlsConfig) -> Self {
         self.tls = tls;

@@ -232,11 +232,11 @@ impl tower_service::Service<http::Uri> for ProxyConnector {
         let https = dst.scheme_str() == Some("https");
         match (intercept(&self.rules, &dst), https) {
             (None, _) => {
-                if let Some(scheme) = unsupported(&self.rules, &dst)
+                if let Some(_scheme) = unsupported(&self.rules, &dst)
                     && !self.said_unsupported.swap(true, Ordering::Relaxed)
                 {
                     trace_warn!(
-                        "the proxy for {dst} is `{scheme}://`, which is not supported (only `http://` \
+                        "the proxy for {dst} is `{_scheme}://`, which is not supported (only `http://` \
                          proxies are); connecting directly"
                     );
                 }

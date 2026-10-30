@@ -515,6 +515,9 @@ impl ClientBuilder {
 
     /// Disables TLS: plain HTTP only, and [`build`](Self::build) refuses an
     /// `https://` endpoint.
+    // Const only without `tls-rustls`: with it `TlsConfig` holds an `Arc`,
+    // whose destructor a const fn cannot run.
+    #[cfg_attr(not(feature = "tls-rustls"), allow(clippy::missing_const_for_fn))]
     #[must_use]
     pub fn without_tls(mut self) -> Self {
         self.config.tls = TlsConfig::Disabled;

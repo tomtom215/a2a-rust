@@ -24,12 +24,6 @@ use std::time::Duration;
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::header;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::Client;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 

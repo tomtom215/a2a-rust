@@ -46,17 +46,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(not(feature = "tls-rustls"))]
-use http_body_util::Full;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper::body::Bytes;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::Client;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::client::legacy::connect::HttpConnector;
-#[cfg(not(feature = "tls-rustls"))]
-use hyper_util::rt::TokioExecutor;
-
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
