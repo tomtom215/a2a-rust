@@ -394,6 +394,9 @@ pub use lifecycle::*;
 
 mod takeover;
 pub use takeover::*;
+
+mod push;
+pub use push::*;
 #[cfg(feature = "postgres")]
 mod upgrade;
 

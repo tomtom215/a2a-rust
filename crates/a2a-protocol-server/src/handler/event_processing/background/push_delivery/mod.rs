@@ -15,6 +15,9 @@ use crate::handler::limits::HandlerLimits;
 use crate::metrics::{Metrics, push_outcome};
 use crate::push::{PushConfigStore, PushSender};
 
+mod lanes;
+pub use lanes::{PushLanes, ends_turn};
+
 /// Which timeout label a cut-off delivery deserves.
 ///
 /// Two different situations produce the same outer timeout and they call for

@@ -125,11 +125,11 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | ID | Severity | Finding | Status | Note |
 |---|---|---|---|---|
 | D-01 | High | The default timeout cuts off a blocking `SendMessage` to a slow agent, and the task is orphaned | fixed | confirmed live (CLI exit 1 at 30 s, task kept running); send_timeout 600 s on all transports + CLI --send-timeout |
-| D-02 | High | A hung webhook stalls the streaming persistence pipeline (push runs inline per event) | open | |
+| D-02 | High | A hung webhook stalls the streaming persistence pipeline (push runs inline per event) | fixed | per-task push lanes (`push_delivery/lanes.rs`); `tests/turn_claims/push.rs` `a_hung_webhook_does_not_hold_events_out_of_the_store` fails before (never parked in 15 s). Not done: the config list is still read per event, and no per-URL breaker (D-05) |
 | D-03 | Medium | An executor panic gives no `Failed` push and no terminal SSE frame | open | |
 | D-04 | Medium | A config-list failure drops the push silently | open | |
 | D-05 | Medium | Push is at-most-a-few-attempts, not durable, and has no dedupe id or dead-webhook handling | open | |
-| D-06 | Medium | Blocking-path push jobs: unbounded spawn and no per-task ordering | open | |
+| D-06 | Medium | Blocking-path push jobs: unbounded spawn and no per-task ordering | fixed (part) | ordered with the streaming path in the task's lane, bounded per task; `a_webhook_answers_each_turn_in_order` fails before. Not done: no cap on concurrent deliveries across tasks |
 | D-07 | Medium | The server WebSocket read loop blocks on an untimed write, defeating the idle timeout | open | |
 | D-08 | Medium | A half-open client WebSocket stays wedged for about 15 minutes | open | |
 | D-09 | Low | WebSocket client connect errors are classed non-retryable | open | |
@@ -156,7 +156,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 |---|---|---|---|---|
 | E-F1 | High | a dead or stalled owner's task stays WORKING forever, and nothing reaps it | fixed | confirmed live (task WORKING 70 s after SIGKILL of its owner); reaper ends it failed/transient, webhook sent; 4 stores tested |
 | E-F2 | High | rolling update and scale-down cancel in-flight turns, and deploy-agent keeps taking (and cancelling) new sends for about 15 s after SIGTERM | fixed | Sends refused once shutdown begins (HTTP 503 + Retry-After, gRPC UNAVAILABLE, RetryInfo everywhere), and the SDK client repeats them with a retry policy; a turn shutdown stops ends `failed`, class `transient`, not `canceled`. Tests on all four bindings, each failing with its part reverted; live on two probe replicas sharing PostgreSQL (2026-10-29): send answered during the 2 s drain delay, refused after it on the same connection, held turn ended `failed`/transient at 8.0 s, replica 2 served throughout |
-| E-F3 | Medium-High | the owner holds the turn claim until its webhook deliveries finish, so continuations on other replicas are refused while the same send on the owner succeeds | open | |
+| E-F3 | Medium-High | the owner holds the turn claim until its webhook deliveries finish, so continuations on other replicas are refused while the same send on the owner succeeds | fixed | push queued, not awaited, by the processor; `a_hung_webhook_does_not_hold_the_turn_against_another_replica` (SQLite, PostgreSQL) fails before with "already being processed" |
 | E-F4 | Medium (High for anyone using push) | the default push-config store stays in-memory when the task store is SQL; build() is silent and the book snippet omits it | fixed | build() refuses when the card declares push over a shared task store; book shared-stores page fixed |
 | E-F5 | Medium-High | readiness runs a full COUNT(*), so all replicas go NotReady together, and a read-only database still reports ready | fixed | as A2; a standby is now not ready |
 | E-F6 | Medium | pool size × replicas runs out of PostgreSQL's default `max_connections` | open | |

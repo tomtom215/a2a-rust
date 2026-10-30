@@ -49,7 +49,6 @@ use crate::streaming::event_queue::applied::AppliedMark;
 use crate::streaming::event_queue::carries_terminal_state;
 use crate::streaming::event_queue::terminal_gate::TerminalGate;
 
-use super::push_delivery::deliver_push_bg;
 use super::record_event;
 use super::state_machine::{BackgroundDeps, Outcome, process_queued_event};
 
@@ -234,15 +233,7 @@ impl<'a> Processor<'a> {
             self.record(seq, verdict.clone()).await;
         }
         if !self.pushed_terminal {
-            deliver_push_bg(
-                self.task_id,
-                &verdict,
-                self.deps.push_config_store,
-                self.deps.push_sender,
-                self.deps.limits,
-                self.deps.metrics,
-            )
-            .await;
+            self.deps.push.push(self.task_id, &verdict);
             self.pushed_terminal = true;
         }
         self.superseded = Some(verdict);

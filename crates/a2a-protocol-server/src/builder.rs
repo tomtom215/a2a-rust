@@ -1486,11 +1486,21 @@ impl RequestHandlerBuilder {
             ))
         });
 
+        let push_sender = signing_push(self.push_sender, &self.outbound);
+        let in_flight = crate::handler::InFlight::default();
+        let push_lanes = crate::handler::PushLanes::new(
+            Arc::clone(&push_config_store),
+            push_sender.clone(),
+            self.handler_limits.clone(),
+            Arc::clone(&self.metrics),
+            in_flight.background().clone(),
+        );
         Ok(RequestHandler {
             executor: self.executor,
             task_store,
             push_config_store,
-            push_sender: signing_push(self.push_sender, &self.outbound),
+            push_sender,
+            push_lanes,
             event_queue_manager: {
                 let mut mgr = self
                     .event_queue_capacity
@@ -1542,7 +1552,7 @@ impl RequestHandlerBuilder {
             )),
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-            in_flight: crate::handler::InFlight::default(),
+            in_flight,
             halts: Arc::default(),
             leases: self.lease_store.map(|store| crate::handler::lease::Leases {
                 store,

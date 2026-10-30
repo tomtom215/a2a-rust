@@ -24,6 +24,7 @@ mod capability;
 pub(crate) mod claims;
 mod concurrency;
 mod event_processing;
+pub(crate) use event_processing::PushLanes;
 pub(crate) mod halt;
 pub(crate) mod helpers;
 mod ids;
@@ -105,6 +106,9 @@ pub struct RequestHandler {
     pub(crate) task_store: Arc<dyn TaskStore>,
     pub(crate) push_config_store: Arc<dyn PushConfigStore>,
     pub(crate) push_sender: Option<Arc<dyn PushSender>>,
+    /// One ordered push lane per task, which both send paths queue
+    /// deliveries on; see [`PushLanes`].
+    pub(crate) push_lanes: PushLanes,
     pub(crate) event_queue_manager: EventQueueManager,
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,

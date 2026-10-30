@@ -37,6 +37,33 @@ needs up to 38 s at the defaults, so the third attempt can be cut short (the
 `timeout_truncated` outcome of `a2a.server.push_deliveries`). A failed delivery
 is counted (and logged, with the `tracing` feature) and does not fail the task.
 
+## Order, and a webhook slower than the agent
+
+Each task's deliveries go through one lane, on a task of their own: an event
+is stored, its delivery is handed to the lane, and the next event is stored
+without waiting for any webhook. The lane runs its deliveries one after
+another, so a webhook is sent a task's events in the order they were stored.
+A blocking `SendMessage` hands over the whole request's events as one
+delivery in the same lane, so this holds across turns whichever send path ran
+each one. Lanes are per task: a webhook that hangs holds back its own task's
+notifications and nothing else, not the task's state, its event log, its
+streams, or a continuation sent to another replica. Shutdown waits for the
+lanes as it waits for executors, within the same grace period.
+
+A lane holds up to `HandlerLimits::push_queue_capacity` deliveries waiting
+behind the one under way (1,024). When it is full, the oldest waiting
+delivery that does not end a turn is dropped and counted as `dropped`, so a
+webhook that cannot keep up loses intermediate events (artifact chunks,
+`working`) and is still sent the terminal or interrupted status that ends
+each turn. Spec §4.3.3 allows an agent to stop delivering after a configured
+number of failures; this bound is that number, counted in waiting deliveries.
+
+Before 2026-10-30 the streaming path delivered inline: a webhook that did not
+answer held each later event out of the store for up to
+`push_delivery_timeout`, back-pressured the executor once 1,024 events were
+buffered, and held the turn's claim, so a continuation sent to another
+replica was refused as "already being processed".
+
 ## Outcomes
 
 Each delivery is counted once in `a2a.server.push_deliveries`, labelled with
@@ -47,6 +74,7 @@ its outcome:
 | `delivered` | The webhook answered `2xx`. |
 | `failed` | The webhook refused it with a status that is not retried, every attempt failed, or the sender refused the delivery (a screened URL, an unsendable credential). |
 | `timeout` | `push_delivery_timeout` expired before the sender finished. |
+| `dropped` | Never started: the task's lane was full (`push_queue_capacity`), because the webhook is slower than the agent. Counted once per dropped event (or blocking request), not per webhook. |
 | `timeout_truncated` | The same, for a sender whose own schedule (`PushSender::max_delivery_duration`) is longer than `push_delivery_timeout`, so its last attempts could never run in full. At the defaults (38 s against 30 s) every timeout is this one; the fix is to lengthen the timeout or shorten the schedule. |
 
 ## Security considerations

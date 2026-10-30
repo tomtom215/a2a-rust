@@ -12,12 +12,13 @@
 //! | (this file) | Event loop orchestration and executor lifecycle |
 //! | [`processor`] | One run over one task, including a task another writer finished |
 //! | [`state_machine`] | Event dispatch, state transitions, task store updates |
-//! | [`push_delivery`] | Push notification delivery to webhook endpoints |
+//! | [`push_delivery`] | Push notification delivery to webhook endpoints, in each task's lane |
 
 mod processor;
 mod push_delivery;
 pub use push_delivery::deliver_push_bg;
 pub use push_delivery::timeout_outcome;
+pub use push_delivery::{PushLanes, ends_turn};
 pub use push_delivery::{deliver_to_every_config, delivery_concurrency};
 mod state_machine;
 
@@ -35,7 +36,8 @@ use state_machine::BackgroundDeps;
 
 impl RequestHandler {
     /// Spawns a background task that processes events (state transitions,
-    /// task store updates, push delivery) from a dedicated persistence channel.
+    /// task store updates, queueing push delivery) from a dedicated
+    /// persistence channel.
     ///
     /// The `persistence_rx` is an mpsc receiver that is independent of the
     /// broadcast channel used for SSE delivery. This means slow SSE consumers
@@ -55,8 +57,7 @@ impl RequestHandler {
         links: super::ProcessorLinks,
     ) {
         let task_store = Arc::clone(&self.task_store);
-        let push_config_store = Arc::clone(&self.push_config_store);
-        let push_sender = self.push_sender.clone();
+        let push = self.push_lanes.clone();
         let limits = self.limits.clone();
         // Carried into the spawned task so failures here are reportable. The
         // trace macros below compile to nothing without the (non-default)
@@ -89,7 +90,9 @@ impl RequestHandler {
                         claim,
                         saved_whole,
                     } = links;
-                    // Held to this processor's last write (`handler::claims`).
+                    // Held to this processor's last write (`handler::claims`),
+                    // and no longer: push deliveries are queued on the task's
+                    // lane, not awaited here (audit E-F3).
                     let _claim = claim;
                     // Closes the gate however this task ends — including by panic —
                     // so no writer waits out its timeout on a processor that is gone.
@@ -158,8 +161,7 @@ impl RequestHandler {
                         &task_id,
                         BackgroundDeps {
                             task_store: &*task_store,
-                            push_config_store: &*push_config_store,
-                            push_sender: push_sender.as_deref(),
+                            push: &push,
                             limits: &limits,
                             metrics: &*metrics,
                         },

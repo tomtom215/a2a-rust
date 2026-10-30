@@ -416,6 +416,24 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A webhook that did not answer stalled its task, held the turn's claim,
+  and could be sent turns out of order** (server; audits D-02, E-F3, D-06).
+  The streaming path awaited each event's push before storing the next, so
+  a hung webhook held every later event out of the store for up to
+  `push_delivery_timeout` (30 s) each and back-pressured the executor; the
+  processor holds the turn's claim to its last write, so a continuation
+  sent to another replica waited out its drain bound and was refused
+  ("already being processed"); and a blocking send's push job ran beside
+  the next turn's, which the webhook could answer first. Now each task has
+  one push lane: both send paths hand their deliveries to it and go on,
+  and it runs them in order on the handler's background tracker. A full
+  lane (new `HandlerLimits::push_queue_capacity`, 1,024 waiting) drops the
+  oldest delivery that does not end a turn and counts it as the new
+  `push_outcome::DROPPED` (`dropped`); a terminal or interrupted status is
+  never dropped. Tested on SQLite and PostgreSQL
+  (`tests/turn_claims/push.rs`): each of the three cases fails on the code
+  before, with the finding's own symptom; the lane's rules are unit-tested
+  and each of nine mutants of them is caught.
 - **The PostgreSQL halt store broke behind a transaction-mode pooler**
   (server; `PostgresHaltStore`). Its `LISTEN` ran on a lent server
   connection and stayed there when the pooler lent it again, so a later
