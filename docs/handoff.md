@@ -31,12 +31,34 @@ only: when something here is done, delete it rather than annotating it.
     149 `open`, 4 `confirmed (read)`, 59 `fixed`, 4 `fixed (part)`, 7
     `verified live`, 1 refuted, 2 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
-  - **Not release-ready.** Every row judged release-relevant is fixed; the
-    last, L5 (no token streaming in the tool loop), was built as the
-    maintainer chose on 2026-10-30: a draft artifact per turn
+  - **Not release-ready.** L5 (no token streaming in the tool loop) was
+    built as the maintainer chose on 2026-10-30: a draft artifact per turn
     (`ToolLoopExecutor::with_drafts`), the `answer` artifact sent whole at
-    the end as before. 149 rows stay open, most of lower severity, so this
-    is still not a release.
+    the end as before. 149 rows stay `open`. By the list's own labels: 3 S0
+    (H2, H3, H4), 9 S1 (H5 to H11, H13, H19), 1 high (B-03), 52 medium,
+    5 S2, 5 low to medium, 69 low and 5 info. **This handoff said "every
+    row judged release-relevant is fixed" until 2026-10-30; that was not
+    checked and is withdrawn.** Some open rows are likely stale (H2's
+    private CA and mTLS look covered by `TlsConfig::Custom`, H3's orphaned
+    `working` tasks by the turn-claim reaper), some are real (H4, the S1
+    designs), and none has been re-checked against the code since its
+    report was written.
+  - **How #184 was verified, the bar for what follows.** Before a push:
+    `scripts/preflight.sh --force`; every script gate (the list is in the
+    workflow's Static checks job); `cargo hack clippy -p a2a-protocol-types
+    -p a2a-protocol-client -p a2a-protocol-server -p a2a-protocol-sdk
+    --all-targets --each-feature -- -D warnings`, exactly as CI runs it
+    (one crate is not enough: 3dac520 failed the matrix that way);
+    `scripts/run_postgres_suites.py` against PostgreSQL; and, for each
+    crate a change touches, `cargo mutants --in-diff` on its diff from
+    `main` (the command is in `.github/workflows/mutants.yml`). Hand-picked
+    mutants are not that check: two CI mutation runs (on df86307 and
+    8ec32f4) found 47 survivors that hand-picking had missed (10 client,
+    10 discovery, 27 server). The
+    server's full run is 20 shards of about 50 minutes; locally, apply its
+    survivors by hand (scratchpad script pattern: replace, run the one
+    test, restore) and let CI's run be the full one. macOS and Windows
+    cannot be run here; CI is their check.
   - **Pull request [#184](https://github.com/tomtom215/a2a-rust/pull/184)**
     (2026-10-30). The workspace reads **0.16.0**, bumped there at the
     maintainer's choice because `cargo-semver-checks` blocks the branch's
@@ -70,9 +92,22 @@ only: when something here is done, delete it rather than annotating it.
   - **Not yet run live:** the client dashboard with a
     long-lived client (L11: short-lived CLI processes never export); the
     `deploy-agent` Dockerfile's build stages (its runtime stage ran, L18).
-  - **First, next session:** read the task list's `open` rows in the order
-    above, confirm or refute each by running it, and keep the `Status`
-    column true.
+  - **First, next session (plan agreed with the maintainer 2026-10-30),
+    once #184 is green and merged:**
+    1. **Triage, no code.** Re-check every `open` row against the code on
+       `main`: read it, or run it where it is a behaviour. Mark each
+       `fixed` (with the commit), `confirmed (read)` or `verified live`
+       (still real), `not a defect`, or `needs decision` (a design the
+       maintainer chooses, as L5 was). Start with the S0, S1 and high rows
+       above, then the rest by severity. Correct the count here.
+    2. **Fix in themed pull requests**, each held to the bar above before
+       its first push: docs and READMEs (report G's 33 rows, mostly
+       cheap), then client, then stores, then the remaining SEC rows.
+    3. **The H-report designs** (retry budget and circuit breaker,
+       admission queue and fairness, task lineage and tree-scoped halt,
+       per-tenant metrics, polyglot swarm controls) each need an ADR and
+       the maintainer's choice before they are built; set out the options
+       for each, as was done for L5, rather than building one.
 - **Branch `claude/intelligent-bohr-9qraxk` (2026-10-28), on `main` at
   `568fc6c1` (pull request #182, the 0.15.1 preparation, merged; no tag).**
   The maintainer judged 0.15.0 not ready in practice and asked for everything
