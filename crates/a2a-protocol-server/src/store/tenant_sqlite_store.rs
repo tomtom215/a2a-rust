@@ -794,6 +794,15 @@ mod tests {
         }
     }
 
+    /// `health` asks the database: a store whose pool is closed is unhealthy.
+    #[tokio::test]
+    async fn health_fails_once_the_database_is_unreachable() {
+        let store = make_store().await;
+        assert!(store.health().await.is_ok());
+        store.pool.close().await;
+        assert!(store.health().await.is_err());
+    }
+
     /// See the note on the in-memory tenant store's equivalent test: the send
     /// path reads this to decide whether to claim a key, so a silent `false`
     /// removes the guarantee without failing anything.

@@ -74,7 +74,7 @@ where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
     use tracing_subscriber::filter::LevelFilter;
-    let app = app.filter(|a| !a.is_empty());
+    let app = app_name(app);
     let has_app = app.is_some();
     let app_info =
         filter_fn(move |meta| shows_app_info(app.as_deref(), *meta.level(), meta.target()))
@@ -96,6 +96,11 @@ where
 }
 
 /// Whether `target` is crate `app` or one of its modules.
+/// The application's crate name, when one is given: an empty one is none.
+fn app_name(app: Option<String>) -> Option<String> {
+    app.filter(|a| !a.is_empty())
+}
+
 /// Whether an event of `level` on `target` is the application's own `info`
 /// or louder, which the console shows beside the SDK's warnings.
 fn shows_app_info(app: Option<&str>, level: tracing::Level, target: &str) -> bool {
@@ -218,6 +223,12 @@ mod tests {
         }
         assert!(!shows_app_info(app, Level::INFO, "a2a_protocol_client"));
         assert!(!shows_app_info(None, Level::INFO, "deploy_agent"));
+        assert_eq!(
+            app_name(Some("deploy_agent".into())).as_deref(),
+            Some("deploy_agent")
+        );
+        assert_eq!(app_name(Some(String::new())), None, "an empty name is none");
+        assert_eq!(app_name(None), None);
     }
 
     #[test]
