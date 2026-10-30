@@ -12,7 +12,7 @@ in CI (`postgres_store_tests.rs`):
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.15", features = ["postgres"] }
+a2a-protocol-server = { version = "0.16", features = ["postgres"] }
 ```
 
 ```rust,no_run

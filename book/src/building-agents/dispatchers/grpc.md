@@ -12,7 +12,7 @@ Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature 
 `with_tls` — see [Transport Layers](../../concepts/transport-layers/grpc.md#serving-tls):
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["grpc"] }
+a2a-protocol-server = { version = "0.16", features = ["grpc"] }
 ```
 
 ```rust,no_run

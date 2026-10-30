@@ -37,13 +37,28 @@ only: when something here is done, delete it rather than annotating it.
     (`ToolLoopExecutor::with_drafts`), the `answer` artifact sent whole at
     the end as before. 149 rows stay open, most of lower severity, so this
     is still not a release.
+  - **Pull request [#184](https://github.com/tomtom215/a2a-rust/pull/184)**
+    (2026-10-30). The workspace reads **0.16.0**, bumped there at the
+    maintainer's choice because `cargo-semver-checks` blocks the branch's
+    deliberate breaks under 0.15.x (0.15.1 was prepared, never published:
+    crates.io has 0.15.0). It is a version bump, not a release: no tag,
+    `CITATION.cff` and `ROADMAP.md` still name 0.15.1, and the
+    `0.15 → 0.16` upgrade guide is
+    `book/src/reference/upgrading/0.15-to-0.16.md`. Before tagging 0.16.0:
+    RELEASING.md's checklist, and STABILITY.md's cadence, since 0.15.0 was
+    a breaking release in October 2026 (a second one that month needs a
+    `**Cadence exception:**`). The SLIMRPC binding's requirements read
+    `0.16`; its own version (0.7.0) moves at its own release (RELEASING.md,
+    "releases separately").
   - **mDNS discovery is built, not released:** `crates/a2a-protocol-discovery`
     (ADR 0029, proposed) is `publish = false`. Publishing it needs its
     crates.io name set up for trusted publishing and a place in
     `.github/workflows/release.yml` (packaging steps, SBOM and attestation
     lists); then `a2a discover` can join the CLI. Its round-trip tests need
-    multicast looped back on the CI runner; they passed in this container
-    and have not run in CI yet.
+    multicast looped back on the CI runner. First run in CI on pull request
+    #184: on macOS the browse heard the agent only over loopback, and
+    `card_urls` left loopback out, so the card fetch had no URL; it now
+    falls back to loopback when that is all there is.
   - **Run live 2026-10-30:** `live-model` 10 of 10 against Qwen3.5-4B and
     against Gemma 4 E2B (task list L13 to L15); with the drafts check, 11
     of 11 twice against Qwen3.5-2B (`examples/live-model/README.md`); every

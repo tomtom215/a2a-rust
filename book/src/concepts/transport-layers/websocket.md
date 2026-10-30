@@ -7,10 +7,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.15", features = ["websocket"] }
+a2a-protocol-server = { version = "0.16", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.15", features = ["websocket"] }
+a2a-protocol-client = { version = "0.16", features = ["websocket"] }
 ```
 
 ## Serving it

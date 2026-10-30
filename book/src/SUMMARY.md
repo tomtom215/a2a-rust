@@ -180,6 +180,7 @@
 - [API Quick Reference](./reference/api-reference.md)
 - [Generated API Docs](./reference/api-docs.md)
 - [Upgrading Between Minor Versions](./reference/upgrading.md)
+    - [0.15 → 0.16](./reference/upgrading/0.15-to-0.16.md)
     - [0.14 → 0.15](./reference/upgrading/0.14-to-0.15.md)
         - [Toolchain and dependencies](./reference/upgrading/0.14-to-0.15/toolchain.md)
         - [Telemetry, dashboards and alerts](./reference/upgrading/0.14-to-0.15/telemetry.md)

@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.15.1"
+version     = "0.16.0"
 description = "Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 
@@ -137,7 +137,7 @@ encryption = ["dep:ring", "dep:zeroize"]
 audit = ["a2a-protocol-types/audit"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.15.1", path = "../a2a-protocol-types" }
+a2a-protocol-types      = { version = "0.16.0", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
 # `#[mutants::skip]` for the mutants no test can distinguish (ADR 0006,
 # "Equivalent mutants"). Attribute-only, zero transitive dependencies, MIT,
@@ -249,7 +249,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1.11.1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.15.1", path = "../a2a-protocol-types" }
+a2a-protocol-types = { version = "0.16.0", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true, features = ["sqlite"] }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }

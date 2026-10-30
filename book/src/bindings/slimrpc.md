@@ -63,7 +63,7 @@ SDK crates resolve to the same checkout:
 ```toml
 [dependencies]
 a2a-protocol-slimrpc = { path = "../a2a-rust/bindings/a2a-protocol-slimrpc" }
-a2a-protocol-server  = "0.15"
+a2a-protocol-server  = "0.16"
 
 # The binding is built against the SDK crates in the checkout, so yours must
 # be those same copies (see "Why two version numbers").

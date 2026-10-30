@@ -11,7 +11,7 @@ For projects already using Axum, the `axum` feature provides `A2aRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["axum"] }
+a2a-protocol-server = { version = "0.16", features = ["axum"] }
 ```
 
 ```rust,no_run

@@ -12,7 +12,7 @@ setting wins — is [Environment variables](./environment.md).
 ## Turning them on
 
 ```toml
-a2a-protocol-sdk = "0.15"   # `tracing`, `otel` and `otlp` are default features
+a2a-protocol-sdk = "0.16"   # `tracing`, `otel` and `otlp` are default features
 ```
 
 * **`tracing`** — on by default in all three crates; with

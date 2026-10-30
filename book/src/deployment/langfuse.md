@@ -49,7 +49,7 @@ run one or the other on a machine, or remap one.
 ## Point an agent at it
 
 ```toml
-a2a-protocol-sdk   = "0.15"   # `otlp`, which Langfuse needs, is a default feature
+a2a-protocol-sdk   = "0.16"   # `otlp`, which Langfuse needs, is a default feature
 tokio              = { version = "1", features = ["full"] }
 tracing-subscriber = "0.3"
 ```

@@ -22,7 +22,7 @@ static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint. A remote
 JWKS or discovery URL must be `https://`, or `http://` to a loopback host.
 
 ```toml
-a2a-protocol-server = { version = "0.15", features = ["auth-jwt", "tls-rustls"] }
+a2a-protocol-server = { version = "0.16", features = ["auth-jwt", "tls-rustls"] }
 ```
 
 `tls-rustls` is needed to fetch JWKS or OIDC discovery documents over
