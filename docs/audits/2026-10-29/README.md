@@ -295,6 +295,9 @@ HAProxy 3.2, the observability stack), not by any of the eight readings.
 | L14 | info | `live-model` against Gemma 4 E2B (Q4_0, same server): 10 of 10 checks; on 3 of 4 bindings it asked for a service named "billing service", was told the inventory, and answered that none exists | not a defect | model quality; the SDK carried every turn, error and retry as it should |
 | L15 | medium | The tool loop failed every task `internal` while the model provider answered `503` (`llama-server` loading Gemma for 3 min 40 s), so a client was told not to retry a failure that would pass | fixed | `LoopError::is_transient`: 429/502/503/504, timeout and transport end `transient`; tests fail with it disabled; live, an unreachable provider now ends `transient` |
 
+| L16 | high | Behind PgBouncer in transaction mode, `PostgresHaltStore::from_pool`'s `LISTEN` stays on a lent server connection, and a halt write failed with `unexpected message: NotificationResponse` (2026-10-30) | fixed | `from_pool_listening_at` (listener on a direct URL) and `from_pool_without_listener` (poll only); both pass through PgBouncer, `from_pool` still fails there and is documented as direct-only. Whether other stores' statements on the same pooler fail the same way: not shown (a psql probe printed nothing) |
+| L17 | info | Every PostgreSQL test in the server crate through PgBouncer 1.26.1 (2026-10-30): 147 of 151 | verified live | the 4: L16's two `from_pool` tests, and two `transient_store_errors` cases whose backend kills the pooler hides (no statement lost, none to retry) |
+
 ## M. Found re-reading this branch's own fixes
 
 | ID | Severity | Finding | Status | Note |

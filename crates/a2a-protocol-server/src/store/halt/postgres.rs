@@ -44,11 +44,35 @@ const PUT_SQL: &str = "INSERT INTO a2a_halts (scope, reason, halted_by, halted_a
 /// a cancel notifies `a2a_cancels`; one listener per store (its clones
 /// share it) forwards both to the handlers holding it. The listener holds
 /// one connection of its own and ends when the last clone is dropped.
+///
+/// # Behind a connection pooler
+///
+/// `LISTEN` belongs to a session. A pooler in transaction mode (`PgBouncer`'s
+/// `pool_mode = transaction`, the usual setting) runs it on whichever
+/// server connection it lends, then lends that connection to someone else
+/// still listening, and the next notification lands in the middle of that
+/// client's statement: sqlx fails it with `unexpected message:
+/// NotificationResponse`. Seen live through `PgBouncer` 1.26.1 (2026-10-30):
+/// the halt itself failed to be written. So behind such a pooler, build the
+/// store with [`from_pool_listening_at`](Self::from_pool_listening_at), the
+/// listener on a direct connection to PostgreSQL, or with
+/// [`from_pool_without_listener`](Self::from_pool_without_listener), the
+/// handlers then learning of other replicas' halts and cancels at their
+/// next poll.
 #[derive(Debug, Clone)]
 pub struct PostgresHaltStore {
     pool: PgPool,
-    signals: broadcast::Sender<HaltSignal>,
-    _listener: Arc<Listener>,
+    /// `None` without a listener: nothing is pushed.
+    signals: Option<broadcast::Sender<HaltSignal>>,
+    _listener: Option<Arc<Listener>>,
+}
+
+/// Where the listener's session comes from.
+enum ListenOn {
+    /// A connection from the store's own pool.
+    Pool(PgPool),
+    /// A connection of its own to this URL, past any pooler.
+    Url(String),
 }
 
 /// The listening task, aborted when the last store clone is dropped.
@@ -69,15 +93,55 @@ impl PostgresHaltStore {
     ///
     /// [`A2aError::internal`] if the table cannot be created.
     pub async fn from_pool(pool: PgPool) -> A2aResult<Self> {
+        let on = ListenOn::Pool(pool.clone());
+        Self::build(pool, Some(on)).await
+    }
+
+    /// Uses `pool` for every statement and listens on a connection of its
+    /// own to `listen_url`: for a `pool` that goes through a pooler in
+    /// transaction mode, `listen_url` names PostgreSQL directly (see
+    /// *Behind a connection pooler* above).
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError::internal`] if the table cannot be created. A listener
+    /// that cannot connect retries every second and is not an error here.
+    pub async fn from_pool_listening_at(
+        pool: PgPool,
+        listen_url: impl Into<String>,
+    ) -> A2aResult<Self> {
+        Self::build(pool, Some(ListenOn::Url(listen_url.into()))).await
+    }
+
+    /// Uses `pool` and listens to nothing: [`signals`](HaltStore::signals)
+    /// is `None`, and a handler learns of other replicas' halts and cancels
+    /// at its next poll ([`with_halt_poll_interval`](crate::builder::RequestHandlerBuilder::with_halt_poll_interval)).
+    /// For a pooler in transaction mode with no direct route to PostgreSQL.
+    ///
+    /// # Errors
+    ///
+    /// [`A2aError::internal`] if the table cannot be created.
+    pub async fn from_pool_without_listener(pool: PgPool) -> A2aResult<Self> {
+        Self::build(pool, None).await
+    }
+
+    async fn build(pool: PgPool, listen_on: Option<ListenOn>) -> A2aResult<Self> {
         crate::store::pg_schema::apply(&pool, &[CREATE_TABLE_SQL])
             .await
             .map_err(|e| A2aError::internal(format!("halt store migrate: {e}")))?;
+        let Some(on) = listen_on else {
+            return Ok(Self {
+                pool,
+                signals: None,
+                _listener: None,
+            });
+        };
         let signals = broadcast::channel(SIGNAL_CAPACITY).0;
-        let listener = tokio::spawn(listen(pool.clone(), signals.clone()));
+        let listener = tokio::spawn(listen(on, signals.clone()));
         Ok(Self {
             pool,
-            signals,
-            _listener: Arc::new(Listener(listener)),
+            signals: Some(signals),
+            _listener: Some(Arc::new(Listener(listener))),
         })
     }
 
@@ -107,9 +171,13 @@ impl PostgresHaltStore {
 /// Forwards both channels to `signals` until the task is aborted. After a
 /// lost connection it sends [`HaltSignal::Changed`] once reconnected:
 /// notifications sent meanwhile are lost, and a read recovers them.
-async fn listen(pool: PgPool, signals: broadcast::Sender<HaltSignal>) {
+async fn listen(on: ListenOn, signals: broadcast::Sender<HaltSignal>) {
     loop {
-        let mut listener = match PgListener::connect_with(&pool).await {
+        let connected = match &on {
+            ListenOn::Pool(pool) => PgListener::connect_with(pool).await,
+            ListenOn::Url(url) => PgListener::connect(url).await,
+        };
+        let mut listener = match connected {
             Ok(l) => l,
             Err(_e) => {
                 trace_warn!(error = %_e, "halt listener: cannot connect; retrying");
@@ -208,7 +276,7 @@ impl HaltStore for PostgresHaltStore {
     }
 
     fn signals(&self) -> Option<broadcast::Receiver<HaltSignal>> {
-        Some(self.signals.subscribe())
+        self.signals.as_ref().map(broadcast::Sender::subscribe)
     }
 
     fn publish_cancel<'a>(

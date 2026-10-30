@@ -416,6 +416,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **The PostgreSQL halt store broke behind a transaction-mode pooler**
+  (server; `PostgresHaltStore`). Its `LISTEN` ran on a lent server
+  connection and stayed there when the pooler lent it again, so a later
+  notification arrived mid-statement and sqlx failed it (`unexpected
+  message: NotificationResponse`); through PgBouncer 1.26.1 the halt itself
+  could not be written. New constructors: `from_pool_listening_at(pool,
+  url)` listens on a connection of its own straight to PostgreSQL, and
+  `from_pool_without_listener(pool)` listens to nothing (`signals` is
+  `None`; handlers learn of other replicas' halts at their next poll).
+  `from_pool` is unchanged, for a pool that reaches PostgreSQL directly.
+  Tested directly and through PgBouncer (`store/halt/tests.rs`; the new
+  constructors pass through it, `from_pool` fails as described).
 - **The PostgreSQL stores could not use TLS** (server, `postgres`): sqlx was
   built with no TLS backend, so `sslmode=require` or `verify-full`, which
   hosted PostgreSQL documents, refused to start ("SQLx was built without TLS

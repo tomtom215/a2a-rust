@@ -112,5 +112,29 @@ opened before. So after setting `a2a.legacy_claim_ttl` (or a
 admin console) or wait for `server_lifetime`; until then the old value
 holds. The claims, the upgrade guard's mark and the schema lock each last
 one transaction, which a transaction-mode pooler keeps on one server
-connection. A pooler does stop the halt store's `LISTEN`, which then falls
-back to its poll.
+connection.
+
+The halt store's `LISTEN` does not survive such a pooler, and it is not
+stopped by one either: run on a lent server connection, it stays on that
+connection when the pooler lends it again, and the next notification
+arrives in the middle of a statement, which sqlx fails with `unexpected
+message: NotificationResponse`. On 2026-10-30, through PgBouncer 1.26.1,
+the halt itself failed to be written that way. Behind a transaction-mode
+pooler, build the halt store with
+`PostgresHaltStore::from_pool_listening_at(pool, direct_url)`, its listener
+on a connection straight to PostgreSQL, or
+`PostgresHaltStore::from_pool_without_listener(pool)`, the handlers then
+learning of other replicas' halts and cancels at their next poll
+(`with_halt_poll_interval`). `from_pool` is for a pool that reaches
+PostgreSQL directly.
+
+On 2026-10-30 every PostgreSQL test in the server crate ran through
+PgBouncer 1.26.1 (transaction mode, `max_prepared_statements = 200`, a
+wildcard database entry so each test's scratch database passes through):
+147 of 151 passed. The four that did not: the two halt-store tests that
+build with `from_pool`, as above; and two that end the database's
+backends and wait for the store to retry a lost connection, which the
+pooler hides: it drops the dead server connection and lends the next
+statement a new one, so nothing is lost and there is nothing to retry. A
+statement in flight when its backend ends is answered by the pooler with
+`08P01`, which the store retries as any `08` error.
