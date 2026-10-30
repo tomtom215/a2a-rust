@@ -1760,8 +1760,11 @@ async fn executor_failure_writes_failed_event() {
         }
     }
 
+    // The text exposed: what is checked is how it travels; that it is
+    // withheld by default is `error::withheld`'s to test.
     let handler = RequestHandlerBuilder::new(FailExecutor)
         .without_agent_card()
+        .expose_internal_errors()
         .build()
         .unwrap();
     let params = make_params(None);
@@ -1929,8 +1932,11 @@ async fn streaming_executor_failure_writes_error_event() {
         }
     }
 
+    // The text exposed: what is checked is how it travels; that it is
+    // withheld by default is `error::withheld`'s to test.
     let handler = RequestHandlerBuilder::new(FailExecutor)
         .without_agent_card()
+        .expose_internal_errors()
         .build()
         .unwrap();
     let params = make_params(None);

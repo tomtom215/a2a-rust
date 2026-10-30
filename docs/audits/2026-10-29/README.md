@@ -39,7 +39,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | A8 | MEDIUM | The manifest is rejected by Pod Security Standards "restricted" (no `seccompProfile`), and it mounts the service-account token | fixed | seccompProfile, automountServiceAccountToken: false |
 | A9 | MEDIUM | No PodDisruptionBudget, anti-affinity or topology spread for the two "HA" replicas | fixed | PDB, topology spread, explicit rolling update |
 | A10 | MEDIUM | Every replica runs DDL and `CREATE OR REPLACE FUNCTION` at every start, so the runtime database role must own the schema; least privilege is impossible | open | |
-| A11 | MEDIUM (conjecture) | `CREATE INDEX IF NOT EXISTS` at every replica start may take a SHARE lock on `tasks` and stall all writes behind any long transaction | open | |
+| A11 | MEDIUM (conjecture) | `CREATE INDEX IF NOT EXISTS` at every replica start may take a SHARE lock on `tasks` and stall all writes behind any long transaction | fixed | confirmed on PostgreSQL 17.11 (a third writer waited 4.66 s); guarded by `to_regclass` in `pg_schema::apply`; `a_replica_start_does_not_stall_writes_behind_an_open_one` fails unguarded |
 | A12 | MEDIUM | `.dockerignore` excludes only `target`, so `COPY . .` puts `.env` files and `.git` into the build stages | fixed | .dockerignore: env files, keys, .git, built book |
 | A13 | MEDIUM | Following the top-level README's deploy commands fails twice (missing Secret, then `:latest` pull) | open | |
 | A14 | MEDIUM | The generic `DATABASE_URL` env var plus generic table names (`tasks`, `push_configs`) in the `public` schema collide with an existing database or a developer's shell | open | |
@@ -191,7 +191,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | SEC-04 | Medium | Forced JWKS refetch with a forged `kid`, no cooldown | fixed | `with_jwks_refetch_interval` (10 s); `forged_key_ids_do_not_each_fetch_the_key_set`: 50 forged kids, 1 fetch; mutants of the interval fail it |
 | SEC-05 | Medium | An empty API key fails open | fixed | CredentialSet::matching refuses an empty credential; unit test |
 | SEC-06 | Medium; partly KNOWN | JWT defaults: no `iss`/`aud`, `from_oidc_issuer` does not bind the issuer, plaintext JWKS | fixed | `iss` and `aud` checked by default: a validator naming neither refuses every token (logged at construction) unless `allow_any_issuer`/`allow_any_audience`; `from_oidc_issuer` checks the document's `issuer` (§4.3) and binds it; JWKS and discovery URLs must be https or loopback http. Six mutations, each failing a test |
-| SEC-07 | Medium | Internal error text returned verbatim to callers and persisted | open | |
+| SEC-07 | Medium | Internal error text returned verbatim to callers and persisted | fixed | withheld by default with a logged reference (`error/withheld.rs`), `expose_internal_errors()` to opt out; the SDK's own text kept; an unavailable SQL error's sqlx text is still sent |
 | SEC-08 | Medium | OAuth client secret and tokens sent to `http://` endpoints and to card-controlled `tokenUrl` | open | |
 | SEC-09 | Medium | a2a-cli sends `--header` credentials to card-chosen hosts and to the JWKS host | open | |
 | SEC-10 | Low | Raw id logged at INFO before validation and before authentication | fixed (part) | per-request id lines moved to DEBUG; still logged at DEBUG before validation |

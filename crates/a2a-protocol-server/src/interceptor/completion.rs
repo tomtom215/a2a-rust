@@ -86,7 +86,12 @@ impl InterceptedCall<'_> {
             self.entered -= 1;
             interceptor.on_complete(self.ctx, outcome).await;
         }
-        result
+        // After `on_complete`, which sees the error whole (audit SEC-07).
+        if chain.expose_internal {
+            result
+        } else {
+            result.map_err(crate::error::ServerError::withheld)
+        }
     }
 }
 

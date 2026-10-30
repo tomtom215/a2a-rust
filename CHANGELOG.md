@@ -233,6 +233,21 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Breaking Changes
 
+- **An internal error's text is withheld from callers** (server; audit
+  SEC-07). An `A2aError` with the internal code that an executor, a store,
+  an interceptor or the database returns is answered `internal error
+  (reference <12 hex digits>)`, its data dropped, and its text logged under
+  that reference (feature `tracing`; an executor's with the task id). An
+  executor's internal error is withheld from the `Failed` status every
+  later `GetTask` returns, too. Its text was often not the caller's to
+  read: a URL with its API key, table and constraint names, a downstream
+  agent's address. Errors of other codes, what `EventEmitter::fail` writes,
+  and the SDK's own messages are sent as written; interceptors'
+  `on_complete`, the audit log's included, see every error whole.
+  `RequestHandlerBuilder::expose_internal_errors()` restores the text. Tests
+  in `error/withheld_tests.rs` (four mutants, each caught); tests that read
+  an executor's text now expose it, and the client-delegation test checks
+  the downstream address no longer reaches the caller.
 - **A `JwtValidator` checks `iss` and `aud` by default** (server;
   `auth::jwt`; audit SEC-06). One that names no issuer, or no audience,
   refuses every token, and the interceptor logs why when it is built, unless
@@ -416,6 +431,15 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A replica's start stalled every write behind any open one** (server,
+  postgres; audit A11, measured). `CREATE INDEX IF NOT EXISTS` asks for a
+  `SHARE` lock on its table before it finds the index there and skips: on
+  PostgreSQL 17.11 it waited behind an open `INSERT` on `tasks`, and an
+  unrelated `INSERT` waited behind it, 4.66 s, until the first committed.
+  Each store's start ran several. `pg_schema::apply` now runs each one only
+  when `to_regclass` finds no relation of that name, which locks nothing.
+  `pg_schema_tests.rs` starts a second replica while a write is open and
+  writes meanwhile; with each statement run unguarded, it times out.
 - **`A2AAgentSilent` paged on every rollout and stopped paging for a dead
   fleet after an hour** (`deploy/observability`; audit C-04). It was keyed on
   the instance (a random id per process) over an hour. It is now keyed on

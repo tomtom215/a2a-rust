@@ -63,10 +63,24 @@ agent_executor!(MyAgent, |ctx, queue| async {
 });
 ```
 
-Returning `Err` also ends the task `Failed`, with the error's text; the class
-is then inferred from its code, which can only say `InvalidRequest` or
-`Internal`, unless the error carries one recorded with
-`a2a_protocol_types::failure::set_error_class`.
+Returning `Err` also ends the task `Failed`; the class is then inferred from
+its code, which can only say `InvalidRequest` or `Internal`, unless the error
+carries one recorded with `a2a_protocol_types::failure::set_error_class`.
+
+What the caller reads depends on the code. An error of any code but
+`InternalError` is the executor's message to its caller, and its text is
+the task's status message. An `A2aError::internal`'s text is withheld: the
+caller reads `internal error (reference 3f9c0a1b2d4e)`, and the text is
+logged under that reference with the task id (feature `tracing`). That text
+is whatever the failure wrote, often a URL with its API key, a database's
+table names or a downstream agent's address, and every later `GetTask`
+returns it (audit SEC-07; before 2026-10-30 it was sent as it was). What
+`emit.fail` writes is sent as written: it is what you chose to tell the
+caller. `RequestHandlerBuilder::expose_internal_errors()` sends internal
+errors' text too, for development or an agent whose callers are its
+operators. The same rule holds for an internal error a store, an
+interceptor or a database returns to any call; the SDK's own messages (an
+executor's deadline, a refused configuration) are sent as written.
 
 ## Executor with state
 

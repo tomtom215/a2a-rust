@@ -83,8 +83,10 @@ async fn a_claim_that_fails_for_good_is_not_reported_as_overloaded() {
         !matches!(err, ServerError::Overloaded(_)),
         "a store failure is not a temporary refusal: {err:?}"
     );
+    // The store's own text is withheld from the caller (audit SEC-07).
     assert!(
-        err.to_string().contains("the key index is corrupt"),
+        !err.to_string().contains("the key index is corrupt")
+            && err.to_string().contains("internal error (reference "),
         "{err}"
     );
     assert_eq!(executions.load(Ordering::SeqCst), 0, "nothing ran");

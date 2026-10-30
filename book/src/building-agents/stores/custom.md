@@ -67,6 +67,12 @@ stores do. A send and a push config's creation answer `500` either way: a
 client re-sends those on `503` as refused before any work began, and a store
 failure can come after the executor ran.
 
+An internal error's text does not reach the caller: it is answered
+`internal error (reference …)`, and the text is logged under the reference
+(feature `tracing`), unless the handler is built with
+`expose_internal_errors()`. The SQL stores' errors are internal or
+unavailable; an unavailable one's text, sqlx's, is sent as it is.
+
 The handler makes a turn's event writes again while the store answers
 unavailable, for up to `HandlerLimits::store_write_retry`
 ([PostgreSQL](./postgres.md#when-the-connection-is-lost-or-the-database-is-busy)).

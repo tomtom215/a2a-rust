@@ -87,7 +87,138 @@ pub async fn apply(pool: &PgPool, statements: &[&'static str]) -> Result<(), sql
     let mut tx = super::pg_retry::retry(&crate::metrics::NoopMetrics, || pool.begin()).await?;
     lock(&mut tx).await?;
     for statement in statements {
-        sqlx::query(*statement).execute(&mut *tx).await?;
+        match index_if_missing(statement) {
+            Some(guarded) => {
+                sqlx::query(sqlx::AssertSqlSafe(guarded))
+                    .execute(&mut *tx)
+                    .await?
+            }
+            None => sqlx::query(*statement).execute(&mut *tx).await?,
+        };
     }
     tx.commit().await
+}
+
+/// `CREATE INDEX IF NOT EXISTS name ON ...` run only when no relation is
+/// named `name`, or `None` for any other statement.
+///
+/// `CREATE INDEX IF NOT EXISTS` asks for a `SHARE` lock on the table before
+/// it finds the index there and skips: measured on PostgreSQL 17.11, it
+/// waited behind an open `INSERT` on `tasks`, and a third session's
+/// `INSERT` waited behind it, 4.66 s, until the first committed (audit
+/// A11). Every replica start ran four of them on `tasks`, so a start behind
+/// any long write transaction stalled every replica's writes. The catalog
+/// lookup takes no lock on the table, as the check before `ADD COLUMN`
+/// below does not.
+fn index_if_missing(statement: &str) -> Option<String> {
+    let rest = statement
+        .trim_start()
+        .strip_prefix("CREATE INDEX IF NOT EXISTS ")?;
+    let name = rest.split_whitespace().next()?;
+    if !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        return None;
+    }
+    Some(format!(
+        "DO $$ BEGIN IF to_regclass('{name}') IS NULL THEN {statement}; END IF; END $$"
+    ))
+}
+
+/// A replica's start takes no lock its writes wait on.
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn an_index_statement_is_guarded_and_nothing_else_is() {
+        assert_eq!(
+            index_if_missing("CREATE INDEX IF NOT EXISTS idx_t_c ON t(c)").as_deref(),
+            Some(
+                "DO $$ BEGIN IF to_regclass('idx_t_c') IS NULL THEN \
+                 CREATE INDEX IF NOT EXISTS idx_t_c ON t(c); END IF; END $$"
+            )
+        );
+        for other in [
+            "CREATE TABLE IF NOT EXISTS t (c TEXT)",
+            "CREATE INDEX i ON t(c)",
+            "CREATE INDEX IF NOT EXISTS \"odd name\" ON t(c)",
+        ] {
+            assert_eq!(index_if_missing(other), None, "{other}");
+        }
+    }
+
+    /// A second replica starts while a write on `tasks` is open, and a third
+    /// session's write goes through meanwhile: the start's schema statements
+    /// wait on no lock the write holds, and queue none in front of the third.
+    /// Until 2026-10-30 its `CREATE INDEX IF NOT EXISTS` waited for the open
+    /// write, and every write after it waited behind that (audit A11).
+    #[tokio::test]
+    #[ignore = "needs a live PostgreSQL (A2A_TEST_POSTGRES_URL)"]
+    async fn a_replica_start_does_not_stall_writes_behind_an_open_one() {
+        use crate::store::PostgresTaskStore;
+        use sqlx::Connection as _;
+
+        let admin = std::env::var("A2A_TEST_POSTGRES_URL").expect("A2A_TEST_POSTGRES_URL");
+        let name = format!("a2a_a11_{}", std::process::id());
+        let mut conn = sqlx::PgConnection::connect(&admin).await.expect("admin");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+        )))
+        .execute(&mut conn)
+        .await
+        .expect("drop");
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
+            .execute(&mut conn)
+            .await
+            .expect("create");
+        let url = match admin.rsplit_once('/') {
+            Some((base, _)) => format!("{base}/{name}"),
+            None => panic!("a URL with a database"),
+        };
+
+        let first = PostgresTaskStore::new(&url)
+            .await
+            .expect("the first replica");
+        let mut open = sqlx::PgConnection::connect(&url).await.expect("open");
+        sqlx::query("BEGIN")
+            .execute(&mut open)
+            .await
+            .expect("begin");
+        sqlx::query(
+            "INSERT INTO tasks (id, context_id, state, data) VALUES ('held', 'c', 'working', '{}')",
+        )
+        .execute(&mut open)
+        .await
+        .expect("an open write");
+
+        let started =
+            tokio::time::timeout(Duration::from_secs(5), PostgresTaskStore::new(&url)).await;
+        let mut third = sqlx::PgConnection::connect(&url).await.expect("third");
+        sqlx::query("SET lock_timeout = '2s'")
+            .execute(&mut third)
+            .await
+            .expect("set");
+        let wrote = sqlx::query(
+            "INSERT INTO tasks (id, context_id, state, data) VALUES ('third', 'c', 'working', '{}')",
+        )
+        .execute(&mut third)
+        .await;
+        sqlx::query("ROLLBACK")
+            .execute(&mut open)
+            .await
+            .expect("rollback");
+        drop((first, open, third));
+
+        let started = started.expect("a replica starts while a write is open");
+        started.expect("and its schema statements succeed");
+        wrote.expect("a write is not queued behind a replica's start");
+
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS {name} WITH (FORCE)"
+        )))
+        .execute(&mut conn)
+        .await
+        .expect("drop");
+    }
 }

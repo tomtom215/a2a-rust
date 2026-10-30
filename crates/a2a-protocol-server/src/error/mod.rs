@@ -384,5 +384,8 @@ pub type ServerResult<T> = Result<T, ServerError>;
 mod label_tests;
 #[cfg(test)]
 mod status_tests;
+mod withheld;
+pub use withheld::{withhold, withhold_for_task};
+
 #[cfg(test)]
 mod tests;

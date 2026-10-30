@@ -972,6 +972,23 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sends callers the text of internal errors: what an executor, a store
+    /// or an outbound call wrote, as written.
+    ///
+    /// By default a caller is told only that an internal error happened,
+    /// with a reference to find its text in the log (feature `tracing`), in
+    /// the error it is answered with and in the `Failed` status of a task
+    /// whose executor returned one. That text is often not the caller's to
+    /// read: a URL with its API key, a database's table and constraint
+    /// names, an identity provider's response (audit SEC-07). Errors of any
+    /// other code, such as `InvalidParams`, are sent as they are written.
+    /// For development, or an agent whose callers are its operators.
+    #[must_use]
+    pub const fn expose_internal_errors(mut self) -> Self {
+        self.interceptors.expose_internal_errors();
+        self
+    }
+
     /// Accepts message parts whose `mediaType` the agent card does not
     /// declare.
     ///
