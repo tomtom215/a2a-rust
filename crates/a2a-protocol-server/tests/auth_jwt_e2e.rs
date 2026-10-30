@@ -346,10 +346,9 @@ async fn oidc_discovery_end_to_end_validates_tokens() {
 /// A discovery document without `jwks_uri` is a hard, described error.
 #[tokio::test]
 async fn oidc_discovery_missing_jwks_uri_errors() {
-    let discovery = Arc::new(std::sync::Mutex::new(String::from(
-        r#"{"issuer":"http://example.invalid"}"#,
-    )));
-    let issuer_addr = spawn_oidc_issuer(discovery, jwks_json("rk1"), 200).await;
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() = format!(r#"{{"issuer":"http://{issuer_addr}"}}"#);
 
     let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
         .await
@@ -402,4 +401,73 @@ async fn oidc_discovery_unreachable_issuer_errors() {
         err.message.contains("OIDC discovery"),
         "error must name the failing step: {err}"
     );
+}
+
+/// A discovery document that names another issuer is refused (OpenID
+/// Connect Discovery 1.0 §4.3; audit SEC-06): its keys may sign for that
+/// issuer, not this one.
+#[tokio::test]
+async fn oidc_discovery_naming_another_issuer_is_refused() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() = format!(
+        r#"{{"issuer":"https://login.example.com/common","jwks_uri":"http://{issuer_addr}/jwks"}}"#
+    );
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("another issuer's document must be refused");
+    assert!(err.message.contains("another issuer"), "{err}");
+}
+
+/// A validator that names no issuer is bound to the discovered one: a
+/// correctly signed token from another issuer sharing the keys is refused
+/// (audit SEC-06). `allow_any_issuer` keeps the old behaviour, on purpose.
+#[tokio::test]
+async fn oidc_discovery_binds_the_issuer_to_a_validator_that_names_none() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() =
+        format!(r#"{{"issuer":"http://{issuer_addr}","jwks_uri":"http://{issuer_addr}/jwks"}}"#);
+    let issuer = format!("http://{issuer_addr}");
+
+    // RS256_VALID is signed by these keys, with `iss` https://issuer.test.
+    let bound = JwtAuthInterceptor::from_oidc_issuer(
+        &issuer,
+        JwtValidator::new().with_audience("a2a-agent"),
+    )
+    .await
+    .expect("discovery");
+    // Bound, not merely refusing everything for want of an issuer.
+    let shown = format!("{bound:?}");
+    assert!(shown.contains(&format!("\"{issuer}\"")), "{shown}");
+    let refused = post_send_message(spawn_guarded_server(bound).await, Some(RS256_VALID)).await;
+    assert!(
+        refused.contains("error"),
+        "another issuer's token: {refused}"
+    );
+
+    let any = JwtAuthInterceptor::from_oidc_issuer(
+        &issuer,
+        JwtValidator::new()
+            .with_audience("a2a-agent")
+            .allow_any_issuer(),
+    )
+    .await
+    .expect("discovery");
+    let served = post_send_message(spawn_guarded_server(any).await, Some(RS256_VALID)).await;
+    assert!(served.contains("result"), "allow_any_issuer: {served}");
+}
+
+/// A discovery document naming a plaintext `jwks_uri` off loopback is
+/// refused: whoever changes the keys in transit can sign any identity.
+#[tokio::test]
+async fn oidc_discovery_with_a_plaintext_jwks_uri_is_refused() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() =
+        format!(r#"{{"issuer":"http://{issuer_addr}","jwks_uri":"http://203.0.113.1/jwks"}}"#);
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("plaintext jwks_uri");
+    assert!(err.message.contains("plaintext"), "{err}");
 }

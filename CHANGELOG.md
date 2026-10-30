@@ -216,6 +216,20 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Breaking Changes
 
+- **A `JwtValidator` checks `iss` and `aud` by default** (server;
+  `auth::jwt`; audit SEC-06). One that names no issuer, or no audience,
+  refuses every token, and the interceptor logs why when it is built, unless
+  `allow_any_issuer()` or `allow_any_audience()` (new) opts out. Before,
+  both checks were skipped when unset, so a key set that signs for more than
+  one issuer or application let any of its tokens in (another tenant of a
+  multi-tenant identity provider; a token minted for another API).
+  `from_oidc_issuer` now refuses a discovery document whose `issuer` is not
+  the one named (OpenID Connect Discovery 1.0 §4.3; a trailing `/` ignored)
+  and binds that issuer to a validator that names none. A JWKS or discovery
+  URL must be `https://`, or `http://` to a loopback host; a plaintext one
+  is refused (every token, with the reason logged, for `from_jwks_url`).
+  `JwtAuthInterceptor::new` is no longer `const`. Tests in `auth/jwt.rs` and
+  `tests/auth_jwt_e2e.rs`, each shown failing with its part reverted.
 - **The WebSocket listener refuses every browser by default** (server;
   `WebSocketDispatcher`; audit SEC-03). An upgrade that carries an `Origin`
   header is refused with `403` unless `with_allowed_origins` lists that

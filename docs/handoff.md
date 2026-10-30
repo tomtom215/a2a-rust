@@ -28,13 +28,12 @@ only: when something here is done, delete it rather than annotating it.
     (section L), and four low findings from re-reading this branch's own
     fixes (section M). Its `Status` column is the only record of what was checked;
     count it rather than trusting a figure here. At this commit, 220 rows:
-    166 `open`, 4 `confirmed (read)`, 42 `fixed`, 2 `fixed (part)`, 4
+    165 `open`, 4 `confirmed (read)`, 43 `fixed`, 2 `fixed (part)`, 4
     `verified live`, 1 refuted, 1 not a defect. Every fix is listed in `CHANGELOG.md` `[Unreleased]`,
     including a "Breaking Changes" section.
   - **Not release-ready.** Open and judged release-relevant, from that list:
     E-F3 (a claim held through webhook delivery), D-02 (inline push stalls
-    persistence), D-15 (failover error 25006 treated as permanent), SEC-04 (JWKS refetch without cooldown), SEC-06 (JWT
-    `iss`/`aud` defaults), SEC-07 (error text returned to callers), C-04
+    persistence), D-15 (failover error 25006 treated as permanent), SEC-04 (JWKS refetch without cooldown), SEC-07 (error text returned to callers), C-04
     (alerts fire on every restart), A10/A11/E-F10 (DDL at every start), E-F6/D-17
     (pool sizing), G-11 (configuration errors reported as `InvalidParams`),
     L5 (no token streaming in the tool loop), L6 (no `a2a task subscribe`),

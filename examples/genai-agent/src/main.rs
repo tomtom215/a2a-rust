@@ -378,12 +378,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // `try_`: refuses a secret under 32 bytes (RFC 7518 §3.2) at
             // startup, rather than starting a server no HS256 token can reach.
             let mut validator = JwtValidator::new().try_with_hs256_secret(secret.into_bytes())?;
-            if let Ok(iss) = std::env::var("A2A_JWT_ISS") {
-                validator = validator.with_issuer(iss);
+            // Unset, the SDK would refuse every token; this secret's holder
+            // mints them all, so an unset variable opts out, said aloud.
+            let (iss, aud) = (std::env::var("A2A_JWT_ISS"), std::env::var("A2A_JWT_AUD"));
+            if iss.is_err() || aud.is_err() {
+                println!("auth: A2A_JWT_ISS/A2A_JWT_AUD unset: that claim is not checked");
             }
-            if let Ok(aud) = std::env::var("A2A_JWT_AUD") {
-                validator = validator.with_audience(aud);
-            }
+            validator = match iss {
+                Ok(iss) => validator.with_issuer(iss),
+                Err(_) => validator.allow_any_issuer(),
+            };
+            validator = match aud {
+                Ok(aud) => validator.with_audience(aud),
+                Err(_) => validator.allow_any_audience(),
+            };
             builder = builder.with_interceptor(JwtAuthInterceptor::new(validator, Jwks::new()));
             println!("auth: JWT HS256 required (Authorization: Bearer <jwt>)");
         }

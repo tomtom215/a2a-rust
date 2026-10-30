@@ -190,7 +190,7 @@ Severity is the reviewer's; where a check changed it, the note says so.
 | SEC-03 | High; KNOWN | WebSocket accepts any `Origin` (cross-site WebSocket hijacking) | fixed | Default refuses every upgrade that carries an `Origin` unless listed (`with_allowed_origins`); no `Origin` (non-browser clients) accepted; `allow_any_origin()` opts out. Not "same host as `Host`", which DNS rebinding satisfies. Test fails with the old default; live in Chromium (2026-10-29): a page on another origin could not open the socket by default, could and read a GetTask answer when listed; a raw upgrade with no `Origin` got `101` |
 | SEC-04 | Medium | Forced JWKS refetch with a forged `kid`, no cooldown | open | |
 | SEC-05 | Medium | An empty API key fails open | fixed | CredentialSet::matching refuses an empty credential; unit test |
-| SEC-06 | Medium; partly KNOWN | JWT defaults: no `iss`/`aud`, `from_oidc_issuer` does not bind the issuer, plaintext JWKS | open | |
+| SEC-06 | Medium; partly KNOWN | JWT defaults: no `iss`/`aud`, `from_oidc_issuer` does not bind the issuer, plaintext JWKS | fixed | `iss` and `aud` checked by default: a validator naming neither refuses every token (logged at construction) unless `allow_any_issuer`/`allow_any_audience`; `from_oidc_issuer` checks the document's `issuer` (§4.3) and binds it; JWKS and discovery URLs must be https or loopback http. Six mutations, each failing a test |
 | SEC-07 | Medium | Internal error text returned verbatim to callers and persisted | open | |
 | SEC-08 | Medium | OAuth client secret and tokens sent to `http://` endpoints and to card-controlled `tokenUrl` | open | |
 | SEC-09 | Medium | a2a-cli sends `--header` credentials to card-chosen hosts and to the JWKS host | open | |

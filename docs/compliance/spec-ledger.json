@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:10924 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:10938 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1780,13 +1780,13 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:20 AuthRejectionKind",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:355 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:371 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/error/mod.rs:189 ServerError::http_status",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:86 server_error_to_status"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings",
-    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:97 a_valid_token_without_the_scope_is_refused_403_naming_it",
+    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:99 a_valid_token_without_the_scope_is_refused_403_naming_it",
     "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it"
    ],
    "notes": "Re-examined 2026-10-18: A2aError::permission_denied and insufficient_scope answer 403 / PERMISSION_DENIED on every binding, and the SDK now applies a permission itself: JwtValidator::require_scope refuses a valid token lacking a required scope with 403 (not 401), on both HTTP bindings in the test. Which permissions an operation needs beyond that is the agent's policy, expressed in an interceptor.",
@@ -1805,11 +1805,11 @@
    "impl_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:56 AuthRejection::insufficient_scope",
     "crates/a2a-protocol-types/src/error.rs:402 A2aError::insufficient_scope",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:449 JwtValidator::validate"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:500 JwtValidator::validate"
    ],
    "test_evidence": [
     "crates/a2a-protocol-types/src/auth_rejection.rs:123 insufficient_scope_names_the_scopes_in_its_challenge",
-    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:97 a_valid_token_without_the_scope_is_refused_403_naming_it"
+    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:99 a_valid_token_without_the_scope_is_refused_403_naming_it"
    ],
    "notes": "Re-examined 2026-10-18: A2aError::insufficient_scope(message, scopes) carries the RFC 6750 §3 challenge Bearer error=\"insufficient_scope\", scope=\"...\", which every binding sends with its 403 (header, gRPC metadata, WebSocket ErrorInfo metadata). JwtValidator::require_scope names only the scopes the token lacks, and only to a caller whose token verified, so a caller without a valid credential learns nothing about them (the test's forged token gets 401 with no scope in the challenge).",
    "auditor": "B",
@@ -5017,13 +5017,13 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/interceptor/mod.rs:148 ServerInterceptor::authenticates",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:355 JwtValidator::require_scope",
+    "crates/a2a-protocol-server/src/auth/jwt.rs:371 JwtValidator::require_scope",
     "crates/a2a-protocol-server/src/call_context.rs:113 CallContext"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_rejection_status.rs:205 permission_denied_answers_403_without_a_challenge_on_both_bindings",
     "crates/a2a-protocol-server/tests/authorization_per_task.rs:153 an_authorizer_sees_the_task_every_method_names_and_can_refuse_it",
-    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:97 a_valid_token_without_the_scope_is_refused_403_naming_it"
+    "crates/a2a-protocol-server/tests/jwt_required_scope.rs:99 a_valid_token_without_the_scope_is_refused_403_naming_it"
    ],
    "notes": "Custom ServerInterceptor returning A2aError::permission_denied; caller identity on CallContext. The tests assert an interceptor sees the method and the task each request names and can refuse one task with 403, and a JWT lacking a required OAuth scope is refused 403; shown able to fail by hiding CallContext::task_id and by making require_scope a no-op; skills are not visible to an authorizer, as no request names one (2026-10-20).",
    "auditor": "D",
@@ -8671,7 +8671,7 @@
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:106 debug_names_no_accepted_credential",
     "crates/a2a-protocol-server/tests/auth_secret_redaction.rs:135 accepting_and_refusing_logs_no_credential",
     "crates/a2a-protocol-server/tests/credential_rotation.rs:110 an_api_key_is_rotated_and_revoked_while_serving",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:1449 debug_impls_render_type_and_redact_secrets"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:1662 debug_impls_render_type_and_redact_secrets"
    ],
    "notes": "Constant-time comparison, Debug shows counts not keys, identity labels separate from credentials, push secrets redacted. Exception: SQL push-config stores keep credentials plaintext at rest (see 3131). Client: until 2026-10-14 (audit register R17) the derived Debug of ClientRequest, ClientResponse, CardFetchOptions and WebSocketTransportConfig printed header values (the Authorization an auth interceptor adds) and push-config params and results verbatim; they print header names and JSON keys now, never values.",
    "auditor": "F",
@@ -8690,7 +8690,7 @@
     "crates/a2a-protocol-server/src/auth/credentials.rs:44 CredentialSet::add",
     "crates/a2a-protocol-server/src/auth/mod.rs:257 ApiKeyAuthInterceptor::credentials",
     "crates/a2a-protocol-server/src/auth/mod.rs:375 BearerTokenAuthInterceptor::credentials",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:892 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:979 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:95 a_bearer_token_is_rotated_and_revoked_while_serving",
@@ -8738,7 +8738,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/credentials.rs:58 CredentialSet::revoke",
-    "crates/a2a-protocol-server/src/auth/jwt.rs:892 RemoteJwks::get"
+    "crates/a2a-protocol-server/src/auth/jwt.rs:979 RemoteJwks::get"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/credential_rotation.rs:95 a_bearer_token_is_rotated_and_revoked_while_serving",
